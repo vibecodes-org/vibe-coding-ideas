@@ -91,6 +91,8 @@ export function AgentsHub({
           botStats={botStats}
           onCreateAgent={() => setCreateOpen(true)}
           onSwitchToCommunity={() => setActiveTab("community")}
+          featuredTeams={featuredTeams}
+          userExistingRoles={userExistingRoles}
         />
       ) : (
         <CommunityTab

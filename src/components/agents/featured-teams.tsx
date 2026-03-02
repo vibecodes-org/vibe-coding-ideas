@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Star, ChevronDown } from "lucide-react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Star, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { addFeaturedTeam } from "@/actions/bots";
@@ -18,6 +18,32 @@ interface FeaturedTeamsProps {
 export function FeaturedTeams({ teams, userExistingRoles }: FeaturedTeamsProps) {
   const [loadingTeamId, setLoadingTeamId] = useState<string | null>(null);
   const [expandedTeam, setExpandedTeam] = useState<string | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(false);
+
+  const updateScrollState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 0);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 1);
+  }, []);
+
+  useEffect(() => {
+    updateScrollState();
+    const el = scrollRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver(updateScrollState);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [updateScrollState, teams]);
+
+  function scroll(direction: "left" | "right") {
+    const el = scrollRef.current;
+    if (!el) return;
+    const cardWidth = 340 + 12; // card max-width + gap
+    el.scrollBy({ left: direction === "left" ? -cardWidth : cardWidth, behavior: "smooth" });
+  }
 
   if (teams.length === 0) return null;
 
@@ -46,7 +72,27 @@ export function FeaturedTeams({ teams, userExistingRoles }: FeaturedTeamsProps) 
         <Star className="h-4 w-4" />
         Featured Teams
       </div>
-      <div className="flex gap-3 overflow-x-auto pb-2 snap-x snap-mandatory scrollbar-thin">
+      <div className="relative">
+        <button
+          onClick={() => scroll("left")}
+          disabled={!canScrollLeft}
+          className="absolute -left-5 top-1/2 z-10 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-muted disabled:opacity-0 disabled:pointer-events-none"
+        >
+          <ChevronLeft className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => scroll("right")}
+          disabled={!canScrollRight}
+          className="absolute -right-5 top-1/2 z-10 -translate-y-1/2 flex h-8 w-8 items-center justify-center rounded-full border border-border bg-background shadow-md transition-colors hover:bg-muted disabled:opacity-0 disabled:pointer-events-none"
+        >
+          <ChevronRight className="h-4 w-4" />
+        </button>
+        <div
+          ref={scrollRef}
+          onScroll={updateScrollState}
+          className="flex gap-3 overflow-x-auto snap-x snap-mandatory [&::-webkit-scrollbar]:hidden"
+          style={{ scrollbarWidth: "none" }}
+        >
         {teams.map((team) => {
           const sortedAgents = [...team.agents].sort(
             (a, b) => a.display_order - b.display_order
@@ -151,6 +197,7 @@ export function FeaturedTeams({ teams, userExistingRoles }: FeaturedTeamsProps) 
             </div>
           );
         })}
+        </div>
       </div>
     </div>
   );

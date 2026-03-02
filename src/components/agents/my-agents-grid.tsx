@@ -4,16 +4,18 @@ import { useState } from "react";
 import { AgentCard } from "./agent-card";
 import { EmptyState } from "./empty-state";
 import { EditAgentDialog } from "./edit-agent-dialog";
-import type { BotProfile } from "@/types";
+import type { BotProfile, FeaturedTeamWithAgents } from "@/types";
 
 interface MyAgentsGridProps {
   bots: BotProfile[];
   botStats: Record<string, { taskCount: number; ideaCount: number; assignedCount: number }>;
   onCreateAgent: () => void;
   onSwitchToCommunity: () => void;
+  featuredTeams: FeaturedTeamWithAgents[];
+  userExistingRoles: Set<string>;
 }
 
-export function MyAgentsGrid({ bots, botStats, onCreateAgent, onSwitchToCommunity }: MyAgentsGridProps) {
+export function MyAgentsGrid({ bots, botStats, onCreateAgent, onSwitchToCommunity, featuredTeams, userExistingRoles }: MyAgentsGridProps) {
   const [editingBot, setEditingBot] = useState<BotProfile | null>(null);
 
   if (bots.length === 0) {
@@ -21,6 +23,8 @@ export function MyAgentsGrid({ bots, botStats, onCreateAgent, onSwitchToCommunit
       <EmptyState
         onCreateAgent={onCreateAgent}
         onBrowseCommunity={onSwitchToCommunity}
+        featuredTeams={featuredTeams}
+        userExistingRoles={userExistingRoles}
       />
     );
   }
