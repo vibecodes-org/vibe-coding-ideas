@@ -1,5 +1,5 @@
--- Agents Hub: Community profiles, agent votes, featured teams, and seed data
--- Merged from: 00062_agents_hub, 00063_admin_featured_teams, 00064_seed_admin_agents
+-- Agents Hub: Community profiles, agent votes, featured teams, seed data, and increment RPC
+-- Merged from: 00062_agents_hub, 00063_admin_featured_teams, 00064_seed_admin_agents, 00063_increment_times_cloned_rpc
 
 -- ============================================================
 -- Part 1: bot_profiles extensions + agent_votes
@@ -686,5 +686,19 @@ INSERT INTO featured_team_agents (team_id, bot_id, display_order) VALUES
   ('c0000000-0000-4000-a000-000000000005', 'b0000000-0000-4000-a000-000000000003', 2),
   ('c0000000-0000-4000-a000-000000000005', 'b0000000-0000-4000-a000-000000000006', 3)
 ON CONFLICT (team_id, bot_id) DO NOTHING;
+
+-- ============================================================
+-- Part 6: Atomic increment RPC for times_cloned
+-- ============================================================
+
+CREATE OR REPLACE FUNCTION public.increment_times_cloned(p_bot_id uuid)
+RETURNS void
+LANGUAGE sql
+SECURITY DEFINER
+AS $$
+  UPDATE public.bot_profiles
+  SET times_cloned = COALESCE(times_cloned, 0) + 1
+  WHERE id = p_bot_id;
+$$;
 
 COMMIT;
