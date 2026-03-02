@@ -13,8 +13,8 @@ interface AgentsHubProps {
   myBots: BotProfile[];
   botStats: Record<string, { taskCount: number; ideaCount: number; assignedCount: number }>;
   communityBots: BotProfileWithOwner[];
-  userVotedBotIds: Set<string>;
-  userExistingRoles: Set<string>;
+  userVotedBotIds: string[];
+  userExistingRoles: string[];
   featuredTeams: FeaturedTeamWithAgents[];
 }
 

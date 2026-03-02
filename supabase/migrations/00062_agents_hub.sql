@@ -53,6 +53,7 @@ CREATE OR REPLACE FUNCTION update_agent_community_upvotes()
 RETURNS trigger
 LANGUAGE plpgsql
 SECURITY DEFINER
+SET search_path = public
 AS $$
 BEGIN
   IF TG_OP = 'INSERT' THEN
@@ -62,7 +63,7 @@ BEGIN
     RETURN NEW;
   ELSIF TG_OP = 'DELETE' THEN
     UPDATE bot_profiles
-      SET community_upvotes = community_upvotes - 1
+      SET community_upvotes = GREATEST(community_upvotes - 1, 0)
       WHERE id = OLD.bot_id;
     RETURN OLD;
   END IF;
@@ -289,8 +290,6 @@ ALTER PUBLICATION supabase_realtime ADD TABLE featured_team_agents;
 --   Agents: b0000000-0000-4000-a000-0000000000XX (XX = 01-15)
 --   Teams:  c0000000-0000-4000-a000-0000000000XX (XX = 01-05)
 --   Owner:  a0000000-0000-4000-a000-000000000001 (VIBECODES_USER_ID)
-
-BEGIN;
 
 -- 3a. Insert auth.users rows (handle_new_user trigger creates public.users)
 
@@ -695,10 +694,10 @@ CREATE OR REPLACE FUNCTION public.increment_times_cloned(p_bot_id uuid)
 RETURNS void
 LANGUAGE sql
 SECURITY DEFINER
+SET search_path = public
 AS $$
   UPDATE public.bot_profiles
   SET times_cloned = COALESCE(times_cloned, 0) + 1
   WHERE id = p_bot_id;
 $$;
 
-COMMIT;

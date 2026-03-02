@@ -76,7 +76,7 @@ export default async function AgentPage({ params }: AgentPageProps) {
   // Count completed tasks (done column tasks)
   const { count: completedCount } = await supabase
     .from("board_tasks")
-    .select("id", { count: "exact", head: true })
+    .select("id, board_columns!inner(is_done_column)", { count: "exact", head: true })
     .eq("assignee_id", id)
     .eq("board_columns.is_done_column", true);
 

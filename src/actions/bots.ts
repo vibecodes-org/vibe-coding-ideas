@@ -218,7 +218,7 @@ async function cloneBotProfile(
   if (createError) throw new Error(createError.message);
 
   // Set extended fields + provenance, and atomically increment source counter
-  await Promise.all([
+  const [updateResult, rpcResult] = await Promise.all([
     supabase
       .from("bot_profiles")
       .update({
@@ -230,6 +230,9 @@ async function cloneBotProfile(
       .eq("owner_id", ownerId),
     supabase.rpc("increment_times_cloned", { p_bot_id: source.id }),
   ]);
+
+  if (updateResult.error) throw new Error(updateResult.error.message);
+  if (rpcResult.error) throw new Error(rpcResult.error.message);
 
   return newBotId as string;
 }

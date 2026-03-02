@@ -12,7 +12,7 @@ interface MyAgentsGridProps {
   onCreateAgent: () => void;
   onSwitchToCommunity: () => void;
   featuredTeams: FeaturedTeamWithAgents[];
-  userExistingRoles: Set<string>;
+  userExistingRoles: string[];
 }
 
 export function MyAgentsGrid({ bots, botStats, onCreateAgent, onSwitchToCommunity, featuredTeams, userExistingRoles }: MyAgentsGridProps) {

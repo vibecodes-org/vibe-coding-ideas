@@ -363,8 +363,10 @@ export async function listCommunityAgents(
     .eq("is_published", true);
 
   if (args.search) {
+    // Escape PostgREST special characters to prevent filter injection
+    const s = args.search.replace(/[%_\\]/g, "\\$&").replace(/[.,()]/g, "");
     query = query.or(
-      `name.ilike.%${args.search}%,bio.ilike.%${args.search}%,role.ilike.%${args.search}%`
+      `name.ilike.%${s}%,bio.ilike.%${s}%,role.ilike.%${s}%`
     );
   }
   if (args.role) {

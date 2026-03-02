@@ -17,8 +17,8 @@ import type { BotProfileWithOwner, FeaturedTeamWithAgents } from "@/types";
 
 interface CommunityTabProps {
   bots: BotProfileWithOwner[];
-  userVotedBotIds: Set<string>;
-  userExistingRoles: Set<string>;
+  userVotedBotIds: string[];
+  userExistingRoles: string[];
   featuredTeams: FeaturedTeamWithAgents[];
 }
 
@@ -143,7 +143,7 @@ export function CommunityTab({ bots, userVotedBotIds, userExistingRoles, feature
               bot={bot}
               variant="community"
               ownerName={bot.owner?.full_name}
-              hasVoted={userVotedBotIds.has(bot.id)}
+              hasVoted={userVotedBotIds.includes(bot.id)}
               onClick={() => setSelectedBotId(bot.id)}
             />
           ))}

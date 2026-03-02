@@ -58,9 +58,7 @@ export default async function AgentsPage() {
   }
 
   // Collect user's existing roles for duplicate detection in featured teams
-  const userExistingRoles = new Set(
-    myBots.map((b) => (b.role ?? "").toLowerCase()).filter(Boolean)
-  );
+  const userExistingRoles = myBots.map((b) => (b.role ?? "").toLowerCase()).filter(Boolean);
 
   // Fetch all published community bots (including own — so authors can see their listing)
   const { data: communityData } = await supabase
@@ -78,7 +76,7 @@ export default async function AgentsPage() {
     .select("bot_id")
     .eq("user_id", user.id);
 
-  const userVotedBotIds = new Set((votesData ?? []).map((v) => v.bot_id));
+  const userVotedBotIds = (votesData ?? []).map((v) => v.bot_id);
 
   // Fetch active featured teams with agents
   const { data: teamsData } = await supabase

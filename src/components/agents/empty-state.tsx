@@ -9,7 +9,7 @@ interface EmptyStateProps {
   onCreateAgent: () => void;
   onBrowseCommunity: () => void;
   featuredTeams: FeaturedTeamWithAgents[];
-  userExistingRoles: Set<string>;
+  userExistingRoles: string[];
 }
 
 export function EmptyState({

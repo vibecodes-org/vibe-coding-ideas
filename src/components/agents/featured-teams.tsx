@@ -12,7 +12,7 @@ import type { FeaturedTeamWithAgents } from "@/types";
 
 interface FeaturedTeamsProps {
   teams: FeaturedTeamWithAgents[];
-  userExistingRoles: Set<string>;
+  userExistingRoles: string[];
 }
 
 export function FeaturedTeams({ teams, userExistingRoles }: FeaturedTeamsProps) {
@@ -98,7 +98,7 @@ export function FeaturedTeams({ teams, userExistingRoles }: FeaturedTeamsProps) 
             (a, b) => a.display_order - b.display_order
           );
           const existingCount = sortedAgents.filter((a) =>
-            userExistingRoles.has((a.bot.role ?? "").toLowerCase())
+            userExistingRoles.includes((a.bot.role ?? "").toLowerCase())
           ).length;
           const remainingCount = sortedAgents.length - existingCount;
           const maxVisible = 3;
