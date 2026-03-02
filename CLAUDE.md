@@ -70,6 +70,24 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - Board dropdown groups pooled agents by owner name instead of flat "My Agents"
 - MCP tools: `allocate_agent`, `remove_idea_agent`, `list_idea_agents` in `mcp-server/src/tools/idea-agents.ts`
 
+### Agents Hub
+- `/agents` page is tabbed: "My Agents" + "Community" tabs via `AgentsHub` component
+- `bot_profiles` extended with `bio`, `skills` (text[]), `is_published`, `community_upvotes`, `times_cloned`, `cloned_from` (FK → self)
+- `agent_votes` table for community upvotes with trigger-based denormalization to `bot_profiles.community_upvotes`
+- Publishing is opt-in (`is_published`); published agents always show their system prompt; `is_published` filtered at query level (RLS unchanged)
+- Clone = independent copy; `cloned_from` FK for provenance only, no live sync
+- Featured teams stored in DB (`featured_teams` + `featured_team_agents` junction table); admin-managed via `/admin?tab=teams`
+- `addFeaturedTeam(teamId)` clones each team agent into user's account, skipping duplicate roles
+- Agent profile pages at `/agents/[id]` — private if not published (except owner); shows stats, skills, prompt display, contributing ideas
+- Components in `src/components/agents/`: agents-hub, my-agents-grid, agent-card, create-agent-dialog, edit-agent-dialog, empty-state, community-tab, featured-teams, agent-vote-button, clone-agent-button, agent-profile
+- Admin components in `src/components/admin/`: admin-agents-dashboard, create-admin-agent-dialog, admin-teams-dashboard, team-editor-dialog
+- Server actions in `src/actions/bots.ts`: createBot (extended with bio/skills), updateBot (extended with bio/skills/is_published), toggleAgentVote, cloneAgent, addFeaturedTeam
+- Admin actions in `src/actions/admin-agents.ts`: createAdminAgent, updateAdminAgent, deleteAdminAgent, createFeaturedTeam, updateFeaturedTeam, deleteFeaturedTeam, toggleFeaturedTeamActive, setTeamAgents
+- VibeCodes system user (`VIBECODES_USER_ID` in constants.ts) owns admin agents; admin agents auto-published
+- MCP tools: `toggle_agent_vote`, `clone_agent`, `publish_agent`, `list_community_agents`, `list_featured_teams` in `mcp-server/src/tools/bots.ts`
+- Avatar upload reuses `avatars` bucket; path: `avatars/{botId}/avatar`, upload after RPC returns bot ID
+- `create_bot_user` RPC untouched; new columns set via follow-up UPDATE
+
 ### Collaboration Requests
 - `collaboration_requests` table with `pending`/`accepted`/`declined` status enum
 - Users request access → author accepts/rejects from idea detail page (`pending-requests.tsx`)
@@ -107,16 +125,16 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 
 ### Validation
 - `src/lib/validation.ts` — all server actions validate before DB ops
-- Limits: title 200, description 50K, comment 5K, discussion body 10K, discussion reply 5K, bio 500, tags 50 chars / 10 max
+- Limits: title 200, description 50K, comment 5K, discussion body 10K, discussion reply 5K, bio 500, tags 50 chars / 10 max, skills 30 chars / 10 max, team name 200, team description 1K
 - Idea attachments: 10 MB per file, 10 files per idea, allowed types: images (png/jpg/gif/webp/svg), PDF, Markdown
 
 ## Database
 
-29 tables with RLS (`supabase/migrations/`):
+32 tables with RLS (`supabase/migrations/`):
 - **Core**: users, ideas, comments, collaborators, votes, notifications, feedback, idea_attachments
 - **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_checklist_items, board_task_activity, board_task_comments, board_task_attachments
 - **Discussions**: idea_discussions, idea_discussion_replies, discussion_votes
-- **Agents**: bot_profiles, idea_agents
+- **Agents**: bot_profiles, idea_agents, agent_votes, featured_teams, featured_team_agents
 - **AI**: ai_usage_log, ai_prompt_templates
 - **MCP/OAuth**: mcp_oauth_clients, mcp_oauth_codes
 - **Collaboration**: collaboration_requests
@@ -125,7 +143,7 @@ Key columns:
 - `users.is_bot`, `users.is_admin`, `users.ai_daily_limit` (default 10), `users.ai_enabled`, `users.default_board_columns`, `users.email_notifications`, `users.active_bot_id`, `users.encrypted_anthropic_key`
 - `ideas.visibility` (public/private) enforced by RLS
 - Denormalized counts on ideas (upvotes, comment_count, collaborator_count, discussion_count, attachment_count) via triggers
-- `admin_delete_user` RPC cascades from auth.users
+- `admin_delete_user` RPC cascades from auth.users; `admin_delete_bot_user` + `admin_update_bot_user` RPCs for admin agent management
 - Board tables use `is_idea_team_member()` RLS function
 
 ## Server Actions (src/actions/)
@@ -139,7 +157,8 @@ Key columns:
 - `votes.ts` — toggleVote
 - `notifications.ts` — markNotificationsRead, markAllNotificationsRead, updateNotificationPreferences
 - `profile.ts` — updateProfile, updateDefaultBoardColumns, saveApiKey, removeApiKey
-- `bots.ts` — createBot, updateBot, deleteBot, listMyBots
+- `bots.ts` — createBot, updateBot, deleteBot, listMyBots, toggleAgentVote, cloneAgent, addFeaturedTeam
+- `admin-agents.ts` — createAdminAgent, updateAdminAgent, deleteAdminAgent, createFeaturedTeam, updateFeaturedTeam, deleteFeaturedTeam, toggleFeaturedTeamActive, setTeamAgents
 - `admin.ts` — toggleAiEnabled, setUserAiDailyLimit
 - `users.ts` — deleteUser (admin only)
 - `prompt-templates.ts` — list, create, delete
@@ -174,7 +193,7 @@ NOTIFICATION_WEBHOOK_SECRET
 
 ## MCP Server
 
-Two modes sharing 49 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI:
+Two modes sharing 54 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI:
 - **Local (stdio)**: `mcp-server/src/index.ts` — service-role client, bypasses RLS
 - **Remote (HTTP)**: `src/app/api/mcp/[[...transport]]/route.ts` — OAuth 2.1 + PKCE, per-user RLS
 

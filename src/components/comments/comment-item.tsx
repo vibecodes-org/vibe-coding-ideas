@@ -11,7 +11,7 @@ import { CommentForm } from "./comment-form";
 import { incorporateComment, deleteComment, updateComment } from "@/actions/comments";
 import { undoableAction } from "@/lib/undo-toast";
 import { toast } from "sonner";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime, getInitials } from "@/lib/utils";
 import { Markdown } from "@/components/ui/markdown";
 import type { CommentWithAuthor, User } from "@/types";
 
@@ -51,12 +51,7 @@ export function CommentItem({
   const isBotOwner = userBotIds.includes(comment.author_id);
   const canModify = isCommentAuthor || isBotOwner;
 
-  const initials =
-    comment.author.full_name
-      ?.split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase() ?? "?";
+  const initials = getInitials(comment.author.full_name);
 
   const handleIncorporate = async () => {
     if (isIncorporating) return;

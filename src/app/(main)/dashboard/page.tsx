@@ -36,6 +36,7 @@ import type {
   DashboardBotActivity,
   BoardLabel,
   BotProfile,
+  FeaturedTeamWithAgents,
 } from "@/types";
 
 export const metadata: Metadata = {
@@ -58,6 +59,7 @@ export default async function DashboardPage() {
     tasksResult,
     botProfilesResult,
     userProfileResult,
+    featuredTeamsResult,
   ] = await Promise.all([
     // My ideas (limit 5)
     supabase
@@ -120,6 +122,12 @@ export default async function DashboardPage() {
       .select("onboarding_completed_at, full_name, avatar_url, github_username")
       .eq("id", user.id)
       .maybeSingle(),
+    // Featured teams for onboarding
+    supabase
+      .from("featured_teams")
+      .select("*, agents:featured_team_agents(*, bot:bot_profiles(*))")
+      .eq("is_active", true)
+      .order("display_order", { ascending: true }),
   ]);
 
   const myIdeas = (myIdeasResult.data ?? []) as unknown as IdeaWithAuthor[];
@@ -151,6 +159,7 @@ export default async function DashboardPage() {
   } | null;
   const onboardingCompleted = !!userProfile?.onboarding_completed_at;
   const isNewUser = !onboardingCompleted && ideasCount === 0 && collaborationsCount === 0;
+  const featuredTeams = (featuredTeamsResult.data ?? []) as unknown as FeaturedTeamWithAgents[];
 
   // All idea IDs the user owns or collaborates on (for board queries)
   const myIdeaIds = (myIdeaIdsResult.data ?? []).map((i) => i.id);
@@ -526,6 +535,7 @@ export default async function DashboardPage() {
           userFullName={userProfile?.full_name ?? null}
           userAvatarUrl={userProfile?.avatar_url ?? null}
           userGithubUsername={userProfile?.github_username ?? null}
+          featuredTeams={featuredTeams}
         />
       ) : !onboardingCompleted && ideasCount === 0 && collaborationsCount === 0 ? (
         <WelcomeExperience />

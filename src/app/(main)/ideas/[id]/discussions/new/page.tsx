@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getIdeaTeam } from "@/lib/idea-team";
+import { BotRolesProvider } from "@/components/bot-roles-context";
 import { NewDiscussionForm } from "@/components/discussions/new-discussion-form";
 import type { Metadata } from "next";
 
@@ -60,12 +61,14 @@ export default async function NewDiscussionPage({ params }: PageProps) {
 
       <h1 className="mb-6 text-xl font-bold sm:text-2xl">New Discussion</h1>
 
-      <NewDiscussionForm
-        ideaId={ideaId}
-        teamMembers={ideaTeam.allMentionable}
-        currentUserId={user.id}
-        hasApiKey={!!currentUserProfile?.encrypted_anthropic_key}
-      />
+      <BotRolesProvider botRoles={ideaTeam.botRoles}>
+        <NewDiscussionForm
+          ideaId={ideaId}
+          teamMembers={ideaTeam.allMentionable}
+          currentUserId={user.id}
+          hasApiKey={!!currentUserProfile?.encrypted_anthropic_key}
+        />
+      </BotRolesProvider>
     </div>
   );
 }

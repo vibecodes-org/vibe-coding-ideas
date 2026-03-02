@@ -13,7 +13,7 @@ import { MentionAutocomplete } from "@/components/board/mention-autocomplete";
 import { updateDiscussionReply } from "@/actions/discussions";
 import { useMentionState } from "@/hooks/use-mentions";
 import { sendDiscussionMentionNotifications } from "@/lib/mention-notifications";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime, getInitials } from "@/lib/utils";
 import { DiscussionReplyForm } from "./discussion-reply-form";
 import { ChildReplyItem } from "./child-reply-item";
 import type {
@@ -102,7 +102,7 @@ export function ReplyItem({
         <Avatar className="h-7 w-7 shrink-0">
           <AvatarImage src={reply.author.avatar_url ?? undefined} />
           <AvatarFallback className="text-xs">
-            {(reply.author.full_name ?? "?")[0]}
+            {getInitials(reply.author.full_name)}
           </AvatarFallback>
         </Avatar>
         <div className="min-w-0 flex-1">

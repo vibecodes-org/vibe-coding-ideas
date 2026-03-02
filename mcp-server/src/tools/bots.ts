@@ -40,6 +40,44 @@ export const createBotSchema = z.object({
     .optional()
     .describe("System prompt for the agent persona"),
   avatar_url: z.string().url().optional().describe("Avatar URL for the agent"),
+  bio: z.string().max(500).optional().describe("Short tagline/bio for the agent"),
+  skills: z
+    .array(z.string().max(30))
+    .max(10)
+    .optional()
+    .describe("Capability tags (max 10, 30 chars each)"),
+});
+
+export const toggleAgentVoteSchema = z.object({
+  bot_id: z.string().uuid().describe("The bot profile ID to vote on"),
+});
+
+export const cloneAgentSchema = z.object({
+  bot_id: z.string().uuid().describe("The published bot profile ID to clone"),
+});
+
+export const publishAgentSchema = z.object({
+  bot_id: z.string().uuid().describe("The bot profile ID to publish/unpublish"),
+  is_published: z.boolean().describe("Whether to publish or unpublish"),
+});
+
+export const listCommunityAgentsSchema = z.object({
+  search: z.string().optional().describe("Search in name, bio, and role"),
+  role: z.string().optional().describe("Filter by role"),
+  sort: z
+    .enum(["popular", "newest", "most_cloned"])
+    .optional()
+    .default("popular")
+    .describe("Sort order"),
+  limit: z.number().min(1).max(50).optional().default(20).describe("Max results"),
+});
+
+export const listFeaturedTeamsSchema = z.object({
+  include_inactive: z
+    .boolean()
+    .optional()
+    .default(false)
+    .describe("Include inactive teams (admin only). Defaults to false."),
 });
 
 // --- Handlers ---
@@ -64,6 +102,11 @@ export async function listBots(
     role: bot.role,
     system_prompt: bot.system_prompt,
     is_active: bot.is_active,
+    bio: bot.bio,
+    skills: bot.skills,
+    is_published: bot.is_published,
+    community_upvotes: bot.community_upvotes,
+    times_cloned: bot.times_cloned,
     avatar_url: bot.avatar_url ?? (bot.user as any)?.avatar_url ?? null,
     created_at: bot.created_at,
   }));
@@ -190,12 +233,185 @@ export async function createBot(
 
   if (error) throw new Error(error.message);
 
+  // Set extended fields via follow-up UPDATE
+  const extras: Record<string, unknown> = {};
+  if (args.bio) extras.bio = args.bio.trim();
+  if (args.skills && args.skills.length > 0) {
+    extras.skills = args.skills.map((s) => s.trim().toLowerCase());
+  }
+  if (Object.keys(extras).length > 0) {
+    await ctx.supabase
+      .from("bot_profiles")
+      .update(extras)
+      .eq("id", data)
+      .eq("owner_id", ownerId);
+  }
+
   // Fetch the created profile
   const { data: profile } = await ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, system_prompt, is_active, avatar_url")
+    .select("id, name, role, system_prompt, is_active, avatar_url, bio, skills, is_published")
     .eq("id", data)
     .single();
 
   return profile;
+}
+
+export async function toggleAgentVote(
+  ctx: McpContext,
+  args: z.infer<typeof toggleAgentVoteSchema>
+) {
+  const userId = ctx.ownerUserId ?? ctx.userId;
+
+  const { data: existing } = await ctx.supabase
+    .from("agent_votes")
+    .select("id")
+    .eq("bot_id", args.bot_id)
+    .eq("user_id", userId)
+    .maybeSingle();
+
+  if (existing) {
+    const { error } = await ctx.supabase
+      .from("agent_votes")
+      .delete()
+      .eq("bot_id", args.bot_id)
+      .eq("user_id", userId);
+    if (error) throw new Error(error.message);
+    return { voted: false };
+  } else {
+    const { error } = await ctx.supabase.from("agent_votes").insert({
+      bot_id: args.bot_id,
+      user_id: userId,
+    });
+    if (error) throw new Error(error.message);
+    return { voted: true };
+  }
+}
+
+export async function cloneAgent(
+  ctx: McpContext,
+  args: z.infer<typeof cloneAgentSchema>
+) {
+  const ownerId = ctx.ownerUserId ?? ctx.userId;
+
+  // Fetch published source bot
+  const { data: source, error: fetchErr } = await ctx.supabase
+    .from("bot_profiles")
+    .select("*")
+    .eq("id", args.bot_id)
+    .eq("is_published", true)
+    .maybeSingle();
+
+  if (fetchErr) throw new Error(fetchErr.message);
+  if (!source) throw new Error("Agent not found or not published");
+
+  // Create clone
+  const { data: newId, error: createErr } = await ctx.supabase.rpc("create_bot_user", {
+    p_name: source.name,
+    p_owner_id: ownerId,
+    p_role: source.role,
+    p_system_prompt: source.system_prompt,
+    p_avatar_url: source.avatar_url,
+  });
+
+  if (createErr) throw new Error(createErr.message);
+
+  // Set extended fields + provenance, and atomically increment source counter
+  await Promise.all([
+    ctx.supabase
+      .from("bot_profiles")
+      .update({
+        bio: source.bio,
+        skills: source.skills,
+        cloned_from: args.bot_id,
+      })
+      .eq("id", newId)
+      .eq("owner_id", ownerId),
+    ctx.supabase.rpc("increment_times_cloned", { p_bot_id: args.bot_id }),
+  ]);
+
+  return { cloned_bot_id: newId, source_name: source.name };
+}
+
+export async function publishAgent(
+  ctx: McpContext,
+  args: z.infer<typeof publishAgentSchema>
+) {
+  const ownerId = ctx.ownerUserId ?? ctx.userId;
+
+  const updates: Record<string, unknown> = {
+    is_published: args.is_published,
+  };
+
+  const { error } = await ctx.supabase
+    .from("bot_profiles")
+    .update(updates)
+    .eq("id", args.bot_id)
+    .eq("owner_id", ownerId);
+
+  if (error) throw new Error(error.message);
+  return { success: true, is_published: args.is_published };
+}
+
+export async function listCommunityAgents(
+  ctx: McpContext,
+  args: z.infer<typeof listCommunityAgentsSchema>
+) {
+  let query = ctx.supabase
+    .from("bot_profiles")
+    .select("id, name, role, bio, skills, community_upvotes, times_cloned, avatar_url, created_at, owner:users!bot_profiles_owner_id_fkey(id, full_name)")
+    .eq("is_published", true);
+
+  if (args.search) {
+    query = query.or(
+      `name.ilike.%${args.search}%,bio.ilike.%${args.search}%,role.ilike.%${args.search}%`
+    );
+  }
+  if (args.role) {
+    query = query.ilike("role", args.role);
+  }
+
+  switch (args.sort) {
+    case "newest":
+      query = query.order("created_at", { ascending: false });
+      break;
+    case "most_cloned":
+      query = query.order("times_cloned", { ascending: false });
+      break;
+    default:
+      query = query.order("community_upvotes", { ascending: false });
+  }
+
+  const { data, error } = await query.limit(args.limit ?? 20);
+  if (error) throw new Error(error.message);
+
+  return data ?? [];
+}
+
+export async function listFeaturedTeams(
+  ctx: McpContext,
+  args: z.infer<typeof listFeaturedTeamsSchema>
+) {
+  let query = ctx.supabase
+    .from("featured_teams")
+    .select(
+      "id, name, icon, description, display_order, is_active, created_at, agents:featured_team_agents(id, display_description, display_order, bot:bot_profiles(id, name, role, avatar_url, bio))"
+    )
+    .order("display_order", { ascending: true });
+
+  if (!args.include_inactive) {
+    query = query.eq("is_active", true);
+  }
+
+  const { data, error } = await query;
+  if (error) throw new Error(error.message);
+
+  return (data ?? []).map((team) => ({
+    ...team,
+    agents: ((team.agents as unknown[]) ?? []).sort(
+      (a: unknown, b: unknown) =>
+        ((a as { display_order?: number }).display_order ?? 0) -
+        ((b as { display_order?: number }).display_order ?? 0)
+    ),
+  }));
 }

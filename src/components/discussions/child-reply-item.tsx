@@ -13,7 +13,7 @@ import { MentionAutocomplete } from "@/components/board/mention-autocomplete";
 import { updateDiscussionReply } from "@/actions/discussions";
 import { useMentionState } from "@/hooks/use-mentions";
 import { sendDiscussionMentionNotifications } from "@/lib/mention-notifications";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime, getInitials } from "@/lib/utils";
 import type { IdeaDiscussionReplyWithAuthor, User } from "@/types";
 
 interface ChildReplyItemProps {
@@ -95,7 +95,7 @@ export function ChildReplyItem({
       <Avatar className="h-6 w-6 shrink-0">
         <AvatarImage src={reply.author.avatar_url ?? undefined} />
         <AvatarFallback className="text-[10px]">
-          {(reply.author.full_name ?? "?")[0]}
+          {getInitials(reply.author.full_name)}
         </AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">

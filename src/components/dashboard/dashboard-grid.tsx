@@ -222,6 +222,7 @@ export function DashboardGrid({ sections, defaultOrder }: DashboardGridProps) {
       {/* Two-column grid */}
       {customizing ? (
         <DndContext
+          id="dashboard-grid"
           sensors={sensors}
           collisionDetection={closestCenter}
           onDragStart={handleDragStart}

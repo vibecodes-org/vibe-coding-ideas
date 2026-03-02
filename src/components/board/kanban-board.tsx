@@ -23,6 +23,7 @@ import {
   arrayMove,
 } from "@dnd-kit/sortable";
 import { useSearchParams } from "next/navigation";
+import { BotRolesProvider } from "@/components/bot-roles-context";
 import { BoardColumn } from "./board-column";
 import { AddColumnButton } from "./add-column-button";
 import { BoardToolbar } from "./board-toolbar";
@@ -233,6 +234,15 @@ export function KanbanBoard({
   coverImageUrls = {},
   isReadOnly = false,
 }: KanbanBoardProps) {
+  // Build botRoles map from botProfiles for @mention autocomplete
+  const botRoles = useMemo(() => {
+    const map: Record<string, string> = {};
+    for (const bp of botProfiles) {
+      if (bp.role) map[bp.id] = bp.role;
+    }
+    return map;
+  }, [botProfiles]);
+
   // Auto-open: detect taskId from URL navigation (Link clicks) as well as server props.
   // useSearchParams reacts to Link navigations, which may not propagate through server
   // props when the board is already mounted (memo chain can block the update).
@@ -842,6 +852,7 @@ export function KanbanBoard({
   return (
     <BoardOpsContext.Provider value={boardOps}>
     <TaskAutoOpenContext.Provider value={autoOpenCtx}>
+    <BotRolesProvider botRoles={botRoles}>
     <div className="flex min-h-0 flex-1 flex-col">
       <BoardToolbar
         searchQuery={searchQuery}
@@ -866,6 +877,7 @@ export function KanbanBoard({
         isReadOnly={isReadOnly}
       />
       <DndContext
+        id="kanban-board"
         sensors={isReadOnly ? [] : sensors}
         collisionDetection={multiContainerCollision}
         measuring={layoutMeasuring}
@@ -925,6 +937,7 @@ export function KanbanBoard({
         )}
       </DndContext>
     </div>
+    </BotRolesProvider>
     </TaskAutoOpenContext.Provider>
     </BoardOpsContext.Provider>
   );

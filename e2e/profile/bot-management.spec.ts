@@ -15,16 +15,14 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  // Clean up any E2E bots created during tests
+  // Clean up all bots owned by Test User A (E2E bots + team-cloned bots)
   const { data: bots } = await supabaseAdmin
     .from("bot_profiles")
     .select("id, name")
-    .eq("owner_id", userAId)
-    .like("name", "%E2E%");
+    .eq("owner_id", userAId);
 
   if (bots && bots.length > 0) {
     for (const bot of bots) {
-      // Delete via the RPC to cascade properly (auth.users -> public.users -> bot_profiles)
       await supabaseAdmin.rpc("delete_bot_user", {
         p_bot_id: bot.id,
         p_owner_id: userAId,
@@ -176,6 +174,42 @@ test.describe("Agent management", () => {
     } else {
       await expect(botSection.getByText("Active").first()).toBeVisible();
     }
+  });
+
+  test("add a featured team", async ({ userAPage }) => {
+    await userAPage.goto("/agents");
+
+    // Switch to Browse tab
+    const browseTab = userAPage.getByRole("button", { name: /browse/i });
+    await expect(browseTab).toBeVisible({ timeout: 15_000 });
+    await browseTab.click();
+
+    // Wait for featured teams section to load
+    await expect(userAPage.getByText("Featured Teams")).toBeVisible({ timeout: 10_000 });
+
+    // Find the first team with an "Add Team" button (not all-added)
+    const addTeamButton = userAPage
+      .getByRole("button", { name: /add team|add \d+ remaining/i })
+      .first();
+    await expect(addTeamButton).toBeVisible({ timeout: 5_000 });
+
+    // Click to add the team
+    await addTeamButton.click();
+
+    // Should see a success toast about agents being created
+    const toast = userAPage
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: /created \d+ agent|already exist/i });
+    await expect(toast).toBeVisible({ timeout: 10_000 });
+
+    // Switch to My Agents tab to confirm the agents appeared
+    const myAgentsTab = userAPage.getByRole("button", { name: /my agents/i });
+    await myAgentsTab.click();
+
+    // There should be at least one agent card visible
+    await expect(
+      userAPage.locator("[class*='grid'] a, [class*='grid'] button").first()
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test("delete an agent", async ({ userAPage }) => {

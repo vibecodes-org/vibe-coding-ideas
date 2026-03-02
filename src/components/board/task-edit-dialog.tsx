@@ -12,15 +12,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { toast } from "sonner";
-import { Bot, X, Image as ImageIcon, Sparkles, Loader2, Eye, Pencil } from "lucide-react";
+import { X, Image as ImageIcon, Sparkles, Loader2, Eye, Pencil } from "lucide-react";
+import { AssigneeSelect } from "./assignee-select";
 import { Markdown } from "@/components/ui/markdown";
 import { getLabelColorConfig } from "@/lib/utils";
 import { createBoardTask, addLabelsToTask } from "@/actions/board";
@@ -404,41 +398,12 @@ export function TaskEditDialog({
           </div>
           <div className="space-y-2">
             <Label htmlFor="task-assignee">Assignee</Label>
-            <Select value={assigneeId} onValueChange={setAssigneeId}>
-              <SelectTrigger>
-                <SelectValue placeholder="Unassigned" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="unassigned">Unassigned</SelectItem>
-                {teamMembers.length > 0 && (
-                  <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
-                    Collaborators
-                  </div>
-                )}
-                {teamMembers.map((member) => (
-                  <SelectItem key={member.id} value={member.id}>
-                    {member.full_name ?? member.email}
-                  </SelectItem>
-                ))}
-                {ideaAgents.filter((b) => !teamMembers.some((m) => m.id === b.id)).length > 0 && (
-                  <>
-                    <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
-                      Agents
-                    </div>
-                    {ideaAgents
-                      .filter((b) => !teamMembers.some((m) => m.id === b.id))
-                      .map((bot) => (
-                        <SelectItem key={bot.id} value={bot.id}>
-                          <span className="inline-flex items-center gap-1">
-                            <Bot className="h-3 w-3" />
-                            {bot.full_name ?? bot.email}
-                          </span>
-                        </SelectItem>
-                      ))}
-                  </>
-                )}
-              </SelectContent>
-            </Select>
+            <AssigneeSelect
+              value={assigneeId}
+              onValueChange={setAssigneeId}
+              teamMembers={teamMembers}
+              ideaAgents={ideaAgents}
+            />
           </div>
           {boardLabels.length > 0 && (
             <div className="space-y-2">

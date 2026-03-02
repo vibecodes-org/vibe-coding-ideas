@@ -57,6 +57,10 @@ export type BoardTaskComment = Database["public"]["Tables"]["board_task_comments
 export type BoardTaskAttachment = Database["public"]["Tables"]["board_task_attachments"]["Row"];
 export type IdeaAttachment = Database["public"]["Tables"]["idea_attachments"]["Row"];
 export type BotProfile = Database["public"]["Tables"]["bot_profiles"]["Row"];
+export type AgentVote = Database["public"]["Tables"]["agent_votes"]["Row"];
+export type BotProfileWithOwner = BotProfile & {
+  owner: { id: string; full_name: string | null; avatar_url: string | null };
+};
 export type BoardTaskWithAssignee = BoardTask & {
   assignee: User | null;
   labels: BoardLabel[];
@@ -117,6 +121,13 @@ export type IdeaAgentWithDetails = IdeaAgent & {
   bot: BotProfile & { owner: { id: string; full_name: string | null } };
 };
 export type IdeaAgentUser = User & { ownerName: string; ownerId: string };
+
+// Featured Teams types
+export type FeaturedTeam = Database["public"]["Tables"]["featured_teams"]["Row"];
+export type FeaturedTeamAgent = Database["public"]["Tables"]["featured_team_agents"]["Row"];
+export type FeaturedTeamWithAgents = FeaturedTeam & {
+  agents: (FeaturedTeamAgent & { bot: BotProfile })[];
+};
 
 // AI usage types
 export type AiUsageLog = Database["public"]["Tables"]["ai_usage_log"]["Row"];

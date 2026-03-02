@@ -23,7 +23,8 @@ import { InlineIdeaBody } from "@/components/ideas/inline-idea-body";
 import { InlineIdeaTags } from "@/components/ideas/inline-idea-tags";
 import { IdeaAttachmentsSection } from "@/components/ideas/idea-attachments-section";
 import { IdeaAgentsSection } from "@/components/ideas/idea-agents-section";
-import { formatRelativeTime, stripMarkdownForMeta } from "@/lib/utils";
+import { formatRelativeTime, getInitials, stripMarkdownForMeta } from "@/lib/utils";
+import { BotRolesProvider } from "@/components/bot-roles-context";
 import { PendingRequests } from "@/components/ideas/pending-requests";
 import type { CommentWithAuthor, CollaboratorWithUser, CollaborationRequestWithRequester, BotProfile } from "@/types";
 import type { Metadata } from "next";
@@ -191,12 +192,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
   const canDelete = isAuthor || isAdmin;
 
   const author = idea.author as unknown as { full_name: string | null; avatar_url: string | null; id: string };
-  const authorInitials =
-    author.full_name
-      ?.split(" ")
-      .map((n: string) => n[0])
-      .join("")
-      .toUpperCase() ?? "?";
+  const authorInitials = getInitials(author.full_name);
 
   return (
     <div className="mx-auto max-w-3xl px-4 pt-10 pb-4">
@@ -329,12 +325,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
           </h3>
           <div className="flex flex-wrap gap-2">
             {(collaborators as unknown as CollaboratorWithUser[])?.map((collab) => {
-              const collabInitials =
-                collab.user.full_name
-                  ?.split(" ")
-                  .map((n) => n[0])
-                  .join("")
-                  .toUpperCase() ?? "?";
+              const collabInitials = getInitials(collab.user.full_name);
               return (
                 <div
                   key={collab.id}
@@ -397,14 +388,16 @@ export default async function IdeaDetailPage({ params }: PageProps) {
 
       {/* Comments */}
       <Separator className="my-6" />
-      <CommentThread
-        comments={topLevelComments}
-        ideaId={idea.id}
-        ideaAuthorId={idea.author_id}
-        currentUserId={user?.id}
-        userBotIds={ideaTeam.currentUserBotIds}
-        teamMembers={ideaTeam.allMentionable}
-      />
+      <BotRolesProvider botRoles={ideaTeam.botRoles}>
+        <CommentThread
+          comments={topLevelComments}
+          ideaId={idea.id}
+          ideaAuthorId={idea.author_id}
+          currentUserId={user?.id}
+          userBotIds={ideaTeam.currentUserBotIds}
+          teamMembers={ideaTeam.allMentionable}
+        />
+      </BotRolesProvider>
     </div>
   );
 }

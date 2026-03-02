@@ -172,6 +172,50 @@ describe("parsePromptToFields", () => {
   });
 });
 
+describe("parsePromptToFields — markdown headers", () => {
+  it("parses ## Goal / ## Constraints / ## Approach format", () => {
+    const prompt =
+      "## Goal\nBuild robust APIs and server logic.\n\n" +
+      "## Constraints\nNever expose internal errors to clients.\n\n" +
+      "## Approach\nDesign schemas before writing code.";
+    const result = parsePromptToFields(prompt);
+    expect(result).toEqual({
+      goal: "Build robust APIs and server logic.",
+      constraints: "Never expose internal errors to clients.",
+      approach: "Design schemas before writing code.",
+    });
+  });
+
+  it("parses with only two markdown sections", () => {
+    const prompt =
+      "## Goal\nShip clean code.\n\n## Approach\nWrite tests first.";
+    const result = parsePromptToFields(prompt);
+    expect(result).toEqual({
+      goal: "Ship clean code.",
+      constraints: "",
+      approach: "Write tests first.",
+    });
+  });
+
+  it("returns null with only one markdown section", () => {
+    const prompt = "## Goal\nJust a goal, nothing else.";
+    expect(parsePromptToFields(prompt)).toBeNull();
+  });
+
+  it("handles sections in non-standard order", () => {
+    const prompt =
+      "## Approach\nAutomate everything.\n\n" +
+      "## Goal\nKeep systems reliable.\n\n" +
+      "## Constraints\nDon't skip monitoring.";
+    const result = parsePromptToFields(prompt);
+    expect(result).toEqual({
+      goal: "Keep systems reliable.",
+      constraints: "Don't skip monitoring.",
+      approach: "Automate everything.",
+    });
+  });
+});
+
 describe("isStructuredPrompt", () => {
   it("returns true for structured prompt", () => {
     expect(

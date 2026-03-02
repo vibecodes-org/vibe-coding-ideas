@@ -31,7 +31,7 @@ import {
 import { enhanceDiscussionBody } from "@/actions/ai";
 import { useMentionState } from "@/hooks/use-mentions";
 import { sendDiscussionMentionNotifications } from "@/lib/mention-notifications";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime, getInitials } from "@/lib/utils";
 import { DiscussionReplyForm } from "./discussion-reply-form";
 import { DiscussionVoteButton } from "./discussion-vote-button";
 import { ConvertToTaskDialog } from "./convert-to-task-dialog";
@@ -402,7 +402,7 @@ export function DiscussionThread({
           <Avatar className="h-7 w-7">
             <AvatarImage src={discussion.author.avatar_url ?? undefined} />
             <AvatarFallback className="text-xs">
-              {(discussion.author.full_name ?? "?")[0]}
+              {getInitials(discussion.author.full_name)}
             </AvatarFallback>
           </Avatar>
           <span className="text-sm font-medium">

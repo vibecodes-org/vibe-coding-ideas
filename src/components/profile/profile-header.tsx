@@ -1,7 +1,7 @@
 import { Github, Calendar, AtSign, ShieldCheck } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime, getInitials } from "@/lib/utils";
 import type { User } from "@/types";
 
 interface ProfileHeaderProps {
@@ -21,12 +21,7 @@ export function ProfileHeader({
   tasksCreated = 0,
   tasksCompleted = 0,
 }: ProfileHeaderProps) {
-  const initials =
-    user.full_name
-      ?.split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase() ?? "?";
+  const initials = getInitials(user.full_name);
 
   return (
     <div className="rounded-xl border border-border bg-card p-6">

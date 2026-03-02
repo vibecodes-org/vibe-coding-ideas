@@ -15,7 +15,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime, getInitials } from "@/lib/utils";
 import type { IdeaDiscussionWithAuthor } from "@/types";
 
 /** Strip markdown syntax to produce a clean plain-text preview */
@@ -204,7 +204,7 @@ export function DiscussionList({ discussions, ideaId }: DiscussionListProps) {
                       <Avatar className="h-4 w-4">
                         <AvatarImage src={discussion.author.avatar_url ?? undefined} />
                         <AvatarFallback className="text-[8px]">
-                          {(discussion.author.full_name ?? "?")[0]}
+                          {getInitials(discussion.author.full_name)}
                         </AvatarFallback>
                       </Avatar>
                       <span>{discussion.author.full_name ?? "Anonymous"}</span>

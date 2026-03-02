@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/dialog";
 import { updateProfile } from "@/actions/profile";
 import { createClient } from "@/lib/supabase/client";
+import { getInitials } from "@/lib/utils";
 import type { User } from "@/types";
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
@@ -39,12 +40,7 @@ export function EditProfileDialog({ user }: EditProfileDialogProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const currentAvatarUrl = user.avatar_url;
-  const initials =
-    user.full_name
-      ?.split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase() ?? "?";
+  const initials = getInitials(user.full_name);
 
   // Determine what to show in the avatar preview
   const displayAvatarUrl = removeAvatar
