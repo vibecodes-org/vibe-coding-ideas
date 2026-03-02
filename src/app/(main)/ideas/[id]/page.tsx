@@ -3,6 +3,7 @@ import Link from "next/link";
 import { Users, Pencil, LayoutDashboard, MessageSquare, Trash2, Sparkles } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getIdeaTeam } from "@/lib/idea-team";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { Separator } from "@/components/ui/separator";
@@ -21,9 +22,10 @@ import { InlineIdeaHeader } from "@/components/ideas/inline-idea-header";
 import { InlineIdeaBody } from "@/components/ideas/inline-idea-body";
 import { InlineIdeaTags } from "@/components/ideas/inline-idea-tags";
 import { IdeaAttachmentsSection } from "@/components/ideas/idea-attachments-section";
+import { IdeaAgentsSection } from "@/components/ideas/idea-agents-section";
 import { formatRelativeTime, stripMarkdownForMeta } from "@/lib/utils";
 import { PendingRequests } from "@/components/ideas/pending-requests";
-import type { CommentWithAuthor, CollaboratorWithUser, CollaborationRequestWithRequester, BotProfile, User } from "@/types";
+import type { CommentWithAuthor, CollaboratorWithUser, CollaborationRequestWithRequester, BotProfile } from "@/types";
 import type { Metadata } from "next";
 
 export const maxDuration = 120;
@@ -95,6 +97,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
     { data: collab },
     { data: profile },
     { data: bots },
+    ideaTeam,
   ] = await Promise.all([
     supabase
       .from("comments")
@@ -128,6 +131,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
       .eq("owner_id", user.id)
       .eq("is_active", true)
       .order("created_at", { ascending: true }),
+    getIdeaTeam(supabase, id, idea.author_id, user.id),
   ]);
 
   const hasVoted = !!vote;
@@ -135,6 +139,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
   const isAdmin = profile?.is_admin ?? false;
   const userHasApiKey = !!profile?.encrypted_anthropic_key;
   const userBots = (bots ?? []) as BotProfile[];
+  const ideaAgents = ideaTeam.ideaAgentDetails;
 
   // Build threaded comments
   const commentMap = new Map<string, CommentWithAuthor>();
@@ -184,16 +189,6 @@ export default async function IdeaDetailPage({ params }: PageProps) {
 
   const isAuthor = user?.id === idea.author_id;
   const canDelete = isAuthor || isAdmin;
-  // Build team members list for @mention autocomplete (author + collaborators, deduplicated)
-  const teamMembersMap = new Map<string, User>();
-  const ideaAuthor = idea.author as unknown as User;
-  teamMembersMap.set(ideaAuthor.id, ideaAuthor);
-  (collaborators as unknown as CollaboratorWithUser[])?.forEach((collab) => {
-    if (!teamMembersMap.has(collab.user_id)) {
-      teamMembersMap.set(collab.user_id, collab.user);
-    }
-  });
-  const teamMembers = Array.from(teamMembersMap.values());
 
   const author = idea.author as unknown as { full_name: string | null; avatar_url: string | null; id: string };
   const authorInitials =
@@ -372,6 +367,16 @@ export default async function IdeaDetailPage({ params }: PageProps) {
         </div>
       )}
 
+      {/* Agent Pool */}
+      <IdeaAgentsSection
+        ideaId={idea.id}
+        ideaAgents={ideaAgents}
+        currentUserId={user.id}
+        isAuthor={isAuthor}
+        isTeamMember={isAuthor || isCollaborator}
+        userBots={userBots}
+      />
+
       {/* Description + GitHub URL */}
       <Separator className="mt-8 mb-6" />
       <InlineIdeaBody
@@ -397,8 +402,8 @@ export default async function IdeaDetailPage({ params }: PageProps) {
         ideaId={idea.id}
         ideaAuthorId={idea.author_id}
         currentUserId={user?.id}
-        userBotIds={userBots.map((b) => b.id)}
-        teamMembers={teamMembers}
+        userBotIds={ideaTeam.currentUserBotIds}
+        teamMembers={ideaTeam.allMentionable}
       />
     </div>
   );

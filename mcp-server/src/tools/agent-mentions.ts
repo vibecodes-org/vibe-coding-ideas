@@ -63,7 +63,7 @@ export async function getAgentMentions(
     throw new Error(`Failed to fetch mentions: ${notifError.message}`);
 
   // 3. Enrich with agent info and mention location
-  type NotifRow = {
+  interface NotifRow {
     id: string;
     user_id: string;
     created_at: string;
@@ -71,8 +71,16 @@ export async function getAgentMentions(
     actor: { id: string; full_name: string | null } | null;
     idea: { id: string; title: string } | null;
     discussion: { id: string; title: string } | null;
-  };
-  const rows = (notifications ?? []) as unknown as NotifRow[];
+  }
+  const rows: NotifRow[] = (notifications ?? []).map((n) => ({
+    id: n.id,
+    user_id: n.user_id,
+    created_at: n.created_at,
+    reply_id: n.reply_id,
+    actor: n.actor as NotifRow["actor"],
+    idea: n.idea as NotifRow["idea"],
+    discussion: n.discussion as NotifRow["discussion"],
+  }));
   const mentions = rows.map((n) => {
     const bot = botMap.get(n.user_id);
     return {

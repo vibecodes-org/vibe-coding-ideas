@@ -27,7 +27,7 @@ import { enhanceTaskDescription } from "@/actions/ai";
 import { useBoardOps } from "./board-context";
 import { createClient } from "@/lib/supabase/client";
 import { logTaskActivity } from "@/lib/activity";
-import type { BoardTaskWithAssignee, BoardLabel, BoardChecklistItem, User } from "@/types";
+import type { BoardTaskWithAssignee, BoardLabel, BoardChecklistItem, User, IdeaAgentUser } from "@/types";
 
 interface TaskDetailDialogProps {
   open: boolean;
@@ -39,7 +39,7 @@ interface TaskDetailDialogProps {
   teamMembers: User[];
   currentUserId: string;
   initialTab?: string;
-  userBots?: User[];
+  ideaAgents?: User[];
   isReadOnly?: boolean;
   hasApiKey?: boolean;
 }
@@ -54,11 +54,27 @@ export function TaskDetailDialog({
   teamMembers,
   currentUserId,
   initialTab,
-  userBots = [],
+  ideaAgents = [],
   isReadOnly = false,
   hasApiKey = false,
 }: TaskDetailDialogProps) {
   const ops = useBoardOps();
+
+  // Combine humans + pooled agents for @mention autocomplete
+  const allMentionable = useMemo(() => {
+    const ids = new Set(teamMembers.map((m) => m.id));
+    return [...teamMembers, ...ideaAgents.filter((a) => !ids.has(a.id))];
+  }, [teamMembers, ideaAgents]);
+
+  // Current user's bots from the pool (for canModify checks on bot-authored comments)
+  const currentUserBotIds = useMemo(
+    () =>
+      ideaAgents
+        .filter((a) => (a as IdeaAgentUser).ownerId === currentUserId)
+        .map((a) => a.id),
+    [ideaAgents, currentUserId]
+  );
+
   const [activeTab, setActiveTab] = useState("details");
   const [title, setTitle] = useState(task.title);
   const [description, setDescription] = useState(task.description ?? "");
@@ -283,7 +299,7 @@ export function TaskDetailDialog({
     try {
       await updateBoardTask(task.id, ideaId, { assignee_id: assigneeId });
       if (assigneeId) {
-        const member = teamMembers.find((m) => m.id === assigneeId) ?? userBots.find((b) => b.id === assigneeId);
+        const member = teamMembers.find((m) => m.id === assigneeId) ?? ideaAgents.find((b) => b.id === assigneeId);
         logTaskActivity(task.id, ideaId, currentUserId, "assigned", {
           assignee_name: member?.full_name ?? "Unknown",
         });
@@ -337,7 +353,7 @@ export function TaskDetailDialog({
 
   const localAssignee = localAssigneeId
     ? (teamMembers.find((m) => m.id === localAssigneeId) ??
-      userBots.find((b) => b.id === localAssigneeId) ??
+      ideaAgents.find((b) => b.id === localAssigneeId) ??
       task.assignee)
     : null;
   const assigneeInitials =
@@ -566,17 +582,22 @@ export function TaskDetailDialog({
                         </SelectTrigger>
                         <SelectContent>
                           <SelectItem value="unassigned">Unassigned</SelectItem>
+                          {teamMembers.length > 0 && (
+                            <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
+                              Collaborators
+                            </div>
+                          )}
                           {teamMembers.map((member) => (
                             <SelectItem key={member.id} value={member.id}>
                               {member.full_name ?? member.email}
                             </SelectItem>
                           ))}
-                          {userBots.length > 0 && (
+                          {ideaAgents.filter((b) => !teamMembers.some((m) => m.id === b.id)).length > 0 && (
                             <>
                               <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
-                                My Agents
+                                Agents
                               </div>
-                              {userBots
+                              {ideaAgents
                                 .filter((b) => !teamMembers.some((m) => m.id === b.id))
                                 .map((bot) => (
                                   <SelectItem key={bot.id} value={bot.id}>
@@ -772,8 +793,8 @@ export function TaskDetailDialog({
               taskId={task.id}
               ideaId={ideaId}
               currentUserId={currentUserId}
-              teamMembers={teamMembers}
-              userBotIds={userBots.map((b) => b.id)}
+              teamMembers={allMentionable}
+              userBotIds={currentUserBotIds}
               isReadOnly={isReadOnly}
             />
           </TabsContent>

@@ -298,21 +298,17 @@ export async function toggleDiscussionVote(discussionId: string, ideaId: string)
 
   if (!user) throw new Error("Not authenticated");
 
-  const { data: existingVote } = await supabase
+  // Try to delete first — if a row was removed, we toggled off
+  const { data: deleted } = await supabase
     .from("discussion_votes")
-    .select("id")
+    .delete()
     .eq("discussion_id", discussionId)
     .eq("user_id", user.id)
+    .select("id")
     .maybeSingle();
 
-  if (existingVote) {
-    const { error } = await supabase
-      .from("discussion_votes")
-      .delete()
-      .eq("discussion_id", discussionId)
-      .eq("user_id", user.id);
-    if (error) throw new Error(error.message);
-  } else {
+  if (!deleted) {
+    // No existing vote — insert one (unique constraint prevents duplicates)
     const { error } = await supabase
       .from("discussion_votes")
       .insert({ discussion_id: discussionId, user_id: user.id });
@@ -420,13 +416,26 @@ export async function convertDiscussionToTask(
 
   if (taskError) throw new Error(taskError.message);
 
-  // Mark discussion as converted
-  const { error: updateError } = await supabase
+  // Mark discussion as converted — guard with status check to prevent concurrent conversion
+  const { data: updated, error: updateError } = await supabase
     .from("idea_discussions")
     .update({ status: "converted" })
-    .eq("id", discussionId);
+    .eq("id", discussionId)
+    .in("status", ["open", "resolved", "ready_to_convert"])
+    .select("id")
+    .maybeSingle();
 
-  if (updateError) throw new Error(updateError.message);
+  if (updateError) {
+    // Cleanup orphaned task
+    await supabase.from("board_tasks").delete().eq("id", task.id);
+    throw new Error(updateError.message);
+  }
+
+  if (!updated) {
+    // Another concurrent conversion won — cleanup our task
+    await supabase.from("board_tasks").delete().eq("id", task.id);
+    throw new Error("Discussion was already converted by another user");
+  }
 
   revalidatePath(`/ideas/${ideaId}/discussions`);
   revalidatePath(`/ideas/${ideaId}/discussions/${discussionId}`);

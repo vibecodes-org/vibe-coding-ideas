@@ -25,6 +25,8 @@ const VALID_LABEL_COLORS = [
   "rose", "zinc",
 ];
 
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/.+/;
 
 export class ValidationError extends Error {
@@ -155,6 +157,15 @@ export function validateAvatarUrl(url: string | null): string | null {
     new URL(trimmed);
   } catch {
     throw new ValidationError("Invalid avatar URL");
+  }
+  return trimmed;
+}
+
+export function validateUuid(value: string, label = "ID"): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new ValidationError(`${label} is required`);
+  if (!UUID_PATTERN.test(trimmed)) {
+    throw new ValidationError(`${label} must be a valid UUID`);
   }
   return trimmed;
 }

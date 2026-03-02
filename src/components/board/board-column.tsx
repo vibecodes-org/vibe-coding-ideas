@@ -41,7 +41,7 @@ interface BoardColumnProps {
   highlightQuery?: string;
   currentUserId: string;
   initialTaskId?: string;
-  userBots?: User[];
+  ideaAgents?: User[];
   coverImageUrls?: Record<string, string>;
   hasApiKey?: boolean;
   ideaDescription?: string;
@@ -59,7 +59,7 @@ export const BoardColumn = memo(function BoardColumn({
   highlightQuery,
   currentUserId,
   initialTaskId,
-  userBots = [],
+  ideaAgents = [],
   coverImageUrls = {},
   hasApiKey = false,
   ideaDescription = "",
@@ -219,7 +219,7 @@ export const BoardColumn = memo(function BoardColumn({
                 highlightQuery={highlightQuery}
                 currentUserId={currentUserId}
                 autoOpen={task.id === initialTaskId}
-                userBots={userBots}
+                ideaAgents={ideaAgents}
                 initialCoverUrl={task.cover_image_path ? coverImageUrls[task.cover_image_path] : undefined}
                 isReadOnly={isReadOnly}
                 hasApiKey={hasApiKey}
@@ -254,7 +254,7 @@ export const BoardColumn = memo(function BoardColumn({
             teamMembers={teamMembers}
             boardLabels={boardLabels}
             currentUserId={currentUserId}
-            userBots={userBots}
+            ideaAgents={ideaAgents}
             hasApiKey={hasApiKey}
             ideaDescription={ideaDescription}
           />

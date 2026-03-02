@@ -39,7 +39,7 @@ interface TaskEditDialogProps {
   teamMembers: User[];
   boardLabels: BoardLabel[];
   currentUserId: string;
-  userBots?: User[];
+  ideaAgents?: User[];
   hasApiKey?: boolean;
   ideaDescription?: string;
 }
@@ -52,7 +52,7 @@ export function TaskEditDialog({
   teamMembers,
   boardLabels,
   currentUserId,
-  userBots = [],
+  ideaAgents = [],
   hasApiKey = false,
   ideaDescription = "",
 }: TaskEditDialogProps) {
@@ -213,7 +213,7 @@ export function TaskEditDialog({
     // Build optimistic task
     const tempId = `temp-${crypto.randomUUID()}`;
     const assignee = assigneeId
-      ? [...teamMembers, ...userBots].find((m) => m.id === assigneeId) ?? null
+      ? [...teamMembers, ...ideaAgents].find((m) => m.id === assigneeId) ?? null
       : null;
     const selectedLabels = boardLabels.filter((l) => selectedLabelIds.has(l.id));
     const tempTask: BoardTaskWithAssignee = {
@@ -410,17 +410,22 @@ export function TaskEditDialog({
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="unassigned">Unassigned</SelectItem>
+                {teamMembers.length > 0 && (
+                  <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
+                    Collaborators
+                  </div>
+                )}
                 {teamMembers.map((member) => (
                   <SelectItem key={member.id} value={member.id}>
                     {member.full_name ?? member.email}
                   </SelectItem>
                 ))}
-                {userBots.length > 0 && (
+                {ideaAgents.filter((b) => !teamMembers.some((m) => m.id === b.id)).length > 0 && (
                   <>
                     <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
-                      My Agents
+                      Agents
                     </div>
-                    {userBots
+                    {ideaAgents
                       .filter((b) => !teamMembers.some((m) => m.id === b.id))
                       .map((bot) => (
                         <SelectItem key={bot.id} value={bot.id}>

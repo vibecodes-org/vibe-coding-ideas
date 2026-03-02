@@ -3,8 +3,8 @@ import { ArrowLeft } from "lucide-react";
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { getIdeaTeam } from "@/lib/idea-team";
 import { NewDiscussionForm } from "@/components/discussions/new-discussion-form";
-import type { User } from "@/types";
 import type { Metadata } from "next";
 
 interface PageProps {
@@ -42,42 +42,11 @@ export default async function NewDiscussionPage({ params }: PageProps) {
     notFound();
   }
 
-  // Fetch current user profile, author, collaborators, and bot profiles
-  const [{ data: currentUserProfile }, { data: ideaAuthor }, { data: collabs }, { data: botProfiles }] = await Promise.all([
+  // Fetch current user profile + team info in parallel
+  const [{ data: currentUserProfile }, ideaTeam] = await Promise.all([
     supabase.from("users").select("*").eq("id", user.id).single(),
-    supabase.from("users").select("*").eq("id", idea.author_id).single(),
-    supabase
-      .from("collaborators")
-      .select("*, user:users!collaborators_user_id_fkey(*)")
-      .eq("idea_id", ideaId),
-    supabase
-      .from("bot_profiles")
-      .select("id")
-      .eq("owner_id", user.id)
-      .eq("is_active", true),
+    getIdeaTeam(supabase, ideaId, idea.author_id, user.id),
   ]);
-
-  const teamMembersMap = new Map<string, User>();
-  if (ideaAuthor) teamMembersMap.set(ideaAuthor.id, ideaAuthor as User);
-  for (const c of collabs ?? []) {
-    const u = c.user as unknown as User;
-    if (u && !teamMembersMap.has(u.id)) teamMembersMap.set(u.id, u);
-  }
-
-  // Add active bot user records
-  if (botProfiles && botProfiles.length > 0) {
-    const botUserIds = botProfiles.map((b) => b.id);
-    const { data: botUsers } = await supabase
-      .from("users")
-      .select("*")
-      .in("id", botUserIds);
-
-    for (const bu of botUsers ?? []) {
-      if (!teamMembersMap.has(bu.id)) teamMembersMap.set(bu.id, bu as User);
-    }
-  }
-
-  const teamMembers = Array.from(teamMembersMap.values());
 
   return (
     <div className="mx-auto max-w-3xl px-4 py-6">
@@ -93,7 +62,7 @@ export default async function NewDiscussionPage({ params }: PageProps) {
 
       <NewDiscussionForm
         ideaId={ideaId}
-        teamMembers={teamMembers}
+        teamMembers={ideaTeam.allMentionable}
         currentUserId={user.id}
         hasApiKey={!!currentUserProfile?.encrypted_anthropic_key}
       />
