@@ -17,6 +17,8 @@ export interface IdeaTeamResult {
   botProfiles: BotProfile[];
   /** Full idea_agent rows with bot + owner details (for IdeaAgentsSection) */
   ideaAgentDetails: IdeaAgentWithDetails[];
+  /** Bot user ID → role string for mention autocomplete (plain object for serialization) */
+  botRoles: Record<string, string>;
 }
 
 /**
@@ -113,6 +115,12 @@ export async function getIdeaTeam(
     return r;
   });
 
+  // Build bot ID → role map for mention autocomplete
+  const botRoles: Record<string, string> = {};
+  for (const bp of botProfiles) {
+    if (bp.role) botRoles[bp.id] = bp.role;
+  }
+
   return {
     teamMembers,
     ideaAgents,
@@ -120,5 +128,6 @@ export async function getIdeaTeam(
     currentUserBotIds,
     botProfiles,
     ideaAgentDetails,
+    botRoles,
   };
 }

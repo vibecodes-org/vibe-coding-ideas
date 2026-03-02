@@ -7,6 +7,7 @@ import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { respondToRequest } from "@/actions/collaborators";
+import { getInitials } from "@/lib/utils";
 import type { CollaborationRequestWithRequester } from "@/types";
 
 interface PendingRequestsProps {
@@ -17,12 +18,7 @@ interface PendingRequestsProps {
 function RequestRow({ request, ideaId }: { request: CollaborationRequestWithRequester; ideaId: string }) {
   const [isPending, startTransition] = useTransition();
 
-  const initials =
-    request.requester.full_name
-      ?.split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase() ?? "?";
+  const initials = getInitials(request.requester.full_name);
 
   const handleRespond = (accept: boolean) => {
     startTransition(async () => {

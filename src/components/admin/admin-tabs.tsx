@@ -4,7 +4,10 @@ import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AiUsageDashboard } from "./ai-usage-dashboard";
 import { FeedbackDashboard } from "./feedback-dashboard";
+import { AdminAgentsDashboard } from "./admin-agents-dashboard";
+import { AdminTeamsDashboard } from "./admin-teams-dashboard";
 import type { UsageLogWithUser, FeedbackWithUser } from "@/app/(main)/admin/page";
+import type { BotProfile, FeaturedTeamWithAgents } from "@/types";
 
 interface AdminTabsProps {
   activeTab: string;
@@ -13,6 +16,9 @@ interface AdminTabsProps {
   feedback: FeedbackWithUser[];
   feedbackFilters: { category: string; status: string };
   newFeedbackCount: number;
+  adminAgents: BotProfile[];
+  featuredTeams: FeaturedTeamWithAgents[];
+  communityAgents: BotProfile[];
 }
 
 export function AdminTabs({
@@ -22,6 +28,9 @@ export function AdminTabs({
   feedback,
   feedbackFilters,
   newFeedbackCount,
+  adminAgents,
+  featuredTeams,
+  communityAgents,
 }: AdminTabsProps) {
   const router = useRouter();
 
@@ -31,6 +40,10 @@ export function AdminTabs({
     } else {
       router.push(`/admin?tab=${value}`);
     }
+  }
+
+  function handleRefresh() {
+    router.refresh();
   }
 
   return (
@@ -45,12 +58,25 @@ export function AdminTabs({
             </span>
           )}
         </TabsTrigger>
+        <TabsTrigger value="agents">Agents</TabsTrigger>
+        <TabsTrigger value="teams">Teams</TabsTrigger>
       </TabsList>
       <TabsContent value="ai-usage" className="mt-6">
         <AiUsageDashboard usageLogs={usageLogs} filters={usageFilters} />
       </TabsContent>
       <TabsContent value="feedback" className="mt-6">
         <FeedbackDashboard feedback={feedback} filters={feedbackFilters} />
+      </TabsContent>
+      <TabsContent value="agents" className="mt-6">
+        <AdminAgentsDashboard agents={adminAgents} onRefresh={handleRefresh} />
+      </TabsContent>
+      <TabsContent value="teams" className="mt-6">
+        <AdminTeamsDashboard
+          teams={featuredTeams}
+          adminAgents={adminAgents}
+          communityAgents={communityAgents}
+          onRefresh={handleRefresh}
+        />
       </TabsContent>
     </Tabs>
   );

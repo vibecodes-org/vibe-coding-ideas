@@ -12,6 +12,7 @@ import { Input } from "@/components/ui/input";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { createClient } from "@/lib/supabase/client";
 import { addCollaborator } from "@/actions/collaborators";
+import { getInitials } from "@/lib/utils";
 import type { User } from "@/types";
 
 interface AddCollaboratorPopoverProps {
@@ -61,6 +62,7 @@ export function AddCollaboratorPopover({
         .select("*")
         .or(`full_name.ilike.${searchTerm},email.ilike.${searchTerm}`)
         .not("id", "in", `(${excludeIds.join(",")})`)
+        .eq("is_bot", false)
         .limit(5);
 
       setResults(data ?? []);
@@ -129,12 +131,7 @@ export function AddCollaboratorPopover({
             </p>
           )}
           {results.map((user, i) => {
-            const initials =
-              user.full_name
-                ?.split(" ")
-                .map((n) => n[0])
-                .join("")
-                .toUpperCase() ?? "?";
+            const initials = getInitials(user.full_name);
             return (
               <button
                 key={user.id}

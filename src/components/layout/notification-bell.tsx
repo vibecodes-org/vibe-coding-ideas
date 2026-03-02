@@ -14,13 +14,15 @@ import {
   UserPlus,
   UserCheck,
 } from "lucide-react";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
+import { getRoleColor } from "@/lib/agent-colors";
 import { markAllNotificationsRead, markNotificationsRead } from "@/actions/notifications";
 import { RequestActionButtons } from "@/components/layout/request-action-buttons";
-import { formatRelativeTime } from "@/lib/utils";
+import { formatRelativeTime, getInitials } from "@/lib/utils";
 import type { NotificationWithDetails } from "@/types";
 
 const iconMap = {
@@ -62,6 +64,8 @@ const agentMessageMap: Record<string, string> = {
 
 type AgentNotification = NotificationWithDetails & {
   botName: string;
+  botRole: string | null;
+  botAvatarUrl: string | null;
 };
 
 export function NotificationBell() {
@@ -93,12 +97,14 @@ export function NotificationBell() {
     if (ids.length === 0) return;
     const supabase = createClient();
 
-    // Fetch bot names for display
+    // Fetch bot names, roles, and avatars for display
     const { data: bots } = await supabase
       .from("bot_profiles")
-      .select("id, name")
+      .select("id, name, role, avatar_url")
       .in("id", ids);
-    const botNameMap = new Map(bots?.map((b) => [b.id, b.name]) ?? []);
+    const botInfoMap = new Map(
+      bots?.map((b) => [b.id, { name: b.name, role: b.role, avatar_url: b.avatar_url }]) ?? []
+    );
 
     const { data } = await supabase
       .from("notifications")
@@ -110,10 +116,15 @@ export function NotificationBell() {
       .limit(20);
 
     if (data) {
-      const mapped = (data as unknown as NotificationWithDetails[]).map((n) => ({
-        ...n,
-        botName: botNameMap.get(n.user_id) ?? "Agent",
-      }));
+      const mapped = (data as unknown as NotificationWithDetails[]).map((n) => {
+        const bot = botInfoMap.get(n.user_id);
+        return {
+          ...n,
+          botName: bot?.name ?? "Agent",
+          botRole: bot?.role ?? null,
+          botAvatarUrl: bot?.avatar_url ?? null,
+        };
+      });
       setAgentNotifications(mapped);
       setAgentUnreadCount(mapped.filter((n) => !n.read).length);
     }
@@ -193,21 +204,32 @@ export function NotificationBell() {
 
   const renderNotificationItem = (
     notification: NotificationWithDetails,
-    options: { isAgent?: boolean; botName?: string } = {}
+    options: { isAgent?: boolean; botName?: string; botRole?: string | null; botAvatarUrl?: string | null } = {}
   ) => {
-    const { isAgent, botName } = options;
-    const Icon = iconMap[notification.type as keyof typeof iconMap] ?? Bell;
+    const { isAgent, botName, botRole, botAvatarUrl } = options;
     const message = isAgent
       ? (agentMessageMap[notification.type] ?? messageMap[notification.type as keyof typeof messageMap] ?? "interacted with")
       : (messageMap[notification.type as keyof typeof messageMap] ?? "interacted with");
 
+    // For agent notifications, show the bot avatar with role-based colors
+    // For regular notifications, show the actor's avatar
+    const agentColors = isAgent ? getRoleColor(botRole) : null;
+    const avatarUrl = isAgent ? botAvatarUrl : notification.actor.avatar_url;
+    const avatarName = isAgent ? (botName ?? "Agent") : (notification.actor.full_name ?? "?");
+    const initials = getInitials(avatarName);
+
     const content = (
       <>
-        <Icon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+        <Avatar className="mt-0.5 h-7 w-7 shrink-0">
+          <AvatarImage src={avatarUrl ?? undefined} />
+          <AvatarFallback className={`text-[10px] ${agentColors ? `${agentColors.avatarBg} ${agentColors.avatarText}` : ""}`}>
+            {initials}
+          </AvatarFallback>
+        </Avatar>
         <div className="flex-1 min-w-0">
           <p className="text-sm">
             {isAgent && botName && (
-              <span className="mr-1 inline-flex items-center rounded bg-muted px-1.5 py-0.5 text-[10px] font-semibold text-muted-foreground">
+              <span className={`mr-1 inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-semibold ${agentColors ? agentColors.badge : "bg-muted text-muted-foreground"}`}>
                 {botName}
               </span>
             )}
@@ -287,12 +309,15 @@ export function NotificationBell() {
         </div>
       );
     }
-    return items.map((n) =>
-      renderNotificationItem(n, {
+    return items.map((n) => {
+      const agentN = isAgent ? (n as AgentNotification) : undefined;
+      return renderNotificationItem(n, {
         isAgent,
-        botName: isAgent ? (n as AgentNotification).botName : undefined,
-      })
-    );
+        botName: agentN?.botName,
+        botRole: agentN?.botRole,
+        botAvatarUrl: agentN?.botAvatarUrl,
+      });
+    });
   };
 
   return (

@@ -1006,6 +1006,12 @@ export type Database = {
           system_prompt: string | null;
           avatar_url: string | null;
           is_active: boolean;
+          bio: string | null;
+          skills: string[];
+          is_published: boolean;
+          community_upvotes: number;
+          times_cloned: number;
+          cloned_from: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -1017,6 +1023,12 @@ export type Database = {
           system_prompt?: string | null;
           avatar_url?: string | null;
           is_active?: boolean;
+          bio?: string | null;
+          skills?: string[];
+          is_published?: boolean;
+          community_upvotes?: number;
+          times_cloned?: number;
+          cloned_from?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1028,6 +1040,12 @@ export type Database = {
           system_prompt?: string | null;
           avatar_url?: string | null;
           is_active?: boolean;
+          bio?: string | null;
+          skills?: string[];
+          is_published?: boolean;
+          community_upvotes?: number;
+          times_cloned?: number;
+          cloned_from?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -1044,6 +1062,135 @@ export type Database = {
             columns: ["owner_id"];
             isOneToOne: false;
             referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "bot_profiles_cloned_from_fkey";
+            columns: ["cloned_from"];
+            isOneToOne: false;
+            referencedRelation: "bot_profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      agent_votes: {
+        Row: {
+          id: string;
+          bot_id: string;
+          user_id: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id: string;
+          user_id: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          user_id?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agent_votes_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bot_profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "agent_votes_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      featured_teams: {
+        Row: {
+          id: string;
+          name: string;
+          icon: string;
+          description: string | null;
+          display_order: number;
+          is_active: boolean;
+          created_by: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          name: string;
+          icon?: string;
+          description?: string | null;
+          display_order?: number;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          name?: string;
+          icon?: string;
+          description?: string | null;
+          display_order?: number;
+          is_active?: boolean;
+          created_by?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "featured_teams_created_by_fkey";
+            columns: ["created_by"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      featured_team_agents: {
+        Row: {
+          id: string;
+          team_id: string;
+          bot_id: string;
+          display_description: string | null;
+          display_order: number;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          team_id: string;
+          bot_id: string;
+          display_description?: string | null;
+          display_order?: number;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          team_id?: string;
+          bot_id?: string;
+          display_description?: string | null;
+          display_order?: number;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "featured_team_agents_team_id_fkey";
+            columns: ["team_id"];
+            isOneToOne: false;
+            referencedRelation: "featured_teams";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "featured_team_agents_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bot_profiles";
             referencedColumns: ["id"];
           },
         ];
@@ -1429,6 +1576,26 @@ export type Database = {
           p_owner_id: string;
           p_name?: string | null;
           p_avatar_url?: string | null;
+        };
+        Returns: undefined;
+      };
+      admin_delete_bot_user: {
+        Args: {
+          p_bot_id: string;
+        };
+        Returns: undefined;
+      };
+      admin_update_bot_user: {
+        Args: {
+          p_bot_id: string;
+          p_name?: string | null;
+          p_avatar_url?: string | null;
+        };
+        Returns: undefined;
+      };
+      increment_times_cloned: {
+        Args: {
+          p_bot_id: string;
         };
         Returns: undefined;
       };

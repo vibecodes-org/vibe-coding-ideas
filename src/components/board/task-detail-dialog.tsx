@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { AssigneeSelect } from "./assignee-select";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { TaskLabelBadges } from "./task-label-badges";
 import { LabelPicker } from "./label-picker";
@@ -27,6 +27,9 @@ import { enhanceTaskDescription } from "@/actions/ai";
 import { useBoardOps } from "./board-context";
 import { createClient } from "@/lib/supabase/client";
 import { logTaskActivity } from "@/lib/activity";
+import { useBotRoles } from "@/components/bot-roles-context";
+import { getRoleColor } from "@/lib/agent-colors";
+import { getInitials } from "@/lib/utils";
 import type { BoardTaskWithAssignee, BoardLabel, BoardChecklistItem, User, IdeaAgentUser } from "@/types";
 
 interface TaskDetailDialogProps {
@@ -58,6 +61,7 @@ export function TaskDetailDialog({
   isReadOnly = false,
   hasApiKey = false,
 }: TaskDetailDialogProps) {
+  const botRoles = useBotRoles();
   const ops = useBoardOps();
 
   // Combine humans + pooled agents for @mention autocomplete
@@ -356,12 +360,9 @@ export function TaskDetailDialog({
       ideaAgents.find((b) => b.id === localAssigneeId) ??
       task.assignee)
     : null;
-  const assigneeInitials =
-    localAssignee?.full_name
-      ?.split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase() ?? null;
+  const assigneeInitials = localAssignee
+    ? getInitials(localAssignee.full_name)
+    : null;
 
   const commentCount = task.comment_count;
   const attachmentCount = task.attachment_count;
@@ -558,59 +559,33 @@ export function TaskDetailDialog({
                   <span className="text-sm font-medium">Assignee</span>
                   <div className="flex items-center gap-2">
                     {localAssignee && (
-                      <div className="relative">
-                        <Avatar className="h-6 w-6">
-                          <AvatarImage src={localAssignee.avatar_url ?? undefined} />
-                          <AvatarFallback className="text-[10px]">{assigneeInitials}</AvatarFallback>
-                        </Avatar>
-                        {localAssignee.is_bot && (
-                          <Bot className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-primary" />
-                        )}
-                      </div>
+                      (() => {
+                        const ac = localAssignee.is_bot ? getRoleColor(botRoles?.[localAssignee.id]) : null;
+                        return (
+                          <div className="relative">
+                            <Avatar className="h-6 w-6">
+                              <AvatarImage src={localAssignee.avatar_url ?? undefined} />
+                              <AvatarFallback className={`text-[10px] ${ac ? `${ac.avatarBg} ${ac.avatarText}` : ""}`}>{assigneeInitials}</AvatarFallback>
+                            </Avatar>
+                            {localAssignee.is_bot && (
+                              <Bot className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-primary" />
+                            )}
+                          </div>
+                        );
+                      })()
                     )}
                     {isReadOnly ? (
                       <span className="text-xs">
                         {localAssignee?.full_name ?? "Unassigned"}
                       </span>
                     ) : (
-                      <Select
+                      <AssigneeSelect
                         value={localAssigneeId ?? "unassigned"}
                         onValueChange={handleAssigneeChange}
-                      >
-                        <SelectTrigger className="h-8 w-40 text-xs">
-                          <SelectValue placeholder="Unassigned" />
-                        </SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="unassigned">Unassigned</SelectItem>
-                          {teamMembers.length > 0 && (
-                            <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
-                              Collaborators
-                            </div>
-                          )}
-                          {teamMembers.map((member) => (
-                            <SelectItem key={member.id} value={member.id}>
-                              {member.full_name ?? member.email}
-                            </SelectItem>
-                          ))}
-                          {ideaAgents.filter((b) => !teamMembers.some((m) => m.id === b.id)).length > 0 && (
-                            <>
-                              <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
-                                Agents
-                              </div>
-                              {ideaAgents
-                                .filter((b) => !teamMembers.some((m) => m.id === b.id))
-                                .map((bot) => (
-                                  <SelectItem key={bot.id} value={bot.id}>
-                                    <span className="inline-flex items-center gap-1">
-                                      <Bot className="h-3 w-3" />
-                                      {bot.full_name ?? bot.email}
-                                    </span>
-                                  </SelectItem>
-                                ))}
-                            </>
-                          )}
-                        </SelectContent>
-                      </Select>
+                        teamMembers={teamMembers}
+                        ideaAgents={ideaAgents}
+                        triggerClassName="h-8 w-40 text-xs"
+                      />
                     )}
                   </div>
                 </div>

@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/tooltip";
 import { IdeaStatusBadge } from "./idea-status-badge";
 import { VoteButton } from "./vote-button";
-import { formatRelativeTime, stripMarkdown } from "@/lib/utils";
+import { formatRelativeTime, getInitials, stripMarkdown } from "@/lib/utils";
 import type { IdeaWithAuthor } from "@/types";
 
 interface IdeaCardProps {
@@ -20,12 +20,7 @@ interface IdeaCardProps {
 }
 
 export function IdeaCard({ idea, hasVoted, taskCount }: IdeaCardProps) {
-  const initials =
-    idea.author.full_name
-      ?.split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase() ?? "?";
+  const initials = getInitials(idea.author.full_name);
 
   return (
     <Card data-testid={`idea-card-${idea.id}`} className="group/card relative transition-colors hover:border-primary/30">

@@ -31,6 +31,19 @@ export function formatRelativeTime(dateString: string): string {
   return `${years}y ago`;
 }
 
+/** Extract uppercase initials from a name string, e.g. "John Doe" → "JD". */
+export function getInitials(name: string | null | undefined, fallback = "?"): string {
+  if (!name) return fallback;
+  return (
+    name
+      .split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .slice(0, 2) || fallback
+  );
+}
+
 export function getDueDateStatus(dueDate: string): "overdue" | "due_soon" | "on_track" {
   const due = new Date(dueDate);
   const now = new Date();

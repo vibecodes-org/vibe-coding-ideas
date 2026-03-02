@@ -9,6 +9,7 @@ import { Switch } from "@/components/ui/switch";
 import { CreateBotDialog } from "./create-bot-dialog";
 import { EditBotDialog } from "./edit-bot-dialog";
 import { updateBot } from "@/actions/bots";
+import { getInitials } from "@/lib/utils";
 import type { BotProfile } from "@/types";
 
 interface BotManagementProps {
@@ -41,13 +42,7 @@ export function BotManagement({ bots }: BotManagementProps) {
       ) : (
         <div className="grid gap-3 sm:grid-cols-2">
           {bots.map((bot) => {
-            const initials =
-              bot.name
-                .split(" ")
-                .map((n) => n[0])
-                .join("")
-                .toUpperCase()
-                .slice(0, 2);
+            const initials = getInitials(bot.name);
 
             return (
               <div

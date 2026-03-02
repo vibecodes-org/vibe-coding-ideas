@@ -2,6 +2,9 @@
 
 import { useEffect, useRef, useMemo } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useBotRoles } from "@/components/bot-roles-context";
+import { getRoleColor } from "@/lib/agent-colors";
+import { getInitials } from "@/lib/utils";
 import type { User } from "@/types";
 
 interface MentionAutocompleteProps {
@@ -15,6 +18,7 @@ export function MentionAutocomplete({
   selectedIndex,
   onSelect,
 }: MentionAutocompleteProps) {
+  const botRoles = useBotRoles();
   const listRef = useRef<HTMLDivElement>(null);
 
   const { agents, members } = useMemo(() => {
@@ -54,12 +58,10 @@ export function MentionAutocomplete({
 
   function renderItem(user: User) {
     const idx = flatIndex++;
-    const initials =
-      user.full_name
-        ?.split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase() ?? "?";
+    const initials = getInitials(user.full_name);
+
+    const role = user.is_bot ? botRoles?.[user.id] : undefined;
+    const colors = user.is_bot ? getRoleColor(role) : null;
 
     return (
       <button
@@ -78,11 +80,16 @@ export function MentionAutocomplete({
       >
         <Avatar className="h-5 w-5">
           <AvatarImage src={user.avatar_url ?? undefined} />
-          <AvatarFallback className="text-[9px]">
+          <AvatarFallback className={`text-[9px] ${colors ? `${colors.avatarBg} ${colors.avatarText}` : ""}`}>
             {initials}
           </AvatarFallback>
         </Avatar>
-        <span>{user.full_name ?? user.email}</span>
+        <div className="flex flex-col leading-tight">
+          <span>{user.full_name ?? user.email}</span>
+          {user.is_bot && botRoles?.[user.id] && (
+            <span className="text-[11px] text-muted-foreground">{botRoles[user.id]}</span>
+          )}
+        </div>
       </button>
     );
   }

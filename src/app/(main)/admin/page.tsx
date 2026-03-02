@@ -1,6 +1,8 @@
 import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin/admin-tabs";
+import { VIBECODES_USER_ID } from "@/lib/constants";
+import type { BotProfile, FeaturedTeamWithAgents } from "@/types";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -76,6 +78,35 @@ export default async function AdminPage({ searchParams }: PageProps) {
     .select("id", { count: "exact", head: true })
     .eq("status", "new");
 
+  // Fetch VibeCodes admin agents (exclude the system user itself)
+  const { data: adminAgentsData } = await supabase
+    .from("bot_profiles")
+    .select("*")
+    .eq("owner_id", VIBECODES_USER_ID)
+    .neq("id", VIBECODES_USER_ID)
+    .order("created_at", { ascending: true });
+
+  const adminAgents = (adminAgentsData ?? []) as BotProfile[];
+
+  // Fetch featured teams with agents
+  const { data: teamsData } = await supabase
+    .from("featured_teams")
+    .select("*, agents:featured_team_agents(*, bot:bot_profiles(id, name, role, avatar_url, bio, is_published))")
+    .order("display_order", { ascending: true });
+
+  const featuredTeams = (teamsData ?? []) as unknown as FeaturedTeamWithAgents[];
+
+  // Fetch published community agents for team bundling picker
+  const { data: communityData } = await supabase
+    .from("bot_profiles")
+    .select("*")
+    .eq("is_published", true)
+    .neq("owner_id", VIBECODES_USER_ID)
+    .order("community_upvotes", { ascending: false })
+    .limit(100);
+
+  const communityAgents = (communityData ?? []) as BotProfile[];
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold">Admin</h1>
@@ -86,6 +117,9 @@ export default async function AdminPage({ searchParams }: PageProps) {
         feedback={(feedback ?? []) as FeedbackWithUser[]}
         feedbackFilters={{ category: category ?? "all", status: status ?? "all" }}
         newFeedbackCount={newFeedbackCount ?? 0}
+        adminAgents={adminAgents}
+        featuredTeams={featuredTeams}
+        communityAgents={communityAgents}
       />
     </div>
   );

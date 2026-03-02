@@ -3,6 +3,7 @@ import { Calendar } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { DeleteUserButton } from "@/components/profile/delete-user-button";
+import { getInitials } from "@/lib/utils";
 import type { MemberWithCounts } from "./member-directory";
 
 interface MemberCardProps {
@@ -12,12 +13,7 @@ interface MemberCardProps {
 }
 
 export function MemberCard({ member, isAdmin, isCurrentUser }: MemberCardProps) {
-  const initials =
-    member.full_name
-      ?.split(" ")
-      .map((n) => n[0])
-      .join("")
-      .toUpperCase() ?? "?";
+  const initials = getInitials(member.full_name);
 
   const joinDate = new Date(member.created_at).toLocaleDateString("en-GB", {
     month: "short",

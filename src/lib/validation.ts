@@ -145,6 +145,28 @@ export function validateDiscussionReply(content: string): string {
   return trimmed;
 }
 
+export const MAX_TEAM_NAME_LENGTH = 200;
+export const MAX_TEAM_DESCRIPTION_LENGTH = 1000;
+
+export function validateTeamName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) throw new ValidationError("Team name is required");
+  if (trimmed.length > MAX_TEAM_NAME_LENGTH) {
+    throw new ValidationError(`Team name must be ${MAX_TEAM_NAME_LENGTH} characters or less`);
+  }
+  return trimmed;
+}
+
+export function validateTeamDescription(description: string | null): string | null {
+  if (!description) return null;
+  const trimmed = description.trim();
+  if (!trimmed) return null;
+  if (trimmed.length > MAX_TEAM_DESCRIPTION_LENGTH) {
+    throw new ValidationError(`Team description must be ${MAX_TEAM_DESCRIPTION_LENGTH} characters or less`);
+  }
+  return trimmed;
+}
+
 export const MAX_AVATAR_URL_LENGTH = 2000;
 
 export function validateAvatarUrl(url: string | null): string | null {
@@ -178,4 +200,24 @@ export function validateBio(bio: string | null): string | null {
     throw new ValidationError(`Bio must be ${MAX_BIO_LENGTH} characters or less`);
   }
   return trimmed;
+}
+
+export const MAX_SKILLS = 10;
+export const MAX_SKILL_LENGTH = 30;
+
+export function validateSkills(skills: string[]): string[] {
+  if (!skills || skills.length === 0) return [];
+  const cleaned = skills
+    .map((s) => s.trim().toLowerCase())
+    .filter(Boolean);
+  const unique = [...new Set(cleaned)];
+  if (unique.length > MAX_SKILLS) {
+    throw new ValidationError(`Maximum ${MAX_SKILLS} skills allowed`);
+  }
+  for (const skill of unique) {
+    if (skill.length > MAX_SKILL_LENGTH) {
+      throw new ValidationError(`Skill "${skill}" exceeds ${MAX_SKILL_LENGTH} characters`);
+    }
+  }
+  return unique;
 }

@@ -23,6 +23,7 @@ import { FeedbackDialog } from "./feedback-dialog";
 import { useUser } from "@/hooks/use-user";
 import { createClient } from "@/lib/supabase/client";
 import { useState, useEffect } from "react";
+import { getInitials } from "@/lib/utils";
 
 export function Navbar() {
   const { user, loading } = useUser();
@@ -59,11 +60,10 @@ export function Navbar() {
     router.refresh();
   };
 
-  const initials = user?.user_metadata?.full_name
-    ?.split(" ")
-    .map((n: string) => n[0])
-    .join("")
-    .toUpperCase() ?? user?.email?.[0]?.toUpperCase() ?? "?";
+  const initials = getInitials(
+    user?.user_metadata?.full_name,
+    user?.email?.[0]?.toUpperCase() ?? "?"
+  );
 
   return (
     <nav className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-sm">

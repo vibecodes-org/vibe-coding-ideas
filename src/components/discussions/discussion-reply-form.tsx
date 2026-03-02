@@ -11,6 +11,7 @@ import { createDiscussionReply } from "@/actions/discussions";
 import { useMentionState } from "@/hooks/use-mentions";
 import { sendDiscussionMentionNotifications } from "@/lib/mention-notifications";
 import { MAX_DISCUSSION_REPLY_LENGTH } from "@/lib/validation";
+import { getInitials } from "@/lib/utils";
 import type { User } from "@/types";
 
 interface DiscussionReplyFormProps {
@@ -121,7 +122,7 @@ export function DiscussionReplyForm({
         <Avatar className="h-5 w-5">
           <AvatarImage src={currentUser.avatar_url ?? undefined} />
           <AvatarFallback className="text-[8px]">
-            {(currentUser.full_name ?? "?")[0]}
+            {getInitials(currentUser.full_name)}
           </AvatarFallback>
         </Avatar>
         Reply as {currentUser.full_name ?? "Anonymous"}

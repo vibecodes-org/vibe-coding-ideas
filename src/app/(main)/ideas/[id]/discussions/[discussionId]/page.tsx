@@ -4,6 +4,7 @@ import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getIdeaTeam } from "@/lib/idea-team";
+import { BotRolesProvider } from "@/components/bot-roles-context";
 import { DiscussionThread } from "@/components/discussions/discussion-thread";
 import type {
   IdeaDiscussionDetail,
@@ -135,18 +136,20 @@ export default async function DiscussionDetailPage({ params }: PageProps) {
         Back to Discussions
       </Link>
 
-      <DiscussionThread
-        discussion={discussionDetail}
-        ideaId={ideaId}
-        currentUser={currentUser as User | null}
-        isAuthorOrOwner={isAuthorOrOwner}
-        isTeamMember={isTeamMember}
-        columns={typedColumns}
-        convertedTaskId={convertedTaskId}
-        hasVoted={hasVotedOnDiscussion}
-        teamMembers={ideaTeam.allMentionable}
-        hasApiKey={!!(currentUser as User | null)?.encrypted_anthropic_key}
-      />
+      <BotRolesProvider botRoles={ideaTeam.botRoles}>
+        <DiscussionThread
+          discussion={discussionDetail}
+          ideaId={ideaId}
+          currentUser={currentUser as User | null}
+          isAuthorOrOwner={isAuthorOrOwner}
+          isTeamMember={isTeamMember}
+          columns={typedColumns}
+          convertedTaskId={convertedTaskId}
+          hasVoted={hasVotedOnDiscussion}
+          teamMembers={ideaTeam.allMentionable}
+          hasApiKey={!!(currentUser as User | null)?.encrypted_anthropic_key}
+        />
+      </BotRolesProvider>
     </div>
   );
 }

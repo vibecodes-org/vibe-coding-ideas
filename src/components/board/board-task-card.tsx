@@ -16,6 +16,9 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
+import { useBotRoles } from "@/components/bot-roles-context";
+import { getRoleColor } from "@/lib/agent-colors";
+import { getInitials } from "@/lib/utils";
 import { TaskLabelBadges } from "./task-label-badges";
 import { LabelPicker } from "./label-picker";
 import { DueDateBadge } from "./due-date-badge";
@@ -80,6 +83,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   isReadOnly = false,
   hasApiKey = false,
 }: BoardTaskCardProps) {
+  const botRoles = useBotRoles();
   // Use context for auto-open — bypasses memo chain and reacts to URL navigation
   const { autoOpenTaskId, onAutoOpenConsumed } = useContext(TaskAutoOpenContext);
   const shouldAutoOpen = autoOpen || task.id === autoOpenTaskId;
@@ -203,11 +207,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
 
   const assigneeInitials = useMemo(
     () =>
-      task.assignee?.full_name
-        ?.split(" ")
-        .map((n) => n[0])
-        .join("")
-        .toUpperCase() ?? null,
+      task.assignee ? getInitials(task.assignee.full_name) : null,
     [task.assignee?.full_name],
   );
 
@@ -351,10 +351,15 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <div className="relative">
-                      <Avatar className="h-5 w-5">
-                        <AvatarImage src={task.assignee.avatar_url ?? undefined} />
-                        <AvatarFallback className="text-[10px]">{assigneeInitials}</AvatarFallback>
-                      </Avatar>
+                      {(() => {
+                        const ac = task.assignee.is_bot ? getRoleColor(botRoles?.[task.assignee.id]) : null;
+                        return (
+                          <Avatar className="h-5 w-5">
+                            <AvatarImage src={task.assignee.avatar_url ?? undefined} />
+                            <AvatarFallback className={`text-[10px] ${ac ? `${ac.avatarBg} ${ac.avatarText}` : ""}`}>{assigneeInitials}</AvatarFallback>
+                          </Avatar>
+                        );
+                      })()}
                       {task.assignee.is_bot && (
                         <Bot className="absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 text-primary" />
                       )}

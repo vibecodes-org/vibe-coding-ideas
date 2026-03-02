@@ -44,6 +44,11 @@ export function parsePromptToFields(
 
   const text = prompt.trim();
 
+  // Try markdown header format first: ## Goal / ## Constraints / ## Approach
+  const mdResult = parseMarkdownHeaders(text);
+  if (mdResult) return mdResult;
+
+  // Fall back to inline marker format: "You must not:" / "Your approach:"
   const constraintsIdx = text.indexOf(CONSTRAINTS_MARKER);
   const approachIdx = text.indexOf(APPROACH_MARKER);
 
@@ -87,6 +92,41 @@ export function parsePromptToFields(
   goal = goalSection;
 
   return { goal, constraints, approach };
+}
+
+function parseMarkdownHeaders(text: string): StructuredPromptFields | null {
+  const goalMatch = text.match(/##\s*Goal\s*\n/i);
+  const constraintsMatch = text.match(/##\s*Constraints\s*\n/i);
+  const approachMatch = text.match(/##\s*Approach\s*\n/i);
+
+  // Need at least two markdown section headers to consider it structured
+  const matchCount = [goalMatch, constraintsMatch, approachMatch].filter(Boolean).length;
+  if (matchCount < 2) return null;
+
+  // Build ordered list of section boundaries
+  const sections: { key: string; start: number; headerEnd: number }[] = [];
+  if (goalMatch) {
+    const idx = text.indexOf(goalMatch[0]);
+    sections.push({ key: "goal", start: idx, headerEnd: idx + goalMatch[0].length });
+  }
+  if (constraintsMatch) {
+    const idx = text.indexOf(constraintsMatch[0]);
+    sections.push({ key: "constraints", start: idx, headerEnd: idx + constraintsMatch[0].length });
+  }
+  if (approachMatch) {
+    const idx = text.indexOf(approachMatch[0]);
+    sections.push({ key: "approach", start: idx, headerEnd: idx + approachMatch[0].length });
+  }
+
+  sections.sort((a, b) => a.start - b.start);
+
+  const fields: Record<string, string> = { goal: "", constraints: "", approach: "" };
+  for (let i = 0; i < sections.length; i++) {
+    const end = i + 1 < sections.length ? sections[i + 1].start : text.length;
+    fields[sections[i].key] = text.slice(sections[i].headerEnd, end).trim();
+  }
+
+  return { goal: fields.goal, constraints: fields.constraints, approach: fields.approach };
 }
 
 export function isStructuredPrompt(prompt: string): boolean {

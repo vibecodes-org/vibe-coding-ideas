@@ -14,6 +14,9 @@ import {
   validateDiscussionTitle,
   validateDiscussionBody,
   validateDiscussionReply,
+  validateSkills,
+  validateTeamName,
+  validateTeamDescription,
   ValidationError,
   MAX_TITLE_LENGTH,
   MAX_DESCRIPTION_LENGTH,
@@ -25,6 +28,10 @@ import {
   MAX_AVATAR_URL_LENGTH,
   MAX_DISCUSSION_BODY_LENGTH,
   MAX_DISCUSSION_REPLY_LENGTH,
+  MAX_SKILLS,
+  MAX_SKILL_LENGTH,
+  MAX_TEAM_NAME_LENGTH,
+  MAX_TEAM_DESCRIPTION_LENGTH,
 } from "./validation";
 
 describe("validateTitle", () => {
@@ -294,5 +301,89 @@ describe("validateDiscussionReply", () => {
     expect(() => validateDiscussionReply("a".repeat(MAX_DISCUSSION_REPLY_LENGTH + 1))).toThrow(
       ValidationError
     );
+  });
+});
+
+describe("validateSkills", () => {
+  it("returns empty array for empty input", () => {
+    expect(validateSkills([])).toEqual([]);
+  });
+
+  it("trims, lowercases, and deduplicates", () => {
+    expect(validateSkills(["  Testing  ", "testing", " Debugging "])).toEqual([
+      "testing",
+      "debugging",
+    ]);
+  });
+
+  it("filters out empty strings", () => {
+    expect(validateSkills(["code-review", "", "  ", "debugging"])).toEqual([
+      "code-review",
+      "debugging",
+    ]);
+  });
+
+  it("throws on too many skills", () => {
+    const skills = Array.from({ length: MAX_SKILLS + 1 }, (_, i) => `skill${i}`);
+    expect(() => validateSkills(skills)).toThrow(ValidationError);
+  });
+
+  it("throws on too-long skill", () => {
+    expect(() => validateSkills(["a".repeat(MAX_SKILL_LENGTH + 1)])).toThrow(
+      ValidationError
+    );
+  });
+
+  it("accepts max skills at max length", () => {
+    const skills = Array.from({ length: MAX_SKILLS }, (_, i) =>
+      `skill${i}`.padEnd(MAX_SKILL_LENGTH, "x")
+    );
+    expect(validateSkills(skills)).toHaveLength(MAX_SKILLS);
+  });
+});
+
+describe("validateTeamName", () => {
+  it("returns trimmed name", () => {
+    expect(validateTeamName("  Full Product Team  ")).toBe("Full Product Team");
+  });
+
+  it("throws on empty name", () => {
+    expect(() => validateTeamName("")).toThrow(ValidationError);
+    expect(() => validateTeamName("   ")).toThrow(ValidationError);
+  });
+
+  it("throws on too-long name", () => {
+    expect(() => validateTeamName("a".repeat(MAX_TEAM_NAME_LENGTH + 1))).toThrow(
+      ValidationError
+    );
+  });
+
+  it("accepts max length name", () => {
+    expect(validateTeamName("a".repeat(MAX_TEAM_NAME_LENGTH))).toHaveLength(
+      MAX_TEAM_NAME_LENGTH
+    );
+  });
+});
+
+describe("validateTeamDescription", () => {
+  it("returns null for empty/null", () => {
+    expect(validateTeamDescription(null)).toBeNull();
+    expect(validateTeamDescription("")).toBeNull();
+    expect(validateTeamDescription("   ")).toBeNull();
+  });
+
+  it("returns trimmed description", () => {
+    expect(validateTeamDescription("  Hello  ")).toBe("Hello");
+  });
+
+  it("throws on too-long description", () => {
+    expect(() =>
+      validateTeamDescription("a".repeat(MAX_TEAM_DESCRIPTION_LENGTH + 1))
+    ).toThrow(ValidationError);
+  });
+
+  it("accepts max length description", () => {
+    const desc = "a".repeat(MAX_TEAM_DESCRIPTION_LENGTH);
+    expect(validateTeamDescription(desc)).toHaveLength(MAX_TEAM_DESCRIPTION_LENGTH);
   });
 });

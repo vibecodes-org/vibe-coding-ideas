@@ -7,25 +7,32 @@ import {
   ArrowRight,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   Check,
   Lightbulb,
   Bot,
   Cable,
   LayoutGrid,
   Copy,
+  Users,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { StepIndicator } from "./step-indicator";
 import { Confetti } from "./confetti";
+import { getRoleColor } from "@/lib/agent-colors";
+import { cn } from "@/lib/utils";
 import {
   completeOnboarding,
   createIdeaFromOnboarding,
   updateProfileFromOnboarding,
   enhanceOnboardingDescription,
 } from "@/actions/onboarding";
+import { addFeaturedTeam } from "@/actions/bots";
+import type { FeaturedTeamWithAgents } from "@/types";
 
 const SUGGESTED_TAGS = [
   "ai",
@@ -43,6 +50,7 @@ interface OnboardingDialogProps {
   userFullName: string | null;
   userAvatarUrl: string | null;
   userGithubUsername: string | null;
+  featuredTeams: FeaturedTeamWithAgents[];
 }
 
 export function OnboardingDialog({
@@ -51,6 +59,7 @@ export function OnboardingDialog({
   userFullName,
   userAvatarUrl,
   userGithubUsername,
+  featuredTeams,
 }: OnboardingDialogProps) {
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -61,6 +70,12 @@ export function OnboardingDialog({
   const [githubUsername, setGithubUsername] = useState(
     userGithubUsername ?? ""
   );
+
+  // Team selection state
+  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
+  const [addedTeamId, setAddedTeamId] = useState<string | null>(null);
+  const [addingTeam, setAddingTeam] = useState(false);
+  const [expandedTeam, setExpandedTeam] = useState<string | null>(null);
 
   // Idea fields
   const [ideaTitle, setIdeaTitle] = useState("");
@@ -131,6 +146,28 @@ export function OnboardingDialog({
     }
   };
 
+  const handleAddTeam = async () => {
+    if (!selectedTeamId || addingTeam) return;
+    setAddingTeam(true);
+    try {
+      const { created, skipped } = await addFeaturedTeam(selectedTeamId);
+      if (created.length > 0) {
+        toast.success(
+          `Created ${created.length} agent${created.length > 1 ? "s" : ""}: ${created.join(", ")}`
+        );
+      }
+      if (created.length === 0 && skipped.length > 0) {
+        toast.info("All agents from this team already exist");
+      }
+      setAddedTeamId(selectedTeamId);
+      goToStep(3);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to add team");
+    } finally {
+      setAddingTeam(false);
+    }
+  };
+
   const handleCreateIdea = async () => {
     if (submitting) return;
     if (!ideaTitle.trim()) {
@@ -146,7 +183,7 @@ export function OnboardingDialog({
       });
       setCreatedIdeaId(result.ideaId);
       await completeOnboarding();
-      goToStep(3);
+      goToStep(4);
     } catch (err) {
       if (err instanceof Error && "digest" in err) {
         const digest = (err as { digest?: string }).digest;
@@ -168,7 +205,7 @@ export function OnboardingDialog({
     } catch {
       // Non-critical
     }
-    goToStep(3);
+    goToStep(4);
   };
 
   const handleFinish = () => {
@@ -211,7 +248,7 @@ export function OnboardingDialog({
           <div className="mx-auto h-20 w-72 bg-primary/[0.08] blur-3xl" />
         </div>
 
-        <StepIndicator totalSteps={4} currentStep={step} />
+        <StepIndicator totalSteps={5} currentStep={step} />
 
         {/* Step content — conditionally rendered */}
         <div
@@ -311,7 +348,7 @@ export function OnboardingDialog({
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <span className="text-xs text-muted-foreground/60">
-                  Step 2 of 4
+                  Step 2 of 5
                 </span>
               </div>
 
@@ -413,7 +450,208 @@ export function OnboardingDialog({
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <span className="text-xs text-muted-foreground/60">
-                  Step 3 of 4
+                  Step 3 of 5
+                </span>
+              </div>
+
+              <h2 className="-tracking-wide mb-1 text-xl font-bold text-foreground sm:text-[22px]">
+                Pick your agent team
+              </h2>
+              <p className="mb-5 text-sm text-muted-foreground">
+                Start with a pre-built team of AI agents. You can customise them
+                later.
+              </p>
+
+              {featuredTeams.length === 0 ? (
+                <div className="mb-6 rounded-xl border border-border/60 bg-card/60 p-6 text-center">
+                  <Users className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
+                  <p className="text-sm text-muted-foreground">
+                    No featured teams available yet.
+                  </p>
+                </div>
+              ) : (
+                <div className="mb-5 flex flex-col gap-2.5">
+                  {featuredTeams.map((team) => {
+                    const sortedAgents = [...team.agents].sort(
+                      (a, b) => a.display_order - b.display_order
+                    );
+                    const isSelected = selectedTeamId === team.id;
+                    const isAdded = addedTeamId === team.id;
+                    const isExpanded = expandedTeam === team.id;
+
+                    return (
+                      <button
+                        key={team.id}
+                        type="button"
+                        onClick={() => {
+                          if (!isAdded) setSelectedTeamId(isSelected ? null : team.id);
+                        }}
+                        className={cn(
+                          "flex flex-col overflow-hidden rounded-xl border text-left transition-all",
+                          isAdded
+                            ? "border-emerald-500/50 bg-emerald-500/[0.06]"
+                            : isSelected
+                              ? "border-primary bg-primary/[0.06] ring-1 ring-primary/30"
+                              : "border-border/60 bg-card/60 hover:border-border hover:bg-card/80"
+                        )}
+                      >
+                        {/* Header */}
+                        <div className="flex items-center gap-3 p-3.5">
+                          <span className="text-xl shrink-0">{team.icon}</span>
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-sm">{team.name}</div>
+                            <p className="text-[11px] text-muted-foreground leading-snug">
+                              {team.description}
+                            </p>
+                          </div>
+                          <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] font-semibold text-muted-foreground">
+                            {sortedAgents.length} agents
+                          </span>
+                          {isAdded ? (
+                            <div className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-emerald-500">
+                              <Check className="h-3.5 w-3.5 text-white" />
+                            </div>
+                          ) : (
+                            <div
+                              className={cn(
+                                "flex h-6 w-6 shrink-0 items-center justify-center rounded-full border-2 transition-colors",
+                                isSelected
+                                  ? "border-primary bg-primary"
+                                  : "border-muted-foreground/30"
+                              )}
+                            >
+                              {isSelected && <Check className="h-3 w-3 text-white" />}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* View / hide agents toggle */}
+                        {!isExpanded ? (
+                          <span
+                            role="button"
+                            tabIndex={0}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedTeam(team.id);
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.stopPropagation();
+                                setExpandedTeam(team.id);
+                              }
+                            }}
+                            className="flex items-center justify-center gap-1 border-t border-border/40 py-2 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:text-muted-foreground hover:bg-muted/30"
+                          >
+                            <ChevronDown className="h-3 w-3" />
+                            View agents
+                          </span>
+                        ) : (
+                          <>
+                            <div className="flex flex-col gap-1 border-t border-border/40 px-3 py-2.5">
+                              {sortedAgents.map((entry) => {
+                                const bot = entry.bot;
+                                const initial = (bot.role ?? bot.name)?.[0]?.toUpperCase() ?? "?";
+                                const agentColors = getRoleColor(bot.role);
+
+                                return (
+                                  <div
+                                    key={entry.id}
+                                    className="flex items-center gap-2 rounded-md bg-background/50 px-2 py-1.5 text-xs"
+                                  >
+                                    <Avatar className="h-5 w-5 shrink-0">
+                                      <AvatarImage src={bot.avatar_url ?? undefined} />
+                                      <AvatarFallback className={cn("text-[9px]", agentColors.avatarBg, agentColors.avatarText)}>
+                                        {initial}
+                                      </AvatarFallback>
+                                    </Avatar>
+                                    <span className="font-medium">{bot.role ?? bot.name}</span>
+                                    {bot.bio && (
+                                      <span className="ml-auto text-[10px] text-muted-foreground truncate max-w-[140px]">
+                                        {bot.bio}
+                                      </span>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedTeam(null);
+                              }}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" || e.key === " ") {
+                                  e.stopPropagation();
+                                  setExpandedTeam(null);
+                                }
+                              }}
+                              className="flex items-center justify-center gap-1 border-t border-border/40 py-2 text-[11px] font-medium text-muted-foreground/60 transition-colors hover:text-muted-foreground hover:bg-muted/30"
+                            >
+                              <ChevronDown className="h-3 w-3 rotate-180" />
+                              Hide agents
+                            </span>
+                          </>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+
+              {selectedTeamId && !addedTeamId && (
+                <Button
+                  className="w-full gap-2 mb-2"
+                  size="lg"
+                  onClick={handleAddTeam}
+                  disabled={addingTeam}
+                >
+                  {addingTeam ? (
+                    "Adding agents..."
+                  ) : (
+                    <>
+                      <Users className="h-4 w-4" />
+                      Add Team & Continue
+                    </>
+                  )}
+                </Button>
+              )}
+
+              {!selectedTeamId && !addedTeamId && (
+                <Button
+                  className="w-full gap-2 mb-2"
+                  size="lg"
+                  variant="outline"
+                  onClick={() => goToStep(3)}
+                >
+                  Continue without a team
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              )}
+
+              <button
+                onClick={() => goToStep(3)}
+                className="mt-1 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+              >
+                Skip this step
+              </button>
+            </div>
+          )}
+
+          {step === 3 && (
+            <div className="px-8 pt-4 pb-8 sm:px-10">
+              <div className="mb-4 flex items-center justify-between">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => goToStep(2)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-xs text-muted-foreground/60">
+                  Step 4 of 5
                 </span>
               </div>
 
@@ -520,7 +758,7 @@ export function OnboardingDialog({
             </div>
           )}
 
-          {step === 3 && (
+          {step === 4 && (
             <div className="overflow-hidden px-6 pt-8 pb-8 sm:px-10">
               <Confetti />
 

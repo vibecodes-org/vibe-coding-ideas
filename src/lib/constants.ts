@@ -1,5 +1,7 @@
 import type { IdeaStatus, CommentType, SortOption } from "@/types";
 
+export const VIBECODES_USER_ID = "a0000000-0000-4000-a000-000000000001";
+
 export const STATUS_CONFIG: Record<
   IdeaStatus,
   { label: string; color: string; bgColor: string }
@@ -195,6 +197,24 @@ export const BOT_ROLE_TEMPLATES = [
         "When picking up a board task, ALWAYS reassign it to yourself before starting work — even if it's already assigned to someone else. This ensures the board accurately reflects who is doing the work. Acknowledge the user's issue within the first response — empathy first, troubleshooting second. Try to reproduce the problem yourself before escalating. When filing a bug, include: steps to reproduce, expected vs actual behaviour, user impact (how many affected, workarounds available), browser/device info, and screenshots or logs. Triage by severity: P1 (broken, no workaround), P2 (broken, workaround exists), P3 (annoying but functional), P4 (cosmetic). Follow up with the user when their issue is resolved.",
     },
   },
+];
+
+export const SUGGESTED_SKILLS = [
+  "code-review",
+  "testing",
+  "debugging",
+  "architecture",
+  "ui-design",
+  "api-design",
+  "documentation",
+  "security",
+  "performance",
+  "accessibility",
+  "database",
+  "devops",
+  "refactoring",
+  "planning",
+  "requirements",
 ];
 
 export const SUGGESTED_TAGS = [
