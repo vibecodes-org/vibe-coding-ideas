@@ -119,7 +119,7 @@ interface KanbanBoardProps {
   checklistItemsByTaskId: Record<string, BoardChecklistItem[]>;
   currentUserId: string;
   initialTaskId?: string;
-  userBots?: User[];
+  ideaAgents?: User[];
   hasApiKey?: boolean;
   botProfiles?: BotProfile[];
   coverImageUrls?: Record<string, string>;
@@ -227,7 +227,7 @@ export function KanbanBoard({
   checklistItemsByTaskId,
   currentUserId,
   initialTaskId,
-  userBots = [],
+  ideaAgents = [],
   hasApiKey = false,
   botProfiles = [],
   coverImageUrls = {},
@@ -901,7 +901,7 @@ export function KanbanBoard({
                     highlightQuery={searchQuery}
                     currentUserId={currentUserId}
                     initialTaskId={autoOpenTaskId}
-                    userBots={userBots}
+                    ideaAgents={ideaAgents}
                     coverImageUrls={coverImageUrls}
                     hasApiKey={hasApiKey}
                     ideaDescription={ideaDescription}

@@ -302,64 +302,76 @@ export async function getDiscussionsReadyToConvert(
     };
   }
 
-  // Enrich each discussion with replies, column name, and assignee name
-  const enriched = await Promise.all(
-    data.map(async (d) => {
-      // Fetch all replies for full context
-      const { data: replies } = await ctx.supabase
-        .from("idea_discussion_replies")
-        .select(
-          "id, content, parent_reply_id, created_at, users!idea_discussion_replies_author_id_fkey(id, full_name)"
-        )
-        .eq("discussion_id", d.id)
-        .order("created_at", { ascending: true });
+  const discussionIds = data.map((d) => d.id);
 
-      // Resolve target column name
-      let targetColumnName: string | null = null;
-      if (d.target_column_id) {
-        const { data: col } = await ctx.supabase
-          .from("board_columns")
-          .select("title")
-          .eq("id", d.target_column_id)
-          .single();
-        targetColumnName = col?.title ?? null;
-      }
+  // Batch-fetch all replies for all discussions in one query
+  const { data: allReplies } = await ctx.supabase
+    .from("idea_discussion_replies")
+    .select(
+      "id, content, parent_reply_id, created_at, discussion_id, users!idea_discussion_replies_author_id_fkey(id, full_name)"
+    )
+    .in("discussion_id", discussionIds)
+    .order("created_at", { ascending: true });
 
-      // Resolve target assignee name
-      let targetAssigneeName: string | null = null;
-      if (d.target_assignee_id) {
-        const { data: user } = await ctx.supabase
-          .from("users")
-          .select("full_name")
-          .eq("id", d.target_assignee_id)
-          .single();
-        targetAssigneeName = user?.full_name ?? null;
-      }
+  // Group replies by discussion_id
+  const repliesByDiscussion = new Map<string, typeof allReplies>();
+  for (const reply of allReplies ?? []) {
+    const existing = repliesByDiscussion.get(reply.discussion_id) ?? [];
+    existing.push(reply);
+    repliesByDiscussion.set(reply.discussion_id, existing);
+  }
 
-      return {
-        id: d.id,
-        idea_id: d.idea_id,
-        idea: (d as Record<string, unknown>).ideas,
-        title: d.title,
-        body: d.body,
-        author: (d as Record<string, unknown>).users,
-        reply_count: d.reply_count,
-        last_activity_at: d.last_activity_at,
-        created_at: d.created_at,
-        target_column_id: d.target_column_id,
-        target_column_name: targetColumnName,
-        target_assignee_id: d.target_assignee_id,
-        target_assignee_name: targetAssigneeName,
-        replies: (replies ?? []).map((r) => ({
-          id: r.id,
-          content: r.content,
-          parent_reply_id: r.parent_reply_id,
-          created_at: r.created_at,
-          author: (r as Record<string, unknown>).users,
-        })),
-      };
-    })
-  );
+  // Batch-fetch column names
+  const columnIds = [...new Set(data.map((d) => d.target_column_id).filter(Boolean))] as string[];
+  const columnMap = new Map<string, string>();
+  if (columnIds.length > 0) {
+    const { data: cols } = await ctx.supabase
+      .from("board_columns")
+      .select("id, title")
+      .in("id", columnIds);
+    for (const col of cols ?? []) {
+      columnMap.set(col.id, col.title);
+    }
+  }
+
+  // Batch-fetch assignee names
+  const assigneeIds = [...new Set(data.map((d) => d.target_assignee_id).filter(Boolean))] as string[];
+  const assigneeMap = new Map<string, string>();
+  if (assigneeIds.length > 0) {
+    const { data: users } = await ctx.supabase
+      .from("users")
+      .select("id, full_name")
+      .in("id", assigneeIds);
+    for (const user of users ?? []) {
+      if (user.full_name) assigneeMap.set(user.id, user.full_name);
+    }
+  }
+
+  const enriched = data.map((d) => {
+    const replies = repliesByDiscussion.get(d.id) ?? [];
+    return {
+      id: d.id,
+      idea_id: d.idea_id,
+      idea: (d as Record<string, unknown>).ideas,
+      title: d.title,
+      body: d.body,
+      author: (d as Record<string, unknown>).users,
+      reply_count: d.reply_count,
+      last_activity_at: d.last_activity_at,
+      created_at: d.created_at,
+      target_column_id: d.target_column_id,
+      target_column_name: d.target_column_id ? (columnMap.get(d.target_column_id) ?? null) : null,
+      target_assignee_id: d.target_assignee_id,
+      target_assignee_name: d.target_assignee_id ? (assigneeMap.get(d.target_assignee_id) ?? null) : null,
+      replies: replies.map((r) => ({
+        id: r.id,
+        content: r.content,
+        parent_reply_id: r.parent_reply_id,
+        created_at: r.created_at,
+        author: (r as Record<string, unknown>).users,
+      })),
+    };
+  });
 
   return {
     discussions: enriched,

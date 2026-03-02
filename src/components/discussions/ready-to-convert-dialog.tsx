@@ -132,7 +132,7 @@ export function ReadyToConvertDialog({
                 {bots.length > 0 && (
                   <>
                     <div className="px-2 py-1.5 text-[10px] font-medium text-muted-foreground">
-                      My Agents
+                      Agents
                     </div>
                     {bots.map((bot) => (
                       <SelectItem key={bot.id} value={bot.id}>

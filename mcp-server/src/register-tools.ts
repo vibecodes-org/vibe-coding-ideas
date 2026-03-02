@@ -127,6 +127,14 @@ import {
   createBot,
   createBotSchema,
 } from "./tools/bots";
+import {
+  allocateAgent,
+  allocateAgentSchema,
+  removeIdeaAgent,
+  removeIdeaAgentSchema,
+  listIdeaAgents,
+  listIdeaAgentsSchema,
+} from "./tools/idea-agents";
 
 function jsonResult(data: unknown) {
   return {
@@ -816,6 +824,50 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await createBot(ctx, createBotSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  // --- Idea Agent Pool Tools ---
+
+  server.tool(
+    "allocate_agent",
+    "Allocate a bot to an idea's shared agent pool. The bot becomes available for task assignment by all team members.",
+    allocateAgentSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await allocateAgent(ctx, allocateAgentSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "remove_idea_agent",
+    "Remove a bot from an idea's shared agent pool. The bot will be unassigned from any tasks in that idea.",
+    removeIdeaAgentSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await removeIdeaAgent(ctx, removeIdeaAgentSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "list_idea_agents",
+    "List all agents allocated to an idea's shared pool with bot profile details and who added them.",
+    listIdeaAgentsSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await listIdeaAgents(ctx, listIdeaAgentsSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

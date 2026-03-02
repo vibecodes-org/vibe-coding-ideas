@@ -10,6 +10,7 @@ import {
   validateLabelName,
   validateBio,
   validateAvatarUrl,
+  validateUuid,
   validateDiscussionTitle,
   validateDiscussionBody,
   validateDiscussionReply,
@@ -214,6 +215,34 @@ describe("validateBio", () => {
     expect(() => validateBio("a".repeat(MAX_BIO_LENGTH + 1))).toThrow(
       ValidationError
     );
+  });
+});
+
+describe("validateUuid", () => {
+  it("accepts valid UUIDs", () => {
+    expect(validateUuid("a0000000-0000-4000-a000-000000000001")).toBe(
+      "a0000000-0000-4000-a000-000000000001"
+    );
+    expect(validateUuid("  A0000000-0000-4000-A000-000000000001  ")).toBe(
+      "A0000000-0000-4000-A000-000000000001"
+    );
+  });
+
+  it("throws on empty value", () => {
+    expect(() => validateUuid("")).toThrow(ValidationError);
+    expect(() => validateUuid("   ")).toThrow(ValidationError);
+  });
+
+  it("throws on invalid UUID format", () => {
+    expect(() => validateUuid("not-a-uuid")).toThrow(ValidationError);
+    expect(() => validateUuid("12345")).toThrow(ValidationError);
+    expect(() => validateUuid("a0000000-0000-4000-a000-00000000000g")).toThrow(
+      ValidationError
+    );
+  });
+
+  it("uses custom label in error message", () => {
+    expect(() => validateUuid("bad", "Bot ID")).toThrow("Bot ID must be a valid UUID");
   });
 });
 

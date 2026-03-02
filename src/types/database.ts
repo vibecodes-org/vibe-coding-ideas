@@ -23,6 +23,7 @@ export type Database = {
             collaboration_requests: boolean;
             collaboration_responses: boolean;
             discussion_mentions: boolean;
+            discussions: boolean;
           };
           default_board_columns: { title: string; is_done_column: boolean }[] | null;
           is_admin: boolean;
@@ -54,6 +55,7 @@ export type Database = {
             collaboration_requests: boolean;
             collaboration_responses: boolean;
             discussion_mentions: boolean;
+            discussions: boolean;
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           is_admin?: boolean;
@@ -85,6 +87,7 @@ export type Database = {
             collaboration_requests: boolean;
             collaboration_responses: boolean;
             discussion_mentions: boolean;
+            discussions: boolean;
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           is_admin?: boolean;
@@ -1338,6 +1341,52 @@ export type Database = {
           {
             foreignKeyName: "feedback_user_id_fkey";
             columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      idea_agents: {
+        Row: {
+          id: string;
+          idea_id: string;
+          bot_id: string;
+          added_by: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          idea_id: string;
+          bot_id: string;
+          added_by: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          idea_id?: string;
+          bot_id?: string;
+          added_by?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "idea_agents_idea_id_fkey";
+            columns: ["idea_id"];
+            isOneToOne: false;
+            referencedRelation: "ideas";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "idea_agents_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bot_profiles";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "idea_agents_added_by_fkey";
+            columns: ["added_by"];
             isOneToOne: false;
             referencedRelation: "users";
             referencedColumns: ["id"];

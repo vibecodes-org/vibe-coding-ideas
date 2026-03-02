@@ -111,6 +111,13 @@ export type IdeaDiscussionDetail = IdeaDiscussion & {
   replies: IdeaDiscussionReplyWithAuthor[];
 };
 
+// Idea Agent Pool types
+export type IdeaAgent = Database["public"]["Tables"]["idea_agents"]["Row"];
+export type IdeaAgentWithDetails = IdeaAgent & {
+  bot: BotProfile & { owner: { id: string; full_name: string | null } };
+};
+export type IdeaAgentUser = User & { ownerName: string; ownerId: string };
+
 // AI usage types
 export type AiUsageLog = Database["public"]["Tables"]["ai_usage_log"]["Row"];
 

@@ -1,18 +1,23 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-// Mock the Supabase client
-const mockUpdate = vi.fn().mockReturnThis();
-const mockEq = vi.fn().mockReturnThis();
-const mockInsert = vi.fn().mockReturnThis();
-const mockSelect = vi.fn().mockReturnThis();
+// Mock the Supabase client — all chain methods return `chain` by default,
+// individual tests override terminal methods (single, gte) as needed.
 const mockSingle = vi.fn();
-const mockFrom = vi.fn().mockReturnValue({
+const mockGte = vi.fn();
+const chain: Record<string, unknown> = {};
+const mockUpdate = vi.fn(() => chain);
+const mockEq = vi.fn(() => chain);
+const mockInsert = vi.fn(() => chain);
+const mockSelect = vi.fn(() => chain);
+Object.assign(chain, {
   update: mockUpdate,
   insert: mockInsert,
   select: mockSelect,
   eq: mockEq,
   single: mockSingle,
+  gte: mockGte,
 });
+const mockFrom = vi.fn(() => chain);
 const mockGetUser = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -49,11 +54,16 @@ vi.mock("@ai-sdk/anthropic", () => ({
 describe("onboarding actions", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Re-set default chain implementations (clearAllMocks doesn't reset mockReturnValue)
+    mockUpdate.mockImplementation(() => chain);
+    mockEq.mockImplementation(() => chain);
+    mockInsert.mockImplementation(() => chain);
+    mockSelect.mockImplementation(() => chain);
+    mockFrom.mockImplementation(() => chain);
     mockGetUser.mockResolvedValue({
       data: { user: { id: "user-1" } },
     });
-    // Default: operations succeed
-    mockEq.mockResolvedValue({ error: null });
+    // Default terminal mocks
     mockSingle.mockResolvedValue({
       data: { id: "idea-123" },
       error: null,
@@ -219,13 +229,12 @@ describe("onboarding actions", () => {
     it("enhances a description for users who haven't completed onboarding", async () => {
       const { enhanceOnboardingDescription } = await import("./onboarding");
 
-      // Mock chain: from("users").select(...).eq(...).single()
-      mockSelect.mockReturnValue({ eq: mockEq });
-      mockEq.mockReturnValue({ single: mockSingle });
+      // Chain methods return `chain` by default — just configure terminals
       mockSingle.mockResolvedValue({
         data: { onboarding_completed_at: null },
         error: null,
       });
+      mockGte.mockResolvedValue({ count: 0, error: null });
 
       const result = await enhanceOnboardingDescription({
         title: "My cool app",
@@ -250,8 +259,6 @@ describe("onboarding actions", () => {
     it("throws when user already completed onboarding", async () => {
       const { enhanceOnboardingDescription } = await import("./onboarding");
 
-      mockSelect.mockReturnValue({ eq: mockEq });
-      mockEq.mockReturnValue({ single: mockSingle });
       mockSingle.mockResolvedValue({
         data: { onboarding_completed_at: "2026-01-01T00:00:00Z" },
         error: null,
@@ -268,12 +275,11 @@ describe("onboarding actions", () => {
     it("rejects empty titles", async () => {
       const { enhanceOnboardingDescription } = await import("./onboarding");
 
-      mockSelect.mockReturnValue({ eq: mockEq });
-      mockEq.mockReturnValue({ single: mockSingle });
       mockSingle.mockResolvedValue({
         data: { onboarding_completed_at: null },
         error: null,
       });
+      mockGte.mockResolvedValue({ count: 0, error: null });
 
       await expect(
         enhanceOnboardingDescription({ title: "  ", description: "" })

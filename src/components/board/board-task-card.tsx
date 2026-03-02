@@ -35,7 +35,7 @@ interface BoardTaskCardProps {
   highlightQuery?: string;
   currentUserId: string;
   autoOpen?: boolean;
-  userBots?: User[];
+  ideaAgents?: User[];
   initialCoverUrl?: string;
   isReadOnly?: boolean;
   hasApiKey?: boolean;
@@ -75,7 +75,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   highlightQuery,
   currentUserId,
   autoOpen = false,
-  userBots = [],
+  ideaAgents = [],
   initialCoverUrl,
   isReadOnly = false,
   hasApiKey = false,
@@ -381,7 +381,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
           teamMembers={teamMembers}
           currentUserId={currentUserId}
           initialTab={initialTab}
-          userBots={userBots}
+          ideaAgents={ideaAgents}
           isReadOnly={isReadOnly}
           hasApiKey={hasApiKey}
         />

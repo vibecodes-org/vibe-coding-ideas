@@ -59,6 +59,17 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - Position calculation: `MAX(position) + 1000` in target column
 - Public boards have read-only guest access; non-team guests see `GuestBoardBanner` with option to request collaboration
 
+### Idea Agent Pool
+- `idea_agents` junction table: `(idea_id, bot_id, added_by)` with `UNIQUE(idea_id, bot_id)`
+- Team members allocate their active bots to an idea's shared pool; all team members can assign pooled bots to tasks
+- RLS: team members + public viewers SELECT; team members INSERT own active bots; adder or idea author DELETE
+- Trigger on collaborator removal: cleans up all bots that collaborator allocated
+- Trigger on agent removal: unassigns bot from all tasks in that idea
+- Server actions in `src/actions/idea-agents.ts`: `allocateAgent`, `removeIdeaAgent`
+- UI: `IdeaAgentsSection` component on idea detail page (between Collaborators and Description)
+- Board dropdown groups pooled agents by owner name instead of flat "My Agents"
+- MCP tools: `allocate_agent`, `remove_idea_agent`, `list_idea_agents` in `mcp-server/src/tools/idea-agents.ts`
+
 ### Collaboration Requests
 - `collaboration_requests` table with `pending`/`accepted`/`declined` status enum
 - Users request access → author accepts/rejects from idea detail page (`pending-requests.tsx`)
@@ -66,15 +77,16 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - Guards against concurrent responses via `.eq("status", "pending")`
 
 ### Discussions
-- `idea_discussions` + `idea_discussion_replies` tables for titled, threaded planning conversations per idea
-- Three statuses: `open` → `resolved` (concluded) or `converted` (promoted to board task)
-- Pinnable threads, denormalized `reply_count` + `last_activity_at` via triggers
+- `idea_discussions` + `idea_discussion_replies` + `discussion_votes` tables for titled, threaded planning conversations per idea
+- Four statuses: `open` → `resolved` (concluded), `ready_to_convert` (queued for agent), or `converted` (promoted to board task)
+- Pinnable threads, denormalized `reply_count` + `last_activity_at` + `upvotes` via triggers
 - `board_tasks.discussion_id` back-links converted discussions to their resulting tasks
 - `ideas.discussion_count` denormalized via trigger
 - Routes: `/ideas/[id]/discussions` (list), `/ideas/[id]/discussions/[discussionId]` (thread), `/ideas/[id]/discussions/new`
-- Server actions in `src/actions/discussions.ts`: createDiscussion, updateDiscussion, deleteDiscussion, createDiscussionReply, updateDiscussionReply, deleteDiscussionReply, convertDiscussionToTask
+- Server actions in `src/actions/discussions.ts`: createDiscussion, updateDiscussion, deleteDiscussion, createDiscussionReply, updateDiscussionReply, deleteDiscussionReply, toggleDiscussionVote, markReadyToConvert, convertDiscussionToTask
+- `convertDiscussionToTask` uses status guard (`.in("status", [...])`) to prevent concurrent conversion, with orphaned task cleanup on failure
 - RLS: team members can write; authenticated users can read public idea discussions
-- Notification types: `discussion`, `discussion_reply` (trigger-based, follows comment notification pattern)
+- Notification types: `discussion`, `discussion_reply`, `discussion_mention` (trigger-based); controlled by `discussions` notification preference (falls back to `comments`)
 
 ### Idea Attachments
 - `idea_attachments` table with `idea-attachments` private storage bucket (signed URLs for access)
@@ -100,11 +112,11 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 
 ## Database
 
-25 tables with RLS (`supabase/migrations/`):
+29 tables with RLS (`supabase/migrations/`):
 - **Core**: users, ideas, comments, collaborators, votes, notifications, feedback, idea_attachments
 - **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_checklist_items, board_task_activity, board_task_comments, board_task_attachments
-- **Discussions**: idea_discussions, idea_discussion_replies
-- **Agents**: bot_profiles
+- **Discussions**: idea_discussions, idea_discussion_replies, discussion_votes
+- **Agents**: bot_profiles, idea_agents
 - **AI**: ai_usage_log, ai_prompt_templates
 - **MCP/OAuth**: mcp_oauth_clients, mcp_oauth_codes
 - **Collaboration**: collaboration_requests
@@ -118,7 +130,7 @@ Key columns:
 
 ## Server Actions (src/actions/)
 
-14 files, 64 exported functions:
+16 files, 80 exported functions:
 - `ideas.ts` — create, update, updateStatus, updateIdeaFields (partial inline edit), delete
 - `board.ts` — columns (init, CRUD, reorder), tasks (CRUD, move, archive), labels (CRUD, assign), checklists (CRUD, toggle), task comments (create, update, delete)
 - `collaborators.ts` — requestCollaboration, withdrawRequest, respondToRequest, leaveCollaboration, addCollaborator, removeCollaborator
@@ -131,8 +143,9 @@ Key columns:
 - `admin.ts` — toggleAiEnabled, setUserAiDailyLimit
 - `users.ts` — deleteUser (admin only)
 - `prompt-templates.ts` — list, create, delete
-- `discussions.ts` — createDiscussion, updateDiscussion, deleteDiscussion, createDiscussionReply, updateDiscussionReply, deleteDiscussionReply, convertDiscussionToTask
+- `discussions.ts` — createDiscussion, updateDiscussion, deleteDiscussion, createDiscussionReply, updateDiscussionReply, deleteDiscussionReply, toggleDiscussionVote, markReadyToConvert, convertDiscussionToTask
 - `feedback.ts` — submitFeedback, updateFeedbackStatus, deleteFeedback
+- `idea-agents.ts` — allocateAgent, removeIdeaAgent
 
 ## Environment Variables
 
@@ -161,7 +174,7 @@ NOTIFICATION_WEBHOOK_SECRET
 
 ## MCP Server
 
-Two modes sharing 38 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI:
+Two modes sharing 49 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI:
 - **Local (stdio)**: `mcp-server/src/index.ts` — service-role client, bypasses RLS
 - **Remote (HTTP)**: `src/app/api/mcp/[[...transport]]/route.ts` — OAuth 2.1 + PKCE, per-user RLS
 
