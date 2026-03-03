@@ -596,11 +596,20 @@ export function AiGenerateDialog({
               />
             </div>
 
-            <ScrollArea className="h-[240px] rounded-md border p-3">
+            <div className="h-[240px] overflow-y-auto rounded-md border p-3">
               <div className="space-y-1.5">
                 {taskStatuses.map((task, i) => (
                   <div
                     key={i}
+                    ref={
+                      task.status === "creating"
+                        ? (el) =>
+                            el?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "nearest",
+                            })
+                        : undefined
+                    }
                     className={`flex items-center gap-2 text-sm ${
                       task.status === "pending"
                         ? "text-muted-foreground"
@@ -632,7 +641,7 @@ export function AiGenerateDialog({
                   </div>
                 ))}
               </div>
-            </ScrollArea>
+            </div>
 
             <p className="text-center text-xs text-muted-foreground">
               Tasks appear on the board as they&apos;re created.
