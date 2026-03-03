@@ -241,7 +241,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
       </div>
 
       {/* Status and Actions */}
-      <div className="mt-8 flex flex-wrap items-center gap-3">
+      <div className="mt-6 flex flex-wrap items-center gap-2">
         {isAuthor ? (
           <StatusSelect ideaId={idea.id} currentStatus={idea.status} />
         ) : (
