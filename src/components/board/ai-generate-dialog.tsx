@@ -601,6 +601,15 @@ export function AiGenerateDialog({
                 {taskStatuses.map((task, i) => (
                   <div
                     key={i}
+                    ref={
+                      task.status === "creating"
+                        ? (el) =>
+                            el?.scrollIntoView({
+                              behavior: "smooth",
+                              block: "nearest",
+                            })
+                        : undefined
+                    }
                     className={`flex items-center gap-2 text-sm ${
                       task.status === "pending"
                         ? "text-muted-foreground"
