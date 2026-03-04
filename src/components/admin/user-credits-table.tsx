@@ -67,14 +67,8 @@ export function UserCreditsTable({ userCredits, allPlatformLogs }: UserCreditsTa
     return map;
   }, [allPlatformLogs]);
 
-  // Filter to users with credits < 10 or platform usage
-  const filteredUsers = useMemo(() => {
-    return userCredits.filter((u) => {
-      const hasCreditsUsed = u.ai_starter_credits < 10;
-      const hasPlatformUsage = userStatsMap.has(u.id);
-      return hasCreditsUsed || hasPlatformUsage;
-    });
-  }, [userCredits, userStatsMap]);
+  // Show all non-bot users
+  const filteredUsers = userCredits;
 
   // Summary stats
   const summary = useMemo(() => {
@@ -88,7 +82,7 @@ export function UserCreditsTable({ userCredits, allPlatformLogs }: UserCreditsTa
       }
     }
     return { usersWithCredits, totalPlatformCost };
-  }, [filteredUsers, userStatsMap]);
+  }, [userCredits, userStatsMap]);
 
   if (filteredUsers.length === 0) return null;
 
