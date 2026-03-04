@@ -41,7 +41,6 @@ const SUGGESTED_TAGS = [
   "tool",
   "game",
   "automation",
-  "open-source",
 ];
 
 interface OnboardingDialogProps {
