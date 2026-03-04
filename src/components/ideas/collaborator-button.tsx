@@ -85,6 +85,7 @@ export function CollaboratorButton({ ideaId, isCollaborator, isAuthor, pendingRe
         });
       }}
       disabled={isPending}
+      size="sm"
       className="gap-2"
     >
       <UserPlus className="h-4 w-4" />

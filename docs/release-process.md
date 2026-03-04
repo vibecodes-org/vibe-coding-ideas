@@ -34,11 +34,11 @@ feature/cool-thing ──PR──► develop ──PR──► master
 
 ---
 
-## One-Time Setup
+## One-Time Setup (Completed)
 
-These steps create the branch structure, configure Vercel, and set up branch protection. You only do this once.
+All setup steps below have been completed. This section is kept as a reference for how the infrastructure was configured.
 
-### 1. Create the develop branch
+### 1. Create the develop branch ✅
 
 ```bash
 git checkout master
@@ -47,69 +47,62 @@ git checkout -b develop
 git push -u origin develop
 ```
 
-### 2. Tag the current release
+### 2. Tag the current release ✅
+
+Tagged as `v1.0.0` on master.
 
 ```bash
-git checkout master
 git tag v1.0.0
 git push origin v1.0.0
 ```
 
-### 3. Configure Vercel staging deployment
+### 3. Configure Vercel staging deployment ✅
 
-In the Vercel dashboard:
-1. Go to **Settings → Domains**
-2. Add `staging.vibecodes.co.uk`
-3. Set the **Git Branch** for that domain to `develop`
+- Domain `staging.vibecodes.co.uk` added in Vercel dashboard (Settings → Domains), linked to the `develop` branch
+- DNS CNAME record for `staging.vibecodes.co.uk` points to Vercel (`76.76.21.21`)
+- Staging is behind Vercel Deployment Protection (team members only)
 
-Also add a DNS record for `staging.vibecodes.co.uk` pointing to Vercel (same as your main domain).
+Deployments:
+- Pushes to `master` → deploy to `vibecodes.co.uk` (production)
+- Pushes to `develop` → deploy to `staging.vibecodes.co.uk` (staging)
 
-Now:
-- Pushes to `master` → deploy to `vibecodes.co.uk`
-- Pushes to `develop` → deploy to `staging.vibecodes.co.uk`
+### 4. Staging Supabase project ✅
 
-### 4. Set up a staging Supabase project
+The staging/test Supabase project is **`vibecodes-test`** (project ID: `zndmozhgtuerxvkuktdh`). This is also used by the E2E test suite.
 
-1. Go to [supabase.com/dashboard](https://supabase.com/dashboard)
-2. Create a new project called "VibeCodes Staging" (free tier allows 2 active projects)
-3. Run all migrations against it (use `supabase db push` after linking, or the Supabase SQL Editor)
-4. Copy the project's URL and anon key
+| Project | Supabase Name | Purpose |
+|---------|--------------|---------|
+| Production | `vibe-coding-ideas` (`irqbqxspxxzvuczhujzg`) | Live site — `vibecodes.co.uk` |
+| Staging/Test | `vibecodes-test` (`zndmozhgtuerxvkuktdh`) | Staging site + E2E tests |
 
-### 5. Add staging environment variables on Vercel
+**Important**: When new migrations are merged into `develop`, they must be **manually applied** to `vibecodes-test` before the feature will work on staging. See [Database Migrations](#database-migrations) below.
 
-In Vercel → Settings → Environment Variables, add these for the **Preview** environment (which `develop` will use):
+### 5. Staging environment variables on Vercel ✅
 
-- `NEXT_PUBLIC_SUPABASE_URL` → your staging Supabase URL
-- `NEXT_PUBLIC_SUPABASE_ANON_KEY` → your staging anon key
-- `SUPABASE_SERVICE_ROLE_KEY` → your staging service role key
+Vercel Preview environment variables point at the `vibecodes-test` Supabase project:
+
+- `NEXT_PUBLIC_SUPABASE_URL` → staging Supabase URL
+- `NEXT_PUBLIC_SUPABASE_ANON_KEY` → staging anon key
+- `SUPABASE_SERVICE_ROLE_KEY` → staging service role key
 - `NEXT_PUBLIC_APP_URL` → `https://staging.vibecodes.co.uk`
 
-Keep the Production environment variables pointing at the real Supabase project.
+Production environment variables point at `vibe-coding-ideas` (the production Supabase project).
 
-### 6. Set up branch protection on GitHub
+### 6. Branch protection on GitHub ✅
 
-Go to **GitHub → Settings → Branches → Branch protection rules**:
+**`master`:**
+- Require pull request reviews (1 approval, dismiss stale, require code owner review)
+- Require status checks: `e2e-tests (Desktop Chrome)`, `e2e-tests (Desktop Firefox)`, `e2e-tests (Mobile Chrome)`
+- No force pushes, no deletions
 
-**For `master`:**
-- Require pull request reviews before merging
-- Require status checks to pass (E2E tests)
-- Restrict who can push (no direct pushes)
+**`develop`:**
+- Require pull request reviews (1 approval, dismiss stale, require code owner review)
+- Enforce for admins
+- No force pushes, no deletions
 
-**For `develop`:**
-- Require pull request reviews before merging
-- Require status checks to pass
+### 7. E2E workflow ✅
 
-### 7. Update the E2E workflow
-
-Update `.github/workflows/e2e.yml` to also trigger on PRs to `develop`:
-
-```yaml
-on:
-  push:
-    branches: [master, develop]
-  pull_request:
-    branches: [master, develop]
-```
+E2E tests trigger on pushes to `master` and PRs to `master`. The `develop` branch was removed from E2E triggers to save CI minutes — features are tested via PRs to master instead.
 
 ---
 

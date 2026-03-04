@@ -42,7 +42,7 @@ export function InlineIdeaTags({
   if (!isAuthor) {
     if (initialTags.length === 0) return null;
     return (
-      <div className="mt-5 flex flex-wrap gap-2">
+      <div className="mt-4 flex flex-wrap gap-2">
         {initialTags.map((tag) => (
           <Badge key={tag} variant="secondary">
             {tag}
@@ -53,7 +53,7 @@ export function InlineIdeaTags({
   }
 
   return (
-    <div className="mt-5">
+    <div className="mt-4">
       <TagInput value={tags} onChange={handleTagsChange} />
     </div>
   );

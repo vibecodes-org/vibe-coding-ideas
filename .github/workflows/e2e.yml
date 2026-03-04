@@ -126,4 +126,3 @@ jobs:
               -H "Content-Type: application/json" \
               -d "{\"task_id\": \"${TASK_ID}\", \"label_id\": \"${BUG_LABEL_ID}\"}"
           fi
-

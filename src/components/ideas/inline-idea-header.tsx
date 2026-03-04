@@ -69,7 +69,7 @@ export function InlineIdeaHeader({
   if (!isAuthor) {
     return (
       <div className="flex items-center gap-2">
-        <h1 className="text-3xl font-bold tracking-tight">{initialTitle}</h1>
+        <h1 className="text-3xl font-bold tracking-tight min-w-0 break-words">{initialTitle}</h1>
         {initialVisibility === "private" && (
           <Badge variant="outline" className="gap-1">
             <Lock className="h-3 w-3" />
@@ -87,7 +87,7 @@ export function InlineIdeaHeader({
         onChange={(e) => setTitle(e.target.value)}
         onBlur={handleTitleBlur}
         onKeyDown={handleTitleKeyDown}
-        className="border-none p-0 text-3xl font-bold tracking-tight shadow-none focus-visible:ring-0 h-auto"
+        className="border-none px-2 py-2 text-3xl font-bold tracking-tight shadow-none focus-visible:ring-0 h-auto leading-snug min-w-0"
       />
       <Badge
         variant="outline"
