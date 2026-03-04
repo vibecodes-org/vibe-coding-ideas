@@ -35,6 +35,8 @@ interface TaskEditDialogProps {
   currentUserId: string;
   ideaAgents?: User[];
   hasApiKey?: boolean;
+  hasByokKey?: boolean;
+  starterCredits?: number;
   ideaDescription?: string;
 }
 
@@ -48,6 +50,8 @@ export function TaskEditDialog({
   currentUserId,
   ideaAgents = [],
   hasApiKey = false,
+  hasByokKey = false,
+  starterCredits = 0,
   ideaDescription = "",
 }: TaskEditDialogProps) {
   const [title, setTitle] = useState("");
@@ -355,7 +359,7 @@ export function TaskEditDialog({
                     className="h-6 gap-1 px-2 text-xs text-muted-foreground"
                     onClick={handleEnhanceDescription}
                     disabled={enhancing}
-                    title="Enhance with AI"
+                    title={hasByokKey ? "Enhance with AI — using your API key" : `Enhance with AI — ${starterCredits} free credit${starterCredits !== 1 ? "s" : ""} remaining`}
                   >
                     {enhancing ? (
                       <Loader2 className="h-3 w-3 animate-spin" />

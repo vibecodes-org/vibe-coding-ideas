@@ -42,6 +42,8 @@ interface BoardTaskCardProps {
   initialCoverUrl?: string;
   isReadOnly?: boolean;
   hasApiKey?: boolean;
+  hasByokKey?: boolean;
+  starterCredits?: number;
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
@@ -82,6 +84,8 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   initialCoverUrl,
   isReadOnly = false,
   hasApiKey = false,
+  hasByokKey = false,
+  starterCredits = 0,
 }: BoardTaskCardProps) {
   const botRoles = useBotRoles();
   // Use context for auto-open — bypasses memo chain and reacts to URL navigation
@@ -389,6 +393,8 @@ export const BoardTaskCard = memo(function BoardTaskCard({
           ideaAgents={ideaAgents}
           isReadOnly={isReadOnly}
           hasApiKey={hasApiKey}
+          hasByokKey={hasByokKey}
+          starterCredits={starterCredits}
         />
       )}
       {/* Cover image lightbox */}

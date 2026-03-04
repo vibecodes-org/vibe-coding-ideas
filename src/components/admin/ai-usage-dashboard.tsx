@@ -25,11 +25,14 @@ import {
 } from "@/components/ui/table";
 import { formatRelativeTime } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import type { UsageLogWithUser } from "@/app/(main)/admin/page";
+import { UserCreditsTable } from "./user-credits-table";
+import type { UsageLogWithUser, UserCreditInfo, PlatformLogEntry } from "@/app/(main)/admin/page";
 
 interface AiUsageDashboardProps {
   usageLogs: UsageLogWithUser[];
   filters: { from: string; to: string; action: string; source: string };
+  userCredits: UserCreditInfo[];
+  allPlatformLogs: PlatformLogEntry[];
 }
 
 const ACTION_LABELS: Record<string, string> = {
@@ -40,13 +43,15 @@ const ACTION_LABELS: Record<string, string> = {
   enhance_task_description: "Enhance Task Description",
 };
 
-function estimateCost(inputTokens: number, outputTokens: number): number {
+export function estimateCost(inputTokens: number, outputTokens: number): number {
   return (inputTokens * 3) / 1_000_000 + (outputTokens * 15) / 1_000_000;
 }
 
 export function AiUsageDashboard({
   usageLogs,
   filters,
+  userCredits,
+  allPlatformLogs,
 }: AiUsageDashboardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -257,6 +262,9 @@ export function AiUsageDashboard({
           </Table>
         </div>
       </div>
+
+      {/* User Credits & Platform Costs — all-time, not affected by filters */}
+      <UserCreditsTable userCredits={userCredits} allPlatformLogs={allPlatformLogs} />
     </div>
   );
 }

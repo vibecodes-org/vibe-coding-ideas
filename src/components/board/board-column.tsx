@@ -44,6 +44,8 @@ interface BoardColumnProps {
   ideaAgents?: User[];
   coverImageUrls?: Record<string, string>;
   hasApiKey?: boolean;
+  hasByokKey?: boolean;
+  starterCredits?: number;
   ideaDescription?: string;
   isReadOnly?: boolean;
   isDragTarget?: boolean;
@@ -62,6 +64,8 @@ export const BoardColumn = memo(function BoardColumn({
   ideaAgents = [],
   coverImageUrls = {},
   hasApiKey = false,
+  hasByokKey = false,
+  starterCredits = 0,
   ideaDescription = "",
   isReadOnly = false,
   isDragTarget = false,
@@ -223,6 +227,8 @@ export const BoardColumn = memo(function BoardColumn({
                 initialCoverUrl={task.cover_image_path ? coverImageUrls[task.cover_image_path] : undefined}
                 isReadOnly={isReadOnly}
                 hasApiKey={hasApiKey}
+                hasByokKey={hasByokKey}
+                starterCredits={starterCredits}
               />
             ))}
           </SortableContext>
@@ -256,6 +262,8 @@ export const BoardColumn = memo(function BoardColumn({
             currentUserId={currentUserId}
             ideaAgents={ideaAgents}
             hasApiKey={hasApiKey}
+            hasByokKey={hasByokKey}
+            starterCredits={starterCredits}
             ideaDescription={ideaDescription}
           />
           <ColumnEditDialog

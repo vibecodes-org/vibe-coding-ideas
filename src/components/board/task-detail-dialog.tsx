@@ -45,6 +45,8 @@ interface TaskDetailDialogProps {
   ideaAgents?: User[];
   isReadOnly?: boolean;
   hasApiKey?: boolean;
+  hasByokKey?: boolean;
+  starterCredits?: number;
 }
 
 export function TaskDetailDialog({
@@ -60,6 +62,8 @@ export function TaskDetailDialog({
   ideaAgents = [],
   isReadOnly = false,
   hasApiKey = false,
+  hasByokKey = false,
+  starterCredits = 0,
 }: TaskDetailDialogProps) {
   const botRoles = useBotRoles();
   const ops = useBoardOps();
@@ -638,7 +642,7 @@ export function TaskDetailDialog({
                         onMouseDown={() => { skipBlurRef.current = true; }}
                         onClick={handleEnhanceDescription}
                         disabled={enhancing}
-                        title="Enhance with AI"
+                        title={hasByokKey ? "Enhance with AI — using your API key" : `Enhance with AI — ${starterCredits} free credit${starterCredits !== 1 ? "s" : ""} remaining`}
                       >
                         {enhancing ? (
                           <Loader2 className="h-3 w-3 animate-spin" />

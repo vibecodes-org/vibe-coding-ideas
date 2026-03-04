@@ -20,6 +20,8 @@ interface IdeaActionsMenuProps {
   isAuthor: boolean;
   canDelete: boolean;
   hasApiKey: boolean;
+  hasByokKey?: boolean;
+  starterCredits?: number;
   bots: BotProfile[];
 }
 
@@ -30,6 +32,8 @@ export function IdeaActionsMenu({
   isAuthor,
   canDelete,
   hasApiKey,
+  hasByokKey = false,
+  starterCredits = 0,
   bots,
 }: IdeaActionsMenuProps) {
   return (
@@ -58,6 +62,8 @@ export function IdeaActionsMenu({
               bots={bots}
               variant="dropdown"
               disabled={!hasApiKey}
+              hasByokKey={hasByokKey}
+              starterCredits={starterCredits}
             />
           </DropdownMenuItem>
         )}

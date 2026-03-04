@@ -6,7 +6,7 @@ import { AiUsageDashboard } from "./ai-usage-dashboard";
 import { FeedbackDashboard } from "./feedback-dashboard";
 import { AdminAgentsDashboard } from "./admin-agents-dashboard";
 import { AdminTeamsDashboard } from "./admin-teams-dashboard";
-import type { UsageLogWithUser, FeedbackWithUser } from "@/app/(main)/admin/page";
+import type { UsageLogWithUser, FeedbackWithUser, UserCreditInfo, PlatformLogEntry } from "@/app/(main)/admin/page";
 import type { BotProfile, FeaturedTeamWithAgents } from "@/types";
 
 interface AdminTabsProps {
@@ -19,6 +19,8 @@ interface AdminTabsProps {
   adminAgents: BotProfile[];
   featuredTeams: FeaturedTeamWithAgents[];
   communityAgents: BotProfile[];
+  userCredits: UserCreditInfo[];
+  allPlatformLogs: PlatformLogEntry[];
 }
 
 export function AdminTabs({
@@ -31,6 +33,8 @@ export function AdminTabs({
   adminAgents,
   featuredTeams,
   communityAgents,
+  userCredits,
+  allPlatformLogs,
 }: AdminTabsProps) {
   const router = useRouter();
 
@@ -62,7 +66,7 @@ export function AdminTabs({
         <TabsTrigger value="teams">Teams</TabsTrigger>
       </TabsList>
       <TabsContent value="ai-usage" className="mt-6">
-        <AiUsageDashboard usageLogs={usageLogs} filters={usageFilters} />
+        <AiUsageDashboard usageLogs={usageLogs} filters={usageFilters} userCredits={userCredits} allPlatformLogs={allPlatformLogs} />
       </TabsContent>
       <TabsContent value="feedback" className="mt-6">
         <FeedbackDashboard feedback={feedback} filters={feedbackFilters} />
