@@ -42,12 +42,17 @@ export function PromptBuilder({
 
   // Track last generated text to detect manual raw edits
   const lastGenerated = useRef(value);
+  const isInitialMount = useRef(true);
 
   // Regenerate prompt when role or fields change in builder mode
   useEffect(() => {
     if (mode === "builder") {
       const generated = generatePromptFromFields(role, fields);
       lastGenerated.current = generated;
+      if (isInitialMount.current) {
+        isInitialMount.current = false;
+        return; // Don't call onChange on mount — preserve original format
+      }
       onChange(generated);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
