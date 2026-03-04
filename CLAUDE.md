@@ -80,7 +80,7 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - `addFeaturedTeam(teamId)` clones each team agent into user's account, skipping duplicate roles
 - Agent profile pages at `/agents/[id]` — private if not published (except owner); shows stats, skills, prompt display, contributing ideas
 - Components in `src/components/agents/`: agents-hub, my-agents-grid, agent-card, create-agent-dialog, edit-agent-dialog, empty-state, community-tab, featured-teams, agent-vote-button, clone-agent-button, agent-profile
-- Admin components in `src/components/admin/`: admin-agents-dashboard, create-admin-agent-dialog, admin-teams-dashboard, team-editor-dialog
+- Admin components in `src/components/admin/`: admin-agents-dashboard, create-admin-agent-dialog, admin-teams-dashboard, team-editor-dialog, user-credits-table
 - Server actions in `src/actions/bots.ts`: createBot (extended with bio/skills), updateBot (extended with bio/skills/is_published), toggleAgentVote, cloneAgent, addFeaturedTeam
 - Admin actions in `src/actions/admin-agents.ts`: createAdminAgent, updateAdminAgent, deleteAdminAgent, createFeaturedTeam, updateFeaturedTeam, deleteFeaturedTeam, toggleFeaturedTeamActive, setTeamAgents
 - VibeCodes system user (`VIBECODES_USER_ID` in constants.ts) owns admin agents; admin agents auto-published
@@ -125,13 +125,15 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 
 ### AI Starter Credits
 - New users get 10 lifetime AI credits (`users.ai_starter_credits`, default 10)
-- `requireAiAccess()` in `src/actions/ai.ts`: BYOK key → platform key with credits → error
-- `getAiAccess()` returns `{ hasApiKey, starterCredits, canUseAi }` for UI gating
+- `resolveAiProvider()` in `src/lib/ai-helpers.ts`: shared access resolution for both server actions and API routes — BYOK key → platform key with credits → error. Returns discriminated union `{ ok: true, anthropic, keyType } | { ok: false, error, status }`
+- `requireAiAccess()` in `src/actions/ai.ts` wraps `resolveAiProvider()` for server actions (throws on failure)
+- `getAiAccess()` returns `{ canUseAi, hasByokKey, starterCredits }` for UI gating — `canUseAi` means BYOK or credits available, `hasByokKey` means user has their own Anthropic API key
 - `getPlatformAnthropicProvider()` in `src/lib/ai-helpers.ts` uses `ANTHROPIC_API_KEY` env var
 - `decrement_starter_credit` RPC atomically decrements; `grant_starter_credits` RPC is admin-only
 - Onboarding enhance is a separate freebie — doesn't deduct credits
 - Daily safety cap: `PLATFORM_AI_DAILY_LIMIT` env var (default 50) prevents abuse
-- Credit badge shown on AI Generate button when user has credits but no BYOK key
+- Credit badge shown on AI Generate button when `!hasByokKey && starterCredits > 0`
+- Admin credits dashboard (`/admin?tab=credits`): view/grant credits via `UserCreditsTable` component
 
 ### Validation
 - `src/lib/validation.ts` — all server actions validate before DB ops
@@ -158,7 +160,7 @@ Key columns:
 
 ## Server Actions (src/actions/)
 
-16 files, 80 exported functions:
+18 files, 94 exported functions:
 - `ideas.ts` — create, update, updateStatus, updateIdeaFields (partial inline edit), delete
 - `board.ts` — columns (init, CRUD, reorder), tasks (CRUD, move, archive), labels (CRUD, assign), checklists (CRUD, toggle), task comments (create, update, delete)
 - `collaborators.ts` — requestCollaboration, withdrawRequest, respondToRequest, leaveCollaboration, addCollaborator, removeCollaborator
@@ -175,6 +177,7 @@ Key columns:
 - `discussions.ts` — createDiscussion, updateDiscussion, deleteDiscussion, createDiscussionReply, updateDiscussionReply, deleteDiscussionReply, toggleDiscussionVote, markReadyToConvert, convertDiscussionToTask
 - `feedback.ts` — submitFeedback, updateFeedbackStatus, deleteFeedback
 - `idea-agents.ts` — allocateAgent, removeIdeaAgent
+- `onboarding.ts` — completeOnboarding, enhanceOnboardingDescription, generateOnboardingClarifyingQuestions, enhanceOnboardingWithContext
 
 ## Environment Variables
 
@@ -248,4 +251,11 @@ Auto-inject `idea_id` into MCP tool calls from `.vibecodes/config.json`.
 
 ## Testing Convention
 
-Write tests for all new pure logic, validators, parsers, utilities. Tests co-located as `*.test.ts`. Component changes verified via build + manual testing. Currently 16 unit test files (14 in `src/` + 2 in `mcp-server/`) and 42 E2E spec files across 15 directories.
+Write tests for all new pure logic, validators, parsers, utilities. Tests co-located as `*.test.ts`. Component changes verified via build + manual testing. Currently 23 unit test files (18 in `src/` + 5 in `mcp-server/src/`) and 43 E2E spec files across 21 directories.
+
+### E2E Test Conventions
+- Shared constants in `e2e/fixtures/constants.ts`: `EXPECT_TIMEOUT` (15s)
+- `getTestUserId()` helper in `e2e/fixtures/test-data.ts` for user lookups
+- `scopedTitle()` for unique test data (replaces `[E2E]` prefix)
+- Scope locators to `page.getByRole("main")` to avoid Playwright strict mode violations from sidebar matches
+- Playwright config: `fullyParallel: false`, `retries: 0` locally (2 in CI), `expect.timeout: 5_000` default

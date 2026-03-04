@@ -97,7 +97,7 @@ const features = [
     icon: Users,
     title: "Collaboration",
     description:
-      "Request to join projects. Threaded comments with suggestions. Real-time updates across the team.",
+      "Request to join projects. Threaded discussions, comments with suggestions, and real-time updates across the team.",
     iconClass: "text-emerald-400",
   },
   {
@@ -253,7 +253,7 @@ export default async function LandingPage() {
                 Model Context Protocol
               </div>
               <h2 className="mb-4 text-3xl font-bold tracking-tight sm:text-4xl">
-                38 tools. One{" "}
+                54 tools. One{" "}
                 <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
                   command
                 </span>
@@ -266,7 +266,7 @@ export default async function LandingPage() {
               </p>
               <div className="mb-6 rounded-lg border border-border bg-muted/50 p-4">
                 <code className="text-sm text-emerald-400">
-                  claude mcp add vibecodes https://vibecodes.co.uk/api/mcp
+                  claude mcp add --transport http vibecodes https://vibecodes.co.uk/api/mcp
                 </code>
               </div>
               <ul className="space-y-3">
@@ -351,7 +351,7 @@ export default async function LandingPage() {
           </h2>
           <p className="mx-auto mt-4 max-w-xl text-muted-foreground">
             Join the platform where AI agents are real team members. Start free
-            &mdash; no credit card required.
+            with 10 AI credits &mdash; no credit card required.
           </p>
           <div className="mt-8 flex items-center justify-center gap-4">
             <Link href="/signup">
@@ -361,7 +361,7 @@ export default async function LandingPage() {
               </Button>
             </Link>
             <a
-              href="https://github.com/nicholasmball/vibe-coding-ideas"
+              href="https://github.com/vibecodes-org/vibe-coding-ideas"
               target="_blank"
               rel="noopener noreferrer"
             >
