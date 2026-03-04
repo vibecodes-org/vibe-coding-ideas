@@ -2,6 +2,31 @@ import { supabaseAdmin } from "./supabase-admin";
 
 const E2E_PREFIX = "[E2E]";
 
+const TEST_USER_EMAILS: Record<string, string> = {
+  userA: process.env.TEST_USER_A_EMAIL ?? "test-user-a@vibecodes-test.local",
+  userB: process.env.TEST_USER_B_EMAIL ?? "test-user-b@vibecodes-test.local",
+  admin: process.env.TEST_ADMIN_EMAIL ?? "test-admin@vibecodes-test.local",
+  fresh: process.env.TEST_FRESH_EMAIL ?? "test-fresh@vibecodes-test.local",
+};
+
+/** Look up a test user's ID by key (userA, userB, admin, fresh) */
+export async function getTestUserId(key: string): Promise<string> {
+  const email = TEST_USER_EMAILS[key];
+  if (!email) throw new Error(`Unknown test user key: ${key}`);
+  const { data, error } = await supabaseAdmin
+    .from("users")
+    .select("id")
+    .eq("email", email)
+    .maybeSingle();
+  if (error || !data) throw new Error(`Test user "${key}" (${email}) not found`);
+  return data.id;
+}
+
+/** Create a unique scoped title for test data to avoid collisions between parallel runs */
+export function scopedTitle(base: string): string {
+  return `${E2E_PREFIX} ${base} ${Date.now()}`;
+}
+
 /** Create a test idea with [E2E] prefix for reliable cleanup */
 export async function createTestIdea(
   authorId: string,
