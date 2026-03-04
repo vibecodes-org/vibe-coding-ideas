@@ -2,8 +2,9 @@ import { streamText } from "ai";
 import { createClient } from "@/lib/supabase/server";
 import {
   AI_MODEL,
-  getAnthropicProvider,
   logAiUsage,
+  decrementStarterCredit,
+  resolveAiProvider,
 } from "@/lib/ai-helpers";
 
 export const maxDuration = 300; // Streaming keeps the connection alive; allow generous time
@@ -19,18 +20,11 @@ export async function POST(req: Request) {
       return Response.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const { data: profile } = await supabase
-      .from("users")
-      .select("encrypted_anthropic_key")
-      .eq("id", user.id)
-      .single();
-
-    if (!profile?.encrypted_anthropic_key) {
-      return Response.json(
-        { error: "No API key configured — add your Anthropic key in your profile settings" },
-        { status: 403 }
-      );
+    const resolved = await resolveAiProvider(supabase, user.id);
+    if (!resolved.ok) {
+      return Response.json({ error: resolved.error }, { status: resolved.status });
     }
+    const { anthropic, keyType } = resolved;
 
     const body = await req.json();
     const { ideaId, prompt, personaPrompt, answers, previousEnhanced, refinementFeedback } = body as {
@@ -45,8 +39,6 @@ export async function POST(req: Request) {
     if (!ideaId || !prompt) {
       return Response.json({ error: "Missing ideaId or prompt" }, { status: 400 });
     }
-
-    const anthropic = getAnthropicProvider(profile.encrypted_anthropic_key);
 
     const { data: idea } = await supabase
       .from("ideas")
@@ -120,7 +112,11 @@ Use the answers above to inform your enhanced description. Make the enhancement 
           outputTokens: usage.outputTokens ?? 0,
           model: AI_MODEL,
           ideaId,
+          keyType,
         });
+        if (keyType === "platform") {
+          await decrementStarterCredit(supabase, user.id);
+        }
         if (finishReason === "length") {
           console.warn(`[AI Enhance] Output truncated for idea ${ideaId}`);
         }

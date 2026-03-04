@@ -20,14 +20,14 @@ interface NewDiscussionFormProps {
   ideaId: string;
   teamMembers?: User[];
   currentUserId?: string;
-  hasApiKey?: boolean;
+  canUseAi?: boolean;
 }
 
 export function NewDiscussionForm({
   ideaId,
   teamMembers = [],
   currentUserId,
-  hasApiKey = false,
+  canUseAi = false,
 }: NewDiscussionFormProps) {
   const router = useRouter();
   const [title, setTitle] = useState("");
@@ -35,7 +35,7 @@ export function NewDiscussionForm({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
 
-  const showAiEnhance = hasApiKey && body.trim().length > 0;
+  const showAiEnhance = canUseAi && body.trim().length > 0;
 
   async function handleEnhanceBody() {
     setEnhancing(true);

@@ -104,7 +104,7 @@ interface DiscussionThreadProps {
   convertedTaskId?: string | null;
   hasVoted?: boolean;
   teamMembers?: User[];
-  hasApiKey?: boolean;
+  canUseAi?: boolean;
 }
 
 export function DiscussionThread({
@@ -117,7 +117,7 @@ export function DiscussionThread({
   convertedTaskId,
   hasVoted = false,
   teamMembers = [],
-  hasApiKey = false,
+  canUseAi = false,
 }: DiscussionThreadProps) {
   const router = useRouter();
   const [isDeleting, setIsDeleting] = useState(false);
@@ -129,7 +129,7 @@ export function DiscussionThread({
   const config = STATUS_CONFIG[discussion.status];
   const StatusIcon = config.icon;
 
-  const showAiEnhance = hasApiKey && discussion.body.trim().length > 10;
+  const showAiEnhance = canUseAi && discussion.body.trim().length > 10;
 
   const mention = useMentionState(teamMembers);
 

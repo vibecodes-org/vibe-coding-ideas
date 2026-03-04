@@ -121,7 +121,9 @@ interface KanbanBoardProps {
   currentUserId: string;
   initialTaskId?: string;
   ideaAgents?: User[];
-  hasApiKey?: boolean;
+  canUseAi?: boolean;
+  hasByokKey?: boolean;
+  starterCredits?: number;
   botProfiles?: BotProfile[];
   coverImageUrls?: Record<string, string>;
   isReadOnly?: boolean;
@@ -229,7 +231,9 @@ export function KanbanBoard({
   currentUserId,
   initialTaskId,
   ideaAgents = [],
-  hasApiKey = false,
+  canUseAi = false,
+  hasByokKey = false,
+  starterCredits = 0,
   botProfiles = [],
   coverImageUrls = {},
   isReadOnly = false,
@@ -872,7 +876,9 @@ export function KanbanBoard({
         ideaId={ideaId}
         ideaDescription={ideaDescription}
         currentUserId={currentUserId}
-        hasApiKey={hasApiKey}
+        canUseAi={canUseAi}
+        hasByokKey={hasByokKey}
+        starterCredits={starterCredits}
         botProfiles={botProfiles}
         isReadOnly={isReadOnly}
       />
@@ -915,7 +921,7 @@ export function KanbanBoard({
                     initialTaskId={autoOpenTaskId}
                     ideaAgents={ideaAgents}
                     coverImageUrls={coverImageUrls}
-                    hasApiKey={hasApiKey}
+                    canUseAi={canUseAi}
                     ideaDescription={ideaDescription}
                     isReadOnly={isReadOnly}
                     isDragTarget={dragOverColumnId === filteredCol.id}

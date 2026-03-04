@@ -147,7 +147,7 @@ export default async function DiscussionDetailPage({ params }: PageProps) {
           convertedTaskId={convertedTaskId}
           hasVoted={hasVotedOnDiscussion}
           teamMembers={ideaTeam.allMentionable}
-          hasApiKey={!!(currentUser as User | null)?.encrypted_anthropic_key}
+          canUseAi={!!(currentUser as User | null)?.encrypted_anthropic_key || ((currentUser as User | null)?.ai_starter_credits ?? 0) > 0}
         />
       </BotRolesProvider>
     </div>

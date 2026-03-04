@@ -19,7 +19,7 @@ interface IdeaMobileActionsProps {
   ideaDescription: string;
   isAuthor: boolean;
   canDelete: boolean;
-  hasApiKey: boolean;
+  canUseAi: boolean;
   userBots: BotProfile[];
 }
 
@@ -29,7 +29,7 @@ export function IdeaMobileActions({
   ideaDescription,
   isAuthor,
   canDelete,
-  hasApiKey,
+  canUseAi,
   userBots,
 }: IdeaMobileActionsProps) {
   return (
@@ -56,7 +56,7 @@ export function IdeaMobileActions({
               ideaTitle={ideaTitle}
               currentDescription={ideaDescription}
               bots={userBots}
-              disabled={!hasApiKey}
+              disabled={!canUseAi}
               variant="dropdown"
             />
           </DropdownMenuItem>

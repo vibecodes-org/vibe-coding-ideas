@@ -66,7 +66,7 @@ export default async function NewDiscussionPage({ params }: PageProps) {
           ideaId={ideaId}
           teamMembers={ideaTeam.allMentionable}
           currentUserId={user.id}
-          hasApiKey={!!currentUserProfile?.encrypted_anthropic_key}
+          canUseAi={!!currentUserProfile?.encrypted_anthropic_key || (currentUserProfile?.ai_starter_credits ?? 0) > 0}
         />
       </BotRolesProvider>
     </div>

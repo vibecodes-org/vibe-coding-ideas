@@ -50,6 +50,7 @@ interface EnhanceIdeaDialogProps {
   ideaTitle: string;
   currentDescription: string;
   bots: BotProfile[];
+  onCreditUsed?: () => void;
 }
 
 export function EnhanceIdeaDialog({
@@ -59,6 +60,7 @@ export function EnhanceIdeaDialog({
   ideaTitle,
   currentDescription,
   bots,
+  onCreditUsed,
 }: EnhanceIdeaDialogProps) {
   const router = useRouter();
 
@@ -132,6 +134,7 @@ export function EnhanceIdeaDialog({
           prompt,
           getPersonaPrompt()
         );
+        onCreditUsed?.();
         setQuestions(result.questions);
         setAnswers({});
         setPhase("questions");
@@ -195,6 +198,9 @@ export function EnhanceIdeaDialog({
         setEnhancedText(text);
         setTruncated(true);
       }
+
+      // Credit was consumed server-side in onFinish — update the badge
+      onCreditUsed?.();
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to enhance description"

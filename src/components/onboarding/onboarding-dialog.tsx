@@ -372,11 +372,23 @@ export function OnboardingDialog({
                   </div>
                 )}
                 <div className="text-[13px] leading-relaxed text-muted-foreground">
-                  <span className="font-medium text-foreground">
-                    Looking good!
-                  </span>
-                  <br />
-                  Your avatar was imported from your account.
+                  {userAvatarUrl ? (
+                    <>
+                      <span className="font-medium text-foreground">
+                        Looking good!
+                      </span>
+                      <br />
+                      Your avatar was imported from your account.
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium text-foreground">
+                        No avatar yet
+                      </span>
+                      <br />
+                      You can add one later in your profile settings.
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -676,27 +688,12 @@ export function OnboardingDialog({
               </div>
 
               <div className="mb-4">
-                <div className="mb-1.5 flex items-center justify-between">
-                  <label className="flex items-center gap-1.5 text-[13px] font-medium text-foreground">
-                    Description
-                    <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
-                      optional
-                    </span>
-                  </label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-7 gap-1.5 px-2.5 text-[11px]"
-                    onClick={handleEnhance}
-                    disabled={enhancing}
-                  >
-                    <Sparkles
-                      className={`h-3 w-3 ${enhancing ? "animate-spin" : ""}`}
-                      style={enhancing ? { animationDuration: "2s" } : undefined}
-                    />
-                    {enhancing ? "Enhancing..." : "Enhance with AI"}
-                  </Button>
-                </div>
+                <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-foreground">
+                  Description
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                    optional
+                  </span>
+                </label>
                 <Textarea
                   placeholder="Briefly describe what it does, who it's for, or what problem it solves..."
                   value={ideaDescription}
@@ -728,11 +725,43 @@ export function OnboardingDialog({
                 </div>
               </div>
 
-              <div className="mb-6 flex items-center gap-2 rounded-lg border border-primary/10 bg-primary/[0.04] px-3.5 py-2.5 text-xs text-muted-foreground">
-                <Sparkles className="h-4 w-4 shrink-0 text-primary" />
-                AI can enhance your description and generate a full task board
-                after creation.
-              </div>
+              <button
+                type="button"
+                onClick={handleEnhance}
+                disabled={enhancing}
+                className="enhance-cta-border group mb-6 flex w-full items-center gap-3.5 rounded-xl bg-violet-500/[0.06] px-4 py-4 text-left transition-all hover:bg-violet-500/[0.10] hover:shadow-[0_0_32px_-6px_rgba(139,92,246,0.2)] disabled:pointer-events-none disabled:opacity-70"
+              >
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-violet-500/25 to-purple-500/[0.12]">
+                  <Sparkles
+                    className={cn(
+                      "h-5 w-5 text-violet-300",
+                      enhancing && "animate-spin"
+                    )}
+                    style={enhancing ? { animationDuration: "2s" } : undefined}
+                  />
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-semibold text-zinc-200">
+                      {enhancing ? "Enhancing your idea..." : "Enhance your Idea with AI"}
+                    </span>
+                    {!enhancing && (
+                      <span className="rounded bg-violet-500/20 border border-violet-500/30 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-300">
+                        Free
+                      </span>
+                    )}
+                  </div>
+                  <span className="text-xs text-zinc-500">
+                    {enhancing
+                      ? "This may take a moment..."
+                      : "AI can refine your description and auto-generate your task board"}
+                  </span>
+                </div>
+                <span className="flex shrink-0 items-center gap-1.5 rounded-lg bg-gradient-to-br from-violet-600 to-violet-700 px-4 py-2 text-[13px] font-semibold text-white shadow-[0_2px_8px_rgba(124,58,237,0.3)]">
+                  <Sparkles className="h-3.5 w-3.5" />
+                  {enhancing ? "Working..." : "Enhance"}
+                </span>
+              </button>
 
               <Button
                 className="w-full gap-2"

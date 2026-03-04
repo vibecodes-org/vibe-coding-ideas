@@ -5,6 +5,12 @@ import type { Database } from "@/types/database";
 
 export const AI_MODEL = "claude-sonnet-4-6";
 
+export type AiAccess = {
+  hasApiKey: boolean;
+  starterCredits: number;
+  canUseAi: boolean;
+};
+
 export type AiActionType =
   | "enhance_description"
   | "generate_questions"
@@ -25,6 +31,85 @@ export function getAnthropicProvider(encryptedKey: string | null) {
     throw new Error("Failed to decrypt API key — please re-save your key in profile settings");
   }
   return createAnthropic({ apiKey });
+}
+
+/** Create an Anthropic provider using the platform API key. */
+export function getPlatformAnthropicProvider() {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) {
+    throw new Error("Platform AI is not configured");
+  }
+  return createAnthropic({ apiKey });
+}
+
+/** Shared AI access resolution: BYOK key → platform key with credits → error.
+ *  Used by both server actions (requireAiAccess) and streaming API routes. */
+export type ResolvedAiAccess =
+  | { ok: true; anthropic: ReturnType<typeof createAnthropic>; keyType: "byok" | "platform" }
+  | { ok: false; error: string; status: number };
+
+export async function resolveAiProvider(
+  supabase: SupabaseClient<Database>,
+  userId: string
+): Promise<ResolvedAiAccess> {
+  const { data: profile } = await supabase
+    .from("users")
+    .select("encrypted_anthropic_key, ai_starter_credits")
+    .eq("id", userId)
+    .single();
+
+  if (!profile) return { ok: false, error: "User profile not found", status: 404 };
+
+  // Path 1: User has their own API key (BYOK)
+  if (profile.encrypted_anthropic_key) {
+    return { ok: true, anthropic: getAnthropicProvider(profile.encrypted_anthropic_key), keyType: "byok" };
+  }
+
+  // Path 2: User has starter credits — use platform key
+  if (profile.ai_starter_credits > 0) {
+    if (PLATFORM_AI_DAILY_LIMIT > 0) {
+      const todayCount = await getPlatformAiCallsToday(supabase, userId);
+      if (todayCount >= PLATFORM_AI_DAILY_LIMIT) {
+        return { ok: false, error: "Daily AI safety limit reached. Please try again tomorrow.", status: 429 };
+      }
+    }
+    return { ok: true, anthropic: getPlatformAnthropicProvider(), keyType: "platform" };
+  }
+
+  // Path 3: No key and no credits
+  return {
+    ok: false,
+    error: "You've used all your free AI credits. Add your API key in profile settings for unlimited use.",
+    status: 403,
+  };
+}
+
+/** Read remaining starter credits for a user. */
+export async function getStarterCreditsRemaining(
+  supabase: SupabaseClient<Database>,
+  userId: string
+): Promise<number> {
+  const { data } = await supabase
+    .from("users")
+    .select("ai_starter_credits")
+    .eq("id", userId)
+    .single();
+  return data?.ai_starter_credits ?? 0;
+}
+
+/** Atomically decrement a starter credit. Returns remaining count. */
+export async function decrementStarterCredit(
+  supabase: SupabaseClient<Database>,
+  userId: string
+): Promise<number> {
+  const { data, error } = await supabase.rpc("decrement_starter_credit", {
+    p_user_id: userId,
+  });
+  if (error) {
+    console.error("[AI Starter Credits] Failed to decrement:", error.message);
+    return 0;
+  }
+  return data ?? 0;
 }
 
 export async function logAiUsage(

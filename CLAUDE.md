@@ -123,6 +123,16 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - Respects `users.email_notifications` preference; skips bot users
 - Template: `src/lib/email-template.ts` (`buildEmailHtml`)
 
+### AI Starter Credits
+- New users get 10 lifetime AI credits (`users.ai_starter_credits`, default 10)
+- `requireAiAccess()` in `src/actions/ai.ts`: BYOK key → platform key with credits → error
+- `getAiAccess()` returns `{ hasApiKey, starterCredits, canUseAi }` for UI gating
+- `getPlatformAnthropicProvider()` in `src/lib/ai-helpers.ts` uses `ANTHROPIC_API_KEY` env var
+- `decrement_starter_credit` RPC atomically decrements; `grant_starter_credits` RPC is admin-only
+- Onboarding enhance is a separate freebie — doesn't deduct credits
+- Daily safety cap: `PLATFORM_AI_DAILY_LIMIT` env var (default 50) prevents abuse
+- Credit badge shown on AI Generate button when user has credits but no BYOK key
+
 ### Validation
 - `src/lib/validation.ts` — all server actions validate before DB ops
 - Limits: title 200, description 50K, comment 5K, discussion body 10K, discussion reply 5K, bio 500, tags 50 chars / 10 max, skills 30 chars / 10 max, team name 200, team description 1K
@@ -140,7 +150,7 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - **Collaboration**: collaboration_requests
 
 Key columns:
-- `users.is_bot`, `users.is_admin`, `users.ai_daily_limit` (default 10), `users.ai_enabled`, `users.default_board_columns`, `users.email_notifications`, `users.active_bot_id`, `users.encrypted_anthropic_key`
+- `users.is_bot`, `users.is_admin`, `users.ai_daily_limit` (default 10), `users.ai_enabled`, `users.ai_starter_credits` (default 10, lifetime), `users.default_board_columns`, `users.email_notifications`, `users.active_bot_id`, `users.encrypted_anthropic_key`
 - `ideas.visibility` (public/private) enforced by RLS
 - Denormalized counts on ideas (upvotes, comment_count, collaborator_count, discussion_count, attachment_count) via triggers
 - `admin_delete_user` RPC cascades from auth.users; `admin_delete_bot_user` + `admin_update_bot_user` RPCs for admin agent management
@@ -152,14 +162,14 @@ Key columns:
 - `ideas.ts` — create, update, updateStatus, updateIdeaFields (partial inline edit), delete
 - `board.ts` — columns (init, CRUD, reorder), tasks (CRUD, move, archive), labels (CRUD, assign), checklists (CRUD, toggle), task comments (create, update, delete)
 - `collaborators.ts` — requestCollaboration, withdrawRequest, respondToRequest, leaveCollaboration, addCollaborator, removeCollaborator
-- `ai.ts` — enhanceIdeaDescription, generateClarifyingQuestions, enhanceIdeaWithContext, applyEnhancedDescription, generateBoardTasks, enhanceTaskDescription, getAiRemainingCredits
+- `ai.ts` — enhanceIdeaDescription, generateClarifyingQuestions, enhanceIdeaWithContext, applyEnhancedDescription, generateBoardTasks, enhanceTaskDescription, enhanceDiscussionBody, getAiAccess, hasApiKey (deprecated)
 - `comments.ts` — create, incorporate, delete, update
 - `votes.ts` — toggleVote
 - `notifications.ts` — markNotificationsRead, markAllNotificationsRead, updateNotificationPreferences
 - `profile.ts` — updateProfile, updateDefaultBoardColumns, saveApiKey, removeApiKey
 - `bots.ts` — createBot, updateBot, deleteBot, listMyBots, toggleAgentVote, cloneAgent, addFeaturedTeam
 - `admin-agents.ts` — createAdminAgent, updateAdminAgent, deleteAdminAgent, createFeaturedTeam, updateFeaturedTeam, deleteFeaturedTeam, toggleFeaturedTeamActive, setTeamAgents
-- `admin.ts` — toggleAiEnabled, setUserAiDailyLimit
+- `admin.ts` — grantStarterCredits
 - `users.ts` — deleteUser (admin only)
 - `prompt-templates.ts` — list, create, delete
 - `discussions.ts` — createDiscussion, updateDiscussion, deleteDiscussion, createDiscussionReply, updateDiscussionReply, deleteDiscussionReply, toggleDiscussionVote, markReadyToConvert, convertDiscussionToTask
@@ -176,11 +186,36 @@ NOTIFICATION_WEBHOOK_SECRET
 
 ## Deployment
 
-- **Platform**: Vercel (zero-config Next.js, auto-deploys on push to `master`)
-- **Production domain**: `vibecodes.co.uk`
+See `docs/release-process.md` for full details.
+
+### Environments
+
+| Environment | URL | Branch | Database |
+|---|---|---|---|
+| Local | http://localhost:3000 | any | Docker Supabase |
+| Staging | https://staging.vibecodes.co.uk | `develop` | Staging Supabase project |
+| Production | https://vibecodes.co.uk | `master` | Production Supabase project |
+
+### Branching (Git Flow Lite)
+- Feature branches → PR to `develop` (staging) → PR to `master` (production)
+- Hotfixes branch directly from `master`
+- Vercel auto-deploys: Preview for `develop`, Production for `master`
+
+### Database Migrations
+- **Staging**: auto-applied via CI when migrations merge to `develop` (`supabase db push`)
+- **Production**: manual trigger via `workflow_dispatch` with approval gate (GitHub Environment `production`)
+- **PR validation**: naming convention, non-empty check, destructive keyword warnings — posts summary comment
+- Flow: feature branch → `develop` (staging DB, auto) → `master` (production DB, manual trigger)
+- Migrations cannot be rolled back — only corrective forward migrations
+- Required secrets: `SUPABASE_ACCESS_TOKEN`, `STAGING_PROJECT_REF`, `PROD_PROJECT_REF`
+- GitHub Environment `Production` with required reviewer (`nicholasmball`) gates production deploys
+- `migration-failure` label used for auto-created failure issues
+
+### CI & Monitoring
 - **CI**: GitHub Actions E2E tests (`.github/workflows/e2e.yml`) — 3-browser matrix (Desktop Chrome, Desktop Firefox, Mobile Chrome)
+- **CI**: GitHub Actions database migrations (`.github/workflows/migrations.yml`) — auto-apply staging, manual production, PR validation
 - **Monitoring**: Sentry (`@sentry/nextjs` with source maps), Vercel Analytics + Speed Insights
-- **No deployment gates** — E2E runs in parallel but doesn't block Vercel deployment
+- E2E runs on all PRs to both `develop` and `master` but doesn't block Vercel deployment
 
 ## Adding DB Tables
 

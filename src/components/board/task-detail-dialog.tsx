@@ -44,7 +44,9 @@ interface TaskDetailDialogProps {
   initialTab?: string;
   ideaAgents?: User[];
   isReadOnly?: boolean;
-  hasApiKey?: boolean;
+  canUseAi?: boolean;
+  hasByokKey?: boolean;
+  starterCredits?: number;
 }
 
 export function TaskDetailDialog({
@@ -59,7 +61,9 @@ export function TaskDetailDialog({
   initialTab,
   ideaAgents = [],
   isReadOnly = false,
-  hasApiKey = false,
+  canUseAi = false,
+  hasByokKey = false,
+  starterCredits = 0,
 }: TaskDetailDialogProps) {
   const botRoles = useBotRoles();
   const ops = useBoardOps();
@@ -280,7 +284,7 @@ export function TaskDetailDialog({
     }
   }
 
-  const showAiEnhance = hasApiKey && !isReadOnly && editingDescription && description.trim().length > 10;
+  const showAiEnhance = canUseAi && !isReadOnly && editingDescription && description.trim().length > 10;
 
   async function handleEnhanceDescription() {
     if (!title.trim() || !description.trim()) return;
@@ -638,7 +642,7 @@ export function TaskDetailDialog({
                         onMouseDown={() => { skipBlurRef.current = true; }}
                         onClick={handleEnhanceDescription}
                         disabled={enhancing}
-                        title="Enhance with AI"
+                        title={hasByokKey ? "Enhance with AI — using your API key" : `Enhance with AI — ${starterCredits} free credit${starterCredits !== 1 ? "s" : ""} remaining`}
                       >
                         {enhancing ? (
                           <Loader2 className="h-3 w-3 animate-spin" />

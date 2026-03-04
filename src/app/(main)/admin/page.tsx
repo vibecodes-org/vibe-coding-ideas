@@ -107,6 +107,23 @@ export default async function AdminPage({ searchParams }: PageProps) {
 
   const communityAgents = (communityData ?? []) as BotProfile[];
 
+  // Fetch ALL platform usage logs (unfiltered) for credits table — must be independent of filters
+  const { data: allPlatformLogs } = await supabase
+    .from("ai_usage_log")
+    .select("user_id, input_tokens, output_tokens, key_type")
+    .eq("key_type", "platform")
+    .order("created_at", { ascending: false })
+    .limit(5000);
+
+  // Fetch non-bot users with credit and key info for admin credits table
+  const { data: userCreditsData } = await supabase
+    .from("users")
+    .select("id, full_name, email, avatar_url, ai_starter_credits, encrypted_anthropic_key")
+    .eq("is_bot", false)
+    .order("full_name", { ascending: true });
+
+  const userCredits = (userCreditsData ?? []) as UserCreditInfo[];
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold">Admin</h1>
@@ -120,6 +137,8 @@ export default async function AdminPage({ searchParams }: PageProps) {
         adminAgents={adminAgents}
         featuredTeams={featuredTeams}
         communityAgents={communityAgents}
+        userCredits={userCredits}
+        allPlatformLogs={(allPlatformLogs ?? []) as PlatformLogEntry[]}
       />
     </div>
   );
@@ -142,6 +161,22 @@ export type UsageLogWithUser = {
     email: string;
     avatar_url: string | null;
   };
+};
+
+export type PlatformLogEntry = {
+  user_id: string;
+  input_tokens: number;
+  output_tokens: number;
+  key_type: string;
+};
+
+export type UserCreditInfo = {
+  id: string;
+  full_name: string | null;
+  email: string;
+  avatar_url: string | null;
+  ai_starter_credits: number;
+  encrypted_anthropic_key: string | null;
 };
 
 export type FeedbackWithUser = {

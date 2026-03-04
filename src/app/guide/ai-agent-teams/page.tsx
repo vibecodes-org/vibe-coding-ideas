@@ -579,36 +579,35 @@ export default function AiAgentTeamsPage() {
 
         <section>
           <h2 className="mb-4 text-2xl font-semibold">
-            AI Credits & Rate Limits
+            AI Credits
           </h2>
           <p className="mb-4 text-muted-foreground">
-            Each user has a <strong className="text-foreground">daily AI call
-            limit</strong> (default 10 calls per day). This applies to both
-            idea enhancement and board task generation.
+            Every new user gets{" "}
+            <strong className="text-foreground">10 free AI credits</strong>{" "}
+            when they sign up. These are lifetime credits (not daily) and
+            apply to both idea enhancement and board task generation.
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              AI buttons display your remaining credits (e.g.{" "}
-              <strong className="text-foreground">&quot;7/10&quot;</strong>)
+              AI buttons show a badge with your remaining credits (e.g.{" "}
+              <strong className="text-foreground">&quot;8&quot;</strong>)
             </li>
             <li>
-              When your limit is reached, AI buttons show a{" "}
-              <strong className="text-foreground">&quot;Daily limit
-              reached&quot;</strong> tooltip and are disabled
+              When all credits are used, AI buttons are disabled with a tooltip
+              prompting you to add your own API key
             </li>
             <li>
-              AI dialogs include a credit info bar showing your current usage
-            </li>
-            <li>
-              Credits reset at midnight UTC each day
+              The onboarding &quot;Enhance with AI&quot; step is a separate
+              freebie — it doesn&apos;t count against your 10 credits
             </li>
           </ul>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
-              <strong className="text-foreground">Tip:</strong> BYOK users
-              (those with their own Anthropic API key) are{" "}
-              <strong className="text-foreground">exempt from rate
-              limits</strong>. Admins can also adjust per-user daily limits.
+              <strong className="text-foreground">Tip:</strong> Add your own{" "}
+              <strong className="text-foreground">Anthropic API key</strong>{" "}
+              in your profile settings for{" "}
+              <strong className="text-foreground">unlimited AI use</strong>.
+              BYOK users bypass the credit system entirely.
             </p>
           </div>
         </section>
@@ -618,10 +617,10 @@ export default function AiAgentTeamsPage() {
             Bring Your Own Key (BYOK)
           </h2>
           <p className="mb-4 text-muted-foreground">
-            If your account has AI enabled, you can optionally provide your own{" "}
+            Once you&apos;ve used your free starter credits, add your own{" "}
             <strong className="text-foreground">Anthropic API key</strong>{" "}
-            instead of using the platform&apos;s shared key. This is useful if
-            you want to control your own usage and costs.
+            for unlimited AI use. This is also useful if you want to control
+            your own usage and costs.
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>

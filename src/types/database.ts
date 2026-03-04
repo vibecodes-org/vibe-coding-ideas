@@ -32,6 +32,7 @@ export type Database = {
           encrypted_anthropic_key: string | null;
           active_bot_id: string | null;
           ai_daily_limit: number;
+          ai_starter_credits: number;
           onboarding_completed_at: string | null;
           created_at: string;
           updated_at: string;
@@ -64,6 +65,7 @@ export type Database = {
           encrypted_anthropic_key?: string | null;
           active_bot_id?: string | null;
           ai_daily_limit?: number;
+          ai_starter_credits?: number;
           onboarding_completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -96,6 +98,7 @@ export type Database = {
           encrypted_anthropic_key?: string | null;
           active_bot_id?: string | null;
           ai_daily_limit?: number;
+          ai_starter_credits?: number;
           onboarding_completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
@@ -1596,6 +1599,19 @@ export type Database = {
       increment_times_cloned: {
         Args: {
           p_bot_id: string;
+        };
+        Returns: undefined;
+      };
+      decrement_starter_credit: {
+        Args: {
+          p_user_id: string;
+        };
+        Returns: number;
+      };
+      grant_starter_credits: {
+        Args: {
+          p_user_id: string;
+          p_credits: number;
         };
         Returns: undefined;
       };
