@@ -1,8 +1,11 @@
+import { EXPECT_TIMEOUT } from "../fixtures/constants";
 import { test, expect } from "../fixtures/auth";
 import {
   createTestIdea,
   createTestBoardWithTasks,
   cleanupTestData,
+  getTestUserId,
+  scopedTitle,
 } from "../fixtures/test-data";
 import { supabaseAdmin } from "../fixtures/supabase-admin";
 
@@ -13,19 +16,12 @@ let testIdeaId: string;
 const FAKE_ENCRYPTED_KEY = "aabbccdd:eeff0011:22334455";
 
 test.beforeAll(async () => {
-  const { data: users } = await supabaseAdmin
-    .from("users")
-    .select("id, full_name")
-    .in("full_name", ["Test User A"]);
-
-  const userA = users?.find((u) => u.full_name === "Test User A");
-  if (!userA) throw new Error("Test User A not found -- run global setup first");
-  userAId = userA.id;
+  userAId = await getTestUserId("userA");
 
   // Create a test idea with board and tasks
   const idea = await createTestIdea(userAId, {
-    title: "[E2E] AI Generate Board Idea",
-    description: "[E2E] An idea for testing AI board generation features.",
+    title: scopedTitle("AI Generate Board Idea"),
+    description: scopedTitle("An idea for testing AI board generation features."),
   });
   testIdeaId = idea.id;
   await createTestBoardWithTasks(testIdeaId, 2);
@@ -46,15 +42,16 @@ test.describe("AI Generate - Board Toolbar", () => {
     userAPage,
   }) => {
     await userAPage.goto(`/ideas/${testIdeaId}/board`);
+    const main = userAPage.getByRole("main");
 
     // Wait for board columns to load
-    await userAPage
+    await main
       .locator('[data-testid^="column-"]')
       .first()
-      .waitFor({ timeout: 15_000 });
+      .waitFor({ timeout: EXPECT_TIMEOUT });
 
     // AI Generate button should be visible (always shown for team members)
-    const aiButton = userAPage.getByRole("button", { name: /ai generate/i });
+    const aiButton = main.getByRole("button", { name: /ai generate/i });
     await expect(aiButton).toBeVisible();
   });
 
@@ -68,20 +65,21 @@ test.describe("AI Generate - Board Toolbar", () => {
       .eq("id", userAId);
 
     await userAPage.goto(`/ideas/${testIdeaId}/board`);
+    const main = userAPage.getByRole("main");
 
     // Wait for board columns to load
-    await userAPage
+    await main
       .locator('[data-testid^="column-"]')
       .first()
-      .waitFor({ timeout: 15_000 });
+      .waitFor({ timeout: EXPECT_TIMEOUT });
 
     // AI Generate button should be visible but with opacity-50
-    const aiButton = userAPage.getByRole("button", { name: /ai generate/i });
+    const aiButton = main.getByRole("button", { name: /ai generate/i });
     await expect(aiButton).toBeVisible();
     await expect(aiButton).toHaveClass(/opacity-50/);
   });
 
-  test("clicking disabled AI Generate button shows API key toast", async ({
+  test("disabled AI Generate button shows API key tooltip on hover", async ({
     userAPage,
   }) => {
     // Remove API key
@@ -91,20 +89,27 @@ test.describe("AI Generate - Board Toolbar", () => {
       .eq("id", userAId);
 
     await userAPage.goto(`/ideas/${testIdeaId}/board`);
+    const main = userAPage.getByRole("main");
 
     // Wait for board columns to load
-    await userAPage
+    await main
       .locator('[data-testid^="column-"]')
       .first()
-      .waitFor({ timeout: 15_000 });
+      .waitFor({ timeout: EXPECT_TIMEOUT });
 
-    // Click the button (it's not HTML-disabled, just opacity-50 with a toast handler)
-    await userAPage.getByRole("button", { name: /ai generate/i }).click();
+    // The button should have pointer-events-none (disabled style)
+    const generateButton = main.getByRole("button", { name: /ai generate/i });
+    await expect(generateButton).toBeVisible();
+    await expect(generateButton).toHaveClass(/pointer-events-none/);
 
-    // Toast should tell user to add API key
+    // Hover over the tooltip trigger (the wrapping span) to show the tooltip
+    const tooltipTrigger = generateButton.locator("xpath=ancestor::span[@tabindex='0']").first();
+    await tooltipTrigger.hover();
+
+    // Tooltip should tell user to add API key
     await expect(
-      userAPage.locator("[data-sonner-toast]").filter({ hasText: /api key/i })
-    ).toBeVisible({ timeout: 10_000 });
+      userAPage.getByRole("tooltip").filter({ hasText: /api key/i })
+    ).toBeVisible({ timeout: 5_000 });
   });
 
   test("opens AI Generate dialog with prompt field and mode selector", async ({
@@ -117,15 +122,16 @@ test.describe("AI Generate - Board Toolbar", () => {
       .eq("id", userAId);
 
     await userAPage.goto(`/ideas/${testIdeaId}/board`);
+    const main = userAPage.getByRole("main");
 
     // Wait for board columns to load
-    await userAPage
+    await main
       .locator('[data-testid^="column-"]')
       .first()
-      .waitFor({ timeout: 15_000 });
+      .waitFor({ timeout: EXPECT_TIMEOUT });
 
     // Click AI Generate button
-    await userAPage.getByRole("button", { name: /ai generate/i }).click();
+    await main.getByRole("button", { name: /ai generate/i }).click();
 
     // Dialog should open
     const dialog = userAPage.getByRole("dialog");
@@ -157,15 +163,16 @@ test.describe("AI Generate - Board Toolbar", () => {
       .eq("id", userAId);
 
     await userAPage.goto(`/ideas/${testIdeaId}/board`);
+    const main = userAPage.getByRole("main");
 
     // Wait for board columns to load
-    await userAPage
+    await main
       .locator('[data-testid^="column-"]')
       .first()
-      .waitFor({ timeout: 15_000 });
+      .waitFor({ timeout: EXPECT_TIMEOUT });
 
     // Open dialog
-    await userAPage.getByRole("button", { name: /ai generate/i }).click();
+    await main.getByRole("button", { name: /ai generate/i }).click();
     const dialog = userAPage.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: 10_000 });
 

@@ -1,17 +1,12 @@
+import { EXPECT_TIMEOUT } from "../fixtures/constants";
 import { test, expect } from "../fixtures/auth";
+import { getTestUserId } from "../fixtures/test-data";
 import { supabaseAdmin } from "../fixtures/supabase-admin";
 
 let userAId: string;
 
 test.beforeAll(async () => {
-  const { data: users } = await supabaseAdmin
-    .from("users")
-    .select("id, full_name")
-    .eq("full_name", "Test User A");
-
-  const userA = users?.[0];
-  if (!userA) throw new Error("Test User A not found — run global setup first");
-  userAId = userA.id;
+  userAId = await getTestUserId("userA");
 });
 
 test.afterAll(async () => {
@@ -34,19 +29,20 @@ test.afterAll(async () => {
 test.describe("Agent management", () => {
   test("create a new agent", async ({ userAPage }) => {
     await userAPage.goto("/agents");
+    const main = userAPage.getByRole("main");
 
-    // The "My Agents" h1 heading should be visible (h2 sidebar also matches, so use locator("h1"))
-    await expect(userAPage.locator("h1").filter({ hasText: "My Agents" })).toBeVisible({ timeout: 15_000 });
+    // The "Agents Hub" h1 heading should be visible (page was renamed from "My Agents")
+    await expect(main.locator("h1").filter({ hasText: "Agents Hub" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // Click "Create Agent"
-    const createButton = userAPage.getByRole("button", { name: /create agent/i });
+    // Click "Create Agent" (may appear in both header and empty state)
+    const createButton = main.getByRole("button", { name: /create agent/i }).first();
     await expect(createButton).toBeVisible();
     await createButton.click();
 
     // Dialog should open
     const dialog = userAPage.getByRole("dialog");
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByText("Create Agent")).toBeVisible();
+    await expect(dialog.getByRole("heading", { name: "Create Agent" })).toBeVisible();
 
     // Fill agent name
     await dialog.getByLabel("Name").fill("E2E Test Bot Alpha");
@@ -68,7 +64,7 @@ test.describe("Agent management", () => {
 
     // The new agent should appear in the list
     await expect(
-      userAPage.getByText("E2E Test Bot Alpha")
+      main.getByText("E2E Test Bot Alpha")
     ).toBeVisible({ timeout: 10_000 });
   });
 
@@ -92,12 +88,13 @@ test.describe("Agent management", () => {
     }
 
     await userAPage.goto("/agents");
+    const main = userAPage.getByRole("main");
 
     // Find the "Edit" button next to an agent
-    const editButton = userAPage
+    const editButton = main
       .getByRole("button", { name: /^edit$/i })
       .first();
-    await expect(editButton).toBeVisible({ timeout: 15_000 });
+    await expect(editButton).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await editButton.click();
 
     // Edit dialog should open
@@ -124,15 +121,15 @@ test.describe("Agent management", () => {
 
     // The renamed agent should appear in the list
     await expect(
-      userAPage.getByText("E2E Renamed Bot")
+      main.getByText("E2E Renamed Bot")
     ).toBeVisible({ timeout: 10_000 });
   });
 
-  test("toggle agent active/inactive", async ({ userAPage }) => {
+  test("toggle publish to community via edit dialog", async ({ userAPage }) => {
     // Ensure a bot exists
     const { data: existingBots } = await supabaseAdmin
       .from("bot_profiles")
-      .select("id, name, is_active")
+      .select("id, name")
       .eq("owner_id", userAId)
       .like("name", "%E2E%");
 
@@ -147,48 +144,55 @@ test.describe("Agent management", () => {
     }
 
     await userAPage.goto("/agents");
+    const main = userAPage.getByRole("main");
 
-    // Find a toggle switch next to an agent card
-    // The agent management section has switches with "Active"/"Inactive" text
-    const botSection = userAPage.locator(".grid.gap-3").first();
-    await expect(botSection).toBeVisible({ timeout: 15_000 });
+    // Find and hover over an agent card to reveal the edit button
+    const editButton = main.getByRole("button", { name: /^edit$/i }).first();
+    await editButton.waitFor({ state: "attached", timeout: EXPECT_TIMEOUT });
+    // The edit button is hidden until hover — force click it
+    await editButton.click({ force: true });
 
-    const toggle = botSection.locator("button[role='switch']").first();
-    await expect(toggle).toBeVisible();
+    // Edit dialog should open
+    const dialog = userAPage.getByRole("dialog");
+    await expect(dialog).toBeVisible();
+
+    // Find the "Publish to Community" switch
+    const publishSwitch = dialog.locator("button[role='switch']").first();
+    await expect(publishSwitch).toBeVisible();
 
     // Get initial state
-    const initialState = await toggle.getAttribute("data-state");
+    const initialState = await publishSwitch.getAttribute("data-state");
 
     // Click to toggle
-    await toggle.click();
+    await publishSwitch.click();
 
-    // Wait for the server action to complete and the toggle state to change
-    await expect(toggle).not.toHaveAttribute("data-state", initialState!, { timeout: 10_000 });
+    // The switch state should change
+    await expect(publishSwitch).not.toHaveAttribute("data-state", initialState!, { timeout: 5_000 });
 
-    const newState = await toggle.getAttribute("data-state");
-    expect(newState).not.toBe(initialState);
+    // Save the change
+    await dialog.getByRole("button", { name: "Save" }).click();
 
-    // The label text should change between "Active" and "Inactive"
-    if (initialState === "checked") {
-      await expect(botSection.getByText("Inactive").first()).toBeVisible();
-    } else {
-      await expect(botSection.getByText("Active").first()).toBeVisible();
-    }
+    // Success toast
+    const toast = userAPage
+      .locator("[data-sonner-toast]")
+      .filter({ hasText: /agent updated/i });
+    await expect(toast).toBeVisible({ timeout: 5_000 });
   });
 
   test("add a featured team", async ({ userAPage }) => {
     await userAPage.goto("/agents");
+    const main = userAPage.getByRole("main");
 
-    // Switch to Browse tab
-    const browseTab = userAPage.getByRole("button", { name: /browse/i });
-    await expect(browseTab).toBeVisible({ timeout: 15_000 });
+    // Switch to Browse tab (use exact match to avoid matching "Browse Agents" button)
+    const browseTab = main.getByRole("button", { name: "Browse", exact: true });
+    await expect(browseTab).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await browseTab.click();
 
     // Wait for featured teams section to load
-    await expect(userAPage.getByText("Featured Teams")).toBeVisible({ timeout: 10_000 });
+    await expect(main.getByText("Featured Teams")).toBeVisible({ timeout: 10_000 });
 
     // Find the first team with an "Add Team" button (not all-added)
-    const addTeamButton = userAPage
+    const addTeamButton = main
       .getByRole("button", { name: /add team|add \d+ remaining/i })
       .first();
     await expect(addTeamButton).toBeVisible({ timeout: 5_000 });
@@ -203,12 +207,12 @@ test.describe("Agent management", () => {
     await expect(toast).toBeVisible({ timeout: 10_000 });
 
     // Switch to My Agents tab to confirm the agents appeared
-    const myAgentsTab = userAPage.getByRole("button", { name: /my agents/i });
+    const myAgentsTab = main.getByRole("button", { name: /my agents/i });
     await myAgentsTab.click();
 
     // There should be at least one agent card visible
     await expect(
-      userAPage.locator("[class*='grid'] a, [class*='grid'] button").first()
+      main.locator("[class*='grid'] a, [class*='grid'] button").first()
     ).toBeVisible({ timeout: 10_000 });
   });
 
@@ -223,16 +227,18 @@ test.describe("Agent management", () => {
     });
 
     await userAPage.goto("/agents");
+    const main = userAPage.getByRole("main");
 
     // The agent should be visible
     await expect(
-      userAPage.getByText("E2E Delete Me Bot")
-    ).toBeVisible({ timeout: 15_000 });
+      main.getByText("E2E Delete Me Bot")
+    ).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // Find the agent card container, then click its Edit button
-    const botCards = userAPage.locator(".grid.gap-3 > div");
-    const targetCard = botCards.filter({ hasText: "E2E Delete Me Bot" });
-    await targetCard.getByRole("button", { name: /edit/i }).click();
+    // Find the agent card for the target bot, then click its Edit button
+    // Edit button is hidden until hover (opacity-0 → group-hover:opacity-100), so force click
+    const targetCard = main.locator("a, button").filter({ hasText: "E2E Delete Me Bot" }).first();
+    const editButton = targetCard.getByRole("button", { name: /edit/i });
+    await editButton.click({ force: true });
 
     // Edit dialog should open
     const dialog = userAPage.getByRole("dialog");
@@ -262,7 +268,7 @@ test.describe("Agent management", () => {
 
     // The agent should no longer appear in the list
     await expect(
-      userAPage.getByText("E2E Delete Me Bot")
+      main.getByText("E2E Delete Me Bot")
     ).not.toBeVisible({ timeout: 5_000 });
   });
 });

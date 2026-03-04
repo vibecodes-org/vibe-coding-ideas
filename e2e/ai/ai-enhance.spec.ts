@@ -1,5 +1,6 @@
+import { EXPECT_TIMEOUT } from "../fixtures/constants";
 import { test, expect } from "../fixtures/auth";
-import { createTestIdea, cleanupTestData } from "../fixtures/test-data";
+import { createTestIdea, cleanupTestData, getTestUserId, scopedTitle } from "../fixtures/test-data";
 import { supabaseAdmin } from "../fixtures/supabase-admin";
 
 let userAId: string;
@@ -9,19 +10,12 @@ let testIdeaId: string;
 const FAKE_ENCRYPTED_KEY = "aabbccdd:eeff0011:22334455";
 
 test.beforeAll(async () => {
-  const { data: users } = await supabaseAdmin
-    .from("users")
-    .select("id, full_name")
-    .in("full_name", ["Test User A"]);
-
-  const userA = users?.find((u) => u.full_name === "Test User A");
-  if (!userA) throw new Error("Test User A not found -- run global setup first");
-  userAId = userA.id;
+  userAId = await getTestUserId("userA");
 
   // Create a test idea owned by User A
   const idea = await createTestIdea(userAId, {
-    title: "[E2E] AI Enhance Test Idea",
-    description: "[E2E] This is the original description that should be enhanced by AI.",
+    title: scopedTitle("AI Enhance Test Idea"),
+    description: scopedTitle("This is the original description that should be enhanced by AI."),
   });
   testIdeaId = idea.id;
 });
@@ -47,10 +41,11 @@ test.describe("AI Enhance - Idea Detail", () => {
       .eq("id", userAId);
 
     await userAPage.goto(`/ideas/${testIdeaId}`);
+    const main = userAPage.getByRole("main");
 
     // The button should be visible on desktop (hidden sm:inline-flex wrapper)
-    const enhanceButton = userAPage.getByRole("button", { name: /enhance with ai/i });
-    await expect(enhanceButton.first()).toBeVisible({ timeout: 15_000 });
+    const enhanceButton = main.getByRole("button", { name: /enhance with ai/i });
+    await expect(enhanceButton.first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
     // Button should be enabled when user has API key
     await expect(enhanceButton.first()).toBeEnabled();
   });
@@ -65,19 +60,20 @@ test.describe("AI Enhance - Idea Detail", () => {
       .eq("id", userAId);
 
     await userAPage.goto(`/ideas/${testIdeaId}`);
+    const main = userAPage.getByRole("main");
 
     // Wait for page to fully render
-    await expect(userAPage.locator("input[value*='AI Enhance Test Idea']")).toBeVisible({
-      timeout: 15_000,
+    await expect(main.locator("input[value*='AI Enhance Test Idea']")).toBeVisible({
+      timeout: EXPECT_TIMEOUT,
     });
 
     // The enhance button should still be visible but disabled (opacity-50)
-    const enhanceButton = userAPage.getByRole("button", { name: /enhance with ai/i }).first();
+    const enhanceButton = main.getByRole("button", { name: /enhance with ai/i }).first();
     await expect(enhanceButton).toBeVisible({ timeout: 10_000 });
     await expect(enhanceButton).toHaveClass(/opacity-50/);
   });
 
-  test("clicking disabled enhance button shows API key toast", async ({
+  test("disabled enhance button shows API key tooltip on hover", async ({
     userAPage,
   }) => {
     // Remove API key
@@ -87,18 +83,23 @@ test.describe("AI Enhance - Idea Detail", () => {
       .eq("id", userAId);
 
     await userAPage.goto(`/ideas/${testIdeaId}`);
+    const main = userAPage.getByRole("main");
 
-    // Wait for the button to appear
-    const enhanceButton = userAPage.getByRole("button", { name: /enhance with ai/i }).first();
-    await expect(enhanceButton).toBeVisible({ timeout: 15_000 });
+    // Wait for the button to appear (disabled state: wrapped in a span with pointer-events-none)
+    const enhanceButton = main.getByRole("button", { name: /enhance with ai/i }).first();
+    await expect(enhanceButton).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // Force-click the disabled button (Playwright can click disabled elements with force)
-    await enhanceButton.click({ force: true });
+    // The button should have pointer-events-none (disabled style)
+    await expect(enhanceButton).toHaveClass(/pointer-events-none/);
 
-    // Toast should tell user to add API key
+    // Hover over the tooltip trigger (the wrapping span) to show the tooltip
+    const tooltipTrigger = enhanceButton.locator("xpath=ancestor::span[@data-slot='tooltip-trigger']").first();
+    await tooltipTrigger.hover();
+
+    // Tooltip should tell user to add API key
     await expect(
-      userAPage.locator("[data-sonner-toast]").filter({ hasText: /api key/i })
-    ).toBeVisible({ timeout: 10_000 });
+      userAPage.getByRole("tooltip").filter({ hasText: /api key/i })
+    ).toBeVisible({ timeout: 5_000 });
   });
 
   test("opens enhance dialog with prompt textarea and current description", async ({
@@ -111,10 +112,11 @@ test.describe("AI Enhance - Idea Detail", () => {
       .eq("id", userAId);
 
     await userAPage.goto(`/ideas/${testIdeaId}`);
+    const main = userAPage.getByRole("main");
 
     // Click the enhance button
-    const enhanceButton = userAPage.getByRole("button", { name: /enhance with ai/i });
-    await expect(enhanceButton.first()).toBeEnabled({ timeout: 15_000 });
+    const enhanceButton = main.getByRole("button", { name: /enhance with ai/i });
+    await expect(enhanceButton.first()).toBeEnabled({ timeout: EXPECT_TIMEOUT });
     await enhanceButton.first().click();
 
     // Dialog should open
@@ -143,10 +145,11 @@ test.describe("AI Enhance - Idea Detail", () => {
       .eq("id", userAId);
 
     await userAPage.goto(`/ideas/${testIdeaId}`);
+    const main = userAPage.getByRole("main");
 
     // Open the enhance dialog
-    const enhanceButton = userAPage.getByRole("button", { name: /enhance with ai/i });
-    await expect(enhanceButton.first()).toBeEnabled({ timeout: 15_000 });
+    const enhanceButton = main.getByRole("button", { name: /enhance with ai/i });
+    await expect(enhanceButton.first()).toBeEnabled({ timeout: EXPECT_TIMEOUT });
     await enhanceButton.first().click();
 
     const dialog = userAPage.getByRole("dialog");

@@ -6,13 +6,13 @@ dotenv.config({ path: path.resolve(__dirname, ".env.test"), override: true });
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: true,
+  fullyParallel: false,
   forbidOnly: !!process.env.CI,
-  retries: process.env.CI ? 2 : 1,
-  workers: 1,
+  retries: process.env.CI ? 2 : 0,
+  workers: undefined,
   reporter: [["html", { open: "never" }]],
   timeout: 30_000,
-  expect: { timeout: 10_000 },
+  expect: { timeout: 5_000 },
 
   use: {
     baseURL: "http://localhost:3000",
@@ -59,6 +59,7 @@ export default defineConfig({
     stderr: "pipe",
     env: {
       ...process.env,
+      E2E: "1",
       NEXT_PUBLIC_SUPABASE_URL: process.env.NEXT_PUBLIC_SUPABASE_URL!,
       NEXT_PUBLIC_SUPABASE_ANON_KEY: process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
       SUPABASE_SERVICE_ROLE_KEY: process.env.SUPABASE_SERVICE_ROLE_KEY!,

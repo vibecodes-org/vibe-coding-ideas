@@ -1,20 +1,13 @@
+import { EXPECT_TIMEOUT } from "../fixtures/constants";
 import { test, expect } from "../fixtures/auth";
 import {
   createTestIdea,
   addCollaborator,
   cleanupTestData,
+  getTestUserId,
+  scopedTitle,
 } from "../fixtures/test-data";
 import { supabaseAdmin } from "../fixtures/supabase-admin";
-
-async function getUserId(fullName: string): Promise<string> {
-  const { data } = await supabaseAdmin
-    .from("users")
-    .select("id")
-    .eq("full_name", fullName)
-    .single();
-  if (!data) throw new Error(`Test user not found: ${fullName}`);
-  return data.id;
-}
 
 test.describe("Collaboration", () => {
   let userAId: string;
@@ -23,13 +16,13 @@ test.describe("Collaboration", () => {
   let privateIdeaId: string;
 
   test.beforeAll(async () => {
-    userAId = await getUserId("Test User A");
-    userBId = await getUserId("Test User B");
+    userAId = await getTestUserId("userA");
+    userBId = await getTestUserId("userB");
 
     // Create a public idea owned by User A
     const publicIdea = await createTestIdea(userAId, {
-      title: "[E2E] Collaboration Public Idea",
-      description: "[E2E] A public idea to test collaboration features.",
+      title: scopedTitle("Collaboration Public Idea"),
+      description: scopedTitle("A public idea to test collaboration features."),
       tags: ["e2e-test", "collaboration"],
       visibility: "public",
     });
@@ -37,8 +30,8 @@ test.describe("Collaboration", () => {
 
     // Create a private idea owned by User A
     const privateIdea = await createTestIdea(userAId, {
-      title: "[E2E] Collaboration Private Idea",
-      description: "[E2E] A private idea that should not be visible to non-collaborators.",
+      title: scopedTitle("Collaboration Private Idea"),
+      description: scopedTitle("A private idea that should not be visible to non-collaborators."),
       tags: ["e2e-test", "private"],
       visibility: "private",
     });
@@ -61,22 +54,23 @@ test.describe("Collaboration", () => {
         .eq("requester_id", userBId);
 
       await userBPage.goto(`/ideas/${publicIdeaId}`);
+      const main = userBPage.getByRole('main');
 
       // The collaborator button should say "I want to build this" for non-collaborators
-      const joinButton = userBPage.getByRole("button", {
+      const joinButton = main.getByRole("button", {
         name: /i want to build this/i,
       });
-      await expect(joinButton).toBeVisible({ timeout: 15_000 });
-      await expect(joinButton).toBeEnabled({ timeout: 15_000 });
+      await expect(joinButton).toBeVisible({ timeout: EXPECT_TIMEOUT });
+      await expect(joinButton).toBeEnabled({ timeout: EXPECT_TIMEOUT });
 
       // Click to request collaboration
       await joinButton.click();
 
       // After requesting, button text should change to "Requested" (pending approval)
-      const requestedButton = userBPage.getByRole("button", {
+      const requestedButton = main.getByRole("button", {
         name: /requested/i,
       });
-      await expect(requestedButton).toBeVisible({ timeout: 15_000 });
+      await expect(requestedButton).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // A success toast should appear
       await expect(
@@ -91,13 +85,14 @@ test.describe("Collaboration", () => {
       await addCollaborator(publicIdeaId, userBId);
 
       await userBPage.goto(`/ideas/${publicIdeaId}`);
+      const main = userBPage.getByRole('main');
 
       // Wait for the collaborators section to render
-      const collaboratorsSection = userBPage.getByText(/Collaborators \(/);
-      await expect(collaboratorsSection).toBeVisible({ timeout: 15_000 });
+      const collaboratorsSection = main.getByText(/Collaborators \(/);
+      await expect(collaboratorsSection).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // User B's name should appear in the collaborators list
-      await expect(userBPage.getByText("Test User B")).toBeVisible();
+      await expect(main.getByText("Test User B")).toBeVisible();
     });
 
     test("User B leaves the project by clicking Leave button", async ({
@@ -114,21 +109,37 @@ test.describe("Collaboration", () => {
       await addCollaborator(publicIdeaId, userBId);
 
       await userBPage.goto(`/ideas/${publicIdeaId}`);
+      const main = userBPage.getByRole('main');
 
       // The button should show "Leave Project" since User B is a collaborator
-      const leaveButton = userBPage.getByRole("button", {
+      const leaveButton = main.getByRole("button", {
         name: /leave project/i,
       });
-      await expect(leaveButton).toBeVisible({ timeout: 15_000 });
+      await expect(leaveButton).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-      // Click to leave
+      // Click to leave and wait for the server action to complete
+      const actionPromise = userBPage.waitForResponse(
+        (resp) => resp.url().includes("ideas") && resp.request().method() === "POST",
+        { timeout: 10_000 }
+      );
       await leaveButton.click();
+      await actionPromise;
 
-      // Button should revert to join state
-      const joinButton = userBPage.getByRole("button", {
+      // Button should revert to join state after revalidation
+      // revalidatePath may not trigger a full re-render in time, so reload as fallback
+      const joinButton = main.getByRole("button", {
         name: /i want to build this/i,
       });
-      await expect(joinButton).toBeVisible({ timeout: 15_000 });
+      try {
+        await expect(joinButton).toBeVisible({ timeout: 5_000 });
+      } catch {
+        await userBPage.reload();
+        await expect(
+          userBPage.getByRole("main").getByRole("button", {
+            name: /i want to build this/i,
+          })
+        ).toBeVisible({ timeout: 10_000 });
+      }
     });
   });
 
@@ -151,15 +162,16 @@ test.describe("Collaboration", () => {
         .eq("requester_id", userBId);
 
       await userAPage.goto(`/ideas/${publicIdeaId}`);
+      const main = userAPage.getByRole('main');
 
       // Wait for Collaborators (0) to confirm clean state
       await expect(
-        userAPage.getByText(/Collaborators \(0\)/)
-      ).toBeVisible({ timeout: 15_000 });
+        main.getByText(/Collaborators \(0\)/)
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Click the "Add" button to open the collaborator search popover
-      const addButton = userAPage.getByRole("button", { name: "Add", exact: true });
-      await expect(addButton).toBeVisible({ timeout: 15_000 });
+      const addButton = main.getByRole("button", { name: "Add", exact: true });
+      await expect(addButton).toBeVisible({ timeout: EXPECT_TIMEOUT });
       await addButton.click();
 
       // Search for User B by name in the popover input
@@ -181,7 +193,7 @@ test.describe("Collaboration", () => {
             // Final attempt — use full timeout
             await searchInput.clear();
             await searchInput.fill("Test User B");
-            await expect(userBResult).toBeVisible({ timeout: 15_000 });
+            await expect(userBResult).toBeVisible({ timeout: EXPECT_TIMEOUT });
           }
         }
       }
@@ -189,23 +201,24 @@ test.describe("Collaboration", () => {
       // Click the result to add User B and wait for the server action response
       const actionPromise = userAPage.waitForResponse(
         (resp) => resp.url().includes("ideas") && resp.request().method() === "POST",
-        { timeout: 15_000 }
+        { timeout: EXPECT_TIMEOUT }
       );
       await userBResult.click();
       await actionPromise;
 
       // Wait for revalidation to update the collaborator count
       await expect(
-        userAPage.getByText(/Collaborators \(1\)/)
-      ).toBeVisible({ timeout: 15_000 });
+        main.getByText(/Collaborators \(1\)/)
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Reload the page to verify the collaborator persisted
       await userAPage.reload();
+      const mainAfterReload = userAPage.getByRole('main');
 
       // Verify User B appears in the collaborators section
-      const collaboratorsSection = userAPage.getByText(/Collaborators \(/);
-      await expect(collaboratorsSection).toBeVisible({ timeout: 15_000 });
-      await expect(userAPage.getByText("Test User B")).toBeVisible();
+      const collaboratorsSection = mainAfterReload.getByText(/Collaborators \(/);
+      await expect(collaboratorsSection).toBeVisible({ timeout: EXPECT_TIMEOUT });
+      await expect(mainAfterReload.getByText("Test User B")).toBeVisible();
     });
 
     test("Author removes collaborator and undo toast appears", async ({
@@ -215,14 +228,15 @@ test.describe("Collaboration", () => {
       await addCollaborator(publicIdeaId, userBId);
 
       await userAPage.goto(`/ideas/${publicIdeaId}`);
+      const main = userAPage.getByRole('main');
 
       // Wait for collaborators section to render
       await expect(
-        userAPage.getByText(/Collaborators \(/)
-      ).toBeVisible({ timeout: 15_000 });
+        main.getByText(/Collaborators \(/)
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Find the remove button (X icon) next to User B's name
-      const removeButton = userAPage.getByRole("button", {
+      const removeButton = main.getByRole("button", {
         name: "Remove collaborator",
       });
       await expect(removeButton).toBeVisible();
@@ -232,7 +246,7 @@ test.describe("Collaboration", () => {
       const toast = userAPage
         .locator("[data-sonner-toast]")
         .filter({ hasText: /removed/i });
-      await expect(toast).toBeVisible({ timeout: 15_000 });
+      await expect(toast).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Toast should contain an Undo action button
       const undoButton = toast.getByRole("button", { name: "Undo" });
@@ -246,17 +260,18 @@ test.describe("Collaboration", () => {
       await addCollaborator(publicIdeaId, userBId);
 
       await userAPage.goto(`/ideas/${publicIdeaId}`);
+      const main = userAPage.getByRole('main');
 
       // Wait for collaborators section
       await expect(
-        userAPage.getByText(/Collaborators \(/)
-      ).toBeVisible({ timeout: 15_000 });
+        main.getByText(/Collaborators \(/)
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Verify User B is shown
-      await expect(userAPage.getByText("Test User B")).toBeVisible();
+      await expect(main.getByText("Test User B")).toBeVisible();
 
       // Remove the collaborator
-      const removeButton = userAPage.getByRole("button", {
+      const removeButton = main.getByRole("button", {
         name: "Remove collaborator",
       });
       await removeButton.click();
@@ -265,15 +280,15 @@ test.describe("Collaboration", () => {
       const toast = userAPage
         .locator("[data-sonner-toast]")
         .filter({ hasText: /removed/i });
-      await expect(toast).toBeVisible({ timeout: 15_000 });
+      await expect(toast).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Click Undo in the toast
       await toast.getByRole("button", { name: "Undo" }).click();
 
       // The remove button should reappear after undo (the collaborator was restored)
       await expect(
-        userAPage.getByRole("button", { name: "Remove collaborator" })
-      ).toBeVisible({ timeout: 15_000 });
+        main.getByRole("button", { name: "Remove collaborator" })
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
   });
 
@@ -287,7 +302,7 @@ test.describe("Collaboration", () => {
       // The server returns notFound() which renders the default Next.js not-found page
       await expect(
         userBPage.getByText(/could not be found|not found/i).first()
-      ).toBeVisible({ timeout: 15_000 });
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
   });
 });

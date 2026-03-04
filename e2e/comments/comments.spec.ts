@@ -1,20 +1,13 @@
+import { EXPECT_TIMEOUT } from "../fixtures/constants";
 import { test, expect } from "../fixtures/auth";
 import {
   createTestIdea,
   createTestComment,
   cleanupTestData,
+  getTestUserId,
+  scopedTitle,
 } from "../fixtures/test-data";
 import { supabaseAdmin } from "../fixtures/supabase-admin";
-
-async function getUserId(fullName: string): Promise<string> {
-  const { data } = await supabaseAdmin
-    .from("users")
-    .select("id")
-    .eq("full_name", fullName)
-    .single();
-  if (!data) throw new Error(`Test user not found: ${fullName}`);
-  return data.id;
-}
 
 test.describe("Comments", () => {
   let userAId: string;
@@ -22,12 +15,12 @@ test.describe("Comments", () => {
   let ideaId: string;
 
   test.beforeAll(async () => {
-    userAId = await getUserId("Test User A");
-    userBId = await getUserId("Test User B");
+    userAId = await getTestUserId("userA");
+    userBId = await getTestUserId("userB");
 
     const idea = await createTestIdea(userAId, {
-      title: "[E2E] Comments Test Idea",
-      description: "[E2E] An idea to test comment functionality.",
+      title: scopedTitle("Comments Test Idea"),
+      description: scopedTitle("An idea to test comment functionality."),
       tags: ["e2e-test", "comments"],
     });
     ideaId = idea.id;
@@ -45,45 +38,49 @@ test.describe("Comments", () => {
   test.describe("Posting comments", () => {
     test("post a comment with default type", async ({ userAPage }) => {
       await userAPage.goto(`/ideas/${ideaId}`);
+      const main = userAPage.getByRole('main');
 
       // Wait for the comment form to be visible
-      const commentTextarea = userAPage.getByPlaceholder(/add a comment/i);
-      await expect(commentTextarea).toBeVisible({ timeout: 15_000 });
+      const commentTextarea = main.getByPlaceholder(/add a comment/i);
+      await expect(commentTextarea).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Type a comment — click first to focus, then fill
       await commentTextarea.click();
-      await commentTextarea.fill("[E2E] This is a test comment from User A");
+      await commentTextarea.fill(scopedTitle("This is a test comment from User A"));
       await userAPage.waitForTimeout(300);
 
       // The default type should already be "Comment" — just click Post
-      const postButton = userAPage.getByRole("button", { name: "Post" }).first();
+      const postButton = main.getByRole("button", { name: "Post" }).first();
       await expect(postButton).toBeEnabled({ timeout: 5_000 });
       await postButton.click();
 
       // The comment should appear in the thread
       await expect(
-        userAPage.getByText("[E2E] This is a test comment from User A")
-      ).toBeVisible({ timeout: 15_000 });
+        main.getByText(scopedTitle("This is a test comment from User A"))
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Author name should be shown
       await expect(
-        userAPage.getByText("Test User A").first()
+        main.getByText("Test User A").first()
       ).toBeVisible();
     });
 
     test("post a suggestion comment", async ({ userAPage }) => {
       await userAPage.goto(`/ideas/${ideaId}`);
+      const main = userAPage.getByRole('main');
 
-      const commentTextarea = userAPage.getByPlaceholder(/add a comment/i);
-      await expect(commentTextarea).toBeVisible({ timeout: 15_000 });
+      const commentTextarea = main.getByPlaceholder(/add a comment/i);
+      await commentTextarea.scrollIntoViewIfNeeded();
+      await expect(commentTextarea).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Ensure Post button is in its default disabled state (empty textarea)
-      const postButton = userAPage.getByRole("button", { name: "Post" }).first();
+      const postButton = main.getByRole("button", { name: "Post" }).first();
       await expect(postButton).toBeDisabled();
 
       // Change the comment type to Suggestion via the Radix Select
-      const commentForm = userAPage.locator("form").filter({ has: commentTextarea }).first();
-      const typeSelect = commentForm.getByRole("combobox").first();
+      // The type combobox is adjacent to the textarea, defaulting to "Comment"
+      const typeSelect = commentTextarea.locator("xpath=following::button[@role='combobox']").first();
+      await typeSelect.scrollIntoViewIfNeeded();
       await typeSelect.click();
       // Wait for the dropdown option to appear then click it
       const suggestionOption = userAPage.getByRole("option", { name: "Suggestion" });
@@ -95,7 +92,7 @@ test.describe("Comments", () => {
       // Fill the textarea (Post button is disabled until content is non-empty)
       await commentTextarea.click();
       await commentTextarea.fill(
-        "[E2E] This is a suggestion for improving the idea"
+        scopedTitle("This is a suggestion for improving the idea")
       );
       await userAPage.waitForTimeout(300);
 
@@ -105,39 +102,43 @@ test.describe("Comments", () => {
       // Wait for the server action response
       const actionPromise = userAPage.waitForResponse(
         (resp) => resp.url().includes("ideas") && resp.request().method() === "POST",
-        { timeout: 15_000 }
+        { timeout: EXPECT_TIMEOUT }
       );
       await postButton.click();
       await actionPromise;
 
       // Reload for fresh server data
       await userAPage.reload();
+      const mainAfterReload = userAPage.getByRole('main');
 
       // Comment should appear after reload
-      const commentText = userAPage.getByText(
-        "[E2E] This is a suggestion for improving the idea"
+      const commentText = mainAfterReload.getByText(
+        scopedTitle("This is a suggestion for improving the idea")
       );
-      await expect(commentText).toBeVisible({ timeout: 15_000 });
+      await expect(commentText).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // The Suggestion badge should be visible near the comment
       await expect(
-        userAPage.locator('[data-slot="badge"]').filter({ hasText: "Suggestion" }).first()
-      ).toBeVisible({ timeout: 15_000 });
+        mainAfterReload.locator('[data-slot="badge"]').filter({ hasText: "Suggestion" }).first()
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
 
     test("post a question comment", async ({ userAPage }) => {
       await userAPage.goto(`/ideas/${ideaId}`);
+      const main = userAPage.getByRole('main');
 
-      const commentTextarea = userAPage.getByPlaceholder(/add a comment/i);
-      await expect(commentTextarea).toBeVisible({ timeout: 15_000 });
+      const commentTextarea = main.getByPlaceholder(/add a comment/i);
+      await commentTextarea.scrollIntoViewIfNeeded();
+      await expect(commentTextarea).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Ensure Post button is in its default disabled state (empty textarea)
-      const postButton = userAPage.getByRole("button", { name: "Post" }).first();
+      const postButton = main.getByRole("button", { name: "Post" }).first();
       await expect(postButton).toBeDisabled();
 
       // Change type to Question via the Radix Select
-      const commentForm = userAPage.locator("form").filter({ has: commentTextarea }).first();
-      const typeSelect = commentForm.getByRole("combobox").first();
+      // The type combobox is adjacent to the textarea, defaulting to "Comment"
+      const typeSelect = commentTextarea.locator("xpath=following::button[@role='combobox']").first();
+      await typeSelect.scrollIntoViewIfNeeded();
       await typeSelect.click();
       // Wait for the dropdown option to appear then click it
       const questionOption = userAPage.getByRole("option", { name: "Question" });
@@ -149,7 +150,7 @@ test.describe("Comments", () => {
       // Fill the textarea (Post button is disabled until content is non-empty)
       await commentTextarea.click();
       await commentTextarea.fill(
-        "[E2E] What is the expected timeline for this idea?"
+        scopedTitle("What is the expected timeline for this idea?")
       );
       await userAPage.waitForTimeout(300);
 
@@ -159,25 +160,26 @@ test.describe("Comments", () => {
       // Wait for the server action response
       const actionPromise = userAPage.waitForResponse(
         (resp) => resp.url().includes("ideas") && resp.request().method() === "POST",
-        { timeout: 15_000 }
+        { timeout: EXPECT_TIMEOUT }
       );
       await postButton.click();
       await actionPromise;
 
       // Reload for fresh server data
       await userAPage.reload();
+      const mainAfterReload = userAPage.getByRole('main');
 
       // Comment should appear with Question badge
       await expect(
-        userAPage.getByText(
-          "[E2E] What is the expected timeline for this idea?"
+        mainAfterReload.getByText(
+          scopedTitle("What is the expected timeline for this idea?")
         )
-      ).toBeVisible({ timeout: 15_000 });
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // The Question badge should be visible
       await expect(
-        userAPage.locator('[data-slot="badge"]').filter({ hasText: "Question" }).first()
-      ).toBeVisible({ timeout: 15_000 });
+        mainAfterReload.locator('[data-slot="badge"]').filter({ hasText: "Question" }).first()
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
 
     test("comment appears in thread with author name and content", async ({
@@ -185,19 +187,20 @@ test.describe("Comments", () => {
     }) => {
       // Seed a comment from User A via the API
       await createTestComment(ideaId, userAId, {
-        content: "[E2E] Seeded comment for thread verification",
+        content: scopedTitle("Seeded comment for thread verification"),
         type: "comment",
       });
 
       await userBPage.goto(`/ideas/${ideaId}`);
+      const main = userBPage.getByRole('main');
 
       // The seeded comment should be visible
       await expect(
-        userBPage.getByText("[E2E] Seeded comment for thread verification")
-      ).toBeVisible({ timeout: 15_000 });
+        main.getByText(scopedTitle("Seeded comment for thread verification"))
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Author name should be displayed
-      await expect(userBPage.getByText("Test User A").first()).toBeVisible();
+      await expect(main.getByText("Test User A").first()).toBeVisible();
     });
   });
 
@@ -207,17 +210,18 @@ test.describe("Comments", () => {
     }) => {
       // Seed a top-level comment from User A
       await createTestComment(ideaId, userAId, {
-        content: "[E2E] Parent comment for reply test",
+        content: scopedTitle("Parent comment for reply test"),
         type: "comment",
       });
 
       await userBPage.goto(`/ideas/${ideaId}`);
+      const main = userBPage.getByRole('main');
 
       // Find the parent comment and click Reply
-      const parentComment = userBPage.getByText(
-        "[E2E] Parent comment for reply test"
+      const parentComment = main.getByText(
+        scopedTitle("Parent comment for reply test")
       );
-      await expect(parentComment).toBeVisible({ timeout: 15_000 });
+      await expect(parentComment).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // The Reply button is in the same comment item container
       const commentContainer = parentComment
@@ -229,21 +233,38 @@ test.describe("Comments", () => {
       await replyButton.click();
 
       // Reply form should appear with "Write a reply..." placeholder
-      const replyTextarea = userBPage.getByPlaceholder(/write a reply/i);
+      const replyTextarea = main.getByPlaceholder(/write a reply/i);
       await expect(replyTextarea).toBeVisible();
 
       // Type and submit a reply — scope the Post button to the reply form
-      await replyTextarea.fill("[E2E] This is a reply from User B");
-      const replyForm = userBPage.locator("form").filter({ has: replyTextarea });
-      await replyForm.getByRole("button", { name: "Post" }).click();
+      await replyTextarea.fill(scopedTitle("This is a reply from User B"));
+      await userBPage.waitForTimeout(300);
+
+      // Find the Post button nearest to the reply textarea
+      const replyPostButton = replyTextarea
+        .locator("xpath=ancestor::form[1]")
+        .getByRole("button", { name: "Post" });
+      await expect(replyPostButton).toBeEnabled({ timeout: 5_000 });
+
+      // Wait for the server action response
+      const actionPromise = userBPage.waitForResponse(
+        (resp) => resp.url().includes("ideas") && resp.request().method() === "POST",
+        { timeout: EXPECT_TIMEOUT }
+      );
+      await replyPostButton.click();
+      await actionPromise;
+
+      // Reload for fresh server data
+      await userBPage.reload();
+      const mainAfterReload = userBPage.getByRole('main');
 
       // The reply should appear (nested under the parent, indented via ml-6)
       await expect(
-        userBPage.getByText("[E2E] This is a reply from User B")
-      ).toBeVisible({ timeout: 15_000 });
+        mainAfterReload.getByText(scopedTitle("This is a reply from User B"))
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Reply author
-      await expect(userBPage.getByText("Test User B").first()).toBeVisible();
+      await expect(mainAfterReload.getByText("Test User B").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
   });
 
@@ -251,17 +272,18 @@ test.describe("Comments", () => {
     test("delete own comment shows undo toast", async ({ userAPage }) => {
       // Seed a comment from User A
       await createTestComment(ideaId, userAId, {
-        content: "[E2E] Comment to be deleted by author",
+        content: scopedTitle("Comment to be deleted by author"),
         type: "comment",
       });
 
       await userAPage.goto(`/ideas/${ideaId}`);
+      const main = userAPage.getByRole('main');
 
       // Find the comment
-      const comment = userAPage.getByText(
-        "[E2E] Comment to be deleted by author"
+      const comment = main.getByText(
+        scopedTitle("Comment to be deleted by author")
       );
-      await expect(comment).toBeVisible({ timeout: 15_000 });
+      await expect(comment).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Find the Delete button in the same comment item
       const commentContainer = comment
@@ -280,7 +302,7 @@ test.describe("Comments", () => {
       const toast = userAPage
         .locator("[data-sonner-toast]")
         .filter({ hasText: /comment deleted/i });
-      await expect(toast).toBeVisible({ timeout: 15_000 });
+      await expect(toast).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Toast should have Undo button
       await expect(
@@ -293,17 +315,18 @@ test.describe("Comments", () => {
     }) => {
       // Seed a comment from User A
       await createTestComment(ideaId, userAId, {
-        content: "[E2E] User A comment that User B should not delete",
+        content: scopedTitle("User A comment that User B should not delete"),
         type: "comment",
       });
 
       await userBPage.goto(`/ideas/${ideaId}`);
+      const main = userBPage.getByRole('main');
 
       // Find the comment
-      const comment = userBPage.getByText(
-        "[E2E] User A comment that User B should not delete"
+      const comment = main.getByText(
+        scopedTitle("User A comment that User B should not delete")
       );
-      await expect(comment).toBeVisible({ timeout: 15_000 });
+      await expect(comment).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // The comment container should NOT have a Delete button for User B
       const commentContainer = comment
@@ -326,21 +349,22 @@ test.describe("Comments", () => {
     }) => {
       // Seed a suggestion comment from User B
       await createTestComment(ideaId, userBId, {
-        content: "[E2E] Suggestion to incorporate",
+        content: scopedTitle("Suggestion to incorporate"),
         type: "suggestion",
       });
 
       await userAPage.goto(`/ideas/${ideaId}`);
+      const main = userAPage.getByRole('main');
 
       // Find the suggestion comment
-      const suggestion = userAPage.getByText(
-        "[E2E] Suggestion to incorporate"
+      const suggestion = main.getByText(
+        scopedTitle("Suggestion to incorporate")
       );
-      await expect(suggestion).toBeVisible({ timeout: 15_000 });
+      await expect(suggestion).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // Find the "Mark as incorporated" button — it lives in the same comment item
       // The button is a sibling within the comment's button area
-      const incorporateButton = userAPage.getByRole("button", {
+      const incorporateButton = main.getByRole("button", {
         name: /mark as incorporated/i,
       });
       await expect(incorporateButton).toBeVisible({ timeout: 10_000 });
@@ -348,8 +372,8 @@ test.describe("Comments", () => {
 
       // After incorporating, the "Incorporated" badge should appear
       await expect(
-        userAPage.getByText("Incorporated", { exact: true }).first()
-      ).toBeVisible({ timeout: 15_000 });
+        main.getByText("Incorporated", { exact: true }).first()
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
       // The "Mark as incorporated" button should no longer be visible
       await expect(incorporateButton).not.toBeVisible();
