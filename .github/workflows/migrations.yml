@@ -1,0 +1,475 @@
+name: Database Migrations
+
+on:
+  push:
+    branches: [develop, master]
+    paths:
+      - 'supabase/migrations/*.sql'
+  pull_request:
+    branches: [develop, master]
+    paths:
+      - 'supabase/migrations/*.sql'
+  workflow_dispatch:
+    inputs:
+      target:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - production
+          - staging
+      dry_run:
+        description: 'Dry run (validate only, do not apply)'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: write
+  issues: write
+
+concurrency:
+  group: migrations-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # ──────────────────────────────────────────────
+  # Job 1: Detect new or changed migration files
+  # ──────────────────────────────────────────────
+  detect-migrations:
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    outputs:
+      has_new: ${{ steps.detect.outputs.has_new }}
+      files: ${{ steps.detect.outputs.files }}
+      file_count: ${{ steps.detect.outputs.file_count }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Detect new migration files
+        id: detect
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ]; then
+            BASE="${{ github.event.pull_request.base.sha }}"
+          else
+            BASE="${{ github.event.before }}"
+          fi
+
+          # Handle initial push (no previous SHA)
+          if [ "$BASE" = "0000000000000000000000000000000000000000" ]; then
+            echo "Initial push detected — scanning all migration files"
+            FILES=$(find supabase/migrations -name '*.sql' -type f | sort)
+          else
+            FILES=$(git diff --name-only --diff-filter=A "$BASE" HEAD -- 'supabase/migrations/*.sql' | sort)
+          fi
+
+          if [ -z "$FILES" ]; then
+            echo "has_new=false" >> "$GITHUB_OUTPUT"
+            echo "files=" >> "$GITHUB_OUTPUT"
+            echo "file_count=0" >> "$GITHUB_OUTPUT"
+            echo "No new migration files detected."
+          else
+            COUNT=$(echo "$FILES" | wc -l | tr -d ' ')
+            echo "has_new=true" >> "$GITHUB_OUTPUT"
+            echo "files<<EOF" >> "$GITHUB_OUTPUT"
+            echo "$FILES" >> "$GITHUB_OUTPUT"
+            echo "EOF" >> "$GITHUB_OUTPUT"
+            echo "file_count=$COUNT" >> "$GITHUB_OUTPUT"
+            echo "Detected $COUNT new migration file(s):"
+            echo "$FILES"
+          fi
+
+  # ──────────────────────────────────────────────
+  # Job 2: Validate migrations on PRs
+  # ──────────────────────────────────────────────
+  validate:
+    needs: detect-migrations
+    if: >-
+      github.event_name == 'pull_request' &&
+      needs.detect-migrations.outputs.has_new == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate migration files
+        id: validate
+        run: |
+          FILES="${{ needs.detect-migrations.outputs.files }}"
+          ERRORS=""
+          WARNINGS=""
+          VALID=0
+          INVALID=0
+
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            basename=$(basename "$file")
+
+            # Check naming convention: 5-digit prefix followed by underscore
+            if ! echo "$basename" | grep -qE '^[0-9]{5}_.*\.sql$'; then
+              ERRORS="${ERRORS}\n- \`${basename}\`: Does not match naming convention \`NNNNN_description.sql\`"
+              INVALID=$((INVALID + 1))
+              continue
+            fi
+
+            # Check file is non-empty
+            if [ ! -s "$file" ]; then
+              ERRORS="${ERRORS}\n- \`${basename}\`: File is empty"
+              INVALID=$((INVALID + 1))
+              continue
+            fi
+
+            # Warn on destructive keywords
+            DESTRUCTIVE=$(grep -inE '^\s*(DROP\s+TABLE|TRUNCATE|DELETE\s+FROM)\b' "$file" || true)
+            if [ -n "$DESTRUCTIVE" ]; then
+              MATCH_LINES=$(echo "$DESTRUCTIVE" | head -3 | sed 's/^/    /')
+              WARNINGS="${WARNINGS}\n- \`${basename}\`: Contains potentially destructive statements:\n\`\`\`sql\n${MATCH_LINES}\n\`\`\`"
+            fi
+
+            VALID=$((VALID + 1))
+          done <<< "$FILES"
+
+          # Build summary
+          SUMMARY="## Migration Validation\n\n"
+          SUMMARY="${SUMMARY}**${VALID} valid** migration(s) detected"
+
+          if [ $INVALID -gt 0 ]; then
+            SUMMARY="${SUMMARY}, **${INVALID} with errors**"
+          fi
+
+          SUMMARY="${SUMMARY}.\n\n"
+
+          SUMMARY="${SUMMARY}### Files\n"
+          while IFS= read -r file; do
+            [ -z "$file" ] && continue
+            SUMMARY="${SUMMARY}\n- \`$(basename "$file")\`"
+          done <<< "$FILES"
+
+          if [ -n "$ERRORS" ]; then
+            SUMMARY="${SUMMARY}\n\n### Errors\n${ERRORS}"
+          fi
+
+          if [ -n "$WARNINGS" ]; then
+            SUMMARY="${SUMMARY}\n\n### Warnings\n${WARNINGS}"
+          fi
+
+          SUMMARY="${SUMMARY}\n\n---\n*Migrations are auto-applied to staging when merged to \`develop\`. Production requires manual trigger via [workflow_dispatch](../actions/workflows/migrations.yml).*"
+
+          echo "summary<<EOF" >> "$GITHUB_OUTPUT"
+          echo -e "$SUMMARY" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
+
+          if [ $INVALID -gt 0 ]; then
+            echo "has_errors=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_errors=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Comment on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const summary = `${{ steps.validate.outputs.summary }}`;
+            const { owner, repo } = context.repo;
+            const prNumber = context.payload.pull_request.number;
+
+            // Check for existing bot comment to update
+            const { data: comments } = await github.rest.issues.listComments({
+              owner, repo, issue_number: prNumber,
+            });
+            const botComment = comments.find(c =>
+              c.user.type === 'Bot' && c.body.includes('## Migration Validation')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                owner, repo,
+                comment_id: botComment.id,
+                body: summary,
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner, repo,
+                issue_number: prNumber,
+                body: summary,
+              });
+            }
+
+      - name: Fail if validation errors
+        if: steps.validate.outputs.has_errors == 'true'
+        run: |
+          echo "::error::Migration validation failed. See PR comment for details."
+          exit 1
+
+  # ──────────────────────────────────────────────
+  # Job 3: Auto-apply to staging on push to develop
+  # ──────────────────────────────────────────────
+  apply-staging:
+    needs: detect-migrations
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/develop' &&
+      needs.detect-migrations.outputs.has_new == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link to staging project
+        run: supabase link --project-ref ${{ secrets.STAGING_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Apply migrations to staging
+        run: supabase db push
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Log applied migrations
+        run: |
+          echo "### Successfully applied to staging" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "**Files:**" >> "$GITHUB_STEP_SUMMARY"
+          echo '${{ needs.detect-migrations.outputs.files }}' | while IFS= read -r f; do
+            [ -n "$f" ] && echo "- \`$(basename "$f")\`" >> "$GITHUB_STEP_SUMMARY"
+          done
+
+      - name: Create issue on failure
+        id: create-issue
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const sha = context.sha.substring(0, 7);
+            const runUrl = `https://github.com/${owner}/${repo}/actions/runs/${context.runId}`;
+            const files = `${{ needs.detect-migrations.outputs.files }}`.split('\n').filter(Boolean);
+            const fileList = files.map(f => `- \`${f.split('/').pop()}\``).join('\n');
+
+            const issue = await github.rest.issues.create({
+              owner, repo,
+              title: `Migration failed on staging (${sha})`,
+              body: [
+                '## Staging Migration Failure',
+                '',
+                `**Commit:** [\`${sha}\`](https://github.com/${owner}/${repo}/commit/${context.sha})`,
+                `**Run:** [View logs](${runUrl})`,
+                '',
+                '### Migration files',
+                fileList,
+                '',
+                'The migration was not applied. Please investigate and re-run manually if needed.',
+              ].join('\n'),
+              labels: ['migration-failure'],
+            });
+            core.setOutput('issue_title', issue.data.title);
+            core.setOutput('issue_url', issue.data.html_url);
+            core.setOutput('run_url', runUrl);
+
+      - name: Create board task for migration failure
+        if: failure()
+        env:
+          SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.PROD_SUPABASE_SERVICE_KEY }}
+        run: |
+          IDEA_ID="${{ vars.VIBECODES_IDEA_ID }}"
+          COLUMN_ID="${{ vars.VIBECODES_TODO_COLUMN_ID }}"
+          BUG_LABEL_ID="${{ vars.VIBECODES_BUG_LABEL_ID }}"
+          ISSUE_TITLE="${{ steps.create-issue.outputs.issue_title }}"
+          ISSUE_URL="${{ steps.create-issue.outputs.issue_url }}"
+          RUN_URL="${{ steps.create-issue.outputs.run_url }}"
+
+          SAFE_TITLE=$(echo "$ISSUE_TITLE" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+          MAX_POS=$(curl -s "${SUPABASE_URL}/rest/v1/board_tasks?idea_id=eq.${IDEA_ID}&column_id=eq.${COLUMN_ID}&select=position&order=position.desc&limit=1" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" | jq -r 'if type == "array" then .[0].position // 0 else 0 end')
+          NEW_POS=$((MAX_POS + 1000))
+
+          TASK=$(curl -s "${SUPABASE_URL}/rest/v1/board_tasks" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            -d "{
+              \"idea_id\": \"${IDEA_ID}\",
+              \"column_id\": \"${COLUMN_ID}\",
+              \"title\": \"${SAFE_TITLE}\",
+              \"description\": \"Auto-created from CI migration failure.\\n\\n**GitHub issue:** ${ISSUE_URL}\\n**CI run:** ${RUN_URL}\",
+              \"position\": ${NEW_POS}
+            }")
+          TASK_ID=$(echo "$TASK" | jq -r 'if type == "array" then .[0].id // empty else empty end')
+
+          if [ -n "$TASK_ID" ] && [ -n "$BUG_LABEL_ID" ]; then
+            curl -s "${SUPABASE_URL}/rest/v1/board_task_labels" \
+              -H "apikey: ${SUPABASE_KEY}" \
+              -H "Authorization: Bearer ${SUPABASE_KEY}" \
+              -H "Content-Type: application/json" \
+              -d "{\"task_id\": \"${TASK_ID}\", \"label_id\": \"${BUG_LABEL_ID}\"}"
+          fi
+
+  # ──────────────────────────────────────────────
+  # Job 3b: Remind to apply migrations to production
+  # ──────────────────────────────────────────────
+  remind-production:
+    needs: detect-migrations
+    if: >-
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/master' &&
+      needs.detect-migrations.outputs.has_new == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create production migration reminder
+        id: create-reminder
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const sha = context.sha.substring(0, 7);
+            const files = `${{ needs.detect-migrations.outputs.files }}`.split('\n').filter(Boolean);
+            const fileList = files.map(f => `- \`${f.split('/').pop()}\``).join('\n');
+            const workflowUrl = `https://github.com/${owner}/${repo}/actions/workflows/migrations.yml`;
+
+            const issue = await github.rest.issues.create({
+              owner, repo,
+              title: `Apply migrations to production (${sha})`,
+              body: [
+                '## Production Migration Pending',
+                '',
+                `New migrations merged to \`master\` in [\`${sha}\`](https://github.com/${owner}/${repo}/commit/${context.sha}) but have **not been applied to production** yet.`,
+                '',
+                '### Migration files',
+                fileList,
+                '',
+                '### How to apply',
+                `1. Go to [Database Migrations workflow](${workflowUrl})`,
+                '2. Click **Run workflow** → branch \`master\` → target \`production\``,
+                '3. Optionally enable **Dry run** first to preview',
+                '4. Approve the deployment when prompted',
+                '',
+                'Close this issue once the migrations have been applied.',
+              ].join('\n'),
+              assignees: ['nicholasmball'],
+            });
+            core.setOutput('issue_title', issue.data.title);
+            core.setOutput('issue_url', issue.data.html_url);
+
+      - name: Create board task for production migration
+        env:
+          SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.PROD_SUPABASE_SERVICE_KEY }}
+        run: |
+          IDEA_ID="${{ vars.VIBECODES_IDEA_ID }}"
+          COLUMN_ID="${{ vars.VIBECODES_TODO_COLUMN_ID }}"
+          ISSUE_TITLE="${{ steps.create-reminder.outputs.issue_title }}"
+          ISSUE_URL="${{ steps.create-reminder.outputs.issue_url }}"
+
+          SAFE_TITLE=$(echo "$ISSUE_TITLE" | sed 's/\\/\\\\/g; s/"/\\"/g')
+
+          MAX_POS=$(curl -s "${SUPABASE_URL}/rest/v1/board_tasks?idea_id=eq.${IDEA_ID}&column_id=eq.${COLUMN_ID}&select=position&order=position.desc&limit=1" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" | jq -r 'if type == "array" then .[0].position // 0 else 0 end')
+          NEW_POS=$((MAX_POS + 1000))
+
+          curl -s "${SUPABASE_URL}/rest/v1/board_tasks" \
+            -H "apikey: ${SUPABASE_KEY}" \
+            -H "Authorization: Bearer ${SUPABASE_KEY}" \
+            -H "Content-Type: application/json" \
+            -H "Prefer: return=representation" \
+            -d "{
+              \"idea_id\": \"${IDEA_ID}\",
+              \"column_id\": \"${COLUMN_ID}\",
+              \"title\": \"${SAFE_TITLE}\",
+              \"description\": \"Auto-created from CI.\\n\\n**GitHub issue:** ${ISSUE_URL}\\n\\nApply pending migrations to production, then close the linked issue.\",
+              \"position\": ${NEW_POS}
+            }"
+
+  # ──────────────────────────────────────────────
+  # Job 4: Manual apply to production (workflow_dispatch)
+  # ──────────────────────────────────────────────
+  apply-production:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.target == 'production'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link to production project
+        run: supabase link --project-ref ${{ secrets.PROD_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Apply migrations to production
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "Dry run mode — listing pending migrations"
+            supabase db push --dry-run
+          else
+            supabase db push
+          fi
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Log result
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "### Dry run completed (production)" >> "$GITHUB_STEP_SUMMARY"
+            echo "No migrations were applied." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Successfully applied to production" >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+  apply-staging-manual:
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.target == 'staging'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Supabase CLI
+        uses: supabase/setup-cli@v1
+        with:
+          version: latest
+
+      - name: Link to staging project
+        run: supabase link --project-ref ${{ secrets.STAGING_PROJECT_REF }}
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Apply migrations to staging
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "Dry run mode — listing pending migrations"
+            supabase db push --dry-run
+          else
+            supabase db push
+          fi
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      - name: Log result
+        run: |
+          if [ "${{ github.event.inputs.dry_run }}" = "true" ]; then
+            echo "### Dry run completed (staging)" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "### Successfully applied to staging" >> "$GITHUB_STEP_SUMMARY"
+          fi

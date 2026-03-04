@@ -72,7 +72,7 @@ Now:
 
 1. Go to [supabase.com/dashboard](https://supabase.com/dashboard)
 2. Create a new project called "VibeCodes Staging" (free tier allows 2 active projects)
-3. Run all migrations against it (use the Supabase SQL Editor or CLI)
+3. Run all migrations against it (use `supabase db push` after linking, or the Supabase SQL Editor)
 4. Copy the project's URL and anon key
 
 ### 5. Add staging environment variables on Vercel
@@ -305,24 +305,53 @@ Supabase migrations are forward-only SQL files. They can't be rolled back easily
 ### How migrations flow through branches
 
 ```
-Feature branch → develop (staging DB) → master (production DB)
+Feature branch → develop (staging DB, auto-applied) → master (production DB, manual trigger)
 ```
 
 1. **Write the migration** in your feature branch (e.g. `supabase/migrations/00060_add_discussions.sql`)
 2. **Test locally** with Docker (`npm run docker:reset` applies all migrations)
-3. **Merge to develop** → migration runs on the staging Supabase project
-4. **Verify on staging** — check the schema looks right in Supabase Studio
-5. **Merge to master** → migration runs on the production Supabase project
+3. **Open a PR to develop** → CI validates naming, checks for destructive statements, posts a summary comment
+4. **Merge to develop** → CI auto-applies the migration to the staging Supabase project via `supabase db push`
+5. **Verify on staging** — check the schema looks right in Supabase Studio
+6. **Merge to master** → migration is NOT auto-applied to production (see below)
+7. **Apply to production** → manually trigger the workflow (see next section)
 
 ### Applying migrations
 
-Migrations need to be applied manually to each Supabase project (staging and production) after merging. Use Claude Code with the Supabase MCP:
+**Staging** — fully automated. When a PR containing new `supabase/migrations/*.sql` files merges to `develop`, the `Database Migrations` GitHub Actions workflow detects the new files and runs `supabase db push` against the staging project. If it fails, a GitHub issue with the `migration-failure` label is created.
 
-```
-"Apply migration 00060_add_discussions.sql to the staging Supabase project"
-```
+**Production** — manual trigger with approval gate:
 
-Or apply via the Supabase SQL Editor by pasting the migration contents.
+1. Go to **Actions → Database Migrations → Run workflow**
+2. Select the `master` branch
+3. Set **Target environment** to `production`
+4. Optionally enable **Dry run** to preview without applying
+5. Click **Run workflow**
+6. A reviewer must approve the run (configured via the `production` GitHub Environment)
+
+You can also manually trigger against staging the same way (useful for re-runs or catching up).
+
+### Required secrets
+
+These must be set in **GitHub → Settings → Secrets and variables → Actions**:
+
+| Secret | Description | Where to get it |
+|--------|-------------|-----------------|
+| `SUPABASE_ACCESS_TOKEN` | Personal access token for the Supabase CLI | [supabase.com/dashboard/account/tokens](https://supabase.com/dashboard/account/tokens) |
+| `STAGING_PROJECT_REF` | Staging project reference ID | Supabase Dashboard → Settings → General |
+| `PROD_PROJECT_REF` | Production project reference ID | Supabase Dashboard → Settings → General |
+
+You also need a GitHub Environment called `Production` with **required reviewers** enabled (Settings → Environments). A `migration-failure` label must also exist for failure issue tracking.
+
+### PR validation
+
+When a PR to `develop` or `master` contains new migration files, the workflow:
+
+- Checks naming convention (`NNNNN_description.sql`)
+- Checks files are non-empty
+- Warns on destructive keywords (`DROP TABLE`, `TRUNCATE`, `DELETE FROM`)
+- Posts a summary comment on the PR (updates on re-push)
+- Fails the check if any file has naming/empty errors
 
 ### Avoiding migration conflicts
 
