@@ -58,6 +58,7 @@ export const metadata: Metadata = {
     title: "VibeCodes",
   },
   icons: {
+    icon: "/icon.svg",
     apple: "/apple-touch-icon.png",
   },
 };
