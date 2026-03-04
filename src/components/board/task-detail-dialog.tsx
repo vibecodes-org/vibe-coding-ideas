@@ -346,6 +346,15 @@ export function TaskDetailDialog({
       .join("")
       .toUpperCase() ?? null;
 
+  // Derive current label display data from boardLabels prop (always up-to-date)
+  // instead of task.labels snapshot (stale after label edits until full page reload)
+  const currentLabels = useMemo(() => {
+    const labelMap = new Map(boardLabels.map((l) => [l.id, l]));
+    return task.labels
+      .map((tl) => labelMap.get(tl.id))
+      .filter((l): l is BoardLabel => l !== undefined);
+  }, [task.labels, boardLabels]);
+
   const commentCount = task.comment_count;
   const attachmentCount = task.attachment_count;
   const propCoverPath = task.cover_image_path ?? null;
@@ -515,7 +524,7 @@ export function TaskDetailDialog({
                   {!isReadOnly && (
                     <LabelPicker
                       boardLabels={boardLabels}
-                      taskLabels={task.labels}
+                      taskLabels={currentLabels}
                       taskId={task.id}
                       ideaId={ideaId}
                       currentUserId={currentUserId}
@@ -528,8 +537,8 @@ export function TaskDetailDialog({
                     </LabelPicker>
                   )}
                 </div>
-                {task.labels.length > 0 ? (
-                  <TaskLabelBadges labels={task.labels} maxVisible={6} />
+                {currentLabels.length > 0 ? (
+                  <TaskLabelBadges labels={currentLabels} maxVisible={6} />
                 ) : isReadOnly ? (
                   <p className="text-xs text-muted-foreground">None</p>
                 ) : null}

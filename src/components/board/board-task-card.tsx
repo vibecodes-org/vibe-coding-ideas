@@ -211,6 +211,15 @@ export const BoardTaskCard = memo(function BoardTaskCard({
     [task.assignee?.full_name],
   );
 
+  // Derive current label display data from boardLabels prop (always up-to-date)
+  // instead of task.labels snapshot (stale after label edits until full page reload)
+  const currentLabels = useMemo(() => {
+    const labelMap = new Map(boardLabels.map((l) => [l.id, l]));
+    return task.labels
+      .map((tl) => labelMap.get(tl.id))
+      .filter((l): l is BoardLabel => l !== undefined);
+  }, [task.labels, boardLabels]);
+
   return (
     <>
       <div
@@ -255,20 +264,20 @@ export const BoardTaskCard = memo(function BoardTaskCard({
           )}
           <div className="min-w-0 flex-1">
             {/* Labels */}
-            {task.labels.length > 0 && (
+            {currentLabels.length > 0 && (
               <div className="mb-1.5">
                 {isReadOnly ? (
-                  <TaskLabelBadges labels={task.labels} />
+                  <TaskLabelBadges labels={currentLabels} />
                 ) : (
                   <LabelPicker
                     boardLabels={boardLabels}
-                    taskLabels={task.labels}
+                    taskLabels={currentLabels}
                     taskId={task.id}
                     ideaId={ideaId}
                     currentUserId={currentUserId}
                   >
                     <div onClick={(e) => e.stopPropagation()} className="cursor-pointer">
-                      <TaskLabelBadges labels={task.labels} />
+                      <TaskLabelBadges labels={currentLabels} />
                     </div>
                   </LabelPicker>
                 )}
