@@ -372,11 +372,23 @@ export function OnboardingDialog({
                   </div>
                 )}
                 <div className="text-[13px] leading-relaxed text-muted-foreground">
-                  <span className="font-medium text-foreground">
-                    Looking good!
-                  </span>
-                  <br />
-                  Your avatar was imported from your account.
+                  {userAvatarUrl ? (
+                    <>
+                      <span className="font-medium text-foreground">
+                        Looking good!
+                      </span>
+                      <br />
+                      Your avatar was imported from your account.
+                    </>
+                  ) : (
+                    <>
+                      <span className="font-medium text-foreground">
+                        No avatar yet
+                      </span>
+                      <br />
+                      You can add one later in your profile settings.
+                    </>
+                  )}
                 </div>
               </div>
 
