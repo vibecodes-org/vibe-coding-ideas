@@ -421,7 +421,7 @@ export async function convertDiscussionToTask(
     .from("idea_discussions")
     .update({ status: "converted" })
     .eq("id", discussionId)
-    .in("status", ["open", "resolved", "ready_to_convert"])
+    .in("status", ["open", "resolved", "ready_to_convert", "archived"])
     .select("id")
     .maybeSingle();
 

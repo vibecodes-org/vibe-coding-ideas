@@ -1298,7 +1298,7 @@ export type Database = {
           author_id: string;
           title: string;
           body: string;
-          status: "open" | "resolved" | "ready_to_convert" | "converted";
+          status: "open" | "resolved" | "ready_to_convert" | "converted" | "archived";
           pinned: boolean;
           upvotes: number;
           reply_count: number;
@@ -1314,7 +1314,7 @@ export type Database = {
           author_id: string;
           title: string;
           body: string;
-          status?: "open" | "resolved" | "ready_to_convert" | "converted";
+          status?: "open" | "resolved" | "ready_to_convert" | "converted" | "archived";
           pinned?: boolean;
           upvotes?: number;
           reply_count?: number;
@@ -1330,7 +1330,7 @@ export type Database = {
           author_id?: string;
           title?: string;
           body?: string;
-          status?: "open" | "resolved" | "ready_to_convert" | "converted";
+          status?: "open" | "resolved" | "ready_to_convert" | "converted" | "archived";
           pinned?: boolean;
           upvotes?: number;
           reply_count?: number;
@@ -1635,7 +1635,7 @@ export type Database = {
         | "discussion_reply"
         | "discussion_mention";
       collaboration_request_status: "pending" | "accepted" | "declined";
-      discussion_status: "open" | "resolved" | "ready_to_convert" | "converted";
+      discussion_status: "open" | "resolved" | "ready_to_convert" | "converted" | "archived";
     };
     CompositeTypes: {
       [_ in never]: never;

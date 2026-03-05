@@ -148,7 +148,7 @@ export async function createTestDiscussion(
   overrides: {
     title?: string;
     body?: string;
-    status?: "open" | "resolved" | "ready_to_convert" | "converted";
+    status?: "open" | "resolved" | "ready_to_convert" | "converted" | "archived";
     pinned?: boolean;
     target_column_id?: string;
     target_assignee_id?: string;

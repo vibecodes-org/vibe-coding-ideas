@@ -11,6 +11,7 @@ import {
   Search,
   Star,
   Bot,
+  Archive,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -49,7 +50,7 @@ export function stripMarkdown(md: string): string {
     .trim();
 }
 
-type FilterStatus = "all" | "open" | "resolved" | "ready_to_convert" | "converted";
+type FilterStatus = "all" | "open" | "resolved" | "ready_to_convert" | "converted" | "archived";
 
 const STATUS_CONFIG = {
   open: {
@@ -76,6 +77,12 @@ const STATUS_CONFIG = {
     iconClassName: "text-blue-400",
     badgeClassName: "bg-blue-500/10 text-blue-400 border-blue-500/20",
   },
+  archived: {
+    label: "Archived",
+    icon: Archive,
+    iconClassName: "text-zinc-400",
+    badgeClassName: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
+  },
 } as const;
 
 interface DiscussionListProps {
@@ -88,6 +95,8 @@ export function DiscussionList({ discussions, ideaId }: DiscussionListProps) {
   const [search, setSearch] = useState("");
 
   const filtered = discussions.filter((d) => {
+    // Hide archived from "all" — only show when explicitly filtered
+    if (filter === "all" && d.status === "archived") return false;
     if (filter !== "all" && d.status !== filter) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -103,11 +112,13 @@ export function DiscussionList({ discussions, ideaId }: DiscussionListProps) {
     return new Date(b.last_activity_at).getTime() - new Date(a.last_activity_at).getTime();
   });
 
+  const archivedCount = discussions.filter((d) => d.status === "archived").length;
   const filterTabs: { value: FilterStatus; label: string; count: number }[] = [
-    { value: "all", label: "All", count: discussions.length },
+    { value: "all", label: "All", count: discussions.length - archivedCount },
     { value: "open", label: "Open", count: discussions.filter((d) => d.status === "open").length },
     { value: "resolved", label: "Resolved", count: discussions.filter((d) => d.status === "resolved").length },
     { value: "ready_to_convert", label: "Ready", count: discussions.filter((d) => d.status === "ready_to_convert").length },
+    { value: "archived", label: "Archived", count: archivedCount },
   ];
 
   return (

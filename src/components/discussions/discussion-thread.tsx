@@ -14,6 +14,7 @@ import {
   Pencil,
   Sparkles,
   Loader2,
+  Archive,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -65,6 +66,11 @@ const STATUS_CONFIG = {
     label: "Converted",
     icon: ArrowRightLeft,
     className: "bg-blue-500/10 text-blue-400 border-blue-500/20",
+  },
+  archived: {
+    label: "Archived",
+    icon: Archive,
+    className: "bg-zinc-500/10 text-zinc-400 border-zinc-500/20",
   },
 } as const;
 
@@ -153,7 +159,7 @@ export function DiscussionThread({
   );
 
   const canReply =
-    isTeamMember && discussion.status !== "converted" && discussion.status !== "ready_to_convert" && !!currentUser;
+    isTeamMember && discussion.status !== "converted" && discussion.status !== "ready_to_convert" && discussion.status !== "archived" && !!currentUser;
 
   async function handleResolve() {
     try {
@@ -172,6 +178,17 @@ export function DiscussionThread({
       router.refresh();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to reopen");
+    }
+  }
+
+  async function handleArchive() {
+    const newStatus = discussion.status === "archived" ? "open" : "archived";
+    try {
+      await updateDiscussion(discussion.id, ideaId, { status: newStatus });
+      toast.success(newStatus === "archived" ? "Discussion archived" : "Discussion unarchived");
+      router.refresh();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update");
     }
   }
 
@@ -329,6 +346,15 @@ export function DiscussionThread({
               <Button
                 variant="ghost"
                 size="sm"
+                onClick={handleArchive}
+                className="gap-1 text-muted-foreground h-8 px-2"
+              >
+                <Archive className="h-3.5 w-3.5" />
+                {discussion.status === "archived" ? "Unarchive" : "Archive"}
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
                 onClick={handleDelete}
                 disabled={isDeleting}
                 className="gap-1 text-destructive hover:text-destructive h-8 px-2"
@@ -390,6 +416,16 @@ export function DiscussionThread({
                     columns={columns}
                   />
                 </>
+              ) : discussion.status === "archived" ? (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={handleReopen}
+                  className="gap-1.5"
+                >
+                  <MessageSquare className="h-3.5 w-3.5" />
+                  Reopen
+                </Button>
               ) : null}
             </div>
           )}

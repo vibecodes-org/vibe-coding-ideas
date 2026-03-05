@@ -4,7 +4,7 @@ import type { McpContext } from "../context";
 export const listDiscussionsSchema = z.object({
   idea_id: z.string().uuid().describe("The idea ID"),
   status: z
-    .enum(["open", "resolved", "ready_to_convert", "converted"])
+    .enum(["open", "resolved", "ready_to_convert", "converted", "archived"])
     .optional()
     .describe("Filter by discussion status"),
   limit: z
@@ -207,7 +207,7 @@ export const updateDiscussionSchema = z.object({
   title: z.string().min(1).max(200).optional().describe("New title"),
   body: z.string().min(1).max(10000).optional().describe("New body (markdown)"),
   status: z
-    .enum(["open", "resolved", "ready_to_convert", "converted"])
+    .enum(["open", "resolved", "ready_to_convert", "converted", "archived"])
     .optional()
     .describe("New status"),
   pinned: z.boolean().optional().describe("Pin or unpin the discussion"),
