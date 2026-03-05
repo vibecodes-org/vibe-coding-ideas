@@ -9,6 +9,12 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import type { Metadata } from "next";
+
+export const metadata: Metadata = {
+  title: "Log In",
+  description: "Log in to your VibeCodes account.",
+};
 
 export default function LoginPage() {
   return (

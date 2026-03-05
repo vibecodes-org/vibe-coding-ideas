@@ -11,8 +11,11 @@ import { ApiKeySettings } from "@/components/profile/api-key-settings";
 import { BoardColumnSettings } from "@/components/profile/board-column-settings";
 import Link from "next/link";
 import { Bot } from "lucide-react";
+import { stripMarkdownForMeta } from "@/lib/utils";
 import type { IdeaWithAuthor } from "@/types";
 import type { Metadata } from "next";
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
 
 interface PageProps {
   params: Promise<{ id: string }>;
@@ -25,22 +28,24 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     .from("users")
     .select("full_name, bio")
     .eq("id", id)
-    .single();
+    .maybeSingle();
 
   if (!profile) return { title: "User Not Found" };
 
   const displayName = profile.full_name ?? "User";
   const description = profile.bio
-    ? profile.bio.substring(0, 155)
+    ? stripMarkdownForMeta(profile.bio)
     : `${displayName} — Member of VibeCodes`;
 
   return {
     title: displayName,
     description,
+    alternates: { canonical: `${appUrl}/profile/${id}` },
     openGraph: {
       title: displayName,
       description,
       type: "profile",
+      url: `${appUrl}/profile/${id}`,
     },
     twitter: {
       card: "summary",
