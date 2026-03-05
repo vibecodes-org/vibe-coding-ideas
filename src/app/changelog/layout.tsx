@@ -1,10 +1,26 @@
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 
+const description =
+  "Stay up to date with VibeCodes releases — new features, improvements, and bug fixes across the AI-powered idea board platform.";
+
 export const metadata = {
   title: "Changelog",
-  description:
-    "Stay up to date with VibeCodes releases — new features, improvements, and bug fixes across the AI-powered idea board platform.",
+  description,
+  openGraph: {
+    title: "Changelog | VibeCodes",
+    description,
+    url: "https://vibecodes.co.uk/changelog",
+  },
+  twitter: {
+    title: "Changelog | VibeCodes",
+    description,
+  },
+  alternates: {
+    types: {
+      "application/rss+xml": "/feed.xml",
+    },
+  },
 };
 
 export default function ChangelogLayout({

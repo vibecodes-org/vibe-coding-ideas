@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ArrowLeft, ScrollText } from "lucide-react";
+import { ArrowLeft, Link as LinkIcon, ScrollText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { changelog } from "@/data/changelog";
 import type { ChangelogEntryType } from "@/data/changelog";
@@ -23,7 +23,7 @@ export default function ChangelogPage() {
     <>
       <Link
         href="/"
-        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
+        className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground"
       >
         <ArrowLeft className="h-4 w-4" />
         Back to Home
@@ -46,17 +46,20 @@ export default function ChangelogPage() {
       ) : (
       <div className="space-y-8 border-l border-border pl-8">
         {changelog.map((entry) => (
-          <article key={entry.isoDate} className="relative">
+          <article key={entry.isoDate} id={entry.isoDate} className="relative scroll-mt-24">
             {/* Timeline dot — decorative */}
             <div aria-hidden="true" className="absolute -left-[calc(2rem+1px)] top-1.5 h-3 w-3 rounded-full border-2 border-primary bg-background" />
 
             <header className="mb-4">
-              <time
-                dateTime={entry.isoDate}
-                className="text-sm font-medium text-muted-foreground"
+              <a
+                href={`#${entry.isoDate}`}
+                className="group inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground"
               >
-                {entry.date}
-              </time>
+                <time dateTime={entry.isoDate}>
+                  {entry.date}
+                </time>
+                <LinkIcon className="h-3 w-3 opacity-0 transition-opacity group-hover:opacity-100" />
+              </a>
               <h2 className="mt-1 text-xl font-semibold">{entry.title}</h2>
             </header>
 
