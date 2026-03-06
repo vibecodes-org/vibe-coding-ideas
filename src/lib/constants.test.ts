@@ -9,6 +9,7 @@ import {
   SORT_OPTIONS,
   BOT_ROLE_TEMPLATES,
   SUGGESTED_TAGS,
+  SAMPLE_IDEA_CONTENT,
 } from "./constants";
 import type { IdeaStatus, CommentType } from "@/types";
 
@@ -177,6 +178,33 @@ describe("BOT_ROLE_TEMPLATES", () => {
   it("has no duplicate roles", () => {
     const roles = BOT_ROLE_TEMPLATES.map((t) => t.role);
     expect(new Set(roles).size).toBe(roles.length);
+  });
+});
+
+// ── SAMPLE_IDEA_CONTENT ──────────────────────────────────────────────
+
+describe("SAMPLE_IDEA_CONTENT", () => {
+  it("has required top-level fields", () => {
+    expect(SAMPLE_IDEA_CONTENT.title).toBeTruthy();
+    expect(SAMPLE_IDEA_CONTENT.description).toBeTruthy();
+    expect(SAMPLE_IDEA_CONTENT.tags.length).toBeGreaterThan(0);
+    expect(SAMPLE_IDEA_CONTENT.tasks.length).toBeGreaterThan(0);
+  });
+
+  it("each task has title, description, and valid columnIndex", () => {
+    for (const task of SAMPLE_IDEA_CONTENT.tasks) {
+      expect(task.title).toBeTruthy();
+      expect(task.description).toBeTruthy();
+      expect(task.columnIndex).toBeGreaterThanOrEqual(0);
+      expect(task.columnIndex).toBeLessThan(DEFAULT_BOARD_COLUMNS.length);
+    }
+  });
+
+  it("does not place tasks in the Done column", () => {
+    const doneIndex = DEFAULT_BOARD_COLUMNS.findIndex((c) => c.is_done_column);
+    for (const task of SAMPLE_IDEA_CONTENT.tasks) {
+      expect(task.columnIndex).not.toBe(doneIndex);
+    }
   });
 });
 

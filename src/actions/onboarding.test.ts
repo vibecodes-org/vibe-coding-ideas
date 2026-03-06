@@ -312,6 +312,68 @@ describe("onboarding actions", () => {
       expect(result).toBeNull();
     });
 
+    it("throws when idea insert fails", async () => {
+      const { createSampleIdea } = await import("./onboarding");
+
+      const countEq = vi.fn().mockResolvedValue({ count: 0, error: null });
+      const countSelect = vi.fn(() => ({ eq: countEq }));
+
+      const insertSelectSingle = vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "insert failed" },
+      });
+      const insertSelect = vi.fn(() => ({ single: insertSelectSingle }));
+      const insertFn = vi.fn(() => ({ select: insertSelect }));
+
+      let fromCallCount = 0;
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "ideas") {
+          fromCallCount++;
+          if (fromCallCount === 1) return { select: countSelect };
+          return { insert: insertFn };
+        }
+        return chain;
+      });
+
+      await expect(createSampleIdea()).rejects.toThrow("insert failed");
+    });
+
+    it("returns ideaId even when column insert fails (graceful degradation)", async () => {
+      const { createSampleIdea } = await import("./onboarding");
+
+      const countEq = vi.fn().mockResolvedValue({ count: 0, error: null });
+      const countSelect = vi.fn(() => ({ eq: countEq }));
+
+      const insertSelectSingle = vi.fn().mockResolvedValue({
+        data: { id: "sample-idea-id" },
+        error: null,
+      });
+      const insertSelect = vi.fn(() => ({ single: insertSelectSingle }));
+      const insertFn = vi.fn(() => ({ select: insertSelect }));
+
+      // Column insert fails
+      const colOrderFn = vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "column insert failed" },
+      });
+      const colSelect = vi.fn(() => ({ order: colOrderFn }));
+      const colInsert = vi.fn(() => ({ select: colSelect }));
+
+      let fromCallCount = 0;
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "ideas") {
+          fromCallCount++;
+          if (fromCallCount === 1) return { select: countSelect };
+          return { insert: insertFn };
+        }
+        if (table === "board_columns") return { insert: colInsert };
+        return chain;
+      });
+
+      const result = await createSampleIdea();
+      expect(result).toEqual({ ideaId: "sample-idea-id" });
+    });
+
     it("redirects unauthenticated users to login", async () => {
       mockGetUser.mockResolvedValue({ data: { user: null } });
       const { createSampleIdea } = await import("./onboarding");
