@@ -529,7 +529,7 @@ export async function executeBulkImport(
         description: t.description ?? null,
         assignee_id: assigneeId,
         position: pos,
-        due_date: t.dueDate ?? null,
+        due_date: t.dueDate ? parseDateString(t.dueDate) ?? null : null,
       };
     });
 
@@ -882,7 +882,7 @@ export async function insertTasksSequentially(
       description: t.description ?? null,
       assignee_id: assigneeId,
       position: pos,
-      due_date: t.dueDate ?? null,
+      due_date: t.dueDate ? parseDateString(t.dueDate) ?? null : null,
     };
 
     // Insert with one retry

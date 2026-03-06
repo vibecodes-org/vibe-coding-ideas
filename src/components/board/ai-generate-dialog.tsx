@@ -8,7 +8,9 @@ import {
   AlertTriangle,
   Check,
   ArrowRight,
+  Circle,
   CircleAlert,
+  RotateCcw,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -106,6 +108,7 @@ export function AiGenerateDialog({
   );
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
   const [generating, setGenerating] = useState(false);
+  const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
 
   // Inserting phase state
   const [taskStatuses, setTaskStatuses] = useState<TaskInsertStatus[]>([]);
@@ -130,6 +133,13 @@ export function AiGenerateDialog({
   // Pool bots not owned by current user (deduplicates bots that are in both lists)
   const ideaAgentBots = bots.filter((b) => b.is_active && !myAgentIds.has(b.id));
   const allBots = [...myAgents, ...ideaAgentBots];
+
+  // When generation completes, select all tasks
+  useEffect(() => {
+    if (!generating && generatedTasks && generatedTasks.length > 0 && phase === "preview") {
+      setSelectedIndices(new Set(generatedTasks.map((_, i) => i)));
+    }
+  }, [generating, generatedTasks, phase]);
 
   // Auto-close when board refresh completes
   useEffect(() => {
@@ -164,6 +174,7 @@ export function AiGenerateDialog({
   async function handleGenerate() {
     setGenerating(true);
     setGeneratedTasks([]);
+    setSelectedIndices(new Set());
     setPhase("preview");
     try {
       const selectedBot =
@@ -384,6 +395,12 @@ export function AiGenerateDialog({
     ]
   );
 
+  function handleApplySelected() {
+    if (!generatedTasks) return;
+    const filtered = generatedTasks.filter((_, i) => selectedIndices.has(i));
+    handleApply(filtered);
+  }
+
   function handleCancel() {
     abortRef.current?.abort();
   }
@@ -408,6 +425,7 @@ export function AiGenerateDialog({
     setTaskStatuses([]);
     setInsertProgress({ current: 0, total: 0 });
     setInsertResult(null);
+    setSelectedIndices(new Set());
     if (loadingTimeoutRef.current) {
       clearTimeout(loadingTimeoutRef.current);
       loadingTimeoutRef.current = null;
@@ -425,133 +443,299 @@ export function AiGenerateDialog({
       ? Math.round((insertProgress.current / insertProgress.total) * 100)
       : 0;
 
+  const isWidePhase = phase === "preview" || phase === "inserting";
+
+  const phaseDescriptions: Record<DialogPhase, string> = {
+    configure: "AI will create tasks, columns, and labels based on the idea description.",
+    preview: generating ? "AI is generating tasks..." : "Review generated tasks and select which to apply.",
+    inserting: "Creating tasks on the board...",
+    "loading-board": "Preparing your board view...",
+    complete: "Task generation complete.",
+  };
+
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
-        className="max-h-[90vh] overflow-y-auto sm:max-w-2xl"
+        className={`flex max-h-[90vh] flex-col overflow-hidden p-0 transition-[max-width] duration-200 ${
+          isWidePhase ? "sm:max-w-4xl" : "sm:max-w-2xl"
+        }`}
         onInteractOutside={(e) => busy && e.preventDefault()}
         onEscapeKeyDown={(e) => busy && e.preventDefault()}
       >
-        <DialogHeader>
+        {/* ── Header ──────────────────────────────────────────────── */}
+        <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
           <DialogTitle className="flex items-center gap-2">
-            <Sparkles className="h-5 w-5 text-primary" />
+            <Sparkles className="h-[18px] w-[18px] text-violet-400" />
             AI Generate Board
           </DialogTitle>
-          <DialogDescription>
-            {phase === "inserting"
-              ? "Creating tasks on the board..."
-              : phase === "loading-board"
-                ? "Preparing your board view..."
-                : phase === "complete"
-                  ? "Task generation complete."
-                  : "AI will create tasks, columns, and labels based on the idea description."}
-          </DialogDescription>
+          <DialogDescription>{phaseDescriptions[phase]}</DialogDescription>
         </DialogHeader>
 
-        {/* ── Configure Phase ─────────────────────────────────── */}
-        {phase === "configure" && (
-          <div className="space-y-4">
-            {allBots.length > 0 && (
-              <div className="space-y-2">
-                <Label>AI Persona</Label>
-                <Select value={selectedBotId} onValueChange={setSelectedBotId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select persona" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="default">
-                      Default (Project Manager)
-                    </SelectItem>
-                    {myAgents.length > 0 && (
-                      <SelectGroup>
-                        <SelectLabel>My Agents</SelectLabel>
-                        {myAgents.map((bot) => (
-                          <SelectItem key={bot.id} value={bot.id}>
-                            {bot.name}
-                            {bot.role ? ` (${bot.role})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    )}
-                    {ideaAgentBots.length > 0 && (
-                      <SelectGroup>
-                        <SelectLabel>Idea Agents</SelectLabel>
-                        {ideaAgentBots.map((bot) => (
-                          <SelectItem key={bot.id} value={bot.id}>
-                            {bot.name}
-                            {bot.role ? ` (${bot.role})` : ""}
-                          </SelectItem>
-                        ))}
-                      </SelectGroup>
-                    )}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+        {/* ── Scrollable Body ─────────────────────────────────────── */}
+        <div className="flex-1 overflow-y-auto p-4 sm:p-6">
+          {/* ── Configure Phase ─────────────────────────────────── */}
+          {phase === "configure" && (
+            <div className="space-y-4">
+              {allBots.length > 0 && (
+                <div className="space-y-2">
+                  <Label>AI Persona</Label>
+                  <Select value={selectedBotId} onValueChange={setSelectedBotId}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select persona" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="default">
+                        Default (Project Manager)
+                      </SelectItem>
+                      {myAgents.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>My Agents</SelectLabel>
+                          {myAgents.map((bot) => (
+                            <SelectItem key={bot.id} value={bot.id}>
+                              {bot.name}
+                              {bot.role ? ` (${bot.role})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                      {ideaAgentBots.length > 0 && (
+                        <SelectGroup>
+                          <SelectLabel>Idea Agents</SelectLabel>
+                          {ideaAgentBots.map((bot) => (
+                            <SelectItem key={bot.id} value={bot.id}>
+                              {bot.name}
+                              {bot.role ? ` (${bot.role})` : ""}
+                            </SelectItem>
+                          ))}
+                        </SelectGroup>
+                      )}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
 
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <Label>Prompt</Label>
-                <PromptTemplateSelector
-                  type="generate"
-                  currentPrompt={prompt}
-                  onSelectTemplate={setPrompt}
-                  disabled={busy}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <Label>Prompt</Label>
+                  <PromptTemplateSelector
+                    type="generate"
+                    currentPrompt={prompt}
+                    onSelectTemplate={setPrompt}
+                    disabled={busy}
+                  />
+                </div>
+                <Textarea
+                  value={prompt}
+                  onChange={(e) => setPrompt(e.target.value)}
+                  rows={4}
+                  placeholder="Tell the AI how to structure the task board..."
                 />
               </div>
-              <Textarea
-                value={prompt}
-                onChange={(e) => setPrompt(e.target.value)}
-                rows={4}
-                placeholder="Tell the AI how to structure the task board..."
-              />
-            </div>
 
-            <div className="space-y-2">
-              <Label>Mode</Label>
-              <RadioGroup
-                value={mode}
-                onValueChange={(v) => setMode(v as "add" | "replace")}
-                className="flex gap-4"
-              >
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="add" id="mode-add" />
-                  <Label htmlFor="mode-add" className="font-normal">
-                    Add to existing board
-                  </Label>
-                </div>
-                <div className="flex items-center gap-2">
-                  <RadioGroupItem value="replace" id="mode-replace" />
-                  <Label
-                    htmlFor="mode-replace"
-                    className="font-normal text-destructive"
-                  >
-                    Replace existing board
-                  </Label>
-                </div>
-              </RadioGroup>
-            </div>
-
-            {mode === "replace" && (
-              <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-                <span>
-                  This will delete all existing tasks on the board before
-                  applying AI-generated tasks.
-                </span>
-              </div>
-            )}
-
-            {ideaDescription && (
               <div className="space-y-2">
-                <Label className="text-muted-foreground">Idea Context</Label>
-                <p className="line-clamp-3 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
-                  {ideaDescription.substring(0, 300)}
-                  {ideaDescription.length > 300 ? "..." : ""}
+                <Label>Mode</Label>
+                <RadioGroup
+                  value={mode}
+                  onValueChange={(v) => setMode(v as "add" | "replace")}
+                  className="flex gap-4"
+                >
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="add" id="mode-add" />
+                    <Label htmlFor="mode-add" className="font-normal">
+                      Add to existing board
+                    </Label>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <RadioGroupItem value="replace" id="mode-replace" />
+                    <Label
+                      htmlFor="mode-replace"
+                      className="font-normal text-destructive"
+                    >
+                      Replace existing board
+                    </Label>
+                  </div>
+                </RadioGroup>
+              </div>
+
+              {mode === "replace" && (
+                <div className="flex items-start gap-2 rounded-md border border-destructive/50 bg-destructive/10 p-3 text-sm text-destructive">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span>
+                    This will delete all existing tasks on the board before
+                    applying AI-generated tasks.
+                  </span>
+                </div>
+              )}
+
+              {ideaDescription && (
+                <div className="space-y-2">
+                  <Label className="text-muted-foreground">Idea Context</Label>
+                  <p className="line-clamp-3 rounded-md border border-border bg-muted/30 p-3 text-xs text-muted-foreground">
+                    {ideaDescription.substring(0, 300)}
+                    {ideaDescription.length > 300 ? "..." : ""}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* ── Preview Phase ──────────────────────────────────── */}
+          {phase === "preview" && generatedTasks && (
+            <ImportPreviewTable
+              tasks={generatedTasks}
+              columns={columns}
+              columnMapping={columnMapping}
+              defaultColumnId={columns[0]?.id ?? ""}
+              streaming={generating}
+              boardLabels={boardLabels}
+              selectedIndices={generating ? undefined : selectedIndices}
+              onSelectionChange={generating ? undefined : setSelectedIndices}
+            />
+          )}
+
+          {/* ── Inserting Phase ────────────────────────────────── */}
+          {phase === "inserting" && (
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <div className="flex items-center justify-between text-sm">
+                  <span className="text-muted-foreground" aria-live="polite">
+                    Creating task{" "}
+                    <span className="font-semibold text-foreground">
+                      {insertProgress.current}
+                    </span>{" "}
+                    of{" "}
+                    <span className="font-semibold text-foreground">
+                      {insertProgress.total}
+                    </span>
+                    ...
+                  </span>
+                  <span className="font-semibold text-violet-400">
+                    {progressPercent}%
+                  </span>
+                </div>
+                <Progress
+                  value={progressPercent}
+                  className="h-1.5 [&>div]:bg-gradient-to-r [&>div]:from-violet-600 [&>div]:to-violet-400"
+                  aria-valuemin={0}
+                  aria-valuemax={100}
+                  aria-valuenow={progressPercent}
+                />
+              </div>
+
+              <div className="max-h-[400px] overflow-y-auto rounded-lg border">
+                <div className="divide-y divide-border">
+                  {taskStatuses.map((task, i) => (
+                    <div
+                      key={i}
+                      ref={
+                        task.status === "creating"
+                          ? (el) =>
+                              el?.scrollIntoView({
+                                behavior: "smooth",
+                                block: "nearest",
+                              })
+                          : undefined
+                      }
+                      className={`flex items-center gap-2.5 px-3.5 py-2 text-sm ${
+                        task.status === "pending"
+                          ? "opacity-35"
+                          : task.status === "creating"
+                            ? "bg-violet-500/10"
+                            : task.status === "error"
+                              ? "text-destructive"
+                              : "text-muted-foreground"
+                      }`}
+                    >
+                      {task.status === "done" && (
+                        <Check className="h-4 w-4 shrink-0 text-green-400" />
+                      )}
+                      {task.status === "creating" && (
+                        <ArrowRight className="h-4 w-4 shrink-0 animate-pulse text-violet-400" />
+                      )}
+                      {task.status === "error" && (
+                        <CircleAlert className="h-4 w-4 shrink-0" />
+                      )}
+                      {task.status === "pending" && (
+                        <Circle className="h-4 w-4 shrink-0 text-muted-foreground" />
+                      )}
+                      <span
+                        className={`min-w-0 truncate ${
+                          task.status === "creating"
+                            ? "font-semibold text-foreground"
+                            : ""
+                        }`}
+                      >
+                        {task.title}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── Loading Board Phase ────────────────────────────── */}
+          {phase === "loading-board" && (
+            <div className="space-y-4 py-8">
+              <div className="text-center">
+                <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
+                <p
+                  className="mt-3 text-sm font-medium"
+                  role="status"
+                  aria-live="polite"
+                >
+                  Preparing your board view...
+                </p>
+                <p className="mt-1 text-xs text-muted-foreground">
+                  {createdCountRef.current} task
+                  {createdCountRef.current !== 1 ? "s" : ""} created. Loading
+                  board data.
                 </p>
               </div>
-            )}
+            </div>
+          )}
 
+          {/* ── Complete Phase (only shown when there are failures) ── */}
+          {phase === "complete" && insertResult && (
+            <div className="space-y-4">
+              <div className="space-y-3">
+                <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+                  <div>
+                    <p className="font-medium">
+                      Created {insertResult.created} of{" "}
+                      {insertResult.created + insertResult.failed.length} tasks
+                    </p>
+                    <p className="mt-1 text-muted-foreground">
+                      {insertResult.failed.length} task
+                      {insertResult.failed.length !== 1 ? "s" : ""} failed to
+                      create:
+                    </p>
+                  </div>
+                </div>
+
+                <ScrollArea className="max-h-[120px]">
+                  <ul className="space-y-1 text-sm text-muted-foreground">
+                    {insertResult.failed.map((f, i) => (
+                      <li key={i} className="flex items-start gap-1.5">
+                        <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
+                        <span>
+                          &ldquo;{f.title}&rdquo;{" "}
+                          <span className="text-xs">— {f.error}</span>
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                </ScrollArea>
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* ── Sticky Footer ───────────────────────────────────────── */}
+        {/* Configure phase footer */}
+        {phase === "configure" && (
+          <div className="shrink-0 border-t border-border bg-background px-4 py-3 sm:px-6">
             <Button
               onClick={handleGenerate}
               disabled={!prompt.trim()}
@@ -563,122 +747,59 @@ export function AiGenerateDialog({
           </div>
         )}
 
-        {/* ── Preview Phase ──────────────────────────────────── */}
+        {/* Preview phase footer */}
         {phase === "preview" && generatedTasks && (
-          <div className="space-y-4">
-            <ImportPreviewTable
-              tasks={generatedTasks}
-              columns={columns}
-              columnMapping={columnMapping}
-              defaultColumnId={columns[0]?.id ?? ""}
-              streaming={generating}
-            />
-
-            <div className="flex gap-2">
-              <Button
-                onClick={() => handleApply()}
-                disabled={busy || generatedTasks.length === 0}
-                className="flex-1 gap-2"
-              >
-                {generating
-                  ? "Generating..."
-                  : `Apply All (${generatedTasks.length} tasks)`}
-              </Button>
-              <Button
-                variant="outline"
-                onClick={() => {
-                  setPhase("configure");
-                  handleGenerate();
-                }}
-                disabled={busy}
-                className="gap-2"
-              >
-                Regenerate
-              </Button>
-              <Button
-                variant="ghost"
-                onClick={() => handleOpenChange(false)}
-                disabled={busy}
-              >
-                Cancel
-              </Button>
-            </div>
+          <div className="shrink-0 border-t border-border bg-background px-4 py-3 sm:px-6">
+            {generating ? (
+              <div className="flex items-center gap-3">
+                <div className="enhance-dot-indicator flex gap-[3px]">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <span className="text-[13px] text-muted-foreground">
+                  Generating tasks...
+                </span>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => {
+                      setPhase("configure");
+                      handleGenerate();
+                    }}
+                    className="gap-1.5"
+                  >
+                    <RotateCcw className="h-3.5 w-3.5" />
+                    Regenerate
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => handleOpenChange(false)}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+                <Button
+                  onClick={handleApplySelected}
+                  disabled={selectedIndices.size === 0}
+                  className="gap-2"
+                >
+                  <Sparkles className="h-4 w-4" />
+                  Apply {selectedIndices.size} Task{selectedIndices.size !== 1 ? "s" : ""}
+                </Button>
+              </div>
+            )}
           </div>
         )}
 
-        {/* ── Inserting Phase ────────────────────────────────── */}
+        {/* Inserting phase footer */}
         {phase === "inserting" && (
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <div className="flex items-center justify-between text-sm">
-                <span className="font-medium" aria-live="polite">
-                  Creating task {insertProgress.current} of{" "}
-                  {insertProgress.total}...
-                </span>
-                <span className="text-muted-foreground">
-                  {progressPercent}%
-                </span>
-              </div>
-              <Progress
-                value={progressPercent}
-                className="h-2"
-                aria-valuemin={0}
-                aria-valuemax={100}
-                aria-valuenow={progressPercent}
-              />
-            </div>
-
-            <div className="h-[240px] overflow-y-auto rounded-md border p-3">
-              <div className="space-y-1.5">
-                {taskStatuses.map((task, i) => (
-                  <div
-                    key={i}
-                    ref={
-                      task.status === "creating"
-                        ? (el) =>
-                            el?.scrollIntoView({
-                              behavior: "smooth",
-                              block: "nearest",
-                            })
-                        : undefined
-                    }
-                    className={`flex items-center gap-2 text-sm ${
-                      task.status === "pending"
-                        ? "text-muted-foreground"
-                        : task.status === "error"
-                          ? "text-destructive"
-                          : ""
-                    }`}
-                  >
-                    {task.status === "done" && (
-                      <Check className="h-3.5 w-3.5 shrink-0 text-green-500" />
-                    )}
-                    {task.status === "creating" && (
-                      <ArrowRight className="h-3.5 w-3.5 shrink-0 animate-pulse text-primary" />
-                    )}
-                    {task.status === "error" && (
-                      <CircleAlert className="h-3.5 w-3.5 shrink-0" />
-                    )}
-                    {task.status === "pending" && (
-                      <span className="inline-block h-3.5 w-3.5 shrink-0" />
-                    )}
-                    <span
-                      className={
-                        task.status === "creating" ? "font-medium" : ""
-                      }
-                    >
-                      {task.title}
-                      {task.status === "creating" && "..."}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <p className="text-center text-xs text-muted-foreground">
-              Tasks appear on the board as they&apos;re created.
-            </p>
-
+          <div className="shrink-0 border-t border-border bg-background px-4 py-3 sm:px-6">
             <Button
               variant="outline"
               onClick={handleCancel}
@@ -689,61 +810,9 @@ export function AiGenerateDialog({
           </div>
         )}
 
-        {/* ── Loading Board Phase ────────────────────────────── */}
-        {phase === "loading-board" && (
-          <div className="space-y-4 py-8">
-            <div className="text-center">
-              <Loader2 className="mx-auto h-8 w-8 animate-spin text-primary" />
-              <p
-                className="mt-3 text-sm font-medium"
-                role="status"
-                aria-live="polite"
-              >
-                Preparing your board view...
-              </p>
-              <p className="mt-1 text-xs text-muted-foreground">
-                {createdCountRef.current} task
-                {createdCountRef.current !== 1 ? "s" : ""} created. Loading
-                board data.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* ── Complete Phase (only shown when there are failures) ── */}
+        {/* Complete phase footer */}
         {phase === "complete" && insertResult && (
-          <div className="space-y-4">
-            <div className="space-y-3">
-              <div className="flex items-start gap-2 rounded-md border border-amber-500/50 bg-amber-500/10 p-3 text-sm">
-                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
-                <div>
-                  <p className="font-medium">
-                    Created {insertResult.created} of{" "}
-                    {insertResult.created + insertResult.failed.length} tasks
-                  </p>
-                  <p className="mt-1 text-muted-foreground">
-                    {insertResult.failed.length} task
-                    {insertResult.failed.length !== 1 ? "s" : ""} failed to
-                    create:
-                  </p>
-                </div>
-              </div>
-
-              <ScrollArea className="max-h-[120px]">
-                <ul className="space-y-1 text-sm text-muted-foreground">
-                  {insertResult.failed.map((f, i) => (
-                    <li key={i} className="flex items-start gap-1.5">
-                      <CircleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-destructive" />
-                      <span>
-                        &ldquo;{f.title}&rdquo;{" "}
-                        <span className="text-xs">— {f.error}</span>
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </ScrollArea>
-            </div>
-
+          <div className="shrink-0 border-t border-border bg-background px-4 py-3 sm:px-6">
             <div className="flex gap-2">
               <Button
                 variant="outline"

@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI Generate Board - Inserting State Mockup</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg: #09090b;
+      --card: #18181b;
+      --border: rgba(255,255,255,0.1);
+      --border-accent: rgba(255,255,255,0.15);
+      --fg: #fafafa;
+      --fg-muted: #a1a1aa;
+      --fg-dim: #71717a;
+      --primary: #e4e4e7;
+      --primary-fg: #18181b;
+      --accent: #a78bfa;
+      --accent-dim: rgba(139,92,246,0.12);
+      --accent-border: rgba(139,92,246,0.25);
+      --muted-bg: rgba(255,255,255,0.04);
+      --green: #4ade80;
+      --radius: 10px;
+      --font: 'Geist', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    }
+
+    body {
+      font-family: var(--font);
+      background: var(--bg);
+      color: var(--fg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 1rem;
+    }
+
+    .overlay {
+      position: fixed; inset: 0;
+      background: rgba(0,0,0,0.6);
+      backdrop-filter: blur(4px);
+      z-index: 40;
+    }
+
+    .dialog {
+      position: relative; z-index: 50;
+      width: 100%; max-width: 56rem;
+      max-height: 88vh;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: 0 25px 60px rgba(0,0,0,0.5);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+    }
+
+    /* -- Header ------------------------------------------------- */
+    .header {
+      padding: 1.25rem 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; justify-content: space-between;
+      flex-shrink: 0;
+    }
+    .title {
+      display: flex; align-items: center; gap: 0.5rem;
+      font-size: 1.05rem; font-weight: 600;
+    }
+    .title svg { width: 18px; height: 18px; color: var(--accent); }
+    .subtitle { font-size: 0.8rem; color: var(--fg-muted); margin-top: 2px; }
+    .close-btn {
+      background: none; border: none; color: var(--fg-dim);
+      padding: 0.25rem; border-radius: 4px;
+      line-height: 0; cursor: not-allowed; opacity: 0.35;
+    }
+
+    /* -- Body --------------------------------------------------- */
+    .body {
+      flex: 1; overflow-y: auto; padding: 1.5rem;
+      display: flex; flex-direction: column; gap: 1.25rem;
+    }
+
+    /* Progress section */
+    .progress-section {
+      display: flex; flex-direction: column; gap: 0.5rem;
+    }
+    .progress-info {
+      display: flex; align-items: center; justify-content: space-between;
+      font-size: 0.8rem;
+    }
+    .progress-label { color: var(--fg-muted); }
+    .progress-label strong { color: var(--fg); font-weight: 600; }
+    .progress-pct { color: var(--accent); font-weight: 600; font-size: 0.85rem; }
+    .progress-track {
+      width: 100%; height: 6px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 999px; overflow: hidden;
+    }
+    .progress-fill {
+      height: 100%; width: 87%;
+      background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+      border-radius: 999px;
+      transition: width 0.4s ease;
+      position: relative;
+    }
+    .progress-fill::after {
+      content: '';
+      position: absolute; right: 0; top: 0; bottom: 0; width: 40px;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.25));
+      border-radius: 999px;
+      animation: shimmer 1.5s ease-in-out infinite;
+    }
+    @keyframes shimmer {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 1; }
+    }
+
+    /* Task status list */
+    .task-status-list {
+      display: flex; flex-direction: column;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      max-height: 480px;
+      overflow-y: auto;
+    }
+
+    .status-row {
+      display: flex; align-items: center; gap: 0.625rem;
+      padding: 0.5rem 0.875rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.8rem;
+    }
+    .status-row:last-child { border-bottom: none; }
+
+    /* Done rows */
+    .status-row--done { color: var(--fg-muted); }
+    .status-row--done .status-icon {
+      width: 18px; height: 18px; flex-shrink: 0;
+      color: var(--green);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .status-row--done .status-title { color: var(--fg-muted); }
+
+    /* In-progress row */
+    .status-row--active {
+      background: var(--accent-dim);
+    }
+    .status-row--active .status-icon {
+      width: 18px; height: 18px; flex-shrink: 0;
+      color: var(--accent);
+      display: flex; align-items: center; justify-content: center;
+      animation: pulse-icon 1.2s ease-in-out infinite;
+    }
+    @keyframes pulse-icon {
+      0%, 100% { opacity: 0.6; }
+      50% { opacity: 1; }
+    }
+    .status-row--active .status-title {
+      color: var(--fg); font-weight: 600;
+    }
+
+    /* Pending rows */
+    .status-row--pending { opacity: 0.35; }
+    .status-row--pending .status-icon {
+      width: 18px; height: 18px; flex-shrink: 0;
+      color: var(--fg-dim);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .status-row--pending .status-title { color: var(--fg-dim); }
+
+    .status-title {
+      flex: 1; min-width: 0;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+    .status-col {
+      font-size: 0.7rem; color: var(--fg-dim);
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .status-row--active .status-col { color: var(--accent); opacity: 0.8; }
+
+    /* -- Footer ------------------------------------------------- */
+    .footer {
+      padding: 0.875rem 1.5rem;
+      border-top: 1px solid var(--border);
+      flex-shrink: 0;
+      background: var(--card);
+    }
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center;
+      gap: 0.375rem; padding: 0.5rem 1rem;
+      border-radius: 8px; font-size: 0.8125rem; font-weight: 500;
+      font-family: var(--font); cursor: pointer;
+      transition: all 0.15s; border: 1px solid transparent;
+      white-space: nowrap;
+    }
+    .btn-outline {
+      background: transparent; color: var(--fg);
+      border-color: var(--border-accent);
+      width: 100%;
+    }
+    .btn-outline:hover { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.2); }
+
+    @media (max-width: 640px) {
+      .dialog { max-width: 100%; }
+      .status-col { display: none; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="overlay"></div>
+
+<div class="dialog">
+  <!-- Header -->
+  <div class="header">
+    <div>
+      <div class="title">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        AI Generate Board
+      </div>
+      <div class="subtitle">Creating tasks on the board...</div>
+    </div>
+    <button class="close-btn" disabled>
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+    </button>
+  </div>
+
+  <!-- Body -->
+  <div class="body">
+    <!-- Progress bar -->
+    <div class="progress-section">
+      <div class="progress-info">
+        <span class="progress-label">Creating task <strong>20</strong> of <strong>23</strong>...</span>
+        <span class="progress-pct">87%</span>
+      </div>
+      <div class="progress-track">
+        <div class="progress-fill"></div>
+      </div>
+    </div>
+
+    <!-- Task status list -->
+    <div class="task-status-list">
+      <!-- Done tasks (1-19) -->
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Data Source Integration & API Setup</span>
+        <span class="status-col">Backlog</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Feature Engineering Pipeline</span>
+        <span class="status-col">Backlog</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Model Training & Ensemble Architecture</span>
+        <span class="status-col">Backlog</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Prediction API & Caching Layer</span>
+        <span class="status-col">To Do</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Frontend Dashboard & Match Cards</span>
+        <span class="status-col">To Do</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Subscription & Payment Integration</span>
+        <span class="status-col">To Do</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Legal & Regulatory Review</span>
+        <span class="status-col">Compliance</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">User Authentication & Profile Setup</span>
+        <span class="status-col">To Do</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Notification System & Tip Alerts</span>
+        <span class="status-col">Backlog</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Database Schema & Migration Scripts</span>
+        <span class="status-col">Backlog</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">CI/CD Pipeline & Docker Setup</span>
+        <span class="status-col">Backlog</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Rate Limiting & Abuse Prevention</span>
+        <span class="status-col">To Do</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">User Onboarding Flow & Tutorials</span>
+        <span class="status-col">To Do</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Analytics Dashboard & Metrics</span>
+        <span class="status-col">Backlog</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Social Sharing & Referral System</span>
+        <span class="status-col">Backlog</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Search & Filtering Engine</span>
+        <span class="status-col">To Do</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Error Handling & Logging Infrastructure</span>
+        <span class="status-col">Backlog</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Accessibility Audit & WCAG Compliance</span>
+        <span class="status-col">To Do</span>
+      </div>
+      <div class="status-row status-row--done">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        <span class="status-title">Performance Optimization & Caching</span>
+        <span class="status-col">Backlog</span>
+      </div>
+
+      <!-- In-progress task (20) -->
+      <div class="status-row status-row--active">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg></div>
+        <span class="status-title">Marketing Landing Page & SEO</span>
+        <span class="status-col">To Do</span>
+      </div>
+
+      <!-- Pending tasks (21-23) -->
+      <div class="status-row status-row--pending">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg></div>
+        <span class="status-title">Mobile Responsive Design Pass</span>
+        <span class="status-col">To Do</span>
+      </div>
+      <div class="status-row status-row--pending">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg></div>
+        <span class="status-title">End-to-End Test Suite</span>
+        <span class="status-col">Backlog</span>
+      </div>
+      <div class="status-row status-row--pending">
+        <div class="status-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/></svg></div>
+        <span class="status-title">Documentation & API Reference</span>
+        <span class="status-col">Backlog</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="footer">
+    <button class="btn btn-outline">Cancel</button>
+  </div>
+</div>
+
+</body>
+</html>
