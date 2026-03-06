@@ -50,9 +50,8 @@ export function DeleteIdeaButton({ ideaId, variant = "button" }: DeleteIdeaButto
             Delete
           </button>
         ) : (
-          <Button variant="outline" size="sm" className="gap-2 text-destructive hover:text-destructive">
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground hover:text-destructive">
             <Trash2 className="h-4 w-4" />
-            Delete
           </Button>
         )}
       </AlertDialogTrigger>
