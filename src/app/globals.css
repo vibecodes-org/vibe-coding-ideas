@@ -141,6 +141,60 @@
   pointer-events: none;
 }
 
+/* Enhance dialog streaming animations */
+@keyframes enhance-cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.2; }
+}
+
+@keyframes enhance-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+@keyframes enhance-dot-bounce {
+  0%, 60%, 100% { transform: translateY(0); opacity: 0.4; }
+  30% { transform: translateY(-4px); opacity: 1; }
+}
+
+@keyframes enhance-dot-pulse {
+  0%, 100% { box-shadow: 0 0 4px rgba(139, 92, 246, 0.3); }
+  50% { box-shadow: 0 0 12px rgba(139, 92, 246, 0.6); }
+}
+
+.enhance-streaming-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.1em;
+  background: #a78bfa;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  border-radius: 1px;
+  animation: enhance-cursor-blink 0.7s ease-in-out infinite;
+}
+
+.enhance-skeleton-line {
+  height: 0.75rem;
+  border-radius: 4px;
+  background: linear-gradient(90deg, rgba(255,255,255,0.04) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.04) 75%);
+  background-size: 200% 100%;
+  animation: enhance-shimmer 1.5s ease-in-out infinite;
+}
+
+.enhance-dot-indicator > span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #a78bfa;
+  animation: enhance-dot-bounce 1.2s ease-in-out infinite;
+}
+.enhance-dot-indicator > span:nth-child(2) { animation-delay: 0.15s; }
+.enhance-dot-indicator > span:nth-child(3) { animation-delay: 0.3s; }
+
+.enhance-label-dot-pulse {
+  animation: enhance-dot-pulse 1.5s ease-in-out infinite;
+}
+
 @layer base {
   * {
     @apply border-border outline-ring/50;
