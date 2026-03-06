@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Sparkles,
@@ -69,8 +70,10 @@ export function OnboardingDialog({
   userGithubUsername,
   featuredTeams,
 }: OnboardingDialogProps) {
+  const router = useRouter();
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+  const [skipping, setSkipping] = useState(false);
 
   // Profile fields
   const [displayName, setDisplayName] = useState(userFullName ?? "");
@@ -101,7 +104,9 @@ export function OnboardingDialog({
     setStep(s);
   }, []);
 
-  const handleSkip = async () => {
+  const handleSkipWithSample = async (afterSkip: () => void) => {
+    if (skipping) return;
+    setSkipping(true);
     try {
       const result = await createSampleIdea();
       if (result) {
@@ -109,20 +114,34 @@ export function OnboardingDialog({
         toast("We created a sample project so you can explore", {
           action: {
             label: "View project",
-            onClick: () => { window.location.href = `/ideas/${result.ideaId}/board`; },
+            onClick: () => router.push(`/ideas/${result.ideaId}/board`),
           },
         });
       }
     } catch (err) {
+      if (err instanceof Error && "digest" in err) {
+        const digest = (err as { digest?: string }).digest;
+        if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) {
+          throw err;
+        }
+      }
       console.error("[handleSkip] createSampleIdea failed:", err);
     }
     try {
       await completeOnboarding();
-    } catch {
-      // Non-critical
+    } catch (err) {
+      if (err instanceof Error && "digest" in err) {
+        const digest = (err as { digest?: string }).digest;
+        if (typeof digest === "string" && digest.startsWith("NEXT_REDIRECT")) {
+          throw err;
+        }
+      }
     }
-    onComplete();
+    setSkipping(false);
+    afterSkip();
   };
+
+  const handleSkip = () => handleSkipWithSample(() => onComplete());
 
   const handleEnhance = async () => {
     if (enhancing) return;
@@ -219,28 +238,7 @@ export function OnboardingDialog({
     }
   };
 
-  const handleSkipIdea = async () => {
-    try {
-      const result = await createSampleIdea();
-      if (result) {
-        setCreatedIdeaId(result.ideaId);
-        toast("We created a sample project so you can explore", {
-          action: {
-            label: "View project",
-            onClick: () => { window.location.href = `/ideas/${result.ideaId}/board`; },
-          },
-        });
-      }
-    } catch {
-      // Non-critical
-    }
-    try {
-      await completeOnboarding();
-    } catch {
-      // Non-critical
-    }
-    goToStep(4);
-  };
+  const handleSkipIdea = () => handleSkipWithSample(() => goToStep(4));
 
   const handleFinish = () => {
     onComplete();
@@ -364,9 +362,10 @@ export function OnboardingDialog({
               </Button>
               <button
                 onClick={handleSkip}
-                className="mt-3 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+                disabled={skipping}
+                className="mt-3 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground disabled:pointer-events-none disabled:opacity-50"
               >
-                Skip for now
+                {skipping ? "Setting up..." : "Skip for now"}
               </button>
             </div>
           )}
@@ -770,9 +769,10 @@ export function OnboardingDialog({
               </Button>
               <button
                 onClick={handleSkipIdea}
-                className="mt-3 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+                disabled={skipping}
+                className="mt-3 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground disabled:pointer-events-none disabled:opacity-50"
               >
-                I&apos;ll do this later
+                {skipping ? "Setting up..." : "I'll do this later"}
               </button>
             </div>
           )}

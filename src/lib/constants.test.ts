@@ -11,6 +11,7 @@ import {
   SUGGESTED_TAGS,
   SAMPLE_IDEA_CONTENT,
 } from "./constants";
+import { MAX_TAGS, MAX_TAG_LENGTH } from "./validation";
 import type { IdeaStatus, CommentType } from "@/types";
 
 // ── STATUS_CONFIG completeness ────────────────────────────────────────
@@ -184,17 +185,30 @@ describe("BOT_ROLE_TEMPLATES", () => {
 // ── SAMPLE_IDEA_CONTENT ──────────────────────────────────────────────
 
 describe("SAMPLE_IDEA_CONTENT", () => {
-  it("has required top-level fields", () => {
-    expect(SAMPLE_IDEA_CONTENT.title).toBeTruthy();
-    expect(SAMPLE_IDEA_CONTENT.description).toBeTruthy();
+  it("has required top-level fields with non-whitespace values", () => {
+    expect(SAMPLE_IDEA_CONTENT.title.trim().length).toBeGreaterThan(0);
+    expect(SAMPLE_IDEA_CONTENT.description.trim().length).toBeGreaterThan(0);
     expect(SAMPLE_IDEA_CONTENT.tags.length).toBeGreaterThan(0);
     expect(SAMPLE_IDEA_CONTENT.tasks.length).toBeGreaterThan(0);
   });
 
+  it("tags respect MAX_TAGS and MAX_TAG_LENGTH limits", () => {
+    expect(SAMPLE_IDEA_CONTENT.tags.length).toBeLessThanOrEqual(MAX_TAGS);
+    for (const tag of SAMPLE_IDEA_CONTENT.tags) {
+      expect(tag.trim().length).toBeGreaterThan(0);
+      expect(tag.length).toBeLessThanOrEqual(MAX_TAG_LENGTH);
+    }
+  });
+
+  it("has no duplicate tags", () => {
+    const tags = SAMPLE_IDEA_CONTENT.tags;
+    expect(new Set(tags).size).toBe(tags.length);
+  });
+
   it("each task has title, description, and valid columnIndex", () => {
     for (const task of SAMPLE_IDEA_CONTENT.tasks) {
-      expect(task.title).toBeTruthy();
-      expect(task.description).toBeTruthy();
+      expect(task.title.trim().length).toBeGreaterThan(0);
+      expect(task.description.trim().length).toBeGreaterThan(0);
       expect(task.columnIndex).toBeGreaterThanOrEqual(0);
       expect(task.columnIndex).toBeLessThan(DEFAULT_BOARD_COLUMNS.length);
     }

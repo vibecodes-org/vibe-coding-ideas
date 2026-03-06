@@ -104,15 +104,20 @@ export async function createSampleIdea(): Promise<{ ideaId: string } | null> {
     redirect("/login");
   }
 
-  // Idempotency: don't create if user already has ideas
-  const { count } = await supabase
+  // Idempotency: skip if user already has a sample idea
+  const { count, error: countError } = await supabase
     .from("ideas")
-    .select("*", { head: true, count: "exact" })
+    .select("id", { head: true, count: "exact" })
     .eq("author_id", user.id);
+
+  if (countError) {
+    throw new Error("Failed to check existing ideas");
+  }
 
   if ((count ?? 0) > 0) return null;
 
-  // Insert the sample idea
+  // Insert the sample idea — unique partial index (ideas_one_sample_per_user)
+  // guards against TOCTOU race; handle 23505 (unique violation) gracefully.
   const { data: idea, error: ideaError } = await supabase
     .from("ideas")
     .insert({
@@ -126,8 +131,14 @@ export async function createSampleIdea(): Promise<{ ideaId: string } | null> {
     .select("id")
     .single();
 
-  if (ideaError || !idea) {
-    throw new Error(ideaError?.message ?? "Failed to create sample idea");
+  if (ideaError) {
+    // Unique constraint violation — another request already created a sample idea
+    if (ideaError.code === "23505") return null;
+    throw new Error("Failed to create sample idea");
+  }
+
+  if (!idea) {
+    throw new Error("Failed to create sample idea");
   }
 
   // Eagerly create board columns
@@ -149,19 +160,25 @@ export async function createSampleIdea(): Promise<{ ideaId: string } | null> {
     return { ideaId: idea.id };
   }
 
-  // Sort columns by position to map columnIndex reliably
-  const sortedColumns = [...columns].sort((a, b) => a.position - b.position);
+  // Insert sample tasks — columns already sorted by .order() above
+  const taskInserts = SAMPLE_IDEA_CONTENT.tasks
+    .filter((task) => task.columnIndex >= 0 && task.columnIndex < columns.length)
+    .map((task, i) => ({
+      idea_id: idea.id,
+      column_id: columns[task.columnIndex].id,
+      title: task.title,
+      description: task.description,
+      position: (i + 1) * POSITION_GAP,
+    }));
 
-  // Insert sample tasks
-  const taskInserts = SAMPLE_IDEA_CONTENT.tasks.map((task, i) => ({
-    idea_id: idea.id,
-    column_id: sortedColumns[task.columnIndex].id,
-    title: task.title,
-    description: task.description,
-    position: (i + 1) * POSITION_GAP,
-  }));
-
-  await supabase.from("board_tasks").insert(taskInserts);
+  if (taskInserts.length > 0) {
+    const { error: taskError } = await supabase
+      .from("board_tasks")
+      .insert(taskInserts);
+    if (taskError) {
+      console.error("[createSampleIdea] task insert failed:", taskError);
+    }
+  }
 
   return { ideaId: idea.id };
 }

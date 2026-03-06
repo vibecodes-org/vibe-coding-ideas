@@ -3,10 +3,20 @@
 import { useState } from "react";
 import { Sparkles, X } from "lucide-react";
 
+const DISMISS_KEY = "sample-idea-banner-dismissed";
+
 export function SampleIdeaBanner() {
-  const [dismissed, setDismissed] = useState(false);
+  const [dismissed, setDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem(DISMISS_KEY) === "1";
+  });
 
   if (dismissed) return null;
+
+  const handleDismiss = () => {
+    localStorage.setItem(DISMISS_KEY, "1");
+    setDismissed(true);
+  };
 
   return (
     <div className="mb-4 flex items-center gap-3 rounded-lg border border-primary/20 bg-primary/[0.06] px-4 py-3">
@@ -18,7 +28,7 @@ export function SampleIdeaBanner() {
         </strong>
       </p>
       <button
-        onClick={() => setDismissed(true)}
+        onClick={handleDismiss}
         className="shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
         aria-label="Dismiss banner"
       >

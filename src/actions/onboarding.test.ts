@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { SAMPLE_IDEA_CONTENT, POSITION_GAP } from "@/lib/constants";
 
 // Mock the Supabase client — all chain methods return `chain` by default,
 // individual tests override terminal methods (single, gte) as needed.
@@ -335,7 +336,55 @@ describe("onboarding actions", () => {
         return chain;
       });
 
-      await expect(createSampleIdea()).rejects.toThrow("insert failed");
+      await expect(createSampleIdea()).rejects.toThrow(
+        "Failed to create sample idea"
+      );
+    });
+
+    it("returns null on unique constraint violation (23505 race condition)", async () => {
+      const { createSampleIdea } = await import("./onboarding");
+
+      const countEq = vi.fn().mockResolvedValue({ count: 0, error: null });
+      const countSelect = vi.fn(() => ({ eq: countEq }));
+
+      const insertSelectSingle = vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "duplicate key", code: "23505" },
+      });
+      const insertSelect = vi.fn(() => ({ single: insertSelectSingle }));
+      const insertFn = vi.fn(() => ({ select: insertSelect }));
+
+      let fromCallCount = 0;
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "ideas") {
+          fromCallCount++;
+          if (fromCallCount === 1) return { select: countSelect };
+          return { insert: insertFn };
+        }
+        return chain;
+      });
+
+      const result = await createSampleIdea();
+      expect(result).toBeNull();
+    });
+
+    it("throws on count query error", async () => {
+      const { createSampleIdea } = await import("./onboarding");
+
+      const countEq = vi.fn().mockResolvedValue({
+        count: null,
+        error: { message: "connection error" },
+      });
+      const countSelect = vi.fn(() => ({ eq: countEq }));
+
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "ideas") return { select: countSelect };
+        return chain;
+      });
+
+      await expect(createSampleIdea()).rejects.toThrow(
+        "Failed to check existing ideas"
+      );
     });
 
     it("returns ideaId even when column insert fails (graceful degradation)", async () => {
@@ -379,6 +428,206 @@ describe("onboarding actions", () => {
       const { createSampleIdea } = await import("./onboarding");
 
       await expect(createSampleIdea()).rejects.toThrow("REDIRECT: /login");
+    });
+
+    it("skips task insert when column insert fails (no board_tasks call)", async () => {
+      const { createSampleIdea } = await import("./onboarding");
+
+      const countEq = vi.fn().mockResolvedValue({ count: 0, error: null });
+      const countSelect = vi.fn(() => ({ eq: countEq }));
+
+      const insertSelectSingle = vi.fn().mockResolvedValue({
+        data: { id: "sample-idea-id" },
+        error: null,
+      });
+      const insertSelect = vi.fn(() => ({ single: insertSelectSingle }));
+      const insertFn = vi.fn(() => ({ select: insertSelect }));
+
+      const colOrderFn = vi.fn().mockResolvedValue({
+        data: null,
+        error: { message: "column insert failed" },
+      });
+      const colSelect = vi.fn(() => ({ order: colOrderFn }));
+      const colInsert = vi.fn(() => ({ select: colSelect }));
+
+      const taskInsert = vi.fn().mockResolvedValue({ error: null });
+
+      let fromCallCount = 0;
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "ideas") {
+          fromCallCount++;
+          if (fromCallCount === 1) return { select: countSelect };
+          return { insert: insertFn };
+        }
+        if (table === "board_columns") return { insert: colInsert };
+        if (table === "board_tasks") return { insert: taskInsert };
+        return chain;
+      });
+
+      await createSampleIdea();
+      expect(taskInsert).not.toHaveBeenCalled();
+    });
+
+    it("logs error but still returns ideaId when task insert fails", async () => {
+      const { createSampleIdea } = await import("./onboarding");
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+      const countEq = vi.fn().mockResolvedValue({ count: 0, error: null });
+      const countSelect = vi.fn(() => ({ eq: countEq }));
+
+      const insertSelectSingle = vi.fn().mockResolvedValue({
+        data: { id: "sample-idea-id" },
+        error: null,
+      });
+      const insertSelect = vi.fn(() => ({ single: insertSelectSingle }));
+      const insertFn = vi.fn(() => ({ select: insertSelect }));
+
+      const colOrderFn = vi.fn().mockResolvedValue({
+        data: [
+          { id: "col-0", position: 0 },
+          { id: "col-1", position: 1000 },
+          { id: "col-2", position: 2000 },
+          { id: "col-3", position: 3000 },
+          { id: "col-4", position: 4000 },
+          { id: "col-5", position: 5000 },
+        ],
+        error: null,
+      });
+      const colSelect = vi.fn(() => ({ order: colOrderFn }));
+      const colInsert = vi.fn(() => ({ select: colSelect }));
+
+      const taskInsert = vi.fn().mockResolvedValue({
+        error: { message: "task insert failed" },
+      });
+
+      let fromCallCount = 0;
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "ideas") {
+          fromCallCount++;
+          if (fromCallCount === 1) return { select: countSelect };
+          return { insert: insertFn };
+        }
+        if (table === "board_columns") return { insert: colInsert };
+        if (table === "board_tasks") return { insert: taskInsert };
+        return chain;
+      });
+
+      const result = await createSampleIdea();
+      expect(result).toEqual({ ideaId: "sample-idea-id" });
+      expect(consoleSpy).toHaveBeenCalledWith(
+        "[createSampleIdea] task insert failed:",
+        expect.objectContaining({ message: "task insert failed" })
+      );
+      consoleSpy.mockRestore();
+    });
+
+    it("sets correct position values on tasks using POSITION_GAP", async () => {
+      const { createSampleIdea } = await import("./onboarding");
+
+      const countEq = vi.fn().mockResolvedValue({ count: 0, error: null });
+      const countSelect = vi.fn(() => ({ eq: countEq }));
+
+      const insertSelectSingle = vi.fn().mockResolvedValue({
+        data: { id: "sample-idea-id" },
+        error: null,
+      });
+      const insertSelect = vi.fn(() => ({ single: insertSelectSingle }));
+      const insertFn = vi.fn(() => ({ select: insertSelect }));
+
+      const colOrderFn = vi.fn().mockResolvedValue({
+        data: [
+          { id: "col-0", position: 0 },
+          { id: "col-1", position: 1000 },
+          { id: "col-2", position: 2000 },
+          { id: "col-3", position: 3000 },
+          { id: "col-4", position: 4000 },
+          { id: "col-5", position: 5000 },
+        ],
+        error: null,
+      });
+      const colSelect = vi.fn(() => ({ order: colOrderFn }));
+      const colInsert = vi.fn(() => ({ select: colSelect }));
+
+      const taskInsert = vi.fn().mockResolvedValue({ error: null });
+
+      let fromCallCount = 0;
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "ideas") {
+          fromCallCount++;
+          if (fromCallCount === 1) return { select: countSelect };
+          return { insert: insertFn };
+        }
+        if (table === "board_columns") return { insert: colInsert };
+        if (table === "board_tasks") return { insert: taskInsert };
+        return chain;
+      });
+
+      await createSampleIdea();
+
+      const insertedTasks = taskInsert.mock.calls[0][0] as Array<{
+        position: number;
+        idea_id: string;
+      }>;
+      expect(insertedTasks).toHaveLength(SAMPLE_IDEA_CONTENT.tasks.length);
+      for (let i = 0; i < insertedTasks.length; i++) {
+        expect(insertedTasks[i].position).toBe((i + 1) * POSITION_GAP);
+        expect(insertedTasks[i].idea_id).toBe("sample-idea-id");
+      }
+    });
+
+    it("task titles and descriptions match SAMPLE_IDEA_CONTENT", async () => {
+      const { createSampleIdea } = await import("./onboarding");
+
+      const countEq = vi.fn().mockResolvedValue({ count: 0, error: null });
+      const countSelect = vi.fn(() => ({ eq: countEq }));
+
+      const insertSelectSingle = vi.fn().mockResolvedValue({
+        data: { id: "sample-idea-id" },
+        error: null,
+      });
+      const insertSelect = vi.fn(() => ({ single: insertSelectSingle }));
+      const insertFn = vi.fn(() => ({ select: insertSelect }));
+
+      const colOrderFn = vi.fn().mockResolvedValue({
+        data: [
+          { id: "col-0", position: 0 },
+          { id: "col-1", position: 1000 },
+          { id: "col-2", position: 2000 },
+          { id: "col-3", position: 3000 },
+          { id: "col-4", position: 4000 },
+          { id: "col-5", position: 5000 },
+        ],
+        error: null,
+      });
+      const colSelect = vi.fn(() => ({ order: colOrderFn }));
+      const colInsert = vi.fn(() => ({ select: colSelect }));
+
+      const taskInsert = vi.fn().mockResolvedValue({ error: null });
+
+      let fromCallCount = 0;
+      mockFrom.mockImplementation((table: string) => {
+        if (table === "ideas") {
+          fromCallCount++;
+          if (fromCallCount === 1) return { select: countSelect };
+          return { insert: insertFn };
+        }
+        if (table === "board_columns") return { insert: colInsert };
+        if (table === "board_tasks") return { insert: taskInsert };
+        return chain;
+      });
+
+      await createSampleIdea();
+
+      const insertedTasks = taskInsert.mock.calls[0][0] as Array<{
+        title: string;
+        description: string;
+      }>;
+      for (let i = 0; i < SAMPLE_IDEA_CONTENT.tasks.length; i++) {
+        expect(insertedTasks[i].title).toBe(SAMPLE_IDEA_CONTENT.tasks[i].title);
+        expect(insertedTasks[i].description).toBe(
+          SAMPLE_IDEA_CONTENT.tasks[i].description
+        );
+      }
     });
   });
 
