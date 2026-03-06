@@ -86,11 +86,12 @@ export async function ensureTestUsers(): Promise<Record<string, TestUser>> {
         .eq("id", users[key].id);
     }
 
-    // Set full_name for non-fresh users
+    // Set full_name and mark onboarding complete for non-fresh users
+    // (prevents the onboarding dialog from blocking E2E interactions)
     if (key !== "fresh") {
       await supabaseAdmin
         .from("users")
-        .update({ full_name: config.fullName })
+        .update({ full_name: config.fullName, onboarding_completed_at: new Date().toISOString() })
         .eq("id", users[key].id);
     }
   }
