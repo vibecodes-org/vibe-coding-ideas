@@ -1,8 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useTransition, useCallback } from "react";
-import { UserPlus, Loader2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Loader2 } from "lucide-react";
 import {
   Popover,
   PopoverContent,
@@ -103,10 +102,9 @@ export function AddCollaboratorPopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="gap-1.5">
-          <UserPlus className="h-3.5 w-3.5" />
-          Add
-        </Button>
+        <button className="ml-1 flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-muted-foreground/40 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary">
+          +
+        </button>
       </PopoverTrigger>
       <PopoverContent className="w-72 p-3" align="start">
         <Input
