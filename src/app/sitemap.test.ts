@@ -60,6 +60,7 @@ describe("sitemap", () => {
     expect(urls).toContain(`${BASE}/guide/ai-agent-teams`);
     expect(urls).toContain(`${BASE}/guide/mcp-integration`);
     expect(urls).toContain(`${BASE}/guide/admin`);
+    expect(urls).toContain(`${BASE}/changelog`);
     expect(urls).toContain(`${BASE}/terms`);
     expect(urls).toContain(`${BASE}/privacy`);
 
