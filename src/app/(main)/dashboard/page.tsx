@@ -6,6 +6,7 @@ import {
   Bell,
   Bot,
   CheckSquare,
+  Compass,
   LayoutDashboard,
   Lightbulb,
   Plus,
@@ -59,6 +60,7 @@ export default async function DashboardPage() {
     tasksResult,
     botProfilesResult,
     userProfileResult,
+    publicIdeasCountResult,
     featuredTeamsResult,
   ] = await Promise.all([
     // My ideas (limit 5)
@@ -122,6 +124,11 @@ export default async function DashboardPage() {
       .select("onboarding_completed_at, full_name, avatar_url, github_username")
       .eq("id", user.id)
       .maybeSingle(),
+    // Public ideas count (for community-aware empty states)
+    supabase
+      .from("ideas")
+      .select("*", { head: true, count: "exact" })
+      .eq("visibility", "public"),
     // Featured teams for onboarding
     supabase
       .from("featured_teams")
@@ -139,6 +146,7 @@ export default async function DashboardPage() {
     0
   );
   const votedIdeaIds = new Set((votesResult.data ?? []).map((v) => v.idea_id));
+  const publicIdeasCount = publicIdeasCountResult.count ?? 0;
   const notifications = (notificationsResult.data ?? []) as unknown as NotificationWithDetails[];
 
   // Process tasks — exclude tasks in done columns
@@ -424,15 +432,29 @@ export default async function DashboardPage() {
       >
         {myIdeas.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              You haven&apos;t created any ideas yet.
+            <Lightbulb className="mx-auto h-8 w-8 text-muted-foreground/50" />
+            <p className="mt-3 text-sm font-medium">
+              Share your first idea
             </p>
-            <Link href="/ideas/new">
-              <Button variant="outline" size="sm" className="mt-3 gap-2">
-                <Plus className="h-4 w-4" />
-                Create your first idea
-              </Button>
-            </Link>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Describe a project and use AI to generate a full task board.
+            </p>
+            <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-2">
+              <Link href="/ideas/new">
+                <Button size="sm" className="gap-2">
+                  <Plus className="h-4 w-4" />
+                  Create an idea
+                </Button>
+              </Link>
+              {publicIdeasCount > 0 && (
+                <Link href="/ideas">
+                  <Button variant="outline" size="sm" className="gap-2">
+                    <Compass className="h-4 w-4" />
+                    Explore {publicIdeasCount} community idea{publicIdeasCount !== 1 ? "s" : ""}
+                  </Button>
+                </Link>
+              )}
+            </div>
           </div>
         ) : (
           <div className="space-y-3">
@@ -468,14 +490,21 @@ export default async function DashboardPage() {
       >
         {collabIdeas.length === 0 ? (
           <div className="rounded-lg border border-dashed border-border p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              Not collaborating on any ideas yet.
+            <Users className="mx-auto h-8 w-8 text-muted-foreground/50" />
+            <p className="mt-3 text-sm font-medium">
+              Join a project
             </p>
-            <Link href="/ideas">
-              <Button variant="outline" size="sm" className="mt-3">
-                Browse the feed
-              </Button>
-            </Link>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Request to collaborate on public ideas and help build them out.
+            </p>
+            {publicIdeasCount > 0 && (
+              <Link href="/ideas">
+                <Button variant="outline" size="sm" className="mt-4 gap-2">
+                  <Compass className="h-4 w-4" />
+                  Explore {publicIdeasCount} community idea{publicIdeasCount !== 1 ? "s" : ""}
+                </Button>
+              </Link>
+            )}
           </div>
         ) : (
           <div className="space-y-3">

@@ -27,6 +27,7 @@ import { BotRolesProvider } from "@/components/bot-roles-context";
 import { BoardColumn } from "./board-column";
 import { AddColumnButton } from "./add-column-button";
 import { BoardToolbar } from "./board-toolbar";
+import { BoardEmptyState } from "./board-empty-state";
 import { BoardOpsContext, type BoardOptimisticOps } from "./board-context";
 import { toast } from "sonner";
 import { moveBoardTask, reorderBoardColumns } from "@/actions/board";
@@ -297,6 +298,17 @@ export function KanbanBoard({
   // Cooldown after last move to let Realtime catch up before syncing
   const lastMoveTimeRef = useRef(0);
   const MOVE_COOLDOWN_MS = 1500;
+
+  // AI Generate dialog state (lifted so both toolbar and empty state can trigger it)
+  const [aiGenerateOpen, setAiGenerateOpen] = useState(false);
+
+  // Board empty state — true when every column has zero tasks
+  const isBoardEmpty = useMemo(
+    () => columns.every((col) => col.tasks.length === 0),
+    [columns]
+  );
+  const [emptyStateDismissed, setEmptyStateDismissed] = useState(false);
+  const showEmptyState = isBoardEmpty && !emptyStateDismissed;
 
   // Filter state
   const [searchQuery, setSearchQuery] = useState("");
@@ -884,67 +896,80 @@ export function KanbanBoard({
         botProfiles={botProfiles}
         userBotProfiles={userBotProfiles}
         isReadOnly={isReadOnly}
+        aiGenerateOpen={aiGenerateOpen}
+        onAiGenerateOpenChange={setAiGenerateOpen}
       />
-      <DndContext
-        id="kanban-board"
-        sensors={isReadOnly ? [] : sensors}
-        collisionDetection={multiContainerCollision}
-        measuring={layoutMeasuring}
-        autoScroll={false}
-        onDragStart={isReadOnly ? undefined : handleDragStart}
-        onDragOver={isReadOnly ? undefined : handleDragOver}
-        onDragEnd={isReadOnly ? undefined : handleDragEnd}
-        onDragCancel={isReadOnly ? undefined : handleDragCancel}
-      >
-        <div className="relative min-h-0 flex-1">
-          <div
-            ref={scrollContainerRef}
-            onScroll={handleScrollCheck}
-            className={`flex h-full items-start gap-4 overflow-x-auto pb-4 ${
-              activeTask || activeColumn ? "!snap-none" : "snap-x snap-mandatory sm:snap-none"
-            }`}
-          >
-            <SortableContext
-              items={columnIds}
-              strategy={horizontalListSortingStrategy}
+      {showEmptyState ? (
+        <BoardEmptyState
+          canUseAi={canUseAi}
+          hasByokKey={hasByokKey}
+          starterCredits={starterCredits}
+          onAiGenerate={() => setAiGenerateOpen(true)}
+          onDismiss={() => setEmptyStateDismissed(true)}
+          isReadOnly={isReadOnly}
+        />
+      ) : (
+        <DndContext
+          id="kanban-board"
+          sensors={isReadOnly ? [] : sensors}
+          collisionDetection={multiContainerCollision}
+          measuring={layoutMeasuring}
+          autoScroll={false}
+          onDragStart={isReadOnly ? undefined : handleDragStart}
+          onDragOver={isReadOnly ? undefined : handleDragOver}
+          onDragEnd={isReadOnly ? undefined : handleDragEnd}
+          onDragCancel={isReadOnly ? undefined : handleDragCancel}
+        >
+          <div className="relative min-h-0 flex-1">
+            <div
+              ref={scrollContainerRef}
+              onScroll={handleScrollCheck}
+              className={`flex h-full items-start gap-4 overflow-x-auto pb-4 ${
+                activeTask || activeColumn ? "!snap-none" : "snap-x snap-mandatory sm:snap-none"
+              }`}
             >
-              {filteredColumns.map((filteredCol) => {
-                const fullCol = columns.find((c) => c.id === filteredCol.id)!;
-                return (
-                  <BoardColumn
-                    key={filteredCol.id}
-                    column={filteredCol}
-                    totalTaskCount={fullCol.tasks.filter((t) => !t.archived).length}
-                    ideaId={ideaId}
-                    teamMembers={teamMembers}
-                    boardLabels={boardLabels}
-                    checklistItemsByTaskId={checklistItemsByTaskId}
-                    highlightQuery={searchQuery}
-                    currentUserId={currentUserId}
-                    initialTaskId={autoOpenTaskId}
-                    ideaAgents={ideaAgents}
-                    coverImageUrls={coverImageUrls}
-                    canUseAi={canUseAi}
-                    ideaDescription={ideaDescription}
-                    isReadOnly={isReadOnly}
-                    isDragTarget={dragOverColumnId === filteredCol.id}
-                  />
-                );
-              })}
-            </SortableContext>
-            {!isReadOnly && <AddColumnButton ideaId={ideaId} />}
+              <SortableContext
+                items={columnIds}
+                strategy={horizontalListSortingStrategy}
+              >
+                {filteredColumns.map((filteredCol) => {
+                  const fullCol = columns.find((c) => c.id === filteredCol.id)!;
+                  return (
+                    <BoardColumn
+                      key={filteredCol.id}
+                      column={filteredCol}
+                      totalTaskCount={fullCol.tasks.filter((t) => !t.archived).length}
+                      ideaId={ideaId}
+                      teamMembers={teamMembers}
+                      boardLabels={boardLabels}
+                      checklistItemsByTaskId={checklistItemsByTaskId}
+                      highlightQuery={searchQuery}
+                      currentUserId={currentUserId}
+                      initialTaskId={autoOpenTaskId}
+                      ideaAgents={ideaAgents}
+                      coverImageUrls={coverImageUrls}
+                      canUseAi={canUseAi}
+                      ideaDescription={ideaDescription}
+                      isReadOnly={isReadOnly}
+                      isDragTarget={dragOverColumnId === filteredCol.id}
+                    />
+                  );
+                })}
+              </SortableContext>
+              {!isReadOnly && <AddColumnButton ideaId={ideaId} />}
+            </div>
+            {/* Right-edge fade gradient — visible on mobile when more columns exist off-screen */}
+            {canScrollRight && (
+              <div className="pointer-events-none absolute right-0 top-0 h-full w-8 bg-gradient-to-l from-background to-transparent sm:hidden" />
+            )}
           </div>
-          {/* Right-edge fade gradient — visible on mobile when more columns exist off-screen */}
-          {canScrollRight && (
-            <div className="pointer-events-none absolute right-0 top-0 h-full w-8 bg-gradient-to-l from-background to-transparent sm:hidden" />
+          {!isReadOnly && (
+            <DragOverlay dropAnimation={null}>
+              <OverlayContent activeTask={activeTask} activeColumn={activeColumn} targetColumnName={dragTargetColumnName} />
+            </DragOverlay>
           )}
-        </div>
-        {!isReadOnly && (
-          <DragOverlay dropAnimation={null}>
-            <OverlayContent activeTask={activeTask} activeColumn={activeColumn} targetColumnName={dragTargetColumnName} />
-          </DragOverlay>
-        )}
-      </DndContext>
+        </DndContext>
+      )}
     </div>
     </BotRolesProvider>
     </TaskAutoOpenContext.Provider>

@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dashboard Empty States — Mockup</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600;9..40,700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  :root {
+    --bg: #09090b;
+    --card: #18181b;
+    --card-hover: #1f1f23;
+    --border: rgba(63, 63, 70, 0.5);
+    --border-dashed: rgba(63, 63, 70, 0.6);
+    --text: #fafafa;
+    --text-muted: #a1a1aa;
+    --text-dim: rgba(161, 161, 170, 0.5);
+    --primary: #fafafa;
+    --primary-bg: #fafafa;
+    --primary-fg: #09090b;
+    --outline-border: rgba(63, 63, 70, 0.8);
+    --outline-hover: rgba(82, 82, 91, 0.7);
+    --badge-bg: rgba(39, 39, 42, 0.8);
+  }
+
+  body {
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: #050507;
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 40px 20px 80px;
+    gap: 40px;
+  }
+
+  h1.page-title {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    text-align: center;
+    color: var(--text-muted);
+  }
+  h1.page-title span { color: var(--text); }
+
+  .mockup-container {
+    width: 100%;
+    max-width: 640px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .mockup-label {
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+    margin-top: 20px;
+    padding-left: 4px;
+  }
+
+  /* ---- Card / Section ---- */
+  .section-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 20px;
+  }
+
+  .section-header-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    color: var(--text);
+  }
+
+  .section-header-left svg {
+    width: 16px;
+    height: 16px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+  }
+
+  .section-header-left .section-icon {
+    width: 20px;
+    height: 20px;
+    color: var(--text-muted);
+  }
+
+  .section-content {
+    padding: 0 20px 20px;
+  }
+
+  /* ---- Empty State Card ---- */
+  .empty-state {
+    border: 1px dashed var(--border-dashed);
+    border-radius: 8px;
+    padding: 32px 24px;
+    text-align: center;
+  }
+
+  .empty-icon {
+    width: 32px;
+    height: 32px;
+    color: var(--text-dim);
+    margin: 0 auto 12px;
+  }
+
+  .empty-heading {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 4px;
+  }
+
+  .empty-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  .empty-actions {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+
+  /* ---- Buttons ---- */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: 6px;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s ease;
+    text-decoration: none;
+    white-space: nowrap;
+  }
+
+  .btn svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .btn-primary {
+    background: var(--primary-bg);
+    color: var(--primary-fg);
+  }
+  .btn-primary:hover {
+    opacity: 0.9;
+  }
+
+  .btn-outline {
+    background: transparent;
+    color: var(--text);
+    border: 1px solid var(--outline-border);
+  }
+  .btn-outline:hover {
+    background: rgba(255,255,255,0.04);
+    border-color: var(--outline-hover);
+  }
+
+  /* ---- Annotation ---- */
+  .annotation {
+    font-size: 11px;
+    color: var(--text-dim);
+    text-align: center;
+    margin-top: 8px;
+    font-style: italic;
+  }
+</style>
+</head>
+<body>
+
+<h1 class="page-title">Dashboard <span>Empty States</span></h1>
+
+<div class="mockup-container">
+
+  <p class="mockup-label">1. Active Boards</p>
+
+  <div class="section-card">
+    <div class="section-header">
+      <div class="section-header-left">
+        <!-- Chevron -->
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        <!-- LayoutDashboard icon -->
+        <svg class="section-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+        Active Boards
+      </div>
+    </div>
+    <div class="section-content">
+      <div class="empty-state">
+        <!-- LayoutDashboard large -->
+        <svg class="empty-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect width="7" height="9" x="3" y="3" rx="1"/><rect width="7" height="5" x="14" y="3" rx="1"/><rect width="7" height="9" x="14" y="12" rx="1"/><rect width="7" height="5" x="3" y="16" rx="1"/></svg>
+        <div class="empty-heading">No active boards</div>
+        <div class="empty-desc">Create an idea and add tasks to see your boards here.</div>
+        <div class="empty-actions">
+          <button class="btn btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            Create an idea
+          </button>
+          <button class="btn btn-outline">Browse the feed</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="mockup-label">2. My Ideas</p>
+
+  <div class="section-card">
+    <div class="section-header">
+      <div class="section-header-left">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        <!-- Lightbulb icon -->
+        <svg class="section-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        My Ideas
+      </div>
+    </div>
+    <div class="section-content">
+      <div class="empty-state">
+        <!-- Lightbulb large -->
+        <svg class="empty-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/></svg>
+        <div class="empty-heading">Share your first idea</div>
+        <div class="empty-desc">Describe a project and use AI to generate a full task board.</div>
+        <div class="empty-actions">
+          <button class="btn btn-primary">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+            Create an idea
+          </button>
+          <button class="btn btn-outline">
+            <!-- Compass icon -->
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+            Explore 47 community ideas
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <p class="mockup-label">3. Collaborations</p>
+
+  <div class="section-card">
+    <div class="section-header">
+      <div class="section-header-left">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+        <!-- Users icon -->
+        <svg class="section-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        Collaborations
+      </div>
+    </div>
+    <div class="section-content">
+      <div class="empty-state">
+        <!-- Users large -->
+        <svg class="empty-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <div class="empty-heading">Join a project</div>
+        <div class="empty-desc">Request to collaborate on public ideas and help build them out.</div>
+        <div class="empty-actions">
+          <button class="btn btn-outline">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polygon points="16.24 7.76 14.12 14.12 7.76 16.24 9.88 9.88 16.24 7.76"/></svg>
+            Explore 47 community ideas
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="annotation">
+    The "47" count is dynamic &mdash; fetched from the public ideas table at render time.
+  </div>
+
+</div>
+
+</body>
+</html>

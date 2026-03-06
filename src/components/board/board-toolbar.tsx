@@ -139,6 +139,8 @@ interface BoardToolbarProps {
   botProfiles?: BotProfile[];
   userBotProfiles?: BotProfile[];
   isReadOnly?: boolean;
+  aiGenerateOpen?: boolean;
+  onAiGenerateOpenChange?: (open: boolean) => void;
 }
 
 export function BoardToolbar({
@@ -165,10 +167,16 @@ export function BoardToolbar({
   botProfiles = [],
   userBotProfiles = [],
   isReadOnly = false,
+  aiGenerateOpen: aiGenerateOpenProp,
+  onAiGenerateOpenChange,
 }: BoardToolbarProps) {
   const [importOpen, setImportOpen] = useState(false);
-  const [aiGenerateOpen, setAiGenerateOpen] = useState(false);
+  const [aiGenerateOpenLocal, setAiGenerateOpenLocal] = useState(false);
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
+
+  // Use lifted state if provided, otherwise fall back to local state
+  const aiGenerateOpen = aiGenerateOpenProp ?? aiGenerateOpenLocal;
+  const setAiGenerateOpen = onAiGenerateOpenChange ?? setAiGenerateOpenLocal;
 
   function handleLabelToggle(labelId: string) {
     if (labelFilter.includes(labelId)) {

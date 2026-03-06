@@ -1,5 +1,7 @@
 import Link from "next/link";
+import { LayoutDashboard, Plus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/utils";
 
 export interface ActiveBoard {
@@ -17,13 +19,26 @@ interface ActiveBoardsProps {
 export function ActiveBoards({ boards }: ActiveBoardsProps) {
   if (boards.length === 0) {
     return (
-      <p className="py-4 text-center text-sm text-muted-foreground">
-        No active boards yet.{" "}
-        <Link href="/ideas" className="text-primary hover:underline">
-          Browse the feed
-        </Link>{" "}
-        to find ideas to work on.
-      </p>
+      <div className="rounded-lg border border-dashed border-border p-8 text-center">
+        <LayoutDashboard className="mx-auto h-8 w-8 text-muted-foreground/50" />
+        <p className="mt-3 text-sm font-medium">No active boards</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Create an idea and add tasks to see your boards here.
+        </p>
+        <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-2">
+          <Link href="/ideas/new">
+            <Button size="sm" className="gap-2">
+              <Plus className="h-4 w-4" />
+              Create an idea
+            </Button>
+          </Link>
+          <Link href="/ideas">
+            <Button variant="outline" size="sm">
+              Browse the feed
+            </Button>
+          </Link>
+        </div>
+      </div>
     );
   }
 
