@@ -22,7 +22,6 @@ import { DeleteIdeaButton } from "@/components/ideas/delete-idea-button";
 import { EnhanceIdeaButton } from "@/components/ideas/enhance-idea-button";
 import { IdeaActionsMenu } from "@/components/ideas/idea-actions-menu";
 import { AddCollaboratorPopover } from "@/components/ideas/add-collaborator-popover";
-import { RemoveCollaboratorButton } from "@/components/ideas/remove-collaborator-button";
 import { InlineIdeaHeader } from "@/components/ideas/inline-idea-header";
 import { InlineIdeaBody } from "@/components/ideas/inline-idea-body";
 import { InlineIdeaTags } from "@/components/ideas/inline-idea-tags";
@@ -143,7 +142,9 @@ export default async function IdeaDetailPage({ params }: PageProps) {
   const hasVoted = !!vote;
   const isCollaborator = !!collab;
   const isAdmin = profile?.is_admin ?? false;
-  const userCanUseAi = !!profile?.encrypted_anthropic_key || (profile?.ai_starter_credits ?? 0) > 0;
+  const userHasByokKey = !!profile?.encrypted_anthropic_key;
+  const userStarterCredits = profile?.ai_starter_credits ?? 0;
+  const userCanUseAi = userHasByokKey || userStarterCredits > 0;
   const userBots = (bots ?? []) as BotProfile[];
   const ideaAgents = ideaTeam.ideaAgentDetails;
 
@@ -215,7 +216,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
             hasVoted={hasVoted}
           />
           <div className="min-w-0 flex-1">
-            <div className="flex items-start justify-between gap-2">
+            <div className="flex items-center justify-between gap-2">
               <InlineIdeaHeader
                 ideaId={idea.id}
                 title={idea.title}
@@ -232,6 +233,8 @@ export default async function IdeaDetailPage({ params }: PageProps) {
                       currentDescription={idea.description}
                       bots={userBots}
                       disabled={!userCanUseAi}
+                      hasByokKey={userHasByokKey}
+                      starterCredits={userStarterCredits}
                     />
                   </span>
                 )}
@@ -261,6 +264,8 @@ export default async function IdeaDetailPage({ params }: PageProps) {
                     isAuthor={isAuthor}
                     canDelete={canDelete}
                     canUseAi={userCanUseAi}
+                    hasByokKey={userHasByokKey}
+                    starterCredits={userStarterCredits}
                     bots={userBots}
                   />
                 )}
@@ -344,24 +349,15 @@ export default async function IdeaDetailPage({ params }: PageProps) {
                     </Tooltip>
                   ))}
                 </div>
+                {(1 + collabList.length) > 1 && (
+                  <span className="text-xs text-muted-foreground">{1 + collabList.length}</span>
+                )}
                 {isAuthor && (
                   <AddCollaboratorPopover
                     ideaId={idea.id}
                     authorId={idea.author_id}
                     existingCollaboratorIds={collabList.map((c) => c.user_id)}
                   />
-                )}
-                {isAuthor && collabList.length > 0 && (
-                  <div className="ml-1 flex items-center gap-0.5">
-                    {collabList.map((c) => (
-                      <RemoveCollaboratorButton
-                        key={c.id}
-                        ideaId={idea.id}
-                        userId={c.user_id}
-                        userName={c.user.full_name ?? undefined}
-                      />
-                    ))}
-                  </div>
                 )}
               </div>
             </>
