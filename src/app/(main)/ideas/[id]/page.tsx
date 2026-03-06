@@ -77,7 +77,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       type: "article",
       url: `${appUrl}/ideas/${id}`,
       publishedTime: idea.created_at,
-      modifiedTime: idea.updated_at,
+      modifiedTime: idea.updated_at ?? undefined,
       authors: [`${appUrl}/profile/${idea.author_id}`],
     },
     twitter: {
