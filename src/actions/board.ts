@@ -647,10 +647,12 @@ export async function updateTaskComment(
 
   content = validateComment(content);
 
+  // App-level author check + RLS defense-in-depth
   const { error } = await supabase
     .from("board_task_comments")
     .update({ content })
-    .eq("id", commentId);
+    .eq("id", commentId)
+    .eq("author_id", user.id);
 
   if (error) throw new Error(error.message);
 

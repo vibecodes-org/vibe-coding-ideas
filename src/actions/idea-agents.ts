@@ -45,6 +45,7 @@ export async function removeIdeaAgent(ideaId: string, botId: string) {
     throw new Error("Not authenticated");
   }
 
+  // Try deleting own agent first, then fall back to idea author privilege (RLS allows both)
   const { error } = await supabase
     .from("idea_agents")
     .delete()

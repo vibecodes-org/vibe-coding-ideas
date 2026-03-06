@@ -89,7 +89,8 @@ export async function updateComment(
   const { error } = await supabase
     .from("comments")
     .update({ content })
-    .eq("id", commentId);
+    .eq("id", commentId)
+    .eq("author_id", user.id);
 
   if (error) {
     throw new Error(error.message);
