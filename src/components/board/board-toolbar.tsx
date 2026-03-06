@@ -17,6 +17,104 @@ import type { BoardColumnWithTasks, BoardLabel, User, BotProfile } from "@/types
 const ImportDialog = dynamic(() => import("./import-dialog").then((m) => m.ImportDialog), { ssr: false });
 const AiGenerateDialog = dynamic(() => import("./ai-generate-dialog").then((m) => m.AiGenerateDialog), { ssr: false });
 
+function LabelFilterPopover({
+  boardLabels,
+  labelFilter,
+  onLabelToggle,
+  onLabelFilterChange,
+}: {
+  boardLabels: BoardLabel[];
+  labelFilter: string[];
+  onLabelToggle: (labelId: string) => void;
+  onLabelFilterChange: (value: string[]) => void;
+}) {
+  const [labelSearch, setLabelSearch] = useState("");
+
+  const filteredLabels = labelSearch
+    ? boardLabels.filter((l) => l.name.toLowerCase().includes(labelSearch.toLowerCase()))
+    : boardLabels;
+
+  const allFilteredSelected = filteredLabels.length > 0 && filteredLabels.every((l) => labelFilter.includes(l.id));
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="h-8 w-full md:w-auto text-xs">
+          Labels
+          {labelFilter.length > 0 && (
+            <span className="ml-1 rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground">
+              {labelFilter.length}
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent className="w-56 p-0" align="start">
+        {/* Header with search */}
+        <div className="border-b p-2">
+          <Input
+            value={labelSearch}
+            onChange={(e) => setLabelSearch(e.target.value)}
+            placeholder="Search labels..."
+            className="h-7 text-xs"
+          />
+        </div>
+
+        {/* Quick actions */}
+        <div className="flex items-center justify-between border-b px-2 py-1.5">
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() => {
+              if (allFilteredSelected) {
+                onLabelFilterChange(labelFilter.filter((id) => !filteredLabels.some((l) => l.id === id)));
+              } else {
+                const newIds = filteredLabels.map((l) => l.id).filter((id) => !labelFilter.includes(id));
+                onLabelFilterChange([...labelFilter, ...newIds]);
+              }
+            }}
+          >
+            {allFilteredSelected ? "Deselect all" : "Select all"}
+          </button>
+          {labelFilter.length > 0 && (
+            <button
+              type="button"
+              className="text-[11px] text-muted-foreground hover:text-foreground"
+              onClick={() => onLabelFilterChange([])}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {/* Scrollable label list */}
+        <div className="max-h-56 overflow-y-auto p-1">
+          {filteredLabels.length === 0 ? (
+            <p className="px-2 py-3 text-center text-xs text-muted-foreground">No labels found</p>
+          ) : (
+            filteredLabels.map((label) => {
+              const config = getLabelColorConfig(label.color);
+              return (
+                <div
+                  key={label.id}
+                  className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 hover:bg-muted/50"
+                  onClick={() => onLabelToggle(label.id)}
+                >
+                  <Checkbox
+                    checked={labelFilter.includes(label.id)}
+                    onCheckedChange={() => onLabelToggle(label.id)}
+                  />
+                  <span className={`h-3 w-3 shrink-0 rounded-sm ${config.swatchColor}`} />
+                  <span className="truncate text-xs font-medium">{label.name}</span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
 interface BoardToolbarProps {
   searchQuery: string;
   onSearchChange: (value: string) => void;
@@ -104,36 +202,12 @@ export function BoardToolbar({
 
       {/* Label filter */}
       {boardLabels.length > 0 && (
-        <Popover>
-          <PopoverTrigger asChild>
-            <Button variant="outline" size="sm" className="h-8 w-full md:w-auto text-xs">
-              Labels
-              {labelFilter.length > 0 && (
-                <span className="ml-1 rounded-full bg-primary px-1.5 text-[10px] text-primary-foreground">
-                  {labelFilter.length}
-                </span>
-              )}
-            </Button>
-          </PopoverTrigger>
-          <PopoverContent className="w-52 p-2" align="start">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">Filter by labels</p>
-            <div className="space-y-1">
-              {boardLabels.map((label) => {
-                const config = getLabelColorConfig(label.color);
-                return (
-                  <div key={label.id} className="flex items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/50">
-                    <Checkbox
-                      checked={labelFilter.includes(label.id)}
-                      onCheckedChange={() => handleLabelToggle(label.id)}
-                    />
-                    <span className={`h-3 w-3 shrink-0 rounded-sm ${config.swatchColor}`} />
-                    <span className="text-xs font-medium">{label.name}</span>
-                  </div>
-                );
-              })}
-            </div>
-          </PopoverContent>
-        </Popover>
+        <LabelFilterPopover
+          boardLabels={boardLabels}
+          labelFilter={labelFilter}
+          onLabelToggle={handleLabelToggle}
+          onLabelFilterChange={onLabelFilterChange}
+        />
       )}
 
       {/* Due date filter */}
