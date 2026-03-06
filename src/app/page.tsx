@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
@@ -21,6 +22,12 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { createClient } from "@/lib/supabase/server";
 import { BoardPreview, McpAgentPreview } from "@/components/landing/product-mockups";
+
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
+
+export const metadata: Metadata = {
+  alternates: { canonical: appUrl },
+};
 
 const techStack = [
   { icon: Globe, label: "Next.js 16" },

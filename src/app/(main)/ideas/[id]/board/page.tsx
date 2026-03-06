@@ -18,6 +18,8 @@ import type {
 } from "@/types";
 import type { Metadata } from "next";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
+
 export const maxDuration = 120;
 
 interface PageProps {
@@ -50,9 +52,11 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: `${idea.title} — Board`,
     description: ogDescription,
+    alternates: { canonical: `${appUrl}/ideas/${id}/board` },
     openGraph: {
       title: ogTitle,
       description: ogDescription,
+      url: `${appUrl}/ideas/${id}/board`,
     },
     twitter: {
       card: "summary_large_image",

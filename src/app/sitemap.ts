@@ -1,12 +1,14 @@
+import { createClient } from "@supabase/supabase-js";
 import type { MetadataRoute } from "next";
+
+export const revalidate = 3600; // regenerate at most once per hour
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
 
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const staticPages: MetadataRoute.Sitemap = [
     {
       url: BASE_URL,
-      lastModified: new Date(),
       changeFrequency: "weekly",
       priority: 1.0,
     },
@@ -65,17 +67,54 @@ export default function sitemap(): MetadataRoute.Sitemap {
       changeFrequency: "yearly",
       priority: 0.3,
     },
-    {
-      url: `${BASE_URL}/signup`,
-      changeFrequency: "monthly",
-      priority: 0.9,
-    },
-    {
-      url: `${BASE_URL}/login`,
-      changeFrequency: "monthly",
-      priority: 0.5,
-    },
   ];
 
-  return staticPages;
+  const supabase = createClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+  );
+
+  const [ideasResult, usersResult] = await Promise.all([
+    supabase
+      .from("ideas")
+      .select("id, updated_at, author_id")
+      .eq("visibility", "public")
+      .limit(50000),
+    supabase
+      .from("users")
+      .select("id, updated_at")
+      .eq("is_bot", false)
+      .limit(50000),
+  ]);
+
+  if (ideasResult.error) {
+    console.error("[sitemap] ideas query failed:", ideasResult.error.message);
+  }
+  if (usersResult.error) {
+    console.error("[sitemap] users query failed:", usersResult.error.message);
+  }
+
+  const ideas = ideasResult.data ?? [];
+  const users = usersResult.data ?? [];
+
+  // Only include users who have authored at least one public idea
+  const authorIds = new Set(ideas.map((idea) => idea.author_id));
+
+  const ideaEntries: MetadataRoute.Sitemap = ideas.map((idea) => ({
+    url: `${BASE_URL}/ideas/${idea.id}`,
+    lastModified: idea.updated_at ? new Date(idea.updated_at) : undefined,
+    changeFrequency: "weekly",
+    priority: 0.7,
+  }));
+
+  const profileEntries: MetadataRoute.Sitemap = users
+    .filter((user) => authorIds.has(user.id))
+    .map((user) => ({
+      url: `${BASE_URL}/profile/${user.id}`,
+      lastModified: user.updated_at ? new Date(user.updated_at) : undefined,
+      changeFrequency: "monthly",
+      priority: 0.5,
+    }));
+
+  return [...staticPages, ...ideaEntries, ...profileEntries];
 }

@@ -33,6 +33,8 @@ import { PendingRequests } from "@/components/ideas/pending-requests";
 import type { CommentWithAuthor, CollaboratorWithUser, CollaborationRequestWithRequester, BotProfile } from "@/types";
 import type { Metadata } from "next";
 
+const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
+
 export const maxDuration = 120;
 
 interface PageProps {
@@ -44,7 +46,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const supabase = await createClient();
   const { data: idea } = await supabase
     .from("ideas")
-    .select("title, description, visibility")
+    .select("title, description, visibility, created_at, updated_at, author_id, author:users!ideas_author_id_fkey(full_name)")
     .eq("id", id)
     .single();
 
@@ -68,10 +70,15 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: idea.title,
     description,
+    alternates: { canonical: `${appUrl}/ideas/${id}` },
     openGraph: {
       title: idea.title,
       description,
       type: "article",
+      url: `${appUrl}/ideas/${id}`,
+      publishedTime: idea.created_at,
+      modifiedTime: idea.updated_at ?? undefined,
+      authors: [`${appUrl}/profile/${idea.author_id}`],
     },
     twitter: {
       card: "summary_large_image",
@@ -202,8 +209,38 @@ export default async function IdeaDetailPage({ params }: PageProps) {
 
   const collabList = (collaborators as unknown as CollaboratorWithUser[]) ?? [];
 
+  const jsonLd = idea.visibility === "public" ? {
+    "@context": "https://schema.org",
+    "@type": "Article",
+    headline: idea.title,
+    description: idea.description ? stripMarkdownForMeta(idea.description) : undefined,
+    author: {
+      "@type": "Person",
+      name: (idea.author as unknown as { full_name: string | null })?.full_name ?? "VibeCodes User",
+    },
+    datePublished: idea.created_at,
+    dateModified: idea.updated_at,
+    publisher: {
+      "@type": "Organization",
+      name: "VibeCodes",
+      url: appUrl,
+    },
+    mainEntityOfPage: `${appUrl}/ideas/${idea.id}`,
+    interactionStatistic: {
+      "@type": "InteractionCounter",
+      interactionType: "https://schema.org/LikeAction",
+      userInteractionCount: idea.upvotes,
+    },
+  } : null;
+
   return (
     <div className="mx-auto max-w-3xl px-4 pt-6 pb-4">
+      {jsonLd && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd).replace(/</g, "\\u003c") }}
+        />
+      )}
       <IdeaDetailRealtime ideaId={idea.id} />
 
       {/* ══ Hero Card ══════════════════════════════════════ */}
