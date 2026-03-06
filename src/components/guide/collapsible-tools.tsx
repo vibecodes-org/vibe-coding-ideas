@@ -42,7 +42,7 @@ export function CollapsibleTools({
         role="region"
         aria-label={title}
         hidden={!open}
-        className="border-t border-border px-4 pb-3"
+        className="border-t border-border px-4 pt-3 pb-3"
       >
         {children}
       </div>
