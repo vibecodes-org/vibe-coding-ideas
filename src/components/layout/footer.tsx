@@ -15,6 +15,10 @@ export function Footer() {
             Guide
           </Link>
           <span className="text-border">&middot;</span>
+          <Link href="/changelog" prefetch={false} className="px-1 hover:text-foreground">
+            Changelog
+          </Link>
+          <span className="text-border">&middot;</span>
           <Link href="/terms" prefetch={false} className="px-1 hover:text-foreground">
             Terms of Service
           </Link>

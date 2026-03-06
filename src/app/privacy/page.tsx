@@ -1,21 +1,12 @@
 import Link from "next/link";
-import { Navbar } from "@/components/layout/navbar";
-import { Sparkles, Shield, ArrowLeft } from "lucide-react";
-
-export const metadata = {
-  title: "Privacy Policy",
-  description:
-    "How VibeCodes collects, uses, stores, and protects your data. Plain-English privacy policy covering accounts, ideas, AI features, and third-party services.",
-};
+import { Shield, ArrowLeft } from "lucide-react";
 
 const LAST_UPDATED = "24 February 2026";
 
 export default function PrivacyPolicyPage() {
   return (
-    <div className="min-h-screen">
-      <Navbar />
-      <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-        <Link
+    <>
+      <Link
           href="/"
           className="mb-6 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground"
         >
@@ -668,22 +659,6 @@ export default function PrivacyPolicyPage() {
             </p>
           </section>
         </div>
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-border py-8">
-        <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
-          <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground">
-            <Sparkles className="h-4 w-4" />
-            <span>
-              VibeCodes &mdash; Built with vibes &mdash;{" "}
-              <Link href="/guide" className="underline hover:text-foreground">
-                Guide
-              </Link>
-            </span>
-          </div>
-        </div>
-      </footer>
-    </div>
+    </>
   );
 }
