@@ -100,11 +100,6 @@ export function EnhanceIdeaButton({
               >
                 <Sparkles className="h-3.5 w-3.5" />
                 Enhance with AI
-                {!hasByokKey && creditsRemaining > 0 && (
-                  <span className="rounded-full bg-primary px-1.5 text-[10px] leading-none text-primary-foreground">
-                    {creditsRemaining}
-                  </span>
-                )}
               </Button>
             </span>
           </TooltipTrigger>

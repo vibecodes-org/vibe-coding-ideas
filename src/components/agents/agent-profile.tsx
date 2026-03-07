@@ -208,7 +208,8 @@ export function AgentProfile({
 
           {/* Skills */}
           {bot.skills && bot.skills.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
+            <div className="flex flex-wrap items-center gap-1 mt-2">
+              <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wide mr-0.5">Skills</span>
               {bot.skills.map((skill) => (
                 <span
                   key={skill}
@@ -222,7 +223,8 @@ export function AgentProfile({
 
           {/* Deliverables */}
           {bot.deliverables && bot.deliverables.length > 0 && (
-            <div className="flex flex-wrap gap-1 mt-2">
+            <div className="flex flex-wrap items-center gap-1 mt-2">
+              <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wide mr-0.5">Outputs</span>
               {bot.deliverables.map((d) => (
                 <span
                   key={d}
@@ -348,28 +350,31 @@ export function AgentProfile({
                 key={ti}
                 className="rounded-lg border border-border bg-muted/30 overflow-hidden"
               >
-                <div className="px-3.5 py-2.5 border-b border-border/50">
+                <div className="px-3.5 py-2.5 border-b border-border/50 flex items-center justify-between">
                   <span className="text-xs font-semibold">{template.name}</span>
-                  <span className="text-[10px] text-muted-foreground ml-2">
+                  <span className="text-[10px] text-muted-foreground">
                     {template.steps.length} step{template.steps.length !== 1 ? "s" : ""}
                   </span>
                 </div>
                 <div className="px-3.5 py-3">
-                  <div className="flex flex-wrap items-center gap-1">
+                  <ol className="space-y-1.5">
                     {template.steps.map((step, si) => (
-                      <span key={si} className="flex items-center gap-1">
-                        {si > 0 && (
-                          <span className="text-[10px] text-muted-foreground">&gt;</span>
-                        )}
-                        <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-400">
-                          {step.title}
-                          {step.human_check_required && (
-                            <UserCheck className="inline ml-0.5 h-2.5 w-2.5 text-amber-400" />
-                          )}
+                      <li key={si} className="flex items-start gap-2 text-xs">
+                        <span className="mt-px flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-[9px] font-semibold text-violet-400">
+                          {si + 1}
                         </span>
-                      </span>
+                        <div className="flex-1 min-w-0">
+                          <span className="font-medium text-foreground/90">{step.title}</span>
+                          {step.agent_role && (
+                            <span className="ml-1.5 text-muted-foreground">· {step.agent_role}</span>
+                          )}
+                        </div>
+                        {step.human_check_required && (
+                          <UserCheck className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" title="Requires human approval" />
+                        )}
+                      </li>
                     ))}
-                  </div>
+                  </ol>
                 </div>
               </div>
             ))}

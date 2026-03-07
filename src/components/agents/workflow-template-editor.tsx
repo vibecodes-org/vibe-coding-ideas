@@ -1,12 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, GripVertical, ChevronDown, ChevronRight, UserCheck } from "lucide-react";
+import { Plus, Trash2, ChevronUp, ChevronDown, ChevronRight, UserCheck } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
-import { cn } from "@/lib/utils";
 import type { WorkflowTemplate, WorkflowTemplateStep } from "@/types";
 
 interface WorkflowTemplateEditorProps {
@@ -128,12 +127,9 @@ export function WorkflowTemplateEditor({ value, onChange }: WorkflowTemplateEdit
                   }}
                   onClick={(e) => e.stopPropagation()}
                   placeholder="Template name (e.g. Dev Workflow)"
-                  className="h-6 text-xs border-0 bg-transparent p-0 focus-visible:ring-0 shadow-none"
+                  className="h-6 text-xs border-0 bg-transparent p-0 pl-2 focus-visible:ring-0 shadow-none"
                   maxLength={100}
                 />
-                <span className="text-[10px] text-muted-foreground shrink-0">
-                  {template.steps.length} step{template.steps.length !== 1 ? "s" : ""}
-                </span>
                 <Button
                   type="button"
                   variant="ghost"
@@ -151,45 +147,28 @@ export function WorkflowTemplateEditor({ value, onChange }: WorkflowTemplateEdit
               {/* Steps */}
               {isExpanded && (
                 <div className="px-3 py-2 space-y-1.5">
-                  {/* Step flow visualization */}
-                  {template.steps.length > 0 && (
-                    <div className="flex flex-wrap items-center gap-1 pb-2 border-b border-border/30 mb-2">
-                      {template.steps.map((step, si) => (
-                        <span key={si} className="flex items-center gap-1">
-                          {si > 0 && (
-                            <span className="text-[10px] text-muted-foreground">&gt;</span>
-                          )}
-                          <span className={cn(
-                            "rounded-full border px-2 py-0.5 text-[10px] font-medium",
-                            step.title
-                              ? "border-violet-500/30 bg-violet-500/10 text-violet-400"
-                              : "border-border/50 text-muted-foreground"
-                          )}>
-                            {step.title || "..."}
-                            {step.human_check_required && (
-                              <UserCheck className="inline ml-0.5 h-2.5 w-2.5 text-amber-400" />
-                            )}
-                          </span>
-                        </span>
-                      ))}
-                    </div>
-                  )}
-
                   {template.steps.map((step, si) => (
                     <div key={si} className="flex items-center gap-1.5">
-                      <span className="text-[10px] text-muted-foreground w-4 shrink-0 text-right">
-                        {si + 1}.
-                      </span>
-                      <div className="flex gap-0.5 shrink-0">
+                      <div className="flex flex-col shrink-0 -my-1">
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
-                          className="h-5 w-5"
+                          className="h-4 w-4"
                           disabled={si === 0}
                           onClick={() => moveStep(ti, si, -1)}
                         >
-                          <GripVertical className="h-3 w-3 text-muted-foreground rotate-180" />
+                          <ChevronUp className="h-3 w-3 text-muted-foreground" />
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="h-4 w-4"
+                          disabled={si === template.steps.length - 1}
+                          onClick={() => moveStep(ti, si, 1)}
+                        >
+                          <ChevronDown className="h-3 w-3 text-muted-foreground" />
                         </Button>
                       </div>
                       <Input

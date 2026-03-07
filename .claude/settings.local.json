@@ -117,7 +117,13 @@
       "Bash(git:*)",
       "mcp__vibecodes__get_discussions_ready_to_convert",
       "Bash(gh pr:*)",
-      "mcp__vibecodes__update_workflow_step"
+      "mcp__vibecodes__update_workflow_step",
+      "mcp__plugin_playwright_playwright__browser_navigate",
+      "mcp__plugin_playwright_playwright__browser_click",
+      "mcp__plugin_playwright_playwright__browser_wait_for",
+      "mcp__plugin_playwright_playwright__browser_evaluate",
+      "mcp__plugin_playwright_playwright__browser_snapshot",
+      "mcp__plugin_playwright_playwright__browser_press_key"
     ]
   },
   "enableAllProjectMcpServers": true,

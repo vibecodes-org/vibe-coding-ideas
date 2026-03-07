@@ -25,6 +25,8 @@ import { AddCollaboratorPopover } from "@/components/ideas/add-collaborator-popo
 import { InlineIdeaHeader } from "@/components/ideas/inline-idea-header";
 import { InlineIdeaBody } from "@/components/ideas/inline-idea-body";
 import { InlineIdeaTags } from "@/components/ideas/inline-idea-tags";
+import { InlineGithubUrl } from "@/components/ideas/inline-github-url";
+import { VisibilityToggle } from "@/components/ideas/visibility-toggle";
 import { IdeaAttachmentsSection } from "@/components/ideas/idea-attachments-section";
 import { IdeaAgentsSection } from "@/components/ideas/idea-agents-section";
 import { formatRelativeTime, getInitials, stripMarkdownForMeta } from "@/lib/utils";
@@ -245,7 +247,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
 
       {/* ══ Hero Card ══════════════════════════════════════ */}
       <div className="rounded-xl border border-border bg-card overflow-hidden">
-        {/* Title row: Vote + Title + Actions */}
+        {/* Title row: Vote + Title + Edit/Delete */}
         <div className="flex items-start gap-3 p-4 pb-0 sm:p-5 sm:pb-0">
           <VoteButton
             ideaId={idea.id}
@@ -253,34 +255,24 @@ export default async function IdeaDetailPage({ params }: PageProps) {
             hasVoted={hasVoted}
           />
           <div className="min-w-0 flex-1">
-            <div className="flex items-center justify-between gap-2">
+            <div className="flex items-start justify-between gap-2">
               <InlineIdeaHeader
                 ideaId={idea.id}
                 title={idea.title}
-                visibility={idea.visibility}
                 isAuthor={isAuthor}
               />
-              {/* Actions: Enhance (prominent) + Edit/Delete (icon buttons) */}
-              <div className="flex shrink-0 items-center gap-1.5">
-                {isAuthor && (
-                  <span className="hidden sm:inline-flex">
-                    <EnhanceIdeaButton
-                      ideaId={idea.id}
-                      ideaTitle={idea.title}
-                      currentDescription={idea.description}
-                      bots={userBots}
-                      disabled={!userCanUseAi}
-                      hasByokKey={userHasByokKey}
-                      starterCredits={userStarterCredits}
-                    />
-                  </span>
-                )}
+              <div className="flex shrink-0 items-center gap-0.5">
+                <VisibilityToggle
+                  ideaId={idea.id}
+                  visibility={idea.visibility}
+                  isAuthor={isAuthor}
+                />
                 {isAuthor && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <Link href={`/ideas/${idea.id}/edit`} className="hidden sm:inline-flex">
-                        <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
-                          <Pencil className="h-4 w-4" />
+                        <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground">
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
                       </Link>
                     </TooltipTrigger>
@@ -292,7 +284,6 @@ export default async function IdeaDetailPage({ params }: PageProps) {
                     <DeleteIdeaButton ideaId={idea.id} />
                   </span>
                 )}
-                {/* Mobile: "More" dropdown for Edit, Enhance, Delete */}
                 {(isAuthor || canDelete) && (
                   <IdeaActionsMenu
                     ideaId={idea.id}
@@ -309,8 +300,8 @@ export default async function IdeaDetailPage({ params }: PageProps) {
               </div>
             </div>
 
-            {/* Meta row: Status + Visibility + Author + Time */}
-            <div className="mt-2 flex flex-wrap items-center gap-2">
+            {/* Meta row: Status + Author + Time */}
+            <div className="mt-0.5 flex flex-wrap items-center gap-2">
               {isAuthor ? (
                 <StatusSelect ideaId={idea.id} currentStatus={idea.status} />
               ) : (
@@ -344,7 +335,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
           </div>
         </div>
 
-        {/* Metadata strip: Tags | Team | Agents */}
+        {/* Metadata strip: Tags | Team */}
         <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 border-t border-border px-4 py-3 sm:px-5">
           {/* Tags */}
           <div className="flex items-center gap-2">
@@ -400,22 +391,25 @@ export default async function IdeaDetailPage({ params }: PageProps) {
             </>
           )}
 
-          {/* Agent Pool (avatar stack) */}
-          {(ideaAgents.length > 0 || (isAuthor || isCollaborator)) && (
+          {/* GitHub */}
+          {(isAuthor || idea.github_url) && (
             <>
               <div className="hidden h-5 w-px bg-border sm:block" />
-              <IdeaAgentsSection
-                ideaId={idea.id}
-                ideaAgents={ideaAgents}
-                currentUserId={user.id}
-                isAuthor={isAuthor}
-                isTeamMember={isAuthor || isCollaborator}
-                userBots={userBots}
-                orchestratorBotId={ideaTeam.orchestratorBotId}
-              />
+              <InlineGithubUrl ideaId={idea.id} githubUrl={idea.github_url} isAuthor={isAuthor} />
             </>
           )}
         </div>
+
+        {/* Agent Pool (collapsible) */}
+        <IdeaAgentsSection
+          ideaId={idea.id}
+          ideaAgents={ideaAgents}
+          currentUserId={user.id}
+          isAuthor={isAuthor}
+          isTeamMember={isAuthor || isCollaborator}
+          userBots={userBots}
+          orchestratorBotId={ideaTeam.orchestratorBotId}
+        />
 
         {/* Pending collaboration requests (author only) */}
         {isAuthor && pendingRequests.length > 0 && (
@@ -423,19 +417,22 @@ export default async function IdeaDetailPage({ params }: PageProps) {
             <PendingRequests ideaId={idea.id} requests={pendingRequests} />
           </div>
         )}
-      </div>
 
-      {/* ══ Navigation Buttons ═════════════════════════════ */}
-      {(isAuthor || isCollaborator || idea.visibility === "public") && (
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Link href={`/ideas/${idea.id}/board`}>
-            <Button variant="outline" size="sm" className="gap-2">
+        {/* Tab bar */}
+        {(isAuthor || isCollaborator || idea.visibility === "public") && (
+          <div className="flex border-t border-border">
+            <Link
+              href={`/ideas/${idea.id}/board`}
+              className="flex flex-1 items-center justify-center gap-2 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            >
               <LayoutDashboard className="h-4 w-4" />
               Board
-            </Button>
-          </Link>
-          <Link href={`/ideas/${idea.id}/discussions`}>
-            <Button variant="outline" size="sm" className="gap-2">
+            </Link>
+            <div className="w-px bg-border" />
+            <Link
+              href={`/ideas/${idea.id}/discussions`}
+              className="flex flex-1 items-center justify-center gap-2 py-3 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+            >
               <MessageSquare className="h-4 w-4" />
               Discussions
               {idea.discussion_count > 0 && (
@@ -443,31 +440,32 @@ export default async function IdeaDetailPage({ params }: PageProps) {
                   {idea.discussion_count}
                 </span>
               )}
-            </Button>
-          </Link>
-        </div>
-      )}
+            </Link>
+          </div>
+        )}
+      </div>
 
-      {/* ══ Description (promoted to top of content) ═══════ */}
+      {/* ══ Description ═══════════════════════════════════ */}
       <div className="mt-6">
+        {isAuthor && (
+          <div className="mb-3 flex items-center">
+            <EnhanceIdeaButton
+              ideaId={idea.id}
+              ideaTitle={idea.title}
+              currentDescription={idea.description}
+              bots={userBots}
+              disabled={!userCanUseAi}
+              hasByokKey={userHasByokKey}
+              starterCredits={userStarterCredits}
+            />
+          </div>
+        )}
         <InlineIdeaBody
           ideaId={idea.id}
           description={idea.description}
-          githubUrl={idea.github_url}
           isAuthor={isAuthor}
         />
       </div>
-
-      {/* Agent Pool */}
-      <IdeaAgentsSection
-        ideaId={idea.id}
-        ideaAgents={ideaAgents}
-        currentUserId={user.id}
-        isAuthor={isAuthor}
-        isTeamMember={isAuthor || isCollaborator}
-        userBots={userBots}
-        orchestratorBotId={ideaTeam.orchestratorBotId}
-      />
 
       {/* ══ Attachments ════════════════════════════════════ */}
       <Separator className="my-6" />

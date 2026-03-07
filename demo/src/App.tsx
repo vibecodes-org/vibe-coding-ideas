@@ -9,17 +9,15 @@ export function App() {
       <h1>Counter</h1>
       <div className="counter">
         <button onClick={() => setCount((c) => c - 1)}>-</button>
-        <span className="count">{count}</span>
-        <button onClick={() => setCount((c) => c + 1)}>+</button>
-      </div>
-      <div className="reset-row">
         <button
-          className="reset-btn"
+          className={`reset-btn${count !== 0 ? " visible" : ""}`}
           disabled={count === 0}
           onClick={() => setCount(0)}
         >
-          Reset
+          reset
         </button>
+        <span className="count">{count}</span>
+        <button onClick={() => setCount((c) => c + 1)}>+</button>
       </div>
     </div>
   );

@@ -252,6 +252,11 @@ INSERT INTO public.bot_profiles (id, owner_id, name, role, system_prompt, is_act
  ARRAY['code-review','security-audit','performance','typescript','sql-review','conventions'])
 ON CONFLICT (id) DO NOTHING;
 
+-- Set deliverables for UX Designer
+UPDATE public.bot_profiles
+  SET deliverables = ARRAY['Design Document (HTML)']
+  WHERE id = 'a3333333-3333-4333-a333-333333333302';
+
 -- ============================================================================
 -- 3. Demo Idea: Counter App
 -- ============================================================================
@@ -289,8 +294,16 @@ INSERT INTO public.idea_agents (idea_id, bot_id, added_by) VALUES
   ('b1111111-1111-4111-b111-111111111111', 'a3333333-3333-4333-a333-333333333301', 'a1111111-1111-4111-a111-111111111111'),
   ('b1111111-1111-4111-b111-111111111111', 'a3333333-3333-4333-a333-333333333302', 'a1111111-1111-4111-a111-111111111111'),
   ('b1111111-1111-4111-b111-111111111111', 'a3333333-3333-4333-a333-333333333303', 'a1111111-1111-4111-a111-111111111111'),
-  ('b1111111-1111-4111-b111-111111111111', 'a3333333-3333-4333-a333-333333333304', 'a1111111-1111-4111-a111-111111111111')
+  ('b1111111-1111-4111-b111-111111111111', 'a3333333-3333-4333-a333-333333333304', 'a1111111-1111-4111-a111-111111111111'),
+  -- Orchestrator agent (seeded in migration 00068)
+  ('b1111111-1111-4111-b111-111111111111', 'b0000000-0000-4000-a000-000000000016', 'a1111111-1111-4111-a111-111111111111')
 ON CONFLICT DO NOTHING;
+
+-- Set orchestrator as the default for the demo idea
+UPDATE public.idea_agents
+  SET is_orchestrator = true
+  WHERE idea_id = 'b1111111-1111-4111-b111-111111111111'
+    AND bot_id = 'b0000000-0000-4000-a000-000000000016';
 
 -- ============================================================================
 -- 6. Discussion: ready to convert (tests the full orchestration flow)
@@ -887,8 +900,15 @@ INSERT INTO public.idea_agents (idea_id, bot_id, added_by) VALUES
   ('b2222222-2222-4222-b222-222222222222', 'a3333333-3333-4333-a333-333333333314', 'a1111111-1111-4111-a111-111111111111')
 ON CONFLICT DO NOTHING;
 
--- Orchestration agent (b0000000-0000-4000-a000-000000000016) may not exist locally
--- since its owner (VIBECODES_USER_ID) is production-only. Skipped.
+-- Orchestrator agent for VibeCodes idea
+INSERT INTO public.idea_agents (idea_id, bot_id, added_by) VALUES
+  ('b2222222-2222-4222-b222-222222222222', 'b0000000-0000-4000-a000-000000000016', 'a1111111-1111-4111-a111-111111111111')
+ON CONFLICT DO NOTHING;
+
+UPDATE public.idea_agents
+  SET is_orchestrator = true
+  WHERE idea_id = 'b2222222-2222-4222-b222-222222222222'
+    AND bot_id = 'b0000000-0000-4000-a000-000000000016';
 
 
 -- ============================================================================

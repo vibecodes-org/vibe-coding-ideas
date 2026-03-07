@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import Link from "next/link";
 import {
   ArrowRight,
+  ChevronDown,
   Crown,
   MessageSquare,
   CheckCircle2,
@@ -41,6 +42,54 @@ function getActivityIcon(action: string) {
   if (action === "moved") return { icon: ArrowRight, className: "bg-blue-500/15 text-blue-500" };
   if (action === "comment_added") return { icon: MessageSquare, className: "bg-emerald-500/15 text-emerald-500" };
   return { icon: CheckCircle2, className: "bg-violet-500/15 text-violet-400" };
+}
+
+const COLLAPSE_HEIGHT = 120;
+
+function CollapsibleText({ children }: { children: React.ReactNode }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [overflow, setOverflow] = useState(false);
+  const [expanded, setExpanded] = useState(false);
+
+  useEffect(() => {
+    if (ref.current && ref.current.scrollHeight > COLLAPSE_HEIGHT + 20) {
+      setOverflow(true);
+    }
+  }, [children]);
+
+  return (
+    <div className="relative">
+      <div
+        ref={ref}
+        className={cn(
+          "px-3.5 py-3 text-xs text-muted-foreground leading-relaxed overflow-hidden transition-[max-height] duration-200",
+          !expanded && overflow && "max-h-[120px]"
+        )}
+      >
+        {children}
+      </div>
+      {overflow && !expanded && (
+        <div className="absolute inset-x-0 bottom-0 flex justify-center bg-gradient-to-t from-muted/80 to-transparent pt-6 pb-1">
+          <button
+            onClick={() => setExpanded(true)}
+            className="flex items-center gap-0.5 rounded-full bg-background/80 px-2 py-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            Show more <ChevronDown className="h-2.5 w-2.5" />
+          </button>
+        </div>
+      )}
+      {overflow && expanded && (
+        <div className="flex justify-center pb-1">
+          <button
+            onClick={() => setExpanded(false)}
+            className="flex items-center gap-0.5 text-[10px] font-medium text-muted-foreground hover:text-foreground transition-colors cursor-pointer"
+          >
+            Show less <ChevronDown className="h-2.5 w-2.5 rotate-180" />
+          </button>
+        </div>
+      )}
+    </div>
+  );
 }
 
 function ProfileSkeleton() {
@@ -114,98 +163,98 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
         ) : (
           <div className="space-y-5 p-6">
             {/* Hero */}
-            <div className="flex gap-4">
-              {/* Avatar + status */}
-              <div className="shrink-0 text-center">
-                <Avatar className="h-16 w-16">
+            <div className="space-y-3">
+              {/* Top row: avatar + name + actions */}
+              <div className="flex items-start gap-3">
+                <Avatar className="h-12 w-12 shrink-0">
                   <AvatarImage src={bot.avatar_url ?? undefined} />
-                  <AvatarFallback className={cn("text-xl", colors.avatarBg, colors.avatarText)}>
+                  <AvatarFallback className={cn("text-lg", colors.avatarBg, colors.avatarText)}>
                     {initials}
                   </AvatarFallback>
                 </Avatar>
-              </div>
-
-              {/* Info */}
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1">
-                  <h2 className="text-lg font-bold truncate">{bot.name}</h2>
-                  {bot.role && (
-                    <Badge className={cn("text-xs shrink-0 border-0", colors.badge)}>
-                      {bot.role}
+                <div className="flex-1 min-w-0">
+                  <h2 className="text-lg font-bold leading-tight truncate">{bot.name}</h2>
+                  <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                    {bot.role && (
+                      <Badge className={cn("text-[10px] shrink-0 border-0", colors.badge)}>
+                        {bot.role}
+                      </Badge>
+                    )}
+                    <Badge
+                      className={cn(
+                        "text-[10px] shrink-0 border-0 gap-1",
+                        bot.agent_type === "orchestrator"
+                          ? "bg-amber-500/15 text-amber-500"
+                          : "bg-blue-500/15 text-blue-500"
+                      )}
+                    >
+                      {bot.agent_type === "orchestrator" ? (
+                        <Crown className="h-2.5 w-2.5" />
+                      ) : (
+                        <Wrench className="h-2.5 w-2.5" />
+                      )}
+                      {bot.agent_type === "orchestrator" ? "Orchestrator" : "Worker"}
                     </Badge>
-                  )}
-                  <Badge
-                    className={cn(
-                      "text-xs shrink-0 border-0 gap-1",
-                      bot.agent_type === "orchestrator"
-                        ? "bg-amber-500/15 text-amber-500"
-                        : "bg-blue-500/15 text-blue-500"
-                    )}
-                  >
-                    {bot.agent_type === "orchestrator" ? (
-                      <Crown className="h-3 w-3" />
-                    ) : (
-                      <Wrench className="h-3 w-3" />
-                    )}
-                    {bot.agent_type === "orchestrator" ? "Orchestrator" : "Worker"}
-                  </Badge>
-                </div>
-
-                {bot.bio && (
-                  <p className="text-sm text-muted-foreground italic mb-1.5">
-                    &ldquo;{bot.bio}&rdquo;
-                  </p>
-                )}
-
-                <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
-                  <span>
-                    Owned by{" "}
-                    <span className="font-medium text-muted-foreground/80">
-                      {bot.owner.full_name ?? "Unknown"}
-                    </span>
-                  </span>
-                  <span className="text-[8px]">&#x2022;</span>
-                  <span>Created {createdDate}</span>
-                </div>
-
-                {/* Skills */}
-                {bot.skills && bot.skills.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {bot.skills.map((skill) => (
-                      <span
-                        key={skill}
-                        className="rounded-full border border-border/50 bg-background/50 px-2 py-px text-[10px] font-medium text-muted-foreground"
-                      >
-                        {skill}
-                      </span>
-                    ))}
                   </div>
-                )}
-
-                {/* Deliverables */}
-                {bot.deliverables && bot.deliverables.length > 0 && (
-                  <div className="flex flex-wrap gap-1 mt-2">
-                    {bot.deliverables.map((d) => (
-                      <span
-                        key={d}
-                        className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-px text-[10px] font-medium text-violet-400"
-                      >
-                        {d}
-                      </span>
-                    ))}
+                </div>
+                {!data.isOwner && (
+                  <div className="shrink-0 flex gap-2">
+                    <AgentVoteButton
+                      botId={bot.id}
+                      upvotes={bot.community_upvotes}
+                      hasVoted={data.hasVoted}
+                    />
+                    <CloneAgentButton botId={bot.id} botName={bot.name} />
                   </div>
                 )}
               </div>
 
-              {/* Actions */}
-              {!data.isOwner && (
-                <div className="shrink-0 flex gap-2 self-start">
-                  <AgentVoteButton
-                    botId={bot.id}
-                    upvotes={bot.community_upvotes}
-                    hasVoted={data.hasVoted}
-                  />
-                  <CloneAgentButton botId={bot.id} botName={bot.name} />
+              {/* Bio */}
+              {bot.bio && (
+                <p className="text-sm text-muted-foreground italic">
+                  &ldquo;{bot.bio}&rdquo;
+                </p>
+              )}
+
+              {/* Meta */}
+              <div className="flex items-center gap-2 flex-wrap text-xs text-muted-foreground">
+                <span>
+                  Owned by{" "}
+                  <span className="font-medium text-muted-foreground/80">
+                    {bot.owner.full_name ?? "Unknown"}
+                  </span>
+                </span>
+                <span className="text-[8px]">&#x2022;</span>
+                <span>Created {createdDate}</span>
+              </div>
+
+              {/* Skills */}
+              {bot.skills && bot.skills.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wide mr-0.5">Skills</span>
+                  {bot.skills.map((skill) => (
+                    <span
+                      key={skill}
+                      className="rounded-full border border-border/50 bg-background/50 px-2 py-px text-[10px] font-medium text-muted-foreground"
+                    >
+                      {skill}
+                    </span>
+                  ))}
+                </div>
+              )}
+
+              {/* Deliverables */}
+              {bot.deliverables && bot.deliverables.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1">
+                  <span className="text-[10px] font-medium text-muted-foreground/50 uppercase tracking-wide mr-0.5">Outputs</span>
+                  {bot.deliverables.map((d) => (
+                    <span
+                      key={d}
+                      className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-px text-[10px] font-medium text-violet-400"
+                    >
+                      {d}
+                    </span>
+                  ))}
                 </div>
               )}
             </div>
@@ -222,9 +271,7 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
                       <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-emerald-500">
                         &#x1F3AF; Goal
                       </div>
-                      <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
-                        {promptFields.goal}
-                      </div>
+                      <CollapsibleText>{promptFields.goal}</CollapsibleText>
                     </div>
                   )}
                   {promptFields.constraints && (
@@ -232,9 +279,7 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
                       <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-red-500">
                         &#x1F6AB; Constraints
                       </div>
-                      <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
-                        {promptFields.constraints}
-                      </div>
+                      <CollapsibleText>{promptFields.constraints}</CollapsibleText>
                     </div>
                   )}
                   {promptFields.approach && (
@@ -242,9 +287,7 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
                       <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-blue-500">
                         &#x1F4CB; Approach
                       </div>
-                      <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
-                        {promptFields.approach}
-                      </div>
+                      <CollapsibleText>{promptFields.approach}</CollapsibleText>
                     </div>
                   )}
                 </div>
@@ -273,34 +316,37 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
                 <h3 className="text-sm font-semibold flex items-center gap-2">
                   &#x1F504; Workflow Templates
                 </h3>
-                <div className="grid gap-2 sm:grid-cols-2">
+                <div className="grid gap-2">
                   {(bot.workflow_templates as WorkflowTemplate[]).map((template, ti) => (
                     <div
                       key={ti}
                       className="rounded-lg border border-border bg-muted/30 overflow-hidden"
                     >
-                      <div className="px-3 py-2 border-b border-border/50">
+                      <div className="px-3 py-2 border-b border-border/50 flex items-center justify-between">
                         <span className="text-xs font-semibold">{template.name}</span>
-                        <span className="text-[10px] text-muted-foreground ml-2">
+                        <span className="text-[10px] text-muted-foreground">
                           {template.steps.length} step{template.steps.length !== 1 ? "s" : ""}
                         </span>
                       </div>
                       <div className="px-3 py-2">
-                        <div className="flex flex-wrap items-center gap-1">
+                        <ol className="space-y-1">
                           {template.steps.map((step, si) => (
-                            <span key={si} className="flex items-center gap-1">
-                              {si > 0 && (
-                                <span className="text-[10px] text-muted-foreground">&gt;</span>
-                              )}
-                              <span className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-400">
-                                {step.title}
-                                {step.human_check_required && (
-                                  <UserCheck className="inline ml-0.5 h-2.5 w-2.5 text-amber-400" />
-                                )}
+                            <li key={si} className="flex items-start gap-2 text-[11px]">
+                              <span className="mt-px flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-violet-500/15 text-[9px] font-semibold text-violet-400">
+                                {si + 1}
                               </span>
-                            </span>
+                              <div className="flex-1 min-w-0">
+                                <span className="font-medium text-foreground/90">{step.title}</span>
+                                {step.agent_role && (
+                                  <span className="ml-1.5 text-muted-foreground">· {step.agent_role}</span>
+                                )}
+                              </div>
+                              {step.human_check_required && (
+                                <UserCheck className="mt-px h-3 w-3 shrink-0 text-amber-400" title="Requires human approval" />
+                              )}
+                            </li>
                           ))}
-                        </div>
+                        </ol>
                       </div>
                     </div>
                   ))}
