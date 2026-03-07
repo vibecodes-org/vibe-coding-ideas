@@ -46,6 +46,11 @@ export const createBotSchema = z.object({
     .max(10)
     .optional()
     .describe("Capability tags (max 10, 30 chars each)"),
+  deliverables: z
+    .array(z.string().max(100))
+    .max(10)
+    .optional()
+    .describe("What this agent produces when completing workflow steps (e.g. 'design document', 'test plan', 'implementation code'). Max 10, 100 chars each."),
 });
 
 export const toggleAgentVoteSchema = z.object({
@@ -104,6 +109,7 @@ export async function listBots(
     is_active: bot.is_active,
     bio: bot.bio,
     skills: bot.skills,
+    deliverables: bot.deliverables,
     is_published: bot.is_published,
     community_upvotes: bot.community_upvotes,
     times_cloned: bot.times_cloned,
@@ -239,6 +245,9 @@ export async function createBot(
   if (args.skills && args.skills.length > 0) {
     extras.skills = args.skills.map((s) => s.trim().toLowerCase());
   }
+  if (args.deliverables && args.deliverables.length > 0) {
+    extras.deliverables = args.deliverables.map((d) => d.trim());
+  }
   if (Object.keys(extras).length > 0) {
     await ctx.supabase
       .from("bot_profiles")
@@ -250,7 +259,7 @@ export async function createBot(
   // Fetch the created profile
   const { data: profile } = await ctx.supabase
     .from("bot_profiles")
-    .select("id, name, role, system_prompt, is_active, avatar_url, bio, skills, is_published")
+    .select("id, name, role, system_prompt, is_active, avatar_url, bio, skills, deliverables, is_published")
     .eq("id", data)
     .single();
 
@@ -323,6 +332,7 @@ export async function cloneAgent(
       .update({
         bio: source.bio,
         skills: source.skills,
+        deliverables: source.deliverables,
         cloned_from: args.bot_id,
       })
       .eq("id", newId)

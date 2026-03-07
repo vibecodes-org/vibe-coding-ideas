@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
-import { validateBio, validateSkills } from "@/lib/validation";
+import { validateBio, validateSkills, validateDeliverables } from "@/lib/validation";
 import type { BotProfile, FeaturedTeamWithAgents } from "@/types";
 
 export async function createBot(
@@ -11,7 +11,8 @@ export async function createBot(
   systemPrompt: string | null,
   avatarUrl: string | null,
   bio?: string | null,
-  skills?: string[]
+  skills?: string[],
+  deliverables?: string[]
 ): Promise<string> {
   const supabase = await createClient();
   const {
@@ -25,6 +26,7 @@ export async function createBot(
 
   const validatedBio = validateBio(bio ?? null);
   const validatedSkills = validateSkills(skills ?? []);
+  const validatedDeliverables = validateDeliverables(deliverables ?? []);
 
   const { data, error } = await supabase.rpc("create_bot_user", {
     p_name: name.trim(),
@@ -43,6 +45,7 @@ export async function createBot(
     const extras: Record<string, unknown> = {};
     if (validatedBio) extras.bio = validatedBio;
     if (validatedSkills.length > 0) extras.skills = validatedSkills;
+    if (validatedDeliverables.length > 0) extras.deliverables = validatedDeliverables;
 
     await supabase
       .from("bot_profiles")
@@ -66,6 +69,7 @@ export async function updateBot(
     is_active?: boolean;
     bio?: string | null;
     skills?: string[];
+    deliverables?: string[];
     is_published?: boolean;
   }
 ) {
@@ -93,6 +97,7 @@ export async function updateBot(
   if (updates.is_active !== undefined) profileUpdates.is_active = updates.is_active;
   if (updates.bio !== undefined) profileUpdates.bio = validateBio(updates.bio ?? null);
   if (updates.skills !== undefined) profileUpdates.skills = validateSkills(updates.skills ?? []);
+  if (updates.deliverables !== undefined) profileUpdates.deliverables = validateDeliverables(updates.deliverables ?? []);
   if (updates.is_published !== undefined) profileUpdates.is_published = updates.is_published;
 
   if (Object.keys(profileUpdates).length > 0) {
@@ -224,6 +229,7 @@ async function cloneBotProfile(
       .update({
         bio: source.bio,
         skills: source.skills,
+        deliverables: source.deliverables,
         cloned_from: source.id,
       })
       .eq("id", newBotId)

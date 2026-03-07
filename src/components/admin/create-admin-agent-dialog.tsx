@@ -50,6 +50,7 @@ export function CreateAdminAgentDialog({
   const [systemPrompt, setSystemPrompt] = useState("");
   const [bio, setBio] = useState("");
   const [skillsInput, setSkillsInput] = useState("");
+  const [deliverablesInput, setDeliverablesInput] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [templateStructured, setTemplateStructured] =
@@ -69,6 +70,7 @@ export function CreateAdminAgentDialog({
       setSystemPrompt(editAgent.system_prompt ?? "");
       setBio(editAgent.bio ?? "");
       setSkillsInput((editAgent.skills ?? []).join(", "));
+      setDeliverablesInput((editAgent.deliverables ?? []).join(", "));
       setSelectedTemplate(null);
       setTemplateStructured(null);
       setPromptKey((k) => k + 1);
@@ -96,6 +98,7 @@ export function CreateAdminAgentDialog({
     setSystemPrompt("");
     setBio("");
     setSkillsInput("");
+    setDeliverablesInput("");
     setSelectedTemplate(null);
     setTemplateStructured(null);
     setPromptKey((k) => k + 1);
@@ -134,6 +137,15 @@ export function CreateAdminAgentDialog({
       .slice(0, 10);
   }
 
+  function parseDeliverables(): string[] {
+    if (!deliverablesInput.trim()) return [];
+    return deliverablesInput
+      .split(",")
+      .map((d) => d.trim())
+      .filter(Boolean)
+      .slice(0, 10);
+  }
+
   async function uploadAvatar(botId: string): Promise<string | undefined> {
     if (!selectedFile) return undefined;
 
@@ -158,6 +170,7 @@ export function CreateAdminAgentDialog({
     setSubmitting(true);
     try {
       const skills = parseSkills();
+      const deliverables = parseDeliverables();
 
       if (isEdit) {
         // Upload avatar first if selected
@@ -172,6 +185,7 @@ export function CreateAdminAgentDialog({
           system_prompt: systemPrompt.trim() || null,
           bio: bio.trim() || null,
           skills,
+          deliverables,
           ...(avatarUrl !== undefined && { avatar_url: avatarUrl }),
         });
         toast.success("Agent updated");
@@ -183,7 +197,8 @@ export function CreateAdminAgentDialog({
           systemPrompt.trim() || null,
           null,
           bio.trim() || null,
-          skills
+          skills,
+          deliverables
         );
 
         // Upload avatar if selected
@@ -343,6 +358,26 @@ export function CreateAdminAgentDialog({
             <p className="text-[10px] text-muted-foreground">
               Shown on the agent card and profile. Admin agents are
               auto-published to the community.
+            </p>
+          </div>
+
+          {/* Deliverables (comma-separated) */}
+          <div className="space-y-1">
+            <Label htmlFor="admin-bot-deliverables" className="text-xs">
+              Deliverables{" "}
+              <span className="font-normal text-muted-foreground">
+                (optional)
+              </span>
+            </Label>
+            <Input
+              id="admin-bot-deliverables"
+              value={deliverablesInput}
+              onChange={(e) => setDeliverablesInput(e.target.value)}
+              placeholder="e.g. design document, wireframes, test plan"
+              maxLength={1000}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              What this agent produces when completing workflow steps.
             </p>
           </div>
 

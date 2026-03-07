@@ -221,3 +221,23 @@ export function validateSkills(skills: string[]): string[] {
   }
   return unique;
 }
+
+export const MAX_DELIVERABLES = 10;
+export const MAX_DELIVERABLE_LENGTH = 100;
+
+export function validateDeliverables(deliverables: string[]): string[] {
+  if (!deliverables || deliverables.length === 0) return [];
+  const cleaned = deliverables
+    .map((d) => d.trim())
+    .filter(Boolean);
+  const unique = [...new Set(cleaned)];
+  if (unique.length > MAX_DELIVERABLES) {
+    throw new ValidationError(`Maximum ${MAX_DELIVERABLES} deliverables allowed`);
+  }
+  for (const d of unique) {
+    if (d.length > MAX_DELIVERABLE_LENGTH) {
+      throw new ValidationError(`Deliverable "${d}" exceeds ${MAX_DELIVERABLE_LENGTH} characters`);
+    }
+  }
+  return unique;
+}

@@ -6,6 +6,7 @@ import { VIBECODES_USER_ID } from "@/lib/constants";
 import {
   validateBio,
   validateSkills,
+  validateDeliverables,
   validateTeamName,
   validateTeamDescription,
 } from "@/lib/validation";
@@ -33,7 +34,8 @@ export async function createAdminAgent(
   systemPrompt: string | null,
   avatarUrl: string | null,
   bio?: string | null,
-  skills?: string[]
+  skills?: string[],
+  deliverables?: string[]
 ): Promise<string> {
   const { supabase } = await requireAdmin();
 
@@ -42,6 +44,7 @@ export async function createAdminAgent(
 
   const validatedBio = validateBio(bio ?? null);
   const validatedSkills = validateSkills(skills ?? []);
+  const validatedDeliverables = validateDeliverables(deliverables ?? []);
 
   const { data, error } = await supabase.rpc("create_bot_user", {
     p_name: name.trim(),
@@ -61,6 +64,7 @@ export async function createAdminAgent(
   };
   if (validatedBio) extras.bio = validatedBio;
   if (validatedSkills.length > 0) extras.skills = validatedSkills;
+  if (validatedDeliverables.length > 0) extras.deliverables = validatedDeliverables;
 
   await supabase
     .from("bot_profiles")
@@ -82,6 +86,7 @@ export async function updateAdminAgent(
     avatar_url?: string | null;
     bio?: string | null;
     skills?: string[];
+    deliverables?: string[];
   }
 ) {
   const { supabase } = await requireAdmin();
@@ -101,6 +106,7 @@ export async function updateAdminAgent(
     profileUpdates.avatar_url = updates.avatar_url?.trim() || null;
   if (updates.bio !== undefined) profileUpdates.bio = validateBio(updates.bio ?? null);
   if (updates.skills !== undefined) profileUpdates.skills = validateSkills(updates.skills ?? []);
+  if (updates.deliverables !== undefined) profileUpdates.deliverables = validateDeliverables(updates.deliverables ?? []);
 
   if (Object.keys(profileUpdates).length > 0) {
     const { error } = await supabase

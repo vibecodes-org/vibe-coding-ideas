@@ -189,16 +189,29 @@ export async function claimNextStep(
   }
 
   // Fetch all comments on this step (inter-agent communication + any failure reasons)
-  const { data: comments } = await ctx.supabase
-    .from("workflow_step_comments")
-    .select("id, type, content, created_at, author:users!workflow_step_comments_author_id_fkey(id, full_name)")
-    .eq("step_id", nextStep.id)
-    .eq("idea_id", params.idea_id)
-    .order("created_at", { ascending: true });
+  // and the agent's deliverables from bot_profiles
+  const [{ data: comments }, { data: agentProfile }] = await Promise.all([
+    ctx.supabase
+      .from("workflow_step_comments")
+      .select("id, type, content, created_at, author:users!workflow_step_comments_author_id_fkey(id, full_name)")
+      .eq("step_id", nextStep.id)
+      .eq("idea_id", params.idea_id)
+      .order("created_at", { ascending: true }),
+    ctx.supabase
+      .from("bot_profiles")
+      .select("deliverables")
+      .eq("id", claimed.bot_id)
+      .maybeSingle(),
+  ]);
+
+  const deliverables = (agentProfile?.deliverables as string[] | undefined) ?? [];
 
   return {
     step: { ...nextStep, status: "in_progress" },
     human_check_required: nextStep.human_check_required,
+    ...(deliverables.length > 0
+      ? { expected_deliverables: deliverables }
+      : {}),
     context,
     comments: comments ?? [],
     ...(wasFailure

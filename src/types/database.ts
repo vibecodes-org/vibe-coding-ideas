@@ -537,8 +537,8 @@ export type Database = {
           id: string;
           task_id: string;
           idea_id: string;
-          bot_id: string | null;
-          step_type: "agent" | "human";
+          bot_id: string;
+          human_check_required: boolean;
           title: string;
           description: string | null;
           status: string;
@@ -553,8 +553,8 @@ export type Database = {
           id?: string;
           task_id: string;
           idea_id: string;
-          bot_id?: string | null;
-          step_type?: "agent" | "human";
+          bot_id: string;
+          human_check_required?: boolean;
           title: string;
           description?: string | null;
           status?: string;
@@ -569,8 +569,8 @@ export type Database = {
           id?: string;
           task_id?: string;
           idea_id?: string;
-          bot_id?: string | null;
-          step_type?: "agent" | "human";
+          bot_id?: string;
+          human_check_required?: boolean;
           title?: string;
           description?: string | null;
           status?: string;
@@ -1096,6 +1096,7 @@ export type Database = {
           is_active: boolean;
           bio: string | null;
           skills: string[];
+          deliverables: string[];
           is_published: boolean;
           community_upvotes: number;
           times_cloned: number;
@@ -1113,6 +1114,7 @@ export type Database = {
           is_active?: boolean;
           bio?: string | null;
           skills?: string[];
+          deliverables?: string[];
           is_published?: boolean;
           community_upvotes?: number;
           times_cloned?: number;
@@ -1130,6 +1132,7 @@ export type Database = {
           is_active?: boolean;
           bio?: string | null;
           skills?: string[];
+          deliverables?: string[];
           is_published?: boolean;
           community_upvotes?: number;
           times_cloned?: number;

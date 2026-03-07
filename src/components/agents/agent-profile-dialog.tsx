@@ -158,6 +158,20 @@ export function AgentProfileDialog({ botId, open, onOpenChange }: AgentProfileDi
                     ))}
                   </div>
                 )}
+
+                {/* Deliverables */}
+                {bot.deliverables && bot.deliverables.length > 0 && (
+                  <div className="flex flex-wrap gap-1 mt-2">
+                    {bot.deliverables.map((d) => (
+                      <span
+                        key={d}
+                        className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-px text-[10px] font-medium text-violet-400"
+                      >
+                        {d}
+                      </span>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {/* Actions */}

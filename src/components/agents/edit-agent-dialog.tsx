@@ -32,6 +32,7 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
   const [systemPrompt, setSystemPrompt] = useState(bot.system_prompt ?? "");
   const [bio, setBio] = useState(bot.bio ?? "");
   const [skillsInput, setSkillsInput] = useState((bot.skills ?? []).join(", "));
+  const [deliverablesInput, setDeliverablesInput] = useState((bot.deliverables ?? []).join(", "));
   const [isPublished, setIsPublished] = useState(bot.is_published);
   const [submitting, setSubmitting] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -69,6 +70,15 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
       .slice(0, 10);
   }
 
+  function parseDeliverables(): string[] {
+    if (!deliverablesInput.trim()) return [];
+    return deliverablesInput
+      .split(",")
+      .map((d) => d.trim())
+      .filter(Boolean)
+      .slice(0, 10);
+  }
+
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();
     if (!name.trim()) return;
@@ -99,6 +109,7 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
         system_prompt: systemPrompt.trim() || null,
         bio: bio.trim() || null,
         skills: parseSkills(),
+        deliverables: parseDeliverables(),
         is_published: isPublished,
         ...(avatarUrl !== undefined && { avatar_url: avatarUrl }),
       });
@@ -221,6 +232,23 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
             />
             <p className="text-[10px] text-muted-foreground">
               Shown on the agent card and profile.
+            </p>
+          </div>
+
+          {/* Deliverables (comma-separated) */}
+          <div className="space-y-1">
+            <Label htmlFor="edit-bot-deliverables" className="text-xs">
+              Deliverables <span className="font-normal text-muted-foreground">(optional)</span>
+            </Label>
+            <Input
+              id="edit-bot-deliverables"
+              value={deliverablesInput}
+              onChange={(e) => setDeliverablesInput(e.target.value)}
+              placeholder="e.g. design document, wireframes, test plan"
+              maxLength={1000}
+            />
+            <p className="text-[10px] text-muted-foreground">
+              What this agent produces when completing workflow steps.
             </p>
           </div>
 
