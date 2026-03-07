@@ -99,11 +99,11 @@ export function InlineIdeaBody({
   }
 
   return (
-    <>
+    <div className="space-y-4">
       {/* GitHub URL */}
       {isAuthor ? (
         editingGithubUrl ? (
-          <div className="mt-4">
+          <div>
             <Input
               value={githubUrl}
               onChange={(e) => setGithubUrl(e.target.value)}
@@ -115,7 +115,7 @@ export function InlineIdeaBody({
             />
           </div>
         ) : githubUrl ? (
-          <div className="mt-4 group/github inline-flex items-center gap-2">
+          <div className="group/github inline-flex items-center gap-2">
             <a
               href={githubUrl}
               target="_blank"
@@ -136,7 +136,7 @@ export function InlineIdeaBody({
         ) : (
           <button
             onClick={startEditingGithub}
-            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+            className="inline-flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
           >
             <Github className="h-4 w-4" />
             <Plus className="h-3 w-3" />
@@ -149,7 +149,7 @@ export function InlineIdeaBody({
             href={initialGithubUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="mt-4 inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+            className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
           >
             <Github className="h-4 w-4" />
             View Repository
@@ -188,6 +188,6 @@ export function InlineIdeaBody({
           <Markdown>{initialDescription}</Markdown>
         </div>
       )}
-    </>
+    </div>
   );
 }
