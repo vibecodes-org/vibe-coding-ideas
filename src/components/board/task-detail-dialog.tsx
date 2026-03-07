@@ -16,6 +16,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 import { TaskLabelBadges } from "./task-label-badges";
 import { LabelPicker } from "./label-picker";
 import { DueDatePicker } from "./due-date-picker";
+import { PrioritySelect } from "./priority-select";
 import { WorkflowSection } from "./workflow-section";
 import { ActivityTimeline } from "./activity-timeline";
 import { TaskCommentsSection } from "./task-comments-section";
@@ -30,7 +31,7 @@ import { logTaskActivity } from "@/lib/activity";
 import { useBotRoles } from "@/components/bot-roles-context";
 import { getRoleColor } from "@/lib/agent-colors";
 import { getInitials } from "@/lib/utils";
-import type { BoardTaskWithAssignee, BoardLabel, TaskWorkflowStepWithAgent, User, IdeaAgentUser } from "@/types";
+import type { BoardTaskWithAssignee, BoardLabel, TaskWorkflowStepWithAgent, User, IdeaAgentUser, TaskPriority } from "@/types";
 
 interface TaskDetailDialogProps {
   open: boolean;
@@ -109,6 +110,7 @@ export function TaskDetailDialog({
   const [isArchived, setIsArchived] = useState(task.archived);
 
   const [localAssigneeId, setLocalAssigneeId] = useState<string | null>(task.assignee_id);
+  const [localPriority, setLocalPriority] = useState<TaskPriority>(task.priority);
 
   // Sync state when task prop changes (including external updates via Realtime/MCP)
   const [lastTaskId, setLastTaskId] = useState(task.id);
@@ -116,6 +118,7 @@ export function TaskDetailDialog({
   const [lastTaskTitle, setLastTaskTitle] = useState(task.title);
   const [lastTaskAssigneeId, setLastTaskAssigneeId] = useState(task.assignee_id);
   const [lastTaskArchived, setLastTaskArchived] = useState(task.archived);
+  const [lastTaskPriority, setLastTaskPriority] = useState(task.priority);
 
   if (task.id !== lastTaskId) {
     // Different task — full reset
@@ -123,12 +126,14 @@ export function TaskDetailDialog({
     setDescription(task.description ?? "");
     setLocalAssigneeId(task.assignee_id);
     setIsArchived(task.archived);
+    setLocalPriority(task.priority);
     setEditingDescription(false);
     setLastTaskId(task.id);
     setLastTaskDesc(task.description);
     setLastTaskTitle(task.title);
     setLastTaskAssigneeId(task.assignee_id);
     setLastTaskArchived(task.archived);
+    setLastTaskPriority(task.priority);
   } else {
     // Same task — sync fields changed externally (only if user isn't actively editing)
     if (task.description !== lastTaskDesc && !editingDescription) {
@@ -146,6 +151,10 @@ export function TaskDetailDialog({
     if (task.archived !== lastTaskArchived) {
       setIsArchived(task.archived);
       setLastTaskArchived(task.archived);
+    }
+    if (task.priority !== lastTaskPriority) {
+      setLocalPriority(task.priority);
+      setLastTaskPriority(task.priority);
     }
   }
 
@@ -317,6 +326,21 @@ export function TaskDetailDialog({
     } catch {
       toast.error("Failed to update assignee");
       setLocalAssigneeId(task.assignee_id);
+    }
+  }
+
+  async function handlePriorityChange(value: TaskPriority) {
+    const prev = localPriority;
+    setLocalPriority(value);
+    try {
+      await updateBoardTask(task.id, ideaId, { priority: value });
+      logTaskActivity(task.id, ideaId, currentUserId, "priority_changed", {
+        from: prev,
+        to: value,
+      });
+    } catch {
+      toast.error("Failed to update priority");
+      setLocalPriority(prev);
     }
   }
 
@@ -598,6 +622,20 @@ export function TaskDetailDialog({
                         teamMembers={teamMembers}
                         ideaAgents={ideaAgents}
                         triggerClassName="h-8 w-40 text-xs"
+                      />
+                    )}
+                  </div>
+                </div>
+
+                <div className="space-y-1.5">
+                  <span className="text-sm font-medium">Priority</span>
+                  <div className="flex items-center gap-2">
+                    {isReadOnly ? (
+                      <span className="text-xs capitalize">{localPriority}</span>
+                    ) : (
+                      <PrioritySelect
+                        value={localPriority}
+                        onValueChange={handlePriorityChange}
                       />
                     )}
                   </div>

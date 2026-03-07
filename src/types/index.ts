@@ -146,5 +146,8 @@ export type CollaborationRequestWithRequester = CollaborationRequest & {
   requester: User;
 };
 
+// Task priority
+export type TaskPriority = "low" | "medium" | "high" | "urgent";
+
 // Sort options
 export type SortOption = "newest" | "popular" | "discussed";

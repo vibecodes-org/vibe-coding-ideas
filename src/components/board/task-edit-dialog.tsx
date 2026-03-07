@@ -15,6 +15,7 @@ import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { X, Image as ImageIcon, Sparkles, Loader2, Eye, Pencil } from "lucide-react";
 import { AssigneeSelect } from "./assignee-select";
+import { PrioritySelect } from "./priority-select";
 import { Markdown } from "@/components/ui/markdown";
 import { getLabelColorConfig } from "@/lib/utils";
 import { createBoardTask, addLabelsToTask } from "@/actions/board";
@@ -23,7 +24,7 @@ import { createClient } from "@/lib/supabase/client";
 import { logTaskActivity } from "@/lib/activity";
 import { enhanceTaskDescription } from "@/actions/ai";
 import { POSITION_GAP } from "@/lib/constants";
-import type { User, BoardLabel, BoardTaskWithAssignee } from "@/types";
+import type { User, BoardLabel, BoardTaskWithAssignee, TaskPriority } from "@/types";
 
 interface TaskEditDialogProps {
   open: boolean;
@@ -57,6 +58,7 @@ export function TaskEditDialog({
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [assigneeId, setAssigneeId] = useState("");
+  const [priority, setPriority] = useState<TaskPriority>("medium");
   const [selectedLabelIds, setSelectedLabelIds] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(false);
   const [pendingImages, setPendingImages] = useState<{ file: File; previewUrl: string }[]>([]);
@@ -179,6 +181,7 @@ export function TaskEditDialog({
     setTitle("");
     setDescription("");
     setAssigneeId("");
+    setPriority("medium");
     setSelectedLabelIds(new Set());
     setPendingImages([]);
     setIsDragging(false);
@@ -234,6 +237,7 @@ export function TaskEditDialog({
       cover_image_path: null,
       comment_count: 0,
       discussion_id: null,
+      priority,
     };
 
     // Optimistically insert & close immediately
@@ -249,7 +253,8 @@ export function TaskEditDialog({
         columnId,
         title.trim(),
         description.trim() || undefined,
-        assigneeId || undefined
+        assigneeId || undefined,
+        priority !== "medium" ? priority : undefined
       );
       if (selectedLabelIds.size > 0) {
         await addLabelsToTask(taskId, Array.from(selectedLabelIds), ideaId);
@@ -407,6 +412,13 @@ export function TaskEditDialog({
               onValueChange={setAssigneeId}
               teamMembers={teamMembers}
               ideaAgents={ideaAgents}
+            />
+          </div>
+          <div className="space-y-2">
+            <Label>Priority</Label>
+            <PrioritySelect
+              value={priority}
+              onValueChange={setPriority}
             />
           </div>
           {boardLabels.length > 0 && (

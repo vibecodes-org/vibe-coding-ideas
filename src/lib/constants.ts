@@ -111,6 +111,7 @@ export const ACTIVITY_ACTIONS: Record<string, { label: string; icon: string }> =
   attachment_added: { label: "added an attachment", icon: "Paperclip" },
   attachment_removed: { label: "removed an attachment", icon: "Trash2" },
   bulk_imported: { label: "imported this task", icon: "Upload" },
+  priority_changed: { label: "changed the priority", icon: "ArrowRight" },
 };
 
 export const BOT_ROLE_TEMPLATES = [

@@ -283,7 +283,7 @@ export function registerTools(
 
   server.tool(
     "update_task",
-    "Update task fields: title, description, assignee, due date, archived status. Only changed fields need to be provided.",
+    "Update task fields: title, description, assignee, due date, priority, archived status. Only changed fields need to be provided.",
     updateTaskSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

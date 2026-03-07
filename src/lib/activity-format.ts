@@ -14,6 +14,7 @@
  *   workflow_step_failed:      { title: string, reason: string }
  *   workflow_step_reset:       { title: string }
  *   attachment_added/removed:  { file_name: string }
+ *   priority_changed:          { from: string, to: string }
  */
 export function formatActivityDetails(
   action: string,
@@ -72,6 +73,14 @@ export function formatActivityDetails(
     case "attachment_removed": {
       const name = details.file_name as string | undefined;
       return name ? `"${name}"` : null;
+    }
+
+    case "priority_changed": {
+      const from = details.from as string | undefined;
+      const to = details.to as string | undefined;
+      if (from && to) return `from ${from} to ${to}`;
+      if (to) return `to ${to}`;
+      return null;
     }
 
     default:

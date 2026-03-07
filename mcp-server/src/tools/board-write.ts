@@ -43,6 +43,10 @@ export const createTaskSchema = z.object({
     .uuid()
     .optional()
     .describe("Link task back to a source discussion (for converted discussions)"),
+  priority: z
+    .enum(["low", "medium", "high", "urgent"])
+    .default("medium")
+    .describe("Task priority level (default: medium)"),
 });
 
 export async function createTask(ctx: McpContext, params: z.infer<typeof createTaskSchema>) {
@@ -58,6 +62,7 @@ export async function createTask(ctx: McpContext, params: z.infer<typeof createT
       assignee_id: params.assignee_id ?? null,
       due_date: params.due_date ?? null,
       discussion_id: params.discussion_id ?? null,
+      priority: params.priority,
       position,
     })
     .select("id, title, column_id, position")
@@ -104,13 +109,17 @@ export const updateTaskSchema = z.object({
     .optional()
     .describe("New due date (null to clear)"),
   archived: z.boolean().optional().describe("Archive or unarchive the task"),
+  priority: z
+    .enum(["low", "medium", "high", "urgent"])
+    .optional()
+    .describe("Task priority level"),
 });
 
 export async function updateTask(ctx: McpContext, params: z.infer<typeof updateTaskSchema>) {
   // Fetch current task for activity diffs
   const { data: current } = await ctx.supabase
     .from("board_tasks")
-    .select("title, description, assignee_id, due_date, archived")
+    .select("title, description, assignee_id, due_date, archived, priority")
     .eq("id", params.task_id)
     .single();
 
@@ -122,6 +131,7 @@ export async function updateTask(ctx: McpContext, params: z.infer<typeof updateT
   if (params.assignee_id !== undefined) updates.assignee_id = params.assignee_id;
   if (params.due_date !== undefined) updates.due_date = params.due_date;
   if (params.archived !== undefined) updates.archived = params.archived;
+  if (params.priority !== undefined) updates.priority = params.priority;
 
   if (Object.keys(updates).length === 0) {
     return { success: true, message: "No changes to apply" };
@@ -177,6 +187,12 @@ export async function updateTask(ctx: McpContext, params: z.infer<typeof updateT
       params.idea_id,
       params.archived ? "archived" : "unarchived"
     );
+  }
+  if (params.priority !== undefined && params.priority !== current.priority) {
+    await logActivity(ctx, params.task_id, params.idea_id, "priority_changed", {
+      from: current.priority,
+      to: params.priority,
+    });
   }
 
   return { success: true, task };

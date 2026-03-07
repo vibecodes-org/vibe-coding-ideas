@@ -115,6 +115,15 @@ export function validateLabelName(name: string): string {
   return trimmed;
 }
 
+const VALID_PRIORITIES = ["low", "medium", "high", "urgent"] as const;
+
+export function validatePriority(priority: string): "low" | "medium" | "high" | "urgent" {
+  if (!(VALID_PRIORITIES as readonly string[]).includes(priority)) {
+    throw new ValidationError(`Invalid priority: ${priority}. Must be one of: ${VALID_PRIORITIES.join(", ")}`);
+  }
+  return priority as "low" | "medium" | "high" | "urgent";
+}
+
 export const MAX_DISCUSSION_BODY_LENGTH = 10000;
 export const MAX_DISCUSSION_REPLY_LENGTH = 5000;
 

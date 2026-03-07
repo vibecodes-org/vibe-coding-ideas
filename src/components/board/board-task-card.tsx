@@ -22,6 +22,7 @@ import { getInitials } from "@/lib/utils";
 import { TaskLabelBadges } from "./task-label-badges";
 import { LabelPicker } from "./label-picker";
 import { DueDateBadge } from "./due-date-badge";
+import { PriorityDot } from "./priority-dot";
 import { createClient } from "@/lib/supabase/client";
 import { TaskAutoOpenContext } from "./kanban-board";
 import type { BoardTaskWithAssignee, BoardLabel, TaskWorkflowStepWithAgent, User } from "@/types";
@@ -301,6 +302,9 @@ export const BoardTaskCard = memo(function BoardTaskCard({
             {/* Metadata row */}
             <div className="mt-2 flex items-center gap-2">
               <div className="flex flex-1 flex-wrap items-center gap-1.5">
+                {task.priority && task.priority !== "medium" && (
+                  <PriorityDot priority={task.priority} />
+                )}
                 {isArchived && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
                     <Archive className="h-3 w-3" />
