@@ -47,11 +47,12 @@ setup("create test users and authenticate", async ({ browser }) => {
     await page.getByLabel("Password").fill(password);
     await page.getByRole("button", { name: /sign in/i }).click();
 
-    // Wait for redirect to dashboard
+    // Wait for auth cookies to be set, then navigate to dashboard explicitly.
+    // router.push("/dashboard") can race with cookie setting in Firefox,
+    // causing middleware to redirect back to /login. Explicit navigation is more reliable.
+    await page.waitForTimeout(3000);
+    await page.goto("/dashboard");
     await page.waitForURL("**/dashboard", { timeout: 15_000 });
-
-    // Wait for the dashboard to fully render (ensures auth cookies are set)
-    await page.waitForTimeout(2000);
 
     // Verify auth cookie exists (Supabase SSR uses cookies, not localStorage)
     const cookies = await context.cookies();

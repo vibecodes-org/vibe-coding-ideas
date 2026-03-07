@@ -5,8 +5,10 @@ test.describe("Logout", () => {
   // (userA/userB storage states are reused across all other specs)
 
   test("sign out via user menu redirects to landing or login", async ({ freshPage }) => {
-    await freshPage.goto("/dashboard");
-    await expect(freshPage).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+    // Use /ideas instead of /dashboard to avoid the onboarding dialog
+    // (fresh user has no onboarding_completed_at, which triggers an un-dismissable dialog on /dashboard)
+    await freshPage.goto("/ideas");
+    await expect(freshPage).toHaveURL(/\/ideas/, { timeout: 15_000 });
 
     // Open the user dropdown menu
     const avatarButton = freshPage
@@ -31,8 +33,8 @@ test.describe("Logout", () => {
   test("after sign out, navigating to /dashboard redirects to /login", async ({
     freshPage,
   }) => {
-    await freshPage.goto("/dashboard");
-    await expect(freshPage).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+    await freshPage.goto("/ideas");
+    await expect(freshPage).toHaveURL(/\/ideas/, { timeout: 15_000 });
 
     // Sign out
     const avatarButton = freshPage
@@ -56,8 +58,8 @@ test.describe("Logout", () => {
   test("after sign out, navbar shows Log In and Sign Up buttons", async ({
     freshPage,
   }) => {
-    await freshPage.goto("/dashboard");
-    await expect(freshPage).toHaveURL(/\/dashboard/, { timeout: 15_000 });
+    await freshPage.goto("/ideas");
+    await expect(freshPage).toHaveURL(/\/ideas/, { timeout: 15_000 });
 
     // Sign out
     const avatarButton = freshPage
