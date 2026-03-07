@@ -192,25 +192,19 @@ export async function deleteIdea(ideaId: string) {
 
   // Best-effort cleanup: delete physical files from storage before DB cascade
   try {
-    const { data: taskAttachments } = await supabase
-      .from("board_task_attachments")
-      .select("storage_path")
-      .eq("idea_id", ideaId);
+    const [{ data: taskAttachments }, { data: ideaAttachments }] = await Promise.all([
+      supabase.from("board_task_attachments").select("storage_path").eq("idea_id", ideaId),
+      supabase.from("idea_attachments").select("storage_path").eq("idea_id", ideaId),
+    ]);
 
+    const removals: Promise<unknown>[] = [];
     if (taskAttachments && taskAttachments.length > 0) {
-      const paths = taskAttachments.map((a) => a.storage_path);
-      await supabase.storage.from("task-attachments").remove(paths);
+      removals.push(supabase.storage.from("task-attachments").remove(taskAttachments.map((a) => a.storage_path)));
     }
-
-    const { data: ideaAttachments } = await supabase
-      .from("idea_attachments")
-      .select("storage_path")
-      .eq("idea_id", ideaId);
-
     if (ideaAttachments && ideaAttachments.length > 0) {
-      const paths = ideaAttachments.map((a) => a.storage_path);
-      await supabase.storage.from("idea-attachments").remove(paths);
+      removals.push(supabase.storage.from("idea-attachments").remove(ideaAttachments.map((a) => a.storage_path)));
     }
+    if (removals.length > 0) await Promise.all(removals);
   } catch {
     // Don't block deletion if storage cleanup fails
   }

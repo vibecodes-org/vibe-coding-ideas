@@ -31,6 +31,27 @@ export const setBotIdentitySchema = z.object({
     .describe("Agent name to search for (if agent_id not provided)."),
 });
 
+const workflowTemplatesSchema = z
+  .array(
+    z.object({
+      name: z.string().min(1).max(100).describe("Template name (e.g. 'Dev Workflow', 'Content Pipeline')"),
+      steps: z
+        .array(
+          z.object({
+            title: z.string().min(1).max(200).describe("Step name (e.g. 'Design', 'Development', 'Code Review')"),
+            agent_role: z.string().max(50).optional().describe("Optional agent role for auto-matching (e.g. 'UX Designer', 'Developer')"),
+            description: z.string().max(1000).optional().describe("Step description"),
+            human_check_required: z.boolean().optional().describe("Require human approval before completing"),
+          })
+        )
+        .min(1)
+        .max(20),
+    })
+  )
+  .max(10)
+  .optional()
+  .describe("Reusable workflow templates for orchestration agents. Each template defines a named sequence of steps referencing agent roles.");
+
 export const createBotSchema = z.object({
   name: z.string().min(1).max(100).describe("Agent display name"),
   role: z.string().max(50).optional().describe("Agent role (e.g. Developer, QA Tester)"),
@@ -51,26 +72,7 @@ export const createBotSchema = z.object({
     .max(10)
     .optional()
     .describe("What this agent produces when completing workflow steps (e.g. 'design document', 'test plan', 'implementation code'). Max 10, 100 chars each."),
-  workflow_templates: z
-    .array(
-      z.object({
-        name: z.string().min(1).max(100).describe("Template name (e.g. 'Dev Workflow', 'Content Pipeline')"),
-        steps: z
-          .array(
-            z.object({
-              title: z.string().min(1).max(200).describe("Step name (e.g. 'Design', 'Development', 'Code Review')"),
-              agent_role: z.string().max(50).optional().describe("Optional agent role for auto-matching (e.g. 'UX Designer', 'Developer')"),
-              description: z.string().max(1000).optional().describe("Step description"),
-              human_check_required: z.boolean().optional().describe("Require human approval before completing"),
-            })
-          )
-          .min(1)
-          .max(20),
-      })
-    )
-    .max(10)
-    .optional()
-    .describe("Reusable workflow templates for orchestration agents. Each template defines a named sequence of steps referencing agent roles."),
+  workflow_templates: workflowTemplatesSchema,
   agent_type: z
     .enum(["worker", "orchestrator"])
     .optional()
@@ -99,26 +101,7 @@ export const updateBotSchema = z.object({
     .max(10)
     .optional()
     .describe("What this agent produces when completing workflow steps (e.g. 'design document', 'test plan'). Max 10, 100 chars each."),
-  workflow_templates: z
-    .array(
-      z.object({
-        name: z.string().min(1).max(100).describe("Template name"),
-        steps: z
-          .array(
-            z.object({
-              title: z.string().min(1).max(200).describe("Step name"),
-              agent_role: z.string().max(50).optional().describe("Optional agent role for auto-matching"),
-              description: z.string().max(1000).optional().describe("Step description"),
-              human_check_required: z.boolean().optional().describe("Require human approval before completing"),
-            })
-          )
-          .min(1)
-          .max(20),
-      })
-    )
-    .max(10)
-    .optional()
-    .describe("Reusable workflow templates for orchestration agents."),
+  workflow_templates: workflowTemplatesSchema,
   agent_type: z
     .enum(["worker", "orchestrator"])
     .optional()

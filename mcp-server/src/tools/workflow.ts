@@ -91,11 +91,13 @@ export async function createWorkflowSteps(
 
   if (error) throw new Error(`Failed to create workflow steps: ${error.message}`);
 
-  for (const step of data ?? []) {
-    await logActivity(ctx, params.task_id, params.idea_id, "workflow_step_added", {
-      title: step.title,
-    });
-  }
+  await Promise.all(
+    (data ?? []).map((step) =>
+      logActivity(ctx, params.task_id, params.idea_id, "workflow_step_added", {
+        title: step.title,
+      })
+    )
+  );
 
   return { success: true, steps: data };
 }
@@ -361,37 +363,33 @@ export async function failStep(
   if (fetchError) throw new Error(`Failed to fetch target step: ${fetchError.message}`);
   if (!targetStepData) throw new Error("Target step not found");
 
-  // Mark target step as failed
-  const { error: failError } = await ctx.supabase
-    .from("task_workflow_steps")
-    .update({ status: "failed" })
-    .eq("id", params.target_step_id)
-    .eq("idea_id", params.idea_id);
+  // Mark step as failed, post failure comment, and cascade-reset subsequent steps in parallel
+  const [{ error: failError }, { error: commentError }, { error: cascadeError }] = await Promise.all([
+    ctx.supabase
+      .from("task_workflow_steps")
+      .update({ status: "failed" })
+      .eq("id", params.target_step_id)
+      .eq("idea_id", params.idea_id),
+    ctx.supabase
+      .from("workflow_step_comments")
+      .insert({
+        step_id: params.target_step_id,
+        idea_id: params.idea_id,
+        author_id: ctx.userId,
+        type: "failure",
+        content: params.reason,
+      }),
+    ctx.supabase
+      .from("task_workflow_steps")
+      .update({ status: "pending", started_at: null, completed_at: null })
+      .eq("task_id", targetStepData.task_id)
+      .eq("idea_id", params.idea_id)
+      .gt("position", targetStepData.position)
+      .neq("status", "pending"),
+  ]);
 
   if (failError) throw new Error(`Failed to mark step as failed: ${failError.message}`);
-
-  // Post failure reason as a comment on the step thread
-  const { error: commentError } = await ctx.supabase
-    .from("workflow_step_comments")
-    .insert({
-      step_id: params.target_step_id,
-      idea_id: params.idea_id,
-      author_id: ctx.userId,
-      type: "failure",
-      content: params.reason,
-    });
-
   if (commentError) throw new Error(`Failed to save failure reason: ${commentError.message}`);
-
-  // Cascade: reset ALL subsequent steps (after the failed step) back to pending
-  const { error: cascadeError } = await ctx.supabase
-    .from("task_workflow_steps")
-    .update({ status: "pending", started_at: null, completed_at: null })
-    .eq("task_id", targetStepData.task_id)
-    .eq("idea_id", params.idea_id)
-    .gt("position", targetStepData.position)
-    .neq("status", "pending");
-
   if (cascadeError) throw new Error(`Failed to cascade reset: ${cascadeError.message}`);
 
   await logActivity(ctx, targetStepData.task_id, params.idea_id, "workflow_step_failed", {
