@@ -96,6 +96,10 @@ import {
   addStepCommentSchema,
   getStepComments,
   getStepCommentsSchema,
+  approveStep,
+  approveStepSchema,
+  requestChanges,
+  requestChangesSchema,
 } from "./tools/workflow";
 import {
   listDiscussions,
@@ -525,7 +529,7 @@ export function registerTools(
 
   server.tool(
     "create_workflow_steps",
-    "Bulk-create sequential workflow pipeline steps for a task. Each step is assigned to a bot agent.",
+    "Bulk-create sequential workflow pipeline steps for a task. Each step can be an 'agent' step (assigned to a bot) or a 'human' step (validation checkpoint requiring human approval before continuing).",
     createWorkflowStepsSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -581,7 +585,7 @@ export function registerTools(
 
   server.tool(
     "fail_step",
-    "Mark a workflow step as failed with a reason, and reset the current step to pending for retry.",
+    "Mark a workflow step as failed with a reason. All subsequent steps are automatically cascade-reset to pending. Do NOT delete and recreate steps — use fail_step instead.",
     failStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -657,6 +661,34 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await getStepComments(ctx, getStepCommentsSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "approve_step",
+    "Approve a human validation step, marking it as completed and allowing the workflow to continue. Only works on human-type steps.",
+    approveStepSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await approveStep(ctx, approveStepSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "request_changes",
+    "Request changes on a human validation step, sending a previous step back for rework. The target step is marked as failed, and all subsequent steps (including the human step) are cascade-reset to pending.",
+    requestChangesSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await requestChanges(ctx, requestChangesSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

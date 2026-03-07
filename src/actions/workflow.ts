@@ -9,7 +9,8 @@ export async function createWorkflowStep(
   ideaId: string,
   title: string,
   description: string | null,
-  botId: string
+  botId: string | null,
+  stepType: "agent" | "human" = "agent"
 ) {
   const supabase = await createClient();
   const {
@@ -20,6 +21,8 @@ export async function createWorkflowStep(
 
   title = validateTitle(title);
   if (description) description = validateOptionalDescription(description) ?? null;
+
+  if (stepType === "agent" && !botId) throw new Error("Agent steps require a bot_id");
 
   // Get max position (gap-based: 1000, 2000, etc.)
   const { data: steps } = await supabase
@@ -34,7 +37,8 @@ export async function createWorkflowStep(
   const { error } = await supabase.from("task_workflow_steps").insert({
     task_id: taskId,
     idea_id: ideaId,
-    bot_id: botId,
+    bot_id: stepType === "human" ? null : botId,
+    step_type: stepType,
     title,
     description,
     position: maxPos + 1000,
@@ -110,7 +114,7 @@ export async function startWorkflowStep(stepId: string, ideaId: string) {
   // Fetch the step to get bot_id for assignee update
   const { data: step } = await supabase
     .from("task_workflow_steps")
-    .select("bot_id, task_id, status")
+    .select("bot_id, task_id, status, step_type")
     .eq("id", stepId)
     .eq("idea_id", ideaId)
     .single();
@@ -131,11 +135,13 @@ export async function startWorkflowStep(stepId: string, ideaId: string) {
 
   if (error) throw new Error(error.message);
 
-  // Update task assignee to this step's bot
-  await supabase
-    .from("board_tasks")
-    .update({ assignee_id: step.bot_id })
-    .eq("id", step.task_id);
+  // Update task assignee to this step's bot (only for agent steps)
+  if (step.step_type === "agent" && step.bot_id) {
+    await supabase
+      .from("board_tasks")
+      .update({ assignee_id: step.bot_id })
+      .eq("id", step.task_id);
+  }
 
   revalidatePath(`/ideas/${ideaId}/board`);
 }
@@ -188,6 +194,16 @@ export async function failWorkflowStep(
 
   if (!user) throw new Error("Not authenticated");
 
+  // Get the target step's position for cascade reset
+  const { data: targetStep } = await supabase
+    .from("task_workflow_steps")
+    .select("position, task_id")
+    .eq("id", targetStepId)
+    .eq("idea_id", ideaId)
+    .single();
+
+  if (!targetStep) throw new Error("Target step not found");
+
   // Set target step to failed
   const { error: failError } = await supabase
     .from("task_workflow_steps")
@@ -206,19 +222,14 @@ export async function failWorkflowStep(
     content: reason,
   });
 
-  // Reset current step back to pending
-  if (stepId !== targetStepId) {
-    const { error: resetError } = await supabase
-      .from("task_workflow_steps")
-      .update({
-        status: "pending",
-        started_at: null,
-      })
-      .eq("id", stepId)
-      .eq("idea_id", ideaId);
-
-    if (resetError) throw new Error(resetError.message);
-  }
+  // Cascade: reset ALL subsequent steps (after the failed step) back to pending
+  await supabase
+    .from("task_workflow_steps")
+    .update({ status: "pending", started_at: null, completed_at: null })
+    .eq("task_id", targetStep.task_id)
+    .eq("idea_id", ideaId)
+    .gt("position", targetStep.position)
+    .neq("status", "pending");
 
   revalidatePath(`/ideas/${ideaId}/board`);
 }
@@ -245,6 +256,123 @@ export async function addStepComment(
   });
 
   if (error) throw new Error(error.message);
+
+  revalidatePath(`/ideas/${ideaId}/board`);
+}
+
+export async function approveWorkflowStep(
+  stepId: string,
+  ideaId: string,
+  comment: string | null
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  if (comment) comment = validateComment(comment);
+
+  // Verify it's a human step that's pending/in_progress
+  const { data: step } = await supabase
+    .from("task_workflow_steps")
+    .select("step_type, status, task_id")
+    .eq("id", stepId)
+    .eq("idea_id", ideaId)
+    .single();
+
+  if (!step) throw new Error("Step not found");
+  if (step.step_type !== "human") throw new Error("Only human steps can be approved");
+  if (step.status !== "pending" && step.status !== "in_progress") {
+    throw new Error("Step is not awaiting approval");
+  }
+
+  const { error } = await supabase
+    .from("task_workflow_steps")
+    .update({
+      status: "completed",
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", stepId)
+    .eq("idea_id", ideaId);
+
+  if (error) throw new Error(error.message);
+
+  // Post approval comment
+  await supabase.from("workflow_step_comments").insert({
+    step_id: stepId,
+    idea_id: ideaId,
+    author_id: user.id,
+    type: "approval",
+    content: comment || "Approved",
+  });
+
+  revalidatePath(`/ideas/${ideaId}/board`);
+}
+
+export async function requestChangesWorkflowStep(
+  stepId: string,
+  targetStepId: string,
+  ideaId: string,
+  reason: string
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  reason = validateComment(reason);
+
+  // Verify it's a human step
+  const { data: step } = await supabase
+    .from("task_workflow_steps")
+    .select("step_type, status")
+    .eq("id", stepId)
+    .eq("idea_id", ideaId)
+    .single();
+
+  if (!step) throw new Error("Step not found");
+  if (step.step_type !== "human") throw new Error("Only human steps can request changes");
+
+  // Get the target step's position for cascade reset
+  const { data: targetStep } = await supabase
+    .from("task_workflow_steps")
+    .select("position, task_id")
+    .eq("id", targetStepId)
+    .eq("idea_id", ideaId)
+    .single();
+
+  if (!targetStep) throw new Error("Target step not found");
+
+  // Set target step to failed
+  const { error: failError } = await supabase
+    .from("task_workflow_steps")
+    .update({ status: "failed" })
+    .eq("id", targetStepId)
+    .eq("idea_id", ideaId);
+
+  if (failError) throw new Error(failError.message);
+
+  // Post changes_requested comment on target step
+  await supabase.from("workflow_step_comments").insert({
+    step_id: targetStepId,
+    idea_id: ideaId,
+    author_id: user.id,
+    type: "changes_requested",
+    content: reason,
+  });
+
+  // Cascade: reset ALL subsequent steps (after the failed step) back to pending
+  await supabase
+    .from("task_workflow_steps")
+    .update({ status: "pending", started_at: null, completed_at: null })
+    .eq("task_id", targetStep.task_id)
+    .eq("idea_id", ideaId)
+    .gt("position", targetStep.position)
+    .neq("status", "pending");
 
   revalidatePath(`/ideas/${ideaId}/board`);
 }

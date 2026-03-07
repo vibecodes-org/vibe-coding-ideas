@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
-import { ClipboardCheck, Bot, LayoutDashboard, MessageSquare } from "lucide-react";
+import { ClipboardCheck, Bot, LayoutDashboard, MessageSquare, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -44,6 +44,7 @@ export function ReadyToConvertDialog({
   const [open, setOpen] = useState(false);
   const [columnId, setColumnId] = useState(columns[0]?.id ?? "");
   const [agentId, setAgentId] = useState<string>(defaultOrchestratorBot?.id ?? "none");
+  const [autonomyLevel, setAutonomyLevel] = useState("2");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const teamBots = teamMembers.filter((m) => m.is_bot);
@@ -68,7 +69,8 @@ export function ReadyToConvertDialog({
         discussion.id,
         ideaId,
         columnId,
-        agentId === "none" ? null : agentId
+        agentId === "none" ? null : agentId,
+        parseInt(autonomyLevel, 10)
       );
       toast.success("Discussion queued for conversion");
       setOpen(false);
@@ -138,6 +140,29 @@ export function ReadyToConvertDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+
+          <div className="space-y-2">
+            <Label htmlFor="autonomyLevel">
+              <span className="inline-flex items-center gap-1">
+                <Shield className="h-3.5 w-3.5" />
+                Human Oversight Level
+              </span>
+            </Label>
+            <Select value={autonomyLevel} onValueChange={setAutonomyLevel}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="1">Full Oversight — review after every step</SelectItem>
+                <SelectItem value="2">Key Checkpoints — review after deliverables &amp; quality gates</SelectItem>
+                <SelectItem value="3">Review on Completion — single sign-off at end</SelectItem>
+                <SelectItem value="4">Fully Autonomous — no human steps</SelectItem>
+              </SelectContent>
+            </Select>
+            <p className="text-[11px] text-muted-foreground">
+              Controls how many human validation checkpoints the agent adds to the workflow.
+            </p>
           </div>
 
           {/* Preview */}

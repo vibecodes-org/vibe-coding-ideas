@@ -324,7 +324,8 @@ export async function markReadyToConvert(
   discussionId: string,
   ideaId: string,
   targetColumnId: string,
-  targetAssigneeId?: string | null
+  targetAssigneeId?: string | null,
+  autonomyLevel?: number
 ) {
   const supabase = await createClient();
   const {
@@ -340,12 +341,15 @@ export async function markReadyToConvert(
     throw new Error("You don't have permission to update this discussion");
   }
 
+  const level = autonomyLevel != null ? Math.max(1, Math.min(4, autonomyLevel)) : undefined;
+
   const { error } = await supabase
     .from("idea_discussions")
     .update({
       status: "ready_to_convert",
       target_column_id: targetColumnId,
       target_assignee_id: targetAssigneeId ?? null,
+      ...(level != null && { autonomy_level: level }),
     })
     .eq("id", discussionId);
 
@@ -379,7 +383,7 @@ export async function convertDiscussionToTask(
   // Get the discussion
   const { data: discussion, error: fetchError } = await supabase
     .from("idea_discussions")
-    .select("id, title, body, status")
+    .select("id, title, body, status, autonomy_level")
     .eq("id", discussionId)
     .single();
 
@@ -451,6 +455,7 @@ export async function convertDiscussionToTask(
       ideaId,
       discussionTitle: discussion.title,
       discussionBody: discussion.body,
+      autonomyLevel: discussion.autonomy_level,
       replies: (replies ?? []).map((r) => ({
         author: (r as unknown as { users: { full_name: string | null } }).users?.full_name ?? "Unknown",
         content: r.content,

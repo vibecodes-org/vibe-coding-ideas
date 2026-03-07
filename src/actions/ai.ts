@@ -542,6 +542,7 @@ export async function generateWorkflowSteps(params: {
   ideaId: string;
   discussionTitle: string;
   discussionBody: string;
+  autonomyLevel?: number;
   replies: { author: string; content: string }[];
 }): Promise<GenerateWorkflowStepsResult> {
   const { supabase, user, anthropic, keyType } = await requireAiAccess();
@@ -550,10 +551,19 @@ export async function generateWorkflowSteps(params: {
     ? params.replies.map((r, i) => `**Reply ${i + 1} (${r.author}):**\n${r.content}`).join("\n\n")
     : "";
 
+  const autonomyLevel = params.autonomyLevel ?? 2;
+  const autonomyInstruction = {
+    1: "Add a human validation checkpoint after EVERY agent step. The human must approve each step before the next begins.",
+    2: "Add human validation checkpoints after key deliverables. Always place human checkpoints after automated quality gates (code review, QA) so humans review validated work.",
+    3: "Add a single human review step at the end of the workflow for final sign-off.",
+    4: "Do NOT add any human validation steps. The workflow is fully autonomous.",
+  }[autonomyLevel] ?? "Add human validation checkpoints after major deliverables.";
+
   const prompt = [
     `**Discussion Title:** ${params.discussionTitle}`,
     `**Discussion Body:**\n${params.discussionBody}`,
     repliesText ? `**Discussion Replies:**\n${repliesText}` : "",
+    `**Autonomy Level:** ${autonomyLevel}/4 — ${autonomyInstruction}`,
   ].filter(Boolean).join("\n\n---\n\n");
 
   let object: z.infer<typeof WorkflowStepsSchema>;

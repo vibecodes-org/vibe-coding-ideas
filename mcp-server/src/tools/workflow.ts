@@ -8,12 +8,14 @@ import type { McpContext } from "../context";
 export const createWorkflowStepsSchema = z.object({
   task_id: z.string().uuid().describe("The task ID"),
   idea_id: z.string().uuid().describe("The idea ID"),
+  after_step_id: z.string().uuid().optional().describe("Insert new steps after this step ID. Subsequent steps are repositioned automatically. If omitted, steps are appended to the end."),
   steps: z
     .array(
       z.object({
         title: z.string().min(1).max(200).describe("Step title"),
         description: z.string().max(10000).optional().describe("Step description"),
-        bot_id: z.string().uuid().describe("The agent (bot user ID) for this step"),
+        bot_id: z.string().uuid().optional().describe("The agent (bot user ID) for this step. Required for agent steps, omit for human steps."),
+        step_type: z.enum(["agent", "human"]).default("agent").describe("Step type: 'agent' for automated agent work, 'human' for human validation/approval checkpoints"),
       })
     )
     .min(1)
@@ -25,26 +27,63 @@ export async function createWorkflowSteps(
   ctx: McpContext,
   params: z.infer<typeof createWorkflowStepsSchema>
 ) {
-  // Get max existing position
-  const { data: existing } = await ctx.supabase
-    .from("task_workflow_steps")
-    .select("position")
-    .eq("task_id", params.task_id)
-    .order("position", { ascending: false })
-    .limit(1);
+  let insertPos: number;
 
-  let nextPos = (existing?.[0]?.position ?? 0) + POSITION_GAP;
+  if (params.after_step_id) {
+    // Get the anchor step's position
+    const { data: anchor } = await ctx.supabase
+      .from("task_workflow_steps")
+      .select("position")
+      .eq("id", params.after_step_id)
+      .eq("task_id", params.task_id)
+      .maybeSingle();
+
+    if (!anchor) throw new Error("after_step_id not found in this task");
+
+    // Bump all subsequent steps to make room
+    const spacingNeeded = params.steps.length * POSITION_GAP;
+    const { data: subsequentSteps } = await ctx.supabase
+      .from("task_workflow_steps")
+      .select("id, position")
+      .eq("task_id", params.task_id)
+      .gt("position", anchor.position)
+      .order("position", { ascending: false });
+
+    // Update from highest to lowest to avoid constraint conflicts
+    for (const s of subsequentSteps ?? []) {
+      await ctx.supabase
+        .from("task_workflow_steps")
+        .update({ position: s.position + spacingNeeded })
+        .eq("id", s.id);
+    }
+
+    insertPos = anchor.position + POSITION_GAP;
+  } else {
+    // Append to end
+    const { data: existing } = await ctx.supabase
+      .from("task_workflow_steps")
+      .select("position")
+      .eq("task_id", params.task_id)
+      .order("position", { ascending: false })
+      .limit(1);
+
+    insertPos = (existing?.[0]?.position ?? 0) + POSITION_GAP;
+  }
 
   const rows = params.steps.map((step) => {
+    if (step.step_type === "agent" && !step.bot_id) {
+      throw new Error(`Agent step "${step.title}" requires a bot_id`);
+    }
     const row = {
       task_id: params.task_id,
       idea_id: params.idea_id,
-      bot_id: step.bot_id,
+      bot_id: step.step_type === "human" ? null : step.bot_id!,
+      step_type: step.step_type,
       title: step.title,
       description: step.description ?? null,
-      position: nextPos,
+      position: insertPos,
     };
-    nextPos += POSITION_GAP;
+    insertPos += POSITION_GAP;
     return row;
   });
 
@@ -90,6 +129,8 @@ export async function getNextStep(
   const nextStep = steps.find((s) => s.status === "pending" || s.status === "failed");
   if (!nextStep) return { next_step: null, all_completed: true, context: [] };
 
+  const requiresHuman = (nextStep as Record<string, unknown>).step_type === "human";
+
   // Collect output comments from all completed steps before this one as context
   const completedBefore = steps.filter(
     (s) => s.status === "completed" && s.position < nextStep.position
@@ -123,6 +164,7 @@ export async function getNextStep(
 
   return {
     next_step: nextStep,
+    requires_human: requiresHuman,
     context,
     comments: comments ?? [],
   };
@@ -149,17 +191,19 @@ export async function startStep(
     .eq("id", params.step_id)
     .eq("idea_id", params.idea_id)
     .in("status", ["pending", "failed"])
-    .select("id, task_id, bot_id, title")
+    .select("id, task_id, bot_id, title, step_type")
     .maybeSingle();
 
   if (error) throw new Error(`Failed to start step: ${error.message}`);
   if (!data) throw new Error("Step was already claimed or does not exist");
 
-  // Update task assignee to this step's bot
-  await ctx.supabase
-    .from("board_tasks")
-    .update({ assignee_id: data.bot_id })
-    .eq("id", data.task_id);
+  // Update task assignee to this step's bot (only for agent steps)
+  if (data.step_type === "agent" && data.bot_id) {
+    await ctx.supabase
+      .from("board_tasks")
+      .update({ assignee_id: data.bot_id })
+      .eq("id", data.task_id);
+  }
 
   await logActivity(ctx, data.task_id, params.idea_id, "workflow_step_started", {
     title: data.title,
@@ -218,8 +262,8 @@ export async function completeStep(
 // --- fail_step ---
 
 export const failStepSchema = z.object({
-  step_id: z.string().uuid().describe("The current step ID (will be reset to pending)"),
-  target_step_id: z.string().uuid().describe("The step that failed (will be marked failed)"),
+  step_id: z.string().uuid().describe("The current step ID (unused, kept for backwards compat)"),
+  target_step_id: z.string().uuid().describe("The step that failed (will be marked failed). All subsequent steps are automatically reset to pending."),
   idea_id: z.string().uuid().describe("The idea ID"),
   reason: z.string().max(5000).describe("Failure reason"),
 });
@@ -228,17 +272,25 @@ export async function failStep(
   ctx: McpContext,
   params: z.infer<typeof failStepSchema>
 ) {
+  // Get the target step's position for cascade reset
+  const { data: targetStepData, error: fetchError } = await ctx.supabase
+    .from("task_workflow_steps")
+    .select("task_id, title, position")
+    .eq("id", params.target_step_id)
+    .eq("idea_id", params.idea_id)
+    .maybeSingle();
+
+  if (fetchError) throw new Error(`Failed to fetch target step: ${fetchError.message}`);
+  if (!targetStepData) throw new Error("Target step not found");
+
   // Mark target step as failed
-  const { data: failedStep, error: failError } = await ctx.supabase
+  const { error: failError } = await ctx.supabase
     .from("task_workflow_steps")
     .update({ status: "failed" })
     .eq("id", params.target_step_id)
-    .eq("idea_id", params.idea_id)
-    .select("task_id, title")
-    .maybeSingle();
+    .eq("idea_id", params.idea_id);
 
   if (failError) throw new Error(`Failed to mark step as failed: ${failError.message}`);
-  if (!failedStep) throw new Error("Target step not found");
 
   // Post failure reason as a comment on the step thread
   const { error: commentError } = await ctx.supabase
@@ -253,26 +305,19 @@ export async function failStep(
 
   if (commentError) throw new Error(`Failed to save failure reason: ${commentError.message}`);
 
-  // Reset current step to pending if different from target
-  if (params.step_id !== params.target_step_id) {
-    const { error: resetError } = await ctx.supabase
-      .from("task_workflow_steps")
-      .update({
-        status: "pending",
-        started_at: null,
-      })
-      .eq("id", params.step_id)
-      .eq("idea_id", params.idea_id);
+  // Cascade: reset ALL subsequent steps (after the failed step) back to pending
+  const { error: cascadeError } = await ctx.supabase
+    .from("task_workflow_steps")
+    .update({ status: "pending", started_at: null, completed_at: null })
+    .eq("task_id", targetStepData.task_id)
+    .eq("idea_id", params.idea_id)
+    .gt("position", targetStepData.position)
+    .neq("status", "pending");
 
-    if (resetError) throw new Error(`Failed to reset step: ${resetError.message}`);
+  if (cascadeError) throw new Error(`Failed to cascade reset: ${cascadeError.message}`);
 
-    await logActivity(ctx, failedStep.task_id, params.idea_id, "workflow_step_reset", {
-      title: failedStep.title,
-    });
-  }
-
-  await logActivity(ctx, failedStep.task_id, params.idea_id, "workflow_step_failed", {
-    title: failedStep.title,
+  await logActivity(ctx, targetStepData.task_id, params.idea_id, "workflow_step_failed", {
+    title: targetStepData.title,
     reason: params.reason,
   });
 
@@ -414,6 +459,129 @@ export async function getStepComments(
   if (error) throw new Error(`Failed to get step comments: ${error.message}`);
 
   return { comments: data ?? [] };
+}
+
+// --- approve_step ---
+
+export const approveStepSchema = z.object({
+  step_id: z.string().uuid().describe("The human workflow step ID to approve"),
+  idea_id: z.string().uuid().describe("The idea ID"),
+  comment: z.string().max(5000).optional().describe("Optional approval comment/feedback"),
+});
+
+export async function approveStep(
+  ctx: McpContext,
+  params: z.infer<typeof approveStepSchema>
+) {
+  // Verify it's a human step
+  const { data: step, error: fetchError } = await ctx.supabase
+    .from("task_workflow_steps")
+    .select("step_type, status, task_id, title")
+    .eq("id", params.step_id)
+    .eq("idea_id", params.idea_id)
+    .maybeSingle();
+
+  if (fetchError) throw new Error(`Failed to fetch step: ${fetchError.message}`);
+  if (!step) throw new Error("Step not found");
+  if (step.step_type !== "human") throw new Error("Only human steps can be approved");
+  if (step.status !== "pending" && step.status !== "in_progress") {
+    throw new Error("Step is not awaiting approval");
+  }
+
+  const { error } = await ctx.supabase
+    .from("task_workflow_steps")
+    .update({
+      status: "completed",
+      completed_at: new Date().toISOString(),
+    })
+    .eq("id", params.step_id)
+    .eq("idea_id", params.idea_id);
+
+  if (error) throw new Error(`Failed to approve step: ${error.message}`);
+
+  await ctx.supabase.from("workflow_step_comments").insert({
+    step_id: params.step_id,
+    idea_id: params.idea_id,
+    author_id: ctx.userId,
+    type: "approval",
+    content: params.comment || "Approved",
+  });
+
+  await logActivity(ctx, step.task_id, params.idea_id, "workflow_step_completed", {
+    title: step.title,
+  });
+
+  return { success: true };
+}
+
+// --- request_changes ---
+
+export const requestChangesSchema = z.object({
+  step_id: z.string().uuid().describe("The human step ID requesting changes"),
+  target_step_id: z.string().uuid().describe("The step to send back for rework (will be marked failed)"),
+  idea_id: z.string().uuid().describe("The idea ID"),
+  reason: z.string().min(1).max(5000).describe("What changes are needed"),
+});
+
+export async function requestChanges(
+  ctx: McpContext,
+  params: z.infer<typeof requestChangesSchema>
+) {
+  // Verify it's a human step
+  const { data: step, error: fetchError } = await ctx.supabase
+    .from("task_workflow_steps")
+    .select("step_type, status")
+    .eq("id", params.step_id)
+    .eq("idea_id", params.idea_id)
+    .maybeSingle();
+
+  if (fetchError) throw new Error(`Failed to fetch step: ${fetchError.message}`);
+  if (!step) throw new Error("Step not found");
+  if (step.step_type !== "human") throw new Error("Only human steps can request changes");
+
+  // Get the target step's position for cascade reset
+  const { data: failedStep, error: targetFetchError } = await ctx.supabase
+    .from("task_workflow_steps")
+    .select("task_id, title, position")
+    .eq("id", params.target_step_id)
+    .eq("idea_id", params.idea_id)
+    .maybeSingle();
+
+  if (targetFetchError) throw new Error(`Failed to fetch target step: ${targetFetchError.message}`);
+  if (!failedStep) throw new Error("Target step not found");
+
+  // Mark target step as failed
+  const { error: failError } = await ctx.supabase
+    .from("task_workflow_steps")
+    .update({ status: "failed" })
+    .eq("id", params.target_step_id)
+    .eq("idea_id", params.idea_id);
+
+  if (failError) throw new Error(`Failed to mark step as failed: ${failError.message}`);
+
+  await ctx.supabase.from("workflow_step_comments").insert({
+    step_id: params.target_step_id,
+    idea_id: params.idea_id,
+    author_id: ctx.userId,
+    type: "changes_requested",
+    content: params.reason,
+  });
+
+  // Cascade: reset ALL subsequent steps (after the failed step) back to pending
+  await ctx.supabase
+    .from("task_workflow_steps")
+    .update({ status: "pending", started_at: null, completed_at: null })
+    .eq("task_id", failedStep.task_id)
+    .eq("idea_id", params.idea_id)
+    .gt("position", failedStep.position)
+    .neq("status", "pending");
+
+  await logActivity(ctx, failedStep.task_id, params.idea_id, "workflow_step_failed", {
+    title: failedStep.title,
+    reason: params.reason,
+  });
+
+  return { success: true };
 }
 
 // --- delete_workflow_step ---

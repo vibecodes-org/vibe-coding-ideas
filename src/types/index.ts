@@ -53,7 +53,7 @@ export type BoardTaskLabel = Database["public"]["Tables"]["board_task_labels"]["
 export type AiPromptTemplate = Database["public"]["Tables"]["ai_prompt_templates"]["Row"];
 export type TaskWorkflowStep = Database["public"]["Tables"]["task_workflow_steps"]["Row"];
 export type TaskWorkflowStepWithAgent = TaskWorkflowStep & {
-  agent: User;
+  agent: User | null;
 };
 export type WorkflowStepComment = Database["public"]["Tables"]["workflow_step_comments"]["Row"];
 export type WorkflowStepCommentWithAuthor = WorkflowStepComment & {

@@ -132,6 +132,7 @@ export type Database = {
           visibility?: "public" | "private";
           tags?: string[];
           github_url?: string | null;
+          autonomy_level?: number;
           upvotes?: number;
           comment_count?: number;
           collaborator_count?: number;
@@ -149,6 +150,7 @@ export type Database = {
           visibility?: "public" | "private";
           tags?: string[];
           github_url?: string | null;
+          autonomy_level?: number;
           upvotes?: number;
           comment_count?: number;
           collaborator_count?: number;
@@ -535,7 +537,8 @@ export type Database = {
           id: string;
           task_id: string;
           idea_id: string;
-          bot_id: string;
+          bot_id: string | null;
+          step_type: "agent" | "human";
           title: string;
           description: string | null;
           status: string;
@@ -550,7 +553,8 @@ export type Database = {
           id?: string;
           task_id: string;
           idea_id: string;
-          bot_id: string;
+          bot_id?: string | null;
+          step_type?: "agent" | "human";
           title: string;
           description?: string | null;
           status?: string;
@@ -565,7 +569,8 @@ export type Database = {
           id?: string;
           task_id?: string;
           idea_id?: string;
-          bot_id?: string;
+          bot_id?: string | null;
+          step_type?: "agent" | "human";
           title?: string;
           description?: string | null;
           status?: string;
@@ -1385,6 +1390,7 @@ export type Database = {
           last_activity_at: string;
           target_column_id: string | null;
           target_assignee_id: string | null;
+          autonomy_level: number;
           created_at: string;
           updated_at: string;
         };
@@ -1401,6 +1407,7 @@ export type Database = {
           last_activity_at?: string;
           target_column_id?: string | null;
           target_assignee_id?: string | null;
+          autonomy_level?: number;
           created_at?: string;
           updated_at?: string;
         };
@@ -1417,6 +1424,7 @@ export type Database = {
           last_activity_at?: string;
           target_column_id?: string | null;
           target_assignee_id?: string | null;
+          autonomy_level?: number;
           created_at?: string;
           updated_at?: string;
         };

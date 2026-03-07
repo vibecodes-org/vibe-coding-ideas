@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { toast } from "sonner";
-import { Send, Trash2, AlertCircle, MessageSquare, Bot, CheckCircle2 } from "lucide-react";
+import { Send, Trash2, AlertCircle, MessageSquare, Bot, CheckCircle2, UserCheck, ThumbsUp, RotateCcw } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -14,9 +14,16 @@ import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Markdown } from "@/components/ui/markdown";
 import { createClient } from "@/lib/supabase/client";
-import { addStepComment, deleteStepComment } from "@/actions/workflow";
+import { addStepComment, deleteStepComment, approveWorkflowStep, requestChangesWorkflowStep } from "@/actions/workflow";
 import { cn, formatRelativeTime, getInitials } from "@/lib/utils";
 import { useBotRoles } from "@/components/bot-roles-context";
 import { getRoleColor } from "@/lib/agent-colors";
@@ -37,6 +44,7 @@ interface StepDetailDialogProps {
   stepIndex: number;
   currentUserId?: string;
   isReadOnly?: boolean;
+  allSteps?: TaskWorkflowStepWithAgent[];
 }
 
 export function StepDetailDialog({
@@ -47,13 +55,23 @@ export function StepDetailDialog({
   stepIndex,
   currentUserId,
   isReadOnly = false,
+  allSteps = [],
 }: StepDetailDialogProps) {
   const botRoles = useBotRoles();
   const [comments, setComments] = useState<WorkflowStepCommentWithAuthor[]>([]);
   const [loading, setLoading] = useState(true);
   const [content, setContent] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [approving, setApproving] = useState(false);
+  const [requestingChanges, setRequestingChanges] = useState(false);
+  const [changesReason, setChangesReason] = useState("");
+  const [changesTargetId, setChangesTargetId] = useState("");
   const commentsEndRef = useRef<HTMLDivElement>(null);
+
+  const isHumanStep = step.step_type === "human";
+  const canReview = isHumanStep && !isReadOnly && currentUserId && (step.status === "pending" || step.status === "in_progress");
+  // Previous steps that can be sent back for rework
+  const previousSteps = allSteps.filter((s) => s.position < step.position && s.step_type === "agent");
 
   const ac = step.agent?.is_bot ? getRoleColor(botRoles?.[step.agent.id]) : null;
   const status = STATUS_LABELS[step.status] ?? STATUS_LABELS.pending;
@@ -130,6 +148,34 @@ export function StepDetailDialog({
     }
   }
 
+  async function handleApprove() {
+    setApproving(true);
+    try {
+      await approveWorkflowStep(step.id, ideaId, content.trim() || null);
+      setContent("");
+      toast.success("Step approved");
+    } catch {
+      toast.error("Failed to approve step");
+    } finally {
+      setApproving(false);
+    }
+  }
+
+  async function handleRequestChanges() {
+    if (!changesReason.trim() || !changesTargetId) return;
+    setRequestingChanges(true);
+    try {
+      await requestChangesWorkflowStep(step.id, changesTargetId, ideaId, changesReason.trim());
+      setChangesReason("");
+      setChangesTargetId("");
+      toast.success("Changes requested");
+    } catch {
+      toast.error("Failed to request changes");
+    } finally {
+      setRequestingChanges(false);
+    }
+  }
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
@@ -144,21 +190,32 @@ export function StepDetailDialog({
         </DialogHeader>
 
         <div className="flex-1 overflow-y-auto space-y-4 min-h-0">
-          {/* Agent */}
-          <div className="flex items-center gap-2">
-            <Avatar className="h-6 w-6">
-              <AvatarImage src={step.agent?.avatar_url ?? undefined} />
-              <AvatarFallback className={cn("text-[9px]", ac?.avatarBg, ac?.avatarText)}>
-                {getInitials(step.agent?.full_name ?? "?")}
-              </AvatarFallback>
-            </Avatar>
-            <div>
-              <span className="text-sm font-medium">{step.agent?.full_name ?? "Unknown"}</span>
-              {step.agent?.is_bot && (
-                <Bot className="inline ml-1 h-3 w-3 text-muted-foreground" />
-              )}
+          {/* Agent or Human checkpoint */}
+          {isHumanStep ? (
+            <div className="flex items-center gap-2">
+              <div className="flex h-6 w-6 items-center justify-center rounded-full bg-amber-500/20 border border-amber-500/30">
+                <UserCheck className="h-3.5 w-3.5 text-amber-400" />
+              </div>
+              <div>
+                <span className="text-sm font-medium text-amber-400">Human Validation</span>
+              </div>
             </div>
-          </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Avatar className="h-6 w-6">
+                <AvatarImage src={step.agent?.avatar_url ?? undefined} />
+                <AvatarFallback className={cn("text-[9px]", ac?.avatarBg, ac?.avatarText)}>
+                  {getInitials(step.agent?.full_name ?? "?")}
+                </AvatarFallback>
+              </Avatar>
+              <div>
+                <span className="text-sm font-medium">{step.agent?.full_name ?? "Unknown"}</span>
+                {step.agent?.is_bot && (
+                  <Bot className="inline ml-1 h-3 w-3 text-muted-foreground" />
+                )}
+              </div>
+            </div>
+          )}
 
           {/* Description */}
           {step.description && (
@@ -238,6 +295,54 @@ export function StepDetailDialog({
                         </div>
                       )}
 
+                      {/* Approval comment */}
+                      {comment.type === "approval" && (
+                        <div className="rounded-md border border-emerald-500/30 bg-emerald-500/5">
+                          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-emerald-500/20">
+                            <ThumbsUp className="h-3 w-3 text-emerald-400" />
+                            <Avatar className="h-4 w-4">
+                              <AvatarImage src={comment.author?.avatar_url ?? undefined} />
+                              <AvatarFallback className={cn("text-[6px]", cac?.avatarBg, cac?.avatarText)}>
+                                {getInitials(comment.author?.full_name ?? "?")}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-[11px] font-medium text-emerald-400">
+                              Approved
+                            </span>
+                            <span className="text-[10px] text-muted-foreground ml-auto">
+                              {formatRelativeTime(comment.created_at)}
+                            </span>
+                          </div>
+                          <div className="px-3 py-2 text-sm">
+                            <Markdown>{comment.content}</Markdown>
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Changes requested comment */}
+                      {comment.type === "changes_requested" && (
+                        <div className="rounded-md border border-amber-500/30 bg-amber-500/5">
+                          <div className="flex items-center gap-2 px-3 py-1.5 border-b border-amber-500/20">
+                            <RotateCcw className="h-3 w-3 text-amber-400" />
+                            <Avatar className="h-4 w-4">
+                              <AvatarImage src={comment.author?.avatar_url ?? undefined} />
+                              <AvatarFallback className={cn("text-[6px]", cac?.avatarBg, cac?.avatarText)}>
+                                {getInitials(comment.author?.full_name ?? "?")}
+                              </AvatarFallback>
+                            </Avatar>
+                            <span className="text-[11px] font-medium text-amber-400">
+                              Changes Requested
+                            </span>
+                            <span className="text-[10px] text-muted-foreground ml-auto">
+                              {formatRelativeTime(comment.created_at)}
+                            </span>
+                          </div>
+                          <div className="px-3 py-2 text-sm text-amber-300/80">
+                            <Markdown>{comment.content}</Markdown>
+                          </div>
+                        </div>
+                      )}
+
                       {/* Regular comment */}
                       {comment.type === "comment" && (
                         <div className="group flex gap-2">
@@ -285,6 +390,100 @@ export function StepDetailDialog({
             )}
           </div>
         </div>
+
+        {/* Human step approval actions */}
+        {canReview && (
+          <div className="space-y-3 pt-2 border-t border-amber-500/20">
+            <div className="flex items-center gap-2">
+              <UserCheck className="h-4 w-4 text-amber-400" />
+              <span className="text-sm font-medium text-amber-400">Review</span>
+            </div>
+
+            <Textarea
+              value={content}
+              onChange={(e) => setContent(e.target.value)}
+              placeholder="Optional feedback..."
+              className="min-h-[50px] text-sm resize-none"
+            />
+
+            <div className="flex gap-2">
+              <Button
+                size="sm"
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+                onClick={handleApprove}
+                disabled={approving}
+              >
+                <ThumbsUp className="h-3 w-3 mr-1.5" />
+                {approving ? "Approving..." : "Approve"}
+              </Button>
+
+              {previousSteps.length > 0 && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                  onClick={() => {
+                    setRequestingChanges(true);
+                    if (!changesTargetId && previousSteps.length > 0) {
+                      setChangesTargetId(previousSteps[previousSteps.length - 1].id);
+                    }
+                  }}
+                  disabled={requestingChanges}
+                >
+                  <RotateCcw className="h-3 w-3 mr-1.5" />
+                  Request Changes
+                </Button>
+              )}
+            </div>
+
+            {requestingChanges && previousSteps.length > 0 && (
+              <div className="space-y-2 rounded-md border border-amber-500/20 p-3">
+                <label className="text-xs font-medium text-muted-foreground">
+                  Send back to step:
+                </label>
+                <Select value={changesTargetId} onValueChange={setChangesTargetId}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select step..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {previousSteps.map((s) => (
+                      <SelectItem key={s.id} value={s.id}>
+                        {s.title}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Textarea
+                  value={changesReason}
+                  onChange={(e) => setChangesReason(e.target.value)}
+                  placeholder="What changes are needed?"
+                  className="min-h-[60px] text-sm resize-none"
+                />
+                <div className="flex gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="border-amber-500/30 text-amber-400 hover:bg-amber-500/10"
+                    onClick={handleRequestChanges}
+                    disabled={!changesReason.trim() || !changesTargetId}
+                  >
+                    Submit
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={() => {
+                      setRequestingChanges(false);
+                      setChangesReason("");
+                    }}
+                  >
+                    Cancel
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Comment input */}
         {!isReadOnly && currentUserId && (

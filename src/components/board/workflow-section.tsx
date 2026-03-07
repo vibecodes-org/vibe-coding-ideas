@@ -8,6 +8,7 @@ import {
   RotateCcw,
   AlertCircle,
   MessageSquare,
+  UserCheck,
 } from "lucide-react";
 import { Progress } from "@/components/ui/progress";
 import { Input } from "@/components/ui/input";
@@ -83,6 +84,7 @@ export function WorkflowSection({
   const [newTitle, setNewTitle] = useState("");
   const [newBotId, setNewBotId] = useState("");
   const [newDescription, setNewDescription] = useState("");
+  const [newStepType, setNewStepType] = useState<"agent" | "human">("agent");
   const [selectedStep, setSelectedStep] = useState<TaskWorkflowStepWithAgent | null>(null);
   const [selectedStepIndex, setSelectedStepIndex] = useState(0);
   const pendingOps = useRef(0);
@@ -105,10 +107,11 @@ export function WorkflowSection({
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
     const title = newTitle.trim();
-    if (!title || !newBotId) return;
+    if (!title) return;
+    if (newStepType === "agent" && !newBotId) return;
 
-    const agent = ideaAgents.find((a) => a.id === newBotId);
-    if (!agent) return;
+    const agent = newStepType === "agent" ? ideaAgents.find((a) => a.id === newBotId) ?? null : null;
+    if (newStepType === "agent" && !agent) return;
 
     const tempId = `temp-${Date.now()}`;
     const maxPos = localSteps.reduce((max, s) => Math.max(max, s.position), 0);
@@ -116,7 +119,8 @@ export function WorkflowSection({
       id: tempId,
       task_id: taskId,
       idea_id: ideaId,
-      bot_id: newBotId,
+      bot_id: newStepType === "human" ? null : newBotId,
+      step_type: newStepType,
       title,
       description: newDescription || null,
       status: "pending",
@@ -139,7 +143,8 @@ export function WorkflowSection({
         ideaId,
         title,
         newDescription || null,
-        newBotId
+        newStepType === "human" ? null : newBotId,
+        newStepType
       );
       if (currentUserId) {
         logTaskActivity(taskId, ideaId, currentUserId, "workflow_step_added", {
@@ -242,27 +247,38 @@ export function WorkflowSection({
                     </span>
                   )}
 
-                  {/* Agent avatar */}
-                  {(() => {
-                    const ac = step.agent?.is_bot ? getRoleColor(botRoles?.[step.agent.id]) : null;
-                    return (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <Avatar className="h-5 w-5 shrink-0">
-                            <AvatarImage
-                              src={step.agent?.avatar_url ?? undefined}
-                            />
-                            <AvatarFallback className={cn("text-[8px]", ac?.avatarBg, ac?.avatarText)}>
-                              {getInitials(step.agent?.full_name ?? "?")}
-                            </AvatarFallback>
-                          </Avatar>
-                        </TooltipTrigger>
-                        <TooltipContent>
-                          {step.agent?.full_name ?? "Unknown agent"}
-                        </TooltipContent>
-                      </Tooltip>
-                    );
-                  })()}
+                  {/* Agent avatar or human checkpoint icon */}
+                  {step.step_type === "human" ? (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-amber-500/20 border border-amber-500/30">
+                          <UserCheck className="h-3 w-3 text-amber-400" />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent>Human validation</TooltipContent>
+                    </Tooltip>
+                  ) : (
+                    (() => {
+                      const ac = step.agent?.is_bot ? getRoleColor(botRoles?.[step.agent.id]) : null;
+                      return (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Avatar className="h-5 w-5 shrink-0">
+                              <AvatarImage
+                                src={step.agent?.avatar_url ?? undefined}
+                              />
+                              <AvatarFallback className={cn("text-[8px]", ac?.avatarBg, ac?.avatarText)}>
+                                {getInitials(step.agent?.full_name ?? "?")}
+                              </AvatarFallback>
+                            </Avatar>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {step.agent?.full_name ?? "Unknown agent"}
+                          </TooltipContent>
+                        </Tooltip>
+                      );
+                    })()
+                  )}
 
                   {/* Status badge */}
                   <span
@@ -316,35 +332,51 @@ export function WorkflowSection({
       {!isReadOnly && (
         <form onSubmit={handleAdd} className="space-y-2">
           <div className="flex gap-2">
+            <Select value={newStepType} onValueChange={(v) => setNewStepType(v as "agent" | "human")}>
+              <SelectTrigger className="h-8 w-[100px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="agent">Agent</SelectItem>
+                <SelectItem value="human">
+                  <span className="flex items-center gap-1.5">
+                    <UserCheck className="h-3 w-3 text-amber-400" />
+                    Human
+                  </span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
             <Input
               value={newTitle}
               onChange={(e) => setNewTitle(e.target.value)}
-              placeholder="Add a workflow step..."
+              placeholder={newStepType === "human" ? "e.g. Review design mockup..." : "Add a workflow step..."}
               className="h-8 text-sm"
             />
-            <Select value={newBotId} onValueChange={setNewBotId}>
-              <SelectTrigger className="h-8 w-[160px] text-xs">
-                <SelectValue placeholder="Agent" />
-              </SelectTrigger>
-              <SelectContent>
-                {ideaAgents.map((agent) => {
-                  const ac = agent.is_bot ? getRoleColor(botRoles?.[agent.id]) : null;
-                  return (
-                    <SelectItem key={agent.id} value={agent.id}>
-                      <span className="flex items-center gap-1.5">
-                        <Avatar className="h-4 w-4">
-                          <AvatarImage src={agent.avatar_url ?? undefined} />
-                          <AvatarFallback className={cn("text-[7px]", ac?.avatarBg, ac?.avatarText)}>
-                            {getInitials(agent.full_name ?? "?")}
-                          </AvatarFallback>
-                        </Avatar>
-                        {agent.full_name ?? "Agent"}
-                      </span>
-                    </SelectItem>
-                  );
-                })}
-              </SelectContent>
-            </Select>
+            {newStepType === "agent" && (
+              <Select value={newBotId} onValueChange={setNewBotId}>
+                <SelectTrigger className="h-8 w-[160px] text-xs">
+                  <SelectValue placeholder="Agent" />
+                </SelectTrigger>
+                <SelectContent>
+                  {ideaAgents.map((agent) => {
+                    const ac = agent.is_bot ? getRoleColor(botRoles?.[agent.id]) : null;
+                    return (
+                      <SelectItem key={agent.id} value={agent.id}>
+                        <span className="flex items-center gap-1.5">
+                          <Avatar className="h-4 w-4">
+                            <AvatarImage src={agent.avatar_url ?? undefined} />
+                            <AvatarFallback className={cn("text-[7px]", ac?.avatarBg, ac?.avatarText)}>
+                              {getInitials(agent.full_name ?? "?")}
+                            </AvatarFallback>
+                          </Avatar>
+                          {agent.full_name ?? "Agent"}
+                        </span>
+                      </SelectItem>
+                    );
+                  })}
+                </SelectContent>
+              </Select>
+            )}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button
@@ -352,7 +384,7 @@ export function WorkflowSection({
                   size="sm"
                   variant="outline"
                   className="h-8"
-                  disabled={!newTitle.trim() || !newBotId}
+                  disabled={!newTitle.trim() || (newStepType === "agent" && !newBotId)}
                 >
                   <Plus className="h-3 w-3" />
                 </Button>
@@ -383,6 +415,7 @@ export function WorkflowSection({
           stepIndex={selectedStepIndex}
           currentUserId={currentUserId}
           isReadOnly={isReadOnly}
+          allSteps={sortedSteps}
         />
       )}
     </div>

@@ -280,7 +280,7 @@ export async function getDiscussionsReadyToConvert(
   let query = ctx.supabase
     .from("idea_discussions")
     .select(
-      "id, title, body, status, target_column_id, target_assignee_id, reply_count, last_activity_at, created_at, idea_id, users!idea_discussions_author_id_fkey(id, full_name), ideas!idea_discussions_idea_id_fkey(id, title)"
+      "id, title, body, status, target_column_id, target_assignee_id, autonomy_level, reply_count, last_activity_at, created_at, idea_id, users!idea_discussions_author_id_fkey(id, full_name), ideas!idea_discussions_idea_id_fkey(id, title)"
     )
     .eq("status", "ready_to_convert")
     .order("created_at", { ascending: true })
@@ -364,6 +364,7 @@ export async function getDiscussionsReadyToConvert(
       target_column_name: d.target_column_id ? (columnMap.get(d.target_column_id) ?? null) : null,
       orchestration_agent_id: d.target_assignee_id,
       orchestration_agent_name: d.target_assignee_id ? (agentMap.get(d.target_assignee_id) ?? null) : null,
+      autonomy_level: d.autonomy_level,
       replies: replies.map((r) => ({
         id: r.id,
         content: r.content,
@@ -380,10 +381,11 @@ export async function getDiscussionsReadyToConvert(
       "For each discussion:",
       "1. If orchestration_agent_id is set, call set_agent_identity with that ID to act as the orchestrator",
       "2. Call convert_discussion with the discussion_id, idea_id, and target_column_id",
-      "   - This creates the task, marks the discussion as converted, and returns the full discussion context",
+      "   - This creates the task, marks the discussion as converted, and returns the full discussion context including autonomy_level",
       "3. Use the returned discussion body and replies to analyze what workflow steps are needed",
       "4. Call list_idea_agents to see which agents are available for the idea",
       "5. Call create_workflow_steps to create sequential implementation steps, assigning each to an appropriate agent",
+      "   - Respect the autonomy_level: 1=human after every step, 2=human after key deliverables (after automated checks), 3=single human sign-off at end, 4=no human steps",
       "6. Add a discussion reply confirming the task and workflow steps were created",
       "7. Call set_agent_identity (no args) to reset to default identity",
     ],
@@ -411,7 +413,7 @@ export async function convertDiscussion(
   // Fetch discussion with status guard
   const { data: discussion, error: fetchError } = await ctx.supabase
     .from("idea_discussions")
-    .select("id, title, body, status, target_assignee_id")
+    .select("id, title, body, status, target_assignee_id, autonomy_level")
     .eq("id", params.discussion_id)
     .eq("idea_id", params.idea_id)
     .single();
@@ -495,6 +497,14 @@ export async function convertDiscussion(
     orchestrationAgentName = agentUser?.full_name ?? null;
   }
 
+  const autonomyLabels: Record<number, string> = {
+    1: "Full Oversight — add a human checkpoint after EVERY agent step",
+    2: "Key Checkpoints — add human review after key deliverables, always AFTER automated quality gates (code review, QA) so humans review validated work.",
+    3: "Review on Completion — add a single human sign-off step at the end",
+    4: "Fully Autonomous — do NOT add any human validation steps",
+  };
+  const autonomyLevel = discussion.autonomy_level ?? 2;
+
   return {
     success: true,
     task,
@@ -506,12 +516,15 @@ export async function convertDiscussion(
     orchestration_agent: discussion.target_assignee_id
       ? { id: discussion.target_assignee_id, name: orchestrationAgentName }
       : null,
+    autonomy_level: autonomyLevel,
+    autonomy_instruction: autonomyLabels[autonomyLevel] ?? autonomyLabels[2],
     next_steps: [
       "The task has been created and the discussion marked as converted.",
+      `Autonomy level: ${autonomyLevel}/4 — ${autonomyLabels[autonomyLevel] ?? autonomyLabels[2]}`,
       "Now build workflow steps for this task:",
       "1. Analyze the discussion body and replies above to identify implementation steps",
       "2. Call list_idea_agents to see which agents are available for this idea",
-      "3. Call create_workflow_steps with the task_id and idea_id, assigning each step to an appropriate agent based on their role",
+      `3. Call create_workflow_steps with the task_id and idea_id, assigning each step to an appropriate agent. Use step_type 'human' for validation checkpoints per the autonomy level above.`,
       ...(discussion.target_assignee_id
         ? [`4. The orchestration agent is "${orchestrationAgentName}" (${discussion.target_assignee_id}) — use set_agent_identity to act as this agent for coordination tasks`]
         : []),
