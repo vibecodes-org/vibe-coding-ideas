@@ -214,3 +214,18 @@
     cursor: default;
   }
 }
+
+/* Print styles — clean PDF export for press kit and other pages */
+@media print {
+  nav,
+  footer {
+    display: none !important;
+  }
+  img {
+    break-inside: avoid;
+  }
+  @page {
+    margin: 1.5cm;
+    size: A4;
+  }
+}

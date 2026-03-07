@@ -56,6 +56,12 @@ playwright-report/
 .playwright-mcp/
 .env.test
 
+# Screenshots output (root only — don't ignore e2e/screenshots/)
+/screenshots/
+
+# Demo video output (root only — don't ignore e2e/videos/)
+/videos/
+
 # Temp/generated files
 nul
 *.log
