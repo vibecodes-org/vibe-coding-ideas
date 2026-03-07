@@ -1,4 +1,5 @@
 import { test, expect } from "../fixtures/auth";
+import { ensureFreshPageAuthenticated } from "../fixtures/fresh-auth";
 
 test.describe("Navbar", () => {
   test("active nav state on current route", async ({ userAPage }) => {
@@ -36,7 +37,8 @@ test.describe("Navbar", () => {
 
   // Use freshPage (separate user) for sign out to avoid revoking shared auth tokens
   test("sign out redirects away from protected routes", async ({ freshPage }) => {
-    await freshPage.goto("/dashboard");
+    // Navigate to /dashboard — re-authenticate if the stored session has expired
+    await ensureFreshPageAuthenticated(freshPage, "/dashboard");
 
     // Open the user dropdown menu (click the avatar button)
     const avatarButton = freshPage

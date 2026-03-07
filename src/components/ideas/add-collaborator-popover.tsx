@@ -102,7 +102,7 @@ export function AddCollaboratorPopover({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button className="ml-1 flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-muted-foreground/40 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary">
+        <button className="ml-1 flex h-6 w-6 items-center justify-center rounded-full border border-dashed border-muted-foreground/40 text-xs text-muted-foreground transition-colors hover:border-primary hover:text-primary" aria-label="Add collaborator">
           +
         </button>
       </PopoverTrigger>

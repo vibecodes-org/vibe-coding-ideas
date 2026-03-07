@@ -278,7 +278,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
                 {isAuthor && (
                   <Tooltip>
                     <TooltipTrigger asChild>
-                      <Link href={`/ideas/${idea.id}/edit`} className="hidden sm:inline-flex">
+                      <Link href={`/ideas/${idea.id}/edit`} className="hidden sm:inline-flex" aria-label="Edit">
                         <Button variant="ghost" size="icon" className="h-8 w-8 text-muted-foreground">
                           <Pencil className="h-4 w-4" />
                         </Button>
