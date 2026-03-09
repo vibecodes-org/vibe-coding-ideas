@@ -1,7 +1,11 @@
-import {
-  protectedResourceHandler,
-  metadataCorsOptionsRequestHandler,
-} from "mcp-handler";
+import { protectedResourceHandler } from "mcp-handler";
+import { NextResponse } from "next/server";
+
+const CORS_HEADERS = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Headers": "*",
+};
 
 const handler = protectedResourceHandler({
   authServerUrls: [
@@ -9,6 +13,8 @@ const handler = protectedResourceHandler({
   ],
 });
 
-const corsHandler = metadataCorsOptionsRequestHandler();
+export { handler as GET };
 
-export { handler as GET, corsHandler as OPTIONS };
+export async function OPTIONS() {
+  return new NextResponse(null, { status: 204, headers: CORS_HEADERS });
+}
