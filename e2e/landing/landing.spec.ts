@@ -13,7 +13,7 @@ test.describe("Landing page", () => {
       // Tagline paragraph
       await expect(
         anonPage.getByText(
-          /the ai-powered idea board where you go from concept to shipped code/i
+          /drop an idea\. let ai refine it, generate a task board, and assign agents to build it/i
         )
       ).toBeVisible();
     });
@@ -31,15 +31,17 @@ test.describe("Landing page", () => {
 
       // Section heading
       await expect(
-        anonPage.getByRole("heading", { name: /from spark to shipped/i })
+        anonPage.getByRole("heading", { name: /everything you need to ship/i })
       ).toBeVisible();
 
-      // All four feature cards
+      // All six feature cards
       const featureTitles = [
-        "Share Ideas",
-        "Find Collaborators",
-        "Discuss & Refine",
-        "Real-time Updates",
+        "Idea Feed",
+        "Kanban Boards",
+        "AI Agent Personas",
+        "Collaboration",
+        "Real-time Everything",
+        "Secure by Default",
       ];
 
       for (const title of featureTitles) {
@@ -50,7 +52,8 @@ test.describe("Landing page", () => {
     test("footer contains Guide and Privacy links", async ({ anonPage }) => {
       await anonPage.goto("/");
 
-      const footer = anonPage.locator("footer");
+      // Use last() — landing page has a testimonial <footer> and the site <footer>
+      const footer = anonPage.locator("footer").last();
       await expect(footer).toBeVisible();
 
       // Guide link

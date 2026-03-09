@@ -33,6 +33,12 @@ test.afterAll(async () => {
 
 test.describe("Dashboard Reorder", () => {
   test.beforeEach(async ({ userAPage }) => {
+    // Bump updated_at so the test idea's board appears in dashboard top 5
+    await supabaseAdmin
+      .from("ideas")
+      .update({ updated_at: new Date().toISOString() })
+      .eq("id", reorderIdeaId);
+
     // Clear any stored panel order before each test
     await userAPage.goto("/dashboard");
     await expect(userAPage.getByRole("heading", { name: /dashboard/i })).toBeVisible({ timeout: 15_000 });

@@ -4,6 +4,7 @@ import {
   addCollaborator,
   createTestComment,
   cleanupIdeas,
+  scopedTitle,
 } from "../fixtures/test-data";
 import { supabaseAdmin } from "../fixtures/supabase-admin";
 
@@ -11,6 +12,11 @@ let userAId: string;
 let userBId: string;
 let ideaId: string;
 let collabIdeaId: string;
+
+// Capture scoped titles once so assertions match what was created
+const ideaTitle = scopedTitle("Profile Test Idea");
+const collabTitle = scopedTitle("Collab Idea for Profile");
+const commentContent = scopedTitle("Profile comment test content");
 
 test.beforeAll(async () => {
   const { data: users } = await supabaseAdmin
@@ -28,16 +34,16 @@ test.beforeAll(async () => {
 
   // Create an idea by User A
   const idea = await createTestIdea(userAId, {
-    title: "[E2E] Profile Test Idea",
-    description: "[E2E] An idea for profile tab testing",
+    title: ideaTitle,
+    description: "An idea for profile tab testing",
     tags: ["e2e-test"],
   });
   ideaId = idea.id;
 
   // Create an idea by User B that User A collaborates on
   const collabIdea = await createTestIdea(userBId, {
-    title: "[E2E] Collab Idea for Profile",
-    description: "[E2E] User A collaborates on this idea",
+    title: collabTitle,
+    description: "User A collaborates on this idea",
     tags: ["e2e-test"],
   });
   collabIdeaId = collabIdea.id;
@@ -45,7 +51,7 @@ test.beforeAll(async () => {
 
   // Create a comment by User A on their own idea
   await createTestComment(ideaId, userAId, {
-    content: "[E2E] Profile comment test content",
+    content: commentContent,
   });
 });
 
@@ -118,7 +124,7 @@ test.describe("Profile page", () => {
 
     // The test idea should appear in the Ideas tab
     await expect(
-      userAPage.getByText("[E2E] Profile Test Idea")
+      userAPage.getByText(ideaTitle).first()
     ).toBeVisible({ timeout: 10_000 });
   });
 
@@ -134,7 +140,7 @@ test.describe("Profile page", () => {
 
     // The collab idea should appear
     await expect(
-      userAPage.getByText("[E2E] Collab Idea for Profile")
+      userAPage.getByText(collabTitle).first()
     ).toBeVisible({ timeout: 10_000 });
   });
 
@@ -148,7 +154,7 @@ test.describe("Profile page", () => {
 
     // The test comment should appear
     await expect(
-      userAPage.getByText("[E2E] Profile comment test content")
+      userAPage.getByText(commentContent).first()
     ).toBeVisible({ timeout: 10_000 });
   });
 });

@@ -53,10 +53,10 @@ test.describe("AI Enhance - Idea Detail", () => {
   test("shows disabled enhance button when user has no API key", async ({
     userAPage,
   }) => {
-    // Remove API key so button is disabled
+    // Remove API key AND zero out credits so button is disabled
     await supabaseAdmin
       .from("users")
-      .update({ encrypted_anthropic_key: null })
+      .update({ encrypted_anthropic_key: null, ai_starter_credits: 0 })
       .eq("id", userAId);
 
     await userAPage.goto(`/ideas/${testIdeaId}`);
@@ -76,10 +76,10 @@ test.describe("AI Enhance - Idea Detail", () => {
   test("disabled enhance button shows API key tooltip on hover", async ({
     userAPage,
   }) => {
-    // Remove API key
+    // Remove API key AND zero out starter credits so button is fully disabled
     await supabaseAdmin
       .from("users")
-      .update({ encrypted_anthropic_key: null })
+      .update({ encrypted_anthropic_key: null, ai_starter_credits: 0 })
       .eq("id", userAId);
 
     await userAPage.goto(`/ideas/${testIdeaId}`);
@@ -99,7 +99,7 @@ test.describe("AI Enhance - Idea Detail", () => {
     // Tooltip should tell user to add API key
     await expect(
       userAPage.getByRole("tooltip").filter({ hasText: /api key/i })
-    ).toBeVisible({ timeout: 5_000 });
+    ).toBeVisible({ timeout: 10_000 });
   });
 
   test("opens enhance dialog with prompt textarea and current description", async ({

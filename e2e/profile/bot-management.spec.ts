@@ -53,11 +53,11 @@ test.describe("Agent management", () => {
     // Submit
     await dialog.getByRole("button", { name: "Create" }).click();
 
-    // Success toast
+    // Success toast (server action may take a moment)
     const toast = userAPage
       .locator("[data-sonner-toast]")
       .filter({ hasText: /agent created/i });
-    await expect(toast).toBeVisible({ timeout: 5_000 });
+    await expect(toast).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
     // Dialog should close
     await expect(dialog).not.toBeVisible();

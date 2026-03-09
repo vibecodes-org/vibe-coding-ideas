@@ -78,6 +78,15 @@ test.afterAll(async () => {
 });
 
 test.describe("Dashboard", () => {
+  // Bump updated_at before each test so our ideas appear in the top 5
+  // (dashboard limits to 5 most recent — parallel workers create other ideas)
+  test.beforeEach(async () => {
+    await supabaseAdmin
+      .from("ideas")
+      .update({ updated_at: new Date().toISOString() })
+      .in("id", [ideaId, boardIdeaId, collabIdeaId].filter(Boolean));
+  });
+
   test("stats cards show counts with numbers", async ({ userAPage }) => {
     await userAPage.goto("/dashboard");
 

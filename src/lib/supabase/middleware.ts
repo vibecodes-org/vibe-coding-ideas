@@ -30,9 +30,17 @@ export async function updateSession(request: NextRequest) {
       }
     );
 
+    // Race getUser against a timeout so Supabase slowness doesn't 504 the whole site
+    const getUserWithTimeout = Promise.race([
+      supabase.auth.getUser(),
+      new Promise<{ data: { user: null }; error: null }>((resolve) =>
+        setTimeout(() => resolve({ data: { user: null }, error: null }), 4000)
+      ),
+    ]);
+
     const {
       data: { user },
-    } = await supabase.auth.getUser();
+    } = await getUserWithTimeout;
 
     // Protect authenticated routes
     const protectedPaths = ["/dashboard", "/ideas", "/members", "/profile", "/admin", "/agents"];
