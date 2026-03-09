@@ -74,17 +74,29 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
   );
 
+  // Race queries against a 10s timeout so builds don't fail when Supabase is slow
+  const timeout = <T>(ms: number, fallback: T) =>
+    new Promise<T>((resolve) => setTimeout(() => resolve(fallback), ms));
+
+  const emptyResult = { data: [], error: null };
+
   const [ideasResult, usersResult] = await Promise.all([
-    supabase
-      .from("ideas")
-      .select("id, updated_at, author_id")
-      .eq("visibility", "public")
-      .limit(50000),
-    supabase
-      .from("users")
-      .select("id, updated_at")
-      .eq("is_bot", false)
-      .limit(50000),
+    Promise.race([
+      supabase
+        .from("ideas")
+        .select("id, updated_at, author_id")
+        .eq("visibility", "public")
+        .limit(50000),
+      timeout(10000, emptyResult),
+    ]),
+    Promise.race([
+      supabase
+        .from("users")
+        .select("id, updated_at")
+        .eq("is_bot", false)
+        .limit(50000),
+      timeout(10000, emptyResult),
+    ]),
   ]);
 
   if (ideasResult.error) {
