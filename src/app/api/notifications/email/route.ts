@@ -1,4 +1,5 @@
-import { NextRequest, NextResponse } from "next/server";
+export const dynamic = "force-dynamic";
+
 import { createClient } from "@supabase/supabase-js";
 import { buildEmailHtml } from "@/lib/email-template";
 import type { Database } from "@/types/database";
@@ -20,24 +21,31 @@ const EMAIL_WORTHY_TYPES: NotificationType[] = [
   "discussion_mention",
 ];
 
-export async function POST(request: NextRequest) {
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+export async function POST(request: Request) {
   // Verify webhook secret
   const authHeader = request.headers.get("authorization");
   const expectedSecret = process.env.NOTIFICATION_WEBHOOK_SECRET;
 
   if (!expectedSecret) {
     console.error("NOTIFICATION_WEBHOOK_SECRET not configured");
-    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+    return jsonResponse({ error: "Server misconfigured" }, 500);
   }
 
   if (authHeader !== `Bearer ${expectedSecret}`) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    return jsonResponse({ error: "Unauthorized" }, 401);
   }
 
   const resendApiKey = process.env.RESEND_API_KEY;
   if (!resendApiKey) {
     console.error("RESEND_API_KEY not configured");
-    return NextResponse.json({ error: "Server misconfigured" }, { status: 500 });
+    return jsonResponse({ error: "Server misconfigured" }, 500);
   }
 
   let payload: {
@@ -56,17 +64,17 @@ export async function POST(request: NextRequest) {
   try {
     payload = await request.json();
   } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+    return jsonResponse({ error: "Invalid JSON" }, 400);
   }
 
   const notification = payload.record;
   if (!notification?.type || !notification?.user_id) {
-    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+    return jsonResponse({ error: "Invalid payload" }, 400);
   }
 
   // Skip low-signal notification types
   if (!EMAIL_WORTHY_TYPES.includes(notification.type)) {
-    return NextResponse.json({ skipped: true, reason: "low-signal type" });
+    return jsonResponse({ skipped: true, reason: "low-signal type" });
   }
 
   // Use service role to query user data (this runs outside auth context)
@@ -83,13 +91,13 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (!recipient?.email) {
-    return NextResponse.json({ skipped: true, reason: "no recipient email" });
+    return jsonResponse({ skipped: true, reason: "no recipient email" });
   }
 
   // Check email_notifications preference
   const prefs = recipient.notification_preferences as Record<string, boolean> | null;
   if (prefs?.email_notifications === false) {
-    return NextResponse.json({ skipped: true, reason: "email notifications disabled" });
+    return jsonResponse({ skipped: true, reason: "email notifications disabled" });
   }
 
   // Don't send emails to bot users
@@ -100,7 +108,7 @@ export async function POST(request: NextRequest) {
     .maybeSingle();
 
   if (recipientFull?.is_bot) {
-    return NextResponse.json({ skipped: true, reason: "bot user" });
+    return jsonResponse({ skipped: true, reason: "bot user" });
   }
 
   // Get actor name
@@ -147,7 +155,7 @@ export async function POST(request: NextRequest) {
   );
 
   if (!email) {
-    return NextResponse.json({ skipped: true, reason: "no email content" });
+    return jsonResponse({ skipped: true, reason: "no email content" });
   }
 
   // Send via Resend
@@ -169,17 +177,17 @@ export async function POST(request: NextRequest) {
     if (!res.ok) {
       const errorText = await res.text();
       console.error("Resend API error:", res.status, errorText);
-      return NextResponse.json(
+      return jsonResponse(
         { error: "Email send failed", details: errorText },
-        { status: 502 },
+        502,
       );
     }
 
     const result = await res.json();
-    return NextResponse.json({ sent: true, id: result.id });
+    return jsonResponse({ sent: true, id: result.id });
   } catch (err) {
     console.error("Failed to send email:", err);
-    return NextResponse.json({ error: "Email send failed" }, { status: 500 });
+    return jsonResponse({ error: "Email send failed" }, 500);
   }
 }
 

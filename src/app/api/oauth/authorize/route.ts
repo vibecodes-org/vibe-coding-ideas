@@ -79,7 +79,10 @@ export async function GET(request: Request) {
     loginUrl.searchParams.set("state", state);
     loginUrl.searchParams.set("scope", scope);
 
-    return Response.redirect(loginUrl.toString(), 307);
+    return new Response(null, {
+      status: 307,
+      headers: { Location: loginUrl.toString() },
+    });
   } catch {
     return jsonResponse(
       { error: "server_error", error_description: "Internal server error" },
