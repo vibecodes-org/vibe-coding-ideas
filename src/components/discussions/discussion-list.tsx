@@ -91,7 +91,7 @@ interface DiscussionListProps {
 }
 
 export function DiscussionList({ discussions, ideaId }: DiscussionListProps) {
-  const [filter, setFilter] = useState<FilterStatus>("all");
+  const [filter, setFilter] = useState<FilterStatus>("open");
   const [search, setSearch] = useState("");
 
   const filtered = discussions.filter((d) => {
