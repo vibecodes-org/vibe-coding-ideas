@@ -8,8 +8,8 @@
  *   unassigned:                {} | { assignee_id: string }
  *   due_date_set:              { due_date: string } (MCP only)
  *   label_added/label_removed: { label_name: string }
- *   checklist_item_added:      { title: string } (UI) or { item_title: string } (MCP)
- *   checklist_item_completed:  { title: string } (UI) or { item_title: string } (MCP)
+ *   checklist_item_added:      { title: string } (UI) or { item_title: string } (MCP) — legacy name, now "workflow step added"
+ *   checklist_item_completed:  { title: string } (UI) or { item_title: string } (MCP) — legacy name, now "workflow step completed"
  *   attachment_added/removed:  { file_name: string }
  */
 export function formatActivityDetails(

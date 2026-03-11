@@ -116,10 +116,10 @@ interface MockTask {
 }
 
 function TaskCard({ task }: { task: MockTask }) {
-  const hasChecklist =
+  const hasSteps =
     task.checkTotal !== undefined && task.checkTotal > 0;
-  const checklistDone =
-    hasChecklist && task.checkDone === task.checkTotal;
+  const stepsDone =
+    hasSteps && task.checkDone === task.checkTotal;
 
   return (
     <div className="rounded-md border border-border bg-background p-2.5 shadow-sm">
@@ -143,9 +143,9 @@ function TaskCard({ task }: { task: MockTask }) {
             {task.dueDate}
           </span>
         )}
-        {hasChecklist && (
+        {hasSteps && (
           <span
-            className={`flex items-center gap-0.5 ${checklistDone ? "text-emerald-400" : ""}`}
+            className={`flex items-center gap-0.5 ${stepsDone ? "text-emerald-400" : ""}`}
           >
             <CheckSquare className="h-3 w-3" />
             {task.checkDone}/{task.checkTotal}

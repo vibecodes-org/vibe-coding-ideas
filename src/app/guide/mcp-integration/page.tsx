@@ -297,7 +297,7 @@ export default function McpIntegrationPage() {
               <ToolTable
                 tools={[
                   { name: "get_board", description: "Kanban board overview with columns and task summaries" },
-                  { name: "get_task", description: "Single task with checklist, comments, activity, and attachments" },
+                  { name: "get_task", description: "Single task with workflow steps, comments, activity, and attachments" },
                   { name: "get_my_tasks", description: "Tasks assigned to you, grouped by idea" },
                   { name: "create_task", description: "Create a task on a board column" },
                   { name: "update_task", description: "Update task title, description, assignee, due date, or archive status" },
@@ -313,10 +313,10 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Checklists & Comments" toolCount={3}>
+            <CollapsibleTools title="Workflow Steps & Comments" toolCount={3}>
               <ToolTable
                 tools={[
-                  { name: "manage_checklist", description: "Add, toggle, or delete checklist items on a task" },
+                  { name: "manage_checklist", description: "Add, update, or delete workflow steps on a task" },
                   { name: "add_idea_comment", description: "Comment on an idea (comment, suggestion, or question)" },
                   { name: "add_task_comment", description: "Comment on a board task" },
                 ]}

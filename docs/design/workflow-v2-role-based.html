@@ -1,0 +1,1646 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VibeCodes — Workflow v2: Role-Based Orchestration Mockups</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            zinc: { 850: '#1f1f23', 950: '#0c0c0e' }
+          }
+        }
+      }
+    }
+  </script>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg-page: #09090b;
+      --bg-card: #18181b;
+      --bg-elevated: #27272a;
+      --bg-muted: #3f3f46;
+      --border: rgba(255,255,255,0.1);
+      --border-strong: rgba(255,255,255,0.18);
+      --text-primary: #fafafa;
+      --text-secondary: #a1a1aa;
+      --text-muted: #71717a;
+      --blue: #3b82f6;
+      --blue-dim: rgba(59,130,246,0.15);
+      --emerald: #10b981;
+      --emerald-dim: rgba(16,185,129,0.15);
+      --amber: #f59e0b;
+      --amber-dim: rgba(245,158,11,0.15);
+      --red: #ef4444;
+      --red-dim: rgba(239,68,68,0.15);
+      --violet: #8b5cf6;
+      --violet-dim: rgba(139,92,246,0.15);
+      --pink: #ec4899;
+      --pink-dim: rgba(236,72,153,0.15);
+      --cyan: #06b6d4;
+      --cyan-dim: rgba(6,182,212,0.15);
+      --font-body: 'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, sans-serif;
+      --font-mono: 'JetBrains Mono', 'SF Mono', 'Cascadia Code', monospace;
+    }
+    body {
+      background: var(--bg-page);
+      color: var(--text-primary);
+      font-family: var(--font-body);
+      -webkit-font-smoothing: antialiased;
+    }
+    /* Callouts */
+    .callout { border-left: 3px solid var(--violet); background: var(--violet-dim); }
+    .callout-remove { border-left: 3px solid var(--red); background: var(--red-dim); }
+    .callout-add { border-left: 3px solid var(--emerald); background: var(--emerald-dim); }
+    .callout-blue { border-left: 3px solid var(--blue); background: var(--blue-dim); }
+    .callout-amber { border-left: 3px solid var(--amber); background: var(--amber-dim); }
+    /* Cards & UI */
+    .mockup-card { background: var(--bg-card); border: 1px solid var(--border); border-radius: 12px; }
+    .dialog-bg { background: #1c1c20; border: 1px solid var(--border); border-radius: 12px; }
+    .input-field {
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px; padding: 8px 12px; color: #fafafa; font-size: 14px; width: 100%;
+      font-family: var(--font-body);
+    }
+    .input-field::placeholder { color: #71717a; }
+    .input-field:focus { outline: none; border-color: var(--violet); }
+    .select-field {
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 8px; padding: 8px 12px; color: #fafafa; font-size: 14px; width: 100%;
+      appearance: none; font-family: var(--font-body);
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2371717a' stroke-width='2'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+      background-repeat: no-repeat; background-position: right 12px center;
+    }
+    .btn-primary { background: #e4e4e7; color: #18181b; font-weight: 600; padding: 8px 16px; border-radius: 8px; font-size: 14px; border: none; cursor: pointer; font-family: var(--font-body); }
+    .btn-primary:hover { background: #fff; }
+    .btn-ghost { background: transparent; color: #a1a1aa; padding: 8px 16px; border-radius: 8px; font-size: 14px; border: none; cursor: pointer; font-family: var(--font-body); }
+    .btn-ghost:hover { background: rgba(255,255,255,0.06); }
+    .btn-outline { background: transparent; border: 1px solid rgba(255,255,255,0.15); color: #d4d4d8; padding: 6px 12px; border-radius: 8px; font-size: 13px; cursor: pointer; font-family: var(--font-body); }
+    .btn-outline:hover { background: rgba(255,255,255,0.06); }
+    .badge { display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 9999px; font-size: 11px; font-weight: 500; border: 1px solid; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 8px 14px; border-radius: 8px; font-size: 13px; border: 1px solid rgba(255,255,255,0.1); background: rgba(255,255,255,0.04); cursor: pointer; transition: all 0.15s; }
+    .chip:hover { background: rgba(255,255,255,0.08); }
+    .chip.selected { border-color: var(--violet); background: var(--violet-dim); color: #c4b5fd; }
+    /* Role badge colors */
+    .role-ba { background: rgba(59,130,246,0.15); color: #60a5fa; border-color: rgba(59,130,246,0.3); }
+    .role-ux { background: rgba(236,72,153,0.15); color: #f472b6; border-color: rgba(236,72,153,0.3); }
+    .role-dev { background: rgba(139,92,246,0.15); color: #a78bfa; border-color: rgba(139,92,246,0.3); }
+    .role-qa { background: rgba(34,211,238,0.15); color: #22d3ee; border-color: rgba(34,211,238,0.3); }
+    .role-human { background: rgba(245,158,11,0.15); color: #fbbf24; border-color: rgba(245,158,11,0.3); }
+    /* Fade overlay for "removed" items */
+    .fade-overlay { position: relative; }
+    .fade-overlay::after {
+      content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: 12px;
+      background: repeating-linear-gradient(-45deg, transparent, transparent 8px, rgba(239,68,68,0.06) 8px, rgba(239,68,68,0.06) 16px);
+    }
+    /* Browser frame */
+    .browser-frame { border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: var(--bg-card); }
+    .browser-titlebar { background: var(--bg-elevated); border-bottom: 1px solid var(--border); padding: 10px 16px; display: flex; align-items: center; gap: 8px; }
+    .traffic-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+    .traffic-dot.r { background: #ff5f57; } .traffic-dot.y { background: #febc2e; } .traffic-dot.g { background: #28c840; }
+    .browser-titlebar .url { flex: 1; text-align: center; font-size: 12px; color: var(--text-muted); font-family: var(--font-mono); }
+    /* Terminal frame */
+    .terminal-frame { border: 1px solid var(--border-strong); border-radius: 12px; overflow: hidden; background: #0d1117; }
+    .terminal-titlebar { background: #161b22; border-bottom: 1px solid rgba(255,255,255,0.06); padding: 10px 16px; display: flex; align-items: center; gap: 8px; }
+    .terminal-titlebar .title { flex: 1; text-align: center; font-size: 12px; color: #8b949e; font-family: var(--font-mono); }
+    .terminal-content { padding: 20px 24px; font-family: var(--font-mono); font-size: 13px; line-height: 1.8; color: #c9d1d9; overflow-x: auto; }
+    .term-prompt { color: #7ee787; } .term-dim { color: #484f58; } .term-blue { color: #79c0ff; }
+    .term-violet { color: #d2a8ff; } .term-amber { color: #e3b341; } .term-cyan { color: #56d4dd; }
+    .term-pink { color: #f778ba; } .term-red { color: #ff7b72; } .term-green { color: #7ee787; }
+    .term-bold { font-weight: 600; }
+    /* Navigation */
+    .nav-fixed {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+      background: rgba(9,9,11,0.88); backdrop-filter: blur(16px);
+      border-bottom: 1px solid var(--border); padding: 0 24px;
+    }
+    .nav-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; height: 48px; gap: 24px; overflow-x: auto; }
+    .nav-fixed a { color: var(--text-muted); text-decoration: none; font-size: 12px; white-space: nowrap; transition: color 0.15s; font-weight: 500; }
+    .nav-fixed a:hover { color: var(--text-primary); }
+    .nav-fixed .brand { color: var(--violet); font-weight: 700; font-size: 13px; margin-right: 8px; letter-spacing: -0.02em; }
+    /* Section dots */
+    .section-nav {
+      position: fixed; top: 50%; right: 20px; transform: translateY(-50%);
+      display: flex; flex-direction: column; gap: 10px; z-index: 50;
+    }
+    .section-nav a {
+      display: block; width: 8px; height: 8px; border-radius: 50%;
+      background: rgba(255,255,255,0.15); transition: all 0.2s; text-decoration: none;
+    }
+    .section-nav a:hover { background: var(--violet); transform: scale(1.5); }
+    /* Workflow step line */
+    .step-connector { width: 2px; height: 20px; margin-left: 11px; }
+    /* Animations */
+    @keyframes fadeInUp { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+    .animate-in { animation: fadeInUp 0.5s ease-out both; }
+    .delay-1 { animation-delay: 0.1s; } .delay-2 { animation-delay: 0.2s; }
+    .delay-3 { animation-delay: 0.3s; } .delay-4 { animation-delay: 0.4s; }
+    @media (max-width: 768px) { .section-nav { display: none; } }
+  </style>
+</head>
+<body class="antialiased">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     NAVIGATION
+     ═══════════════════════════════════════════════════════════════ -->
+<nav class="nav-fixed">
+  <div class="nav-inner">
+    <span class="brand">VibeCodes</span>
+    <a href="#intro">Overview</a>
+    <a href="#mockup-1">1. Agent Creation</a>
+    <a href="#mockup-2">2. Board Templates</a>
+    <a href="#mockup-3">3. Auto-Workflow</a>
+    <a href="#mockup-4">4. Execution</a>
+    <a href="#mockup-5">5. Template Preview</a>
+    <a href="#mockup-6">6. Onboarding</a>
+    <a href="#mockup-7">7. Claude Code</a>
+  </div>
+</nav>
+
+<nav class="section-nav">
+  <a href="#intro" title="Overview"></a>
+  <a href="#mockup-1" title="Agent Creation"></a>
+  <a href="#mockup-2" title="Board Templates"></a>
+  <a href="#mockup-3" title="Auto-Workflow"></a>
+  <a href="#mockup-4" title="Execution"></a>
+  <a href="#mockup-5" title="Template Preview"></a>
+  <a href="#mockup-6" title="Onboarding"></a>
+  <a href="#mockup-7" title="Claude Code"></a>
+</nav>
+
+<!-- ═══════════════════════════════════════════════════════════════
+     INTRO
+     ═══════════════════════════════════════════════════════════════ -->
+<section id="intro" class="max-w-4xl mx-auto px-6 pt-20 pb-12">
+  <div class="flex items-center gap-4 mb-8 animate-in">
+    <div class="w-12 h-12 rounded-2xl bg-gradient-to-br from-violet-500/30 to-blue-500/30 flex items-center justify-center text-2xl border border-violet-500/20">&#9889;</div>
+    <div>
+      <h1 class="text-3xl font-extrabold tracking-tight" style="font-family: var(--font-body);">Workflow v2 <span class="text-violet-400">Role-Based</span> Orchestration</h1>
+      <p class="text-zinc-500 text-sm mt-1">Simplified alternative to PR #62 &mdash; same execution power, better UX</p>
+    </div>
+  </div>
+
+  <div class="callout px-5 py-4 rounded-xl mb-8 text-sm text-zinc-300 leading-relaxed animate-in delay-1">
+    <strong class="text-violet-400">Core idea:</strong> Templates live on the <em>idea</em>, not on agent profiles. Steps declare <strong>roles</strong> (BA, UX, Dev, QA, Human). When applied to a task, roles <strong>auto-match</strong> against the idea's agent pool. No orchestrator/worker distinction. Labels drive workflow association. Claude Code executes autonomously.
+  </div>
+
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm animate-in delay-2">
+    <div class="callout-remove px-4 py-3 rounded-xl">
+      <p class="text-red-400 font-semibold text-xs uppercase tracking-wider mb-2">Removed</p>
+      <ul class="space-y-1 text-zinc-400 text-xs">
+        <li>&times; Worker / Orchestrator types</li>
+        <li>&times; Templates on agent profiles</li>
+        <li>&times; Orchestrator picker on conversion</li>
+        <li>&times; <code class="text-[11px] bg-transparent px-0">set_orchestration_agent</code> MCP tool</li>
+      </ul>
+    </div>
+    <div class="callout-add px-4 py-3 rounded-xl">
+      <p class="text-emerald-400 font-semibold text-xs uppercase tracking-wider mb-2">Added</p>
+      <ul class="space-y-1 text-zinc-400 text-xs">
+        <li>+ Idea-scoped workflow templates</li>
+        <li>+ Label &rarr; template auto-trigger</li>
+        <li>+ Role-based step assignment</li>
+        <li>+ Template application preview</li>
+      </ul>
+    </div>
+    <div class="callout-blue px-4 py-3 rounded-xl">
+      <p class="text-blue-400 font-semibold text-xs uppercase tracking-wider mb-2">Kept (from PR #62)</p>
+      <ul class="space-y-1 text-zinc-400 text-xs">
+        <li>&#10003; task_workflow_steps table</li>
+        <li>&#10003; claim/complete/fail cycle</li>
+        <li>&#10003; Human approval gates</li>
+        <li>&#10003; Review loops &amp; step comments</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<hr class="border-zinc-800/60 max-w-4xl mx-auto">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MOCKUP 1: Simplified Agent Creation
+     ═══════════════════════════════════════════════════════════════ -->
+<section id="mockup-1" class="max-w-4xl mx-auto px-6 py-16">
+  <div class="mb-8">
+    <span class="badge bg-violet-500/20 text-violet-400 border-violet-500/30 mb-3">Mockup 1</span>
+    <h2 class="text-xl font-bold mt-2">Simplified Agent Creation</h2>
+    <p class="text-zinc-500 text-sm mt-1">All agents are equal &mdash; no type taxonomy. The <strong class="text-zinc-300">role</strong> field drives workflow matching.</p>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6">
+    <!-- BEFORE -->
+    <div>
+      <div class="text-xs font-semibold uppercase tracking-wider text-red-400 mb-3 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-red-400"></span> Current (PR #62)
+      </div>
+      <div class="dialog-bg p-5 fade-overlay opacity-70">
+        <div class="text-base font-semibold mb-1">Create Agent</div>
+        <p class="text-zinc-500 text-xs mb-4">Set up a new AI agent to help with your ideas.</p>
+        <div class="flex gap-3 mb-4">
+          <div class="w-14 h-14 rounded-full border-2 border-dashed border-zinc-700 flex items-center justify-center text-xl shrink-0">&#128247;</div>
+          <div class="flex-1 space-y-2">
+            <input class="input-field text-sm" value="Sprint Planner" readonly>
+            <input class="input-field text-sm" value="I orchestrate dev workflows" readonly>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mb-4">
+          <div class="chip text-xs">&#129489;&#8205;&#128187; Developer</div>
+          <div class="chip text-xs">&#127912; UX Designer</div>
+          <div class="chip text-xs">&#129514; QA Tester</div>
+          <div class="chip text-xs">&#128203; Product Owner</div>
+          <div class="chip text-xs">&#128202; Business Analyst</div>
+          <div class="chip text-xs">&#9881;&#65039; DevOps</div>
+        </div>
+        <div class="mb-4">
+          <label class="text-xs text-zinc-400 mb-1 block">Role</label>
+          <input class="input-field text-sm" value="Orchestrator" readonly>
+        </div>
+        <!-- Agent Type Toggle — REMOVED -->
+        <div class="mb-4 relative">
+          <label class="text-xs text-zinc-400 mb-1.5 block">Agent Type</label>
+          <div class="grid grid-cols-2 gap-2">
+            <div class="p-3 rounded-lg border border-zinc-700 bg-zinc-800/50 text-center">
+              <div class="text-lg mb-0.5">&#128295;</div>
+              <div class="text-xs font-medium text-zinc-400">Worker</div>
+            </div>
+            <div class="p-3 rounded-lg border border-amber-500 bg-amber-500/15 text-center">
+              <div class="text-lg mb-0.5">&#128081;</div>
+              <div class="text-xs font-medium text-amber-400">Orchestrator</div>
+            </div>
+          </div>
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="text-red-500/60 text-5xl font-black">&#10005;</div>
+          </div>
+        </div>
+        <!-- Workflow Templates — REMOVED -->
+        <div class="mb-4 relative">
+          <label class="text-xs text-zinc-400 mb-1.5 block">Workflow Templates</label>
+          <div class="border border-zinc-700 rounded-lg p-3 bg-zinc-800/30">
+            <div class="text-xs text-zinc-500">Dev TDD Workflow</div>
+            <div class="text-[10px] text-zinc-600 mt-1">3 steps: Design &rarr; Develop &rarr; Review</div>
+          </div>
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="text-red-500/60 text-5xl font-black">&#10005;</div>
+          </div>
+        </div>
+        <div class="mb-4">
+          <label class="text-xs text-zinc-400 mb-1 block">System Prompt</label>
+          <div class="input-field h-12 text-[10px] text-zinc-600">You are an orchestrator agent...</div>
+        </div>
+        <div class="flex justify-end gap-2 mt-4">
+          <button class="btn-ghost text-xs">Cancel</button>
+          <button class="btn-primary text-xs">Create Agent</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- AFTER -->
+    <div>
+      <div class="text-xs font-semibold uppercase tracking-wider text-emerald-400 mb-3 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span> Proposed (v2)
+      </div>
+      <div class="dialog-bg p-5">
+        <div class="text-base font-semibold mb-1">Create Agent</div>
+        <p class="text-zinc-500 text-xs mb-4">Set up a new AI agent to help with your ideas.</p>
+        <div class="flex gap-3 mb-4">
+          <div class="w-14 h-14 rounded-full border-2 border-dashed border-zinc-700 flex items-center justify-center text-xl shrink-0">&#128247;</div>
+          <div class="flex-1 space-y-2">
+            <input class="input-field text-sm" value="Sprint Planner" readonly>
+            <input class="input-field text-sm" value="I keep dev workflows moving" readonly>
+          </div>
+        </div>
+        <div class="grid grid-cols-3 gap-2 mb-4">
+          <div class="chip text-xs">&#129489;&#8205;&#128187; Developer</div>
+          <div class="chip text-xs">&#127912; UX Designer</div>
+          <div class="chip text-xs">&#129514; QA Tester</div>
+          <div class="chip selected text-xs">&#128203; Product Owner</div>
+          <div class="chip text-xs">&#128202; Business Analyst</div>
+          <div class="chip text-xs">&#9881;&#65039; DevOps</div>
+        </div>
+        <!-- Role — THE KEY FIELD -->
+        <div class="mb-4">
+          <label class="text-xs text-zinc-400 mb-1 block">Role <span class="text-violet-400 font-medium">&larr; drives workflow matching</span></label>
+          <input class="input-field text-sm" value="Product Owner" readonly style="border-color: rgba(139,92,246,0.4);">
+          <p class="text-[10px] text-zinc-500 mt-1">Used for auto-matching to workflow template steps (e.g. a "Developer" agent matches steps with role "Developer").</p>
+        </div>
+        <div class="mb-4">
+          <label class="text-xs text-zinc-400 mb-1 block">Skills <span class="text-zinc-600">(optional)</span></label>
+          <input class="input-field text-sm" value="sprint planning, backlog prioritization" readonly>
+        </div>
+        <div class="mb-4">
+          <label class="text-xs text-zinc-400 mb-1 block">System Prompt</label>
+          <div class="input-field min-h-[72px] text-xs leading-relaxed text-zinc-400">You are a product owner agent. You help teams plan sprints, prioritize backlogs, and ensure delivery aligns with user value...</div>
+        </div>
+        <div class="callout-add px-3 py-2 rounded-lg text-[11px] text-zinc-400 mb-4">
+          <span class="text-emerald-400 font-medium">Cleaner:</span> No type picker, no conditional sections. Every agent gets the same fields. The <strong class="text-zinc-300">role</strong> field is the key &mdash; it's how templates know which agent should execute which step.
+        </div>
+        <div class="flex justify-end gap-2 mt-4">
+          <button class="btn-ghost text-xs">Cancel</button>
+          <button class="btn-primary text-xs">Create Agent</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="border-zinc-800/60 max-w-4xl mx-auto">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MOCKUP 2: Board with Role-Annotated Templates
+     ═══════════════════════════════════════════════════════════════ -->
+<section id="mockup-2" class="max-w-5xl mx-auto px-6 py-16">
+  <div class="mb-8">
+    <span class="badge bg-blue-500/20 text-blue-400 border-blue-500/30 mb-3">Mockup 2</span>
+    <h2 class="text-xl font-bold mt-2">Idea Board &mdash; Role-Annotated Workflow Templates</h2>
+    <p class="text-zinc-500 text-sm mt-1">"Build a Website" idea with 4 templates. Each step declares a role. Agent pool sidebar shows matching.</p>
+  </div>
+
+  <div class="browser-frame">
+    <div class="browser-titlebar">
+      <span class="traffic-dot r"></span><span class="traffic-dot y"></span><span class="traffic-dot g"></span>
+      <span class="url">vibecodes.co.uk/ideas/abc123/board</span>
+    </div>
+
+    <!-- Board header -->
+    <div class="px-5 py-3 border-b border-zinc-800/60 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <button class="text-zinc-500 text-sm flex items-center gap-1.5 hover:text-zinc-300">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m15 18-6-6 6-6"/></svg>
+          Back
+        </button>
+        <span class="text-zinc-700">|</span>
+        <h1 class="text-sm font-semibold">Build a Website <span class="text-zinc-500 font-normal">&mdash; Board</span></h1>
+      </div>
+      <div class="flex items-center gap-2">
+        <button class="btn-outline text-xs flex items-center gap-1.5" style="border-color: rgba(139,92,246,0.4); color: #c4b5fd;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5z"/><path d="M4 13a1 1 0 0 1 1-1h6a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1v-6z"/><path d="M16 13a1 1 0 0 1 1-1h2a1 1 0 0 1 1 1v6a1 1 0 0 1-1 1h-2a1 1 0 0 1-1-1v-6z"/></svg>
+          Workflows
+          <span class="badge bg-violet-500/20 text-violet-400 border-violet-500/30 text-[10px] ml-1">4</span>
+        </button>
+        <button class="btn-outline text-xs">Labels</button>
+        <button class="btn-outline text-xs">Filter</button>
+      </div>
+    </div>
+
+    <!-- Templates Panel -->
+    <div class="border-b border-zinc-800/60 bg-zinc-900/40">
+      <div class="px-5 py-4">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <h3 class="text-sm font-semibold text-zinc-200">Workflow Templates</h3>
+            <span class="text-[10px] text-zinc-500">Steps auto-match to your agent pool by role</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button class="btn-outline text-xs flex items-center gap-1.5">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+              New Template
+            </button>
+          </div>
+        </div>
+
+        <div class="grid md:grid-cols-4 gap-3">
+          <!-- Feature Development -->
+          <div class="border border-violet-500/30 rounded-lg bg-zinc-900/60 overflow-hidden ring-1 ring-violet-500/15">
+            <div class="px-3 py-2.5 flex items-center justify-between border-b border-zinc-800/60 bg-violet-500/5">
+              <div class="flex items-center gap-2">
+                <span class="text-sm">&#128640;</span>
+                <span class="text-xs font-medium text-violet-300">Feature Development</span>
+              </div>
+              <span class="badge bg-violet-500/20 text-violet-400 border-violet-500/30 text-[10px]">6 steps</span>
+            </div>
+            <div class="px-3 py-2.5 space-y-1.5">
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">1</span>
+                <span class="text-zinc-400 flex-1">Requirements Analysis</span>
+                <span class="badge role-ba text-[9px] px-1.5 py-0">BA</span>
+              </div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">2</span>
+                <span class="text-zinc-400 flex-1">UX Design</span>
+                <span class="badge role-ux text-[9px] px-1.5 py-0">UX</span>
+              </div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">3</span>
+                <span class="text-zinc-400 flex-1">Design Review</span>
+                <span class="badge role-human text-[9px] px-1.5 py-0">&#9995; Human</span>
+              </div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">4</span>
+                <span class="text-zinc-400 flex-1">Implementation</span>
+                <span class="badge role-dev text-[9px] px-1.5 py-0">Dev</span>
+              </div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">5</span>
+                <span class="text-zinc-400 flex-1">Write Tests</span>
+                <span class="badge role-dev text-[9px] px-1.5 py-0">Dev</span>
+              </div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">6</span>
+                <span class="text-zinc-400 flex-1">QA Testing</span>
+                <span class="badge role-qa text-[9px] px-1.5 py-0">QA</span>
+              </div>
+            </div>
+            <div class="px-3 py-2 border-t border-zinc-800/40 flex items-center gap-1">
+              <span class="text-[9px] text-zinc-600">Trigger:</span>
+              <span class="badge bg-violet-500/15 text-violet-400 border-violet-500/25 text-[9px] px-1.5 py-0">feature</span>
+              <span class="badge bg-violet-500/15 text-violet-400 border-violet-500/25 text-[9px] px-1.5 py-0">feat</span>
+            </div>
+          </div>
+
+          <!-- Bug Fix -->
+          <div class="border border-zinc-800 rounded-lg bg-zinc-900/60 overflow-hidden">
+            <div class="px-3 py-2.5 flex items-center justify-between border-b border-zinc-800/60">
+              <div class="flex items-center gap-2">
+                <span class="text-sm">&#128027;</span>
+                <span class="text-xs font-medium">Bug Fix</span>
+              </div>
+              <span class="badge bg-zinc-500/20 text-zinc-400 border-zinc-500/30 text-[10px]">4 steps</span>
+            </div>
+            <div class="px-3 py-2.5 space-y-1.5">
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">1</span>
+                <span class="text-zinc-400 flex-1">Reproduce &amp; Diagnose</span>
+                <span class="badge role-qa text-[9px] px-1.5 py-0">QA</span>
+              </div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">2</span>
+                <span class="text-zinc-400 flex-1">Fix</span>
+                <span class="badge role-dev text-[9px] px-1.5 py-0">Dev</span>
+              </div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">3</span>
+                <span class="text-zinc-400 flex-1">Verify Fix</span>
+                <span class="badge role-qa text-[9px] px-1.5 py-0">QA</span>
+              </div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">4</span>
+                <span class="text-zinc-400 flex-1">Regression Check</span>
+                <span class="badge role-human text-[9px] px-1.5 py-0">&#9995; Human</span>
+              </div>
+            </div>
+            <div class="px-3 py-2 border-t border-zinc-800/40 flex items-center gap-1">
+              <span class="text-[9px] text-zinc-600">Trigger:</span>
+              <span class="badge bg-red-500/15 text-red-400 border-red-500/25 text-[9px] px-1.5 py-0">bug</span>
+            </div>
+          </div>
+
+          <!-- Research / Spike -->
+          <div class="border border-zinc-800 rounded-lg bg-zinc-900/60 overflow-hidden">
+            <div class="px-3 py-2.5 flex items-center justify-between border-b border-zinc-800/60">
+              <div class="flex items-center gap-2">
+                <span class="text-sm">&#128270;</span>
+                <span class="text-xs font-medium">Research / Spike</span>
+              </div>
+              <span class="badge bg-zinc-500/20 text-zinc-400 border-zinc-500/30 text-[10px]">3 steps</span>
+            </div>
+            <div class="px-3 py-2.5 space-y-1.5">
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">1</span>
+                <span class="text-zinc-400 flex-1">Research</span>
+                <span class="badge role-ba text-[9px] px-1.5 py-0">BA</span>
+              </div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">2</span>
+                <span class="text-zinc-400 flex-1">Technical Feasibility</span>
+                <span class="badge role-dev text-[9px] px-1.5 py-0">Dev</span>
+              </div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">3</span>
+                <span class="text-zinc-400 flex-1">Findings Review</span>
+                <span class="badge role-human text-[9px] px-1.5 py-0">&#9995; Human</span>
+              </div>
+            </div>
+            <div class="px-3 py-2 border-t border-zinc-800/40 flex items-center gap-1">
+              <span class="text-[9px] text-zinc-600">Trigger:</span>
+              <span class="badge bg-blue-500/15 text-blue-400 border-blue-500/25 text-[9px] px-1.5 py-0">spike</span>
+            </div>
+          </div>
+
+          <!-- Chore -->
+          <div class="border border-zinc-800 rounded-lg bg-zinc-900/60 overflow-hidden">
+            <div class="px-3 py-2.5 flex items-center justify-between border-b border-zinc-800/60">
+              <div class="flex items-center gap-2">
+                <span class="text-sm">&#128736;&#65039;</span>
+                <span class="text-xs font-medium">Chore</span>
+              </div>
+              <span class="badge bg-zinc-500/20 text-zinc-400 border-zinc-500/30 text-[10px]">2 steps</span>
+            </div>
+            <div class="px-3 py-2.5 space-y-1.5">
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">1</span>
+                <span class="text-zinc-400 flex-1">Execute</span>
+                <span class="badge role-dev text-[9px] px-1.5 py-0">Dev</span>
+              </div>
+              <div class="flex items-center gap-2 text-[11px]">
+                <span class="w-4 h-4 rounded-full bg-zinc-800 text-zinc-500 flex items-center justify-center text-[9px] font-medium shrink-0">2</span>
+                <span class="text-zinc-400 flex-1">Verify</span>
+                <span class="badge role-human text-[9px] px-1.5 py-0">&#9995; Human</span>
+              </div>
+            </div>
+            <div class="px-3 py-2 border-t border-zinc-800/40 flex items-center gap-1">
+              <span class="text-[9px] text-zinc-600">Trigger:</span>
+              <span class="badge bg-zinc-500/15 text-zinc-400 border-zinc-500/25 text-[9px] px-1.5 py-0">chore</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Agent Pool -->
+      <div class="px-5 py-3 bg-zinc-900/20 border-t border-zinc-800/40">
+        <div class="flex items-center gap-2 mb-3">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a78bfa" stroke-width="2"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <span class="text-xs font-medium text-violet-400">Idea Agent Pool</span>
+          <span class="text-[10px] text-zinc-600 ml-1">&mdash; Roles available for template matching</span>
+        </div>
+        <div class="flex flex-wrap gap-3 text-[11px]">
+          <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60">
+            <div class="w-6 h-6 rounded-full bg-blue-500/20 flex items-center justify-center text-[9px] text-blue-400 font-medium">SA</div>
+            <div>
+              <div class="text-zinc-300 font-medium">Sarah Analytics</div>
+              <span class="badge role-ba text-[9px] px-1.5 py-0">Business Analyst</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60">
+            <div class="w-6 h-6 rounded-full bg-pink-500/20 flex items-center justify-center text-[9px] text-pink-400 font-medium">PX</div>
+            <div>
+              <div class="text-zinc-300 font-medium">Pixel</div>
+              <span class="badge role-ux text-[9px] px-1.5 py-0">UX Designer</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60">
+            <div class="w-6 h-6 rounded-full bg-violet-500/20 flex items-center justify-center text-[9px] text-violet-400 font-medium">DA</div>
+            <div>
+              <div class="text-zinc-300 font-medium">Dev Alpha</div>
+              <span class="badge role-dev text-[9px] px-1.5 py-0">Developer</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-800 bg-zinc-900/60">
+            <div class="w-6 h-6 rounded-full bg-cyan-500/20 flex items-center justify-center text-[9px] text-cyan-400 font-medium">QB</div>
+            <div>
+              <div class="text-zinc-300 font-medium">QA Bot</div>
+              <span class="badge role-qa text-[9px] px-1.5 py-0">QA Tester</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Template Editor -->
+      <div class="px-5 py-4 bg-zinc-900/30 border-t border-zinc-800/40">
+        <div class="flex items-center gap-2 mb-3">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#a1a1aa" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          <span class="text-xs font-medium text-zinc-300">Editing: Feature Development</span>
+          <span class="text-[10px] text-zinc-600">&mdash; Role assignment per step</span>
+        </div>
+        <div class="space-y-2 max-w-xl">
+          <div class="flex items-center gap-3 text-[12px]">
+            <span class="text-zinc-600 font-medium w-4 shrink-0 text-center">1</span>
+            <input class="input-field text-xs flex-1 py-1.5" value="Requirements Analysis" readonly>
+            <select class="select-field text-xs w-44 py-1.5 shrink-0" style="font-size: 11px;">
+              <option selected>&#128202; Business Analyst</option>
+              <option>&#127912; UX Designer</option>
+              <option>&#129489;&#8205;&#128187; Developer</option>
+              <option>&#129514; QA Tester</option>
+              <option>&#128100; Human Checkpoint</option>
+            </select>
+            <button class="text-zinc-600 hover:text-zinc-400 shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
+            </button>
+          </div>
+          <div class="flex items-center gap-3 text-[12px]">
+            <span class="text-zinc-600 font-medium w-4 shrink-0 text-center">2</span>
+            <input class="input-field text-xs flex-1 py-1.5" value="UX Design" readonly>
+            <select class="select-field text-xs w-44 py-1.5 shrink-0" style="font-size: 11px;">
+              <option>&#128202; Business Analyst</option>
+              <option selected>&#127912; UX Designer</option>
+              <option>&#129489;&#8205;&#128187; Developer</option>
+              <option>&#129514; QA Tester</option>
+              <option>&#128100; Human Checkpoint</option>
+            </select>
+            <button class="text-zinc-600 hover:text-zinc-400 shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
+            </button>
+          </div>
+          <div class="flex items-center gap-3 text-[12px]">
+            <span class="text-zinc-600 font-medium w-4 shrink-0 text-center">3</span>
+            <input class="input-field text-xs flex-1 py-1.5" value="Design Review" readonly>
+            <select class="select-field text-xs w-44 py-1.5 shrink-0" style="font-size: 11px;">
+              <option>&#128202; Business Analyst</option>
+              <option>&#127912; UX Designer</option>
+              <option>&#129489;&#8205;&#128187; Developer</option>
+              <option>&#129514; QA Tester</option>
+              <option selected>&#128100; Human Checkpoint</option>
+            </select>
+            <button class="text-zinc-600 hover:text-zinc-400 shrink-0">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/></svg>
+            </button>
+          </div>
+          <button class="flex items-center gap-1.5 text-[11px] text-zinc-600 hover:text-violet-400 transition-colors pl-7 pt-1">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+            Add step
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Kanban preview -->
+    <div class="px-5 py-4">
+      <div class="flex gap-4 overflow-x-auto pb-2">
+        <div class="w-56 shrink-0">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-medium text-zinc-400">Backlog</span>
+            <span class="text-[10px] text-zinc-600">2</span>
+          </div>
+          <div class="space-y-2">
+            <div class="p-3 rounded-lg border border-zinc-800 bg-zinc-900/40">
+              <div class="text-xs font-medium mb-1.5">Build booking form</div>
+              <div class="flex items-center gap-1.5 mb-1.5">
+                <span class="badge bg-violet-500/15 text-violet-400 border-violet-500/25 text-[9px]">feature</span>
+              </div>
+              <div class="flex items-center gap-1 text-[9px] text-zinc-600">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5z"/></svg>
+                6 workflow steps
+              </div>
+            </div>
+            <div class="p-3 rounded-lg border border-zinc-800 bg-zinc-900/40">
+              <div class="text-xs font-medium mb-1.5">Fix Safari date picker</div>
+              <div class="flex items-center gap-1.5 mb-1.5">
+                <span class="badge bg-red-500/15 text-red-400 border-red-500/25 text-[9px]">bug</span>
+              </div>
+              <div class="flex items-center gap-1 text-[9px] text-zinc-600">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5a1 1 0 0 1 1-1h14a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V5z"/></svg>
+                4 workflow steps
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="w-56 shrink-0">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-medium text-zinc-400">In Progress</span>
+            <span class="text-[10px] text-zinc-600">1</span>
+          </div>
+          <div class="p-3 rounded-lg border border-violet-500/30 bg-violet-500/5">
+            <div class="text-xs font-medium mb-1.5">Design landing page</div>
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <span class="badge bg-violet-500/15 text-violet-400 border-violet-500/25 text-[9px]">feature</span>
+            </div>
+            <div class="flex items-center gap-1 text-[9px] text-zinc-500">
+              <div class="w-full bg-zinc-800 rounded-full h-1.5 flex-1">
+                <div class="bg-violet-500 h-1.5 rounded-full" style="width: 33%"></div>
+              </div>
+              <span>2/6</span>
+            </div>
+          </div>
+        </div>
+        <div class="w-56 shrink-0">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-medium text-zinc-400">Verify</span>
+            <span class="text-[10px] text-zinc-600">0</span>
+          </div>
+          <div class="border border-dashed border-zinc-800 rounded-lg p-4 text-center text-[10px] text-zinc-700">
+            No tasks
+          </div>
+        </div>
+        <div class="w-56 shrink-0">
+          <div class="flex items-center justify-between mb-3">
+            <span class="text-xs font-medium text-zinc-400">Done</span>
+            <span class="text-[10px] text-zinc-600">1</span>
+          </div>
+          <div class="p-3 rounded-lg border border-zinc-800 bg-zinc-900/40 opacity-60">
+            <div class="text-xs font-medium mb-1.5">Set up auth</div>
+            <div class="flex items-center gap-1.5 mb-1.5">
+              <span class="badge bg-violet-500/15 text-violet-400 border-violet-500/25 text-[9px]">feature</span>
+            </div>
+            <div class="flex items-center gap-1 text-[9px] text-emerald-500">
+              <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+              6/6 complete
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="border-zinc-800/60 max-w-5xl mx-auto">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MOCKUP 3: Task Creation with Auto-Workflow
+     ═══════════════════════════════════════════════════════════════ -->
+<section id="mockup-3" class="max-w-5xl mx-auto px-6 py-16">
+  <div class="mb-8">
+    <span class="badge bg-emerald-500/20 text-emerald-400 border-emerald-500/30 mb-3">Mockup 3</span>
+    <h2 class="text-xl font-bold mt-2">Task Creation &mdash; Auto-Workflow via Labels</h2>
+    <p class="text-zinc-500 text-sm mt-1">Every creation path triggers the same mechanism: label &rarr; template &rarr; workflow steps auto-created</p>
+  </div>
+
+  <!-- Creation paths grid -->
+  <div class="grid md:grid-cols-2 gap-6 mb-8">
+
+    <!-- Path 1: Manual creation -->
+    <div class="mockup-card p-5">
+      <div class="flex items-center gap-2 mb-3">
+        <div class="w-7 h-7 rounded-lg bg-blue-500/15 flex items-center justify-center text-sm">&#9997;&#65039;</div>
+        <div>
+          <div class="text-sm font-semibold">Manual Creation</div>
+          <div class="text-[10px] text-zinc-500">User picks label in create task dialog</div>
+        </div>
+      </div>
+      <div class="dialog-bg p-4 text-sm">
+        <div class="mb-3">
+          <label class="text-[10px] text-zinc-500 mb-1 block">Title</label>
+          <input class="input-field text-xs" value="Build booking form" readonly>
+        </div>
+        <div class="mb-3">
+          <label class="text-[10px] text-zinc-500 mb-1 block">Label</label>
+          <div class="flex gap-2">
+            <span class="badge bg-violet-500/15 text-violet-400 border-violet-500/25 text-[10px] cursor-pointer ring-2 ring-violet-500/40">feature</span>
+            <span class="badge bg-red-500/10 text-red-400/60 border-red-500/15 text-[10px] cursor-pointer">bug</span>
+            <span class="badge bg-blue-500/10 text-blue-400/60 border-blue-500/15 text-[10px] cursor-pointer">spike</span>
+            <span class="badge bg-zinc-500/10 text-zinc-400/60 border-zinc-500/15 text-[10px] cursor-pointer">chore</span>
+          </div>
+        </div>
+        <div class="callout px-3 py-2 rounded-lg text-[10px] text-zinc-400">
+          <span class="text-violet-400 font-medium">Auto:</span> "Feature Development" workflow (6 steps) will be applied
+        </div>
+      </div>
+    </div>
+
+    <!-- Path 2: AI-generated -->
+    <div class="mockup-card p-5">
+      <div class="flex items-center gap-2 mb-3">
+        <div class="w-7 h-7 rounded-lg bg-violet-500/15 flex items-center justify-center text-sm">&#10024;</div>
+        <div>
+          <div class="text-sm font-semibold">AI-Generated Tasks</div>
+          <div class="text-[10px] text-zinc-500">AI assigns labels &rarr; workflows auto-attach</div>
+        </div>
+      </div>
+      <div class="dialog-bg p-4 text-sm">
+        <div class="text-[10px] text-zinc-500 mb-2">AI Generate &mdash; 4 tasks created:</div>
+        <div class="space-y-2">
+          <div class="flex items-center gap-2 text-xs">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="text-zinc-300 flex-1">Build booking form</span>
+            <span class="badge bg-violet-500/15 text-violet-400 border-violet-500/25 text-[9px]">feature</span>
+            <span class="text-[9px] text-zinc-600">6 steps</span>
+          </div>
+          <div class="flex items-center gap-2 text-xs">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="text-zinc-300 flex-1">Design landing page</span>
+            <span class="badge bg-violet-500/15 text-violet-400 border-violet-500/25 text-[9px]">feature</span>
+            <span class="text-[9px] text-zinc-600">6 steps</span>
+          </div>
+          <div class="flex items-center gap-2 text-xs">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="text-zinc-300 flex-1">Fix Safari date picker</span>
+            <span class="badge bg-red-500/15 text-red-400 border-red-500/25 text-[9px]">bug</span>
+            <span class="text-[9px] text-zinc-600">4 steps</span>
+          </div>
+          <div class="flex items-center gap-2 text-xs">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="text-zinc-300 flex-1">Research payment providers</span>
+            <span class="badge bg-blue-500/15 text-blue-400 border-blue-500/25 text-[9px]">spike</span>
+            <span class="text-[9px] text-zinc-600">3 steps</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Path 3: MCP-created -->
+    <div class="mockup-card p-5">
+      <div class="flex items-center gap-2 mb-3">
+        <div class="w-7 h-7 rounded-lg bg-cyan-500/15 flex items-center justify-center text-sm">&#128268;</div>
+        <div>
+          <div class="text-sm font-semibold">MCP-Created (Claude Code)</div>
+          <div class="text-[10px] text-zinc-500">AI infers label from task description</div>
+        </div>
+      </div>
+      <div class="terminal-frame">
+        <div class="terminal-titlebar">
+          <span class="traffic-dot r"></span><span class="traffic-dot y"></span><span class="traffic-dot g"></span>
+          <span class="title">Terminal</span>
+        </div>
+        <div class="terminal-content text-[11px] leading-relaxed" style="padding: 12px 16px;">
+          <div><span class="term-prompt">$</span> <span class="term-dim">"add a task to fix the score calculation bug"</span></div>
+          <div class="mt-1"><span class="term-blue">create_task</span>(<span class="term-dim">title:</span> <span class="term-green">"Fix score calculation bug"</span>)</div>
+          <div><span class="term-dim">&rarr;</span> AI infers label: <span class="term-red">bug</span></div>
+          <div><span class="term-dim">&rarr;</span> Auto-applied: <span class="term-violet">Bug Fix</span> workflow (4 steps)</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Path 4: Discussion conversion -->
+    <div class="mockup-card p-5">
+      <div class="flex items-center gap-2 mb-3">
+        <div class="w-7 h-7 rounded-lg bg-amber-500/15 flex items-center justify-center text-sm">&#128172;</div>
+        <div>
+          <div class="text-sm font-semibold">Discussion Conversion</div>
+          <div class="text-[10px] text-zinc-500">Before/after: orchestrator picker &rarr; template picker</div>
+        </div>
+      </div>
+
+      <!-- Before -->
+      <div class="mb-3">
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-red-400 mb-1.5 flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-red-400"></span> PR #62
+        </div>
+        <div class="border border-zinc-800 rounded-lg p-3 bg-zinc-900/40 fade-overlay opacity-60">
+          <label class="text-[10px] text-zinc-500 mb-1 block">Orchestration Agent</label>
+          <select class="select-field text-[11px] py-1.5" disabled>
+            <option>&#128081; Sprint Planner (Orchestrator)</option>
+          </select>
+          <div class="absolute inset-0 flex items-center justify-center pointer-events-none">
+            <div class="text-red-500/50 text-3xl font-black">&#10005;</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- After -->
+      <div>
+        <div class="text-[10px] font-semibold uppercase tracking-wider text-emerald-400 mb-1.5 flex items-center gap-1.5">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-400"></span> v2
+        </div>
+        <div class="border border-emerald-500/20 rounded-lg p-3 bg-emerald-500/5">
+          <label class="text-[10px] text-zinc-500 mb-1 block">Workflow Template <span class="text-zinc-600">(optional)</span></label>
+          <select class="select-field text-[11px] py-1.5">
+            <option>&#128640; Feature Development (6 steps)</option>
+            <option>&#128027; Bug Fix (4 steps)</option>
+            <option>&#128270; Research / Spike (3 steps)</option>
+            <option>None &mdash; create task without workflow</option>
+          </select>
+          <div class="text-[9px] text-zinc-600 mt-1">Or assign a label &mdash; templates auto-attach</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout px-4 py-3 rounded-xl text-sm text-zinc-300 max-w-3xl">
+    <strong class="text-violet-400">Key insight:</strong> All four creation paths converge on the same mechanism. A label triggers a template, which creates workflow steps. The user never needs to think about orchestrators, agent types, or manual step creation.
+  </div>
+</section>
+
+<hr class="border-zinc-800/60 max-w-5xl mx-auto">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MOCKUP 4: Task Workflow Execution with Role Badges
+     ═══════════════════════════════════════════════════════════════ -->
+<section id="mockup-4" class="max-w-4xl mx-auto px-6 py-16">
+  <div class="mb-8">
+    <span class="badge bg-cyan-500/20 text-cyan-400 border-cyan-500/30 mb-3">Mockup 4</span>
+    <h2 class="text-xl font-bold mt-2">Task Workflow Execution</h2>
+    <p class="text-zinc-500 text-sm mt-1">Workflow steps with role badges, agent avatars, and execution state. Shows provenance: "this agent is here because the template says this step needs a Developer".</p>
+  </div>
+
+  <div class="browser-frame">
+    <div class="browser-titlebar">
+      <span class="traffic-dot r"></span><span class="traffic-dot y"></span><span class="traffic-dot g"></span>
+      <span class="url">vibecodes.co.uk/ideas/.../board &mdash; Task Detail</span>
+    </div>
+
+    <div class="p-5" style="background: var(--bg-card);">
+      <!-- Task header -->
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <div class="flex items-center gap-2 mb-1">
+            <span class="badge bg-violet-500/15 text-violet-400 border-violet-500/25 text-[10px]">feature</span>
+            <span class="text-zinc-600 text-xs">#42</span>
+          </div>
+          <h3 class="text-lg font-bold">Build booking form</h3>
+        </div>
+        <div class="flex items-center gap-2">
+          <div class="text-right">
+            <div class="text-[10px] text-zinc-500">Workflow Progress</div>
+            <div class="text-sm font-semibold text-violet-400">3 / 6</div>
+          </div>
+          <div class="w-10 h-10 rounded-full border-2 border-violet-500/30" style="background: conic-gradient(#8b5cf6 50%, #27272a 50%)"></div>
+        </div>
+      </div>
+
+      <!-- Workflow steps -->
+      <div class="mb-2 text-xs font-semibold text-zinc-400 uppercase tracking-wider">Workflow Steps</div>
+
+      <div class="space-y-0">
+        <!-- Step 1: COMPLETED -->
+        <div class="flex items-start gap-3 py-3">
+          <div class="flex flex-col items-center">
+            <div class="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="step-connector bg-emerald-500/30"></div>
+          </div>
+          <div class="flex-1 pb-2">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-sm font-medium text-zinc-300">Requirements Analysis</span>
+              <span class="badge role-ba text-[9px] px-1.5 py-0">BA</span>
+              <span class="text-[10px] text-emerald-500 ml-auto">Completed</span>
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+              <div class="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-[8px] text-blue-400 font-medium">SA</div>
+              <span class="text-[11px] text-zinc-500">Sarah Analytics &middot; 2h ago</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 2: COMPLETED -->
+        <div class="flex items-start gap-3 py-3">
+          <div class="flex flex-col items-center">
+            <div class="w-7 h-7 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="step-connector bg-emerald-500/30"></div>
+          </div>
+          <div class="flex-1 pb-2">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-sm font-medium text-zinc-300">UX Design</span>
+              <span class="badge role-ux text-[9px] px-1.5 py-0">UX</span>
+              <span class="text-[10px] text-emerald-500 ml-auto">Completed</span>
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+              <div class="w-5 h-5 rounded-full bg-pink-500/20 flex items-center justify-center text-[8px] text-pink-400 font-medium">PX</div>
+              <span class="text-[11px] text-zinc-500">Pixel &middot; 1h ago</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 3: ACTIVE (awaiting approval) -->
+        <div class="flex items-start gap-3 py-3">
+          <div class="flex flex-col items-center">
+            <div class="w-7 h-7 rounded-full bg-amber-500/20 border-2 border-amber-500/50 flex items-center justify-center">
+              <span class="text-amber-400 text-xs">&#9995;</span>
+            </div>
+            <div class="step-connector bg-zinc-800"></div>
+          </div>
+          <div class="flex-1 pb-2">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-sm font-semibold text-amber-300">Design Review</span>
+              <span class="badge role-human text-[9px] px-1.5 py-0">&#9995; Human</span>
+              <span class="text-[10px] text-amber-400 ml-auto flex items-center gap-1">
+                <span class="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse"></span>
+                Awaiting Approval
+              </span>
+            </div>
+            <div class="mt-2 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5 text-xs text-zinc-400">
+              <div class="font-medium text-amber-300 mb-1">Review needed</div>
+              <div>Pixel (UX) completed the design for the booking form. Please review the wireframes and component layout before implementation begins.</div>
+              <div class="flex gap-2 mt-3">
+                <button class="btn-primary text-[11px] py-1.5 px-3" style="background: #10b981; color: white;">Approve</button>
+                <button class="btn-outline text-[11px] py-1 px-3" style="border-color: rgba(239,68,68,0.3); color: #f87171;">Request Changes</button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 4: PENDING -->
+        <div class="flex items-start gap-3 py-3 opacity-50">
+          <div class="flex flex-col items-center">
+            <div class="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] text-zinc-500 font-medium">4</div>
+            <div class="step-connector bg-zinc-800"></div>
+          </div>
+          <div class="flex-1 pb-2">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-sm font-medium text-zinc-500">Implementation</span>
+              <span class="badge role-dev text-[9px] px-1.5 py-0">Dev</span>
+              <span class="text-[10px] text-zinc-600 ml-auto">Pending</span>
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+              <div class="w-5 h-5 rounded-full bg-violet-500/20 flex items-center justify-center text-[8px] text-violet-400 font-medium">DA</div>
+              <span class="text-[11px] text-zinc-600">Dev Alpha &middot; auto-assigned via role match</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 5: PENDING -->
+        <div class="flex items-start gap-3 py-3 opacity-50">
+          <div class="flex flex-col items-center">
+            <div class="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] text-zinc-500 font-medium">5</div>
+            <div class="step-connector bg-zinc-800"></div>
+          </div>
+          <div class="flex-1 pb-2">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-sm font-medium text-zinc-500">Write Tests</span>
+              <span class="badge role-dev text-[9px] px-1.5 py-0">Dev</span>
+              <span class="text-[10px] text-zinc-600 ml-auto">Pending</span>
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+              <div class="w-5 h-5 rounded-full bg-violet-500/20 flex items-center justify-center text-[8px] text-violet-400 font-medium">DA</div>
+              <span class="text-[11px] text-zinc-600">Dev Alpha</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Step 6: PENDING -->
+        <div class="flex items-start gap-3 py-3 opacity-50">
+          <div class="flex flex-col items-center">
+            <div class="w-7 h-7 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-[10px] text-zinc-500 font-medium">6</div>
+          </div>
+          <div class="flex-1">
+            <div class="flex items-center gap-2 mb-0.5">
+              <span class="text-sm font-medium text-zinc-500">QA Testing</span>
+              <span class="badge role-qa text-[9px] px-1.5 py-0">QA</span>
+              <span class="badge role-human text-[9px] px-1.5 py-0 ml-1">&#9995; Human</span>
+              <span class="text-[10px] text-zinc-600 ml-auto">Pending</span>
+            </div>
+            <div class="flex items-center gap-2 mt-1">
+              <div class="w-5 h-5 rounded-full bg-cyan-500/20 flex items-center justify-center text-[8px] text-cyan-400 font-medium">QB</div>
+              <span class="text-[11px] text-zinc-600">QA Bot &middot; then human verification</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="border-zinc-800/60 max-w-4xl mx-auto">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MOCKUP 5: Template Application Preview
+     ═══════════════════════════════════════════════════════════════ -->
+<section id="mockup-5" class="max-w-4xl mx-auto px-6 py-16">
+  <div class="mb-8">
+    <span class="badge bg-pink-500/20 text-pink-400 border-pink-500/30 mb-3">Mockup 5</span>
+    <h2 class="text-xl font-bold mt-2">Template Application Preview</h2>
+    <p class="text-zinc-500 text-sm mt-1">When applying a template to a task, shows role &rarr; agent matching with override capability</p>
+  </div>
+
+  <div class="grid md:grid-cols-2 gap-6">
+    <!-- Variant A: All matched -->
+    <div>
+      <div class="text-xs font-semibold uppercase tracking-wider text-emerald-400 mb-3 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-emerald-400"></span> All Roles Matched
+      </div>
+      <div class="dialog-bg p-5">
+        <div class="text-base font-semibold mb-1">Apply Workflow Template</div>
+        <p class="text-zinc-500 text-xs mb-4">Feature Development &rarr; "Build booking form"</p>
+
+        <!-- Summary bar -->
+        <div class="flex items-center gap-4 mb-4 p-3 rounded-lg bg-emerald-500/8 border border-emerald-500/20">
+          <div class="flex items-center gap-1.5 text-xs">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="text-emerald-400 font-medium">5 matched</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-xs">
+            <span class="text-amber-400">&#9995;</span>
+            <span class="text-amber-300 font-medium">2 human checkpoints</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-xs">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            <span class="text-zinc-500 font-medium">0 unassigned</span>
+          </div>
+        </div>
+
+        <!-- Step matching rows -->
+        <div class="space-y-2 mb-4">
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">1</span>
+            <span class="text-xs text-zinc-300 flex-1">Requirements Analysis</span>
+            <span class="badge role-ba text-[9px] px-1.5 py-0">BA</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <div class="flex items-center gap-1.5 w-28 shrink-0">
+              <div class="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-[7px] text-blue-400 font-medium">SA</div>
+              <span class="text-[11px] text-zinc-400">Sarah Analytics</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">2</span>
+            <span class="text-xs text-zinc-300 flex-1">UX Design</span>
+            <span class="badge role-ux text-[9px] px-1.5 py-0">UX</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <div class="flex items-center gap-1.5 w-28 shrink-0">
+              <div class="w-5 h-5 rounded-full bg-pink-500/20 flex items-center justify-center text-[7px] text-pink-400 font-medium">PX</div>
+              <span class="text-[11px] text-zinc-400">Pixel</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">3</span>
+            <span class="text-xs text-amber-300 flex-1">Design Review</span>
+            <span class="badge role-human text-[9px] px-1.5 py-0">&#9995; Human</span>
+            <span class="text-amber-400 text-xs">&#9995;</span>
+            <div class="flex items-center gap-1.5 w-28 shrink-0">
+              <span class="text-[11px] text-amber-400">You (manual)</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">4</span>
+            <span class="text-xs text-zinc-300 flex-1">Implementation</span>
+            <span class="badge role-dev text-[9px] px-1.5 py-0">Dev</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <div class="flex items-center gap-1.5 w-28 shrink-0">
+              <div class="w-5 h-5 rounded-full bg-violet-500/20 flex items-center justify-center text-[7px] text-violet-400 font-medium">DA</div>
+              <span class="text-[11px] text-zinc-400">Dev Alpha</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">5</span>
+            <span class="text-xs text-zinc-300 flex-1">Write Tests</span>
+            <span class="badge role-dev text-[9px] px-1.5 py-0">Dev</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <div class="flex items-center gap-1.5 w-28 shrink-0">
+              <div class="w-5 h-5 rounded-full bg-violet-500/20 flex items-center justify-center text-[7px] text-violet-400 font-medium">DA</div>
+              <span class="text-[11px] text-zinc-400">Dev Alpha</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">6</span>
+            <span class="text-xs text-zinc-300 flex-1">QA Testing</span>
+            <span class="badge role-qa text-[9px] px-1.5 py-0">QA</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <div class="flex items-center gap-1.5 w-28 shrink-0">
+              <div class="w-5 h-5 rounded-full bg-cyan-500/20 flex items-center justify-center text-[7px] text-cyan-400 font-medium">QB</div>
+              <span class="text-[11px] text-zinc-400">QA Bot</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="flex justify-end gap-2">
+          <button class="btn-ghost text-xs">Cancel</button>
+          <button class="btn-primary text-xs">Apply Workflow</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Variant B: Unmatched role -->
+    <div>
+      <div class="text-xs font-semibold uppercase tracking-wider text-amber-400 mb-3 flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-amber-400"></span> Unmatched Role Scenario
+      </div>
+      <div class="dialog-bg p-5">
+        <div class="text-base font-semibold mb-1">Apply Workflow Template</div>
+        <p class="text-zinc-500 text-xs mb-4">Feature Development &rarr; "Build booking form"</p>
+
+        <!-- Summary bar with warning -->
+        <div class="flex items-center gap-4 mb-4 p-3 rounded-lg bg-amber-500/8 border border-amber-500/20">
+          <div class="flex items-center gap-1.5 text-xs">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <span class="text-emerald-400 font-medium">3 matched</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-xs">
+            <span class="text-amber-400">&#9995;</span>
+            <span class="text-amber-300 font-medium">2 human</span>
+          </div>
+          <div class="flex items-center gap-1.5 text-xs">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <span class="text-amber-400 font-medium">1 unassigned</span>
+          </div>
+        </div>
+
+        <div class="space-y-2 mb-4">
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">1</span>
+            <span class="text-xs text-zinc-300 flex-1">Requirements Analysis</span>
+            <span class="badge role-ba text-[9px] px-1.5 py-0">BA</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <div class="flex items-center gap-1.5 w-28 shrink-0">
+              <div class="w-5 h-5 rounded-full bg-blue-500/20 flex items-center justify-center text-[7px] text-blue-400 font-medium">SA</div>
+              <span class="text-[11px] text-zinc-400">Sarah Analytics</span>
+            </div>
+          </div>
+
+          <!-- UNMATCHED: No UX Designer in pool -->
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-amber-500/30 bg-amber-500/8">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">2</span>
+            <span class="text-xs text-amber-300 flex-1">UX Design</span>
+            <span class="badge role-ux text-[9px] px-1.5 py-0">UX</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2"><path d="M10.29 3.86 1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <!-- Override dropdown -->
+            <div class="w-28 shrink-0">
+              <select class="select-field text-[10px] py-1 px-2" style="border-color: rgba(245,158,11,0.3); font-size: 10px;">
+                <option>-- Select agent --</option>
+                <option>Sarah Analytics (BA)</option>
+                <option>Dev Alpha (Dev)</option>
+                <option>QA Bot (QA)</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-amber-500/20 bg-amber-500/5">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">3</span>
+            <span class="text-xs text-amber-300 flex-1">Design Review</span>
+            <span class="badge role-human text-[9px] px-1.5 py-0">&#9995; Human</span>
+            <span class="text-amber-400 text-xs">&#9995;</span>
+            <div class="flex items-center gap-1.5 w-28 shrink-0">
+              <span class="text-[11px] text-amber-400">You (manual)</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">4</span>
+            <span class="text-xs text-zinc-300 flex-1">Implementation</span>
+            <span class="badge role-dev text-[9px] px-1.5 py-0">Dev</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <div class="flex items-center gap-1.5 w-28 shrink-0">
+              <div class="w-5 h-5 rounded-full bg-violet-500/20 flex items-center justify-center text-[7px] text-violet-400 font-medium">DA</div>
+              <span class="text-[11px] text-zinc-400">Dev Alpha</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">5</span>
+            <span class="text-xs text-zinc-300 flex-1">Write Tests</span>
+            <span class="badge role-dev text-[9px] px-1.5 py-0">Dev</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <div class="flex items-center gap-1.5 w-28 shrink-0">
+              <div class="w-5 h-5 rounded-full bg-violet-500/20 flex items-center justify-center text-[7px] text-violet-400 font-medium">DA</div>
+              <span class="text-[11px] text-zinc-400">Dev Alpha</span>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-2.5 rounded-lg border border-zinc-800 bg-zinc-900/40">
+            <span class="text-zinc-500 text-xs font-medium w-4 text-center">6</span>
+            <span class="text-xs text-zinc-300 flex-1">QA Testing</span>
+            <span class="badge role-qa text-[9px] px-1.5 py-0">QA</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+            <div class="flex items-center gap-1.5 w-28 shrink-0">
+              <div class="w-5 h-5 rounded-full bg-cyan-500/20 flex items-center justify-center text-[7px] text-cyan-400 font-medium">QB</div>
+              <span class="text-[11px] text-zinc-400">QA Bot</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout-amber px-3 py-2 rounded-lg text-[11px] text-zinc-400 mb-4">
+          <span class="text-amber-400 font-medium">No UX Designer in pool.</span> You can assign another agent to the UX Design step, or <a href="#" class="text-blue-400 hover:underline">add a UX agent to the pool</a>.
+        </div>
+
+        <div class="flex justify-end gap-2">
+          <button class="btn-ghost text-xs">Cancel</button>
+          <button class="btn-primary text-xs" style="opacity: 0.5;">Apply (1 unassigned)</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="border-zinc-800/60 max-w-4xl mx-auto">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MOCKUP 6: Enhanced Onboarding Flow
+     ═══════════════════════════════════════════════════════════════ -->
+<section id="mockup-6" class="max-w-4xl mx-auto px-6 py-16">
+  <div class="mb-8">
+    <span class="badge bg-amber-500/20 text-amber-400 border-amber-500/30 mb-3">Mockup 6</span>
+    <h2 class="text-xl font-bold mt-2">Enhanced Onboarding Flow</h2>
+    <p class="text-zinc-500 text-sm mt-1">Sarah's journey: idea &rarr; team &rarr; board generation CTA &rarr; Claude Code connection</p>
+  </div>
+
+  <!-- Step 3: Team Selection -->
+  <div class="mb-8">
+    <div class="text-xs text-zinc-500 mb-3 font-medium">Step 3 &mdash; Pick Your Team</div>
+    <div class="browser-frame">
+      <div class="browser-titlebar">
+        <span class="traffic-dot r"></span><span class="traffic-dot y"></span><span class="traffic-dot g"></span>
+        <span class="url">vibecodes.co.uk/onboarding</span>
+      </div>
+      <div class="p-8 text-center" style="background: var(--bg-card);">
+        <!-- Progress -->
+        <div class="flex items-center justify-center gap-2 mb-6">
+          <div class="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xs">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="w-12 h-0.5 bg-emerald-500/30"></div>
+          <div class="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center text-xs">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="w-12 h-0.5 bg-violet-500/30"></div>
+          <div class="w-8 h-8 rounded-full bg-violet-500/20 border-2 border-violet-500/50 flex items-center justify-center text-xs text-violet-400 font-bold">3</div>
+          <div class="w-12 h-0.5 bg-zinc-800"></div>
+          <div class="w-8 h-8 rounded-full bg-zinc-800 border border-zinc-700 flex items-center justify-center text-xs text-zinc-600 font-medium">4</div>
+        </div>
+
+        <h2 class="text-xl font-bold mb-2">Pick your agent team</h2>
+        <p class="text-sm text-zinc-500 mb-6">Choose a pre-built team to get started. You can customise later.</p>
+
+        <div class="grid grid-cols-3 gap-4 max-w-2xl mx-auto text-left">
+          <!-- Web Dev Team — selected -->
+          <div class="p-4 rounded-xl border-2 border-violet-500/50 bg-violet-500/8 cursor-pointer relative">
+            <div class="absolute -top-2 -right-2 w-6 h-6 rounded-full bg-violet-500 flex items-center justify-center">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            </div>
+            <div class="text-lg mb-2">&#128187;</div>
+            <div class="text-sm font-semibold mb-1">Web Dev Team</div>
+            <div class="text-[10px] text-zinc-500 mb-3">Full-stack web development</div>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-1.5">
+                <span class="badge role-ba text-[8px] px-1 py-0">BA</span>
+                <span class="text-[10px] text-zinc-400">Business Analyst</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="badge role-ux text-[8px] px-1 py-0">UX</span>
+                <span class="text-[10px] text-zinc-400">UX Designer</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="badge role-dev text-[8px] px-1 py-0">Dev</span>
+                <span class="text-[10px] text-zinc-400">Developer</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="badge role-qa text-[8px] px-1 py-0">QA</span>
+                <span class="text-[10px] text-zinc-400">QA Tester</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Mobile Team -->
+          <div class="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 cursor-pointer hover:border-zinc-700 transition-colors">
+            <div class="text-lg mb-2">&#128241;</div>
+            <div class="text-sm font-semibold mb-1">Mobile Team</div>
+            <div class="text-[10px] text-zinc-500 mb-3">iOS &amp; Android apps</div>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-1.5">
+                <span class="badge role-ux text-[8px] px-1 py-0">UX</span>
+                <span class="text-[10px] text-zinc-400">Mobile UX</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="badge role-dev text-[8px] px-1 py-0">Dev</span>
+                <span class="text-[10px] text-zinc-400">Mobile Dev</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="badge role-qa text-[8px] px-1 py-0">QA</span>
+                <span class="text-[10px] text-zinc-400">Mobile QA</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Solo Dev -->
+          <div class="p-4 rounded-xl border border-zinc-800 bg-zinc-900/40 cursor-pointer hover:border-zinc-700 transition-colors">
+            <div class="text-lg mb-2">&#129489;&#8205;&#128187;</div>
+            <div class="text-sm font-semibold mb-1">Solo Dev</div>
+            <div class="text-[10px] text-zinc-500 mb-3">Lean &amp; fast</div>
+            <div class="space-y-1.5">
+              <div class="flex items-center gap-1.5">
+                <span class="badge role-dev text-[8px] px-1 py-0">Dev</span>
+                <span class="text-[10px] text-zinc-400">Full-Stack Dev</span>
+              </div>
+              <div class="flex items-center gap-1.5">
+                <span class="badge role-qa text-[8px] px-1 py-0">QA</span>
+                <span class="text-[10px] text-zinc-400">QA Tester</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="mt-6">
+          <button class="btn-primary">Continue with Web Dev Team &rarr;</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Step 4: Success + CTAs -->
+  <div>
+    <div class="text-xs text-zinc-500 mb-3 font-medium">Step 4 &mdash; Success (with strong CTAs)</div>
+    <div class="browser-frame">
+      <div class="browser-titlebar">
+        <span class="traffic-dot r"></span><span class="traffic-dot y"></span><span class="traffic-dot g"></span>
+        <span class="url">vibecodes.co.uk/onboarding</span>
+      </div>
+      <div class="p-8 text-center" style="background: var(--bg-card);">
+        <!-- Progress complete -->
+        <div class="flex items-center justify-center gap-2 mb-6">
+          <div class="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="w-12 h-0.5 bg-emerald-500/30"></div>
+          <div class="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="w-12 h-0.5 bg-emerald-500/30"></div>
+          <div class="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+          <div class="w-12 h-0.5 bg-emerald-500/30"></div>
+          <div class="w-8 h-8 rounded-full bg-emerald-500/20 border border-emerald-500/40 flex items-center justify-center">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          </div>
+        </div>
+
+        <div class="text-4xl mb-4">&#127881;</div>
+        <h2 class="text-2xl font-bold mb-2">Your idea is set up!</h2>
+        <p class="text-sm text-zinc-500 mb-8 max-w-md mx-auto">"A booking platform for dog groomers" is ready with your Web Dev Team (4 agents). Now let's get to work.</p>
+
+        <!-- Primary CTA: Generate Board -->
+        <div class="max-w-md mx-auto mb-6">
+          <div class="p-5 rounded-xl border-2 border-violet-500/40 bg-gradient-to-b from-violet-500/10 to-transparent">
+            <div class="flex items-center justify-center gap-2 mb-2">
+              <span class="text-xl">&#10024;</span>
+              <h3 class="text-lg font-bold">Generate your board</h3>
+            </div>
+            <p class="text-xs text-zinc-400 mb-4">AI will create tasks with labels, and workflow templates auto-attach to each one. Your agents will be ready to start working.</p>
+            <button class="btn-primary w-full text-sm py-3" style="background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white;">
+              &#10024; Generate Board Tasks
+            </button>
+            <p class="text-[10px] text-zinc-600 mt-2">Uses 1 AI credit &middot; Creates 5-10 tasks with workflows</p>
+          </div>
+        </div>
+
+        <!-- Secondary CTA: Connect Claude Code -->
+        <div class="max-w-md mx-auto">
+          <div class="p-5 rounded-xl border border-zinc-800 bg-zinc-900/40">
+            <div class="flex items-center justify-center gap-2 mb-2">
+              <span class="text-lg">&#128268;</span>
+              <h3 class="text-sm font-semibold">Connect Claude Code</h3>
+            </div>
+            <p class="text-xs text-zinc-500 mb-3">Connect your IDE to let agents work autonomously on your tasks.</p>
+            <div class="bg-zinc-950 rounded-lg p-3 mb-3 text-left">
+              <code class="text-[11px] text-cyan-400 font-mono">claude mcp add vibecodes https://vibecodes.co.uk/api/mcp</code>
+              <button class="float-right text-zinc-500 hover:text-zinc-300 text-xs">Copy</button>
+            </div>
+            <p class="text-[10px] text-zinc-600">Then say: <em class="text-zinc-400">"Pick up the next task on the backlog"</em></p>
+          </div>
+        </div>
+
+        <div class="mt-6">
+          <button class="btn-ghost text-sm">Skip for now &rarr; Go to idea</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="border-zinc-800/60 max-w-4xl mx-auto">
+
+<!-- ═══════════════════════════════════════════════════════════════
+     MOCKUP 7: Claude Code MCP Execution ("Money Shot")
+     ═══════════════════════════════════════════════════════════════ -->
+<section id="mockup-7" class="max-w-4xl mx-auto px-6 py-16 pb-32">
+  <div class="mb-8">
+    <span class="badge bg-emerald-500/20 text-emerald-400 border-emerald-500/30 mb-3">Mockup 7</span>
+    <h2 class="text-xl font-bold mt-2">Claude Code &mdash; Autonomous Pipeline Execution</h2>
+    <p class="text-zinc-500 text-sm mt-1">The "money shot" &mdash; Claude Code picks up a task and walks through the full workflow, switching agent identities at each step, only pausing at human gates.</p>
+  </div>
+
+  <div class="callout-blue px-4 py-3 rounded-xl text-sm text-zinc-300 mb-6">
+    <strong class="text-blue-400">What you're seeing:</strong> A real terminal session. User says "pick up the next thing on the backlog". Claude Code autonomously claims steps, switches agents, does the work, completes, and repeats &mdash; until it hits a human gate.
+  </div>
+
+  <div class="terminal-frame">
+    <div class="terminal-titlebar">
+      <span class="traffic-dot r"></span><span class="traffic-dot y"></span><span class="traffic-dot g"></span>
+      <span class="title">claude &mdash; ~/projects/dog-groomer-app</span>
+    </div>
+    <div class="terminal-content" style="font-size: 12px; line-height: 2;">
+
+      <!-- User prompt -->
+      <div class="mb-4">
+        <span class="term-dim">sarah@macbook</span> <span class="term-prompt">~</span> <span class="term-bold">Pick up the next thing on the backlog</span>
+      </div>
+
+      <!-- Phase 1: Find task -->
+      <div class="mb-4 pl-2 border-l-2 border-blue-500/30">
+        <div><span class="term-blue term-bold">&#9654; Checking board...</span></div>
+        <div class="term-dim">  get_board(idea_id: "abc-123")</div>
+        <div>  Found <span class="term-bold">"Build booking form"</span> in Backlog</div>
+        <div class="term-dim">  Labels: <span class="badge role-dev text-[9px] px-1 py-0" style="display:inline; background: rgba(139,92,246,0.15); color: #a78bfa; border: 1px solid rgba(139,92,246,0.3); border-radius: 9999px; padding: 1px 6px; font-size: 10px;">feature</span></div>
+        <div>  Workflow: Feature Development (6 steps)</div>
+        <div class="term-dim">  move_task(task_id: "t-42", column: "In Progress")</div>
+      </div>
+
+      <!-- Phase 2: Step 1 — BA -->
+      <div class="mb-4 pl-2 border-l-2 border-blue-500/30">
+        <div><span class="term-blue term-bold">&#9654; Step 1/6: Requirements Analysis</span> <span class="badge role-ba text-[9px] px-1.5 py-0" style="display:inline; font-size: 10px;">BA</span></div>
+        <div class="term-dim">  claim_next_step(task_id: "t-42")</div>
+        <div>  Switching identity &rarr; <span class="term-blue">Sarah Analytics</span> <span class="term-dim">(Business Analyst)</span></div>
+        <div class="term-dim">  set_agent_identity(bot_id: "sa-001")</div>
+        <div class="mt-1">  <span class="term-blue">Sarah Analytics:</span> Analysing requirements for booking form...</div>
+        <div class="term-dim">  &bull; User stories: book appointment, select groomer, pick time slot</div>
+        <div class="term-dim">  &bull; Acceptance criteria: calendar view, groomer profiles, confirmation email</div>
+        <div class="term-dim">  &bull; Edge cases: double-booking prevention, cancellation policy</div>
+        <div>  <span class="term-green">&#10003;</span> <span class="term-dim">complete_step(step_id: "s-1", output: "Requirements documented")</span></div>
+      </div>
+
+      <!-- Phase 3: Step 2 — UX -->
+      <div class="mb-4 pl-2 border-l-2 border-pink-500/30">
+        <div><span class="term-pink term-bold">&#9654; Step 2/6: UX Design</span> <span class="badge role-ux text-[9px] px-1.5 py-0" style="display:inline; font-size: 10px;">UX</span></div>
+        <div class="term-dim">  claim_next_step(task_id: "t-42")</div>
+        <div>  Switching identity &rarr; <span class="term-pink">Pixel</span> <span class="term-dim">(UX Designer)</span></div>
+        <div class="term-dim">  set_agent_identity(bot_id: "px-001")</div>
+        <div class="mt-1">  <span class="term-pink">Pixel:</span> Designing booking flow based on requirements...</div>
+        <div class="term-dim">  &bull; 3-step wizard: Select Service &rarr; Choose Groomer &amp; Time &rarr; Confirm</div>
+        <div class="term-dim">  &bull; Calendar component with available slot highlighting</div>
+        <div class="term-dim">  &bull; Mobile-first responsive layout</div>
+        <div>  <span class="term-green">&#10003;</span> <span class="term-dim">complete_step(step_id: "s-2", output: "Wireframes and flow documented")</span></div>
+      </div>
+
+      <!-- Phase 4: Step 3 — HUMAN GATE -->
+      <div class="mb-4 pl-2 border-l-2 border-amber-500/40">
+        <div><span class="term-amber term-bold">&#9654; Step 3/6: Design Review</span> <span class="badge role-human text-[9px] px-1.5 py-0" style="display:inline; font-size: 10px;">&#9995; Human</span></div>
+        <div class="term-dim">  claim_next_step(task_id: "t-42")</div>
+        <div class="mt-1"></div>
+        <div class="p-3 rounded-lg border border-amber-500/30 bg-amber-500/8 my-2 mx-0" style="max-width: 500px;">
+          <div class="term-amber term-bold" style="font-size: 13px;">&#9995; Human Review Required</div>
+          <div class="mt-1" style="color: #d4d4d8;">
+            Sarah, the UX design for the booking form needs your review.
+          </div>
+          <div class="mt-2 term-dim" style="font-size: 11px;">
+            Pixel designed a 3-step booking wizard with calendar integration.<br>
+            Review the wireframes in the step comments, then approve or request changes in the VibeCodes UI.
+          </div>
+          <div class="mt-2 term-dim" style="font-size: 11px;">
+            &#8594; <span class="term-blue">vibecodes.co.uk/ideas/abc-123/board?task=t-42</span>
+          </div>
+        </div>
+        <div class="mt-2"><span class="term-amber">Paused.</span> Waiting for human approval on Step 3.</div>
+        <div class="term-dim">Remaining steps after approval: Implementation (Dev) &rarr; Write Tests (Dev) &rarr; QA Testing (QA + Human)</div>
+      </div>
+
+      <!-- After approval -->
+      <div class="mt-6 pt-4 border-t border-zinc-800/60">
+        <div class="term-dim mb-2">... Sarah approves in the UI ...</div>
+      </div>
+
+      <div class="mb-4 pl-2 border-l-2 border-violet-500/30">
+        <div><span class="term-violet term-bold">&#9654; Step 4/6: Implementation</span> <span class="badge role-dev text-[9px] px-1.5 py-0" style="display:inline; font-size: 10px;">Dev</span></div>
+        <div class="term-dim">  claim_next_step(task_id: "t-42")</div>
+        <div>  Switching identity &rarr; <span class="term-violet">Dev Alpha</span> <span class="term-dim">(Developer)</span></div>
+        <div class="term-dim">  set_agent_identity(bot_id: "da-001")</div>
+        <div class="mt-1">  <span class="term-violet">Dev Alpha:</span> Implementing booking form...</div>
+        <div class="term-dim">  &bull; Created src/components/booking/BookingWizard.tsx</div>
+        <div class="term-dim">  &bull; Created src/components/booking/GroomerCalendar.tsx</div>
+        <div class="term-dim">  &bull; Created src/actions/bookings.ts</div>
+        <div class="term-dim">  &bull; Added migration: 00042_create_bookings_table.sql</div>
+        <div>  <span class="term-green">&#10003;</span> <span class="term-dim">complete_step(step_id: "s-4", output: "Booking form implemented")</span></div>
+      </div>
+
+      <div class="mb-4 pl-2 border-l-2 border-violet-500/30">
+        <div><span class="term-violet term-bold">&#9654; Step 5/6: Write Tests</span> <span class="badge role-dev text-[9px] px-1.5 py-0" style="display:inline; font-size: 10px;">Dev</span></div>
+        <div class="term-dim">  claim_next_step(task_id: "t-42")</div>
+        <div>  Same identity: <span class="term-violet">Dev Alpha</span></div>
+        <div class="mt-1">  <span class="term-violet">Dev Alpha:</span> Writing tests...</div>
+        <div class="term-dim">  &bull; Unit tests: booking-wizard.test.ts (12 tests)</div>
+        <div class="term-dim">  &bull; E2E tests: e2e/booking/create-booking.spec.ts</div>
+        <div class="term-dim">  &bull; All tests passing &#10003;</div>
+        <div>  <span class="term-green">&#10003;</span> <span class="term-dim">complete_step(step_id: "s-5", output: "Tests written and passing")</span></div>
+      </div>
+
+      <div class="mb-4 pl-2 border-l-2 border-cyan-500/30">
+        <div><span class="term-cyan term-bold">&#9654; Step 6/6: QA Testing</span> <span class="badge role-qa text-[9px] px-1.5 py-0" style="display:inline; font-size: 10px;">QA</span> + <span class="badge role-human text-[9px] px-1.5 py-0" style="display:inline; font-size: 10px;">&#9995; Human</span></div>
+        <div class="term-dim">  claim_next_step(task_id: "t-42")</div>
+        <div>  Switching identity &rarr; <span class="term-cyan">QA Bot</span> <span class="term-dim">(QA Tester)</span></div>
+        <div class="term-dim">  set_agent_identity(bot_id: "qb-001")</div>
+        <div class="mt-1">  <span class="term-cyan">QA Bot:</span> Running QA checks...</div>
+        <div class="term-dim">  &bull; Functional: booking flow end-to-end &#10003;</div>
+        <div class="term-dim">  &bull; Edge case: double-booking prevention &#10003;</div>
+        <div class="term-dim">  &bull; Accessibility: ARIA labels, keyboard nav &#10003;</div>
+        <div class="term-dim">  &bull; Mobile: responsive layout verified &#10003;</div>
+        <div>  <span class="term-green">&#10003;</span> <span class="term-dim">complete_step(step_id: "s-6", output: "QA passed")</span></div>
+      </div>
+
+      <div class="pl-2 border-l-2 border-amber-500/40 mb-4">
+        <div class="p-3 rounded-lg border border-amber-500/30 bg-amber-500/8" style="max-width: 500px;">
+          <div class="term-amber term-bold" style="font-size: 13px;">&#9995; Final Verification Required</div>
+          <div class="mt-1" style="color: #d4d4d8;">
+            Sarah, the booking form is complete and QA has passed. Please verify the implementation.
+          </div>
+          <div class="mt-2 term-dim" style="font-size: 11px;">
+            &#8594; <span class="term-blue">vibecodes.co.uk/ideas/abc-123/board?task=t-42</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Summary -->
+      <div class="mt-4 pt-4 border-t border-zinc-800/60">
+        <div class="p-4 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+          <div class="term-green term-bold mb-2" style="font-size: 14px;">&#10003; Workflow Complete: "Build booking form"</div>
+          <div class="grid grid-cols-3 gap-4 text-[11px] mt-2">
+            <div>
+              <div class="term-dim">Steps completed</div>
+              <div class="term-bold" style="color: #fafafa; font-size: 16px;">6/6</div>
+            </div>
+            <div>
+              <div class="term-dim">Agents involved</div>
+              <div class="term-bold" style="color: #fafafa; font-size: 16px;">4</div>
+            </div>
+            <div>
+              <div class="term-dim">Human gates</div>
+              <div class="term-bold" style="color: #fafafa; font-size: 16px;">2</div>
+            </div>
+          </div>
+          <div class="mt-3 text-[11px]">
+            <span class="term-dim">Pipeline:</span>
+            <span class="term-blue">BA</span> <span class="term-dim">&rarr;</span>
+            <span class="term-pink">UX</span> <span class="term-dim">&rarr;</span>
+            <span class="term-amber">&#9995;</span> <span class="term-dim">&rarr;</span>
+            <span class="term-violet">Dev</span> <span class="term-dim">&rarr;</span>
+            <span class="term-violet">Dev</span> <span class="term-dim">&rarr;</span>
+            <span class="term-cyan">QA</span> <span class="term-dim">+</span> <span class="term-amber">&#9995;</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="mt-4">
+        <span class="term-dim">Ready for next task. Say "pick up the next thing" to continue.</span>
+      </div>
+
+    </div>
+  </div>
+
+  <div class="callout px-4 py-3 rounded-xl text-sm text-zinc-300 mt-6">
+    <strong class="text-violet-400">This is the core value proposition:</strong> Sarah said one sentence. Claude Code autonomously executed a 6-step workflow across 4 different agent identities, only pausing twice for human review. No manual agent switching, no step-by-step prompting, no orchestrator configuration.
+  </div>
+</section>
+
+<!-- Footer -->
+<div class="text-center py-12 text-xs text-zinc-600 border-t border-zinc-800/40">
+  VibeCodes &mdash; Workflow v2 Role-Based Orchestration Mockups &mdash; For Matt's Review
+</div>
+
+</body>
+</html>

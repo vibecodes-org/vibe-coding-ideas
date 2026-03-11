@@ -28,7 +28,7 @@ export const changelog: ChangelogEntry[] = [
       {
         type: "feature",
         description:
-          "Kanban boards with drag-and-drop tasks, labels, due dates, and checklists.",
+          "Kanban boards with drag-and-drop tasks, labels, due dates, and workflow steps.",
       },
       {
         type: "feature",

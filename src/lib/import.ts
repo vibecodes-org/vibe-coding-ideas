@@ -596,16 +596,16 @@ export async function executeBulkImport(
     }
   }
 
-  // Phase 7: Batch insert checklist items
+  // Phase 7: Batch insert workflow steps (imported from checklist items)
   if (checklistRows.length > 0) {
-    onProgress?.({ phase: "Creating checklists...", current: total, total });
+    onProgress?.({ phase: "Creating workflow steps...", current: total, total });
     for (let i = 0; i < checklistRows.length; i += BATCH_SIZE) {
       const batch = checklistRows.slice(i, i + BATCH_SIZE);
       const { error } = await supabase
-        .from("board_checklist_items")
+        .from("task_workflow_steps")
         .insert(batch);
       if (error) {
-        errors.push(`Checklist batch failed: ${error.message}`);
+        errors.push(`Workflow step batch failed: ${error.message}`);
       }
     }
   }
@@ -923,15 +923,15 @@ export async function insertTasksSequentially(
       }
     }
 
-    // Insert checklist items for this task
+    // Insert workflow steps for this task (imported from checklist items)
     if (t.checklistItems && t.checklistItems.length > 0) {
-      const checklistRows = t.checklistItems.map((title, ci) => ({
+      const stepRows = t.checklistItems.map((title, ci) => ({
         task_id: taskId!,
         idea_id: ideaId,
         title,
         position: ci * POSITION_GAP,
       }));
-      await supabase.from("board_checklist_items").insert(checklistRows);
+      await supabase.from("task_workflow_steps").insert(stepRows);
     }
 
     // Log activity (fire-and-forget)

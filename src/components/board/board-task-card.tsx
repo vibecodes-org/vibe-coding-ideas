@@ -24,7 +24,7 @@ import { LabelPicker } from "./label-picker";
 import { DueDateBadge } from "./due-date-badge";
 import { createClient } from "@/lib/supabase/client";
 import { TaskAutoOpenContext } from "./kanban-board";
-import type { BoardTaskWithAssignee, BoardLabel, BoardChecklistItem, User } from "@/types";
+import type { BoardTaskWithAssignee, BoardLabel, User } from "@/types";
 
 const TaskDetailDialog = dynamic(() => import("./task-detail-dialog").then((m) => m.TaskDetailDialog), { ssr: false });
 
@@ -34,7 +34,6 @@ interface BoardTaskCardProps {
   columnId: string;
   teamMembers: User[];
   boardLabels: BoardLabel[];
-  checklistItems: BoardChecklistItem[];
   highlightQuery?: string;
   currentUserId: string;
   autoOpen?: boolean;
@@ -76,7 +75,6 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   columnId,
   teamMembers,
   boardLabels,
-  checklistItems,
   highlightQuery,
   currentUserId,
   autoOpen = false,
@@ -308,19 +306,19 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                   </span>
                 )}
                 {task.due_date && <DueDateBadge dueDate={task.due_date} />}
-                {task.checklist_total > 0 && (
+                {task.workflow_step_total > 0 && (
                   <Tooltip>
                     <TooltipTrigger asChild>
                       <span
                         className={`inline-flex items-center gap-1 text-[10px] font-medium ${
-                          task.checklist_done === task.checklist_total ? "text-emerald-400" : "text-muted-foreground"
+                          task.workflow_step_completed === task.workflow_step_total ? "text-emerald-400" : "text-muted-foreground"
                         }`}
                       >
                         <CheckSquare className="h-3 w-3" />
-                        {task.checklist_done}/{task.checklist_total}
+                        {task.workflow_step_completed}/{task.workflow_step_total}
                       </span>
                     </TooltipTrigger>
-                    <TooltipContent>Checklist</TooltipContent>
+                    <TooltipContent>Workflow steps</TooltipContent>
                   </Tooltip>
                 )}
                 {!!attachmentCount && attachmentCount > 0 && (
@@ -395,7 +393,6 @@ export const BoardTaskCard = memo(function BoardTaskCard({
           task={task}
           ideaId={ideaId}
           boardLabels={boardLabels}
-          checklistItems={checklistItems}
           teamMembers={teamMembers}
           currentUserId={currentUserId}
           initialTab={initialTab}

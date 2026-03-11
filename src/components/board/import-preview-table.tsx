@@ -230,7 +230,7 @@ export function ImportPreviewTable({
                       {task.title}
                       {task.checklistItems && task.checklistItems.length > 0 && (
                         <span className="ml-1 text-muted-foreground">
-                          ({task.checklistItems.length} subtasks)
+                          ({task.checklistItems.length} steps)
                         </span>
                       )}
                     </span>

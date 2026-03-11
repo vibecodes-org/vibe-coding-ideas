@@ -6,8 +6,9 @@ import { AiUsageDashboard } from "./ai-usage-dashboard";
 import { FeedbackDashboard } from "./feedback-dashboard";
 import { AdminAgentsDashboard } from "./admin-agents-dashboard";
 import { AdminTeamsDashboard } from "./admin-teams-dashboard";
+import { AdminTemplatesDashboard } from "./admin-templates-dashboard";
 import type { UsageLogWithUser, FeedbackWithUser, UserCreditInfo, PlatformLogEntry } from "@/app/(main)/admin/page";
-import type { BotProfile, FeaturedTeamWithAgents } from "@/types";
+import type { BotProfile, FeaturedTeamWithAgents, WorkflowLibraryTemplate } from "@/types";
 
 interface AdminTabsProps {
   activeTab: string;
@@ -19,6 +20,7 @@ interface AdminTabsProps {
   adminAgents: BotProfile[];
   featuredTeams: FeaturedTeamWithAgents[];
   communityAgents: BotProfile[];
+  libraryTemplates: WorkflowLibraryTemplate[];
   userCredits: UserCreditInfo[];
   allPlatformLogs: PlatformLogEntry[];
 }
@@ -33,6 +35,7 @@ export function AdminTabs({
   adminAgents,
   featuredTeams,
   communityAgents,
+  libraryTemplates,
   userCredits,
   allPlatformLogs,
 }: AdminTabsProps) {
@@ -64,6 +67,7 @@ export function AdminTabs({
         </TabsTrigger>
         <TabsTrigger value="agents">Agents</TabsTrigger>
         <TabsTrigger value="teams">Teams</TabsTrigger>
+        <TabsTrigger value="templates">Workflows</TabsTrigger>
       </TabsList>
       <TabsContent value="ai-usage" className="mt-6">
         <AiUsageDashboard usageLogs={usageLogs} filters={usageFilters} userCredits={userCredits} allPlatformLogs={allPlatformLogs} />
@@ -81,6 +85,9 @@ export function AdminTabs({
           communityAgents={communityAgents}
           onRefresh={handleRefresh}
         />
+      </TabsContent>
+      <TabsContent value="templates" className="mt-6">
+        <AdminTemplatesDashboard templates={libraryTemplates} onRefresh={handleRefresh} />
       </TabsContent>
     </Tabs>
   );

@@ -56,7 +56,7 @@ import { PromptTemplateSelector } from "@/components/ai/prompt-template-selector
 import { createClient } from "@/lib/supabase/client";
 
 const DEFAULT_PROMPT =
-  "Create a comprehensive task board for this idea. Break it into logical columns and tasks with labels, checklists, and due dates where appropriate. Focus on actionable, well-scoped tasks.";
+  "Create a comprehensive task board for this idea. Break it into logical columns and tasks with labels, workflow steps, and due dates where appropriate. Focus on actionable, well-scoped tasks.";
 
 const LOADING_TIMEOUT_MS = 15_000;
 

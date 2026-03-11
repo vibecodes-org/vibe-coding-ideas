@@ -90,7 +90,7 @@ const features = [
     icon: LayoutDashboard,
     title: "Kanban Boards",
     description:
-      "Drag-and-drop, labels, due dates, checklists, file attachments, activity logs, and comments per task.",
+      "Drag-and-drop, labels, due dates, workflow steps, file attachments, activity logs, and comments per task.",
     iconClass: "text-blue-400",
   },
   {
@@ -126,7 +126,7 @@ const features = [
 const mcpFeatures = [
   "OAuth 2.1 + PKCE authentication \u2014 per-user RLS",
   "Multi-agent support with named personas and identity switching",
-  "Full board management: tasks, labels, checklists, due dates, comments",
+  "Full board management: tasks, labels, workflow steps, due dates, comments",
   "Activity tracking and real-time notifications",
 ];
 

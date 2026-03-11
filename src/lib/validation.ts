@@ -8,6 +8,7 @@ export const MAX_TAG_LENGTH = 50;
 export const MAX_TAGS = 10;
 export const MAX_LABEL_NAME_LENGTH = 50;
 export const MAX_IDEA_ATTACHMENTS = 10;
+export const MAX_DISCUSSION_ATTACHMENTS = 10;
 export const MAX_IDEA_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10 MB
 export const ALLOWED_IDEA_ATTACHMENT_TYPES = [
   "image/jpeg",
@@ -17,6 +18,7 @@ export const ALLOWED_IDEA_ATTACHMENT_TYPES = [
   "image/svg+xml",
   "application/pdf",
   "text/markdown",
+  "text/html",
 ] as const;
 
 const VALID_LABEL_COLORS = [
@@ -204,6 +206,43 @@ export function validateBio(bio: string | null): string | null {
 
 export const MAX_SKILLS = 10;
 export const MAX_SKILL_LENGTH = 30;
+
+export const MAX_WORKFLOW_ROLE_LENGTH = 100;
+
+export function validateWorkflowTemplateName(name: string): string {
+  const trimmed = name.trim();
+  if (!trimmed) throw new ValidationError("Template name is required");
+  if (trimmed.length > MAX_TITLE_LENGTH) {
+    throw new ValidationError(`Template name must be ${MAX_TITLE_LENGTH} characters or less`);
+  }
+  return trimmed;
+}
+
+export function validateWorkflowTemplateSteps(
+  steps: { title: string; description?: string; role: string; requires_approval?: boolean }[]
+): { title: string; description?: string; role: string; requires_approval?: boolean }[] {
+  if (!steps || steps.length === 0) {
+    throw new ValidationError("At least one step is required");
+  }
+  return steps.map((step, i) => {
+    const title = step.title?.trim();
+    if (!title) throw new ValidationError(`Step ${i + 1}: title is required`);
+    if (title.length > MAX_TITLE_LENGTH) {
+      throw new ValidationError(`Step ${i + 1}: title must be ${MAX_TITLE_LENGTH} characters or less`);
+    }
+    const role = step.role?.trim();
+    if (!role) throw new ValidationError(`Step ${i + 1}: role is required`);
+    if (role.length > MAX_WORKFLOW_ROLE_LENGTH) {
+      throw new ValidationError(`Step ${i + 1}: role must be ${MAX_WORKFLOW_ROLE_LENGTH} characters or less`);
+    }
+    return {
+      title,
+      description: step.description?.trim() || undefined,
+      role,
+      requires_approval: step.requires_approval ?? false,
+    };
+  });
+}
 
 export function validateSkills(skills: string[]): string[] {
   if (!skills || skills.length === 0) return [];

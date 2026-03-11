@@ -89,8 +89,8 @@ export function ImportBulkTextTab({
       <div className="space-y-2">
         <p className="text-xs text-muted-foreground">
           Paste tasks, one per line. Lines starting with{" "}
-          <code className="rounded bg-muted px-1">- [ ]</code> become checklist
-          items on the preceding task.
+          <code className="rounded bg-muted px-1">- [ ]</code> become workflow
+          steps on the preceding task.
         </p>
         <Textarea
           value={text}

@@ -1,0 +1,1516 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Type Presets — Design Document | VibeCodes</title>
+<style>
+  /* ═══════════════════════════════════════════
+     Design Tokens (VibeCodes Dark Theme)
+     ═══════════════════════════════════════════ */
+  :root {
+    --bg-page: #09090b;
+    --bg-card: #18181b;
+    --bg-elevated: #27272a;
+    --bg-muted: #3f3f46;
+    --border: rgba(255,255,255,0.1);
+    --border-strong: rgba(255,255,255,0.18);
+    --text-primary: #fafafa;
+    --text-secondary: #a1a1aa;
+    --text-muted: #71717a;
+    --blue: #3b82f6;
+    --blue-dim: rgba(59,130,246,0.15);
+    --emerald: #10b981;
+    --emerald-dim: rgba(16,185,129,0.15);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245,158,11,0.15);
+    --red: #ef4444;
+    --red-dim: rgba(239,68,68,0.15);
+    --violet: #8b5cf6;
+    --violet-dim: rgba(139,92,246,0.15);
+    --pink: #ec4899;
+    --pink-dim: rgba(236,72,153,0.15);
+    --cyan: #06b6d4;
+    --cyan-dim: rgba(6,182,212,0.15);
+    --orange: #f97316;
+    --orange-dim: rgba(249,115,22,0.15);
+    --radius: 8px;
+    --radius-lg: 12px;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    --font-mono: "SF Mono", "Cascadia Code", "Fira Code", monospace;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    font-family: var(--font-sans);
+    background: var(--bg-page);
+    color: var(--text-primary);
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .container {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 48px 24px 96px;
+  }
+
+  /* Nav */
+  .doc-nav {
+    position: fixed;
+    top: 0; left: 0; right: 0;
+    z-index: 100;
+    background: rgba(9,9,11,0.85);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 24px;
+    display: flex;
+    align-items: center;
+    gap: 24px;
+    overflow-x: auto;
+  }
+  .doc-nav a {
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 13px;
+    white-space: nowrap;
+    transition: color 0.15s;
+  }
+  .doc-nav a:hover { color: var(--text-primary); }
+  .doc-nav .nav-brand {
+    color: var(--blue);
+    font-weight: 600;
+    font-size: 14px;
+    margin-right: 8px;
+  }
+  .container { padding-top: 80px; }
+
+  /* Typography */
+  h1 {
+    font-size: 36px;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    margin-bottom: 12px;
+    line-height: 1.15;
+  }
+  h1 .accent { color: var(--blue); }
+
+  h2 {
+    font-size: 24px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-top: 64px;
+    margin-bottom: 16px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h3 {
+    font-size: 18px;
+    font-weight: 600;
+    margin-top: 32px;
+    margin-bottom: 12px;
+  }
+
+  p, li { color: var(--text-secondary); font-size: 15px; }
+  p { margin-bottom: 12px; }
+  ul, ol { padding-left: 20px; margin-bottom: 16px; }
+  li { margin-bottom: 6px; }
+  strong { color: var(--text-primary); font-weight: 600; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: var(--bg-elevated);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--emerald);
+  }
+
+  .subtitle {
+    font-size: 17px;
+    color: var(--text-muted);
+    margin-bottom: 32px;
+  }
+
+  /* Cards & Callouts */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    padding: 24px;
+    margin-bottom: 24px;
+  }
+
+  .callout {
+    border-left: 3px solid var(--blue);
+    background: var(--blue-dim);
+    padding: 16px 20px;
+    border-radius: 0 var(--radius) var(--radius) 0;
+    margin-bottom: 20px;
+  }
+  .callout p { color: var(--text-secondary); margin: 0; }
+  .callout strong { color: var(--blue); }
+
+  .callout-amber {
+    border-left-color: var(--amber);
+    background: var(--amber-dim);
+  }
+  .callout-amber strong { color: var(--amber); }
+
+  .callout-emerald {
+    border-left-color: var(--emerald);
+    background: var(--emerald-dim);
+  }
+  .callout-emerald strong { color: var(--emerald); }
+
+  /* Tables */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin-bottom: 24px;
+    font-size: 14px;
+  }
+  th, td {
+    text-align: left;
+    padding: 10px 14px;
+    border-bottom: 1px solid var(--border);
+  }
+  th {
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: var(--bg-elevated);
+  }
+  td { color: var(--text-secondary); }
+  tr:last-child td { border-bottom: none; }
+
+  /* Browser Frame */
+  .browser-frame {
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin: 24px 0 32px;
+    background: var(--bg-card);
+  }
+  .browser-titlebar {
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .traffic-dot {
+    width: 10px; height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+  }
+  .traffic-dot.red { background: #ff5f57; }
+  .traffic-dot.yellow { background: #febc2e; }
+  .traffic-dot.green { background: #28c840; }
+  .browser-titlebar .url {
+    flex: 1;
+    text-align: center;
+    font-size: 12px;
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+  }
+  .browser-content {
+    padding: 24px;
+    min-height: 200px;
+  }
+
+  /* Mockup Components */
+  .mock-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    font-weight: 500;
+    cursor: default;
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    background: var(--bg-elevated);
+  }
+  .mock-btn-primary {
+    background: var(--blue);
+    color: white;
+    border-color: var(--blue);
+  }
+  .mock-btn-emerald {
+    background: var(--emerald);
+    color: white;
+    border-color: var(--emerald);
+  }
+  .mock-btn-ghost {
+    background: transparent;
+    border-color: transparent;
+  }
+
+  .mock-input {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-primary);
+    font-family: var(--font-sans);
+  }
+  .mock-textarea {
+    width: 100%;
+    padding: 8px 12px;
+    border-radius: var(--radius);
+    font-size: 13px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    font-family: var(--font-sans);
+    min-height: 60px;
+    resize: none;
+  }
+  .mock-label {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 6px;
+    display: block;
+  }
+  .mock-hint {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 4px;
+  }
+  .form-group {
+    margin-bottom: 20px;
+  }
+
+  /* State Indicator */
+  .state-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 12px;
+  }
+  .state-num {
+    width: 20px; height: 20px;
+    border-radius: 50%;
+    background: var(--bg-muted);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    color: var(--text-secondary);
+  }
+
+  .mockup-caption {
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    margin-top: -16px;
+    margin-bottom: 24px;
+    font-style: italic;
+  }
+
+  /* ═══════════════════════════════════════════
+     Project Type Selector
+     ═══════════════════════════════════════════ */
+  .type-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin: 12px 0;
+  }
+  @media (max-width: 640px) {
+    .type-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+
+  .type-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 16px 12px;
+    background: var(--bg-elevated);
+    border: 2px solid var(--border);
+    border-radius: var(--radius-lg);
+    cursor: default;
+    text-align: center;
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .type-card.selected {
+    border-color: var(--blue);
+    background: var(--blue-dim);
+  }
+  .type-card .type-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+  }
+  .type-card .type-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .type-card .type-desc {
+    font-size: 11px;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+  .type-card.selected .type-name { color: white; }
+
+  /* ═══════════════════════════════════════════
+     Preset Preview Panel
+     ═══════════════════════════════════════════ */
+  .preset-preview {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    overflow: hidden;
+    margin: 16px 0;
+  }
+  .preset-header {
+    padding: 12px 16px;
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .preset-header .preset-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+  .preset-header .preset-badge {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 9999px;
+    background: var(--blue-dim);
+    color: var(--blue);
+  }
+  .preset-body {
+    padding: 16px;
+  }
+  .preset-section {
+    margin-bottom: 16px;
+  }
+  .preset-section:last-child { margin-bottom: 0; }
+  .preset-section-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+  .label-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .label-pill {
+    font-size: 11px;
+    font-weight: 600;
+    padding: 3px 10px;
+    border-radius: 9999px;
+  }
+  .template-mini {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    margin-bottom: 6px;
+  }
+  .template-mini:last-child { margin-bottom: 0; }
+  .template-mini .t-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-primary);
+    flex: 1;
+  }
+  .template-mini .t-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+  }
+  .auto-rule-mini {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-secondary);
+    padding: 6px 0;
+  }
+  .auto-rule-mini .arrow {
+    color: var(--text-muted);
+  }
+
+  /* ═══════════════════════════════════════════
+     Step Flow Diagram
+     ═══════════════════════════════════════════ */
+  .flow-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 20px 0;
+    position: relative;
+    padding-left: 28px;
+  }
+  .flow-steps::before {
+    content: "";
+    position: absolute;
+    left: 10px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: var(--border-strong);
+  }
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 10px 0;
+    position: relative;
+  }
+  .flow-step::before {
+    content: "";
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    position: absolute;
+    left: -23px;
+    top: 14px;
+    border: 2px solid var(--border-strong);
+    background: var(--bg-page);
+    z-index: 1;
+  }
+  .flow-step:first-child::before { background: var(--blue); border-color: var(--blue); }
+  .flow-step .step-content { flex: 1; }
+  .flow-step .step-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+  }
+  .flow-step .step-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+
+  /* ═══════════════════════════════════════════
+     Preset Definition Cards
+     ═══════════════════════════════════════════ */
+  .preset-def {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-lg);
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+  .preset-def-header {
+    padding: 16px 20px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .preset-def-icon {
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+  }
+  .preset-def-header h4 {
+    font-size: 16px;
+    font-weight: 600;
+    margin-bottom: 2px;
+  }
+  .preset-def-header .preset-tagline {
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .preset-def-body {
+    padding: 20px;
+  }
+  .preset-def-body .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--text-muted);
+    margin-bottom: 10px;
+    margin-top: 20px;
+  }
+  .preset-def-body .section-title:first-child { margin-top: 0; }
+
+  .step-chain {
+    display: flex;
+    align-items: center;
+    gap: 0;
+    overflow-x: auto;
+    padding: 8px 0;
+  }
+  .step-chip {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    font-size: 12px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .step-chip .chip-num {
+    width: 18px; height: 18px;
+    border-radius: 50%;
+    background: var(--bg-muted);
+    color: var(--text-secondary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .step-chip .chip-label { color: var(--text-primary); font-weight: 500; }
+  .step-chip .chip-agent { color: var(--text-muted); font-size: 11px; }
+  .step-chip.gate {
+    border-color: var(--amber);
+    background: var(--amber-dim);
+  }
+  .step-chip.gate .chip-num {
+    background: var(--amber);
+    color: #000;
+  }
+  .step-arrow {
+    color: var(--text-muted);
+    font-size: 14px;
+    padding: 0 4px;
+    flex-shrink: 0;
+  }
+
+  /* ═══════════════════════════════════════════
+     Schema Diagram
+     ═══════════════════════════════════════════ */
+  .schema-table {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+  .schema-table-name {
+    padding: 10px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    font-family: var(--font-mono);
+    color: var(--blue);
+    background: var(--bg-card);
+    border-bottom: 1px solid var(--border);
+  }
+  .schema-col {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 14px;
+    font-size: 12px;
+    font-family: var(--font-mono);
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .schema-col:last-child { border-bottom: none; }
+  .schema-col .col-name { color: var(--text-primary); }
+  .schema-col .col-type { color: var(--text-muted); }
+  .schema-col .col-pk { color: var(--amber); font-weight: 600; }
+  .schema-col .col-fk { color: var(--violet); }
+
+  /* Utilities */
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+  .flex { display: flex; }
+  .items-center { align-items: center; }
+  .gap-2 { gap: 8px; }
+  .gap-3 { gap: 12px; }
+  .text-muted { color: var(--text-muted); }
+  .icon { width: 16px; height: 16px; display: inline-block; vertical-align: middle; flex-shrink: 0; }
+  .icon-sm { width: 14px; height: 14px; }
+
+  .roadmap {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    margin: 20px 0;
+    position: relative;
+    padding-left: 28px;
+  }
+  .roadmap::before {
+    content: "";
+    position: absolute;
+    left: 10px;
+    top: 8px;
+    bottom: 8px;
+    width: 2px;
+    background: var(--border-strong);
+  }
+  .roadmap-phase {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    padding: 12px 0;
+    position: relative;
+  }
+  .roadmap-phase::before {
+    content: "";
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    position: absolute;
+    left: -23px;
+    top: 16px;
+    border: 2px solid var(--border-strong);
+    background: var(--bg-page);
+    z-index: 1;
+  }
+  .roadmap-phase:first-child::before { background: var(--blue); border-color: var(--blue); }
+  .roadmap-phase .phase-content { flex: 1; }
+  .roadmap-phase .phase-name {
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  .roadmap-phase .phase-desc {
+    font-size: 13px;
+    color: var(--text-muted);
+  }
+  .roadmap-phase .phase-time {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    padding: 2px 8px;
+    border-radius: 4px;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+</style>
+</head>
+<body>
+
+<nav class="doc-nav">
+  <span class="nav-brand">VibeCodes</span>
+  <a href="#problem">Problem</a>
+  <a href="#solution">Solution</a>
+  <a href="#ux-flow">UX Flow</a>
+  <a href="#presets">Presets</a>
+  <a href="#data-model">Data Model</a>
+  <a href="#integration">Integration</a>
+  <a href="#roadmap">Roadmap</a>
+</nav>
+
+<div class="container">
+
+  <h1>Project Type <span class="accent">Presets</span></h1>
+  <p class="subtitle">One-click board setup &mdash; labels, workflow templates, and auto-rules seeded from a project type selection</p>
+
+  <div class="callout">
+    <p><strong>RFC Status:</strong> Draft &mdash; companion to <a href="workflow-orchestration-v2.html">Workflow Orchestration v2</a>. Depends on workflow templates and auto-rules being implemented first.</p>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════
+       1. PROBLEM
+       ════════════════════════════════════════════════════ -->
+  <h2 id="problem">1. Problem</h2>
+
+  <p>Workflow Orchestration v2 introduces <strong>templates</strong>, <strong>auto-rules</strong>, and <strong>database triggers</strong> that make workflows powerful. But there's a cold-start problem:</p>
+
+  <div class="card">
+    <p style="font-size: 14px; margin: 0;"><strong>To get a working workflow pipeline, a user must:</strong></p>
+    <ol style="font-size: 14px; margin-top: 8px;">
+      <li>Create board labels (<code>feature</code>, <code>bug</code>, etc.)</li>
+      <li>Create workflow templates with agent-assigned steps</li>
+      <li>Create auto-rules mapping labels to templates</li>
+      <li>Allocate agents to the idea's agent pool</li>
+    </ol>
+    <p style="font-size: 14px; margin: 12px 0 0;">That's 4 setup steps before a single workflow can auto-fire. Most users won't do this &mdash; they'll just use the board as a plain kanban and never discover workflows.</p>
+  </div>
+
+  <h3>The AI Enhance Gap</h3>
+  <p>The existing <strong>AI enhance</strong> button generates board tasks from an idea description, but it only creates tasks. It doesn't set up the infrastructure (labels, templates, rules) that would make those tasks flow through a structured workflow. The board starts populated but inert.</p>
+
+
+  <!-- ════════════════════════════════════════════════════
+       2. SOLUTION
+       ════════════════════════════════════════════════════ -->
+  <h2 id="solution">2. Solution</h2>
+
+  <p>Add a <strong>project type selector</strong> to the AI enhance flow. When the user selects a project type, the system seeds the board with a complete, pre-wired setup:</p>
+
+  <div style="overflow-x: auto;">
+    <table>
+      <thead>
+        <tr><th style="width:25%">What gets seeded</th><th>Without project type</th><th>With project type</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><strong>Tasks</strong></td>
+          <td>AI-generated from description</td>
+          <td>AI-generated from description (same)</td>
+        </tr>
+        <tr>
+          <td><strong>Labels</strong></td>
+          <td>None</td>
+          <td>Pre-configured set (e.g. <code>feature</code>, <code>bug</code>, <code>chore</code>)</td>
+        </tr>
+        <tr>
+          <td><strong>Workflow templates</strong></td>
+          <td>None</td>
+          <td>1&ndash;2 templates with agent-assigned steps</td>
+        </tr>
+        <tr>
+          <td><strong>Auto-rules</strong></td>
+          <td>None</td>
+          <td>Label &rarr; template mappings with <code>auto_run</code></td>
+        </tr>
+        <tr>
+          <td><strong>Task labels</strong></td>
+          <td>None</td>
+          <td>AI assigns labels to generated tasks based on type</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="callout-emerald callout">
+    <p><strong>Result:</strong> The user picks a project type, clicks AI enhance, and gets a fully wired board. The first task they (or Claude Code) picks up with a <code>feature</code> label already has a pending workflow run attached via the database trigger. Zero manual setup.</p>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════
+       3. UX FLOW
+       ════════════════════════════════════════════════════ -->
+  <h2 id="ux-flow">3. UX Flow</h2>
+  <p>The project type selector appears in <strong>two places</strong>: the onboarding wizard (first idea) and the AI enhance dialog (existing ideas).</p>
+
+  <h3>3a. Onboarding Wizard</h3>
+  <p>During onboarding, Step 3 already asks the user to create their first idea. The project type selector goes between the description field and the "Enhance with AI" button.</p>
+
+  <div class="state-indicator"><span class="state-num">1</span> Onboarding Step 3 &mdash; Project type selector</div>
+  <div class="browser-frame">
+    <div class="browser-titlebar">
+      <span class="traffic-dot red"></span>
+      <span class="traffic-dot yellow"></span>
+      <span class="traffic-dot green"></span>
+      <span class="url">vibecodes.co.uk &mdash; Onboarding</span>
+    </div>
+    <div class="browser-content">
+      <div style="max-width: 560px; margin: 0 auto;">
+        <div style="font-size: 20px; font-weight: 700; margin-bottom: 4px;">Create your first idea</div>
+        <div style="font-size: 13px; color: var(--text-muted); margin-bottom: 24px;">Tell us what you're building and we'll set up a board for you.</div>
+
+        <div class="form-group">
+          <label class="mock-label">Title</label>
+          <div class="mock-input" style="color: var(--text-primary);">Recipe sharing social app</div>
+        </div>
+
+        <div class="form-group">
+          <div class="mock-textarea" style="min-height: 48px; color: var(--text-secondary);">A social platform where users share recipes, follow cooks, and save favorites. Includes meal planning and shopping list features.</div>
+        </div>
+
+        <div class="form-group">
+          <label class="mock-label">Project Type</label>
+          <div class="mock-hint" style="margin-bottom: 10px; margin-top: -2px;">Choose a type to pre-configure your board with labels, workflow templates, and automation rules.</div>
+          <div class="type-grid">
+            <div class="type-card selected">
+              <div class="type-icon" style="background: var(--blue-dim); color: var(--blue);">&#128187;</div>
+              <div class="type-name">Web App</div>
+              <div class="type-desc">Full-stack web application</div>
+            </div>
+            <div class="type-card">
+              <div class="type-icon" style="background: var(--violet-dim); color: var(--violet);">&#128241;</div>
+              <div class="type-name">Mobile App</div>
+              <div class="type-desc">iOS, Android, or cross-platform</div>
+            </div>
+            <div class="type-card">
+              <div class="type-icon" style="background: var(--emerald-dim); color: var(--emerald);">&#9889;</div>
+              <div class="type-name">API / Backend</div>
+              <div class="type-desc">API service or backend system</div>
+            </div>
+            <div class="type-card">
+              <div class="type-icon" style="background: var(--orange-dim); color: var(--orange);">&#128240;</div>
+              <div class="type-name">Content</div>
+              <div class="type-desc">Blog, docs, or marketing site</div>
+            </div>
+            <div class="type-card">
+              <div class="type-icon" style="background: var(--pink-dim); color: var(--pink);">&#127912;</div>
+              <div class="type-name">Design</div>
+              <div class="type-desc">UI/UX or creative project</div>
+            </div>
+            <div class="type-card">
+              <div class="type-icon" style="background: var(--bg-muted); color: var(--text-muted);">&#9711;</div>
+              <div class="type-name">Custom</div>
+              <div class="type-desc">No presets &mdash; start blank</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Preview of what you get -->
+        <div class="preset-preview">
+          <div class="preset-header">
+            <span class="preset-title">Web App preset will create:</span>
+            <span class="preset-badge">Preview</span>
+          </div>
+          <div class="preset-body">
+            <div class="preset-section">
+              <div class="preset-section-title">Labels</div>
+              <div class="label-list">
+                <span class="label-pill" style="background: var(--emerald-dim); color: var(--emerald);">feature</span>
+                <span class="label-pill" style="background: var(--red-dim); color: var(--red);">bug</span>
+                <span class="label-pill" style="background: var(--amber-dim); color: var(--amber);">chore</span>
+                <span class="label-pill" style="background: var(--violet-dim); color: var(--violet);">spike</span>
+                <span class="label-pill" style="background: var(--cyan-dim); color: var(--cyan);">ux</span>
+              </div>
+            </div>
+            <div class="preset-section">
+              <div class="preset-section-title">Workflow Templates</div>
+              <div class="template-mini">
+                <span class="t-name">Dev Pipeline</span>
+                <span class="t-meta">5 steps &middot; BA &rarr; UX &rarr; Review &rarr; Dev &rarr; QA</span>
+              </div>
+              <div class="template-mini">
+                <span class="t-name">Bug Triage</span>
+                <span class="t-meta">3 steps &middot; Reproduce &rarr; Fix &rarr; Verify</span>
+              </div>
+            </div>
+            <div class="preset-section">
+              <div class="preset-section-title">Auto-Rules</div>
+              <div class="auto-rule-mini">
+                <span class="label-pill" style="background: var(--emerald-dim); color: var(--emerald); font-size: 10px;">feature</span>
+                <span class="arrow">&rarr;</span>
+                Dev Pipeline (auto-run)
+              </div>
+              <div class="auto-rule-mini">
+                <span class="label-pill" style="background: var(--red-dim); color: var(--red); font-size: 10px;">bug</span>
+                <span class="arrow">&rarr;</span>
+                Bug Triage (auto-run)
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 8px; margin-top: 20px;">
+          <div class="mock-btn" style="flex: 1; justify-content: center;">Back</div>
+          <div class="mock-btn mock-btn-primary" style="flex: 2; justify-content: center;">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Enhance with AI & Create Board
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="mockup-caption">Onboarding Step 3: project type selector with live preview of what the preset will create</p>
+
+  <h3>3b. AI Enhance Dialog (Existing Ideas)</h3>
+  <p>For existing ideas that don't have a board yet, the AI Generate dialog gains the same project type selector. For ideas that already have a board, this isn't shown (the board already has labels/templates).</p>
+
+  <div class="state-indicator"><span class="state-num">2</span> AI Generate dialog &mdash; first board generation</div>
+  <div class="browser-frame">
+    <div class="browser-titlebar">
+      <span class="traffic-dot red"></span>
+      <span class="traffic-dot yellow"></span>
+      <span class="traffic-dot green"></span>
+      <span class="url">vibecodes.co.uk/ideas/abc123</span>
+    </div>
+    <div class="browser-content">
+      <div style="max-width: 480px; margin: 0 auto; background: var(--bg-card); border: 1px solid var(--border-strong); border-radius: var(--radius-lg); overflow: hidden;">
+        <div style="padding: 16px 20px; border-bottom: 1px solid var(--border); display: flex; align-items: center; justify-content: space-between;">
+          <div style="font-size: 16px; font-weight: 600;">Generate Board Tasks</div>
+          <span style="font-size: 18px; color: var(--text-muted); cursor: default;">&times;</span>
+        </div>
+        <div style="padding: 20px;">
+          <div class="form-group">
+            <label class="mock-label">Project Type</label>
+            <div class="type-grid" style="grid-template-columns: repeat(3, 1fr); gap: 8px;">
+              <div class="type-card" style="padding: 10px 8px;">
+                <div style="font-size: 16px;">&#128187;</div>
+                <div class="type-name" style="font-size: 11px;">Web App</div>
+              </div>
+              <div class="type-card" style="padding: 10px 8px;">
+                <div style="font-size: 16px;">&#128241;</div>
+                <div class="type-name" style="font-size: 11px;">Mobile</div>
+              </div>
+              <div class="type-card selected" style="padding: 10px 8px;">
+                <div style="font-size: 16px;">&#9889;</div>
+                <div class="type-name" style="font-size: 11px;">API</div>
+              </div>
+              <div class="type-card" style="padding: 10px 8px;">
+                <div style="font-size: 16px;">&#128240;</div>
+                <div class="type-name" style="font-size: 11px;">Content</div>
+              </div>
+              <div class="type-card" style="padding: 10px 8px;">
+                <div style="font-size: 16px;">&#127912;</div>
+                <div class="type-name" style="font-size: 11px;">Design</div>
+              </div>
+              <div class="type-card" style="padding: 10px 8px;">
+                <div style="font-size: 16px;">&#9711;</div>
+                <div class="type-name" style="font-size: 11px;">Custom</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="font-size: 11px; color: var(--text-muted); margin-bottom: 16px; padding: 8px 10px; background: var(--bg-elevated); border-radius: var(--radius);">
+            <strong style="color: var(--text-secondary);">API / Backend</strong> preset: 4 labels, 2 workflow templates, 2 auto-rules
+          </div>
+
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label class="mock-label">Additional context <span style="font-weight: 400; color: var(--text-muted);">(optional)</span></label>
+            <div class="mock-textarea" style="min-height: 48px;">Focus on the REST API endpoints first, auth can come later.</div>
+          </div>
+
+          <div class="mock-btn mock-btn-primary" style="width: 100%; justify-content: center;">
+            <svg class="icon icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Generate Tasks & Setup Board
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="mockup-caption">AI Generate dialog for an existing idea: compact project type selector with summary line</p>
+
+
+  <!-- ════════════════════════════════════════════════════
+       4. PRESET DEFINITIONS
+       ════════════════════════════════════════════════════ -->
+  <h2 id="presets">4. Preset Definitions</h2>
+  <p>Start with <strong>5 project types</strong> plus Custom (no presets). Each type defines labels, workflow templates with agent-assigned steps, and auto-rules. Presets are stored as static JSON config &mdash; not database records.</p>
+
+  <!-- Web App Preset -->
+  <div class="preset-def">
+    <div class="preset-def-header">
+      <div class="preset-def-icon" style="background: var(--blue-dim); color: var(--blue);">&#128187;</div>
+      <div>
+        <h4>Web App</h4>
+        <div class="preset-tagline">Full-stack web application &mdash; the most common project type</div>
+      </div>
+    </div>
+    <div class="preset-def-body">
+      <div class="section-title">Labels (5)</div>
+      <div class="label-list" style="margin-bottom: 16px;">
+        <span class="label-pill" style="background: var(--emerald-dim); color: var(--emerald);">feature</span>
+        <span class="label-pill" style="background: var(--red-dim); color: var(--red);">bug</span>
+        <span class="label-pill" style="background: var(--amber-dim); color: var(--amber);">chore</span>
+        <span class="label-pill" style="background: var(--violet-dim); color: var(--violet);">spike</span>
+        <span class="label-pill" style="background: var(--cyan-dim); color: var(--cyan);">ux</span>
+      </div>
+
+      <div class="section-title">Template: Dev Pipeline (5 steps)</div>
+      <div class="step-chain">
+        <div class="step-chip">
+          <span class="chip-num">1</span>
+          <span class="chip-label">Requirements</span>
+          <span class="chip-agent">BA</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip">
+          <span class="chip-num">2</span>
+          <span class="chip-label">UX Design</span>
+          <span class="chip-agent">UX</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip gate">
+          <span class="chip-num">3</span>
+          <span class="chip-label">Design Review</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip">
+          <span class="chip-num">4</span>
+          <span class="chip-label">Implementation</span>
+          <span class="chip-agent">Dev</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip gate">
+          <span class="chip-num">5</span>
+          <span class="chip-label">QA Review</span>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 16px;">Template: Bug Triage (3 steps)</div>
+      <div class="step-chain">
+        <div class="step-chip">
+          <span class="chip-num">1</span>
+          <span class="chip-label">Reproduce</span>
+          <span class="chip-agent">QA</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip">
+          <span class="chip-num">2</span>
+          <span class="chip-label">Fix</span>
+          <span class="chip-agent">Dev</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip gate">
+          <span class="chip-num">3</span>
+          <span class="chip-label">Verify</span>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 16px;">Auto-Rules</div>
+      <div class="auto-rule-mini">
+        <span class="label-pill" style="background: var(--emerald-dim); color: var(--emerald); font-size: 10px;">feature</span>
+        <span class="arrow">&rarr;</span>
+        <span>Dev Pipeline</span>
+        <span style="color: var(--emerald); font-size: 11px; font-weight: 600;">(auto-run)</span>
+      </div>
+      <div class="auto-rule-mini">
+        <span class="label-pill" style="background: var(--red-dim); color: var(--red); font-size: 10px;">bug</span>
+        <span class="arrow">&rarr;</span>
+        <span>Bug Triage</span>
+        <span style="color: var(--emerald); font-size: 11px; font-weight: 600;">(auto-run)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- API / Backend Preset -->
+  <div class="preset-def">
+    <div class="preset-def-header">
+      <div class="preset-def-icon" style="background: var(--emerald-dim); color: var(--emerald);">&#9889;</div>
+      <div>
+        <h4>API / Backend</h4>
+        <div class="preset-tagline">REST/GraphQL API, microservice, or backend system</div>
+      </div>
+    </div>
+    <div class="preset-def-body">
+      <div class="section-title">Labels (4)</div>
+      <div class="label-list" style="margin-bottom: 16px;">
+        <span class="label-pill" style="background: var(--emerald-dim); color: var(--emerald);">endpoint</span>
+        <span class="label-pill" style="background: var(--red-dim); color: var(--red);">bug</span>
+        <span class="label-pill" style="background: var(--amber-dim); color: var(--amber);">infra</span>
+        <span class="label-pill" style="background: var(--violet-dim); color: var(--violet);">schema</span>
+      </div>
+
+      <div class="section-title">Template: API Pipeline (4 steps)</div>
+      <div class="step-chain">
+        <div class="step-chip">
+          <span class="chip-num">1</span>
+          <span class="chip-label">API Spec</span>
+          <span class="chip-agent">BA</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip gate">
+          <span class="chip-num">2</span>
+          <span class="chip-label">Spec Review</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip">
+          <span class="chip-num">3</span>
+          <span class="chip-label">Implementation</span>
+          <span class="chip-agent">Dev</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip gate">
+          <span class="chip-num">4</span>
+          <span class="chip-label">Test & Verify</span>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 16px;">Auto-Rules</div>
+      <div class="auto-rule-mini">
+        <span class="label-pill" style="background: var(--emerald-dim); color: var(--emerald); font-size: 10px;">endpoint</span>
+        <span class="arrow">&rarr;</span>
+        <span>API Pipeline</span>
+        <span style="color: var(--emerald); font-size: 11px; font-weight: 600;">(auto-run)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Content Preset -->
+  <div class="preset-def">
+    <div class="preset-def-header">
+      <div class="preset-def-icon" style="background: var(--orange-dim); color: var(--orange);">&#128240;</div>
+      <div>
+        <h4>Content</h4>
+        <div class="preset-tagline">Blog, documentation site, or marketing pages</div>
+      </div>
+    </div>
+    <div class="preset-def-body">
+      <div class="section-title">Labels (4)</div>
+      <div class="label-list" style="margin-bottom: 16px;">
+        <span class="label-pill" style="background: var(--blue-dim); color: var(--blue);">article</span>
+        <span class="label-pill" style="background: var(--pink-dim); color: var(--pink);">page</span>
+        <span class="label-pill" style="background: var(--amber-dim); color: var(--amber);">update</span>
+        <span class="label-pill" style="background: var(--red-dim); color: var(--red);">fix</span>
+      </div>
+
+      <div class="section-title">Template: Content Pipeline (4 steps)</div>
+      <div class="step-chain">
+        <div class="step-chip">
+          <span class="chip-num">1</span>
+          <span class="chip-label">Research</span>
+          <span class="chip-agent">BA</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip">
+          <span class="chip-num">2</span>
+          <span class="chip-label">Draft</span>
+          <span class="chip-agent">Dev</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip gate">
+          <span class="chip-num">3</span>
+          <span class="chip-label">Editorial Review</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip">
+          <span class="chip-num">4</span>
+          <span class="chip-label">Publish</span>
+          <span class="chip-agent">Dev</span>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 16px;">Auto-Rules</div>
+      <div class="auto-rule-mini">
+        <span class="label-pill" style="background: var(--blue-dim); color: var(--blue); font-size: 10px;">article</span>
+        <span class="arrow">&rarr;</span>
+        <span>Content Pipeline</span>
+        <span style="color: var(--emerald); font-size: 11px; font-weight: 600;">(auto-run)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Mobile App Preset -->
+  <div class="preset-def">
+    <div class="preset-def-header">
+      <div class="preset-def-icon" style="background: var(--violet-dim); color: var(--violet);">&#128241;</div>
+      <div>
+        <h4>Mobile App</h4>
+        <div class="preset-tagline">iOS, Android, or cross-platform mobile application</div>
+      </div>
+    </div>
+    <div class="preset-def-body">
+      <div class="section-title">Labels (5)</div>
+      <div class="label-list" style="margin-bottom: 16px;">
+        <span class="label-pill" style="background: var(--emerald-dim); color: var(--emerald);">feature</span>
+        <span class="label-pill" style="background: var(--red-dim); color: var(--red);">bug</span>
+        <span class="label-pill" style="background: var(--cyan-dim); color: var(--cyan);">ui</span>
+        <span class="label-pill" style="background: var(--amber-dim); color: var(--amber);">perf</span>
+        <span class="label-pill" style="background: var(--violet-dim); color: var(--violet);">platform</span>
+      </div>
+
+      <div class="section-title">Template: Mobile Dev Pipeline (5 steps)</div>
+      <div class="step-chain">
+        <div class="step-chip">
+          <span class="chip-num">1</span>
+          <span class="chip-label">Requirements</span>
+          <span class="chip-agent">BA</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip">
+          <span class="chip-num">2</span>
+          <span class="chip-label">UI Design</span>
+          <span class="chip-agent">UX</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip gate">
+          <span class="chip-num">3</span>
+          <span class="chip-label">Design Review</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip">
+          <span class="chip-num">4</span>
+          <span class="chip-label">Implementation</span>
+          <span class="chip-agent">Dev</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip gate">
+          <span class="chip-num">5</span>
+          <span class="chip-label">Device Testing</span>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 16px;">Auto-Rules</div>
+      <div class="auto-rule-mini">
+        <span class="label-pill" style="background: var(--emerald-dim); color: var(--emerald); font-size: 10px;">feature</span>
+        <span class="arrow">&rarr;</span>
+        <span>Mobile Dev Pipeline</span>
+        <span style="color: var(--emerald); font-size: 11px; font-weight: 600;">(auto-run)</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Design Preset -->
+  <div class="preset-def">
+    <div class="preset-def-header">
+      <div class="preset-def-icon" style="background: var(--pink-dim); color: var(--pink);">&#127912;</div>
+      <div>
+        <h4>Design</h4>
+        <div class="preset-tagline">UI/UX, branding, or creative project</div>
+      </div>
+    </div>
+    <div class="preset-def-body">
+      <div class="section-title">Labels (4)</div>
+      <div class="label-list" style="margin-bottom: 16px;">
+        <span class="label-pill" style="background: var(--pink-dim); color: var(--pink);">design</span>
+        <span class="label-pill" style="background: var(--violet-dim); color: var(--violet);">prototype</span>
+        <span class="label-pill" style="background: var(--cyan-dim); color: var(--cyan);">research</span>
+        <span class="label-pill" style="background: var(--amber-dim); color: var(--amber);">revision</span>
+      </div>
+
+      <div class="section-title">Template: Design Pipeline (4 steps)</div>
+      <div class="step-chain">
+        <div class="step-chip">
+          <span class="chip-num">1</span>
+          <span class="chip-label">Research</span>
+          <span class="chip-agent">UX</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip">
+          <span class="chip-num">2</span>
+          <span class="chip-label">Wireframes</span>
+          <span class="chip-agent">UX</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip gate">
+          <span class="chip-num">3</span>
+          <span class="chip-label">Stakeholder Review</span>
+        </div>
+        <span class="step-arrow">&rarr;</span>
+        <div class="step-chip">
+          <span class="chip-num">4</span>
+          <span class="chip-label">High-Fidelity</span>
+          <span class="chip-agent">UX</span>
+        </div>
+      </div>
+
+      <div class="section-title" style="margin-top: 16px;">Auto-Rules</div>
+      <div class="auto-rule-mini">
+        <span class="label-pill" style="background: var(--pink-dim); color: var(--pink); font-size: 10px;">design</span>
+        <span class="arrow">&rarr;</span>
+        <span>Design Pipeline</span>
+        <span style="color: var(--emerald); font-size: 11px; font-weight: 600;">(auto-run)</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout-amber callout">
+    <p><strong>Custom:</strong> Selecting "Custom" skips all preset seeding. The board starts with no labels, no templates, and no auto-rules &mdash; identical to the current behaviour. Users can manually add everything later from the Workflows tab.</p>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════
+       5. DATA MODEL
+       ════════════════════════════════════════════════════ -->
+  <h2 id="data-model">5. Data Model</h2>
+
+  <h3>Presets: Static Config, Not Database</h3>
+  <p>Preset definitions are <strong>static JSON config</strong> in the codebase (e.g. <code>src/lib/project-presets.ts</code>), not database records. This keeps them simple, versionable, and avoids a migration every time a preset changes.</p>
+
+  <div class="card">
+    <p style="font-size: 14px; margin: 0;"><strong>Why not store presets in the database?</strong></p>
+    <ul style="font-size: 13px; margin-top: 8px; margin-bottom: 0;">
+      <li>Presets are the same for every user &mdash; no per-user customisation needed</li>
+      <li>Changes to presets should be code-reviewed, not admin-panel edits</li>
+      <li>Keeps the database focused on user-created data (their templates, their rules)</li>
+      <li>The preset is a one-time seed operation &mdash; after creation, the user's labels/templates/rules are independent copies they can modify</li>
+    </ul>
+  </div>
+
+  <h3>Database Changes</h3>
+  <p>One column addition to the <code>ideas</code> table to track which preset was used (for analytics and to avoid re-seeding):</p>
+
+  <div class="schema-table" style="max-width: 480px;">
+    <div class="schema-table-name">ideas <span style="color: var(--amber); font-size: 10px; font-weight: 400;">(modified)</span></div>
+    <div class="schema-col"><span class="col-name">...existing cols</span> <span class="col-type">(unchanged)</span></div>
+    <div class="schema-col"><span class="col-name" style="color: var(--emerald);">+ project_type</span> <span class="col-type">text? (web_app, mobile_app, api, content, design, custom)</span></div>
+  </div>
+
+  <p>This column is nullable (existing ideas have no type) and purely informational. The seeded labels, templates, and auto-rules are independent copies &mdash; changing the preset definition later doesn't affect already-created boards.</p>
+
+  <h3>Config Structure</h3>
+  <div style="background: #0d1117; border: 1px solid var(--border-strong); border-radius: var(--radius-lg); overflow: hidden; margin: 16px 0;">
+    <div style="background: #161b22; border-bottom: 1px solid rgba(255,255,255,0.06); padding: 10px 16px; font-family: var(--font-mono); font-size: 12px; color: #8b949e;">src/lib/project-presets.ts</div>
+    <div style="padding: 16px 20px; font-family: var(--font-mono); font-size: 12px; line-height: 1.7; color: #c9d1d9; overflow-x: auto;">
+<span style="color: var(--violet);">interface</span> <span style="color: var(--blue);">ProjectPreset</span> {<br>
+&nbsp;&nbsp;<span style="color: var(--text-primary);">type</span>: <span style="color: var(--emerald);">string</span><br>
+&nbsp;&nbsp;<span style="color: var(--text-primary);">name</span>: <span style="color: var(--emerald);">string</span><br>
+&nbsp;&nbsp;<span style="color: var(--text-primary);">description</span>: <span style="color: var(--emerald);">string</span><br>
+&nbsp;&nbsp;<span style="color: var(--text-primary);">icon</span>: <span style="color: var(--emerald);">string</span><br>
+&nbsp;&nbsp;<span style="color: var(--text-primary);">labels</span>: { <span style="color: var(--text-primary);">name</span>: <span style="color: var(--emerald);">string</span>, <span style="color: var(--text-primary);">color</span>: <span style="color: var(--emerald);">string</span> }[]<br>
+&nbsp;&nbsp;<span style="color: var(--text-primary);">templates</span>: {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span style="color: var(--text-primary);">name</span>: <span style="color: var(--emerald);">string</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span style="color: var(--text-primary);">description</span>: <span style="color: var(--emerald);">string</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span style="color: var(--text-primary);">steps</span>: { <span style="color: var(--text-primary);">title</span>, <span style="color: var(--text-primary);">agent_role</span>, <span style="color: var(--text-primary);">requires_approval</span> }[]<br>
+&nbsp;&nbsp;}[]<br>
+&nbsp;&nbsp;<span style="color: var(--text-primary);">autoRules</span>: {<br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span style="color: var(--text-primary);">labelName</span>: <span style="color: var(--emerald);">string</span> <span style="color: #6e7681;">// matches a label above</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span style="color: var(--text-primary);">templateName</span>: <span style="color: var(--emerald);">string</span> <span style="color: #6e7681;">// matches a template above</span><br>
+&nbsp;&nbsp;&nbsp;&nbsp;<span style="color: var(--text-primary);">autoRun</span>: <span style="color: var(--emerald);">boolean</span><br>
+&nbsp;&nbsp;}[]<br>
+}
+    </div>
+  </div>
+
+
+  <!-- ════════════════════════════════════════════════════
+       6. INTEGRATION
+       ════════════════════════════════════════════════════ -->
+  <h2 id="integration">6. Integration Points</h2>
+
+  <h3>Seeding Flow</h3>
+  <p>When the user clicks "Enhance with AI & Create Board" with a project type selected:</p>
+
+  <div class="flow-steps">
+    <div class="flow-step">
+      <div class="step-content">
+        <div class="step-name">1. Initialize board columns</div>
+        <div class="step-desc">Same as current flow &mdash; uses <code>initializeBoardColumns()</code> with user's default or system defaults.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="step-content">
+        <div class="step-name">2. Seed labels</div>
+        <div class="step-desc">Insert <code>board_labels</code> rows from the preset config. Skip any that already exist (by name) to avoid duplicates on re-runs.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="step-content">
+        <div class="step-name">3. Seed workflow templates</div>
+        <div class="step-desc">Insert <code>workflow_templates</code> rows with steps JSONB from the preset config. Templates are owned by the idea.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="step-content">
+        <div class="step-name">4. Seed auto-rules</div>
+        <div class="step-desc">Insert <code>workflow_auto_rules</code> rows mapping preset labels to preset templates. Set <code>auto_run</code> per the config.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="step-content">
+        <div class="step-name">5. AI generates tasks with labels</div>
+        <div class="step-desc">The AI prompt includes the available labels, so generated tasks come back pre-labelled. The database trigger fires on label assignment, auto-creating workflow runs for matching tasks.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="step-content">
+        <div class="step-name">6. Board is ready</div>
+        <div class="step-desc">User sees a fully populated board: tasks with labels, workflow runs already attached to labelled tasks, templates and auto-rules configured. Ready for Claude Code to start picking up work.</div>
+      </div>
+    </div>
+  </div>
+
+  <h3>AI Prompt Enhancement</h3>
+  <p>The project type also improves AI task generation. The prompt to Claude for generating board tasks gains additional context:</p>
+
+  <div class="card">
+    <p style="font-size: 13px; color: var(--text-muted); margin: 0 0 8px; font-style: italic;">Added to the existing task generation prompt:</p>
+    <p style="font-size: 13px; margin: 0; padding: 12px; background: var(--bg-elevated); border-radius: var(--radius); font-family: var(--font-mono); color: var(--text-secondary); line-height: 1.6;">
+      This is a <strong style="color: var(--blue);">web_app</strong> project. Available labels: feature, bug, chore, spike, ux.<br>
+      Assign one label to each generated task. Use "feature" for new functionality,<br>
+      "bug" for fixes, "chore" for setup/config, "spike" for research, "ux" for design tasks.<br>
+      Tasks labelled "feature" will auto-trigger a Dev Pipeline workflow.
+    </p>
+  </div>
+
+  <h3>MCP Tool Integration</h3>
+  <p>The project type should also be available via MCP for Claude Code-driven board setup:</p>
+  <div style="overflow-x: auto;">
+    <table>
+      <thead>
+        <tr><th>Tool</th><th>Change</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td style="font-family: var(--font-mono); font-size: 13px; color: var(--emerald);">create_idea</td>
+          <td>Add optional <code>project_type</code> parameter. When provided, seeds the board with the preset after idea creation.</td>
+        </tr>
+        <tr>
+          <td style="font-family: var(--font-mono); font-size: 13px; color: var(--emerald);">get_task</td>
+          <td>Already returns <code>workflow_run</code> inline (from Workflow v2). No additional changes needed.</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Edge Cases</h3>
+  <ul>
+    <li><strong>Existing idea, no board yet:</strong> Project type selector shown in AI Generate dialog. Seeding happens before task generation.</li>
+    <li><strong>Existing idea with board:</strong> Project type selector not shown. User already has labels/templates they've configured. Don't overwrite.</li>
+    <li><strong>User picks Custom then wants presets later:</strong> They can manually create templates from the Workflows tab. No "apply preset retroactively" button needed for MVP.</li>
+    <li><strong>Agent roles reference non-existent agents:</strong> Template steps use generic role names ("BA Agent", "Dev Agent"). Claude Code maps these to actual agents in the idea's agent pool, or just adopts the role name as a persona if no matching agent exists.</li>
+  </ul>
+
+
+  <!-- ════════════════════════════════════════════════════
+       7. IMPLEMENTATION ROADMAP
+       ════════════════════════════════════════════════════ -->
+  <h2 id="roadmap">7. Implementation Roadmap</h2>
+  <p>This feature depends on <a href="workflow-orchestration-v2.html">Workflow Orchestration v2</a> Phases 1&ndash;3 being complete (templates, lifecycle tools, auto-rules + triggers).</p>
+
+  <div class="roadmap">
+    <div class="roadmap-phase">
+      <div class="phase-content">
+        <div class="phase-name">Phase 1 &mdash; Preset Config + Seeding Logic</div>
+        <div class="phase-desc"><code>src/lib/project-presets.ts</code> with all 5 preset definitions. <code>seedProjectPreset()</code> function that creates labels, templates, and auto-rules from a preset config. Migration adding <code>project_type</code> column to <code>ideas</code>.</div>
+      </div>
+      <span class="phase-time">1 day</span>
+    </div>
+    <div class="roadmap-phase">
+      <div class="phase-content">
+        <div class="phase-name">Phase 2 &mdash; UI Components</div>
+        <div class="phase-desc"><code>ProjectTypeSelector</code> component (grid of type cards). Preset preview panel. Integration into onboarding Step 3 and AI Generate dialog.</div>
+      </div>
+      <span class="phase-time">1&ndash;2 days</span>
+    </div>
+    <div class="roadmap-phase">
+      <div class="phase-content">
+        <div class="phase-name">Phase 3 &mdash; AI Prompt Enhancement</div>
+        <div class="phase-desc">Modify <code>generateBoardTasks</code> to include project type context and available labels in the AI prompt. AI generates tasks with label assignments. Labels applied on task creation trigger auto-rule workflow runs.</div>
+      </div>
+      <span class="phase-time">0.5&ndash;1 day</span>
+    </div>
+    <div class="roadmap-phase">
+      <div class="phase-content">
+        <div class="phase-name">Phase 4 &mdash; MCP + Testing</div>
+        <div class="phase-desc">Add <code>project_type</code> parameter to <code>create_idea</code> MCP tool. Unit tests for seeding logic. E2E tests for onboarding flow with preset selection.</div>
+      </div>
+      <span class="phase-time">1 day</span>
+    </div>
+  </div>
+
+  <div class="callout">
+    <p><strong>Total estimate:</strong> 3.5&ndash;5 days. Requires Workflow Orchestration v2 Phases 1&ndash;3 as a prerequisite.</p>
+  </div>
+
+
+  <!-- Footer -->
+  <div style="margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border); text-align: center; color: var(--text-muted); font-size: 12px;">
+    <p>VibeCodes &mdash; Project Type Presets Design Document</p>
+    <p>Draft &mdash; March 2026 &mdash; For stakeholder review</p>
+  </div>
+
+</div>
+</body>
+</html>

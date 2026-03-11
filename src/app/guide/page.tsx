@@ -48,7 +48,7 @@ const sections = [
   {
     title: "Kanban Boards",
     description:
-      "Manage tasks with drag-and-drop boards, labels, due dates, checklists, file attachments, and AI task generation.",
+      "Manage tasks with drag-and-drop boards, labels, due dates, workflow steps, file attachments, and AI task generation.",
     icon: LayoutDashboard,
     href: "/guide/kanban-boards",
   },

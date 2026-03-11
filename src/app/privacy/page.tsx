@@ -111,7 +111,7 @@ export default function PrivacyPolicyPage() {
                   Board &amp; Task Data
                 </h3>
                 <p className="text-muted-foreground">
-                  Kanban board columns, tasks, labels, checklists, due dates,
+                  Kanban board columns, tasks, labels, workflow steps, due dates,
                   task comments, activity logs, and file attachments (up to 10MB
                   per file). Profile pictures are stored in a{" "}
                   <strong className="text-foreground">publicly accessible</strong>{" "}

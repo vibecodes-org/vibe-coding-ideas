@@ -198,3 +198,4 @@ describe("SUGGESTED_TAGS", () => {
     expect(new Set(SUGGESTED_TAGS).size).toBe(SUGGESTED_TAGS.length);
   });
 });
+

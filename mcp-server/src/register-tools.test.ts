@@ -57,6 +57,18 @@ const EXPECTED_TOOL_NAMES = [
   "allocate_agent",
   "remove_idea_agent",
   "list_idea_agents",
+  "list_workflow_templates",
+  "create_workflow_template",
+  "update_workflow_template",
+  "delete_workflow_template",
+  "apply_workflow_template",
+  "claim_next_step",
+  "complete_step",
+  "fail_step",
+  "approve_step",
+  "get_step_context",
+  "add_step_comment",
+  "get_step_comments",
 ];
 
 function createMockServer() {
@@ -64,13 +76,13 @@ function createMockServer() {
 }
 
 describe("registerTools", () => {
-  it("registers exactly 54 tools", () => {
+  it("registers exactly 66 tools", () => {
     const server = createMockServer();
     const getContext = vi.fn();
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(54);
+    expect(server.tool).toHaveBeenCalledTimes(66);
   });
 
   it("registers all expected tool names", () => {

@@ -59,9 +59,9 @@ export function MyTasksList({ tasks }: MyTasksListProps) {
               {task.column.title}
             </Badge>
             {task.due_date && <DueDateBadge dueDate={task.due_date} />}
-            {task.checklist_total > 0 && (
+            {task.workflow_step_total > 0 && (
               <span className="text-[10px] text-muted-foreground">
-                {task.checklist_done}/{task.checklist_total}
+                {task.workflow_step_completed}/{task.workflow_step_total}
               </span>
             )}
           </div>

@@ -93,8 +93,8 @@ export async function POST(req: Request) {
     const hasAgent = !!(personaPrompt || agentRole || agentSkills?.length);
 
     const systemPrompt = hasAgent
-      ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a software project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. If a task has subtasks or implementation steps, include them as a markdown checklist in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
-      : "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown checklist in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").";
+      ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a software project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
+      : "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").";
 
     const contextParts = [
       `${prompt}`,

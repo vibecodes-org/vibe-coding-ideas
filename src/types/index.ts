@@ -51,11 +51,16 @@ export type BoardTask = Database["public"]["Tables"]["board_tasks"]["Row"];
 export type BoardLabel = Database["public"]["Tables"]["board_labels"]["Row"];
 export type BoardTaskLabel = Database["public"]["Tables"]["board_task_labels"]["Row"];
 export type AiPromptTemplate = Database["public"]["Tables"]["ai_prompt_templates"]["Row"];
-export type BoardChecklistItem = Database["public"]["Tables"]["board_checklist_items"]["Row"];
+export type TaskWorkflowStep = Database["public"]["Tables"]["task_workflow_steps"]["Row"];
+export type WorkflowStepComment = Database["public"]["Tables"]["workflow_step_comments"]["Row"];
+export type WorkflowTemplate = Database["public"]["Tables"]["workflow_templates"]["Row"];
+export type WorkflowAutoRule = Database["public"]["Tables"]["workflow_auto_rules"]["Row"];
+export type WorkflowRun = Database["public"]["Tables"]["workflow_runs"]["Row"];
 export type BoardTaskActivity = Database["public"]["Tables"]["board_task_activity"]["Row"];
 export type BoardTaskComment = Database["public"]["Tables"]["board_task_comments"]["Row"];
 export type BoardTaskAttachment = Database["public"]["Tables"]["board_task_attachments"]["Row"];
 export type IdeaAttachment = Database["public"]["Tables"]["idea_attachments"]["Row"];
+export type DiscussionAttachment = Database["public"]["Tables"]["discussion_attachments"]["Row"];
 export type BotProfile = Database["public"]["Tables"]["bot_profiles"]["Row"];
 export type AgentVote = Database["public"]["Tables"]["agent_votes"]["Row"];
 export type BotProfileWithOwner = BotProfile & {
@@ -138,6 +143,9 @@ export type CollaborationRequestStatus = Database["public"]["Enums"]["collaborat
 export type CollaborationRequestWithRequester = CollaborationRequest & {
   requester: User;
 };
+
+// Workflow Library
+export type WorkflowLibraryTemplate = Database["public"]["Tables"]["workflow_library_templates"]["Row"];
 
 // Sort options
 export type SortOption = "newest" | "popular" | "discussed";

@@ -1,0 +1,1255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VibeCodes — Board-Level Workflows Proposal</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&family=Geist+Mono:wght@400;500&display=swap');
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg: #09090b;
+    --bg-card: #18181b;
+    --bg-muted: #27272a;
+    --bg-elevated: #303033;
+    --border: rgba(255,255,255,0.08);
+    --border-hover: rgba(255,255,255,0.14);
+    --fg: #fafafa;
+    --fg-muted: #a1a1aa;
+    --fg-dim: #71717a;
+    --violet: #8b5cf6;
+    --violet-dim: rgba(139,92,246,0.15);
+    --violet-border: rgba(139,92,246,0.25);
+    --violet-text: #a78bfa;
+    --blue: #3b82f6;
+    --blue-dim: rgba(59,130,246,0.15);
+    --blue-border: rgba(59,130,246,0.25);
+    --blue-text: #60a5fa;
+    --emerald: #10b981;
+    --emerald-dim: rgba(16,185,129,0.15);
+    --emerald-border: rgba(16,185,129,0.25);
+    --emerald-text: #34d399;
+    --amber: #f59e0b;
+    --amber-dim: rgba(245,158,11,0.15);
+    --amber-border: rgba(245,158,11,0.25);
+    --amber-text: #fbbf24;
+    --red: #ef4444;
+    --red-dim: rgba(239,68,68,0.15);
+    --red-border: rgba(239,68,68,0.25);
+    --red-text: #f87171;
+    --pink: #ec4899;
+    --pink-dim: rgba(236,72,153,0.15);
+    --pink-text: #f472b6;
+    --cyan: #06b6d4;
+    --cyan-dim: rgba(6,182,212,0.15);
+    --cyan-text: #22d3ee;
+    --radius: 8px;
+    --radius-sm: 6px;
+  }
+
+  body {
+    font-family: 'Geist', -apple-system, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+    padding: 0;
+  }
+
+  /* ─── Top Nav ─── */
+  .top-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 16px 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+  .top-bar .logo {
+    font-weight: 700;
+    font-size: 15px;
+    color: var(--violet-text);
+    letter-spacing: -0.02em;
+  }
+  .top-bar .breadcrumb {
+    font-size: 13px;
+    color: var(--fg-dim);
+  }
+  .top-bar .breadcrumb span { color: var(--fg-muted); }
+  .proposal-badge {
+    margin-left: auto;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    padding: 3px 10px;
+    border-radius: 20px;
+    background: var(--violet-dim);
+    color: var(--violet-text);
+    border: 1px solid var(--violet-border);
+  }
+
+  /* ─── Screen Tabs ─── */
+  .screen-tabs {
+    display: flex;
+    gap: 0;
+    padding: 0 32px;
+    border-bottom: 1px solid var(--border);
+    background: var(--bg-card);
+  }
+  .screen-tab {
+    padding: 10px 18px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--fg-dim);
+    cursor: pointer;
+    border: none;
+    background: none;
+    border-bottom: 2px solid transparent;
+    transition: all 0.15s;
+    font-family: inherit;
+  }
+  .screen-tab:hover { color: var(--fg-muted); }
+  .screen-tab.active {
+    color: var(--fg);
+    border-bottom-color: var(--violet);
+  }
+
+  .screen { display: none; padding: 24px 32px; }
+  .screen.active { display: block; }
+
+  /* ─── Screen 1: Workflows Tab ─── */
+  .workflows-layout {
+    display: flex;
+    gap: 16px;
+    height: 520px;
+  }
+  .templates-sidebar {
+    width: 240px;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-muted);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-header span {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-dim);
+  }
+  .sidebar-actions { display: flex; gap: 4px; }
+  .btn-ghost {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--fg-muted);
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.12s;
+  }
+  .btn-ghost:hover { background: rgba(255,255,255,0.06); }
+  .btn-ghost svg { width: 12px; height: 12px; }
+
+  .sidebar-list { flex: 1; overflow-y: auto; padding: 6px; }
+  .template-item {
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid transparent;
+    background: none;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.12s;
+    display: block;
+  }
+  .template-item:hover { background: rgba(255,255,255,0.04); }
+  .template-item.selected {
+    background: var(--violet-dim);
+    border-color: var(--violet-border);
+  }
+  .template-item .name {
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--fg);
+    display: block;
+  }
+  .template-item.selected .name { color: var(--violet-text); }
+  .template-item .meta {
+    font-size: 10px;
+    color: var(--fg-dim);
+    margin-top: 2px;
+    display: block;
+  }
+
+  .detail-panel {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: rgba(39,39,42,0.4);
+    padding: 20px;
+    overflow-y: auto;
+  }
+  .detail-header { display: flex; justify-content: space-between; align-items: flex-start; }
+  .detail-header h2 { font-size: 18px; font-weight: 600; letter-spacing: -0.01em; }
+  .detail-header .desc { font-size: 13px; color: var(--fg-muted); margin-top: 4px; }
+  .detail-header .usage { font-size: 10px; color: var(--fg-dim); margin-top: 4px; }
+
+  .section-title {
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--fg-dim);
+    margin-bottom: 8px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .section-title svg { width: 14px; height: 14px; }
+
+  /* Steps */
+  .step-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: rgba(39,39,42,0.3);
+    margin-bottom: 6px;
+    transition: all 0.12s;
+  }
+  .step-num {
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .step-num.default { background: var(--bg-muted); color: var(--fg-dim); }
+  .step-num.completed { background: var(--emerald-dim); color: var(--emerald-text); }
+  .step-num.in-progress { background: var(--blue-dim); color: var(--blue-text); }
+  .step-num.awaiting { background: var(--amber-dim); color: var(--amber-text); }
+  .step-num.failed { background: var(--red-dim); color: var(--red-text); }
+  .step-num.pending { background: var(--bg-muted); color: var(--fg-dim); }
+  .step-title { flex: 1; font-size: 13px; font-weight: 500; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* Badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-size: 10px;
+    font-weight: 500;
+    border: 1px solid;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .badge svg { width: 10px; height: 10px; }
+  .badge-violet { background: var(--violet-dim); color: var(--violet-text); border-color: var(--violet-border); }
+  .badge-blue { background: var(--blue-dim); color: var(--blue-text); border-color: var(--blue-border); }
+  .badge-emerald { background: var(--emerald-dim); color: var(--emerald-text); border-color: var(--emerald-border); }
+  .badge-amber { background: var(--amber-dim); color: var(--amber-text); border-color: var(--amber-border); }
+  .badge-red { background: var(--red-dim); color: var(--red-text); border-color: var(--red-border); }
+  .badge-pink { background: var(--pink-dim); color: var(--pink-text); border-color: rgba(236,72,153,0.25); }
+  .badge-cyan { background: var(--cyan-dim); color: var(--cyan-text); border-color: rgba(6,182,212,0.25); }
+  .badge-zinc { background: rgba(161,161,170,0.12); color: var(--fg-muted); border-color: rgba(161,161,170,0.2); }
+
+  .lock-icon { color: var(--amber-text); flex-shrink: 0; width: 14px; height: 14px; }
+
+  /* Auto-rules */
+  .auto-rule {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: rgba(39,39,42,0.2);
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+  .auto-rule .label-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 11px;
+    font-weight: 500;
+  }
+  .label-red { background: var(--red-dim); color: var(--red-text); }
+  .label-violet { background: var(--violet-dim); color: var(--violet-text); }
+  .auto-rule .arrow { color: var(--fg-dim); font-size: 11px; }
+
+  /* ─── Screen 2: Task Detail ─── */
+  .task-dialog {
+    max-width: 480px;
+    margin: 0 auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    overflow: hidden;
+  }
+  .task-dialog-header {
+    padding: 20px 20px 0;
+  }
+  .task-dialog-header h3 {
+    font-size: 16px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+  .task-tabs {
+    display: flex;
+    gap: 0;
+    padding: 12px 20px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .task-tab {
+    padding: 8px 14px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--fg-dim);
+    border: none;
+    background: none;
+    border-bottom: 2px solid transparent;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .task-tab.active { color: var(--fg); border-bottom-color: var(--violet); }
+  .task-dialog-body { padding: 16px 20px 20px; }
+
+  .workflow-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+  }
+  .workflow-header h4 { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .workflow-header .count { font-size: 11px; color: var(--fg-dim); }
+
+  .progress-bar {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-muted);
+    margin-bottom: 12px;
+    overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%;
+    border-radius: 3px;
+    background: var(--emerald);
+    transition: width 0.3s;
+  }
+
+  .template-label { font-size: 11px; color: var(--fg-dim); margin-bottom: 10px; }
+
+  /* Warning banner */
+  .warning-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--amber-border);
+    background: var(--amber-dim);
+    margin-bottom: 12px;
+  }
+  .warning-banner svg { width: 14px; height: 14px; color: var(--amber-text); flex-shrink: 0; margin-top: 1px; }
+  .warning-banner p { font-size: 11px; color: var(--amber-text); line-height: 1.4; }
+
+  /* Interactive step rows */
+  .step-row-interactive {
+    cursor: pointer;
+    position: relative;
+  }
+  .step-row-interactive:hover {
+    border-color: var(--border-hover);
+    background: rgba(39,39,42,0.6);
+  }
+  .step-row-interactive .hover-action {
+    display: none;
+    position: absolute;
+    right: 44px;
+  }
+  .step-row-interactive:hover .hover-action { display: flex; }
+  .step-row-interactive .chevron {
+    opacity: 0;
+    transition: opacity 0.12s;
+    color: var(--fg-dim);
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+  }
+  .step-row-interactive:hover .chevron { opacity: 1; }
+
+  .btn-sm {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 10px;
+    font-size: 10px;
+    font-weight: 500;
+    border-radius: var(--radius-sm);
+    border: 1px solid;
+    cursor: pointer;
+    font-family: inherit;
+    background: none;
+    transition: background 0.12s;
+  }
+  .btn-approve { color: var(--emerald-text); border-color: var(--emerald-border); }
+  .btn-approve:hover { background: var(--emerald-dim); }
+  .btn-retry { color: var(--fg-muted); border-color: var(--border); }
+  .btn-retry:hover { background: rgba(255,255,255,0.06); }
+
+  /* Apply workflow CTA */
+  .apply-cta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px;
+    border: 1px dashed var(--border-hover);
+    border-radius: var(--radius-sm);
+    background: none;
+    color: var(--fg-muted);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    width: 100%;
+    transition: all 0.12s;
+    margin-top: 12px;
+  }
+  .apply-cta:hover { border-color: var(--violet-border); color: var(--violet-text); background: var(--violet-dim); }
+  .apply-cta svg { width: 16px; height: 16px; }
+
+  /* ─── Screen 3: Step Detail ─── */
+  .step-dialog {
+    max-width: 420px;
+    margin: 0 auto;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--bg-card);
+    overflow: hidden;
+  }
+  .step-dialog-header {
+    padding: 20px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+  }
+  .step-dialog-header .step-num { width: 32px; height: 32px; font-size: 13px; }
+  .step-dialog-header .info { flex: 1; }
+  .step-dialog-header .info h3 { font-size: 15px; font-weight: 600; }
+  .step-dialog-header .badges { display: flex; gap: 6px; align-items: center; margin-top: 4px; }
+
+  .step-dialog-body { padding: 0 20px 20px; }
+  .field-label { font-size: 11px; font-weight: 500; color: var(--fg-dim); margin-bottom: 4px; }
+
+  .output-box {
+    padding: 10px 12px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--blue-border);
+    background: var(--blue-dim);
+    font-size: 12px;
+    color: var(--fg);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    margin-bottom: 12px;
+  }
+
+  .timestamps {
+    display: flex;
+    gap: 16px;
+    font-size: 10px;
+    color: var(--fg-dim);
+    margin-bottom: 12px;
+  }
+
+  .action-buttons { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+  .btn-action {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 14px;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: var(--radius-sm);
+    border: 1px solid;
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.12s;
+  }
+  .btn-action svg { width: 12px; height: 12px; }
+  .btn-approve-lg { background: #059669; color: white; border-color: #059669; }
+  .btn-approve-lg:hover { background: #047857; }
+  .btn-reject { background: none; color: var(--amber-text); border-color: var(--amber-border); }
+  .btn-reject:hover { background: var(--amber-dim); }
+
+  .cascade-dropdown {
+    margin-top: 8px;
+    padding: 8px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg-muted);
+  }
+  .cascade-select {
+    width: 100%;
+    padding: 5px 8px;
+    font-size: 11px;
+    border-radius: 4px;
+    border: 1px solid var(--border);
+    background: var(--bg-card);
+    color: var(--fg-muted);
+    font-family: inherit;
+    margin-bottom: 6px;
+    appearance: auto;
+  }
+  .cascade-select option { background: var(--bg-card); }
+
+  .separator { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+
+  /* Comments */
+  .comment-thread { margin-top: 4px; }
+  .comment-item {
+    padding: 8px 10px;
+    border-radius: var(--radius-sm);
+    margin-bottom: 6px;
+    font-size: 12px;
+  }
+  .comment-item.type-output { border-left: 2px solid rgba(59,130,246,0.5); background: var(--blue-dim); }
+  .comment-item.type-approval { border-left: 2px solid rgba(16,185,129,0.5); background: var(--emerald-dim); }
+  .comment-item.type-changes { border-left: 2px solid rgba(245,158,11,0.5); background: var(--amber-dim); }
+  .comment-item.type-default { background: rgba(39,39,42,0.3); }
+  .comment-meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    font-size: 10px;
+  }
+  .comment-avatar {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    background: var(--bg-elevated);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 7px;
+    font-weight: 600;
+    color: var(--fg-dim);
+  }
+  .comment-author { font-weight: 500; color: var(--fg); }
+  .comment-time { margin-left: auto; color: var(--fg-dim); }
+  .comment-body { font-size: 11px; color: var(--fg-muted); line-height: 1.4; }
+
+  .comment-input {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .comment-input textarea {
+    flex: 1;
+    padding: 8px 10px;
+    font-size: 11px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
+    background: var(--bg);
+    color: var(--fg);
+    font-family: inherit;
+    resize: none;
+    height: 48px;
+  }
+  .comment-input textarea::placeholder { color: var(--fg-dim); }
+  .comment-input button {
+    width: 32px;
+    height: 32px;
+    border-radius: var(--radius-sm);
+    border: none;
+    background: none;
+    color: var(--fg-dim);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    align-self: flex-end;
+    transition: color 0.12s;
+  }
+  .comment-input button:hover { color: var(--fg); }
+
+  /* ─── Screen 4: Comparison ─── */
+  .comparison {
+    max-width: 800px;
+    margin: 0 auto;
+  }
+  .comparison h2 {
+    font-size: 20px;
+    font-weight: 600;
+    text-align: center;
+    margin-bottom: 8px;
+    letter-spacing: -0.02em;
+  }
+  .comparison .subtitle {
+    text-align: center;
+    font-size: 13px;
+    color: var(--fg-muted);
+    margin-bottom: 28px;
+  }
+  .comparison-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 32px;
+  }
+  .compare-card {
+    border-radius: var(--radius);
+    border: 1px solid;
+    padding: 24px;
+  }
+  .compare-card.ours {
+    border-color: var(--violet-border);
+    background: linear-gradient(135deg, rgba(139,92,246,0.06) 0%, rgba(139,92,246,0.02) 100%);
+  }
+  .compare-card.theirs {
+    border-color: var(--border);
+    background: rgba(39,39,42,0.3);
+  }
+  .compare-card h3 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .compare-card.ours h3 { color: var(--violet-text); }
+  .compare-card .card-desc { font-size: 12px; color: var(--fg-dim); margin-bottom: 16px; }
+  .compare-card ul { list-style: none; }
+  .compare-card li {
+    font-size: 12px;
+    color: var(--fg-muted);
+    padding: 6px 0;
+    border-top: 1px solid var(--border);
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    line-height: 1.4;
+  }
+  .compare-card li:first-child { border-top: none; }
+  .check-icon { color: var(--emerald-text); flex-shrink: 0; width: 14px; height: 14px; margin-top: 1px; }
+  .x-icon { color: var(--red-text); flex-shrink: 0; width: 14px; height: 14px; margin-top: 1px; }
+  .compare-card li strong { color: var(--fg); font-weight: 500; }
+
+  .key-insight {
+    border: 1px solid var(--violet-border);
+    border-radius: var(--radius);
+    background: var(--violet-dim);
+    padding: 20px 24px;
+    text-align: center;
+  }
+  .key-insight p {
+    font-size: 14px;
+    color: var(--fg);
+    line-height: 1.6;
+    font-weight: 400;
+  }
+  .key-insight p em { color: var(--violet-text); font-style: normal; font-weight: 500; }
+
+  /* ─── Toggle states ─── */
+  .toggle-row {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 16px;
+  }
+  .toggle-btn {
+    padding: 5px 14px;
+    font-size: 11px;
+    font-weight: 500;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: none;
+    color: var(--fg-dim);
+    cursor: pointer;
+    font-family: inherit;
+    transition: all 0.12s;
+  }
+  .toggle-btn.active {
+    background: var(--violet-dim);
+    border-color: var(--violet-border);
+    color: var(--violet-text);
+  }
+
+  /* Utility */
+  .mt-16 { margin-top: 16px; }
+  .mt-20 { margin-top: 20px; }
+  .mt-24 { margin-top: 24px; }
+  .gap-6 { gap: 6px; }
+  .flex { display: flex; }
+  .items-center { align-items: center; }
+  .hidden { display: none !important; }
+
+  /* Spinner animation */
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spin { animation: spin 1s linear infinite; }
+
+  /* SVG icons inline */
+  .icon { width: 14px; height: 14px; flex-shrink: 0; }
+  .icon-sm { width: 12px; height: 12px; }
+  .icon-xs { width: 10px; height: 10px; }
+</style>
+</head>
+<body>
+
+<!-- Top bar -->
+<div class="top-bar">
+  <span class="logo">VibeCodes</span>
+  <span class="breadcrumb">/ My Idea / Board / <span>Workflows</span></span>
+  <span class="proposal-badge">Design Proposal</span>
+</div>
+
+<!-- Screen tabs -->
+<div class="screen-tabs">
+  <button class="screen-tab active" onclick="showScreen(0)">Workflows Tab</button>
+  <button class="screen-tab" onclick="showScreen(1)">Task Workflow</button>
+  <button class="screen-tab" onclick="showScreen(2)">Step Detail</button>
+  <button class="screen-tab" onclick="showScreen(3)">Why This Design</button>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- SCREEN 1: Workflows Tab                      -->
+<!-- ════════════════════════════════════════════ -->
+<div class="screen active" id="screen-0">
+
+  <!-- Board/Workflows toggle -->
+  <div class="toggle-row">
+    <button class="toggle-btn">Board</button>
+    <button class="toggle-btn active">Workflows</button>
+  </div>
+
+  <div class="workflows-layout">
+    <!-- Sidebar -->
+    <div class="templates-sidebar">
+      <div class="sidebar-header">
+        <span>Templates</span>
+        <div class="sidebar-actions">
+          <button class="btn-ghost">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/></svg>
+            Library
+          </button>
+          <button class="btn-ghost">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            New
+          </button>
+        </div>
+      </div>
+      <div class="sidebar-list">
+        <button class="template-item selected" onclick="selectTemplate(0)">
+          <span class="name">Feature Development</span>
+          <span class="meta">6 steps &middot; 2 gates</span>
+        </button>
+        <button class="template-item" onclick="selectTemplate(1)">
+          <span class="name">Bug Fix</span>
+          <span class="meta">4 steps &middot; 1 gate</span>
+        </button>
+        <button class="template-item" onclick="selectTemplate(2)">
+          <span class="name">Content Review</span>
+          <span class="meta">3 steps</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Detail panel -->
+    <div class="detail-panel" id="detail-panel">
+      <!-- Template 0: Feature Development -->
+      <div id="tpl-0">
+        <div class="detail-header">
+          <div>
+            <h2>Feature Development</h2>
+            <div class="desc">Full development lifecycle with TDD, code review, and QA sign-off.</div>
+            <div class="usage">Used 12 times</div>
+          </div>
+          <div style="display:flex;gap:4px;">
+            <button class="btn-ghost">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg>
+              Edit
+            </button>
+          </div>
+        </div>
+
+        <div class="mt-20">
+          <div class="section-title">Steps</div>
+          <div class="step-row"><span class="step-num default">1</span><span class="step-title">Requirements Analysis</span><span class="badge badge-blue">BA</span></div>
+          <div class="step-row"><span class="step-num default">2</span><span class="step-title">UX Mockup</span><span class="badge badge-pink">UX Designer</span></div>
+          <div class="step-row"><span class="step-num default">3</span><span class="step-title">Design Review</span><span class="badge badge-amber">Reviewer</span><svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+          <div class="step-row"><span class="step-num default">4</span><span class="step-title">Implementation (TDD)</span><span class="badge badge-violet">Dev</span></div>
+          <div class="step-row"><span class="step-num default">5</span><span class="step-title">QA Testing</span><span class="badge badge-cyan">QA</span></div>
+          <div class="step-row"><span class="step-num default">6</span><span class="step-title">Final Sign-off</span><span class="badge badge-amber">Reviewer</span><svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        </div>
+
+        <div class="mt-20">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Auto-Rules
+          </div>
+          <div class="auto-rule">
+            <svg style="width:14px;height:14px;color:var(--fg-dim)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+            <span class="label-tag label-violet">feature</span>
+            <span class="arrow">&rarr;</span>
+            <span style="font-size:12px;">Feature Development</span>
+            <span class="badge badge-emerald" style="margin-left:auto;">Auto-run</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Template 1: Bug Fix -->
+      <div id="tpl-1" class="hidden">
+        <div class="detail-header">
+          <div>
+            <h2>Bug Fix</h2>
+            <div class="desc">Reproduce, fix, test, and verify with human sign-off before closing.</div>
+            <div class="usage">Used 8 times</div>
+          </div>
+        </div>
+        <div class="mt-20">
+          <div class="section-title">Steps</div>
+          <div class="step-row"><span class="step-num default">1</span><span class="step-title">Reproduce & Document</span><span class="badge badge-cyan">QA</span></div>
+          <div class="step-row"><span class="step-num default">2</span><span class="step-title">Fix Implementation</span><span class="badge badge-violet">Dev</span></div>
+          <div class="step-row"><span class="step-num default">3</span><span class="step-title">Regression Testing</span><span class="badge badge-cyan">QA</span></div>
+          <div class="step-row"><span class="step-num default">4</span><span class="step-title">Verify Fix</span><span class="badge badge-amber">Reviewer</span><svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+        </div>
+        <div class="mt-20">
+          <div class="section-title">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            Auto-Rules
+          </div>
+          <div class="auto-rule">
+            <svg style="width:14px;height:14px;color:var(--fg-dim)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/></svg>
+            <span class="label-tag label-red">bug</span>
+            <span class="arrow">&rarr;</span>
+            <span style="font-size:12px;">Bug Fix</span>
+            <span class="badge badge-emerald" style="margin-left:auto;">Auto-run</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Template 2: Content Review -->
+      <div id="tpl-2" class="hidden">
+        <div class="detail-header">
+          <div>
+            <h2>Content Review</h2>
+            <div class="desc">Draft, peer review, and publish cycle for documentation and blog posts.</div>
+            <div class="usage">Used 3 times</div>
+          </div>
+        </div>
+        <div class="mt-20">
+          <div class="section-title">Steps</div>
+          <div class="step-row"><span class="step-num default">1</span><span class="step-title">Draft Content</span><span class="badge badge-violet">Dev</span></div>
+          <div class="step-row"><span class="step-num default">2</span><span class="step-title">Peer Review</span><span class="badge badge-amber">Reviewer</span><svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></div>
+          <div class="step-row"><span class="step-num default">3</span><span class="step-title">Publish</span><span class="badge badge-blue">BA</span></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Onboarding callout -->
+  <div style="max-width:480px;margin:20px auto 0;border:1px solid var(--border);border-radius:var(--radius);background:rgba(39,39,42,0.2);padding:16px 20px;">
+    <div style="font-size:12px;font-weight:500;margin-bottom:8px;color:var(--fg);">How workflows work:</div>
+    <ol style="list-style:decimal;list-style-position:inside;font-size:12px;color:var(--fg-muted);line-height:1.7;">
+      <li>Create a <strong style="color:var(--fg);">template</strong> with ordered steps and roles</li>
+      <li><strong style="color:var(--fg);">Apply</strong> it to tasks manually or set up auto-rules</li>
+      <li>Agents <strong style="color:var(--fg);">execute</strong> steps via MCP, or manage them from the UI</li>
+      <li>Steps with <strong style="color:var(--fg);">approval gates</strong> pause for human review</li>
+    </ol>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- SCREEN 2: Task Detail                        -->
+<!-- ════════════════════════════════════════════ -->
+<div class="screen" id="screen-1">
+  <div class="toggle-row">
+    <button class="toggle-btn active" onclick="toggleTaskView('workflow')">With Workflow</button>
+    <button class="toggle-btn" onclick="toggleTaskView('empty')">No Workflow</button>
+  </div>
+
+  <div class="task-dialog">
+    <div class="task-dialog-header">
+      <h3>Implement user settings API endpoint</h3>
+    </div>
+    <div class="task-tabs">
+      <button class="task-tab active">Details</button>
+      <button class="task-tab">Comments <span style="margin-left:4px;padding:1px 6px;border-radius:10px;background:var(--bg-muted);font-size:9px;">3</span></button>
+      <button class="task-tab">Files</button>
+      <button class="task-tab">Activity</button>
+    </div>
+    <div class="task-dialog-body">
+      <!-- Task metadata -->
+      <div style="display:grid;grid-template-columns:80px 1fr;gap:8px 12px;font-size:12px;margin-bottom:12px;">
+        <span style="color:var(--fg-dim);">Assignee</span>
+        <span style="display:flex;align-items:center;gap:6px;"><span style="width:18px;height:18px;border-radius:50%;background:var(--violet-dim);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:600;color:var(--violet-text);">D</span> <strong style="color:var(--fg);font-weight:500;">DevBot</strong></span>
+        <span style="color:var(--fg-dim);">Labels</span>
+        <span><span class="badge badge-violet" style="padding:1px 6px;">feature</span></span>
+        <span style="color:var(--fg-dim);">Due date</span>
+        <span style="color:var(--fg-muted);">14 Mar 2026</span>
+        <span style="color:var(--fg-dim);">Column</span>
+        <span style="color:var(--fg-muted);">In Progress</span>
+      </div>
+
+      <!-- Description -->
+      <div style="margin-bottom:12px;">
+        <div class="field-label">Description</div>
+        <p style="font-size:12px;color:var(--fg-muted);line-height:1.5;">Create a REST API endpoint for user settings. Should support GET (retrieve current settings) and PUT (update settings) with proper validation. Include rate limiting and handle concurrent update conflicts.</p>
+      </div>
+
+      <hr class="separator">
+
+      <!-- Workflow section (with workflow) -->
+      <div id="task-with-workflow">
+        <div class="workflow-header">
+          <h4>
+            Workflow
+            <span class="badge badge-blue">Running</span>
+          </h4>
+          <span class="count">3 of 6 steps completed</span>
+        </div>
+        <div class="template-label">Template: Feature Development</div>
+
+        <div class="progress-bar"><div class="progress-fill" style="width:50%"></div></div>
+
+        <!-- Steps -->
+        <div class="step-row step-row-interactive">
+          <span class="step-num completed"><svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <span class="step-title">Requirements Analysis</span>
+          <span class="badge badge-blue">BA</span>
+          <span class="badge badge-emerald"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Done</span>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="step-row step-row-interactive">
+          <span class="step-num completed"><svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <span class="step-title">UX Mockup</span>
+          <span class="badge badge-pink">UX Designer</span>
+          <span class="badge badge-emerald"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Done</span>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="step-row step-row-interactive">
+          <span class="step-num completed"><svg style="width:14px;height:14px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></span>
+          <span class="step-title">Design Review</span>
+          <span class="badge badge-amber">Reviewer</span>
+          <span class="badge badge-emerald"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Done</span>
+          <svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="step-row step-row-interactive" style="border-color:var(--amber-border);">
+          <span class="step-num awaiting"><svg style="width:12px;height:12px" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="12" r="5"/></svg></span>
+          <span class="step-title">Implementation (TDD)</span>
+          <span class="hover-action"><button class="btn-sm btn-approve"><svg class="icon-xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg> Approve</button></span>
+          <span class="badge badge-violet">Dev</span>
+          <span class="badge badge-amber"><svg class="icon-xs" style="fill:currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/></svg> Awaiting Approval</span>
+          <svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="step-row step-row-interactive">
+          <span class="step-num pending">5</span>
+          <span class="step-title">QA Testing</span>
+          <span class="badge badge-cyan">QA</span>
+          <span class="badge badge-zinc">Pending</span>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+        <div class="step-row step-row-interactive">
+          <span class="step-num pending">6</span>
+          <span class="step-title">Final Sign-off</span>
+          <span class="badge badge-amber">Reviewer</span>
+          <span class="badge badge-zinc">Pending</span>
+          <svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+          <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+        </div>
+      </div>
+
+      <!-- No workflow state -->
+      <div id="task-no-workflow" class="hidden">
+        <div class="workflow-header"><h4>Workflow</h4></div>
+        <button class="apply-cta">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="m19 9-5 5-4-4-3 3"/></svg>
+          Apply Workflow
+        </button>
+        <div style="margin-top:12px;padding:10px 12px;border:1px solid var(--border);border-radius:var(--radius-sm);background:rgba(39,39,42,0.2);">
+          <select class="cascade-select" style="margin-bottom:0;">
+            <option>Select a template...</option>
+            <option>Feature Development (6 steps)</option>
+            <option>Bug Fix (4 steps)</option>
+            <option>Content Review (3 steps)</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- SCREEN 3: Step Detail                        -->
+<!-- ════════════════════════════════════════════ -->
+<div class="screen" id="screen-2">
+  <div class="step-dialog">
+    <div class="step-dialog-header">
+      <span class="step-num awaiting" style="width:32px;height:32px;font-size:13px;">
+        <svg style="width:14px;height:14px;fill:currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/></svg>
+      </span>
+      <div class="info">
+        <h3>Implementation (TDD)</h3>
+        <div class="badges">
+          <span class="badge badge-amber">Awaiting Approval</span>
+          <span class="badge badge-violet">Dev</span>
+          <svg class="lock-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+        </div>
+      </div>
+    </div>
+    <div class="step-dialog-body">
+      <div class="field-label">Description</div>
+      <p style="font-size:12px;color:var(--fg-muted);margin-bottom:12px;line-height:1.5;">Write tests first following TDD methodology, then implement the settings API endpoint. Ensure all edge cases have test coverage before submitting.</p>
+
+      <div class="field-label">Output</div>
+      <div class="output-box">Implemented GET/PUT /api/settings endpoint with Zod validation. 14 tests passing (auth, validation, edge cases, concurrent updates). Response time &lt;50ms p99.</div>
+
+      <div class="timestamps">
+        <span>Started: 11 Mar 2026, 09:14</span>
+        <span>Completed: 11 Mar 2026, 09:31</span>
+      </div>
+
+      <!-- Action buttons -->
+      <div class="action-buttons">
+        <button class="btn-action btn-approve-lg">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          Approve
+        </button>
+        <button class="btn-action btn-reject" onclick="document.getElementById('cascade').classList.toggle('hidden')">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          Request Changes
+        </button>
+      </div>
+
+      <!-- Cascade rejection dropdown -->
+      <div id="cascade" class="cascade-dropdown hidden">
+        <select class="cascade-select">
+          <option>Reset pipeline to step... (optional)</option>
+          <option>This step only</option>
+          <option>Step 1: Requirements Analysis</option>
+          <option>Step 2: UX Mockup</option>
+          <option>Step 3: Design Review</option>
+        </select>
+        <div style="display:flex;gap:6px;">
+          <button class="btn-action btn-reject" style="font-size:10px;padding:4px 10px;">
+            <svg style="width:10px;height:10px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Reject
+          </button>
+          <button class="btn-ghost" onclick="document.getElementById('cascade').classList.add('hidden')" style="font-size:10px;">Cancel</button>
+        </div>
+      </div>
+
+      <hr class="separator">
+
+      <!-- Comments -->
+      <div style="display:flex;align-items:center;gap:6px;margin-bottom:8px;">
+        <svg style="width:14px;height:14px;color:var(--fg-dim)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+        <span class="field-label" style="margin-bottom:0;">Comments (3)</span>
+      </div>
+
+      <div class="comment-thread">
+        <div class="comment-item type-output">
+          <div class="comment-meta">
+            <span class="comment-avatar">D</span>
+            <span class="comment-author">DevBot</span>
+            <span class="badge badge-blue" style="padding:0 5px;font-size:8px;height:16px;">output</span>
+            <span class="comment-time">09:31</span>
+          </div>
+          <div class="comment-body">All 14 tests passing. Endpoint handles auth, validation, and concurrent update edge cases.</div>
+        </div>
+        <div class="comment-item type-default">
+          <div class="comment-meta">
+            <span class="comment-avatar">N</span>
+            <span class="comment-author">Nick</span>
+            <span class="comment-time">09:42</span>
+          </div>
+          <div class="comment-body">Looks good but can you add rate limiting? We discussed this in the requirements step.</div>
+        </div>
+        <div class="comment-item type-changes">
+          <div class="comment-meta">
+            <span class="comment-avatar">N</span>
+            <span class="comment-author">Nick</span>
+            <span class="badge badge-amber" style="padding:0 5px;font-size:8px;height:16px;">changes requested</span>
+            <span class="comment-time">09:45</span>
+          </div>
+          <div class="comment-body">Add rate limiting middleware before approving.</div>
+        </div>
+      </div>
+
+      <div class="comment-input">
+        <textarea placeholder="Add a comment..."></textarea>
+        <button>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<!-- SCREEN 4: Why This Design                    -->
+<!-- ════════════════════════════════════════════ -->
+<div class="screen" id="screen-3">
+  <div class="comparison">
+    <h2>What does the user actually experience?</h2>
+    <p class="subtitle">Same underlying engine &mdash; ordered steps, approval gates, context chaining, agent execution. The difference is what a user has to do to get started, and how it feels day-to-day.</p>
+
+    <div class="comparison-grid">
+      <!-- Ours -->
+      <div class="compare-card ours">
+        <h3>
+          <svg style="width:16px;height:16px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+          Board-Level Templates
+        </h3>
+        <div class="card-desc">The user thinks: "I want this task to follow a process"</div>
+        <ul>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>"I just want to use the bug fix workflow"</strong> &mdash; Open a task, click "Apply Workflow", pick a template. Done. No prerequisites, no agent configuration, no new concepts to learn.</span>
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>"Make all bugs follow this process"</strong> &mdash; Set one auto-rule: label <em>"bug"</em> triggers the Bug Fix template. Every future bug task gets the workflow automatically. No agents involved.</span>
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>"I swapped my QA agent for a better one"</strong> &mdash; The template doesn't change. Steps define <em>roles</em>, not specific agents. Swap freely without rebuilding anything.</span>
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>"I don't have agents yet"</strong> &mdash; Workflows still work. Use them as a human checklist. When you add agents later, they slot into the existing roles.</span>
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>"I want to get started quickly"</strong> &mdash; Import a template from the library with one click. No setup, no boilerplate &mdash; start using it immediately.</span>
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>"The agent got it wrong"</strong> &mdash; Reject a step and cascade the reset back to any earlier point. Add comments explaining what to fix. The agent picks up rework instructions automatically on retry.</span>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Theirs -->
+      <div class="compare-card theirs">
+        <h3>Orchestrator Model</h3>
+        <div class="card-desc">The user thinks: "I need to set up an orchestrator to manage my workers"</div>
+        <ul>
+          <li>
+            <svg class="x-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <span><strong>"Wait, what's an orchestrator?"</strong> &mdash; Before using workflows, users must classify agents as "orchestrator" or "worker". This is an internal implementation concept leaking into UX.</span>
+          </li>
+          <li>
+            <svg class="x-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <span><strong>"Why is the workflow on the agent, not the board?"</strong> &mdash; Templates live on agent profiles. Want the same workflow on a different idea? Recreate it, or ensure that agent is allocated. Templates aren't portable.</span>
+          </li>
+          <li>
+            <svg class="x-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <span><strong>"Can't I just label it as a bug?"</strong> &mdash; No automatic triggers. The orchestrator agent must be running and explicitly pick up the task. Without it, nothing happens.</span>
+          </li>
+          <li>
+            <svg class="x-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            <span><strong>"I don't have agents yet"</strong> &mdash; Workflows require agents. No orchestrator agent = no way to create or apply workflows. The feature is invisible to agent-free users.</span>
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>AI step generation</strong> &mdash; Generate workflow steps from discussion content. (This is additive and works equally well with both approaches.)</span>
+          </li>
+          <li>
+            <svg class="check-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+            <span><strong>Review loops</strong> &mdash; Agents can fail steps for rework. (Both designs support this identically.)</span>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <!-- Key insight -->
+    <div class="key-insight" style="margin-bottom:20px;">
+      <p>The question isn't technical &mdash; it's conceptual. <em>Is a workflow a property of an agent, or a property of a process?</em></p>
+      <p style="margin-top:8px;">A "Bug Fix" workflow is the same regardless of which agent runs it. Templates belong to the board, not to any individual agent. This makes them portable, shareable, and usable by anyone &mdash; including humans without agents.</p>
+    </div>
+
+    <!-- The mental model callout -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px;max-width:800px;margin:0 auto;">
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center;">
+        <div style="font-size:24px;margin-bottom:6px;">1</div>
+        <div style="font-size:12px;font-weight:500;color:var(--fg);margin-bottom:4px;">Define the process</div>
+        <div style="font-size:11px;color:var(--fg-dim);">Create a template with steps and roles. Import from the library or build your own.</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center;">
+        <div style="font-size:24px;margin-bottom:6px;">2</div>
+        <div style="font-size:12px;font-weight:500;color:var(--fg);margin-bottom:4px;">Apply it</div>
+        <div style="font-size:11px;color:var(--fg-dim);">One click on a task, or set up auto-rules so labels do it for you. No agent needed.</div>
+      </div>
+      <div style="border:1px solid var(--border);border-radius:var(--radius);padding:16px;text-align:center;">
+        <div style="font-size:24px;margin-bottom:6px;">3</div>
+        <div style="font-size:12px;font-weight:500;color:var(--fg);margin-bottom:4px;">Execute &amp; review</div>
+        <div style="font-size:11px;color:var(--fg-dim);">Agents run steps, approval gates pause for humans, cascade rejection resets when things go wrong.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function showScreen(idx) {
+  document.querySelectorAll('.screen').forEach((s, i) => {
+    s.classList.toggle('active', i === idx);
+  });
+  document.querySelectorAll('.screen-tab').forEach((t, i) => {
+    t.classList.toggle('active', i === idx);
+  });
+}
+
+function selectTemplate(idx) {
+  document.querySelectorAll('.template-item').forEach((t, i) => {
+    t.classList.toggle('selected', i === idx);
+  });
+  document.querySelectorAll('[id^="tpl-"]').forEach((p, i) => {
+    p.classList.toggle('hidden', i !== idx);
+  });
+}
+
+function toggleTaskView(view) {
+  const btns = document.querySelectorAll('#screen-1 .toggle-btn');
+  btns[0].classList.toggle('active', view === 'workflow');
+  btns[1].classList.toggle('active', view === 'empty');
+  document.getElementById('task-with-workflow').classList.toggle('hidden', view !== 'workflow');
+  document.getElementById('task-no-workflow').classList.toggle('hidden', view !== 'empty');
+}
+</script>
+
+</body>
+</html>

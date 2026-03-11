@@ -99,7 +99,7 @@ export async function manageLabels(
   throw new Error(`Unknown action: ${params.action}`);
 }
 
-// --- manage_checklist ---
+// --- manage_checklist (now manages workflow steps) ---
 
 export const manageChecklistSchema = z.object({
   task_id: z.string().uuid().describe("The task ID"),
@@ -113,13 +113,13 @@ export const manageChecklistSchema = z.object({
     .min(1)
     .max(200)
     .optional()
-    .describe("Checklist item title (for add)"),
+    .describe("Workflow step title (for add)"),
   // For "toggle" / "delete"
   item_id: z
     .string()
     .uuid()
     .optional()
-    .describe("Checklist item ID (for toggle/delete)"),
+    .describe("Workflow step ID (for toggle/delete)"),
 });
 
 export async function manageChecklist(
@@ -131,7 +131,7 @@ export async function manageChecklist(
 
     // Get next position
     const { data: existing } = await ctx.supabase
-      .from("board_checklist_items")
+      .from("task_workflow_steps")
       .select("position")
       .eq("task_id", params.task_id)
       .order("position", { ascending: false })
@@ -140,17 +140,17 @@ export async function manageChecklist(
     const position = (existing?.[0]?.position ?? -POSITION_GAP) + POSITION_GAP;
 
     const { data, error } = await ctx.supabase
-      .from("board_checklist_items")
+      .from("task_workflow_steps")
       .insert({
         task_id: params.task_id,
         idea_id: params.idea_id,
         title: params.title,
         position,
       })
-      .select("id, title, completed, position")
+      .select("id, title, status, position")
       .single();
 
-    if (error) throw new Error(`Failed to add checklist item: ${error.message}`);
+    if (error) throw new Error(`Failed to add workflow step: ${error.message}`);
 
     await logActivity(ctx, params.task_id, params.idea_id, "checklist_item_added", {
       item_title: params.title,
@@ -165,22 +165,25 @@ export async function manageChecklist(
 
     // Get current state
     const { data: item } = await ctx.supabase
-      .from("board_checklist_items")
-      .select("completed, title")
+      .from("task_workflow_steps")
+      .select("status, title")
       .eq("id", params.item_id)
       .single();
 
-    if (!item) throw new Error(`Checklist item not found: ${params.item_id}`);
+    if (!item) throw new Error(`Workflow step not found: ${params.item_id}`);
 
-    const newCompleted = !item.completed;
+    const newStatus = item.status === "completed" ? "pending" : "completed";
     const { error } = await ctx.supabase
-      .from("board_checklist_items")
-      .update({ completed: newCompleted })
+      .from("task_workflow_steps")
+      .update({
+        status: newStatus,
+        completed_at: newStatus === "completed" ? new Date().toISOString() : null,
+      })
       .eq("id", params.item_id);
 
-    if (error) throw new Error(`Failed to toggle checklist item: ${error.message}`);
+    if (error) throw new Error(`Failed to toggle workflow step: ${error.message}`);
 
-    if (newCompleted) {
+    if (newStatus === "completed") {
       await logActivity(
         ctx,
         params.task_id,
@@ -190,7 +193,7 @@ export async function manageChecklist(
       );
     }
 
-    return { success: true, completed: newCompleted };
+    return { success: true, completed: newStatus === "completed" };
   }
 
   if (params.action === "delete") {
@@ -198,11 +201,11 @@ export async function manageChecklist(
       throw new Error("item_id is required for delete");
 
     const { error } = await ctx.supabase
-      .from("board_checklist_items")
+      .from("task_workflow_steps")
       .delete()
       .eq("id", params.item_id);
 
-    if (error) throw new Error(`Failed to delete checklist item: ${error.message}`);
+    if (error) throw new Error(`Failed to delete workflow step: ${error.message}`);
     return { success: true };
   }
 

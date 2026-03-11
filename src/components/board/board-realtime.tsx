@@ -67,7 +67,7 @@ export function BoardRealtime({ ideaId }: { ideaId: string }) {
         {
           event: "*",
           schema: "public",
-          table: "board_checklist_items",
+          table: "task_workflow_steps",
           filter: `idea_id=eq.${ideaId}`,
         },
         debouncedRefresh

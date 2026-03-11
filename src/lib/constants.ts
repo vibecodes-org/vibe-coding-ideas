@@ -92,8 +92,8 @@ export const ACTIVITY_ACTIONS: Record<string, { label: string; icon: string }> =
   unarchived: { label: "unarchived this task", icon: "ArchiveRestore" },
   title_changed: { label: "changed the title", icon: "Pencil" },
   description_changed: { label: "updated the description", icon: "FileText" },
-  checklist_item_added: { label: "added a checklist item", icon: "ListPlus" },
-  checklist_item_completed: { label: "completed a checklist item", icon: "CheckSquare" },
+  checklist_item_added: { label: "added a workflow step", icon: "ListPlus" },
+  checklist_item_completed: { label: "completed a workflow step", icon: "CheckSquare" },
   comment_added: { label: "added a comment", icon: "MessageSquare" },
   attachment_added: { label: "added an attachment", icon: "Paperclip" },
   attachment_removed: { label: "removed an attachment", icon: "Trash2" },
@@ -235,3 +235,4 @@ export const SUGGESTED_TAGS = [
   "education",
   "social",
 ];
+

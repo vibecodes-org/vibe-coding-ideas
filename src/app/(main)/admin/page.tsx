@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin/admin-tabs";
 import { VIBECODES_USER_ID } from "@/lib/constants";
-import type { BotProfile, FeaturedTeamWithAgents } from "@/types";
+import type { BotProfile, FeaturedTeamWithAgents, WorkflowLibraryTemplate } from "@/types";
 import type { Metadata } from "next";
 
 export const metadata: Metadata = {
@@ -107,6 +107,14 @@ export default async function AdminPage({ searchParams }: PageProps) {
 
   const communityAgents = (communityData ?? []) as BotProfile[];
 
+  // Fetch workflow library templates
+  const { data: libraryTemplatesData } = await supabase
+    .from("workflow_library_templates")
+    .select("*")
+    .order("display_order", { ascending: true });
+
+  const libraryTemplates = (libraryTemplatesData ?? []) as WorkflowLibraryTemplate[];
+
   // Fetch ALL platform usage logs (unfiltered) for credits table — must be independent of filters
   const { data: allPlatformLogs } = await supabase
     .from("ai_usage_log")
@@ -137,6 +145,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
         adminAgents={adminAgents}
         featuredTeams={featuredTeams}
         communityAgents={communityAgents}
+        libraryTemplates={libraryTemplates}
         userCredits={userCredits}
         allPlatformLogs={(allPlatformLogs ?? []) as PlatformLogEntry[]}
       />

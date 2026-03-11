@@ -33,6 +33,7 @@ import { enhanceDiscussionBody } from "@/actions/ai";
 import { useMentionState } from "@/hooks/use-mentions";
 import { sendDiscussionMentionNotifications } from "@/lib/mention-notifications";
 import { formatRelativeTime, getInitials } from "@/lib/utils";
+import { DiscussionAttachmentsSection } from "./discussion-attachments-section";
 import { DiscussionReplyForm } from "./discussion-reply-form";
 import { DiscussionVoteButton } from "./discussion-vote-button";
 import { ConvertToTaskDialog } from "./convert-to-task-dialog";
@@ -503,6 +504,18 @@ export function DiscussionThread({
         ) : (
           <div className="mt-3 mb-2 text-sm">
             <Markdown teamMembers={teamMembers}>{discussion.body}</Markdown>
+          </div>
+        )}
+        {/* Attachments */}
+        {currentUser && (
+          <div className="mt-4">
+            <DiscussionAttachmentsSection
+              discussionId={discussion.id}
+              ideaId={ideaId}
+              currentUserId={currentUser.id}
+              isAuthor={isAuthorOrOwner}
+              isTeamMember={isTeamMember}
+            />
           </div>
         )}
         {/* Post footer: vote + edit */}

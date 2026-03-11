@@ -59,6 +59,23 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - Position calculation: `MAX(position) + 1000` in target column
 - Public boards have read-only guest access; non-team guests see `GuestBoardBanner` with option to request collaboration
 
+### Board Workflows
+- **Templates**: `workflow_templates` table (idea-scoped) — reusable step sequences with role, description, approval gates
+- **Auto-Rules**: `workflow_auto_rules` table — maps labels to templates; Postgres trigger on `board_task_labels` INSERT auto-applies template when a task gets a matching label
+- **Workflow Runs**: `workflow_runs` tracks each application of a template to a task (pending → running → paused → completed → failed)
+- **Task Workflow Steps**: `task_workflow_steps` replaces old checklists — steps have status lifecycle (pending → in_progress → completed/failed/awaiting_approval), agent_role, bot_id, output, human_check_required
+- **Step Comments**: `workflow_step_comments` for inter-agent communication (types: comment, output, failure, approval, changes_requested)
+- **Claude Code as Orchestrator**: No designated orchestrator agent — Claude Code reads steps via `claim_next_step`, assumes agent personas per step's `agent_role`, executes, calls `complete_step`, loops
+- **Role-based Auto-Matching**: When applying a template, agents from the idea's pool are auto-matched to steps by role (case-insensitive)
+- **Template Library**: `workflow_library_templates` DB table (admin-managed) — seeded with 7 built-in templates; admin CRUD via `/admin?tab=templates` (`AdminTemplatesDashboard` + `TemplateEditorDialog`); `ImportTemplateLibraryDialog` fetches active templates from DB; RLS: all authenticated SELECT, admin-only write
+- **Board UI**: `BoardPageTabs` wraps board in tabs (Board / Workflows); `WorkflowsTab` for template CRUD + auto-rules + library import + onboarding guidance; `CreateTemplateDialog` for new templates; `TaskWorkflowSection` in task detail dialog shows live workflow steps with status badges, progress bar, realtime updates, inline approve/retry buttons, and "Apply Workflow" CTA when no workflow exists; `StepDetailDialog` shows step description, output, comments, timestamps, and action buttons (start/complete/approve/reject/retry); `getRoleBadgeClasses` shared between components
+- **Approval gates**: Both MCP `complete_step` tool and `completeWorkflowStep` server action respect `human_check_required` — routes to `awaiting_approval` instead of `completed`
+- **Cascade rejection**: `failWorkflowStep` server action and MCP `fail_step` tool accept optional `reset_to_step_id` — resets all steps from target onward back to `pending`, enabling reviewers to send work back to any earlier step in the pipeline
+- **Rework instructions**: MCP `claim_next_step` returns `rework_instructions` (previous failure output + `changes_requested` comments) when claiming a step that was previously failed, giving agents context for retry
+- **Agent match feedback**: `TaskWorkflowSection` shows a warning banner when pending steps have roles with no matching agent in the idea's pool
+- Server actions in `src/actions/workflow.ts` (step lifecycle) and `src/actions/workflow-templates.ts` (template CRUD + auto-rules)
+- MCP tools: 12 tools in `mcp-server/src/tools/workflows.ts` — template CRUD, apply, claim_next_step, complete_step, fail_step, approve_step, get_step_context, add_step_comment, get_step_comments
+
 ### Idea Agent Pool
 - `idea_agents` junction table: `(idea_id, bot_id, added_by)` with `UNIQUE(idea_id, bot_id)`
 - Team members allocate their active bots to an idea's shared pool; all team members can assign pooled bots to tasks
@@ -95,16 +112,18 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - Guards against concurrent responses via `.eq("status", "pending")`
 
 ### Discussions
-- `idea_discussions` + `idea_discussion_replies` + `discussion_votes` tables for titled, threaded planning conversations per idea
+- `idea_discussions` + `idea_discussion_replies` + `discussion_votes` + `discussion_attachments` tables for titled, threaded planning conversations per idea
 - Four statuses: `open` → `resolved` (concluded), `ready_to_convert` (queued for agent), or `converted` (promoted to board task)
-- Pinnable threads, denormalized `reply_count` + `last_activity_at` + `upvotes` via triggers
+- Pinnable threads, denormalized `reply_count` + `attachment_count` + `last_activity_at` + `upvotes` via triggers
 - `board_tasks.discussion_id` back-links converted discussions to their resulting tasks
 - `ideas.discussion_count` denormalized via trigger
 - Routes: `/ideas/[id]/discussions` (list), `/ideas/[id]/discussions/[discussionId]` (thread), `/ideas/[id]/discussions/new`
 - Server actions in `src/actions/discussions.ts`: createDiscussion, updateDiscussion, deleteDiscussion, createDiscussionReply, updateDiscussionReply, deleteDiscussionReply, toggleDiscussionVote, markReadyToConvert, convertDiscussionToTask
 - `convertDiscussionToTask` uses status guard (`.in("status", [...])`) to prevent concurrent conversion, with orphaned task cleanup on failure
+- `deleteDiscussion` cleans up storage files from `discussion-attachments` bucket before cascade delete
 - RLS: team members can write; authenticated users can read public idea discussions
 - Notification types: `discussion`, `discussion_reply`, `discussion_mention` (trigger-based); controlled by `discussions` notification preference (falls back to `comments`)
+- **Discussion Attachments**: `discussion_attachments` table with `discussion-attachments` private storage bucket; storage path `{ideaId}/{discussionId}/{uuid}.{ext}`; same allowed types as idea attachments (images, PDF, Markdown, HTML); `DiscussionAttachmentsSection` component in discussion thread; client-side upload via Supabase JS with Realtime, drag-and-drop, paste handling; denormalized `attachment_count` on `idea_discussions`
 
 ### Idea Attachments
 - `idea_attachments` table with `idea-attachments` private storage bucket (signed URLs for access)
@@ -138,14 +157,15 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 ### Validation
 - `src/lib/validation.ts` — all server actions validate before DB ops
 - Limits: title 200, description 50K, comment 5K, discussion body 10K, discussion reply 5K, bio 500, tags 50 chars / 10 max, skills 30 chars / 10 max, team name 200, team description 1K
-- Idea attachments: 10 MB per file, 10 files per idea, allowed types: images (png/jpg/gif/webp/svg), PDF, Markdown
+- Idea/discussion attachments: 10 MB per file, 10 files per idea/discussion, allowed types: images (png/jpg/gif/webp/svg), PDF, Markdown, HTML
 
 ## Database
 
-32 tables with RLS (`supabase/migrations/`):
+37 tables with RLS (`supabase/migrations/`):
 - **Core**: users, ideas, comments, collaborators, votes, notifications, feedback, idea_attachments
-- **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_checklist_items, board_task_activity, board_task_comments, board_task_attachments
-- **Discussions**: idea_discussions, idea_discussion_replies, discussion_votes
+- **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_task_activity, board_task_comments, board_task_attachments
+- **Workflows**: workflow_templates, workflow_auto_rules, workflow_runs, task_workflow_steps, workflow_step_comments, workflow_library_templates
+- **Discussions**: idea_discussions, idea_discussion_replies, discussion_votes, discussion_attachments
 - **Agents**: bot_profiles, idea_agents, agent_votes, featured_teams, featured_team_agents
 - **AI**: ai_usage_log, ai_prompt_templates
 - **MCP/OAuth**: mcp_oauth_clients, mcp_oauth_codes
@@ -160,9 +180,11 @@ Key columns:
 
 ## Server Actions (src/actions/)
 
-18 files, 94 exported functions:
+21 files, 117 exported functions:
 - `ideas.ts` — create, update, updateStatus, updateIdeaFields (partial inline edit), delete
-- `board.ts` — columns (init, CRUD, reorder), tasks (CRUD, move, archive), labels (CRUD, assign), checklists (CRUD, toggle), task comments (create, update, delete)
+- `board.ts` — columns (init, CRUD, reorder), tasks (CRUD, move, archive), labels (CRUD, assign), task comments (create, update, delete)
+- `workflow.ts` — createWorkflowStep, updateWorkflowStep, deleteWorkflowStep, startWorkflowStep, completeWorkflowStep, failWorkflowStep, approveWorkflowStep, retryWorkflowStep, addStepComment, deleteStepComment
+- `workflow-templates.ts` — listWorkflowTemplates, createWorkflowTemplate, updateWorkflowTemplate, deleteWorkflowTemplate, applyWorkflowTemplate, listWorkflowAutoRules, createWorkflowAutoRule, updateWorkflowAutoRule, deleteWorkflowAutoRule
 - `collaborators.ts` — requestCollaboration, withdrawRequest, respondToRequest, leaveCollaboration, addCollaborator, removeCollaborator
 - `ai.ts` — enhanceIdeaDescription, generateClarifyingQuestions, enhanceIdeaWithContext, applyEnhancedDescription, generateBoardTasks, enhanceTaskDescription, enhanceDiscussionBody, getAiAccess, hasApiKey (deprecated)
 - `comments.ts` — create, incorporate, delete, update
@@ -171,12 +193,13 @@ Key columns:
 - `profile.ts` — updateProfile, updateDefaultBoardColumns, saveApiKey, removeApiKey
 - `bots.ts` — createBot, updateBot, deleteBot, listMyBots, toggleAgentVote, cloneAgent, addFeaturedTeam
 - `admin-agents.ts` — createAdminAgent, updateAdminAgent, deleteAdminAgent, createFeaturedTeam, updateFeaturedTeam, deleteFeaturedTeam, toggleFeaturedTeamActive, setTeamAgents
+- `admin-templates.ts` — listLibraryTemplates, createLibraryTemplate, updateLibraryTemplate, deleteLibraryTemplate
 - `admin.ts` — grantStarterCredits
 - `users.ts` — deleteUser (admin only)
 - `prompt-templates.ts` — list, create, delete
 - `discussions.ts` — createDiscussion, updateDiscussion, deleteDiscussion, createDiscussionReply, updateDiscussionReply, deleteDiscussionReply, toggleDiscussionVote, markReadyToConvert, convertDiscussionToTask
 - `feedback.ts` — submitFeedback, updateFeedbackStatus, deleteFeedback
-- `idea-agents.ts` — allocateAgent, removeIdeaAgent
+- `idea-agents.ts` — allocateAgent, removeIdeaAgent, setOrchestrationAgent
 - `onboarding.ts` — completeOnboarding, enhanceOnboardingDescription, generateOnboardingClarifyingQuestions, enhanceOnboardingWithContext
 
 ## Environment Variables
@@ -231,7 +254,7 @@ See `docs/release-process.md` for full details.
 
 ## MCP Server
 
-Two modes sharing 54 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI:
+Two modes sharing 78 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI:
 - **Local (stdio)**: `mcp-server/src/index.ts` — service-role client, bypasses RLS
 - **Remote (HTTP)**: `src/app/api/mcp/[[...transport]]/route.ts` — OAuth 2.1 + PKCE, per-user RLS
 

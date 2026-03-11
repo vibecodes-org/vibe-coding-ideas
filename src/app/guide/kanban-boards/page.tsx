@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button";
 export const metadata = {
   title: "Kanban Boards Guide",
   description:
-    "Manage tasks with drag-and-drop boards, labels, due dates, checklists, file attachments, and bulk import on VibeCodes.",
+    "Manage tasks with drag-and-drop boards, labels, due dates, workflow steps, file attachments, and bulk import on VibeCodes.",
 };
 
 export default function KanbanBoardsPage() {
@@ -66,8 +66,8 @@ export default function KanbanBoardsPage() {
               deadlines with visual overdue/upcoming indicators
             </li>
             <li>
-              <strong className="text-foreground">Checklists</strong> — break
-              tasks into subtasks with progress tracking
+              <strong className="text-foreground">Workflow Steps</strong> — break
+              tasks into steps with progress tracking
             </li>
             <li>
               <strong className="text-foreground">Comments</strong> — discuss
@@ -212,6 +212,57 @@ export default function KanbanBoardsPage() {
               <strong className="text-foreground">Tip:</strong> AI generation
               uses the same bulk import pipeline under the hood, so it handles
               label and column creation automatically.
+            </p>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">Workflows</h2>
+          <p className="mb-4 text-muted-foreground">
+            The <strong className="text-foreground">Workflows</strong> tab on
+            each board lets you define reusable step-by-step processes for
+            tasks. Workflows are ideal for repeatable processes like bug
+            triage, feature development, or content review.
+          </p>
+          <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              <strong className="text-foreground">Templates</strong> — define
+              ordered steps with roles (e.g., &quot;Dev&quot;, &quot;QA&quot;)
+              and optional approval gates
+            </li>
+            <li>
+              <strong className="text-foreground">Apply to tasks</strong>{" "}
+              — use the &quot;Apply Workflow&quot; button on any task, or set
+              up auto-rules to apply automatically when a label is added
+            </li>
+            <li>
+              <strong className="text-foreground">Step lifecycle</strong>{" "}
+              — steps progress through pending, in progress, completed, or
+              failed. Click any step to see its full details, output, and
+              comments
+            </li>
+            <li>
+              <strong className="text-foreground">Approval gates</strong>{" "}
+              — steps marked as gates pause for human review. Approve or
+              request changes directly from the task detail dialog
+            </li>
+            <li>
+              <strong className="text-foreground">Agent execution</strong>{" "}
+              — agents can execute workflow steps via MCP tools, with context
+              from previous steps passed forward automatically
+            </li>
+            <li>
+              <strong className="text-foreground">Template library</strong>{" "}
+              — import pre-built templates (Feature Development, Bug Fix, etc.)
+              from the admin-managed library
+            </li>
+          </ul>
+          <div className="rounded-xl border border-border bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">Tip:</strong> Set up an
+              auto-rule mapping the &quot;bug&quot; label to a Bug Fix workflow
+              template. Every time a task is labelled as a bug, the workflow
+              steps are automatically applied.
             </p>
           </div>
         </section>

@@ -22,14 +22,11 @@ import { undoableAction } from "@/lib/undo-toast";
 import type {
   BoardColumnWithTasks,
   BoardLabel,
-  BoardChecklistItem,
   User,
 } from "@/types";
 
 const TaskEditDialog = dynamic(() => import("./task-edit-dialog").then((m) => m.TaskEditDialog), { ssr: false });
 const ColumnEditDialog = dynamic(() => import("./column-edit-dialog").then((m) => m.ColumnEditDialog), { ssr: false });
-
-const EMPTY_CHECKLIST: BoardChecklistItem[] = [];
 
 interface BoardColumnProps {
   column: BoardColumnWithTasks;
@@ -37,7 +34,6 @@ interface BoardColumnProps {
   ideaId: string;
   teamMembers: User[];
   boardLabels: BoardLabel[];
-  checklistItemsByTaskId: Record<string, BoardChecklistItem[]>;
   highlightQuery?: string;
   currentUserId: string;
   initialTaskId?: string;
@@ -57,7 +53,6 @@ export const BoardColumn = memo(function BoardColumn({
   ideaId,
   teamMembers,
   boardLabels,
-  checklistItemsByTaskId,
   highlightQuery,
   currentUserId,
   initialTaskId,
@@ -219,7 +214,6 @@ export const BoardColumn = memo(function BoardColumn({
                 columnId={column.id}
                 teamMembers={teamMembers}
                 boardLabels={boardLabels}
-                checklistItems={checklistItemsByTaskId[task.id] ?? EMPTY_CHECKLIST}
                 highlightQuery={highlightQuery}
                 currentUserId={currentUserId}
                 autoOpen={task.id === initialTaskId}

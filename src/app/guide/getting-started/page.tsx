@@ -113,7 +113,7 @@ export default function GettingStartedPage() {
             <li>
               <strong className="text-foreground">My Tasks</strong> — tasks
               assigned to you across all boards, sorted by due date urgency,
-              with labels, checklist progress, and due date badges
+              with labels, workflow step progress, and due date badges
             </li>
             <li>
               <strong className="text-foreground">My Ideas</strong> — your 5

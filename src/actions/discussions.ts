@@ -153,6 +153,18 @@ export async function deleteDiscussion(discussionId: string, ideaId: string) {
     throw new Error("You don't have permission to delete this discussion");
   }
 
+  // Clean up storage files before deleting (CASCADE will remove DB rows)
+  const { data: attachments } = await supabase
+    .from("discussion_attachments")
+    .select("storage_path")
+    .eq("discussion_id", discussionId);
+
+  if (attachments && attachments.length > 0) {
+    await supabase.storage
+      .from("discussion-attachments")
+      .remove(attachments.map((a) => a.storage_path));
+  }
+
   const { error } = await supabase
     .from("idea_discussions")
     .delete()

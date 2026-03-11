@@ -50,6 +50,7 @@ function getIconColor(contentType: string): string {
   if (isImageType(contentType)) return "text-violet-400";
   if (contentType === "application/pdf") return "text-red-400";
   if (contentType === "text/markdown") return "text-blue-400";
+  if (contentType === "text/html") return "text-orange-400";
   return "text-muted-foreground";
 }
 
@@ -163,13 +164,13 @@ export function IdeaAttachmentsSection({
     }
 
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    const allowedExts = ["md", "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg"];
+    const allowedExts = ["md", "html", "htm", "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg"];
     const typeAllowed =
       ALLOWED_IDEA_ATTACHMENT_TYPES.includes(file.type as (typeof ALLOWED_IDEA_ATTACHMENT_TYPES)[number]) ||
       allowedExts.includes(ext);
 
     if (!typeAllowed) {
-      toast.error("Unsupported file type. Allowed: images, PDF, Markdown");
+      toast.error("Unsupported file type. Allowed: images, PDF, Markdown, HTML");
       return;
     }
 
@@ -182,6 +183,9 @@ export function IdeaAttachmentsSection({
     let contentType = file.type;
     if (ext === "md" && contentType !== "text/markdown") {
       contentType = "text/markdown";
+    }
+    if ((ext === "html" || ext === "htm") && contentType !== "text/html") {
+      contentType = "text/html";
     }
 
     const placeholderId = crypto.randomUUID();
@@ -456,7 +460,7 @@ export function IdeaAttachmentsSection({
                   id={`idea-file-upload-${ideaId}`}
                   type="file"
                   className="hidden"
-                  accept=".md,.pdf,.png,.jpg,.jpeg,.gif,.webp,.svg"
+                  accept=".md,.html,.htm,.pdf,.png,.jpg,.jpeg,.gif,.webp,.svg"
                   onChange={handleFileSelect}
                   multiple
                 />
@@ -485,7 +489,7 @@ export function IdeaAttachmentsSection({
                   </label>
                 </div>
                 <p className="mt-2 text-[10px] text-muted-foreground">
-                  Images, PDF, Markdown &middot; Max 10MB &middot;{" "}
+                  Images, PDF, Markdown, HTML &middot; Max 10MB &middot;{" "}
                   {attachments.length}/{MAX_IDEA_ATTACHMENTS} files
                 </p>
               </>

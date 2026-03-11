@@ -16,9 +16,9 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 import { TaskLabelBadges } from "./task-label-badges";
 import { LabelPicker } from "./label-picker";
 import { DueDatePicker } from "./due-date-picker";
-import { ChecklistSection } from "./checklist-section";
 import { ActivityTimeline } from "./activity-timeline";
 import { TaskCommentsSection } from "./task-comments-section";
+import { TaskWorkflowSection } from "./task-workflow-section";
 import { TaskAttachmentsSection } from "./task-attachments-section";
 import { Markdown } from "@/components/ui/markdown";
 import { MentionAutocomplete } from "./mention-autocomplete";
@@ -30,7 +30,7 @@ import { logTaskActivity } from "@/lib/activity";
 import { useBotRoles } from "@/components/bot-roles-context";
 import { getRoleColor } from "@/lib/agent-colors";
 import { getInitials } from "@/lib/utils";
-import type { BoardTaskWithAssignee, BoardLabel, BoardChecklistItem, User, IdeaAgentUser } from "@/types";
+import type { BoardTaskWithAssignee, BoardLabel, User, IdeaAgentUser } from "@/types";
 
 interface TaskDetailDialogProps {
   open: boolean;
@@ -38,7 +38,6 @@ interface TaskDetailDialogProps {
   task: BoardTaskWithAssignee;
   ideaId: string;
   boardLabels: BoardLabel[];
-  checklistItems: BoardChecklistItem[];
   teamMembers: User[];
   currentUserId: string;
   initialTab?: string;
@@ -55,7 +54,6 @@ export function TaskDetailDialog({
   task,
   ideaId,
   boardLabels,
-  checklistItems,
   teamMembers,
   currentUserId,
   initialTab,
@@ -765,14 +763,7 @@ export function TaskDetailDialog({
 
               <Separator />
 
-              {/* Checklist */}
-              <ChecklistSection
-                items={checklistItems}
-                taskId={task.id}
-                ideaId={ideaId}
-                currentUserId={currentUserId}
-                isReadOnly={isReadOnly}
-              />
+              <TaskWorkflowSection taskId={task.id} ideaId={ideaId} isReadOnly={isReadOnly} />
             </div>
           </TabsContent>
 

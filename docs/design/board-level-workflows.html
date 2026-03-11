@@ -1,0 +1,2317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Board-Level Workflows — VibeCodes Design Spec</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:ital,wght@0,300;0,400;0,500;0,600;0,700;1,400&family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,600;0,9..144,700;0,9..144,800;1,9..144,400&display=swap" rel="stylesheet">
+<style>
+/* ══════════════════════════════════════════════
+   Design Tokens
+   ══════════════════════════════════════════════ */
+:root {
+  --bg-void: #050507;
+  --bg-page: #09090b;
+  --bg-card: #131316;
+  --bg-elevated: #1c1c21;
+  --bg-muted: #27272a;
+  --bg-subtle: #3f3f46;
+  --border: rgba(255,255,255,0.07);
+  --border-strong: rgba(255,255,255,0.14);
+  --border-accent: rgba(139,92,246,0.3);
+  --text-primary: #f0f0f2;
+  --text-secondary: #a1a1aa;
+  --text-muted: #63637a;
+  --text-dim: #4a4a5a;
+  --violet: #8b5cf6;
+  --violet-bright: #a78bfa;
+  --violet-dim: rgba(139,92,246,0.12);
+  --violet-glow: rgba(139,92,246,0.06);
+  --emerald: #34d399;
+  --emerald-dim: rgba(52,211,153,0.1);
+  --red: #f87171;
+  --red-dim: rgba(248,113,113,0.08);
+  --amber: #fbbf24;
+  --amber-dim: rgba(251,191,36,0.1);
+  --blue: #60a5fa;
+  --blue-dim: rgba(96,165,250,0.1);
+  --pink: #f472b6;
+  --pink-dim: rgba(244,114,182,0.1);
+  --cyan: #22d3ee;
+  --cyan-dim: rgba(34,211,238,0.1);
+  --font-body: 'Plus Jakarta Sans', -apple-system, sans-serif;
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+  --radius: 8px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+}
+
+/* ══════════════════════════════════════════════
+   Reset & Base
+   ══════════════════════════════════════════════ */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html { scroll-behavior: smooth; scrollbar-color: #2a2a30 transparent; }
+body {
+  font-family: var(--font-body);
+  background: var(--bg-void);
+  color: var(--text-primary);
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* Noise grain overlay */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  pointer-events: none;
+  opacity: 0.025;
+  background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  background-size: 200px;
+}
+
+::selection { background: rgba(139,92,246,0.35); color: #fff; }
+
+/* ══════════════════════════════════════════════
+   Navigation
+   ══════════════════════════════════════════════ */
+.nav {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  background: rgba(5,5,7,0.8);
+  backdrop-filter: blur(20px) saturate(1.4);
+  border-bottom: 1px solid var(--border);
+  padding: 0 32px;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.nav-brand {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--violet-bright);
+  letter-spacing: -0.02em;
+  margin-right: 20px;
+  flex-shrink: 0;
+}
+.nav-brand span { color: var(--text-muted); font-weight: 400; }
+.nav-links {
+  display: flex;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.nav-links::-webkit-scrollbar { display: none; }
+.nav-link {
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 12px;
+  font-weight: 500;
+  padding: 6px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  transition: all 0.15s;
+}
+.nav-link:hover { color: var(--text-secondary); background: rgba(255,255,255,0.04); }
+
+/* ══════════════════════════════════════════════
+   Layout
+   ══════════════════════════════════════════════ */
+.page { padding-top: 52px; }
+.container { max-width: 1020px; margin: 0 auto; padding: 0 28px; }
+
+/* ══════════════════════════════════════════════
+   Hero
+   ══════════════════════════════════════════════ */
+.hero {
+  padding: 100px 0 80px;
+  position: relative;
+  overflow: hidden;
+}
+.hero::before {
+  content: '';
+  position: absolute;
+  top: -200px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 900px;
+  height: 600px;
+  background: radial-gradient(ellipse, rgba(139,92,246,0.08) 0%, transparent 70%);
+  pointer-events: none;
+}
+.hero-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--violet);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-bottom: 20px;
+}
+.hero h1 {
+  font-family: var(--font-display);
+  font-size: clamp(38px, 5.5vw, 56px);
+  font-weight: 700;
+  line-height: 1.1;
+  letter-spacing: -0.03em;
+  color: var(--text-primary);
+  margin-bottom: 20px;
+}
+.hero h1 em {
+  font-style: italic;
+  color: var(--violet-bright);
+}
+.hero-sub {
+  font-size: 17px;
+  color: var(--text-secondary);
+  max-width: 620px;
+  line-height: 1.7;
+}
+.hero-sub strong { color: var(--text-primary); font-weight: 600; }
+
+/* ══════════════════════════════════════════════
+   Section
+   ══════════════════════════════════════════════ */
+.section {
+  padding: 72px 0;
+  border-top: 1px solid var(--border);
+}
+.section-num {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--text-dim);
+  letter-spacing: 0.06em;
+  margin-bottom: 8px;
+}
+.section h2 {
+  font-family: var(--font-display);
+  font-size: 30px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  margin-bottom: 8px;
+}
+.section h2 em { font-style: italic; color: var(--violet-bright); }
+.section-desc {
+  font-size: 15px;
+  color: var(--text-secondary);
+  max-width: 600px;
+  margin-bottom: 40px;
+}
+.section h3 {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 12px;
+  margin-top: 36px;
+  letter-spacing: -0.01em;
+}
+
+/* ══════════════════════════════════════════════
+   Comparison Table
+   ══════════════════════════════════════════════ */
+.cmp-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 28px 0;
+  font-size: 13.5px;
+}
+.cmp-table th {
+  text-align: left;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border-strong);
+}
+.cmp-table td {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+.cmp-table td:first-child {
+  color: var(--text-primary);
+  font-weight: 600;
+  width: 180px;
+}
+.cmp-table .old { color: var(--text-muted); text-decoration: line-through; text-decoration-color: rgba(248,113,113,0.4); }
+.cmp-table .new { color: var(--emerald); }
+.cmp-table tr:last-child td { border-bottom: none; }
+
+/* ══════════════════════════════════════════════
+   Change Cards
+   ══════════════════════════════════════════════ */
+.change-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin: 28px 0;
+}
+@media (max-width: 768px) { .change-grid { grid-template-columns: 1fr; } }
+.change-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 24px;
+}
+.change-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+.change-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+.change-dot.red { background: var(--red); box-shadow: 0 0 8px rgba(248,113,113,0.3); }
+.change-dot.green { background: var(--emerald); box-shadow: 0 0 8px rgba(52,211,153,0.3); }
+.change-dot.blue { background: var(--blue); box-shadow: 0 0 8px rgba(96,165,250,0.3); }
+.change-card-title {
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.change-card-title.red { color: var(--red); }
+.change-card-title.green { color: var(--emerald); }
+.change-card-title.blue { color: var(--blue); }
+.change-card ul {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.change-card li {
+  font-size: 13px;
+  color: var(--text-secondary);
+  padding-left: 16px;
+  position: relative;
+}
+.change-card li::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 7px;
+  width: 4px;
+  height: 4px;
+  border-radius: 1px;
+}
+.change-card.removed li::before { background: var(--red); opacity: 0.6; }
+.change-card.added li::before { background: var(--emerald); opacity: 0.6; }
+.change-card.kept li::before { background: var(--blue); opacity: 0.6; }
+.change-card code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: rgba(255,255,255,0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* ══════════════════════════════════════════════
+   Mockup Frame
+   ══════════════════════════════════════════════ */
+.mockup-frame {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  margin: 32px 0;
+  box-shadow: 0 20px 60px rgba(0,0,0,0.3), 0 0 0 1px rgba(255,255,255,0.03) inset;
+}
+.mockup-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 14px 18px;
+  background: var(--bg-elevated);
+  border-bottom: 1px solid var(--border);
+}
+.mockup-dots {
+  display: flex;
+  gap: 6px;
+  margin-right: 8px;
+}
+.mockup-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+}
+.mockup-dot.r { background: #ff5f57; }
+.mockup-dot.y { background: #febc2e; }
+.mockup-dot.g { background: #28c840; }
+.mockup-bar-title {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.mockup-body {
+  padding: 28px;
+}
+.mockup-caption {
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-dim);
+  margin-top: -16px;
+  margin-bottom: 32px;
+  font-style: italic;
+}
+
+/* ══════════════════════════════════════════════
+   Before / After
+   ══════════════════════════════════════════════ */
+.ba-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  margin: 28px 0;
+}
+@media (max-width: 768px) { .ba-grid { grid-template-columns: 1fr; } }
+.ba-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 4px 10px;
+  border-radius: 4px;
+  display: inline-block;
+  margin-bottom: 16px;
+}
+.ba-label.before { background: var(--red-dim); color: var(--red); }
+.ba-label.after { background: var(--emerald-dim); color: var(--emerald); }
+
+/* Fade overlay for "before" mockups */
+.ba-before .mockup-frame { position: relative; }
+.ba-before .mockup-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  border-radius: var(--radius-xl);
+  background: repeating-linear-gradient(-45deg, transparent, transparent 10px, rgba(248,113,113,0.03) 10px, rgba(248,113,113,0.03) 20px);
+}
+
+/* ══════════════════════════════════════════════
+   Dialog Mockup (Agent Creation)
+   ══════════════════════════════════════════════ */
+.dialog-mock {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius-lg);
+  padding: 28px;
+  max-width: 420px;
+  margin: 0 auto;
+}
+.dialog-title {
+  font-size: 17px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.dialog-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  margin-bottom: 24px;
+}
+.field {
+  margin-bottom: 18px;
+}
+.field-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+.field-hint {
+  font-size: 11px;
+  color: var(--text-dim);
+  margin-top: 4px;
+}
+.field-input {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  color: var(--text-primary);
+  font-family: var(--font-body);
+  font-size: 13.5px;
+}
+.field-input::placeholder { color: var(--text-dim); }
+.field-input:focus { outline: none; border-color: var(--violet); }
+.field-textarea {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  padding: 9px 12px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  min-height: 64px;
+  resize: vertical;
+  line-height: 1.5;
+}
+.field-row {
+  display: flex;
+  gap: 12px;
+}
+.field-row .field { flex: 1; }
+.skill-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+.skill-chip {
+  font-size: 11px;
+  padding: 3px 10px;
+  border-radius: 20px;
+  background: var(--violet-dim);
+  color: var(--violet-bright);
+  border: 1px solid rgba(139,92,246,0.2);
+}
+
+/* Removed field styling */
+.field-removed {
+  position: relative;
+  opacity: 0.35;
+  pointer-events: none;
+}
+.field-removed::after {
+  content: 'REMOVED';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%) rotate(-8deg);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.15em;
+  color: var(--red);
+  background: var(--red-dim);
+  padding: 3px 10px;
+  border-radius: 4px;
+  border: 1px solid rgba(248,113,113,0.3);
+  z-index: 5;
+}
+
+/* Type toggle mockup */
+.type-toggle {
+  display: flex;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid var(--border-strong);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+.type-btn {
+  flex: 1;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-weight: 600;
+  text-align: center;
+  color: var(--text-muted);
+  border: none;
+  background: transparent;
+  cursor: pointer;
+}
+.type-btn.active {
+  background: var(--amber-dim);
+  color: var(--amber);
+}
+
+/* Dialog buttons */
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 24px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border);
+}
+.btn {
+  font-family: var(--font-body);
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 18px;
+  border-radius: var(--radius);
+  border: none;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.btn-primary { background: #e4e4e7; color: #18181b; }
+.btn-primary:hover { background: #fff; }
+.btn-ghost { background: transparent; color: var(--text-secondary); }
+.btn-ghost:hover { background: rgba(255,255,255,0.06); }
+.btn-outline {
+  background: transparent;
+  border: 1px solid var(--border-strong);
+  color: var(--text-secondary);
+  font-size: 12px;
+  padding: 6px 12px;
+}
+.btn-outline:hover { background: rgba(255,255,255,0.04); }
+
+/* ══════════════════════════════════════════════
+   Board Mockup
+   ══════════════════════════════════════════════ */
+.board-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 4px;
+  border-bottom: 1px solid var(--border);
+}
+.board-tab {
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.board-tab:hover { color: var(--text-secondary); }
+.board-tab.active {
+  color: var(--text-primary);
+  border-bottom-color: var(--violet);
+}
+.board-tab .tab-icon { margin-right: 6px; }
+
+.workflows-layout {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  gap: 0;
+  min-height: 480px;
+}
+.wf-sidebar {
+  border-right: 1px solid var(--border);
+  padding: 16px;
+}
+.wf-sidebar-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+.wf-sidebar-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.wf-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.wf-item {
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: all 0.12s;
+}
+.wf-item:hover { background: rgba(255,255,255,0.04); }
+.wf-item.active { background: var(--violet-dim); border: 1px solid rgba(139,92,246,0.2); }
+.wf-item-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin-bottom: 2px;
+}
+.wf-item-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.wf-editor {
+  padding: 24px;
+}
+.wf-editor-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 24px;
+}
+.wf-editor-name {
+  font-size: 20px;
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+.wf-editor-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+}
+.wf-steps-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  margin-bottom: 12px;
+}
+
+/* Workflow step items */
+.wf-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+  position: relative;
+}
+.wf-step::before {
+  content: '';
+  position: absolute;
+  left: 28px;
+  top: 100%;
+  width: 1px;
+  height: 6px;
+  background: var(--border-strong);
+}
+.wf-step:last-child::before { display: none; }
+.wf-step-num {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--bg-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  flex-shrink: 0;
+}
+.wf-step-title {
+  font-size: 13.5px;
+  font-weight: 600;
+  color: var(--text-primary);
+  flex: 1;
+}
+.wf-step-desc {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+.role-badge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+.role-ba { background: var(--blue-dim); color: var(--blue); }
+.role-ux { background: var(--pink-dim); color: var(--pink); }
+.role-dev { background: var(--violet-dim); color: var(--violet-bright); }
+.role-qa { background: var(--cyan-dim); color: var(--cyan); }
+.role-human { background: var(--amber-dim); color: var(--amber); }
+.approval-icon {
+  font-size: 12px;
+  margin-left: -4px;
+}
+
+/* Auto-rules */
+.auto-rules {
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: 1px solid var(--border);
+}
+.auto-rule {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+.label-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 10px;
+  border-radius: 20px;
+}
+.label-feature { background: var(--emerald-dim); color: var(--emerald); }
+.label-bug { background: var(--red-dim); color: var(--red); }
+
+/* ══════════════════════════════════════════════
+   Template Application Preview
+   ══════════════════════════════════════════════ */
+.preview-step {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-bottom: 6px;
+}
+.preview-agent {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+.preview-avatar {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #fff;
+  flex-shrink: 0;
+}
+.preview-avatar.ba { background: #3b82f6; }
+.preview-avatar.ux { background: #ec4899; }
+.preview-avatar.dev { background: #8b5cf6; }
+.preview-avatar.qa { background: #06b6d4; }
+.preview-avatar.human { background: #f59e0b; }
+.preview-agent-name {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+.auto-match-badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--emerald);
+  background: var(--emerald-dim);
+  padding: 1px 6px;
+  border-radius: 3px;
+  font-weight: 500;
+}
+
+/* ══════════════════════════════════════════════
+   Claude Code Terminal
+   ══════════════════════════════════════════════ */
+.cc-frame {
+  background: #0a0a0c;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-xl);
+  overflow: hidden;
+  margin: 32px 0;
+  box-shadow: 0 24px 80px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.02) inset;
+}
+.cc-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 18px;
+  background: #111114;
+  border-bottom: 1px solid rgba(255,255,255,0.06);
+}
+.cc-dots { display: flex; gap: 6px; }
+.cc-dot { width: 10px; height: 10px; border-radius: 50%; }
+.cc-dot.r { background: #ff5f57; }
+.cc-dot.y { background: #febc2e; }
+.cc-dot.g { background: #28c840; }
+.cc-logo {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: #d4a574;
+  margin-left: 6px;
+}
+.cc-path {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+}
+.cc-model {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-dim);
+  margin-left: auto;
+  background: rgba(255,255,255,0.04);
+  padding: 2px 8px;
+  border-radius: 4px;
+}
+
+.cc-body {
+  padding: 20px 22px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.cc-user {
+  margin: 14px 0 6px;
+}
+.cc-user-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--blue);
+  margin-bottom: 4px;
+}
+.cc-user p {
+  font-size: 14px;
+  color: var(--text-primary);
+  padding-left: 2px;
+}
+
+.cc-claude {
+  margin: 8px 0;
+}
+.cc-claude-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: #d4a574;
+  margin-bottom: 6px;
+}
+.cc-claude-label .persona { color: var(--violet-bright); }
+.cc-claude-label .persona-ux { color: var(--pink); }
+.cc-claude-label .persona-dev { color: var(--blue); }
+.cc-claude-label .persona-qa { color: var(--cyan); }
+.cc-claude p {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 4px 0;
+}
+
+.cc-tool {
+  background: rgba(255,255,255,0.025);
+  border: 1px solid rgba(255,255,255,0.06);
+  border-radius: var(--radius);
+  padding: 8px 12px;
+  margin: 8px 0;
+  font-family: var(--font-mono);
+}
+.cc-tool-header {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.cc-tool-icon { color: var(--violet-bright); font-size: 11px; }
+.cc-tool-params {
+  margin-top: 4px;
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.6;
+}
+.cc-tool-params .param-key { color: var(--text-dim); }
+.cc-tool-params .param-val { color: var(--emerald); }
+
+.cc-result {
+  background: rgba(52,211,153,0.04);
+  border-left: 2px solid rgba(52,211,153,0.3);
+  padding: 8px 12px;
+  margin: 6px 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+  line-height: 1.5;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+
+.cc-output {
+  background: rgba(255,255,255,0.02);
+  border-left: 2px solid var(--border-strong);
+  padding: 10px 14px;
+  margin: 8px 0;
+  font-size: 12.5px;
+  color: #8a8a9a;
+  line-height: 1.6;
+  border-radius: 0 var(--radius) var(--radius) 0;
+}
+.cc-output strong { color: var(--text-secondary); font-weight: 600; }
+
+.cc-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-radius: var(--radius);
+  font-size: 13px;
+  font-weight: 600;
+  margin: 8px 0;
+}
+.cc-status.done {
+  background: var(--emerald-dim);
+  color: var(--emerald);
+  border: 1px solid rgba(52,211,153,0.15);
+}
+.cc-status.waiting {
+  background: var(--amber-dim);
+  color: var(--amber);
+  border: 1px solid rgba(251,191,36,0.15);
+}
+.cc-status.fail {
+  background: var(--red-dim);
+  color: var(--red);
+  border: 1px solid rgba(248,113,113,0.15);
+}
+.cc-status-icon { font-size: 14px; }
+
+.cc-divider {
+  height: 1px;
+  background: rgba(255,255,255,0.04);
+  margin: 12px 0;
+}
+
+.cc-summary {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  margin: 6px 0;
+  padding: 8px 12px;
+  background: rgba(255,255,255,0.02);
+  border-radius: var(--radius);
+  line-height: 1.7;
+}
+.cc-summary .step-ref { color: var(--text-muted); }
+.cc-summary .arrow { color: var(--text-dim); margin: 0 4px; }
+
+/* ══════════════════════════════════════════════
+   Flow Diagram
+   ══════════════════════════════════════════════ */
+.flow {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin: 32px 0;
+  overflow-x: auto;
+  padding: 20px 0;
+}
+.flow-step {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  min-width: 140px;
+  flex-shrink: 0;
+}
+.flow-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+}
+.flow-icon.label-icon { background: var(--emerald-dim); border: 1px solid rgba(52,211,153,0.2); }
+.flow-icon.trigger-icon { background: var(--amber-dim); border: 1px solid rgba(251,191,36,0.2); }
+.flow-icon.create-icon { background: var(--violet-dim); border: 1px solid rgba(139,92,246,0.2); }
+.flow-icon.read-icon { background: var(--blue-dim); border: 1px solid rgba(96,165,250,0.2); }
+.flow-icon.exec-icon { background: var(--pink-dim); border: 1px solid rgba(244,114,182,0.2); }
+.flow-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+  text-align: center;
+}
+.flow-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+  max-width: 130px;
+}
+.flow-arrow {
+  font-size: 20px;
+  color: var(--text-dim);
+  flex-shrink: 0;
+  margin: 0 4px;
+  margin-bottom: 28px;
+}
+
+/* ══════════════════════════════════════════════
+   Schema Tables
+   ══════════════════════════════════════════════ */
+.schema-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin: 28px 0;
+}
+@media (max-width: 768px) { .schema-grid { grid-template-columns: 1fr; } }
+.schema-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+.schema-name {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--violet-bright);
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid var(--border);
+}
+.schema-name .new-tag {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: var(--emerald-dim);
+  color: var(--emerald);
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 8px;
+  vertical-align: 1px;
+}
+.schema-name .mod-tag {
+  font-size: 9px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  background: var(--amber-dim);
+  color: var(--amber);
+  padding: 2px 6px;
+  border-radius: 3px;
+  margin-left: 8px;
+  vertical-align: 1px;
+}
+.schema-col {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+.schema-col:last-child { border-bottom: none; }
+.schema-col .col-name {
+  font-family: var(--font-mono);
+  font-weight: 500;
+  color: var(--text-primary);
+  min-width: 120px;
+}
+.schema-col .col-name.new-col { color: var(--emerald); }
+.schema-col .col-type {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.schema-col .col-fk {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--violet-bright);
+  opacity: 0.7;
+}
+
+/* ══════════════════════════════════════════════
+   MCP Tools Table
+   ══════════════════════════════════════════════ */
+.tools-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+  margin: 24px 0;
+}
+.tools-table th {
+  text-align: left;
+  padding: 10px 14px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  border-bottom: 1px solid var(--border-strong);
+}
+.tools-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  vertical-align: top;
+}
+.tools-table td:first-child {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--emerald);
+  font-weight: 500;
+}
+.tools-table .existing td:first-child { color: var(--text-muted); }
+
+/* ══════════════════════════════════════════════
+   Migration Steps
+   ══════════════════════════════════════════════ */
+.migration-steps {
+  counter-reset: mig;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 24px 0;
+}
+.mig-step {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+.mig-step::before {
+  counter-increment: mig;
+  content: counter(mig);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--violet-bright);
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--violet-dim);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+.mig-step-content {
+  font-size: 13.5px;
+  color: var(--text-secondary);
+}
+.mig-step-content strong { color: var(--text-primary); }
+.mig-step-content code {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  background: rgba(255,255,255,0.06);
+  padding: 1px 5px;
+  border-radius: 4px;
+}
+
+/* ══════════════════════════════════════════════
+   Callout
+   ══════════════════════════════════════════════ */
+.callout {
+  padding: 16px 20px;
+  border-radius: var(--radius);
+  margin: 20px 0;
+  font-size: 13.5px;
+  line-height: 1.6;
+}
+.callout.violet {
+  background: var(--violet-dim);
+  border-left: 3px solid var(--violet);
+  color: var(--text-secondary);
+}
+.callout.amber {
+  background: var(--amber-dim);
+  border-left: 3px solid var(--amber);
+  color: var(--text-secondary);
+}
+.callout strong { color: var(--text-primary); }
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════
+     NAVIGATION
+     ════════════════════════════════════════════ -->
+<nav class="nav">
+  <div class="nav-brand">VibeCodes <span>/ design</span></div>
+  <div class="nav-links">
+    <a href="#summary" class="nav-link">Summary</a>
+    <a href="#changes" class="nav-link">Changes</a>
+    <a href="#agents" class="nav-link">Agents</a>
+    <a href="#workflows-tab" class="nav-link">Workflows Tab</a>
+    <a href="#apply" class="nav-link">Apply to Task</a>
+    <a href="#claude-code" class="nav-link">Claude Code</a>
+    <a href="#auto-rules" class="nav-link">Auto-Rules</a>
+    <a href="#schema" class="nav-link">Schema</a>
+    <a href="#mcp" class="nav-link">MCP Tools</a>
+    <a href="#migration" class="nav-link">Migration</a>
+  </div>
+</nav>
+
+<div class="page">
+<div class="container">
+
+<!-- ════════════════════════════════════════════
+     HERO
+     ════════════════════════════════════════════ -->
+<section class="hero">
+  <div class="hero-label">Design Specification</div>
+  <h1>Board-Level <em>Workflows</em></h1>
+  <p class="hero-sub">
+    Workflows are a property of <strong>how your team works</strong>, not a property of any single agent.
+    Move templates to the board. Let Claude Code orchestrate. Kill the agent taxonomy.
+  </p>
+</section>
+
+<!-- ════════════════════════════════════════════
+     1. EXECUTIVE SUMMARY
+     ════════════════════════════════════════════ -->
+<section class="section" id="summary">
+  <div class="section-num">01</div>
+  <h2>Executive <em>Summary</em></h2>
+  <p class="section-desc">
+    The current workflow system is technically complete but practically unusable. Templates are buried inside agent configuration dialogs. Users must learn an orchestrator/worker taxonomy before they can use workflows. This redesign moves workflows to where work already happens &mdash; the board.
+  </p>
+
+  <h3>Before &amp; After</h3>
+  <table class="cmp-table">
+    <thead>
+      <tr><th>Concept</th><th>Current</th><th>Proposed</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Template ownership</td>
+        <td class="old">On agent profiles</td>
+        <td class="new">On the idea's board</td>
+      </tr>
+      <tr>
+        <td>Who orchestrates</td>
+        <td class="old">Designated "orchestrator" agent</td>
+        <td class="new">Claude Code (user's session)</td>
+      </tr>
+      <tr>
+        <td>Agent types</td>
+        <td class="old">orchestrator / worker</td>
+        <td class="new">None &mdash; all agents equal</td>
+      </tr>
+      <tr>
+        <td>How templates trigger</td>
+        <td class="old">Orchestrator creates steps</td>
+        <td class="new">Label auto-rules or manual pick</td>
+      </tr>
+      <tr>
+        <td>Where users find templates</td>
+        <td class="old">Inside agent config dialogs</td>
+        <td class="new">"Workflows" tab on board page</td>
+      </tr>
+      <tr>
+        <td>Agent-to-step matching</td>
+        <td class="old">Orchestrator decides</td>
+        <td class="new">Role-based auto-match from pool</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout violet">
+    <strong>Key insight:</strong> Claude Code IS the orchestrator. It reads workflow steps via MCP, assumes each agent's persona, executes the work, and saves output. The user's Claude Code subscription pays for compute. No server-side AI calls. No special agent type needed.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     2. WHAT CHANGES
+     ════════════════════════════════════════════ -->
+<section class="section" id="changes">
+  <div class="section-num">02</div>
+  <h2>What <em>Changes</em></h2>
+  <p class="section-desc">A clear accounting of what's removed, added, and kept from Matt's implementation.</p>
+
+  <div class="change-grid">
+    <div class="change-card removed">
+      <div class="change-card-header">
+        <div class="change-dot red"></div>
+        <div class="change-card-title red">Removed</div>
+      </div>
+      <ul>
+        <li><code>agent_type</code> on bot_profiles</li>
+        <li><code>workflow_templates</code> jsonb on bot_profiles</li>
+        <li><code>deliverables</code> on bot_profiles</li>
+        <li><code>is_orchestrator</code> on idea_agents</li>
+        <li>WorkflowTemplateEditor in agent dialogs</li>
+        <li><code>set_orchestration_agent</code> MCP tool</li>
+        <li>Orchestrator picker on discussion conversion</li>
+      </ul>
+    </div>
+
+    <div class="change-card added">
+      <div class="change-card-header">
+        <div class="change-dot green"></div>
+        <div class="change-card-title green">Added</div>
+      </div>
+      <ul>
+        <li><code>workflow_templates</code> table (idea-scoped)</li>
+        <li><code>workflow_auto_rules</code> table</li>
+        <li><code>workflow_runs</code> table</li>
+        <li>"Workflows" tab on board page</li>
+        <li>Role-based agent auto-matching</li>
+        <li>Label &rarr; template auto-trigger</li>
+        <li>Template application preview dialog</li>
+      </ul>
+    </div>
+
+    <div class="change-card kept">
+      <div class="change-card-header">
+        <div class="change-dot blue"></div>
+        <div class="change-card-title blue">Unchanged</div>
+      </div>
+      <ul>
+        <li><code>task_workflow_steps</code> table + lifecycle</li>
+        <li>Step comments for context passing</li>
+        <li>Human approval gates</li>
+        <li>Cascade failure on reject</li>
+        <li><code>claim_next_step</code> / <code>complete_step</code></li>
+        <li><code>approve_step</code> / <code>fail_step</code></li>
+        <li>Agent pool per idea</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     3. SIMPLIFIED AGENT CREATION
+     ════════════════════════════════════════════ -->
+<section class="section" id="agents">
+  <div class="section-num">03</div>
+  <h2>Simplified <em>Agent Creation</em></h2>
+  <p class="section-desc">All agents are equal. The <strong>role</strong> field is the only thing that matters for workflow matching. No type taxonomy, no conditional sections.</p>
+
+  <div class="ba-grid">
+    <!-- BEFORE -->
+    <div class="ba-before">
+      <div class="ba-label before">Before</div>
+      <div class="mockup-frame">
+        <div class="mockup-bar">
+          <div class="mockup-dots"><div class="mockup-dot r"></div><div class="mockup-dot y"></div><div class="mockup-dot g"></div></div>
+          <div class="mockup-bar-title">Create Agent</div>
+        </div>
+        <div class="mockup-body">
+          <div class="dialog-mock" style="max-width:100%;">
+            <div class="dialog-title">Create New Agent</div>
+            <div class="dialog-desc">Configure your AI agent</div>
+
+            <div class="field">
+              <label class="field-label">Name</label>
+              <input class="field-input" value="Sprint Planner" readonly>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Role</label>
+              <input class="field-input" value="Orchestrator" readonly>
+            </div>
+
+            <!-- THE REMOVED PARTS -->
+            <div class="field field-removed">
+              <label class="field-label">Agent Type</label>
+              <div class="type-toggle">
+                <div class="type-btn">Worker</div>
+                <div class="type-btn active">Orchestrator</div>
+              </div>
+              <div class="field-hint">Orchestrators manage workflows and delegate to workers.</div>
+            </div>
+
+            <div class="field field-removed">
+              <label class="field-label">Deliverables</label>
+              <input class="field-input" placeholder="e.g. PRD, wireframes, code..." readonly>
+            </div>
+
+            <div class="field field-removed">
+              <label class="field-label">Workflow Templates</label>
+              <div style="background:rgba(255,255,255,0.03);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;">
+                <div style="font-size:12px;color:var(--text-muted);">Dev TDD Workflow</div>
+                <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">3 steps: Design &rarr; Develop &rarr; Review</div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">System Prompt</label>
+              <textarea class="field-textarea" readonly style="min-height:48px;font-size:11px;color:var(--text-dim);">You are an orchestrator agent that manages dev workflows...</textarea>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- AFTER -->
+    <div class="ba-after">
+      <div class="ba-label after">After</div>
+      <div class="mockup-frame">
+        <div class="mockup-bar">
+          <div class="mockup-dots"><div class="mockup-dot r"></div><div class="mockup-dot y"></div><div class="mockup-dot g"></div></div>
+          <div class="mockup-bar-title">Create Agent</div>
+        </div>
+        <div class="mockup-body">
+          <div class="dialog-mock" style="max-width:100%;">
+            <div class="dialog-title">Create New Agent</div>
+            <div class="dialog-desc">Add an agent to your team</div>
+
+            <div class="field-row">
+              <div class="field">
+                <label class="field-label">Name</label>
+                <input class="field-input" value="Dev Alpha" readonly>
+              </div>
+              <div class="field">
+                <label class="field-label">Role</label>
+                <input class="field-input" value="Developer" readonly>
+                <div class="field-hint">Used for auto-matching to workflow steps</div>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Bio</label>
+              <input class="field-input" value="Full-stack TypeScript specialist" readonly>
+            </div>
+
+            <div class="field">
+              <label class="field-label">Skills</label>
+              <div class="skill-chips">
+                <span class="skill-chip">TypeScript</span>
+                <span class="skill-chip">React</span>
+                <span class="skill-chip">Next.js</span>
+                <span class="skill-chip">Supabase</span>
+              </div>
+            </div>
+
+            <div class="field">
+              <label class="field-label">System Prompt</label>
+              <textarea class="field-textarea" readonly style="min-height:48px;font-size:11px;color:var(--text-muted);">You are a senior full-stack developer. Follow TDD. Write clean, typed code...</textarea>
+            </div>
+
+            <div class="dialog-actions">
+              <button class="btn btn-ghost">Cancel</button>
+              <button class="btn btn-primary">Create Agent</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="mockup-caption">Left: current agent creation with orchestrator/worker toggle, deliverables, and embedded templates. Right: simplified &mdash; every agent gets the same clean form. The role field drives workflow matching.</p>
+</section>
+
+<!-- ════════════════════════════════════════════
+     4. BOARD WORKFLOWS TAB
+     ════════════════════════════════════════════ -->
+<section class="section" id="workflows-tab">
+  <div class="section-num">04</div>
+  <h2>Board <em>Workflows</em> Tab</h2>
+  <p class="section-desc">Templates live on the board, visible to the whole team. A new tab alongside Board and Labels.</p>
+
+  <div class="mockup-frame">
+    <div class="mockup-bar">
+      <div class="mockup-dots"><div class="mockup-dot r"></div><div class="mockup-dot y"></div><div class="mockup-dot g"></div></div>
+      <div class="mockup-bar-title">VibeCodes &mdash; Build a Website &mdash; Board</div>
+    </div>
+    <div class="mockup-body" style="padding:0;">
+      <!-- Board Tabs -->
+      <div class="board-tabs">
+        <div class="board-tab"><span class="tab-icon">&#9634;</span> Board</div>
+        <div class="board-tab"><span class="tab-icon">&#9679;</span> Labels</div>
+        <div class="board-tab active"><span class="tab-icon">&#9881;</span> Workflows</div>
+      </div>
+
+      <!-- Workflows Layout -->
+      <div class="workflows-layout">
+        <!-- Sidebar: Template List -->
+        <div class="wf-sidebar">
+          <div class="wf-sidebar-header">
+            <span class="wf-sidebar-title">Templates</span>
+            <button class="btn-outline" style="font-size:11px;padding:4px 10px;">+ New</button>
+          </div>
+          <div class="wf-list">
+            <div class="wf-item active">
+              <div class="wf-item-name">Feature Development</div>
+              <div class="wf-item-meta">6 steps &middot; 2 gates</div>
+            </div>
+            <div class="wf-item">
+              <div class="wf-item-name">Bug Fix Pipeline</div>
+              <div class="wf-item-meta">4 steps &middot; 1 gate</div>
+            </div>
+            <div class="wf-item">
+              <div class="wf-item-name">Content Review</div>
+              <div class="wf-item-meta">3 steps &middot; 1 gate</div>
+            </div>
+            <div class="wf-item">
+              <div class="wf-item-name">Research Sprint</div>
+              <div class="wf-item-meta">3 steps &middot; 0 gates</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Editor: Selected Template -->
+        <div class="wf-editor">
+          <div class="wf-editor-header">
+            <div>
+              <div class="wf-editor-name">Feature Development</div>
+              <div class="wf-editor-desc">Full pipeline: requirements &rarr; design &rarr; review &rarr; implement &rarr; QA &rarr; ship</div>
+            </div>
+            <button class="btn-outline">Edit Template</button>
+          </div>
+
+          <div class="wf-steps-title">Steps</div>
+          <div>
+            <div class="wf-step">
+              <div class="wf-step-num">1</div>
+              <div style="flex:1;">
+                <div class="wf-step-title">Requirements Analysis</div>
+                <div class="wf-step-desc">Identify user stories, acceptance criteria, edge cases</div>
+              </div>
+              <span class="role-badge role-ba">BA</span>
+            </div>
+            <div class="wf-step">
+              <div class="wf-step-num">2</div>
+              <div style="flex:1;">
+                <div class="wf-step-title">UX Design</div>
+                <div class="wf-step-desc">Design the user experience, component inventory, responsive layout</div>
+              </div>
+              <span class="role-badge role-ux">UX</span>
+            </div>
+            <div class="wf-step">
+              <div class="wf-step-num">3</div>
+              <div style="flex:1;">
+                <div class="wf-step-title">Design Review</div>
+                <div class="wf-step-desc">Human reviews requirements and design before implementation</div>
+              </div>
+              <span class="role-badge role-human">&#9995; Human</span>
+              <span class="approval-icon">&#128274;</span>
+            </div>
+            <div class="wf-step">
+              <div class="wf-step-num">4</div>
+              <div style="flex:1;">
+                <div class="wf-step-title">Implementation</div>
+                <div class="wf-step-desc">Build the feature using outputs from prior steps</div>
+              </div>
+              <span class="role-badge role-dev">Dev</span>
+            </div>
+            <div class="wf-step">
+              <div class="wf-step-num">5</div>
+              <div style="flex:1;">
+                <div class="wf-step-title">Code Review &amp; QA</div>
+                <div class="wf-step-desc">Review code quality, run tests, verify acceptance criteria</div>
+              </div>
+              <span class="role-badge role-qa">QA</span>
+            </div>
+            <div class="wf-step">
+              <div class="wf-step-num">6</div>
+              <div style="flex:1;">
+                <div class="wf-step-title">Final Review</div>
+                <div class="wf-step-desc">Human approves implementation and QA before shipping</div>
+              </div>
+              <span class="role-badge role-human">&#9995; Human</span>
+              <span class="approval-icon">&#128274;</span>
+            </div>
+          </div>
+
+          <!-- Auto-Rules -->
+          <div class="auto-rules">
+            <div class="wf-steps-title">Auto-Rules</div>
+            <div style="font-size:12px;color:var(--text-muted);margin-bottom:10px;">Automatically apply this template when a task receives a matching label.</div>
+            <div class="auto-rule">
+              <span style="font-size:12px;color:var(--text-dim);">When task gets label</span>
+              <span class="label-badge label-feature">feature</span>
+              <span style="font-size:12px;color:var(--text-dim);">&rarr; auto-apply this template</span>
+              <span style="margin-left:auto;font-size:11px;color:var(--emerald);font-weight:600;">Active</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="mockup-caption">Board "Workflows" tab &mdash; template list on the left, step editor on the right, auto-rules at the bottom. Visible to the whole team.</p>
+</section>
+
+<!-- ════════════════════════════════════════════
+     5. APPLYING WORKFLOW TO TASK
+     ════════════════════════════════════════════ -->
+<section class="section" id="apply">
+  <div class="section-num">05</div>
+  <h2>Applying a <em>Workflow</em> to a Task</h2>
+  <p class="section-desc">When creating a task, optionally pick a workflow template. A preview shows each step with its auto-matched agent from the pool.</p>
+
+  <div class="mockup-frame">
+    <div class="mockup-bar">
+      <div class="mockup-dots"><div class="mockup-dot r"></div><div class="mockup-dot y"></div><div class="mockup-dot g"></div></div>
+      <div class="mockup-bar-title">Apply Workflow &mdash; "Add user authentication"</div>
+    </div>
+    <div class="mockup-body">
+      <div class="dialog-mock" style="max-width:520px;">
+        <div class="dialog-title">Apply Workflow Template</div>
+        <div class="dialog-desc">Feature Development &middot; 6 steps &middot; 2 approval gates</div>
+
+        <div style="display:flex;flex-direction:column;gap:6px;margin:20px 0;">
+          <div class="preview-step">
+            <div class="wf-step-num" style="width:22px;height:22px;font-size:10px;">1</div>
+            <span style="font-size:13px;font-weight:600;flex:1;">Requirements Analysis</span>
+            <span class="role-badge role-ba">BA</span>
+            <div class="preview-agent">
+              <div class="preview-avatar ba">SP</div>
+              <span class="preview-agent-name">Sprint Planner</span>
+              <span class="auto-match-badge">auto</span>
+            </div>
+          </div>
+          <div class="preview-step">
+            <div class="wf-step-num" style="width:22px;height:22px;font-size:10px;">2</div>
+            <span style="font-size:13px;font-weight:600;flex:1;">UX Design</span>
+            <span class="role-badge role-ux">UX</span>
+            <div class="preview-agent">
+              <div class="preview-avatar ux">UC</div>
+              <span class="preview-agent-name">UX Crafter</span>
+              <span class="auto-match-badge">auto</span>
+            </div>
+          </div>
+          <div class="preview-step">
+            <div class="wf-step-num" style="width:22px;height:22px;font-size:10px;">3</div>
+            <span style="font-size:13px;font-weight:600;flex:1;">Design Review</span>
+            <span class="role-badge role-human">&#9995; Human</span>
+            <div class="preview-agent">
+              <div class="preview-avatar human">&#9995;</div>
+              <span class="preview-agent-name">You</span>
+            </div>
+          </div>
+          <div class="preview-step">
+            <div class="wf-step-num" style="width:22px;height:22px;font-size:10px;">4</div>
+            <span style="font-size:13px;font-weight:600;flex:1;">Implementation</span>
+            <span class="role-badge role-dev">Dev</span>
+            <div class="preview-agent">
+              <div class="preview-avatar dev">DA</div>
+              <span class="preview-agent-name">Dev Alpha</span>
+              <span class="auto-match-badge">auto</span>
+            </div>
+          </div>
+          <div class="preview-step">
+            <div class="wf-step-num" style="width:22px;height:22px;font-size:10px;">5</div>
+            <span style="font-size:13px;font-weight:600;flex:1;">Code Review &amp; QA</span>
+            <span class="role-badge role-qa">QA</span>
+            <div class="preview-agent">
+              <div class="preview-avatar qa">QB</div>
+              <span class="preview-agent-name">QA Bot</span>
+              <span class="auto-match-badge">auto</span>
+            </div>
+          </div>
+          <div class="preview-step">
+            <div class="wf-step-num" style="width:22px;height:22px;font-size:10px;">6</div>
+            <span style="font-size:13px;font-weight:600;flex:1;">Final Review</span>
+            <span class="role-badge role-human">&#9995; Human</span>
+            <div class="preview-agent">
+              <div class="preview-avatar human">&#9995;</div>
+              <span class="preview-agent-name">You</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="callout violet" style="margin:16px 0;font-size:12px;">
+          <strong>4 agents auto-matched</strong> from the pool by role. 2 steps require your approval.
+        </div>
+
+        <div class="dialog-actions" style="border-top:none;padding-top:0;">
+          <button class="btn btn-ghost">Cancel</button>
+          <button class="btn btn-primary">Apply Workflow</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="mockup-caption">Template Application Preview &mdash; roles auto-match to pool agents. Green "auto" badges show matches. Human gates assigned to "You".</p>
+</section>
+
+<!-- ════════════════════════════════════════════
+     6. CLAUDE CODE WORKFLOW SESSION
+     ════════════════════════════════════════════ -->
+<section class="section" id="claude-code">
+  <div class="section-num">06</div>
+  <h2>Claude Code <em>in Action</em></h2>
+  <p class="section-desc">The primary workflow experience. Claude Code reads steps via MCP, assumes agent personas, executes work, and saves output. Only approval gates need human input.</p>
+
+  <h3>Session A: Full Pipeline</h3>
+
+  <div class="cc-frame">
+    <div class="cc-titlebar">
+      <div class="cc-dots"><div class="cc-dot r"></div><div class="cc-dot y"></div><div class="cc-dot g"></div></div>
+      <span class="cc-logo">claude</span>
+      <span class="cc-path">~/projects/vibecodes</span>
+      <span class="cc-model">opus-4</span>
+    </div>
+    <div class="cc-body">
+
+      <!-- User prompt -->
+      <div class="cc-user">
+        <div class="cc-user-label">You</div>
+        <p>Pick up the next thing on the backlog.</p>
+      </div>
+
+      <!-- Claude checks board -->
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude</div>
+        <p>Let me check the board for available tasks.</p>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> get_board</div>
+          <div class="cc-tool-params"><span class="param-key">idea_id:</span> <span class="param-val">"abc-123"</span></div>
+        </div>
+
+        <div class="cc-result">
+          Backlog: "Add user authentication" [feature] &mdash; workflow: Dev Pipeline (pending, 6 steps, 2 gates)<br>
+          Backlog: "Fix mobile nav overflow" [bug] &mdash; no workflow
+        </div>
+
+        <p>The top backlog item is <strong>"Add user authentication"</strong>. It has a pending workflow &mdash; the Dev Pipeline was auto-applied when the <strong style="color:var(--emerald);">feature</strong> label was added. 6 steps, 2 approval gates. Moving to In Progress.</p>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> move_task</div>
+          <div class="cc-tool-params"><span class="param-key">task_id:</span> <span class="param-val">"task_042"</span> &nbsp; <span class="param-key">column:</span> <span class="param-val">"In Progress"</span></div>
+        </div>
+
+        <div class="cc-status done"><span class="cc-status-icon">&#10003;</span> Task moved. Starting workflow.</div>
+      </div>
+
+      <div class="cc-divider"></div>
+
+      <!-- Step 1: BA Agent -->
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude &middot; <span class="persona">Sprint Planner</span> persona</div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> claim_next_step</div>
+        </div>
+
+        <div class="cc-result">Step 1: "Requirements Analysis" &middot; Role: BA &middot; Agent: Sprint Planner</div>
+
+        <p>Assuming Sprint Planner persona. Analysing "Add user authentication":</p>
+
+        <div class="cc-output">
+          <strong>User Stories:</strong><br>
+          &bull; US-1: As a visitor, I can sign in with GitHub or Google OAuth<br>
+          &bull; US-2: As a user, I have a persistent session across page reloads<br>
+          &bull; US-3: As a user, I am redirected to login when accessing protected routes<br>
+          &bull; US-4: As a new user, my profile is auto-created on first OAuth login<br>
+          &bull; US-5: As a user, I can sign out and have my session destroyed<br><br>
+          <strong>Acceptance Criteria:</strong> OAuth callback handles errors gracefully. Session tokens in HTTP-only cookies. Middleware protects /dashboard, /ideas, /profile routes.<br><br>
+          <strong>Edge Cases:</strong> OAuth provider down, duplicate email across providers, expired session token.
+        </div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> complete_step</div>
+          <div class="cc-tool-params"><span class="param-key">output:</span> <span class="param-val">"5 user stories, acceptance criteria, 3 edge cases identified..."</span></div>
+        </div>
+
+        <div class="cc-status done"><span class="cc-status-icon">&#10003;</span> Step 1 complete. Moving to Step 2.</div>
+      </div>
+
+      <div class="cc-divider"></div>
+
+      <!-- Step 2: UX Agent -->
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude &middot; <span class="persona-ux">UX Crafter</span> persona</div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> claim_next_step</div>
+        </div>
+
+        <p>Switching to UX Crafter. Using requirements from Step 1 to design the auth experience.</p>
+
+        <div class="cc-output">
+          <strong>Login Page:</strong> Centred card layout. "Continue with GitHub" and "Continue with Google" prominent. Email/password secondary. Mobile-responsive stacked buttons &lt;640px.<br><br>
+          <strong>OAuth Flow:</strong> Click provider &rarr; redirect &rarr; callback with spinner &rarr; redirect to /dashboard. Error: toast with retry link.<br><br>
+          <strong>Component Inventory:</strong> LoginCard, OAuthButton, AuthLoadingState, ProtectedRouteRedirect, UserMenu (header dropdown).
+        </div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> complete_step</div>
+          <div class="cc-tool-params"><span class="param-key">output:</span> <span class="param-val">"Login page design, OAuth flow, component inventory..."</span></div>
+        </div>
+
+        <div class="cc-status done"><span class="cc-status-icon">&#10003;</span> Step 2 complete.</div>
+      </div>
+
+      <div class="cc-divider"></div>
+
+      <!-- Step 3: Approval Gate -->
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude</div>
+
+        <div class="cc-status waiting"><span class="cc-status-icon">&#9888;</span> Approval Gate: Design Review</div>
+
+        <p>I've completed the first two pipeline steps:</p>
+        <p style="font-size:13px;color:var(--text-muted);margin:4px 0;">
+          &bull; <strong style="color:var(--violet-bright);">Sprint Planner</strong> &mdash; 5 user stories, acceptance criteria, edge cases<br>
+          &bull; <strong style="color:var(--pink);">UX Crafter</strong> &mdash; Login page design, OAuth flow, component inventory
+        </p>
+        <p>This step requires your approval before implementation begins. Does the analysis and design look good?</p>
+      </div>
+
+      <div class="cc-divider"></div>
+
+      <!-- User approves -->
+      <div class="cc-user">
+        <div class="cc-user-label">You</div>
+        <p>Looks solid. Add a "remember me" checkbox too.</p>
+      </div>
+
+      <!-- Claude approves and continues -->
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude</div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> approve_step</div>
+          <div class="cc-tool-params"><span class="param-key">feedback:</span> <span class="param-val">"Approved. Add 'remember me' checkbox to login page."</span></div>
+        </div>
+
+        <div class="cc-status done"><span class="cc-status-icon">&#10003;</span> Design review approved. Continuing to Step 4.</div>
+      </div>
+
+      <div class="cc-divider"></div>
+
+      <!-- Step 4: Dev Agent -->
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude &middot; <span class="persona-dev">Dev Alpha</span> persona</div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> claim_next_step</div>
+        </div>
+
+        <p>Switching to Dev Alpha. Full context from prior steps: 5 user stories, UX designs, feedback about "remember me" checkbox. Implementing now.</p>
+
+        <div class="cc-output">
+          <strong>Implementation Summary:</strong><br>
+          &bull; <code style="font-size:11px;">src/app/(auth)/login/page.tsx</code> &mdash; Login page with OAuth buttons + remember me<br>
+          &bull; <code style="font-size:11px;">src/middleware.ts</code> &mdash; Protected route middleware<br>
+          &bull; <code style="font-size:11px;">src/components/auth/</code> &mdash; LoginCard, OAuthButton, UserMenu<br>
+          &bull; <code style="font-size:11px;">src/actions/auth.ts</code> &mdash; signIn, signOut, handleCallback<br>
+          &bull; 14 files changed, 923 lines added
+        </div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> complete_step</div>
+          <div class="cc-tool-params"><span class="param-key">output:</span> <span class="param-val">"OAuth login (GitHub + Google), session management, protected routes. 14 files, 923 lines."</span></div>
+        </div>
+
+        <div class="cc-status done"><span class="cc-status-icon">&#10003;</span> Step 4 complete.</div>
+      </div>
+
+      <div class="cc-divider"></div>
+
+      <!-- Step 5: QA Agent -->
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude &middot; <span class="persona-qa">QA Bot</span> persona</div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> claim_next_step</div>
+        </div>
+
+        <p>Switching to QA Bot. Reviewing implementation against acceptance criteria from Step 1.</p>
+
+        <div class="cc-output">
+          <strong>QA Report:</strong><br>
+          &#10003; US-1: OAuth sign-in &mdash; both providers working<br>
+          &#10003; US-2: Session persistence &mdash; HTTP-only cookies, survives reload<br>
+          &#10003; US-3: Protected routes &mdash; middleware redirects with ?redirect= param<br>
+          &#10003; US-4: Auto profile creation &mdash; trigger on first login<br>
+          &#10003; US-5: Sign out &mdash; session destroyed, cookie cleared<br>
+          &#10003; Edge cases &mdash; error toasts for OAuth failures, no duplicate emails<br>
+          &#10003; Remember me checkbox &mdash; extends session to 30 days<br><br>
+          <strong>All acceptance criteria passed.</strong>
+        </div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> complete_step</div>
+          <div class="cc-tool-params"><span class="param-key">output:</span> <span class="param-val">"All 5 user stories verified, edge cases handled, remember me working."</span></div>
+        </div>
+
+        <div class="cc-status done"><span class="cc-status-icon">&#10003;</span> Step 5 complete.</div>
+      </div>
+
+      <div class="cc-divider"></div>
+
+      <!-- Step 6: Final Approval -->
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude</div>
+
+        <div class="cc-status waiting"><span class="cc-status-icon">&#9888;</span> Approval Gate: Final Review</div>
+
+        <p>Implementation and QA are complete. All acceptance criteria passed. Ready for your final review &mdash; want me to ship it?</p>
+      </div>
+
+      <div class="cc-divider"></div>
+
+      <div class="cc-user">
+        <div class="cc-user-label">You</div>
+        <p>Ship it.</p>
+      </div>
+
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude</div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> approve_step</div>
+        </div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> move_task</div>
+          <div class="cc-tool-params"><span class="param-key">task_id:</span> <span class="param-val">"task_042"</span> &nbsp; <span class="param-key">column:</span> <span class="param-val">"Verify"</span></div>
+        </div>
+
+        <div class="cc-status done" style="font-weight:700;font-size:14px;margin-top:10px;">
+          <span class="cc-status-icon" style="font-size:16px;">&#10003;</span>
+          Workflow "Dev Pipeline" completed. Task moved to Verify.
+        </div>
+
+        <div class="cc-summary">
+          <span class="step-ref">Backlog pickup</span>
+          <span class="arrow">&rarr;</span>
+          <span class="step-ref" style="color:var(--violet-bright);">Sprint Planner</span>
+          <span class="arrow">&rarr;</span>
+          <span class="step-ref" style="color:var(--pink);">UX Crafter</span>
+          <span class="arrow">&rarr;</span>
+          <span class="step-ref" style="color:var(--amber);">Your approval</span>
+          <span class="arrow">&rarr;</span>
+          <span class="step-ref" style="color:var(--blue);">Dev Alpha</span>
+          <span class="arrow">&rarr;</span>
+          <span class="step-ref" style="color:var(--cyan);">QA Bot</span>
+          <span class="arrow">&rarr;</span>
+          <span class="step-ref" style="color:var(--amber);">Your approval</span>
+          <span class="arrow">&rarr;</span>
+          <span class="step-ref" style="color:var(--emerald);">Done</span>
+        </div>
+      </div>
+
+    </div>
+  </div>
+  <p class="mockup-caption">Full pipeline from one prompt: backlog pickup &rarr; auto-rule detected &rarr; 4 agent personas &rarr; 2 approval gates &rarr; task complete</p>
+
+  <!-- SESSION B: Reject/Rework -->
+  <h3>Session B: Reject &amp; Rework Loop</h3>
+
+  <div class="cc-frame">
+    <div class="cc-titlebar">
+      <div class="cc-dots"><div class="cc-dot r"></div><div class="cc-dot y"></div><div class="cc-dot g"></div></div>
+      <span class="cc-logo">claude</span>
+      <span class="cc-path">~/projects/vibecodes</span>
+      <span class="cc-model">opus-4</span>
+    </div>
+    <div class="cc-body">
+
+      <!-- Approval gate with issue -->
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude</div>
+        <div class="cc-status waiting"><span class="cc-status-icon">&#9888;</span> Approval Gate: Code Review</div>
+        <p>Implementation complete. 14 files changed, 923 lines. OAuth login with GitHub and Google, session management, protected routes. Ready for review.</p>
+      </div>
+
+      <div class="cc-divider"></div>
+
+      <!-- User rejects -->
+      <div class="cc-user">
+        <div class="cc-user-label">You</div>
+        <p>The error handling is too generic &mdash; you're using catch-all Error types everywhere. Use specific error types for auth failures.</p>
+      </div>
+
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude</div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> fail_step</div>
+          <div class="cc-tool-params"><span class="param-key">reason:</span> <span class="param-val">"Use specific error types (AuthError, SessionError, OAuthError) instead of generic catch-all"</span></div>
+        </div>
+
+        <div class="cc-status fail"><span class="cc-status-icon">&#10007;</span> Step 4 "Implementation" failed. Subsequent steps cascade-reset to pending.</div>
+      </div>
+
+      <div class="cc-divider"></div>
+
+      <!-- Rework -->
+      <div class="cc-claude">
+        <div class="cc-claude-label">Claude &middot; <span class="persona-dev">Dev Alpha</span> persona</div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> claim_next_step</div>
+        </div>
+
+        <div class="cc-result">Step 4 (rework) &mdash; Feedback: "Use specific error types (AuthError, SessionError, OAuthError)"</div>
+
+        <p>Reading rejection feedback. Refactoring error handling with typed errors.</p>
+
+        <div class="cc-output">
+          <strong>Rework:</strong><br>
+          &bull; Created <code style="font-size:11px;">AuthError</code>, <code style="font-size:11px;">SessionError</code>, <code style="font-size:11px;">OAuthError</code> classes<br>
+          &bull; Updated all catch blocks to throw/handle specific types<br>
+          &bull; Added error boundary with type-specific recovery messages<br>
+          &bull; 6 files changed, 84 lines added, 31 removed
+        </div>
+
+        <div class="cc-tool">
+          <div class="cc-tool-header"><span class="cc-tool-icon">&#9881;</span> complete_step</div>
+          <div class="cc-tool-params"><span class="param-key">output:</span> <span class="param-val">"Refactored to typed errors: AuthError, SessionError, OAuthError. 6 files changed."</span></div>
+        </div>
+
+        <div class="cc-status done"><span class="cc-status-icon">&#10003;</span> Step 4 rework complete. QA re-running.</div>
+      </div>
+
+    </div>
+  </div>
+  <p class="mockup-caption">Reject &rarr; cascade reset &rarr; rework with feedback context &rarr; re-submit. The review loop that Matt described, without needing an orchestrator agent.</p>
+</section>
+
+<!-- ════════════════════════════════════════════
+     7. LABEL AUTO-RULES
+     ════════════════════════════════════════════ -->
+<section class="section" id="auto-rules">
+  <div class="section-num">07</div>
+  <h2>Label <em>Auto-Rules</em></h2>
+  <p class="section-desc">Zero-touch automation. A database trigger auto-applies workflows when a task gets a matching label. By the time Claude Code reads the task, the workflow is already there.</p>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="flow-icon label-icon">&#127991;</div>
+      <div class="flow-label">Label Applied</div>
+      <div class="flow-desc">Task gets the <strong style="color:var(--emerald);">feature</strong> label</div>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step">
+      <div class="flow-icon trigger-icon">&#9889;</div>
+      <div class="flow-label">Trigger Fires</div>
+      <div class="flow-desc">Postgres trigger on board_task_labels</div>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step">
+      <div class="flow-icon create-icon">&#9881;</div>
+      <div class="flow-label">Run Created</div>
+      <div class="flow-desc">workflow_run + steps auto-populated</div>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step">
+      <div class="flow-icon read-icon">&#128269;</div>
+      <div class="flow-label">Claude Reads</div>
+      <div class="flow-desc">get_board returns task with pending workflow</div>
+    </div>
+    <div class="flow-arrow">&rarr;</div>
+    <div class="flow-step">
+      <div class="flow-icon exec-icon">&#9654;</div>
+      <div class="flow-label">Executes</div>
+      <div class="flow-desc">Claude works through each step automatically</div>
+    </div>
+  </div>
+
+  <div class="callout amber">
+    <strong>Three things work together:</strong> (1) Auto-rule in the database maps label &rarr; template. (2) Postgres trigger on <code>board_task_labels</code> INSERT creates the workflow run. (3) MCP tools return workflow data inline with the task &mdash; Claude Code sees <code>"status": "pending"</code> and naturally knows there's a workflow to execute. No special instructions required.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     8. SCHEMA
+     ════════════════════════════════════════════ -->
+<section class="section" id="schema">
+  <div class="section-num">08</div>
+  <h2>Database <em>Schema</em></h2>
+  <p class="section-desc">Three new tables, one modified table. All use the existing <code>is_idea_team_member()</code> RLS function.</p>
+
+  <div class="schema-grid">
+    <div class="schema-card">
+      <div class="schema-name">workflow_templates <span class="new-tag">New</span></div>
+      <div class="schema-col"><span class="col-name">id</span> <span class="col-type">uuid PK</span></div>
+      <div class="schema-col"><span class="col-name">idea_id</span> <span class="col-type">uuid</span> <span class="col-fk">FK &rarr; ideas</span></div>
+      <div class="schema-col"><span class="col-name">name</span> <span class="col-type">text</span></div>
+      <div class="schema-col"><span class="col-name">description</span> <span class="col-type">text?</span></div>
+      <div class="schema-col"><span class="col-name">steps</span> <span class="col-type">jsonb</span></div>
+      <div class="schema-col"><span class="col-name">usage_count</span> <span class="col-type">int default 0</span></div>
+      <div class="schema-col"><span class="col-name">created_by</span> <span class="col-type">uuid</span> <span class="col-fk">FK &rarr; users</span></div>
+      <div class="schema-col"><span class="col-name">created_at</span> <span class="col-type">timestamptz</span></div>
+      <div class="schema-col"><span class="col-name">updated_at</span> <span class="col-type">timestamptz</span></div>
+    </div>
+
+    <div class="schema-card">
+      <div class="schema-name">workflow_auto_rules <span class="new-tag">New</span></div>
+      <div class="schema-col"><span class="col-name">id</span> <span class="col-type">uuid PK</span></div>
+      <div class="schema-col"><span class="col-name">idea_id</span> <span class="col-type">uuid</span> <span class="col-fk">FK &rarr; ideas</span></div>
+      <div class="schema-col"><span class="col-name">label_id</span> <span class="col-type">uuid</span> <span class="col-fk">FK &rarr; board_labels</span></div>
+      <div class="schema-col"><span class="col-name">template_id</span> <span class="col-type">uuid</span> <span class="col-fk">FK &rarr; workflow_templates</span></div>
+      <div class="schema-col"><span class="col-name">auto_run</span> <span class="col-type">bool default false</span></div>
+      <div class="schema-col"><span class="col-name">created_at</span> <span class="col-type">timestamptz</span></div>
+    </div>
+
+    <div class="schema-card">
+      <div class="schema-name">workflow_runs <span class="new-tag">New</span></div>
+      <div class="schema-col"><span class="col-name">id</span> <span class="col-type">uuid PK</span></div>
+      <div class="schema-col"><span class="col-name">task_id</span> <span class="col-type">uuid</span> <span class="col-fk">FK &rarr; board_tasks</span></div>
+      <div class="schema-col"><span class="col-name">template_id</span> <span class="col-type">uuid</span> <span class="col-fk">FK &rarr; workflow_templates</span></div>
+      <div class="schema-col"><span class="col-name">status</span> <span class="col-type">enum (pending, running, paused, completed, failed)</span></div>
+      <div class="schema-col"><span class="col-name">current_step</span> <span class="col-type">int</span></div>
+      <div class="schema-col"><span class="col-name">started_by</span> <span class="col-type">uuid</span> <span class="col-fk">FK &rarr; users</span></div>
+      <div class="schema-col"><span class="col-name">started_at</span> <span class="col-type">timestamptz?</span></div>
+      <div class="schema-col"><span class="col-name">completed_at</span> <span class="col-type">timestamptz?</span></div>
+      <div class="schema-col"><span class="col-name">created_at</span> <span class="col-type">timestamptz</span></div>
+    </div>
+
+    <div class="schema-card">
+      <div class="schema-name">task_workflow_steps <span class="mod-tag">Modified</span></div>
+      <div class="schema-col"><span class="col-name" style="color:var(--text-muted);">...existing cols</span> <span class="col-type">(unchanged)</span></div>
+      <div class="schema-col"><span class="col-name new-col">+ run_id</span> <span class="col-type">uuid</span> <span class="col-fk">FK &rarr; workflow_runs</span></div>
+      <div class="schema-col"><span class="col-name new-col">+ step_order</span> <span class="col-type">int</span></div>
+      <div class="schema-col"><span class="col-name new-col">+ agent_role</span> <span class="col-type">text?</span></div>
+      <div class="schema-col"><span class="col-name new-col">+ output</span> <span class="col-type">text?</span></div>
+      <div class="schema-col"><span class="col-name new-col">+ requires_approval</span> <span class="col-type">bool default false</span></div>
+    </div>
+  </div>
+
+  <h3>Steps JSONB Schema</h3>
+  <div style="background:var(--bg-card);border:1px solid var(--border);border-radius:var(--radius-lg);padding:18px 20px;margin:16px 0;font-family:var(--font-mono);font-size:12px;line-height:1.7;color:var(--text-muted);">
+    <span style="color:var(--text-dim);">// workflow_templates.steps</span><br>
+    [<br>
+    &nbsp;&nbsp;{<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--violet-bright);">"title"</span>: <span style="color:var(--emerald);">"Requirements Analysis"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--violet-bright);">"description"</span>: <span style="color:var(--emerald);">"Identify user stories, acceptance criteria..."</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--violet-bright);">"role"</span>: <span style="color:var(--emerald);">"Business Analyst"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--violet-bright);">"requires_approval"</span>: <span style="color:var(--amber);">false</span><br>
+    &nbsp;&nbsp;},<br>
+    &nbsp;&nbsp;{<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--violet-bright);">"title"</span>: <span style="color:var(--emerald);">"Design Review"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--violet-bright);">"description"</span>: <span style="color:var(--emerald);">"Human reviews design before implementation"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--violet-bright);">"role"</span>: <span style="color:var(--emerald);">"Human"</span>,<br>
+    &nbsp;&nbsp;&nbsp;&nbsp;<span style="color:var(--violet-bright);">"requires_approval"</span>: <span style="color:var(--amber);">true</span><br>
+    &nbsp;&nbsp;}<br>
+    ]
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     9. MCP TOOLS
+     ════════════════════════════════════════════ -->
+<section class="section" id="mcp">
+  <div class="section-num">09</div>
+  <h2>MCP <em>Tools</em></h2>
+  <p class="section-desc">New tools for template management. Existing step execution tools remain unchanged.</p>
+
+  <table class="tools-table">
+    <thead>
+      <tr><th>Tool</th><th>Description</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>get_workflow_templates</td>
+        <td>List all workflow templates for an idea</td>
+        <td><span style="color:var(--emerald);font-size:11px;font-weight:600;">NEW</span></td>
+      </tr>
+      <tr>
+        <td>create_workflow_template</td>
+        <td>Create a new template with name, description, and steps</td>
+        <td><span style="color:var(--emerald);font-size:11px;font-weight:600;">NEW</span></td>
+      </tr>
+      <tr>
+        <td>update_workflow_template</td>
+        <td>Edit an existing template's steps or metadata</td>
+        <td><span style="color:var(--emerald);font-size:11px;font-weight:600;">NEW</span></td>
+      </tr>
+      <tr>
+        <td>delete_workflow_template</td>
+        <td>Remove a template (doesn't affect active runs)</td>
+        <td><span style="color:var(--emerald);font-size:11px;font-weight:600;">NEW</span></td>
+      </tr>
+      <tr>
+        <td>apply_workflow_template</td>
+        <td>Apply a template to a task &mdash; creates workflow_run + steps, auto-matches agents by role</td>
+        <td><span style="color:var(--emerald);font-size:11px;font-weight:600;">NEW</span></td>
+      </tr>
+      <tr class="existing">
+        <td>claim_next_step</td>
+        <td>Claim the next pending step, returns context from prior steps</td>
+        <td><span style="font-size:11px;color:var(--text-dim);">unchanged</span></td>
+      </tr>
+      <tr class="existing">
+        <td>complete_step</td>
+        <td>Complete a step with output; routes to approval if required</td>
+        <td><span style="font-size:11px;color:var(--text-dim);">unchanged</span></td>
+      </tr>
+      <tr class="existing">
+        <td>approve_step</td>
+        <td>Human approves an awaiting_approval step</td>
+        <td><span style="font-size:11px;color:var(--text-dim);">unchanged</span></td>
+      </tr>
+      <tr class="existing">
+        <td>fail_step</td>
+        <td>Mark step failed + cascade-reset subsequent steps</td>
+        <td><span style="font-size:11px;color:var(--text-dim);">unchanged</span></td>
+      </tr>
+      <tr class="existing">
+        <td>get_step_context</td>
+        <td>Get all steps with comments for pipeline state</td>
+        <td><span style="font-size:11px;color:var(--text-dim);">unchanged</span></td>
+      </tr>
+      <tr class="existing">
+        <td>add_step_comment</td>
+        <td>Inter-agent communication on a step</td>
+        <td><span style="font-size:11px;color:var(--text-dim);">unchanged</span></td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="callout violet">
+    <strong>Removed:</strong> <code>set_orchestration_agent</code> MCP tool. No longer needed &mdash; there is no orchestrator designation.
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════
+     10. MIGRATION PATH
+     ════════════════════════════════════════════ -->
+<section class="section" id="migration">
+  <div class="section-num">10</div>
+  <h2>Migration <em>Path</em></h2>
+  <p class="section-desc">How to get from the current implementation to this proposal. Forward-only migrations.</p>
+
+  <div class="migration-steps">
+    <div class="mig-step">
+      <div class="mig-step-content">
+        <strong>Create new tables.</strong> Add <code>workflow_templates</code>, <code>workflow_auto_rules</code>, <code>workflow_runs</code> with RLS policies using <code>is_idea_team_member()</code>.
+      </div>
+    </div>
+    <div class="mig-step">
+      <div class="mig-step-content">
+        <strong>Migrate existing templates.</strong> Extract <code>workflow_templates</code> jsonb from <code>bot_profiles</code> &rarr; insert into new <code>workflow_templates</code> table, scoped to each idea where the agent is pooled.
+      </div>
+    </div>
+    <div class="mig-step">
+      <div class="mig-step-content">
+        <strong>Add columns to <code>task_workflow_steps</code>.</strong> Add <code>run_id</code>, <code>step_order</code>, <code>agent_role</code>, <code>output</code>, <code>requires_approval</code>. All nullable for backwards compatibility with existing steps.
+      </div>
+    </div>
+    <div class="mig-step">
+      <div class="mig-step-content">
+        <strong>Create auto-rule trigger.</strong> Postgres trigger on <code>board_task_labels</code> INSERT that checks <code>workflow_auto_rules</code> and auto-creates <code>workflow_run</code> + steps.
+      </div>
+    </div>
+    <div class="mig-step">
+      <div class="mig-step-content">
+        <strong>Remove agent type system.</strong> Drop <code>agent_type</code>, <code>workflow_templates</code> (jsonb), <code>deliverables</code> from <code>bot_profiles</code>. Drop <code>is_orchestrator</code> from <code>idea_agents</code>.
+      </div>
+    </div>
+    <div class="mig-step">
+      <div class="mig-step-content">
+        <strong>Update MCP tools.</strong> Add 5 new template tools. Remove <code>set_orchestration_agent</code>. Enrich <code>get_board</code> / <code>get_task</code> responses with <code>workflow_run</code> data inline.
+      </div>
+    </div>
+    <div class="mig-step">
+      <div class="mig-step-content">
+        <strong>Update UI.</strong> Remove agent type picker and WorkflowTemplateEditor from agent dialogs. Add "Workflows" tab to board page. Add template picker to task creation. Add template application preview dialog.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- Footer -->
+<div style="padding:60px 0 80px;text-align:center;">
+  <div style="font-family:var(--font-mono);font-size:11px;color:var(--text-dim);">
+    VibeCodes &middot; Board-Level Workflows Design Spec &middot; March 2026
+  </div>
+</div>
+
+</div><!-- /container -->
+</div><!-- /page -->
+
+</body>
+</html>

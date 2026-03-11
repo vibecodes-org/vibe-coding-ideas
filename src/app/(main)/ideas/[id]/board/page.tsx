@@ -8,12 +8,12 @@ import { getIdeaTeam } from "@/lib/idea-team";
 import { KanbanBoard } from "@/components/board/kanban-board";
 import { BoardRealtime } from "@/components/board/board-realtime";
 import { GuestBoardBanner } from "@/components/board/guest-board-banner";
+import { BoardPageTabs } from "@/components/board/board-page-tabs";
 import { Button } from "@/components/ui/button";
 import type {
   BoardColumnWithTasks,
   BoardTaskWithAssignee,
   BoardLabel,
-  BoardChecklistItem,
   User,
 } from "@/types";
 import type { Metadata } from "next";
@@ -124,7 +124,6 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     { data: rawColumns },
     { data: rawTasks },
     { data: boardLabels },
-    { data: rawChecklistItems },
     { data: userProfile },
     ideaTeam,
     { data: userBotProfiles },
@@ -140,11 +139,6 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       .select("*")
       .eq("idea_id", id)
       .order("created_at", { ascending: true }),
-    supabase
-      .from("board_checklist_items")
-      .select("*")
-      .eq("idea_id", id)
-      .order("position", { ascending: true }),
     isTeamMember
       ? supabase
           .from("users")
@@ -184,17 +178,6 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
         taskLabelsMap[row.task_id] = [];
       }
       taskLabelsMap[row.task_id].push(label);
-    }
-  }
-
-  // Build checklistItemsByTaskId
-  const checklistItemsByTaskId: Record<string, BoardChecklistItem[]> = {};
-  if (rawChecklistItems) {
-    for (const item of rawChecklistItems) {
-      if (!checklistItemsByTaskId[item.task_id]) {
-        checklistItemsByTaskId[item.task_id] = [];
-      }
-      checklistItemsByTaskId[item.task_id].push(item as BoardChecklistItem);
     }
   }
 
@@ -250,25 +233,30 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
         </div>
       )}
 
-      {/* Kanban Board */}
-      <KanbanBoard
-        columns={columns}
+      {/* Tabbed board content */}
+      <BoardPageTabs
         ideaId={id}
-        ideaDescription={idea.description}
-        teamMembers={teamMembers}
         boardLabels={(boardLabels ?? []) as BoardLabel[]}
-        checklistItemsByTaskId={checklistItemsByTaskId}
-        currentUserId={user.id}
-        initialTaskId={initialTaskId}
-        ideaAgents={ideaAgents}
-        canUseAi={userCanUseAi}
-        hasByokKey={userHasByokKey}
-        starterCredits={starterCredits}
-        botProfiles={ideaAgentBotProfiles}
-        userBotProfiles={(userBotProfiles ?? []) as import("@/types").BotProfile[]}
-        coverImageUrls={coverImageUrls}
         isReadOnly={isReadOnly}
-      />
+      >
+        <KanbanBoard
+          columns={columns}
+          ideaId={id}
+          ideaDescription={idea.description}
+          teamMembers={teamMembers}
+          boardLabels={(boardLabels ?? []) as BoardLabel[]}
+          currentUserId={user.id}
+          initialTaskId={initialTaskId}
+          ideaAgents={ideaAgents}
+          canUseAi={userCanUseAi}
+          hasByokKey={userHasByokKey}
+          starterCredits={starterCredits}
+          botProfiles={ideaAgentBotProfiles}
+          userBotProfiles={(userBotProfiles ?? []) as import("@/types").BotProfile[]}
+          coverImageUrls={coverImageUrls}
+          isReadOnly={isReadOnly}
+        />
+      </BoardPageTabs>
     </div>
   );
 }

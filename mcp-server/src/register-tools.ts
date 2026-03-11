@@ -145,6 +145,32 @@ import {
   listIdeaAgents,
   listIdeaAgentsSchema,
 } from "./tools/idea-agents";
+import {
+  listWorkflowTemplates,
+  listWorkflowTemplatesSchema,
+  createWorkflowTemplate,
+  createWorkflowTemplateSchema,
+  updateWorkflowTemplate,
+  updateWorkflowTemplateSchema,
+  deleteWorkflowTemplate,
+  deleteWorkflowTemplateSchema,
+  applyWorkflowTemplate,
+  applyWorkflowTemplateSchema,
+  claimNextStep,
+  claimNextStepSchema,
+  completeStep,
+  completeStepSchema,
+  failStep,
+  failStepSchema,
+  approveStep,
+  approveStepSchema,
+  getStepContext,
+  getStepContextSchema,
+  addStepComment,
+  addStepCommentSchema,
+  getStepComments,
+  getStepCommentsSchema,
+} from "./tools/workflows";
 
 function jsonResult(data: unknown) {
   return {
@@ -211,7 +237,7 @@ export function registerTools(
 
   server.tool(
     "get_task",
-    "Get single task detail including checklist items, comments, and recent activity.",
+    "Get single task detail including workflow steps, comments, and recent activity.",
     getTaskSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -501,7 +527,7 @@ export function registerTools(
 
   server.tool(
     "manage_checklist",
-    "Add, toggle, or delete checklist items on a task. Actions: add, toggle, delete.",
+    "Add, toggle, or delete workflow steps on a task. Actions: add, toggle, delete.",
     manageChecklistSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -950,6 +976,178 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await listIdeaAgents(ctx, listIdeaAgentsSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  // --- Workflow Template Tools ---
+
+  server.tool(
+    "list_workflow_templates",
+    "List workflow templates for an idea. Templates define reusable step sequences that can be applied to tasks.",
+    listWorkflowTemplatesSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await listWorkflowTemplates(ctx, listWorkflowTemplatesSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "create_workflow_template",
+    "Create a workflow template with ordered steps. Each step has a title, role (BA, UX, Dev, QA, Human), and optional approval gate.",
+    createWorkflowTemplateSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await createWorkflowTemplate(ctx, createWorkflowTemplateSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "update_workflow_template",
+    "Update a workflow template's name, description, or steps. Only changed fields need to be provided.",
+    updateWorkflowTemplateSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await updateWorkflowTemplate(ctx, updateWorkflowTemplateSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "delete_workflow_template",
+    "Delete a workflow template. Existing workflow runs using this template are not affected.",
+    deleteWorkflowTemplateSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await deleteWorkflowTemplate(ctx, deleteWorkflowTemplateSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "apply_workflow_template",
+    "Apply a workflow template to a task. Creates a workflow run with steps, auto-matching agents from the idea's agent pool by role. Returns the run, steps, and which roles were auto-matched.",
+    applyWorkflowTemplateSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await applyWorkflowTemplate(ctx, applyWorkflowTemplateSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  // --- Workflow Step Execution Tools ---
+
+  server.tool(
+    "claim_next_step",
+    "Claim the next pending workflow step on a task. Returns the step with its agent_role (assume that persona) and description. Returns { done: true } when all steps are complete.",
+    claimNextStepSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await claimNextStep(ctx, claimNextStepSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "complete_step",
+    "Mark a workflow step as completed with optional output. If the step requires human approval, it moves to awaiting_approval instead. Checks if the entire run is now complete.",
+    completeStepSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await completeStep(ctx, completeStepSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "fail_step",
+    "Mark a workflow step as failed with an optional failure reason. Also marks the parent workflow run as failed.",
+    failStepSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await failStep(ctx, failStepSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "approve_step",
+    "Approve a workflow step that is awaiting human approval. Moves it to completed. Optionally adds an approval comment.",
+    approveStepSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await approveStep(ctx, approveStepSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "get_step_context",
+    "Get full context for a workflow step: the step details, parent task, all comments, and previous steps' outputs in the same run (for context chaining between agent personas).",
+    getStepContextSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await getStepContext(ctx, getStepContextSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "add_step_comment",
+    "Add a comment to a workflow step. Used for inter-agent communication, output logs, failure reports, and approval notes.",
+    addStepCommentSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await addStepComment(ctx, addStepCommentSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "get_step_comments",
+    "Get all comments on a workflow step with author details. Ordered chronologically.",
+    getStepCommentsSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await getStepComments(ctx, getStepCommentsSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

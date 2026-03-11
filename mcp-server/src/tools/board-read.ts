@@ -102,8 +102,8 @@ export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardS
           assignee: (t as Record<string, unknown>).users ?? null,
           due_date: t.due_date,
           archived: t.archived,
-          checklist_total: t.checklist_total,
-          checklist_done: t.checklist_done,
+          workflow_step_total: t.workflow_step_total,
+          workflow_step_completed: t.workflow_step_completed,
           attachment_count: t.attachment_count,
           labels:
             ((t as Record<string, unknown>).board_task_labels as Array<Record<string, unknown>>)?.map(
@@ -133,9 +133,9 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
   if (error) throw new Error(`Failed to get task: ${error.message}`);
   if (!task) throw new Error(`Task not found: ${params.task_id}`);
 
-  // Fetch checklist
-  const { data: checklist } = await ctx.supabase
-    .from("board_checklist_items")
+  // Fetch workflow steps
+  const { data: workflowSteps } = await ctx.supabase
+    .from("task_workflow_steps")
     .select("*")
     .eq("task_id", params.task_id)
     .order("position");
@@ -172,7 +172,7 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
         (tl) => tl.board_labels
       ) ?? [],
     board_task_labels: undefined,
-    checklist: checklist ?? [],
+    workflow_steps: workflowSteps ?? [],
     comments:
       comments?.map((c) => ({
         ...c,
@@ -245,8 +245,8 @@ export async function getMyTasks(ctx: McpContext, params: z.infer<typeof getMyTa
       description: desc && desc.length > 200 ? desc.slice(0, 200) + "…" : desc,
       column: ((task as Record<string, unknown>).board_columns as Record<string, unknown>)?.title,
       due_date: task.due_date,
-      checklist_total: task.checklist_total,
-      checklist_done: task.checklist_done,
+      workflow_step_total: task.workflow_step_total,
+      workflow_step_completed: task.workflow_step_completed,
     });
   }
 
