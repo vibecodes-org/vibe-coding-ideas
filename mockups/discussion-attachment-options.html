@@ -1,0 +1,784 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Discussion Attachment Options</title>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-page: #0c0c0e;
+    --bg-card: #141416;
+    --bg-card-hover: #1a1a1e;
+    --bg-muted: #1e1e22;
+    --bg-pill: #24242a;
+    --border: #27272a;
+    --border-hover: #3f3f46;
+    --text: #e4e4e7;
+    --text-muted: #71717a;
+    --text-dim: #52525b;
+    --accent-violet: #8b5cf6;
+    --accent-violet-dim: rgba(139, 92, 246, 0.12);
+    --accent-red: #f87171;
+    --accent-red-dim: rgba(248, 113, 113, 0.1);
+    --accent-blue: #60a5fa;
+    --accent-blue-dim: rgba(96, 165, 250, 0.1);
+    --accent-emerald: #34d399;
+    --accent-emerald-dim: rgba(52, 211, 153, 0.1);
+    --accent-orange: #fb923c;
+    --accent-orange-dim: rgba(251, 146, 60, 0.1);
+    --radius: 8px;
+    --radius-sm: 6px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg-page);
+    color: var(--text);
+    font-family: 'IBM Plex Sans', -apple-system, sans-serif;
+    line-height: 1.6;
+    padding: 40px 20px 80px;
+  }
+
+  .page-header {
+    max-width: 680px;
+    margin: 0 auto 48px;
+    text-align: center;
+  }
+
+  .page-header h1 {
+    font-size: 22px;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+  }
+
+  .page-header p {
+    color: var(--text-muted);
+    font-size: 14px;
+  }
+
+  .option-section {
+    max-width: 680px;
+    margin: 0 auto 56px;
+  }
+
+  .option-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    font-size: 13px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--text-muted);
+  }
+
+  .option-label .tag {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 20px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .option-label .tag-a { background: var(--accent-violet-dim); color: var(--accent-violet); }
+  .option-label .tag-b { background: var(--accent-blue-dim); color: var(--accent-blue); }
+  .option-label .tag-c { background: var(--accent-emerald-dim); color: var(--accent-emerald); }
+
+  .option-desc {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+    line-height: 1.5;
+  }
+
+  /* ─── Shared Card Shell ────────────────────────────── */
+
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    overflow: hidden;
+  }
+
+  .card-inner {
+    padding: 20px 22px;
+  }
+
+  /* ─── Author Row ───────────────────────────────────── */
+
+  .author-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+
+  .avatar {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #6d28d9, #8b5cf6);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 600;
+    color: white;
+    flex-shrink: 0;
+  }
+
+  .author-name {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  .badge {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 1px 7px;
+    border-radius: 4px;
+    border: 1px solid;
+  }
+
+  .badge-author {
+    background: var(--accent-violet-dim);
+    border-color: rgba(139, 92, 246, 0.2);
+    color: var(--accent-violet);
+  }
+
+  .timestamp {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  /* ─── Body Text ────────────────────────────────────── */
+
+  .body-text {
+    font-size: 14px;
+    color: var(--text);
+    line-height: 1.65;
+  }
+
+  .body-text p + p { margin-top: 10px; }
+
+  .body-text code {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12.5px;
+    background: var(--bg-muted);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--accent-orange);
+  }
+
+  /* ─── Footer (vote / edit / enhance) ───────────────── */
+
+  .footer {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding-top: 14px;
+    border-top: 1px solid var(--border);
+    margin-top: 18px;
+  }
+
+  .footer-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: inherit;
+    cursor: pointer;
+    padding: 3px 2px;
+    transition: color 0.15s;
+  }
+
+  .footer-btn:hover { color: var(--text); }
+
+  .footer-btn svg { width: 14px; height: 14px; }
+
+  .vote-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-muted);
+    font-size: 12px;
+    font-family: inherit;
+    padding: 4px 10px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .vote-btn:hover {
+    border-color: var(--border-hover);
+    color: var(--text);
+  }
+
+  .vote-btn svg { width: 13px; height: 13px; }
+
+  /* ─── Shared icon helpers ──────────────────────────── */
+
+  .icon-md { color: var(--accent-blue); }
+  .icon-pdf { color: var(--accent-red); }
+  .icon-file { color: var(--text-muted); }
+
+  /* ========================================================
+     OPTION A — Compact Chips
+  ======================================================== */
+
+  .chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-pill);
+    border: 1px solid var(--border);
+    border-radius: 20px;
+    padding: 4px 12px 4px 8px;
+    font-size: 12px;
+    color: var(--text);
+    cursor: default;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .chip:hover {
+    border-color: var(--border-hover);
+    background: var(--bg-card-hover);
+  }
+
+  .chip .chip-icon {
+    width: 18px;
+    height: 18px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .chip .chip-icon svg { width: 11px; height: 11px; }
+
+  .chip .chip-icon.md-icon { background: var(--accent-blue-dim); }
+  .chip .chip-icon.pdf-icon { background: var(--accent-red-dim); }
+
+  .chip .chip-name {
+    font-weight: 500;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chip .chip-size {
+    color: var(--text-dim);
+    font-size: 11px;
+    margin-left: -2px;
+  }
+
+  .chip .chip-x {
+    display: flex;
+    width: 14px;
+    height: 14px;
+    align-items: center;
+    justify-content: center;
+    border-radius: 50%;
+    margin-left: 2px;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+
+  .chip .chip-x:hover {
+    background: rgba(248, 113, 113, 0.15);
+    color: var(--accent-red);
+  }
+
+  .chip .chip-x svg { width: 10px; height: 10px; }
+
+  /* ========================================================
+     OPTION B — Compact File Cards Bar
+  ======================================================== */
+
+  .attachment-bar {
+    display: flex;
+    gap: 8px;
+    margin-top: 16px;
+    padding-bottom: 2px;
+    overflow-x: auto;
+  }
+
+  .file-card {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: var(--bg-muted);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 8px 12px;
+    min-width: 0;
+    flex-shrink: 0;
+    cursor: default;
+    transition: border-color 0.15s, background 0.15s;
+  }
+
+  .file-card:hover {
+    border-color: var(--border-hover);
+    background: var(--bg-card-hover);
+  }
+
+  .file-card .fc-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .file-card .fc-icon.md-icon { background: var(--accent-blue-dim); }
+  .file-card .fc-icon.pdf-icon { background: var(--accent-red-dim); }
+
+  .file-card .fc-icon svg { width: 15px; height: 15px; }
+
+  .file-card .fc-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .file-card .fc-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .file-card .fc-meta {
+    font-size: 11px;
+    color: var(--text-dim);
+    display: flex;
+    gap: 6px;
+  }
+
+  .file-card .fc-actions {
+    display: flex;
+    gap: 2px;
+    margin-left: 4px;
+    opacity: 0;
+    transition: opacity 0.15s;
+  }
+
+  .file-card:hover .fc-actions { opacity: 1; }
+
+  .fc-action-btn {
+    width: 24px;
+    height: 24px;
+    border-radius: 4px;
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s;
+  }
+
+  .fc-action-btn:hover { background: var(--bg-pill); color: var(--text); }
+  .fc-action-btn.delete:hover { color: var(--accent-red); }
+
+  .fc-action-btn svg { width: 12px; height: 12px; }
+
+  /* ========================================================
+     OPTION C — Minimal Filename Links
+  ======================================================== */
+
+  .file-links {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    margin-top: 16px;
+  }
+
+  .file-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 12.5px;
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 2px 0;
+    width: fit-content;
+    transition: color 0.15s;
+  }
+
+  .file-link:hover { color: var(--text); }
+
+  .file-link svg { width: 13px; height: 13px; flex-shrink: 0; }
+
+  .file-link .fl-name {
+    color: var(--accent-blue);
+    font-weight: 500;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    transition: color 0.15s;
+  }
+
+  .file-link:hover .fl-name { text-decoration: underline; }
+
+  .file-link .fl-size {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  .file-link .fl-delete {
+    opacity: 0;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 2px;
+    display: flex;
+    transition: all 0.15s;
+  }
+
+  .file-link:hover .fl-delete { opacity: 1; }
+  .file-link .fl-delete:hover { color: var(--accent-red); }
+  .file-link .fl-delete svg { width: 12px; height: 12px; }
+
+  /* ─── Dividers ─────────────────────────────────────── */
+
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 48px 0;
+    max-width: 680px;
+    margin-left: auto;
+    margin-right: auto;
+  }
+
+  /* ─── Current label ────────────────────────────────── */
+  .current-tag {
+    font-size: 10px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 20px;
+    background: var(--accent-orange-dim);
+    color: var(--accent-orange);
+  }
+
+</style>
+</head>
+<body>
+
+<div class="page-header">
+  <h1>Discussion Attachment Options</h1>
+  <p>Three approaches — lightest to most structured. All replace the current full-section design.</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════
+     OPTION A
+═══════════════════════════════════════════════════════ -->
+<div class="option-section">
+  <div class="option-label">
+    <span class="tag tag-a">A</span>
+    Compact Chips
+  </div>
+  <div class="option-desc">
+    Attached files appear as small pills below the post body. Attach button lives in the footer alongside Edit/Enhance. No separate heading or upload zone.
+  </div>
+
+  <div class="card">
+    <div class="card-inner">
+      <div class="author-row">
+        <div class="avatar">NB</div>
+        <span class="author-name">Nicholas Ball</span>
+        <span class="badge badge-author">Author</span>
+        <span class="timestamp">2 hours ago</span>
+      </div>
+
+      <div class="body-text">
+        <p>I've drafted the API spec for the new workflow endpoints. The <code>claim_next_step</code> and <code>complete_step</code> routes need review — particularly around the approval gate logic.</p>
+        <p>Also attached the design review notes from last week. The cascade rejection flow needs more thought.</p>
+      </div>
+
+      <!-- Attachments as chips -->
+      <div class="chips-row">
+        <div class="chip">
+          <span class="chip-icon md-icon">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-md">
+              <path d="M4 1h6l4 4v9a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/>
+              <path d="M10 1v4h4"/>
+            </svg>
+          </span>
+          <span class="chip-name">api-spec.md</span>
+          <span class="chip-size">12 KB</span>
+          <span class="chip-x" title="Remove">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </span>
+        </div>
+        <div class="chip">
+          <span class="chip-icon pdf-icon">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-pdf">
+              <path d="M4 1h6l4 4v9a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/>
+              <path d="M10 1v4h4"/>
+            </svg>
+          </span>
+          <span class="chip-name">design-review.pdf</span>
+          <span class="chip-size">2.4 MB</span>
+          <span class="chip-x" title="Remove">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </span>
+        </div>
+      </div>
+
+      <div class="footer">
+        <button class="vote-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3l5 7H3z"/></svg>
+          0
+        </button>
+        <button class="footer-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11.5 1.5l3 3-9 9H2.5v-3z"/></svg>
+          Edit
+        </button>
+        <button class="footer-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v4M6 4l2-2 2 2M3 7c0 3 2.5 7 5 7s5-4 5-7"/></svg>
+          Enhance
+        </button>
+        <button class="footer-btn" style="color: var(--accent-violet);">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M10.5 4.5L14 1M14 1h-3M14 1v3"/><path d="M8 4H3a1 1 0 00-1 1v8a1 1 0 001 1h8a1 1 0 001-1V8"/></svg>
+          Attach
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ══════════════════════════════════════════════════════
+     OPTION B
+═══════════════════════════════════════════════════════ -->
+<div class="option-section">
+  <div class="option-label">
+    <span class="tag tag-b">B</span>
+    File Cards Bar
+  </div>
+  <div class="option-desc">
+    Slack/email-style — attachments are small cards with icon, name, size, and hover actions. Scrolls horizontally if many files. Paperclip in footer to add more.
+  </div>
+
+  <div class="card">
+    <div class="card-inner">
+      <div class="author-row">
+        <div class="avatar">NB</div>
+        <span class="author-name">Nicholas Ball</span>
+        <span class="badge badge-author">Author</span>
+        <span class="timestamp">2 hours ago</span>
+      </div>
+
+      <div class="body-text">
+        <p>I've drafted the API spec for the new workflow endpoints. The <code>claim_next_step</code> and <code>complete_step</code> routes need review — particularly around the approval gate logic.</p>
+        <p>Also attached the design review notes from last week. The cascade rejection flow needs more thought.</p>
+      </div>
+
+      <!-- Attachment bar -->
+      <div class="attachment-bar">
+        <div class="file-card">
+          <div class="fc-icon md-icon">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-md">
+              <path d="M4 1h6l4 4v9a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/>
+              <path d="M10 1v4h4"/>
+              <path d="M5 8h6M5 10.5h4"/>
+            </svg>
+          </div>
+          <div class="fc-info">
+            <span class="fc-name">api-spec.md</span>
+            <span class="fc-meta"><span>Markdown</span><span>12 KB</span></span>
+          </div>
+          <div class="fc-actions">
+            <button class="fc-action-btn" title="Download">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v9M5 8l3 3 3-3"/><path d="M2 12v2h12v-2"/></svg>
+            </button>
+            <button class="fc-action-btn delete" title="Remove">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4"/></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="file-card">
+          <div class="fc-icon pdf-icon">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-pdf">
+              <path d="M4 1h6l4 4v9a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/>
+              <path d="M10 1v4h4"/>
+              <path d="M5.5 9.5h2a1 1 0 000-2h-2v5"/>
+            </svg>
+          </div>
+          <div class="fc-info">
+            <span class="fc-name">design-review.pdf</span>
+            <span class="fc-meta"><span>PDF</span><span>2.4 MB</span></span>
+          </div>
+          <div class="fc-actions">
+            <button class="fc-action-btn" title="Download">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v9M5 8l3 3 3-3"/><path d="M2 12v2h12v-2"/></svg>
+            </button>
+            <button class="fc-action-btn delete" title="Remove">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 4h10M6 4V3h4v1M5 4v9h6V4"/></svg>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <button class="vote-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3l5 7H3z"/></svg>
+          0
+        </button>
+        <button class="footer-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11.5 1.5l3 3-9 9H2.5v-3z"/></svg>
+          Edit
+        </button>
+        <button class="footer-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v4M6 4l2-2 2 2M3 7c0 3 2.5 7 5 7s5-4 5-7"/></svg>
+          Enhance
+        </button>
+        <button class="footer-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M7.5 3.5L10 1l3 3-2.5 2.5"/>
+            <path d="M9 4.5l-5.5 5.5L2 14l4-1.5 5.5-5.5"/>
+          </svg>
+          Attach
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="divider"></div>
+
+<!-- ══════════════════════════════════════════════════════
+     OPTION C
+═══════════════════════════════════════════════════════ -->
+<div class="option-section">
+  <div class="option-label">
+    <span class="tag tag-c">C</span>
+    Minimal File Links
+  </div>
+  <div class="option-desc">
+    Most minimal — filenames rendered as monospace links with type icon and size. Delete button appears on hover. No cards, no chips, just text. Entire post is a drag-drop target (border highlights on drag).
+  </div>
+
+  <div class="card" id="card-c">
+    <div class="card-inner">
+      <div class="author-row">
+        <div class="avatar">NB</div>
+        <span class="author-name">Nicholas Ball</span>
+        <span class="badge badge-author">Author</span>
+        <span class="timestamp">2 hours ago</span>
+      </div>
+
+      <div class="body-text">
+        <p>I've drafted the API spec for the new workflow endpoints. The <code>claim_next_step</code> and <code>complete_step</code> routes need review — particularly around the approval gate logic.</p>
+        <p>Also attached the design review notes from last week. The cascade rejection flow needs more thought.</p>
+      </div>
+
+      <!-- File links -->
+      <div class="file-links">
+        <a href="#" class="file-link" onclick="return false">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-md">
+            <path d="M4 1h6l4 4v9a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/>
+            <path d="M10 1v4h4"/>
+          </svg>
+          <span class="fl-name">api-spec.md</span>
+          <span class="fl-size">12 KB</span>
+          <button class="fl-delete" title="Remove" onclick="event.stopPropagation()">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </a>
+        <a href="#" class="file-link" onclick="return false">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" class="icon-pdf">
+            <path d="M4 1h6l4 4v9a1 1 0 01-1 1H4a1 1 0 01-1-1V2a1 1 0 011-1z"/>
+            <path d="M10 1v4h4"/>
+          </svg>
+          <span class="fl-name">design-review.pdf</span>
+          <span class="fl-size">2.4 MB</span>
+          <button class="fl-delete" title="Remove" onclick="event.stopPropagation()">
+            <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+          </button>
+        </a>
+      </div>
+
+      <div class="footer">
+        <button class="vote-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 3l5 7H3z"/></svg>
+          0
+        </button>
+        <button class="footer-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11.5 1.5l3 3-9 9H2.5v-3z"/></svg>
+          Edit
+        </button>
+        <button class="footer-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M8 2v4M6 4l2-2 2 2M3 7c0 3 2.5 7 5 7s5-4 5-7"/></svg>
+          Enhance
+        </button>
+        <button class="footer-btn">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M6 10l-3 3M3 13h2.5v-2.5"/>
+            <path d="M8 8l5-5M13 3h-2.5v2.5"/>
+          </svg>
+          Attach
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Drag-over demo for option C -->
+<script>
+  const cardC = document.getElementById('card-c');
+  let counter = 0;
+  cardC.addEventListener('dragenter', (e) => {
+    e.preventDefault();
+    counter++;
+    cardC.style.borderColor = 'var(--accent-emerald)';
+    cardC.style.boxShadow = '0 0 0 1px var(--accent-emerald), inset 0 0 20px rgba(52,211,153,0.03)';
+  });
+  cardC.addEventListener('dragleave', () => {
+    counter--;
+    if (counter === 0) {
+      cardC.style.borderColor = '';
+      cardC.style.boxShadow = '';
+    }
+  });
+  cardC.addEventListener('dragover', (e) => e.preventDefault());
+  cardC.addEventListener('drop', (e) => {
+    e.preventDefault();
+    counter = 0;
+    cardC.style.borderColor = '';
+    cardC.style.boxShadow = '';
+  });
+</script>
+
+</body>
+</html>

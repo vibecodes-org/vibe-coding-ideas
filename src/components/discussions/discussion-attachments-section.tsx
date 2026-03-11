@@ -1,22 +1,23 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
 import {
-  Paperclip,
-  Trash2,
-  Upload,
+  useEffect,
+  useState,
+  useCallback,
+  useRef,
+  useImperativeHandle,
+  forwardRef,
+} from "react";
+import {
   FileText,
   Image as ImageIcon,
   FileCode,
-  Download,
   X,
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { createClient } from "@/lib/supabase/client";
-import { formatRelativeTime } from "@/lib/utils";
 import {
   MAX_DISCUSSION_ATTACHMENTS,
   MAX_IDEA_ATTACHMENT_SIZE,
@@ -24,6 +25,10 @@ import {
 } from "@/lib/validation";
 import { toast } from "sonner";
 import type { DiscussionAttachment } from "@/types";
+
+export interface DiscussionAttachmentsHandle {
+  triggerUpload: () => void;
+}
 
 interface DiscussionAttachmentsSectionProps {
   discussionId: string;
@@ -43,10 +48,12 @@ function isImageType(contentType: string): boolean {
   return contentType.startsWith("image/");
 }
 
-function getFileIcon(contentType: string) {
-  if (isImageType(contentType)) return ImageIcon;
-  if (contentType === "text/html") return FileCode;
-  return FileText;
+function getIconBg(contentType: string): string {
+  if (isImageType(contentType)) return "bg-violet-500/10";
+  if (contentType === "application/pdf") return "bg-red-500/10";
+  if (contentType === "text/markdown") return "bg-blue-500/10";
+  if (contentType === "text/html") return "bg-orange-500/10";
+  return "bg-muted";
 }
 
 function getIconColor(contentType: string): string {
@@ -57,23 +64,34 @@ function getIconColor(contentType: string): string {
   return "text-muted-foreground";
 }
 
-export function DiscussionAttachmentsSection({
-  discussionId,
-  ideaId,
-  currentUserId,
-  isAuthor,
-  isTeamMember,
-}: DiscussionAttachmentsSectionProps) {
+function getFileIcon(contentType: string) {
+  if (isImageType(contentType)) return ImageIcon;
+  if (contentType === "text/html") return FileCode;
+  return FileText;
+}
+
+export const DiscussionAttachmentsSection = forwardRef<
+  DiscussionAttachmentsHandle,
+  DiscussionAttachmentsSectionProps
+>(function DiscussionAttachmentsSection(
+  { discussionId, ideaId, currentUserId, isAuthor, isTeamMember },
+  ref
+) {
   const [attachments, setAttachments] = useState<DiscussionAttachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [uploading, setUploading] = useState(false);
-  const [uploadingFiles, setUploadingFiles] = useState<{ id: string; name: string; size: number }[]>([]);
+  const [uploadingFiles, setUploadingFiles] = useState<
+    { id: string; name: string }[]
+  >([]);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
-  const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const dragCounterRef = useRef(0);
 
   const isReadOnly = !isTeamMember;
+
+  // Expose triggerUpload to parent
+  useImperativeHandle(ref, () => ({
+    triggerUpload: () => fileInputRef.current?.click(),
+  }));
 
   const fetchAttachments = useCallback(async () => {
     const supabase = createClient();
@@ -128,7 +146,9 @@ export function DiscussionAttachmentsSection({
           filter: `discussion_id=eq.${discussionId}`,
         },
         (payload) => {
-          setAttachments((prev) => prev.filter((a) => a.id !== payload.old.id));
+          setAttachments((prev) =>
+            prev.filter((a) => a.id !== payload.old.id)
+          );
         }
       )
       .subscribe();
@@ -168,10 +188,13 @@ export function DiscussionAttachmentsSection({
     }
 
     const ext = file.name.split(".").pop()?.toLowerCase() ?? "";
-    const allowedExts = ["md", "html", "htm", "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg"];
+    const allowedExts = [
+      "md", "html", "htm", "pdf", "png", "jpg", "jpeg", "gif", "webp", "svg",
+    ];
     const typeAllowed =
-      ALLOWED_IDEA_ATTACHMENT_TYPES.includes(file.type as (typeof ALLOWED_IDEA_ATTACHMENT_TYPES)[number]) ||
-      allowedExts.includes(ext);
+      ALLOWED_IDEA_ATTACHMENT_TYPES.includes(
+        file.type as (typeof ALLOWED_IDEA_ATTACHMENT_TYPES)[number]
+      ) || allowedExts.includes(ext);
 
     if (!typeAllowed) {
       toast.error("Unsupported file type. Allowed: images, PDF, Markdown, HTML");
@@ -179,11 +202,12 @@ export function DiscussionAttachmentsSection({
     }
 
     if (attachments.length >= MAX_DISCUSSION_ATTACHMENTS) {
-      toast.error(`Maximum ${MAX_DISCUSSION_ATTACHMENTS} attachments per discussion`);
+      toast.error(
+        `Maximum ${MAX_DISCUSSION_ATTACHMENTS} attachments per discussion`
+      );
       return;
     }
 
-    // Normalize content type — browsers often report .md as text/plain or empty
     let contentType = file.type;
     if (ext === "md" && contentType !== "text/markdown") {
       contentType = "text/markdown";
@@ -193,7 +217,10 @@ export function DiscussionAttachmentsSection({
     }
 
     const placeholderId = crypto.randomUUID();
-    setUploadingFiles((prev) => [...prev, { id: placeholderId, name: file.name, size: file.size }]);
+    setUploadingFiles((prev) => [
+      ...prev,
+      { id: placeholderId, name: file.name },
+    ]);
     setUploading(true);
     const supabase = createClient();
 
@@ -206,7 +233,9 @@ export function DiscussionAttachmentsSection({
 
     if (uploadError) {
       toast.error(`Upload failed: ${uploadError.message}`);
-      setUploadingFiles((prev) => prev.filter((f) => f.id !== placeholderId));
+      setUploadingFiles((prev) =>
+        prev.filter((f) => f.id !== placeholderId)
+      );
       setUploading(false);
       return;
     }
@@ -227,17 +256,19 @@ export function DiscussionAttachmentsSection({
 
     if (dbError || !inserted) {
       toast.error("Failed to save attachment record");
-      // Clean up orphaned storage file
-      await supabase.storage.from("discussion-attachments").remove([storagePath]);
+      await supabase.storage
+        .from("discussion-attachments")
+        .remove([storagePath]);
     } else {
-      // Optimistically add to list immediately (don't wait for Realtime)
       setAttachments((prev) => {
         if (prev.some((a) => a.id === inserted.id)) return prev;
         return [inserted, ...prev];
       });
     }
 
-    setUploadingFiles((prev) => prev.filter((f) => f.id !== placeholderId));
+    setUploadingFiles((prev) =>
+      prev.filter((f) => f.id !== placeholderId)
+    );
     setUploading(false);
   }
 
@@ -256,11 +287,11 @@ export function DiscussionAttachmentsSection({
 
   async function handleDelete(attachment: DiscussionAttachment) {
     const supabase = createClient();
-
-    // Optimistic removal
     setAttachments((prev) => prev.filter((a) => a.id !== attachment.id));
 
-    await supabase.storage.from("discussion-attachments").remove([attachment.storage_path]);
+    await supabase.storage
+      .from("discussion-attachments")
+      .remove([attachment.storage_path]);
 
     const { error } = await supabase
       .from("discussion_attachments")
@@ -269,7 +300,6 @@ export function DiscussionAttachmentsSection({
 
     if (error) {
       toast.error("Failed to delete attachment");
-      // Re-fetch to restore state
       fetchAttachments();
     }
   }
@@ -298,209 +328,104 @@ export function DiscussionAttachmentsSection({
     }
   }
 
-  function handleDragEnter(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current++;
-    if (e.dataTransfer.types.includes("Files")) {
-      setIsDragging(true);
-    }
-  }
-
-  function handleDragLeave(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    dragCounterRef.current--;
-    if (dragCounterRef.current === 0) {
-      setIsDragging(false);
-    }
-  }
-
-  function handleDragOver(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-  }
-
-  async function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-    dragCounterRef.current = 0;
-
-    const files = e.dataTransfer.files;
-    if (!files?.length || uploading) return;
-
-    for (const file of files) {
-      await uploadFile(file);
-    }
-  }
-
   const canDelete = (attachment: DiscussionAttachment) =>
     attachment.uploaded_by === currentUserId || isAuthor;
 
-  // Don't render anything if read-only and no attachments
-  if (isReadOnly && !loading && attachments.length === 0) {
-    return null;
+  const hasContent =
+    !loading && (attachments.length > 0 || uploadingFiles.length > 0);
+
+  // Nothing to render — no attachments and nothing uploading
+  if (!hasContent) {
+    return (
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept=".md,.html,.htm,.pdf,.png,.jpg,.jpeg,.gif,.webp,.svg"
+        onChange={handleFileSelect}
+        multiple
+      />
+    );
   }
 
   return (
     <>
-      <div className="space-y-3">
-        <h3 className="flex items-center gap-2 text-sm font-semibold">
-          <Paperclip className="h-4 w-4" />
-          Attachments
-          {attachments.length > 0 && (
-            <span className="rounded-full bg-muted px-1.5 text-[10px] font-medium text-muted-foreground">
-              {attachments.length}
-            </span>
-          )}
-        </h3>
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept=".md,.html,.htm,.pdf,.png,.jpg,.jpeg,.gif,.webp,.svg"
+        onChange={handleFileSelect}
+        multiple
+      />
 
-        {loading ? (
-          <p className="text-xs text-muted-foreground">Loading...</p>
-        ) : attachments.length > 0 || uploadingFiles.length > 0 ? (
-          <ScrollArea className={attachments.length > 6 ? "max-h-64" : undefined}>
-            <div className="space-y-1.5">
-              {uploadingFiles.map((file) => (
-                <div
-                  key={file.id}
-                  className="flex items-center gap-3 rounded-md border border-dashed border-primary/40 bg-primary/5 p-2"
-                >
-                  <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted">
-                    <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="truncate text-[11px] font-medium">{file.name}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {formatFileSize(file.size)} &middot; Uploading...
-                    </p>
-                  </div>
-                </div>
-              ))}
-              {attachments.map((attachment) => {
-                const Icon = getFileIcon(attachment.content_type);
-                const iconColor = getIconColor(attachment.content_type);
-
-                return (
-                  <div
-                    key={attachment.id}
-                    className="group flex items-center gap-3 rounded-md border border-border p-2 transition-colors hover:border-border/80 hover:bg-muted/30"
-                  >
-                    {isImageType(attachment.content_type) ? (
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            className="flex h-8 w-8 shrink-0 cursor-pointer items-center justify-center rounded bg-muted"
-                            onClick={() => handlePreview(attachment)}
-                          >
-                            <Icon className={`h-4 w-4 ${iconColor}`} />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>Preview</TooltipContent>
-                      </Tooltip>
-                    ) : (
-                      <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded bg-muted">
-                        <Icon className={`h-4 w-4 ${iconColor}`} />
-                      </div>
-                    )}
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-[11px] font-medium">
-                        {attachment.file_name}
-                      </p>
-                      <p className="text-[10px] text-muted-foreground">
-                        {formatFileSize(attachment.file_size)} &middot;{" "}
-                        {formatRelativeTime(attachment.created_at)}
-                      </p>
-                    </div>
-                    <div className="flex shrink-0 gap-0.5">
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <button
-                            className="cursor-pointer rounded p-1 text-muted-foreground hover:text-foreground"
-                            onClick={() => handleDownload(attachment)}
-                          >
-                            <Download className="h-3 w-3" />
-                          </button>
-                        </TooltipTrigger>
-                        <TooltipContent>Download</TooltipContent>
-                      </Tooltip>
-                      {!isReadOnly && canDelete(attachment) && (
-                        <Tooltip>
-                          <TooltipTrigger asChild>
-                            <button
-                              className="cursor-pointer rounded p-1 text-muted-foreground hover:text-destructive"
-                              onClick={() => handleDelete(attachment)}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </TooltipTrigger>
-                          <TooltipContent>Delete</TooltipContent>
-                        </Tooltip>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </ScrollArea>
-        ) : null}
-
-        {/* Upload zone — team members only */}
-        {!isReadOnly && (
-          <div
-            className={`relative rounded-lg border-2 border-dashed p-4 text-center transition-colors ${
-              isDragging ? "border-primary bg-primary/5" : "border-border"
-            }`}
-            onDragEnter={handleDragEnter}
-            onDragLeave={handleDragLeave}
-            onDragOver={handleDragOver}
-            onDrop={handleDrop}
+      {/* Compact chips */}
+      <div className="mt-4 flex flex-wrap gap-1.5">
+        {uploadingFiles.map((file) => (
+          <span
+            key={file.id}
+            className="inline-flex items-center gap-1.5 rounded-full border border-dashed border-primary/40 bg-primary/5 px-2.5 py-1"
           >
-            {isDragging ? (
-              <p className="text-sm text-primary">Drop files here</p>
-            ) : (
-              <>
-                <input
-                  ref={fileInputRef}
-                  id={`discussion-file-upload-${discussionId}`}
-                  type="file"
-                  className="hidden"
-                  accept=".md,.html,.htm,.pdf,.png,.jpg,.jpeg,.gif,.webp,.svg"
-                  onChange={handleFileSelect}
-                  multiple
-                />
-                <div className="flex items-center justify-center gap-2">
-                  <label
-                    htmlFor={uploading ? undefined : `discussion-file-upload-${discussionId}`}
-                    className={uploading ? "pointer-events-none" : undefined}
+            <Loader2 className="h-3 w-3 animate-spin text-primary" />
+            <span className="max-w-[140px] truncate text-[11px] font-medium">
+              {file.name}
+            </span>
+          </span>
+        ))}
+        {attachments.map((attachment) => {
+          const Icon = getFileIcon(attachment.content_type);
+          const iconColor = getIconColor(attachment.content_type);
+          const iconBg = getIconBg(attachment.content_type);
+          const clickable = isImageType(attachment.content_type);
+
+          return (
+            <span
+              key={attachment.id}
+              className="group inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 py-0.5 pl-1 pr-2 transition-colors hover:border-border/80 hover:bg-muted"
+            >
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full ${iconBg} ${clickable ? "cursor-pointer" : "cursor-default"}`}
+                    onClick={() =>
+                      clickable
+                        ? handlePreview(attachment)
+                        : handleDownload(attachment)
+                    }
                   >
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="pointer-events-none gap-1.5 text-xs"
-                      disabled={uploading || attachments.length >= MAX_DISCUSSION_ATTACHMENTS}
-                      tabIndex={-1}
-                      asChild
+                    <Icon className={`h-2.5 w-2.5 ${iconColor}`} />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  {clickable ? "Preview" : "Download"}
+                </TooltipContent>
+              </Tooltip>
+              <button
+                className="max-w-[140px] truncate text-[11px] font-medium text-foreground/80 hover:text-foreground cursor-pointer"
+                onClick={() => handleDownload(attachment)}
+              >
+                {attachment.file_name}
+              </button>
+              <span className="text-[10px] text-muted-foreground">
+                {formatFileSize(attachment.file_size)}
+              </span>
+              {!isReadOnly && canDelete(attachment) && (
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <button
+                      className="ml-0.5 flex h-3.5 w-3.5 shrink-0 cursor-pointer items-center justify-center rounded-full text-muted-foreground/60 transition-colors hover:bg-destructive/15 hover:text-destructive"
+                      onClick={() => handleDelete(attachment)}
                     >
-                      <span>
-                        {uploading ? (
-                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                        ) : (
-                          <Upload className="h-3.5 w-3.5" />
-                        )}
-                        {uploading ? "Uploading..." : "Choose file"}
-                      </span>
-                    </Button>
-                  </label>
-                </div>
-                <p className="mt-2 text-[10px] text-muted-foreground">
-                  Images, PDF, Markdown, HTML &middot; Max 10MB &middot;{" "}
-                  {attachments.length}/{MAX_DISCUSSION_ATTACHMENTS} files
-                </p>
-              </>
-            )}
-          </div>
-        )}
+                      <X className="h-2.5 w-2.5" />
+                    </button>
+                  </TooltipTrigger>
+                  <TooltipContent>Remove</TooltipContent>
+                </Tooltip>
+              )}
+            </span>
+          );
+        })}
       </div>
 
       {/* Image preview overlay */}
@@ -533,4 +458,4 @@ export function DiscussionAttachmentsSection({
       )}
     </>
   );
-}
+});

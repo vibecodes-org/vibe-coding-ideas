@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import Link from "next/link";
@@ -15,6 +15,7 @@ import {
   Sparkles,
   Loader2,
   Archive,
+  Paperclip,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +34,10 @@ import { enhanceDiscussionBody } from "@/actions/ai";
 import { useMentionState } from "@/hooks/use-mentions";
 import { sendDiscussionMentionNotifications } from "@/lib/mention-notifications";
 import { formatRelativeTime, getInitials } from "@/lib/utils";
-import { DiscussionAttachmentsSection } from "./discussion-attachments-section";
+import {
+  DiscussionAttachmentsSection,
+  type DiscussionAttachmentsHandle,
+} from "./discussion-attachments-section";
 import { DiscussionReplyForm } from "./discussion-reply-form";
 import { DiscussionVoteButton } from "./discussion-vote-button";
 import { ConvertToTaskDialog } from "./convert-to-task-dialog";
@@ -133,6 +137,7 @@ export function DiscussionThread({
   const [editBody, setEditBody] = useState(discussion.body);
   const [isSaving, setIsSaving] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
+  const attachmentsRef = useRef<DiscussionAttachmentsHandle>(null);
   const config = STATUS_CONFIG[discussion.status];
   const StatusIcon = config.icon;
 
@@ -506,17 +511,16 @@ export function DiscussionThread({
             <Markdown teamMembers={teamMembers}>{discussion.body}</Markdown>
           </div>
         )}
-        {/* Attachments */}
+        {/* Attachment chips (compact — no heading, no upload zone) */}
         {currentUser && (
-          <div className="mt-4">
-            <DiscussionAttachmentsSection
-              discussionId={discussion.id}
-              ideaId={ideaId}
-              currentUserId={currentUser.id}
-              isAuthor={isAuthorOrOwner}
-              isTeamMember={isTeamMember}
-            />
-          </div>
+          <DiscussionAttachmentsSection
+            ref={attachmentsRef}
+            discussionId={discussion.id}
+            ideaId={ideaId}
+            currentUserId={currentUser.id}
+            isAuthor={isAuthorOrOwner}
+            isTeamMember={isTeamMember}
+          />
         )}
         {/* Post footer: vote + edit */}
         {!isEditing && (
@@ -548,6 +552,15 @@ export function DiscussionThread({
                   <Sparkles className="h-3.5 w-3.5" />
                 )}
                 {enhancing ? "Enhancing..." : "Enhance"}
+              </button>
+            )}
+            {isTeamMember && discussion.status !== "converted" && (
+              <button
+                onClick={() => attachmentsRef.current?.triggerUpload()}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              >
+                <Paperclip className="h-3.5 w-3.5" />
+                Attach
               </button>
             )}
           </div>
