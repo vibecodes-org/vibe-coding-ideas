@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+export const dynamic = "force-dynamic";
+
 import { createClient } from "@supabase/supabase-js";
 import crypto from "crypto";
 import type { Database } from "@/types/database";
@@ -10,6 +11,13 @@ function getServiceClient() {
   );
 }
 
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
 function base64URLEncode(buffer: Buffer): string {
   return buffer.toString("base64url");
 }
@@ -19,21 +27,28 @@ function sha256(input: string): Buffer {
 }
 
 export async function POST(request: Request) {
-  const body = await request.formData();
-  const grantType = body.get("grant_type") as string;
+  try {
+    const body = await request.formData();
+    const grantType = body.get("grant_type") as string;
 
-  if (grantType === "authorization_code") {
-    return handleAuthorizationCode(body);
+    if (grantType === "authorization_code") {
+      return await handleAuthorizationCode(body);
+    }
+
+    if (grantType === "refresh_token") {
+      return await handleRefreshToken(body);
+    }
+
+    return jsonResponse(
+      { error: "unsupported_grant_type", error_description: "Supported: authorization_code, refresh_token" },
+      400
+    );
+  } catch {
+    return jsonResponse(
+      { error: "server_error", error_description: "Internal server error" },
+      500
+    );
   }
-
-  if (grantType === "refresh_token") {
-    return handleRefreshToken(body);
-  }
-
-  return NextResponse.json(
-    { error: "unsupported_grant_type", error_description: "Supported: authorization_code, refresh_token" },
-    { status: 400 }
-  );
 }
 
 async function handleAuthorizationCode(body: FormData) {
@@ -43,9 +58,9 @@ async function handleAuthorizationCode(body: FormData) {
   const redirectUri = body.get("redirect_uri") as string;
 
   if (!code || !codeVerifier || !clientId) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "invalid_request", error_description: "Missing required parameters" },
-      { status: 400 }
+      400
     );
   }
 
@@ -59,50 +74,50 @@ async function handleAuthorizationCode(body: FormData) {
     .maybeSingle();
 
   if (error || !authCode) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "invalid_grant", error_description: "Invalid authorization code" },
-      { status: 400 }
+      400
     );
   }
 
   // Check not expired
   if (new Date(authCode.expires_at) < new Date()) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "invalid_grant", error_description: "Authorization code expired" },
-      { status: 400 }
+      400
     );
   }
 
   // Check not used
   if (authCode.used) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "invalid_grant", error_description: "Authorization code already used" },
-      { status: 400 }
+      400
     );
   }
 
   // Verify client_id matches
   if (authCode.client_id !== clientId) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "invalid_grant", error_description: "client_id mismatch" },
-      { status: 400 }
+      400
     );
   }
 
   // Verify redirect_uri if stored
   if (redirectUri && authCode.redirect_uri !== redirectUri) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "invalid_grant", error_description: "redirect_uri mismatch" },
-      { status: 400 }
+      400
     );
   }
 
   // Verify PKCE: SHA256(code_verifier) === code_challenge
   const computedChallenge = base64URLEncode(sha256(codeVerifier));
   if (computedChallenge !== authCode.code_challenge) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "invalid_grant", error_description: "PKCE verification failed" },
-      { status: 400 }
+      400
     );
   }
 
@@ -113,7 +128,6 @@ async function handleAuthorizationCode(body: FormData) {
     .eq("code", code);
 
   // Refresh the session to get fresh tokens with full TTL
-  // (the stored tokens may already be partially expired)
   const anonClient = createClient<Database>(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
@@ -124,13 +138,13 @@ async function handleAuthorizationCode(body: FormData) {
   });
 
   if (refreshError || !refreshed.session) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "invalid_grant", error_description: "Session expired — please re-authenticate" },
-      { status: 400 }
+      400
     );
   }
 
-  return NextResponse.json({
+  return jsonResponse({
     access_token: refreshed.session.access_token,
     token_type: "bearer",
     expires_in: refreshed.session.expires_in,
@@ -144,9 +158,9 @@ async function handleRefreshToken(body: FormData) {
   const clientId = body.get("client_id") as string;
 
   if (!refreshToken || !clientId) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "invalid_request", error_description: "Missing refresh_token or client_id" },
-      { status: 400 }
+      400
     );
   }
 
@@ -159,9 +173,9 @@ async function handleRefreshToken(body: FormData) {
     .maybeSingle();
 
   if (!client) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "invalid_client", error_description: "Unknown client_id" },
-      { status: 400 }
+      400
     );
   }
 
@@ -176,13 +190,13 @@ async function handleRefreshToken(body: FormData) {
   });
 
   if (error || !session.session) {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "invalid_grant", error_description: "Failed to refresh session" },
-      { status: 400 }
+      400
     );
   }
 
-  return NextResponse.json({
+  return jsonResponse({
     access_token: session.session.access_token,
     token_type: "bearer",
     expires_in: session.session.expires_in,

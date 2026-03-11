@@ -1,4 +1,5 @@
-import { NextResponse } from "next/server";
+export const dynamic = "force-dynamic";
+
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
@@ -7,6 +8,13 @@ function getServiceClient() {
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!
   );
+}
+
+function jsonResponse(data: unknown, status = 200) {
+  return new Response(JSON.stringify(data), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
 }
 
 export async function POST(request: Request) {
@@ -24,9 +32,9 @@ export async function POST(request: Request) {
     } = body;
 
     if (!code || !client_id || !redirect_uri || !code_challenge || !supabase_access_token || !supabase_refresh_token) {
-      return NextResponse.json(
+      return jsonResponse(
         { error: "Missing required fields" },
-        { status: 400 }
+        400
       );
     }
 
@@ -35,9 +43,9 @@ export async function POST(request: Request) {
     const { data: { user }, error: userError } = await supabase.auth.getUser(supabase_access_token);
 
     if (userError || !user) {
-      return NextResponse.json(
+      return jsonResponse(
         { error: "Invalid access token" },
-        { status: 401 }
+        401
       );
     }
 
@@ -57,17 +65,17 @@ export async function POST(request: Request) {
       });
 
     if (error) {
-      return NextResponse.json(
+      return jsonResponse(
         { error: "Failed to store authorization code" },
-        { status: 500 }
+        500
       );
     }
 
-    return NextResponse.json({ success: true });
+    return jsonResponse({ success: true });
   } catch {
-    return NextResponse.json(
+    return jsonResponse(
       { error: "Invalid request body" },
-      { status: 400 }
+      400
     );
   }
 }
