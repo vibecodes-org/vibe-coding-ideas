@@ -328,7 +328,10 @@ export async function updateWorkflowAutoRule(
   return data;
 }
 
-export async function deleteWorkflowAutoRule(ruleId: string) {
+export async function deleteWorkflowAutoRule(
+  ruleId: string,
+  options?: { removeRelatedWorkflows?: boolean }
+) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -336,12 +339,32 @@ export async function deleteWorkflowAutoRule(ruleId: string) {
 
   if (!user) throw new Error("Not authenticated");
 
-  // Fetch idea_id for revalidation before deleting
+  // Fetch rule details for revalidation and optional workflow cleanup
   const { data: rule } = await supabase
     .from("workflow_auto_rules")
-    .select("idea_id")
+    .select("idea_id, label_id, template_id")
     .eq("id", ruleId)
     .single();
+
+  // Remove related workflow runs if requested
+  if (options?.removeRelatedWorkflows && rule) {
+    // Find all tasks that have this label
+    const { data: labeledTasks } = await supabase
+      .from("board_task_labels")
+      .select("task_id")
+      .eq("label_id", rule.label_id);
+
+    if (labeledTasks && labeledTasks.length > 0) {
+      const taskIds = labeledTasks.map((t) => t.task_id);
+      // Delete workflow runs for these tasks that match the rule's template
+      // Steps and step comments cascade-delete automatically via FK ON DELETE CASCADE
+      await supabase
+        .from("workflow_runs")
+        .delete()
+        .in("task_id", taskIds)
+        .eq("template_id", rule.template_id);
+    }
+  }
 
   const { error } = await supabase
     .from("workflow_auto_rules")
