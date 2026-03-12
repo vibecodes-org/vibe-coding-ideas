@@ -9,6 +9,8 @@ const templateStepSchema = z.object({
   role: z.string().min(1).max(100).describe("Agent role that should execute this step"),
   description: z.string().max(5000).optional().describe("Step description"),
   requires_approval: z.boolean().optional().describe("Whether human approval is required after completion"),
+  deliverables: z.array(z.string().max(100)).max(10).optional()
+    .describe("Expected deliverables this step should produce (e.g. 'HTML mockups', 'requirements doc')"),
 });
 
 // ============================================================
@@ -213,6 +215,7 @@ export async function applyWorkflowTemplate(
         agent_role: role,
         bot_id: matchedBotId,
         human_check_required: Boolean(step.requires_approval ?? false),
+        expected_deliverables: Array.isArray(step.deliverables) ? step.deliverables : [],
         position: (i + 1) * 1000,
         step_order: i + 1,
       })
@@ -275,7 +278,7 @@ export async function claimNextStep(
       claimed_by: ctx.userId,
     })
     .eq("id", step.id)
-    .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, comment_count, started_at, completed_at, created_at")
+    .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, expected_deliverables, comment_count, started_at, completed_at, created_at")
     .single();
 
   if (updateError) throw new Error(`Failed to claim step: ${updateError.message}`);
@@ -338,23 +341,81 @@ export async function claimNextStep(
     };
   });
 
+  // Fetch context from prior completed/skipped steps in the same run
+  let context: { step_title: string; output: string }[] = [];
+  if (step.run_id) {
+    const { data: priorSteps } = await ctx.supabase
+      .from("task_workflow_steps")
+      .select("id, title, step_order")
+      .eq("run_id", step.run_id)
+      .in("status", ["completed", "skipped"])
+      .lt("step_order", step.step_order ?? 999999)
+      .order("step_order", { ascending: true });
+
+    if (priorSteps && priorSteps.length > 0) {
+      const stepIds = priorSteps.map((s) => s.id);
+      const { data: outputComments } = await ctx.supabase
+        .from("workflow_step_comments")
+        .select("step_id, content")
+        .in("step_id", stepIds)
+        .eq("type", "output")
+        .order("created_at", { ascending: false });
+
+      // Group by step_id, take latest output per step
+      const outputMap = new Map<string, string>();
+      for (const c of outputComments ?? []) {
+        if (!outputMap.has(c.step_id)) outputMap.set(c.step_id, c.content);
+      }
+
+      context = priorSteps
+        .filter((s) => outputMap.has(s.id))
+        .map((s) => ({ step_title: s.title, output: outputMap.get(s.id)! }));
+    }
+  }
+
+  const expected_deliverables = updated.expected_deliverables ?? [];
+
   // Build an explicit instruction for Claude Code to switch identity before executing
   const matchedAgent = updated.bot_id
     ? available_agents.find((a) => a.bot_id === updated.bot_id)
     : null;
 
-  const instruction = matchedAgent
+  const identityInstruction = matchedAgent
     ? `IMPORTANT: Before executing this step, you MUST call the set_agent_identity tool with agent_id "${matchedAgent.bot_id}" to switch to the ${matchedAgent.bot_name} (${matchedAgent.bot_role}) persona. This ensures your work is attributed correctly and you follow the agent's system prompt.`
     : `IMPORTANT: Before executing this step, you MUST call the set_agent_identity tool to assume an appropriate persona for the "${updated.agent_role}" role. Review the available_agents list and pick the best match by role, then call set_agent_identity with that agent's bot_id.`;
 
-  return { done: false, step: updated, instruction, rework_instructions, available_agents };
+  const contextParts: string[] = [];
+
+  if (context.length > 0) {
+    contextParts.push(
+      `CONTEXT: The "context" array contains deliverables from ${context.length} completed prior step(s). Read these carefully before starting your work.`
+    );
+  }
+
+  if (expected_deliverables.length > 0) {
+    contextParts.push(
+      `EXPECTED DELIVERABLES: You are expected to produce: ${expected_deliverables.join(", ")}.`
+    );
+  }
+
+  contextParts.push(
+    `DELIVERABLE: Pass your full deliverable as the "output" parameter of complete_step.`
+  );
+
+  contextParts.push(
+    `TASK DESCRIPTION: After calling complete_step, call update_task to append a summary of your deliverable to the task description under a markdown heading.`
+  );
+
+  const instruction = [identityInstruction, ...contextParts].join("\n\n");
+
+  return { done: false, step: updated, instruction, rework_instructions, available_agents, context, expected_deliverables };
 }
 
 // --- Complete Step ---
 
 export const completeStepSchema = z.object({
   step_id: z.string().uuid().describe("The workflow step ID"),
-  output: z.string().max(10000).optional().describe("Step output or result summary"),
+  output: z.string().max(50000).optional().describe("Step output or deliverable — stored on the step and as a step comment for context chaining"),
 });
 
 export async function completeStep(
@@ -364,7 +425,7 @@ export async function completeStep(
   // Fetch current step
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, human_check_required, status")
+    .select("id, run_id, idea_id, human_check_required, status")
     .eq("id", params.step_id)
     .single();
 
@@ -385,6 +446,19 @@ export async function completeStep(
     .single();
 
   if (updateError) throw new Error(`Failed to complete step: ${updateError.message}`);
+
+  // Store output as a step comment for context chaining
+  if (params.output && step.idea_id) {
+    await ctx.supabase
+      .from("workflow_step_comments")
+      .insert({
+        step_id: params.step_id,
+        idea_id: step.idea_id,
+        author_id: ctx.userId,
+        type: "output",
+        content: params.output,
+      });
+  }
 
   // Check if all steps in the run are done
   let runComplete = false;

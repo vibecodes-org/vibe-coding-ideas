@@ -66,6 +66,7 @@ const EXPECTED_TOOL_NAMES = [
   "claim_next_step",
   "complete_step",
   "fail_step",
+  "skip_step",
   "approve_step",
   "get_step_context",
   "add_step_comment",
@@ -84,7 +85,7 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(68);
+    expect(server.tool).toHaveBeenCalledTimes(69);
   });
 
   it("registers all expected tool names", () => {

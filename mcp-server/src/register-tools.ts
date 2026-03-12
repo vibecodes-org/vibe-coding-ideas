@@ -1092,7 +1092,7 @@ export function registerTools(
 
   server.tool(
     "complete_step",
-    "Mark a workflow step as completed with optional output. If the step requires human approval, it moves to awaiting_approval instead. Checks if the entire run is now complete.",
+    "Mark a workflow step as completed with optional output/deliverable. The output is stored both on the step and as a step comment (type: 'output') so subsequent steps can access it via context chaining. If the step requires human approval, it moves to awaiting_approval instead.",
     completeStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

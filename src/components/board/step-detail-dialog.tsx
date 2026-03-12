@@ -314,6 +314,24 @@ export function StepDetailDialog({
             </div>
           )}
 
+          {/* Expected Deliverables */}
+          {step.expected_deliverables && step.expected_deliverables.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Expected Deliverables</p>
+              <div className="flex flex-wrap gap-1.5">
+                {step.expected_deliverables.map((d, i) => (
+                  <Badge
+                    key={i}
+                    variant="outline"
+                    className="text-[10px] bg-violet-500/10 text-violet-400 border-violet-500/20"
+                  >
+                    {d}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Output */}
           {step.output && (
             <div className="space-y-1">

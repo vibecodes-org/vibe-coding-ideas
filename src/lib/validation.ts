@@ -207,6 +207,9 @@ export function validateBio(bio: string | null): string | null {
 export const MAX_SKILLS = 10;
 export const MAX_SKILL_LENGTH = 30;
 
+export const MAX_DELIVERABLES = 10;
+export const MAX_DELIVERABLE_LENGTH = 100;
+
 export const MAX_WORKFLOW_ROLE_LENGTH = 100;
 
 export function validateWorkflowTemplateName(name: string): string {
@@ -218,9 +221,26 @@ export function validateWorkflowTemplateName(name: string): string {
   return trimmed;
 }
 
+export function validateDeliverables(deliverables: string[]): string[] {
+  if (!deliverables || deliverables.length === 0) return [];
+  const cleaned = deliverables
+    .map((d) => d.trim())
+    .filter(Boolean);
+  const unique = [...new Set(cleaned)];
+  if (unique.length > MAX_DELIVERABLES) {
+    throw new ValidationError(`Maximum ${MAX_DELIVERABLES} deliverables allowed`);
+  }
+  for (const d of unique) {
+    if (d.length > MAX_DELIVERABLE_LENGTH) {
+      throw new ValidationError(`Deliverable "${d}" exceeds ${MAX_DELIVERABLE_LENGTH} characters`);
+    }
+  }
+  return unique;
+}
+
 export function validateWorkflowTemplateSteps(
-  steps: { title: string; description?: string; role: string; requires_approval?: boolean }[]
-): { title: string; description?: string; role: string; requires_approval?: boolean }[] {
+  steps: { title: string; description?: string; role: string; requires_approval?: boolean; deliverables?: string[] }[]
+): { title: string; description?: string; role: string; requires_approval?: boolean; deliverables?: string[] }[] {
   if (!steps || steps.length === 0) {
     throw new ValidationError("At least one step is required");
   }
@@ -240,6 +260,7 @@ export function validateWorkflowTemplateSteps(
       description: step.description?.trim() || undefined,
       role,
       requires_approval: step.requires_approval ?? false,
+      deliverables: step.deliverables ? validateDeliverables(step.deliverables) : undefined,
     };
   });
 }

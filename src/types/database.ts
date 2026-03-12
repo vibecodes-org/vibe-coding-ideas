@@ -5,6 +5,7 @@ export interface WorkflowTemplateStep {
   description?: string;
   role: string;
   requires_approval?: boolean;
+  deliverables?: string[];
 }
 
 export type Database = {
@@ -715,6 +716,7 @@ export type Database = {
           started_at: string | null;
           completed_at: string | null;
           created_at: string;
+          expected_deliverables: string[];
           updated_at: string;
         };
         Insert: {
@@ -732,6 +734,7 @@ export type Database = {
           agent_role?: string | null;
           output?: string | null;
           human_check_required?: boolean;
+          expected_deliverables?: string[];
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
@@ -753,6 +756,7 @@ export type Database = {
           agent_role?: string | null;
           output?: string | null;
           human_check_required?: boolean;
+          expected_deliverables?: string[];
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
