@@ -12,6 +12,6 @@
     "sourceMap": true,
     "noEmit": true
   },
-  "include": ["src/**/*", "../src/types/**/*"],
+  "include": ["src/**/*", "../src/types/**/*", "../src/lib/role-matching.ts"],
   "exclude": ["node_modules", "dist"]
 }

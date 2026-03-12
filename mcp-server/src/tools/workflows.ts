@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
+import { buildRoleMatcher } from "../../../src/lib/role-matching";
 
 // --- Shared step schema used by template tools ---
 
@@ -175,17 +176,17 @@ export async function applyWorkflowTemplate(
     .select("bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role)")
     .eq("idea_id", task.idea_id);
 
-  // Build role → bot_id map (case-insensitive, first match wins)
-  const roleMap = new Map<string, string>();
-  for (const entry of ideaAgents ?? []) {
-    const bot = (entry as Record<string, unknown>).bot as Record<string, unknown> | null;
-    if (bot?.role && entry.bot_id) {
-      const role = String(bot.role).toLowerCase();
-      if (!roleMap.has(role)) {
-        roleMap.set(role, entry.bot_id);
-      }
-    }
-  }
+  // Build fuzzy role matcher from idea agent pool
+  const candidates = (ideaAgents ?? [])
+    .map((entry) => {
+      const bot = (entry as Record<string, unknown>).bot as Record<string, unknown> | null;
+      return bot?.role && entry.bot_id
+        ? { botId: entry.bot_id, role: String(bot.role) }
+        : null;
+    })
+    .filter((c): c is { botId: string; role: string } => c !== null);
+
+  const matchRole = buildRoleMatcher(candidates);
 
   // Create workflow steps from template steps array
   const steps = (template.steps ?? []) as unknown as Array<Record<string, unknown>>;
@@ -195,7 +196,7 @@ export async function applyWorkflowTemplate(
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     const role = step.role ? String(step.role) : null;
-    const matchedBotId = role ? (roleMap.get(role.toLowerCase()) ?? null) : null;
+    const matchedBotId = role ? (matchRole(role).botId) : null;
 
     if (role) {
       agentMatches[role] = matchedBotId;

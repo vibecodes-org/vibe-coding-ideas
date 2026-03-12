@@ -84,6 +84,8 @@ import {
   getDiscussionSchema,
   addDiscussionReply,
   addDiscussionReplySchema,
+  updateDiscussionReply,
+  updateDiscussionReplySchema,
   createDiscussion,
   createDiscussionSchema,
   updateDiscussion,
@@ -625,6 +627,20 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await addDiscussionReply(ctx, addDiscussionReplySchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "update_discussion_reply",
+    "Update the content of a discussion reply. Can only edit your own replies.",
+    updateDiscussionReplySchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await updateDiscussionReply(ctx, updateDiscussionReplySchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

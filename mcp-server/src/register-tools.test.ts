@@ -33,6 +33,7 @@ const EXPECTED_TOOL_NAMES = [
   "list_discussions",
   "get_discussion",
   "add_discussion_reply",
+  "update_discussion_reply",
   "create_discussion",
   "update_discussion",
   "delete_discussion",
@@ -82,7 +83,7 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(66);
+    expect(server.tool).toHaveBeenCalledTimes(67);
   });
 
   it("registers all expected tool names", () => {

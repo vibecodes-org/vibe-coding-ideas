@@ -274,7 +274,7 @@ Auto-inject `idea_id` into MCP tool calls from `.vibecodes/config.json`.
 
 ## Testing Convention
 
-Write tests for all new pure logic, validators, parsers, utilities. Tests co-located as `*.test.ts`. Component changes verified via build + manual testing. Currently 23 unit test files (18 in `src/` + 5 in `mcp-server/src/`) and 43 E2E spec files across 21 directories.
+Write tests for all new pure logic, validators, parsers, utilities. Tests co-located as `*.test.ts`. Component changes verified via build + manual testing. Currently 24 unit test files (19 in `src/` + 5 in `mcp-server/src/`) and 43 E2E spec files across 21 directories.
 
 ### E2E Test Conventions
 - Shared constants in `e2e/fixtures/constants.ts`: `EXPECT_TIMEOUT` (15s)

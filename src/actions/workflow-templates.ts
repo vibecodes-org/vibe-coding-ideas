@@ -8,6 +8,7 @@ import {
   validateWorkflowTemplateSteps,
   validateOptionalDescription,
 } from "@/lib/validation";
+import { buildRoleMatcher } from "@/lib/role-matching";
 
 // ─── Templates ───
 
@@ -193,19 +194,15 @@ export async function applyWorkflowTemplate(
     .select("bot_id, bot_profiles!inner(id, role)")
     .eq("idea_id", task.idea_id);
 
-  // Build a role -> bot_id map for auto-assignment
-  const roleToBot = new Map<string, string>();
-  if (poolAgents) {
-    for (const agent of poolAgents) {
+  // Build fuzzy role matcher from idea agent pool
+  const candidates = (poolAgents ?? [])
+    .map((agent) => {
       const profile = agent.bot_profiles as unknown as { id: string; role: string | null };
-      if (profile?.role) {
-        const roleLower = profile.role.toLowerCase();
-        if (!roleToBot.has(roleLower)) {
-          roleToBot.set(roleLower, agent.bot_id);
-        }
-      }
-    }
-  }
+      return profile?.role ? { botId: agent.bot_id, role: profile.role } : null;
+    })
+    .filter((c): c is { botId: string; role: string } => c !== null);
+
+  const matchRole = buildRoleMatcher(candidates);
 
   // Create workflow steps from template steps
   const steps = (template.steps as WorkflowTemplateStep[]).map(
@@ -220,7 +217,7 @@ export async function applyWorkflowTemplate(
       position: index * 1000,
       step_order: index + 1,
       status: "pending" as const,
-      bot_id: roleToBot.get(step.role.toLowerCase()) ?? null,
+      bot_id: matchRole(step.role).botId,
     })
   );
 
