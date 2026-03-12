@@ -338,7 +338,16 @@ export async function claimNextStep(
     };
   });
 
-  return { done: false, step: updated, rework_instructions, available_agents };
+  // Build an explicit instruction for Claude Code to switch identity before executing
+  const matchedAgent = updated.bot_id
+    ? available_agents.find((a) => a.bot_id === updated.bot_id)
+    : null;
+
+  const instruction = matchedAgent
+    ? `IMPORTANT: Before executing this step, you MUST call the set_agent_identity tool with agent_id "${matchedAgent.bot_id}" to switch to the ${matchedAgent.bot_name} (${matchedAgent.bot_role}) persona. This ensures your work is attributed correctly and you follow the agent's system prompt.`
+    : `IMPORTANT: Before executing this step, you MUST call the set_agent_identity tool to assume an appropriate persona for the "${updated.agent_role}" role. Review the available_agents list and pick the best match by role, then call set_agent_identity with that agent's bot_id.`;
+
+  return { done: false, step: updated, instruction, rework_instructions, available_agents };
 }
 
 // --- Complete Step ---
