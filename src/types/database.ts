@@ -705,7 +705,7 @@ export type Database = {
           claimed_by: string | null;
           title: string;
           description: string | null;
-          status: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval";
+          status: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval" | "skipped";
           position: number;
           step_order: number | null;
           agent_role: string | null;
@@ -726,7 +726,7 @@ export type Database = {
           claimed_by?: string | null;
           title: string;
           description?: string | null;
-          status?: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval";
+          status?: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval" | "skipped";
           position?: number;
           step_order?: number | null;
           agent_role?: string | null;
@@ -747,7 +747,7 @@ export type Database = {
           claimed_by?: string | null;
           title?: string;
           description?: string | null;
-          status?: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval";
+          status?: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval" | "skipped";
           position?: number;
           step_order?: number | null;
           agent_role?: string | null;

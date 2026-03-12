@@ -15,6 +15,7 @@ import {
   AlertTriangle,
   Workflow,
   X,
+  SkipForward,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -32,6 +33,7 @@ import {
   retryWorkflowStep,
   startWorkflowStep,
   failWorkflowStep,
+  skipWorkflowStep,
 } from "@/actions/workflow";
 import { applyWorkflowTemplate, listWorkflowTemplates } from "@/actions/workflow-templates";
 import { StepDetailDialog } from "./step-detail-dialog";
@@ -93,6 +95,14 @@ const STATUS_CONFIG = {
     badgeCls: "bg-amber-500/15 text-amber-400 border-amber-500/25",
     label: "Awaiting Approval",
     icon: CircleDot,
+  },
+  skipped: {
+    numBg: "bg-zinc-500/20",
+    numText: "text-zinc-500",
+    border: "border-zinc-500/30",
+    badgeCls: "bg-zinc-500/15 text-zinc-500 border-zinc-500/25",
+    label: "Skipped",
+    icon: SkipForward,
   },
 } as const;
 
@@ -204,7 +214,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
 
   async function handleInlineAction(
     stepId: string,
-    action: "approve" | "retry" | "start" | "fail"
+    action: "approve" | "retry" | "start" | "fail" | "skip"
   ) {
     setActionStepId(stepId);
     try {
@@ -224,6 +234,10 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
         case "fail":
           await failWorkflowStep(stepId);
           toast.success("Step marked as failed");
+          break;
+        case "skip":
+          await skipWorkflowStep(stepId);
+          toast.success("Step skipped");
           break;
       }
     } catch (err) {
@@ -322,7 +336,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
     );
   }
 
-  const completedCount = steps!.filter((s) => s.status === "completed").length;
+  const completedCount = steps!.filter((s) => s.status === "completed" || s.status === "skipped").length;
   const totalCount = steps!.length;
 
   return (
@@ -390,6 +404,8 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                 >
                   {step.status === "completed" ? (
                     <Check className="h-3.5 w-3.5" />
+                  ) : step.status === "skipped" ? (
+                    <SkipForward className="h-3.5 w-3.5" />
                   ) : (
                     idx + 1
                   )}
@@ -399,6 +415,21 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                 </span>
 
                 {/* Inline action buttons — shown on hover for key statuses */}
+                {!isReadOnly && step.status === "pending" && (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-6 gap-1 px-2 text-xs text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleInlineAction(step.id, "skip");
+                    }}
+                    disabled={isActionLoading}
+                  >
+                    {isActionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <SkipForward className="h-3 w-3" />}
+                    Skip
+                  </Button>
+                )}
                 {!isReadOnly && step.status === "awaiting_approval" && (
                   <Button
                     size="sm"

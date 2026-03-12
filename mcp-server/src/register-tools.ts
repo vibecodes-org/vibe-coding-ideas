@@ -164,6 +164,8 @@ import {
   completeStepSchema,
   failStep,
   failStepSchema,
+  skipStep,
+  skipStepSchema,
   approveStep,
   approveStepSchema,
   getStepContext,
@@ -1110,6 +1112,20 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await failStep(ctx, failStepSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "skip_step",
+    "Skip a workflow step that is not applicable to this task. Only pending steps can be skipped. Skipped steps count toward progress and allow the workflow to complete.",
+    skipStepSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await skipStep(ctx, skipStepSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

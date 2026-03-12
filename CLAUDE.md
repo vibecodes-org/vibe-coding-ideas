@@ -63,7 +63,8 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - **Templates**: `workflow_templates` table (idea-scoped) — reusable step sequences with role, description, approval gates
 - **Auto-Rules**: `workflow_auto_rules` table — maps labels to templates; Postgres trigger on `board_task_labels` INSERT auto-applies template when a task gets a matching label
 - **Workflow Runs**: `workflow_runs` tracks each application of a template to a task (pending → running → paused → completed → failed)
-- **Task Workflow Steps**: `task_workflow_steps` replaces old checklists — steps have status lifecycle (pending → in_progress → completed/failed/awaiting_approval), agent_role, bot_id, output, human_check_required
+- **Task Workflow Steps**: `task_workflow_steps` replaces old checklists — steps have status lifecycle (pending → in_progress → completed/failed/awaiting_approval/skipped), agent_role, bot_id, output, human_check_required
+- **Skip steps**: Pending steps can be skipped when not applicable to a task. Skipped steps count toward progress and allow workflow runs to complete. UI shows skip button on pending steps (inline + detail dialog). MCP tool: `skip_step`
 - **Step Comments**: `workflow_step_comments` for inter-agent communication (types: comment, output, failure, approval, changes_requested)
 - **Claude Code as Orchestrator**: No designated orchestrator agent — Claude Code reads steps via `claim_next_step`, assumes agent personas per step's `agent_role`, executes, calls `complete_step`, loops
 - **Claim tracking**: `claimed_by` column on `task_workflow_steps` tracks who actually claimed/executed the step; `bot_id` preserves the pre-matched agent from template application. `claim_next_step` sets `claimed_by` (not `bot_id`), returns `bot_id` + `available_agents` for client-side identity switching via `set_agent_identity`
@@ -75,7 +76,7 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - **Rework instructions**: MCP `claim_next_step` returns `rework_instructions` (previous failure output + `changes_requested` comments) when claiming a step that was previously failed, giving agents context for retry
 - **Agent match feedback**: `TaskWorkflowSection` shows a warning banner when pending steps have roles with no matching agent in the idea's pool
 - Server actions in `src/actions/workflow.ts` (step lifecycle) and `src/actions/workflow-templates.ts` (template CRUD + auto-rules)
-- MCP tools: 13 tools in `mcp-server/src/tools/workflows.ts` — template CRUD, apply, claim_next_step, complete_step, fail_step, approve_step, get_step_context, add_step_comment, get_step_comments, rematch_workflow_agents
+- MCP tools: 14 tools in `mcp-server/src/tools/workflows.ts` — template CRUD, apply, claim_next_step, complete_step, fail_step, skip_step, approve_step, get_step_context, add_step_comment, get_step_comments, rematch_workflow_agents
 
 ### Idea Agent Pool
 - `idea_agents` junction table: `(idea_id, bot_id, added_by)` with `UNIQUE(idea_id, bot_id)`
@@ -184,7 +185,7 @@ Key columns:
 21 files, 117 exported functions:
 - `ideas.ts` — create, update, updateStatus, updateIdeaFields (partial inline edit), delete
 - `board.ts` — columns (init, CRUD, reorder), tasks (CRUD, move, archive), labels (CRUD, assign), task comments (create, update, delete)
-- `workflow.ts` — createWorkflowStep, updateWorkflowStep, deleteWorkflowStep, startWorkflowStep, completeWorkflowStep, failWorkflowStep, approveWorkflowStep, retryWorkflowStep, addStepComment, deleteStepComment
+- `workflow.ts` — createWorkflowStep, updateWorkflowStep, deleteWorkflowStep, startWorkflowStep, completeWorkflowStep, skipWorkflowStep, failWorkflowStep, approveWorkflowStep, retryWorkflowStep, addStepComment, deleteStepComment
 - `workflow-templates.ts` — listWorkflowTemplates, createWorkflowTemplate, updateWorkflowTemplate, deleteWorkflowTemplate, applyWorkflowTemplate, listWorkflowAutoRules, createWorkflowAutoRule, updateWorkflowAutoRule, deleteWorkflowAutoRule
 - `collaborators.ts` — requestCollaboration, withdrawRequest, respondToRequest, leaveCollaboration, addCollaborator, removeCollaborator
 - `ai.ts` — enhanceIdeaDescription, generateClarifyingQuestions, enhanceIdeaWithContext, applyEnhancedDescription, generateBoardTasks, enhanceTaskDescription, enhanceDiscussionBody, getAiAccess, hasApiKey (deprecated)

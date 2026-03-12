@@ -384,7 +384,7 @@ export async function completeStep(
       .from("task_workflow_steps")
       .select("id, status")
       .eq("run_id", step.run_id)
-      .not("status", "in", '("completed","failed")');
+      .not("status", "in", '("completed","failed","skipped")');
 
     if (!remainingSteps || remainingSteps.length === 0) {
       await ctx.supabase
@@ -476,6 +476,60 @@ export async function failStep(
   return { step: updated, steps_reset: stepsReset };
 }
 
+// --- Skip Step ---
+
+export const skipStepSchema = z.object({
+  step_id: z.string().uuid().describe("The workflow step ID (must be in pending status)"),
+  reason: z.string().max(10000).optional().describe("Reason for skipping (e.g. 'Not applicable to this task')"),
+});
+
+export async function skipStep(
+  ctx: McpContext,
+  params: z.infer<typeof skipStepSchema>
+) {
+  const { data: step, error: fetchError } = await ctx.supabase
+    .from("task_workflow_steps")
+    .select("id, run_id, status")
+    .eq("id", params.step_id)
+    .single();
+
+  if (fetchError || !step) throw new Error(`Step not found: ${params.step_id}`);
+  if (step.status !== "pending") throw new Error(`Can only skip pending steps (current: ${step.status})`);
+
+  const { data: updated, error: updateError } = await ctx.supabase
+    .from("task_workflow_steps")
+    .update({
+      status: "skipped",
+      completed_at: new Date().toISOString(),
+      output: params.reason ?? "Skipped — not applicable to this task",
+    })
+    .eq("id", params.step_id)
+    .select("id, task_id, run_id, title, agent_role, status, output, completed_at")
+    .single();
+
+  if (updateError) throw new Error(`Failed to skip step: ${updateError.message}`);
+
+  // Check if all steps in the run are now resolved
+  let runComplete = false;
+  if (step.run_id) {
+    const { data: remainingSteps } = await ctx.supabase
+      .from("task_workflow_steps")
+      .select("id, status")
+      .eq("run_id", step.run_id)
+      .not("status", "in", '("completed","failed","skipped")');
+
+    if (!remainingSteps || remainingSteps.length === 0) {
+      await ctx.supabase
+        .from("workflow_runs")
+        .update({ status: "completed", completed_at: new Date().toISOString() })
+        .eq("id", step.run_id);
+      runComplete = true;
+    }
+  }
+
+  return { step: updated, run_complete: runComplete };
+}
+
 // --- Approve Step ---
 
 export const approveStepSchema = z.object({
@@ -535,7 +589,7 @@ export async function approveStep(
       .from("task_workflow_steps")
       .select("id, status")
       .eq("run_id", step.run_id)
-      .not("status", "in", '("completed","failed")');
+      .not("status", "in", '("completed","failed","skipped")');
 
     if (!remainingSteps || remainingSteps.length === 0) {
       await ctx.supabase

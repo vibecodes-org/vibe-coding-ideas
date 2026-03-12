@@ -17,6 +17,7 @@ import {
   Play,
   CheckCircle2,
   X,
+  SkipForward,
 } from "lucide-react";
 import {
   Dialog,
@@ -43,6 +44,7 @@ import {
   failWorkflowStep,
   approveWorkflowStep,
   retryWorkflowStep,
+  skipWorkflowStep,
   addStepComment,
 } from "@/actions/workflow";
 import { getInitials } from "@/lib/utils";
@@ -83,6 +85,13 @@ const STATUS_CONFIG = {
     text: "text-amber-400",
     label: "Awaiting Approval",
     icon: CircleDot,
+  },
+  skipped: {
+    bg: "bg-zinc-500/10",
+    border: "border-zinc-500/20",
+    text: "text-zinc-500",
+    label: "Skipped",
+    icon: SkipForward,
   },
 } as const;
 
@@ -194,7 +203,7 @@ export function StepDetailDialog({
   }
 
   async function handleAction(
-    action: "start" | "complete" | "fail" | "approve" | "reject" | "retry"
+    action: "start" | "complete" | "fail" | "approve" | "reject" | "retry" | "skip"
   ) {
     setActionLoading(true);
     try {
@@ -202,6 +211,10 @@ export function StepDetailDialog({
         case "start":
           await startWorkflowStep(step.id);
           toast.success("Step started");
+          break;
+        case "skip":
+          await skipWorkflowStep(step.id);
+          toast.success("Step skipped");
           break;
         case "complete":
           await completeWorkflowStep(step.id);
@@ -328,16 +341,28 @@ export function StepDetailDialog({
           {!isReadOnly && (
             <div className="flex flex-wrap gap-2">
               {step.status === "pending" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 text-xs"
-                  onClick={() => handleAction("start")}
-                  disabled={actionLoading}
-                >
-                  <Play className="h-3 w-3" />
-                  Start Step
-                </Button>
+                <>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs"
+                    onClick={() => handleAction("start")}
+                    disabled={actionLoading}
+                  >
+                    <Play className="h-3 w-3" />
+                    Start Step
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="gap-1.5 text-xs text-zinc-400 border-zinc-500/30 hover:bg-zinc-500/10"
+                    onClick={() => handleAction("skip")}
+                    disabled={actionLoading}
+                  >
+                    <SkipForward className="h-3 w-3" />
+                    Skip
+                  </Button>
+                </>
               )}
               {step.status === "in_progress" && (
                 <>

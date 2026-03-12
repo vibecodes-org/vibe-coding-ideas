@@ -236,13 +236,28 @@ function AutoRulesSection({
     if (!labelId || !templateId) return;
     setSaving(true);
     try {
-      await createWorkflowAutoRule(ideaId, labelId, templateId, autoRun);
-      toast.success("Auto-rule created");
+      const rule = await createWorkflowAutoRule(ideaId, labelId, templateId, autoRun);
       setAddingRule(false);
       setLabelId("");
       setTemplateId("");
       setAutoRun(false);
       onRulesChange();
+
+      // Auto-apply to existing tasks that already have this label
+      try {
+        const result = await applyAutoRuleRetroactively(rule.id);
+        if (result.applied > 0) {
+          toast.success(
+            `Auto-rule created — applied to ${result.applied} existing task${result.applied !== 1 ? "s" : ""}`
+          );
+        } else {
+          toast.success("Auto-rule created");
+        }
+        if (result.applied > 0) onRulesChange();
+      } catch {
+        // Rule was created successfully, just the retroactive apply failed
+        toast.success("Auto-rule created (could not apply to existing tasks)");
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create auto-rule");
     } finally {

@@ -194,9 +194,62 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
     const allCompleted =
       runSteps !== null &&
       runSteps.length > 0 &&
-      runSteps.every((s) => s.status === "completed");
+      runSteps.every(
+        (s) => s.status === "completed" || s.status === "skipped"
+      );
 
     if (allCompleted) {
+      await supabase
+        .from("workflow_runs")
+        .update({
+          status: "completed",
+          completed_at: new Date().toISOString(),
+        })
+        .eq("id", data.run_id);
+    }
+  }
+
+  revalidatePath(`/ideas/${data.idea_id}/board`);
+
+  return data;
+}
+
+export async function skipWorkflowStep(stepId: string, reason?: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("task_workflow_steps")
+    .update({
+      status: "skipped" as const,
+      completed_at: new Date().toISOString(),
+      output: reason ?? "Skipped — not applicable to this task",
+    })
+    .eq("id", stepId)
+    .select("*")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  // Check if all steps in the run are now resolved (completed or skipped)
+  if (data.run_id) {
+    const { data: runSteps } = await supabase
+      .from("task_workflow_steps")
+      .select("id, status")
+      .eq("run_id", data.run_id);
+
+    const allResolved =
+      runSteps !== null &&
+      runSteps.length > 0 &&
+      runSteps.every(
+        (s) => s.status === "completed" || s.status === "skipped"
+      );
+
+    if (allResolved) {
       await supabase
         .from("workflow_runs")
         .update({
@@ -308,7 +361,9 @@ export async function approveWorkflowStep(stepId: string, output?: string) {
     const allCompleted =
       runSteps !== null &&
       runSteps.length > 0 &&
-      runSteps.every((s) => s.status === "completed");
+      runSteps.every(
+        (s) => s.status === "completed" || s.status === "skipped"
+      );
 
     if (allCompleted) {
       await supabase
