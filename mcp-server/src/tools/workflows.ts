@@ -1012,7 +1012,6 @@ export async function createWorkflowAutoRule(
       label_id: params.label_id,
       template_id: params.template_id,
       auto_run: params.auto_run,
-      created_by: ctx.ownerUserId ?? ctx.userId,
     })
     .select("*, workflow_templates(id, name), board_labels(id, name, color)")
     .single();
