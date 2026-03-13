@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import {
   Lock,
@@ -161,41 +161,42 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
 
   const supabaseRef = useRef(createClient());
 
-  useEffect(() => {
+  const fetchData = useCallback(async () => {
     const supabase = supabaseRef.current;
+    const [stepsRes, runRes] = await Promise.all([
+      supabase
+        .from("task_workflow_steps")
+        .select("*")
+        .eq("task_id", taskId)
+        .order("step_order", { ascending: true }),
+      supabase
+        .from("workflow_runs")
+        .select("*, workflow_templates(name)")
+        .eq("task_id", taskId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
-    async function fetchData() {
-      const [stepsRes, runRes] = await Promise.all([
-        supabase
-          .from("task_workflow_steps")
-          .select("*")
-          .eq("task_id", taskId)
-          .order("step_order", { ascending: true }),
-        supabase
-          .from("workflow_runs")
-          .select("*, workflow_templates(name)")
-          .eq("task_id", taskId)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ]);
-
-      if (stepsRes.data) setSteps(stepsRes.data);
-      if (runRes.data) {
-        const templateData = runRes.data.workflow_templates as { name: string } | null;
-        setRun({
-          ...runRes.data,
-          template_name: templateData?.name ?? undefined,
-          workflow_templates: undefined,
-        } as WorkflowRun & { template_name?: string });
-      } else {
-        setRun(null);
-      }
-      setLoading(false);
+    if (stepsRes.data) setSteps(stepsRes.data);
+    else setSteps([]);
+    if (runRes.data) {
+      const templateData = runRes.data.workflow_templates as { name: string } | null;
+      setRun({
+        ...runRes.data,
+        template_name: templateData?.name ?? undefined,
+        workflow_templates: undefined,
+      } as WorkflowRun & { template_name?: string });
+    } else {
+      setRun(null);
     }
+    setLoading(false);
+  }, [taskId]);
 
+  useEffect(() => {
     fetchData();
 
+    const supabase = supabaseRef.current;
     const channel = supabase
       .channel(`workflow-steps-${taskId}`)
       .on(
@@ -211,7 +212,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
       .subscribe();
 
     return () => { channel.unsubscribe(); };
-  }, [taskId]);
+  }, [taskId, fetchData]);
 
   // Load templates when user opens apply UI
   useEffect(() => {
@@ -229,6 +230,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
       toast.success("Workflow applied");
       setShowApply(false);
       setSelectedTemplateId("");
+      await fetchData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to apply workflow");
     } finally {
@@ -282,6 +284,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
         await removeWorkflow(run.id);
         toast.success("Workflow removed");
       }
+      await fetchData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Action failed");
     } finally {
