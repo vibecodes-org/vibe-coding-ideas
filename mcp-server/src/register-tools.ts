@@ -180,6 +180,16 @@ import {
   resetWorkflowSchema,
   removeWorkflow,
   removeWorkflowSchema,
+  listWorkflowAutoRules,
+  listWorkflowAutoRulesSchema,
+  createWorkflowAutoRule,
+  createWorkflowAutoRuleSchema,
+  updateWorkflowAutoRule,
+  updateWorkflowAutoRuleSchema,
+  deleteWorkflowAutoRule,
+  deleteWorkflowAutoRuleSchema,
+  applyAutoRuleRetroactively,
+  applyAutoRuleRetroactivelySchema,
 } from "./tools/workflows";
 
 function jsonResult(data: unknown) {
@@ -1228,6 +1238,78 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await removeWorkflow(ctx, removeWorkflowSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  // --- Workflow Auto-Rule Tools ---
+
+  server.tool(
+    "list_workflow_auto_rules",
+    "List auto-rules for an idea. Auto-rules link board labels to workflow templates — when a label is added to a task, a Postgres trigger auto-applies the template.",
+    listWorkflowAutoRulesSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await listWorkflowAutoRules(ctx, listWorkflowAutoRulesSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "create_workflow_auto_rule",
+    "Create an auto-rule linking a label to a workflow template. When the label is added to a task, a Postgres trigger auto-applies the template. Use with manage_labels to create classification labels (feature, bug, etc.) and link them to templates.",
+    createWorkflowAutoRuleSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await createWorkflowAutoRule(ctx, createWorkflowAutoRuleSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "update_workflow_auto_rule",
+    "Update an auto-rule's template or auto_run setting. Only changed fields need to be provided.",
+    updateWorkflowAutoRuleSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await updateWorkflowAutoRule(ctx, updateWorkflowAutoRuleSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "delete_workflow_auto_rule",
+    "Delete an auto-rule. Existing workflows applied by this rule are not affected.",
+    deleteWorkflowAutoRuleSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await deleteWorkflowAutoRule(ctx, deleteWorkflowAutoRuleSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "apply_auto_rule_retroactively",
+    "Apply an auto-rule to tasks that already have the matching label but no active workflow. Useful after creating a new rule to catch existing tasks. Skips tasks with active workflows.",
+    applyAutoRuleRetroactivelySchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await applyAutoRuleRetroactively(ctx, applyAutoRuleRetroactivelySchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

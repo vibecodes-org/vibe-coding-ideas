@@ -74,6 +74,11 @@ const EXPECTED_TOOL_NAMES = [
   "rematch_workflow_agents",
   "reset_workflow",
   "remove_workflow",
+  "list_workflow_auto_rules",
+  "create_workflow_auto_rule",
+  "update_workflow_auto_rule",
+  "delete_workflow_auto_rule",
+  "apply_auto_rule_retroactively",
 ];
 
 function createMockServer() {
@@ -87,7 +92,7 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(71);
+    expect(server.tool).toHaveBeenCalledTimes(76);
   });
 
   it("registers all expected tool names", () => {

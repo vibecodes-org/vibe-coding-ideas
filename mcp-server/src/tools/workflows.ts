@@ -967,3 +967,183 @@ export async function removeWorkflow(
 
   return { success: true, run_id: run.id, message: "Workflow removed — all steps deleted" };
 }
+
+// ============================================================
+// Auto-Rule Tools
+// ============================================================
+
+// --- List Workflow Auto Rules ---
+
+export const listWorkflowAutoRulesSchema = z.object({
+  idea_id: z.string().uuid().describe("The idea ID"),
+});
+
+export async function listWorkflowAutoRules(
+  ctx: McpContext,
+  params: z.infer<typeof listWorkflowAutoRulesSchema>
+) {
+  const { data, error } = await ctx.supabase
+    .from("workflow_auto_rules")
+    .select("*, workflow_templates(id, name), board_labels(id, name, color)")
+    .eq("idea_id", params.idea_id)
+    .order("created_at", { ascending: false });
+
+  if (error) throw new Error(`Failed to list auto rules: ${error.message}`);
+  return data ?? [];
+}
+
+// --- Create Workflow Auto Rule ---
+
+export const createWorkflowAutoRuleSchema = z.object({
+  idea_id: z.string().uuid().describe("The idea ID"),
+  label_id: z.string().uuid().describe("The board label ID that triggers this rule"),
+  template_id: z.string().uuid().describe("The workflow template ID to apply when the label is added"),
+  auto_run: z.boolean().optional().default(false).describe("Whether to auto-start the workflow run after applying (default: false)"),
+});
+
+export async function createWorkflowAutoRule(
+  ctx: McpContext,
+  params: z.infer<typeof createWorkflowAutoRuleSchema>
+) {
+  const { data, error } = await ctx.supabase
+    .from("workflow_auto_rules")
+    .insert({
+      idea_id: params.idea_id,
+      label_id: params.label_id,
+      template_id: params.template_id,
+      auto_run: params.auto_run,
+      created_by: ctx.ownerUserId ?? ctx.userId,
+    })
+    .select("*, workflow_templates(id, name), board_labels(id, name, color)")
+    .single();
+
+  if (error) {
+    if (error.code === "23505") {
+      throw new Error("An auto-rule already exists for this label. Update or delete the existing rule first.");
+    }
+    throw new Error(`Failed to create auto rule: ${error.message}`);
+  }
+  return data;
+}
+
+// --- Update Workflow Auto Rule ---
+
+export const updateWorkflowAutoRuleSchema = z.object({
+  rule_id: z.string().uuid().describe("The auto rule ID"),
+  template_id: z.string().uuid().optional().describe("New workflow template ID"),
+  auto_run: z.boolean().optional().describe("Whether to auto-start the workflow run after applying"),
+});
+
+export async function updateWorkflowAutoRule(
+  ctx: McpContext,
+  params: z.infer<typeof updateWorkflowAutoRuleSchema>
+) {
+  const patch: Record<string, unknown> = {};
+  if (params.template_id !== undefined) patch.template_id = params.template_id;
+  if (params.auto_run !== undefined) patch.auto_run = params.auto_run;
+
+  if (Object.keys(patch).length === 0) {
+    return { success: true, message: "No changes to apply" };
+  }
+
+  const { data, error } = await ctx.supabase
+    .from("workflow_auto_rules")
+    .update(patch)
+    .eq("id", params.rule_id)
+    .select("*, workflow_templates(id, name), board_labels(id, name, color)")
+    .single();
+
+  if (error) throw new Error(`Failed to update auto rule: ${error.message}`);
+  return data;
+}
+
+// --- Delete Workflow Auto Rule ---
+
+export const deleteWorkflowAutoRuleSchema = z.object({
+  rule_id: z.string().uuid().describe("The auto rule ID to delete"),
+});
+
+export async function deleteWorkflowAutoRule(
+  ctx: McpContext,
+  params: z.infer<typeof deleteWorkflowAutoRuleSchema>
+) {
+  const { error } = await ctx.supabase
+    .from("workflow_auto_rules")
+    .delete()
+    .eq("id", params.rule_id);
+
+  if (error) throw new Error(`Failed to delete auto rule: ${error.message}`);
+  return { success: true, rule_id: params.rule_id };
+}
+
+// --- Apply Auto Rule Retroactively ---
+
+export const applyAutoRuleRetroactivelySchema = z.object({
+  rule_id: z.string().uuid().describe("The auto rule ID to apply retroactively to already-labelled tasks"),
+});
+
+export async function applyAutoRuleRetroactively(
+  ctx: McpContext,
+  params: z.infer<typeof applyAutoRuleRetroactivelySchema>
+) {
+  // Fetch the rule with template info
+  const { data: rule, error: ruleError } = await ctx.supabase
+    .from("workflow_auto_rules")
+    .select("id, idea_id, label_id, template_id")
+    .eq("id", params.rule_id)
+    .single();
+
+  if (ruleError || !rule) throw new Error(`Auto rule not found: ${params.rule_id}`);
+
+  // Find all non-archived tasks with the matching label
+  const { data: labelledTasks, error: tasksError } = await ctx.supabase
+    .from("board_task_labels")
+    .select("task_id, board_tasks!inner(id, is_archived)")
+    .eq("label_id", rule.label_id);
+
+  if (tasksError) throw new Error(`Failed to find labelled tasks: ${tasksError.message}`);
+
+  // Filter out archived tasks
+  const taskIds = (labelledTasks ?? [])
+    .filter((t) => {
+      const task = (t as Record<string, unknown>).board_tasks as Record<string, unknown> | null;
+      return task && !task.is_archived;
+    })
+    .map((t) => t.task_id);
+
+  if (taskIds.length === 0) {
+    return { applied: 0, skipped: 0, message: "No tasks found with the matching label" };
+  }
+
+  // Find tasks that already have active workflow runs
+  const { data: activeRuns } = await ctx.supabase
+    .from("workflow_runs")
+    .select("task_id")
+    .in("task_id", taskIds)
+    .not("status", "in", '("completed","failed")');
+
+  const tasksWithActiveRuns = new Set((activeRuns ?? []).map((r) => r.task_id));
+
+  let applied = 0;
+  let skipped = 0;
+
+  for (const taskId of taskIds) {
+    if (tasksWithActiveRuns.has(taskId)) {
+      skipped++;
+      continue;
+    }
+
+    try {
+      await applyWorkflowTemplate(ctx, {
+        task_id: taskId,
+        template_id: rule.template_id,
+      });
+      applied++;
+    } catch {
+      // Task may have gotten a workflow between our check and apply — skip it
+      skipped++;
+    }
+  }
+
+  return { applied, skipped, total: taskIds.length };
+}
