@@ -501,21 +501,6 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                     Skip
                   </Button>
                 )}
-                {!isReadOnly && step.status === "awaiting_approval" && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 gap-1 px-2 text-xs text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleInlineAction(step.id, "approve");
-                    }}
-                    disabled={isActionLoading}
-                  >
-                    {isActionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                    Approve
-                  </Button>
-                )}
                 {!isReadOnly && step.status === "failed" && (
                   <Button
                     size="sm"
