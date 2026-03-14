@@ -408,7 +408,7 @@ export async function resetWorkflow(runId: string) {
     .from("workflow_runs")
     .update({
       status: "pending",
-      current_step: null,
+      current_step: 0,
       completed_at: null,
     })
     .eq("id", runId);
