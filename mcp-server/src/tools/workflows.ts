@@ -398,8 +398,14 @@ export async function claimNextStep(
   const contextParts: string[] = [];
 
   if (context.length > 0) {
+    const stepNames = context.map((c) => `"${c.step_title}"`).join(", ");
     contextParts.push(
-      `CONTEXT: The "context" array contains deliverables from ${context.length} completed prior step(s). Read these carefully before starting your work.`
+      `CONTEXT CHAINING: The "context" array contains deliverables from ${context.length} completed prior step(s): ${stepNames}. ` +
+      `You MUST explicitly reference and build upon these prior deliverables in your output. Specifically:\n` +
+      `- Cite prior steps by name (e.g., "Building on the findings from [Step Name]...")\n` +
+      `- Show how your work extends, refines, or implements what prior steps produced\n` +
+      `- Do NOT repeat prior deliverables wholesale — reference them and add new value\n` +
+      `- If a prior step's output conflicts with your analysis, call out the discrepancy explicitly`
     );
   }
 

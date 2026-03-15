@@ -302,6 +302,35 @@ describe("claimNextStep", () => {
     expect(r.context.map((c) => c.step_title)).toEqual(["First", "Second", "Third"]);
   });
 
+  it("includes prior step titles in context chaining instruction", async () => {
+    const step = makeStepRow({ step_order: 3 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const priorSteps = [
+      { id: "s1", title: "Research & Analysis", step_order: 1, output: "findings" },
+      { id: "s2", title: "Architecture Design", step_order: 2, output: "architecture" },
+    ];
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string };
+    expect(r.instruction).toContain("CONTEXT CHAINING");
+    expect(r.instruction).toContain('"Research & Analysis"');
+    expect(r.instruction).toContain('"Architecture Design"');
+    expect(r.instruction).toContain("Cite prior steps by name");
+  });
+
+  it("omits context chaining instruction when no prior steps", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string };
+    expect(r.instruction).not.toContain("CONTEXT CHAINING");
+  });
+
   it("returns done when no pending steps", async () => {
     const ctx = makeContext(((table: string) => {
       const chain = createChain([]);
