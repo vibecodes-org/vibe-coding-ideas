@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
+import { Markdown } from "@/components/ui/markdown";
 import { toast } from "sonner";
 import {
   Check,
@@ -17,6 +18,7 @@ import {
   Play,
   CheckCircle2,
   X,
+  SkipForward,
 } from "lucide-react";
 import {
   Dialog,
@@ -43,6 +45,7 @@ import {
   failWorkflowStep,
   approveWorkflowStep,
   retryWorkflowStep,
+  skipWorkflowStep,
   addStepComment,
 } from "@/actions/workflow";
 import { getInitials } from "@/lib/utils";
@@ -84,6 +87,13 @@ const STATUS_CONFIG = {
     label: "Awaiting Approval",
     icon: CircleDot,
   },
+  skipped: {
+    bg: "bg-zinc-500/10",
+    border: "border-zinc-500/20",
+    text: "text-zinc-500",
+    label: "Skipped",
+    icon: SkipForward,
+  },
 } as const;
 
 type CommentWithAuthor = WorkflowStepComment & {
@@ -114,7 +124,8 @@ export function StepDetailDialog({
   const [newComment, setNewComment] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
-  const [showRejectOptions, setShowRejectOptions] = useState(false);
+  const [activeAction, setActiveAction] = useState<"complete" | "fail" | "reject" | null>(null);
+  const [actionText, setActionText] = useState("");
   const [resetToStepId, setResetToStepId] = useState<string>("");
   const supabaseRef = useRef(createClient());
   const commentsEndRef = useRef<HTMLDivElement>(null);
@@ -194,7 +205,7 @@ export function StepDetailDialog({
   }
 
   async function handleAction(
-    action: "start" | "complete" | "fail" | "approve" | "reject" | "retry"
+    action: "start" | "complete" | "fail" | "approve" | "reject" | "retry" | "skip"
   ) {
     setActionLoading(true);
     try {
@@ -203,15 +214,23 @@ export function StepDetailDialog({
           await startWorkflowStep(step.id);
           toast.success("Step started");
           break;
+        case "skip":
+          await skipWorkflowStep(step.id);
+          toast.success("Step skipped");
+          break;
         case "complete":
-          await completeWorkflowStep(step.id);
+          await completeWorkflowStep(step.id, actionText.trim() || undefined);
           toast.success(
             step.human_check_required ? "Step submitted for approval" : "Step completed"
           );
+          setActiveAction(null);
+          setActionText("");
           break;
         case "fail":
-          await failWorkflowStep(step.id);
+          await failWorkflowStep(step.id, actionText.trim() || undefined);
           toast.success("Step marked as failed");
+          setActiveAction(null);
+          setActionText("");
           break;
         case "approve":
           await approveWorkflowStep(step.id);
@@ -219,14 +238,16 @@ export function StepDetailDialog({
           break;
         case "reject": {
           const cascadeTarget = resetToStepId && resetToStepId !== "__none" ? resetToStepId : undefined;
-          await addStepComment(step.id, ideaId, "Changes requested", "changes_requested");
+          const rejectMessage = actionText.trim() || "Changes requested";
+          await addStepComment(step.id, ideaId, rejectMessage, "changes_requested");
           await failWorkflowStep(step.id, undefined, cascadeTarget);
           toast.success(
             cascadeTarget
               ? "Step rejected — pipeline reset to earlier step"
               : "Step rejected — changes requested"
           );
-          setShowRejectOptions(false);
+          setActiveAction(null);
+          setActionText("");
           setResetToStepId("");
           break;
         }
@@ -301,12 +322,30 @@ export function StepDetailDialog({
             </div>
           )}
 
+          {/* Expected Deliverables */}
+          {step.expected_deliverables && step.expected_deliverables.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Expected Deliverables</p>
+              <div className="flex flex-wrap gap-1.5">
+                {step.expected_deliverables.map((d, i) => (
+                  <Badge
+                    key={i}
+                    variant="outline"
+                    className="text-[10px] bg-violet-500/10 text-violet-400 border-violet-500/20"
+                  >
+                    {d}
+                  </Badge>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Output */}
           {step.output && (
             <div className="space-y-1">
               <p className="text-xs font-medium text-muted-foreground">Output</p>
-              <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-sm whitespace-pre-wrap">
-                {step.output}
+              <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-sm prose-sm">
+                <Markdown>{step.output}</Markdown>
               </div>
             </div>
           )}
@@ -328,39 +367,115 @@ export function StepDetailDialog({
           {!isReadOnly && (
             <div className="flex flex-wrap gap-2">
               {step.status === "pending" && (
-                <Button
-                  size="sm"
-                  variant="outline"
-                  className="gap-1.5 text-xs"
-                  onClick={() => handleAction("start")}
-                  disabled={actionLoading}
-                >
-                  <Play className="h-3 w-3" />
-                  Start Step
-                </Button>
-              )}
-              {step.status === "in_progress" && (
                 <>
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-1.5 text-xs text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
-                    onClick={() => handleAction("complete")}
+                    className="gap-1.5 text-xs"
+                    onClick={() => handleAction("start")}
                     disabled={actionLoading}
                   >
-                    <CheckCircle2 className="h-3 w-3" />
-                    {step.human_check_required ? "Submit for Approval" : "Complete"}
+                    <Play className="h-3 w-3" />
+                    Start Step
                   </Button>
                   <Button
                     size="sm"
                     variant="outline"
-                    className="gap-1.5 text-xs text-red-400 border-red-500/30 hover:bg-red-500/10"
-                    onClick={() => handleAction("fail")}
+                    className="gap-1.5 text-xs text-zinc-400 border-zinc-500/30 hover:bg-zinc-500/10"
+                    onClick={() => handleAction("skip")}
                     disabled={actionLoading}
                   >
-                    <XCircle className="h-3 w-3" />
-                    Fail
+                    <SkipForward className="h-3 w-3" />
+                    Skip
                   </Button>
+                </>
+              )}
+              {step.status === "in_progress" && (
+                <>
+                  {activeAction === "complete" ? (
+                    <div className="flex flex-col gap-2 w-full">
+                      <Textarea
+                        value={actionText}
+                        onChange={(e) => setActionText(e.target.value)}
+                        placeholder="Output / Deliverable (optional)"
+                        rows={3}
+                        className="text-xs min-h-[60px]"
+                      />
+                      <div className="flex gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 text-xs text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                          onClick={() => handleAction("complete")}
+                          disabled={actionLoading}
+                        >
+                          <CheckCircle2 className="h-3 w-3" />
+                          {step.human_check_required ? "Submit" : "Confirm"}
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-xs"
+                          onClick={() => { setActiveAction(null); setActionText(""); }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : activeAction === "fail" ? (
+                    <div className="flex flex-col gap-2 w-full">
+                      <Textarea
+                        value={actionText}
+                        onChange={(e) => setActionText(e.target.value)}
+                        placeholder="What went wrong? (optional)"
+                        rows={3}
+                        className="text-xs min-h-[60px]"
+                      />
+                      <div className="flex gap-1.5">
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 text-xs text-red-400 border-red-500/30 hover:bg-red-500/10"
+                          onClick={() => handleAction("fail")}
+                          disabled={actionLoading}
+                        >
+                          <XCircle className="h-3 w-3" />
+                          Confirm Failure
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-xs"
+                          onClick={() => { setActiveAction(null); setActionText(""); }}
+                        >
+                          Cancel
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs text-emerald-400 border-emerald-500/30 hover:bg-emerald-500/10"
+                        onClick={() => setActiveAction("complete")}
+                        disabled={actionLoading}
+                      >
+                        <CheckCircle2 className="h-3 w-3" />
+                        {step.human_check_required ? "Submit for Approval" : "Complete"}
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5 text-xs text-red-400 border-red-500/30 hover:bg-red-500/10"
+                        onClick={() => setActiveAction("fail")}
+                        disabled={actionLoading}
+                      >
+                        <XCircle className="h-3 w-3" />
+                        Fail
+                      </Button>
+                    </>
+                  )}
                 </>
               )}
               {step.status === "awaiting_approval" && (
@@ -374,8 +489,15 @@ export function StepDetailDialog({
                     <Check className="h-3 w-3" />
                     Approve
                   </Button>
-                  {showRejectOptions ? (
+                  {activeAction === "reject" ? (
                     <div className="flex flex-col gap-2 w-full">
+                      <Textarea
+                        value={actionText}
+                        onChange={(e) => setActionText(e.target.value)}
+                        placeholder="Explain what needs to change..."
+                        rows={2}
+                        className="text-xs min-h-[50px]"
+                      />
                       {earlierSteps.length > 0 && (
                         <Select value={resetToStepId} onValueChange={setResetToStepId}>
                           <SelectTrigger className="h-7 text-xs">
@@ -397,7 +519,6 @@ export function StepDetailDialog({
                           variant="outline"
                           className="gap-1.5 text-xs text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
                           onClick={() => {
-                            // Clear __none sentinel before sending
                             if (resetToStepId === "__none") setResetToStepId("");
                             handleAction("reject");
                           }}
@@ -410,7 +531,7 @@ export function StepDetailDialog({
                           size="sm"
                           variant="ghost"
                           className="text-xs"
-                          onClick={() => { setShowRejectOptions(false); setResetToStepId(""); }}
+                          onClick={() => { setActiveAction(null); setActionText(""); setResetToStepId(""); }}
                         >
                           Cancel
                         </Button>
@@ -421,7 +542,7 @@ export function StepDetailDialog({
                       size="sm"
                       variant="outline"
                       className="gap-1.5 text-xs text-amber-400 border-amber-500/30 hover:bg-amber-500/10"
-                      onClick={() => setShowRejectOptions(true)}
+                      onClick={() => setActiveAction("reject")}
                       disabled={actionLoading}
                     >
                       <X className="h-3 w-3" />

@@ -8,6 +8,7 @@ import {
   validateWorkflowTemplateSteps,
   validateOptionalDescription,
 } from "@/lib/validation";
+import { buildRoleMatcher } from "@/lib/role-matching";
 
 // ─── Templates ───
 
@@ -171,6 +172,20 @@ export async function applyWorkflowTemplate(
     throw new Error("Task not found");
   }
 
+  // Check for active runs on this task
+  const { data: activeRun } = await supabase
+    .from("workflow_runs")
+    .select("id")
+    .eq("task_id", taskId)
+    .not("status", "in", '("completed","failed")')
+    .maybeSingle();
+
+  if (activeRun) {
+    throw new Error(
+      "This task already has an active workflow. Reset or remove it before applying a new one."
+    );
+  }
+
   // Create a workflow run
   const { data: run, error: runError } = await supabase
     .from("workflow_runs")
@@ -193,19 +208,15 @@ export async function applyWorkflowTemplate(
     .select("bot_id, bot_profiles!inner(id, role)")
     .eq("idea_id", task.idea_id);
 
-  // Build a role -> bot_id map for auto-assignment
-  const roleToBot = new Map<string, string>();
-  if (poolAgents) {
-    for (const agent of poolAgents) {
+  // Build fuzzy role matcher from idea agent pool
+  const candidates = (poolAgents ?? [])
+    .map((agent) => {
       const profile = agent.bot_profiles as unknown as { id: string; role: string | null };
-      if (profile?.role) {
-        const roleLower = profile.role.toLowerCase();
-        if (!roleToBot.has(roleLower)) {
-          roleToBot.set(roleLower, agent.bot_id);
-        }
-      }
-    }
-  }
+      return profile?.role ? { botId: agent.bot_id, role: profile.role } : null;
+    })
+    .filter((c): c is { botId: string; role: string } => c !== null);
+
+  const matchRole = buildRoleMatcher(candidates);
 
   // Create workflow steps from template steps
   const steps = (template.steps as WorkflowTemplateStep[]).map(
@@ -217,10 +228,11 @@ export async function applyWorkflowTemplate(
       description: step.description ?? null,
       agent_role: step.role,
       human_check_required: step.requires_approval ?? false,
+      expected_deliverables: step.deliverables ?? [],
       position: index * 1000,
       step_order: index + 1,
       status: "pending" as const,
-      bot_id: roleToBot.get(step.role.toLowerCase()) ?? null,
+      bot_id: matchRole(step.role).botId,
     })
   );
 
@@ -242,6 +254,86 @@ export async function applyWorkflowTemplate(
   revalidatePath(`/ideas/${task.idea_id}/board`);
 
   return { run, steps: createdSteps };
+}
+
+// ─── Rematch Agents ───
+
+export async function rematchWorkflowAgents(taskId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // Fetch pending steps where bot_id IS NULL and agent_role IS NOT NULL
+  const { data: unmatchedSteps, error: stepsError } = await supabase
+    .from("task_workflow_steps")
+    .select("id, agent_role, idea_id")
+    .eq("task_id", taskId)
+    .eq("status", "pending")
+    .is("bot_id", null)
+    .not("agent_role", "is", null);
+
+  if (stepsError) throw new Error(stepsError.message);
+
+  if (!unmatchedSteps || unmatchedSteps.length === 0) {
+    return { matched: 0, unmatched: 0, matches: {} as Record<string, string> };
+  }
+
+  // Fetch task to get idea_id
+  const { data: task, error: taskError } = await supabase
+    .from("board_tasks")
+    .select("idea_id")
+    .eq("id", taskId)
+    .single();
+
+  if (taskError || !task) throw new Error("Task not found");
+
+  // Fetch idea agent pool
+  const { data: poolAgents } = await supabase
+    .from("idea_agents")
+    .select("bot_id, bot_profiles!inner(id, role)")
+    .eq("idea_id", task.idea_id);
+
+  const candidates = (poolAgents ?? [])
+    .map((agent) => {
+      const profile = agent.bot_profiles as unknown as {
+        id: string;
+        role: string | null;
+      };
+      return profile?.role
+        ? { botId: agent.bot_id, role: profile.role }
+        : null;
+    })
+    .filter((c): c is { botId: string; role: string } => c !== null);
+
+  const matchRole = buildRoleMatcher(candidates);
+
+  let matched = 0;
+  let unmatched = 0;
+  const matches: Record<string, string> = {};
+
+  for (const step of unmatchedSteps) {
+    const role = step.agent_role!;
+    const result = matchRole(role);
+
+    if (result.botId) {
+      await supabase
+        .from("task_workflow_steps")
+        .update({ bot_id: result.botId })
+        .eq("id", step.id);
+
+      matches[role] = result.botId;
+      matched++;
+    } else {
+      unmatched++;
+    }
+  }
+
+  revalidatePath(`/ideas/${task.idea_id}/board`);
+
+  return { matched, unmatched, matches };
 }
 
 // ─── Auto-Rules ───
@@ -331,7 +423,10 @@ export async function updateWorkflowAutoRule(
   return data;
 }
 
-export async function deleteWorkflowAutoRule(ruleId: string) {
+export async function deleteWorkflowAutoRule(
+  ruleId: string,
+  options?: { removeRelatedWorkflows?: boolean }
+) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -339,12 +434,32 @@ export async function deleteWorkflowAutoRule(ruleId: string) {
 
   if (!user) throw new Error("Not authenticated");
 
-  // Fetch idea_id for revalidation before deleting
+  // Fetch rule details for revalidation and optional workflow cleanup
   const { data: rule } = await supabase
     .from("workflow_auto_rules")
-    .select("idea_id")
+    .select("idea_id, label_id, template_id")
     .eq("id", ruleId)
     .single();
+
+  // Remove related workflow runs if requested
+  if (options?.removeRelatedWorkflows && rule) {
+    // Find all tasks that have this label
+    const { data: labeledTasks } = await supabase
+      .from("board_task_labels")
+      .select("task_id")
+      .eq("label_id", rule.label_id);
+
+    if (labeledTasks && labeledTasks.length > 0) {
+      const taskIds = labeledTasks.map((t) => t.task_id);
+      // Delete workflow runs for these tasks that match the rule's template
+      // Steps and step comments cascade-delete automatically via FK ON DELETE CASCADE
+      await supabase
+        .from("workflow_runs")
+        .delete()
+        .in("task_id", taskIds)
+        .eq("template_id", rule.template_id);
+    }
+  }
 
   const { error } = await supabase
     .from("workflow_auto_rules")

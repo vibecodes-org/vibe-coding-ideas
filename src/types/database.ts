@@ -5,6 +5,7 @@ export interface WorkflowTemplateStep {
   description?: string;
   role: string;
   requires_approval?: boolean;
+  deliverables?: string[];
 }
 
 export type Database = {
@@ -665,7 +666,7 @@ export type Database = {
           task_id?: string;
           template_id?: string | null;
           status?: "pending" | "running" | "paused" | "completed" | "failed";
-          current_step?: number;
+          current_step?: number | null;
           started_by?: string | null;
           started_at?: string | null;
           completed_at?: string | null;
@@ -702,9 +703,10 @@ export type Database = {
           idea_id: string;
           run_id: string | null;
           bot_id: string | null;
+          claimed_by: string | null;
           title: string;
           description: string | null;
-          status: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval";
+          status: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval" | "skipped";
           position: number;
           step_order: number | null;
           agent_role: string | null;
@@ -714,6 +716,7 @@ export type Database = {
           started_at: string | null;
           completed_at: string | null;
           created_at: string;
+          expected_deliverables: string[];
           updated_at: string;
         };
         Insert: {
@@ -722,14 +725,16 @@ export type Database = {
           idea_id: string;
           run_id?: string | null;
           bot_id?: string | null;
+          claimed_by?: string | null;
           title: string;
           description?: string | null;
-          status?: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval";
+          status?: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval" | "skipped";
           position?: number;
           step_order?: number | null;
           agent_role?: string | null;
           output?: string | null;
           human_check_required?: boolean;
+          expected_deliverables?: string[];
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
@@ -742,14 +747,16 @@ export type Database = {
           idea_id?: string;
           run_id?: string | null;
           bot_id?: string | null;
+          claimed_by?: string | null;
           title?: string;
           description?: string | null;
-          status?: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval";
+          status?: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval" | "skipped";
           position?: number;
           step_order?: number | null;
           agent_role?: string | null;
           output?: string | null;
           human_check_required?: boolean;
+          expected_deliverables?: string[];
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
@@ -781,6 +788,13 @@ export type Database = {
           {
             foreignKeyName: "task_workflow_steps_bot_id_fkey";
             columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_workflow_steps_claimed_by_fkey";
+            columns: ["claimed_by"];
             isOneToOne: false;
             referencedRelation: "users";
             referencedColumns: ["id"];

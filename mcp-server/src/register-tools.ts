@@ -84,6 +84,8 @@ import {
   getDiscussionSchema,
   addDiscussionReply,
   addDiscussionReplySchema,
+  updateDiscussionReply,
+  updateDiscussionReplySchema,
   createDiscussion,
   createDiscussionSchema,
   updateDiscussion,
@@ -162,6 +164,8 @@ import {
   completeStepSchema,
   failStep,
   failStepSchema,
+  skipStep,
+  skipStepSchema,
   approveStep,
   approveStepSchema,
   getStepContext,
@@ -170,6 +174,22 @@ import {
   addStepCommentSchema,
   getStepComments,
   getStepCommentsSchema,
+  rematchWorkflowAgents,
+  rematchWorkflowAgentsSchema,
+  resetWorkflow,
+  resetWorkflowSchema,
+  removeWorkflow,
+  removeWorkflowSchema,
+  listWorkflowAutoRules,
+  listWorkflowAutoRulesSchema,
+  createWorkflowAutoRule,
+  createWorkflowAutoRuleSchema,
+  updateWorkflowAutoRule,
+  updateWorkflowAutoRuleSchema,
+  deleteWorkflowAutoRule,
+  deleteWorkflowAutoRuleSchema,
+  applyAutoRuleRetroactively,
+  applyAutoRuleRetroactivelySchema,
 } from "./tools/workflows";
 
 function jsonResult(data: unknown) {
@@ -237,7 +257,7 @@ export function registerTools(
 
   server.tool(
     "get_task",
-    "Get single task detail including workflow steps, comments, and recent activity.",
+    "Get single task detail including workflow steps, comments, and recent activity. If the task has a workflow with pending steps, follow the workflow_instruction in the response — use claim_next_step to execute steps sequentially rather than implementing directly.",
     getTaskSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -625,6 +645,20 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await addDiscussionReply(ctx, addDiscussionReplySchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "update_discussion_reply",
+    "Update the content of a discussion reply. Can only edit your own replies.",
+    updateDiscussionReplySchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await updateDiscussionReply(ctx, updateDiscussionReplySchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }
@@ -1058,7 +1092,7 @@ export function registerTools(
 
   server.tool(
     "claim_next_step",
-    "Claim the next pending workflow step on a task. Returns the step with its agent_role (assume that persona) and description. Returns { done: true } when all steps are complete.",
+    "Claim the next pending workflow step on a task. Returns the step with bot_id (pre-matched agent), available_agents, and a `context` array of prior completed steps' outputs (step_title + output). If bot_id is set, call set_agent_identity with that bot_id before executing the step. If bot_id is null, use agent_role + available_agents to find the best match and call set_agent_identity. Returns { done: true } when all steps are complete.",
     claimNextStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1072,7 +1106,7 @@ export function registerTools(
 
   server.tool(
     "complete_step",
-    "Mark a workflow step as completed with optional output. If the step requires human approval, it moves to awaiting_approval instead. Checks if the entire run is now complete.",
+    "Mark a workflow step as completed with optional output/deliverable. The output is stored on the step's `output` column (primary source for context chaining to subsequent steps) and also as a step comment for UI display. If the step requires human approval, it moves to awaiting_approval instead.",
     completeStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1099,8 +1133,22 @@ export function registerTools(
   );
 
   server.tool(
+    "skip_step",
+    "Skip a workflow step that is not applicable to this task. Only pending steps can be skipped. Skipped steps count toward progress and allow the workflow to complete.",
+    skipStepSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await skipStep(ctx, skipStepSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
     "approve_step",
-    "Approve a workflow step that is awaiting human approval. Moves it to completed. Optionally adds an approval comment.",
+    "Approve a workflow step that is awaiting human approval. HUMAN-ONLY: This tool must only be called when a human user has explicitly instructed you to approve — never self-approve. Bot calls will be rejected. Moves the step to completed. The step's existing output (set by the agent) is preserved through approval. Optionally adds an approval comment.",
     approveStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1148,6 +1196,120 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await getStepComments(ctx, getStepCommentsSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "rematch_workflow_agents",
+    "Re-run agent matching on unmatched pending workflow steps. Useful after adding new agents to the idea's agent pool. Updates bot_id on steps where a match is found.",
+    rematchWorkflowAgentsSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await rematchWorkflowAgents(ctx, rematchWorkflowAgentsSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "reset_workflow",
+    "Reset an active workflow on a task — all steps go back to pending, run resets to pending. Use when a workflow needs to start over from scratch.",
+    resetWorkflowSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await resetWorkflow(ctx, resetWorkflowSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "remove_workflow",
+    "Remove an active workflow from a task entirely. Deletes the run and all its steps. Use when the wrong template was applied.",
+    removeWorkflowSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await removeWorkflow(ctx, removeWorkflowSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  // --- Workflow Auto-Rule Tools ---
+
+  server.tool(
+    "list_workflow_auto_rules",
+    "List auto-rules for an idea. Auto-rules link board labels to workflow templates — when a label is added to a task, a Postgres trigger auto-applies the template.",
+    listWorkflowAutoRulesSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await listWorkflowAutoRules(ctx, listWorkflowAutoRulesSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "create_workflow_auto_rule",
+    "Create an auto-rule linking a label to a workflow template. When the label is added to a task, a Postgres trigger auto-applies the template. Use with manage_labels to create classification labels (feature, bug, etc.) and link them to templates.",
+    createWorkflowAutoRuleSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await createWorkflowAutoRule(ctx, createWorkflowAutoRuleSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "update_workflow_auto_rule",
+    "Update an auto-rule's template or auto_run setting. Only changed fields need to be provided.",
+    updateWorkflowAutoRuleSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await updateWorkflowAutoRule(ctx, updateWorkflowAutoRuleSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "delete_workflow_auto_rule",
+    "Delete an auto-rule. Existing workflows applied by this rule are not affected.",
+    deleteWorkflowAutoRuleSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await deleteWorkflowAutoRule(ctx, deleteWorkflowAutoRuleSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "apply_auto_rule_retroactively",
+    "Apply an auto-rule to tasks that already have the matching label but no active workflow. Useful after creating a new rule to catch existing tasks. Skips tasks with active workflows.",
+    applyAutoRuleRetroactivelySchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await applyAutoRuleRetroactively(ctx, applyAutoRuleRetroactivelySchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

@@ -9,6 +9,7 @@ interface BoardPageTabsProps {
   ideaId: string;
   boardLabels: BoardLabel[];
   isReadOnly: boolean;
+  isAdmin?: boolean;
   /** The kanban board content rendered as children */
   children: React.ReactNode;
 }
@@ -17,9 +18,15 @@ export function BoardPageTabs({
   ideaId,
   boardLabels,
   isReadOnly,
+  isAdmin,
   children,
 }: BoardPageTabsProps) {
   const [activeTab, setActiveTab] = useState("board");
+  const showWorkflows = !!isAdmin;
+
+  if (!showWorkflows) {
+    return <div className="flex min-h-0 flex-1 flex-col">{children}</div>;
+  }
 
   return (
     <Tabs

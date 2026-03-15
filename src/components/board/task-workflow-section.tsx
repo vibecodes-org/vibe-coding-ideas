@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { toast } from "sonner";
 import {
   Lock,
@@ -15,6 +15,9 @@ import {
   AlertTriangle,
   Workflow,
   X,
+  SkipForward,
+  MoreHorizontal,
+  Trash2,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -26,12 +29,31 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { createClient } from "@/lib/supabase/client";
 import {
   approveWorkflowStep,
   retryWorkflowStep,
   startWorkflowStep,
   failWorkflowStep,
+  skipWorkflowStep,
+  resetWorkflow,
+  removeWorkflow,
 } from "@/actions/workflow";
 import { applyWorkflowTemplate, listWorkflowTemplates } from "@/actions/workflow-templates";
 import { StepDetailDialog } from "./step-detail-dialog";
@@ -94,6 +116,14 @@ const STATUS_CONFIG = {
     label: "Awaiting Approval",
     icon: CircleDot,
   },
+  skipped: {
+    numBg: "bg-zinc-500/20",
+    numText: "text-zinc-500",
+    border: "border-zinc-500/30",
+    badgeCls: "bg-zinc-500/15 text-zinc-500 border-zinc-500/25",
+    label: "Skipped",
+    icon: SkipForward,
+  },
 } as const;
 
 const RUN_STATUS_BADGE: Record<WorkflowRun["status"], { cls: string; label: string }> = {
@@ -125,43 +155,48 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
   // Inline action loading state
   const [actionStepId, setActionStepId] = useState<string | null>(null);
 
+  // Workflow reset/remove confirmation
+  const [confirmAction, setConfirmAction] = useState<"reset" | "remove" | null>(null);
+  const [workflowActionLoading, setWorkflowActionLoading] = useState(false);
+
   const supabaseRef = useRef(createClient());
 
-  useEffect(() => {
+  const fetchData = useCallback(async () => {
     const supabase = supabaseRef.current;
+    const [stepsRes, runRes] = await Promise.all([
+      supabase
+        .from("task_workflow_steps")
+        .select("*")
+        .eq("task_id", taskId)
+        .order("step_order", { ascending: true }),
+      supabase
+        .from("workflow_runs")
+        .select("*, workflow_templates(name)")
+        .eq("task_id", taskId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+    ]);
 
-    async function fetchData() {
-      const [stepsRes, runRes] = await Promise.all([
-        supabase
-          .from("task_workflow_steps")
-          .select("*")
-          .eq("task_id", taskId)
-          .order("step_order", { ascending: true }),
-        supabase
-          .from("workflow_runs")
-          .select("*, workflow_templates(name)")
-          .eq("task_id", taskId)
-          .order("created_at", { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ]);
-
-      if (stepsRes.data) setSteps(stepsRes.data);
-      if (runRes.data) {
-        const templateData = runRes.data.workflow_templates as { name: string } | null;
-        setRun({
-          ...runRes.data,
-          template_name: templateData?.name ?? undefined,
-          workflow_templates: undefined,
-        } as WorkflowRun & { template_name?: string });
-      } else {
-        setRun(null);
-      }
-      setLoading(false);
+    if (stepsRes.data) setSteps(stepsRes.data);
+    else setSteps([]);
+    if (runRes.data) {
+      const templateData = runRes.data.workflow_templates as { name: string } | null;
+      setRun({
+        ...runRes.data,
+        template_name: templateData?.name ?? undefined,
+        workflow_templates: undefined,
+      } as WorkflowRun & { template_name?: string });
+    } else {
+      setRun(null);
     }
+    setLoading(false);
+  }, [taskId]);
 
+  useEffect(() => {
     fetchData();
 
+    const supabase = supabaseRef.current;
     const channel = supabase
       .channel(`workflow-steps-${taskId}`)
       .on(
@@ -177,7 +212,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
       .subscribe();
 
     return () => { channel.unsubscribe(); };
-  }, [taskId]);
+  }, [taskId, fetchData]);
 
   // Load templates when user opens apply UI
   useEffect(() => {
@@ -195,6 +230,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
       toast.success("Workflow applied");
       setShowApply(false);
       setSelectedTemplateId("");
+      await fetchData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to apply workflow");
     } finally {
@@ -204,7 +240,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
 
   async function handleInlineAction(
     stepId: string,
-    action: "approve" | "retry" | "start" | "fail"
+    action: "approve" | "retry" | "start" | "fail" | "skip"
   ) {
     setActionStepId(stepId);
     try {
@@ -225,11 +261,36 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
           await failWorkflowStep(stepId);
           toast.success("Step marked as failed");
           break;
+        case "skip":
+          await skipWorkflowStep(stepId);
+          toast.success("Step skipped");
+          break;
       }
+      await fetchData();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Action failed");
     } finally {
       setActionStepId(null);
+    }
+  }
+
+  async function handleWorkflowAction(action: "reset" | "remove") {
+    if (!run) return;
+    setWorkflowActionLoading(true);
+    try {
+      if (action === "reset") {
+        await resetWorkflow(run.id);
+        toast.success("Workflow reset — all steps are now pending");
+      } else {
+        await removeWorkflow(run.id);
+        toast.success("Workflow removed");
+      }
+      await fetchData();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Action failed");
+    } finally {
+      setWorkflowActionLoading(false);
+      setConfirmAction(null);
     }
   }
 
@@ -322,7 +383,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
     );
   }
 
-  const completedCount = steps!.filter((s) => s.status === "completed").length;
+  const completedCount = steps!.filter((s) => s.status === "completed" || s.status === "skipped").length;
   const totalCount = steps!.length;
 
   return (
@@ -341,9 +402,33 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
               </Badge>
             )}
           </div>
-          <span className="text-xs text-muted-foreground">
-            {completedCount} of {totalCount} steps completed
-          </span>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">
+              {completedCount} of {totalCount} steps completed
+            </span>
+            {!isReadOnly && run && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-6 w-6">
+                    <MoreHorizontal className="h-3.5 w-3.5" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setConfirmAction("reset")}>
+                    <RotateCcw className="mr-2 h-3.5 w-3.5" />
+                    Reset Workflow
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    className="text-destructive"
+                    onClick={() => setConfirmAction("remove")}
+                  >
+                    <Trash2 className="mr-2 h-3.5 w-3.5" />
+                    Remove Workflow
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
+          </div>
         </div>
 
         {/* Template name */}
@@ -390,6 +475,8 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                 >
                   {step.status === "completed" ? (
                     <Check className="h-3.5 w-3.5" />
+                  ) : step.status === "skipped" ? (
+                    <SkipForward className="h-3.5 w-3.5" />
                   ) : (
                     idx + 1
                   )}
@@ -399,19 +486,19 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                 </span>
 
                 {/* Inline action buttons — shown on hover for key statuses */}
-                {!isReadOnly && step.status === "awaiting_approval" && (
+                {!isReadOnly && step.status === "pending" && (
                   <Button
                     size="sm"
                     variant="ghost"
-                    className="h-6 gap-1 px-2 text-xs text-emerald-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="h-6 gap-1 px-2 text-xs text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleInlineAction(step.id, "approve");
+                      handleInlineAction(step.id, "skip");
                     }}
                     disabled={isActionLoading}
                   >
-                    {isActionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-                    Approve
+                    {isActionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <SkipForward className="h-3 w-3" />}
+                    Skip
                   </Button>
                 )}
                 {!isReadOnly && step.status === "failed" && (
@@ -477,6 +564,50 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
           isReadOnly={isReadOnly}
         />
       )}
+
+      {/* Reset/Remove Confirmation Dialogs */}
+      <AlertDialog open={confirmAction === "reset"} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset Workflow?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will reset all steps back to pending and clear any outputs. The workflow template stays applied.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={workflowActionLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleWorkflowAction("reset")}
+              disabled={workflowActionLoading}
+            >
+              {workflowActionLoading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+              Reset
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog open={confirmAction === "remove"} onOpenChange={(open) => { if (!open) setConfirmAction(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove Workflow?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will permanently remove the workflow and all its steps from this task. You can apply a new template afterwards.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={workflowActionLoading}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleWorkflowAction("remove")}
+              disabled={workflowActionLoading}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {workflowActionLoading ? <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" /> : null}
+              Remove
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </>
   );
 }

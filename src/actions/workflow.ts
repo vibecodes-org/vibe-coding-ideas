@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { checkAndCompleteRun } from "@/lib/workflow-helpers";
 
 // ─── Workflow Steps ───
 
@@ -130,10 +131,12 @@ export async function startWorkflowStep(stepId: string) {
       started_at: new Date().toISOString(),
     })
     .eq("id", stepId)
+    .eq("status", "pending")
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Step is no longer pending — it may have been started by another agent");
 
   // Update the workflow run's status to 'running' and current_step if this step belongs to a run
   if (data.run_id) {
@@ -179,32 +182,49 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
       output: output ?? null,
     })
     .eq("id", stepId)
+    .eq("status", "in_progress")
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Step is no longer in progress — it may have been modified by another agent");
 
   // If step belongs to a run, check if all steps in that run are completed
+  if (data.run_id && newStatus === "completed") {
+    await checkAndCompleteRun(supabase, data.run_id);
+  }
+
+  revalidatePath(`/ideas/${data.idea_id}/board`);
+
+  return data;
+}
+
+export async function skipWorkflowStep(stepId: string, reason?: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("task_workflow_steps")
+    .update({
+      status: "skipped" as const,
+      completed_at: new Date().toISOString(),
+      output: reason ?? "Skipped — not applicable to this task",
+    })
+    .eq("id", stepId)
+    .eq("status", "pending")
+    .select("*")
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) throw new Error("Step is no longer pending — it may have been claimed by another agent");
+
+  // Check if all steps in the run are now resolved
   if (data.run_id) {
-    const { data: runSteps } = await supabase
-      .from("task_workflow_steps")
-      .select("id, status")
-      .eq("run_id", data.run_id);
-
-    const allCompleted =
-      runSteps !== null &&
-      runSteps.length > 0 &&
-      runSteps.every((s) => s.status === "completed");
-
-    if (allCompleted) {
-      await supabase
-        .from("workflow_runs")
-        .update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", data.run_id);
-    }
+    await checkAndCompleteRun(supabase, data.run_id);
   }
 
   revalidatePath(`/ideas/${data.idea_id}/board`);
@@ -232,10 +252,12 @@ export async function failWorkflowStep(
       output: output ?? null,
     })
     .eq("id", stepId)
+    .in("status", ["in_progress", "awaiting_approval"])
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Step is not in a state that can be failed (must be in_progress or awaiting_approval)");
 
   // Cascade rejection: reset all steps from resetToStepId up to (but not including) the failed step
   if (resetToStepId && data.run_id) {
@@ -284,41 +306,28 @@ export async function approveWorkflowStep(stepId: string, output?: string) {
 
   if (!user) throw new Error("Not authenticated");
 
+  const updateFields: Record<string, unknown> = {
+    status: "completed",
+    completed_at: new Date().toISOString(),
+  };
+  // Only overwrite output if the approver explicitly provides one;
+  // otherwise preserve the agent's original deliverable.
+  if (output !== undefined) updateFields.output = output;
+
   const { data, error } = await supabase
     .from("task_workflow_steps")
-    .update({
-      status: "completed",
-      completed_at: new Date().toISOString(),
-      output: output ?? null,
-    })
+    .update(updateFields)
     .eq("id", stepId)
     .eq("status", "awaiting_approval")
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Step is no longer awaiting approval — it may have been modified concurrently");
 
   // If step belongs to a run, check if all steps are now completed
   if (data.run_id) {
-    const { data: runSteps } = await supabase
-      .from("task_workflow_steps")
-      .select("id, status")
-      .eq("run_id", data.run_id);
-
-    const allCompleted =
-      runSteps !== null &&
-      runSteps.length > 0 &&
-      runSteps.every((s) => s.status === "completed");
-
-    if (allCompleted) {
-      await supabase
-        .from("workflow_runs")
-        .update({
-          status: "completed",
-          completed_at: new Date().toISOString(),
-        })
-        .eq("id", data.run_id);
-    }
+    await checkAndCompleteRun(supabase, data.run_id);
   }
 
   revalidatePath(`/ideas/${data.idea_id}/board`);
@@ -361,6 +370,86 @@ export async function retryWorkflowStep(stepId: string) {
   revalidatePath(`/ideas/${data.idea_id}/board`);
 
   return data;
+}
+
+// ─── Workflow Reset & Remove ───
+
+export async function resetWorkflow(runId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // Fetch run + task for idea_id (for revalidation)
+  const { data: run, error: runError } = await supabase
+    .from("workflow_runs")
+    .select("id, task_id, board_tasks!inner(idea_id)")
+    .eq("id", runId)
+    .single();
+
+  if (runError || !run) throw new Error("Workflow run not found");
+
+  const ideaId = (run.board_tasks as unknown as { idea_id: string }).idea_id;
+
+  // Reset all steps
+  const { error: stepsError } = await supabase
+    .from("task_workflow_steps")
+    .update({
+      status: "pending",
+      output: null,
+      started_at: null,
+      completed_at: null,
+      claimed_by: null,
+    })
+    .eq("run_id", runId);
+
+  if (stepsError) throw new Error(stepsError.message);
+
+  // Reset run
+  const { error: resetError } = await supabase
+    .from("workflow_runs")
+    .update({
+      status: "pending",
+      current_step: 0,
+      completed_at: null,
+    })
+    .eq("id", runId);
+
+  if (resetError) throw new Error(resetError.message);
+
+  revalidatePath(`/ideas/${ideaId}/board`);
+}
+
+export async function removeWorkflow(runId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // Fetch run + task for idea_id (for revalidation)
+  const { data: run, error: runError } = await supabase
+    .from("workflow_runs")
+    .select("id, task_id, board_tasks!inner(idea_id)")
+    .eq("id", runId)
+    .single();
+
+  if (runError || !run) throw new Error("Workflow run not found");
+
+  const ideaId = (run.board_tasks as unknown as { idea_id: string }).idea_id;
+
+  // Delete run — steps cascade via FK ON DELETE CASCADE
+  const { error } = await supabase
+    .from("workflow_runs")
+    .delete()
+    .eq("id", runId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/ideas/${ideaId}/board`);
 }
 
 // ─── Step Comments ───

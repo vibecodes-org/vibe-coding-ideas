@@ -142,7 +142,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     isTeamMember
       ? supabase
           .from("users")
-          .select("encrypted_anthropic_key, ai_starter_credits")
+          .select("encrypted_anthropic_key, ai_starter_credits, is_admin")
           .eq("id", user.id)
           .single()
       : Promise.resolve({ data: null }),
@@ -184,6 +184,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
   const userHasByokKey = !isReadOnly && !!userProfile?.encrypted_anthropic_key;
   const starterCredits = userProfile?.ai_starter_credits ?? 0;
   const userCanUseAi = !isReadOnly && (userHasByokKey || starterCredits > 0);
+  const userIsAdmin = !!userProfile?.is_admin;
 
   // Batch-create signed URLs for cover images (single API call instead of N)
   const coverPaths = (rawTasks ?? []).map((t) => t.cover_image_path).filter((p): p is string => !!p);
@@ -238,6 +239,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
         ideaId={id}
         boardLabels={(boardLabels ?? []) as BoardLabel[]}
         isReadOnly={isReadOnly}
+        isAdmin={userIsAdmin}
       >
         <KanbanBoard
           columns={columns}
@@ -255,6 +257,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           userBotProfiles={(userBotProfiles ?? []) as import("@/types").BotProfile[]}
           coverImageUrls={coverImageUrls}
           isReadOnly={isReadOnly}
+          isAdmin={userIsAdmin}
         />
       </BoardPageTabs>
     </div>

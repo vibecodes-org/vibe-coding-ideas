@@ -63,9 +63,14 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - **Templates**: `workflow_templates` table (idea-scoped) — reusable step sequences with role, description, approval gates
 - **Auto-Rules**: `workflow_auto_rules` table — maps labels to templates; Postgres trigger on `board_task_labels` INSERT auto-applies template when a task gets a matching label
 - **Workflow Runs**: `workflow_runs` tracks each application of a template to a task (pending → running → paused → completed → failed)
-- **Task Workflow Steps**: `task_workflow_steps` replaces old checklists — steps have status lifecycle (pending → in_progress → completed/failed/awaiting_approval), agent_role, bot_id, output, human_check_required
+- **Task Workflow Steps**: `task_workflow_steps` replaces old checklists — steps have status lifecycle (pending → in_progress → completed/failed/awaiting_approval/skipped), agent_role, bot_id, output, human_check_required
+- **Skip steps**: Pending steps can be skipped when not applicable to a task. Skipped steps count toward progress and allow workflow runs to complete. UI shows skip button on pending steps (inline + detail dialog). MCP tool: `skip_step`
+- **Reset/Remove**: `resetWorkflow(runId)` resets all steps to pending + clears outputs; `removeWorkflow(runId)` deletes run + cascades steps. MCP tools: `reset_workflow(task_id)`, `remove_workflow(task_id)`. UI dropdown in workflow header (MoreHorizontal icon) with AlertDialog confirmations
+- **Concurrency Guards**: All step mutations use `.eq("status", expected)` + `.maybeSingle()` pattern — prevents concurrent claims, double-completions, etc. Shared `checkAndCompleteRun()` helper in `src/lib/workflow-helpers.ts` for consistent run completion logic
+- **Duplicate Run Prevention**: Partial unique index `idx_unique_active_workflow_run` on `workflow_runs(task_id) WHERE status NOT IN ('completed','failed')` + app-level checks in `applyWorkflowTemplate`
 - **Step Comments**: `workflow_step_comments` for inter-agent communication (types: comment, output, failure, approval, changes_requested)
 - **Claude Code as Orchestrator**: No designated orchestrator agent — Claude Code reads steps via `claim_next_step`, assumes agent personas per step's `agent_role`, executes, calls `complete_step`, loops
+- **Claim tracking**: `claimed_by` column on `task_workflow_steps` tracks who actually claimed/executed the step; `bot_id` preserves the pre-matched agent from template application. `claim_next_step` sets `claimed_by` (not `bot_id`), returns `bot_id` + `available_agents` for client-side identity switching via `set_agent_identity`
 - **Role-based Auto-Matching**: When applying a template, agents from the idea's pool are auto-matched to steps by role (case-insensitive)
 - **Template Library**: `workflow_library_templates` DB table (admin-managed) — seeded with 7 built-in templates; admin CRUD via `/admin?tab=templates` (`AdminTemplatesDashboard` + `TemplateEditorDialog`); `ImportTemplateLibraryDialog` fetches active templates from DB; RLS: all authenticated SELECT, admin-only write
 - **Board UI**: `BoardPageTabs` wraps board in tabs (Board / Workflows); `WorkflowsTab` for template CRUD + auto-rules + library import + onboarding guidance; `CreateTemplateDialog` for new templates; `TaskWorkflowSection` in task detail dialog shows live workflow steps with status badges, progress bar, realtime updates, inline approve/retry buttons, and "Apply Workflow" CTA when no workflow exists; `StepDetailDialog` shows step description, output, comments, timestamps, and action buttons (start/complete/approve/reject/retry); `getRoleBadgeClasses` shared between components
@@ -74,7 +79,7 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - **Rework instructions**: MCP `claim_next_step` returns `rework_instructions` (previous failure output + `changes_requested` comments) when claiming a step that was previously failed, giving agents context for retry
 - **Agent match feedback**: `TaskWorkflowSection` shows a warning banner when pending steps have roles with no matching agent in the idea's pool
 - Server actions in `src/actions/workflow.ts` (step lifecycle) and `src/actions/workflow-templates.ts` (template CRUD + auto-rules)
-- MCP tools: 12 tools in `mcp-server/src/tools/workflows.ts` — template CRUD, apply, claim_next_step, complete_step, fail_step, approve_step, get_step_context, add_step_comment, get_step_comments
+- MCP tools: 21 tools in `mcp-server/src/tools/workflows.ts` — template CRUD, apply, claim_next_step, complete_step, fail_step, skip_step, approve_step, get_step_context, add_step_comment, get_step_comments, rematch_workflow_agents, reset_workflow, remove_workflow, list_workflow_auto_rules, create_workflow_auto_rule, update_workflow_auto_rule, delete_workflow_auto_rule, apply_auto_rule_retroactively
 
 ### Idea Agent Pool
 - `idea_agents` junction table: `(idea_id, bot_id, added_by)` with `UNIQUE(idea_id, bot_id)`
@@ -183,7 +188,7 @@ Key columns:
 21 files, 117 exported functions:
 - `ideas.ts` — create, update, updateStatus, updateIdeaFields (partial inline edit), delete
 - `board.ts` — columns (init, CRUD, reorder), tasks (CRUD, move, archive), labels (CRUD, assign), task comments (create, update, delete)
-- `workflow.ts` — createWorkflowStep, updateWorkflowStep, deleteWorkflowStep, startWorkflowStep, completeWorkflowStep, failWorkflowStep, approveWorkflowStep, retryWorkflowStep, addStepComment, deleteStepComment
+- `workflow.ts` — createWorkflowStep, updateWorkflowStep, deleteWorkflowStep, startWorkflowStep, completeWorkflowStep, skipWorkflowStep, failWorkflowStep, approveWorkflowStep, retryWorkflowStep, resetWorkflow, removeWorkflow, addStepComment, deleteStepComment
 - `workflow-templates.ts` — listWorkflowTemplates, createWorkflowTemplate, updateWorkflowTemplate, deleteWorkflowTemplate, applyWorkflowTemplate, listWorkflowAutoRules, createWorkflowAutoRule, updateWorkflowAutoRule, deleteWorkflowAutoRule
 - `collaborators.ts` — requestCollaboration, withdrawRequest, respondToRequest, leaveCollaboration, addCollaborator, removeCollaborator
 - `ai.ts` — enhanceIdeaDescription, generateClarifyingQuestions, enhanceIdeaWithContext, applyEnhancedDescription, generateBoardTasks, enhanceTaskDescription, enhanceDiscussionBody, getAiAccess, hasApiKey (deprecated)
@@ -274,7 +279,7 @@ Auto-inject `idea_id` into MCP tool calls from `.vibecodes/config.json`.
 
 ## Testing Convention
 
-Write tests for all new pure logic, validators, parsers, utilities. Tests co-located as `*.test.ts`. Component changes verified via build + manual testing. Currently 23 unit test files (18 in `src/` + 5 in `mcp-server/src/`) and 43 E2E spec files across 21 directories.
+Write tests for all new pure logic, validators, parsers, utilities. Tests co-located as `*.test.ts`. Component changes verified via build + manual testing. Currently 24 unit test files (19 in `src/` + 5 in `mcp-server/src/`) and 43 E2E spec files across 21 directories.
 
 ### E2E Test Conventions
 - Shared constants in `e2e/fixtures/constants.ts`: `EXPECT_TIMEOUT` (15s)

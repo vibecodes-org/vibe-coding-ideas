@@ -21,6 +21,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Select,
   SelectContent,
@@ -176,6 +177,21 @@ function StepEditor({ steps, onChange }: StepEditorProps) {
                 </span>
               </div>
             </div>
+            <div className="pl-7">
+              <Input
+                value={(step.deliverables ?? []).join(", ")}
+                onChange={(e) =>
+                  updateStep(idx, {
+                    deliverables: e.target.value
+                      .split(",")
+                      .map((d) => d.trim())
+                      .filter(Boolean),
+                  })
+                }
+                placeholder="Deliverables (comma-separated, optional)"
+                className="h-7 text-xs"
+              />
+            </div>
           </div>
 
           <button
@@ -235,13 +251,28 @@ function AutoRulesSection({
     if (!labelId || !templateId) return;
     setSaving(true);
     try {
-      await createWorkflowAutoRule(ideaId, labelId, templateId, autoRun);
-      toast.success("Auto-rule created");
+      const rule = await createWorkflowAutoRule(ideaId, labelId, templateId, autoRun);
       setAddingRule(false);
       setLabelId("");
       setTemplateId("");
       setAutoRun(false);
       onRulesChange();
+
+      // Auto-apply to existing tasks that already have this label
+      try {
+        const result = await applyAutoRuleRetroactively(rule.id);
+        if (result.applied > 0) {
+          toast.success(
+            `Auto-rule created — applied to ${result.applied} existing task${result.applied !== 1 ? "s" : ""}`
+          );
+        } else {
+          toast.success("Auto-rule created");
+        }
+        if (result.applied > 0) onRulesChange();
+      } catch {
+        // Rule was created successfully, just the retroactive apply failed
+        toast.success("Auto-rule created (could not apply to existing tasks)");
+      }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create auto-rule");
     } finally {
@@ -249,13 +280,29 @@ function AutoRulesSection({
     }
   }
 
-  async function handleDeleteRule(ruleId: string) {
+  const [deleteRuleId, setDeleteRuleId] = useState<string | null>(null);
+  const [removeWorkflows, setRemoveWorkflows] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleConfirmDelete() {
+    if (!deleteRuleId) return;
+    setDeleting(true);
     try {
-      await deleteWorkflowAutoRule(ruleId);
-      toast.success("Auto-rule deleted");
+      await deleteWorkflowAutoRule(deleteRuleId, {
+        removeRelatedWorkflows: removeWorkflows,
+      });
+      toast.success(
+        removeWorkflows
+          ? "Auto-rule and related workflows deleted"
+          : "Auto-rule deleted"
+      );
       onRulesChange();
     } catch {
       toast.error("Failed to delete auto-rule");
+    } finally {
+      setDeleting(false);
+      setDeleteRuleId(null);
+      setRemoveWorkflows(false);
     }
   }
 
@@ -357,7 +404,7 @@ function AutoRulesSection({
                 <button
                   type="button"
                   className="rounded p-1 text-muted-foreground hover:text-destructive"
-                  onClick={() => handleDeleteRule(rule.id)}
+                  onClick={() => setDeleteRuleId(rule.id)}
                 >
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
@@ -420,6 +467,67 @@ function AutoRulesSection({
           </div>
         </div>
       )}
+
+      <AlertDialog
+        open={!!deleteRuleId}
+        onOpenChange={(open) => {
+          if (!open) {
+            setDeleteRuleId(null);
+            setRemoveWorkflows(false);
+          }
+        }}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Auto-Rule</AlertDialogTitle>
+            <AlertDialogDescription>
+              This will remove the auto-rule that links{" "}
+              <span className="font-medium text-foreground">
+                {deleteRuleId
+                  ? (labelMap.get(
+                      rules.find((r) => r.id === deleteRuleId)?.label_id ?? ""
+                    )?.name ?? "Unknown label")
+                  : ""}
+              </span>{" "}
+              →{" "}
+              <span className="font-medium text-foreground">
+                {deleteRuleId
+                  ? (templateMap.get(
+                      rules.find((r) => r.id === deleteRuleId)?.template_id ?? ""
+                    )?.name ?? "Unknown template")
+                  : ""}
+              </span>
+              .
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="flex items-center gap-2 py-2">
+            <Checkbox
+              id="remove-workflows"
+              checked={removeWorkflows}
+              onCheckedChange={(checked) =>
+                setRemoveWorkflows(checked === true)
+              }
+            />
+            <label
+              htmlFor="remove-workflows"
+              className="text-sm text-muted-foreground cursor-pointer"
+            >
+              Also remove workflows from tasks created by this rule
+            </label>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={deleting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleConfirmDelete}
+              disabled={deleting}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              {deleting && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

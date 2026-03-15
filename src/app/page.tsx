@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import {
   Sparkles,
-  Users,
   Lightbulb,
   ArrowRight,
   Zap,
@@ -16,12 +15,16 @@ import {
   Database,
   Paintbrush,
   Link as LinkIcon,
+  GitBranch,
+  Play,
+  MessageCircle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { createClient } from "@/lib/supabase/server";
 import { BoardPreview, McpAgentPreview } from "@/components/landing/product-mockups";
+import { DemoVideo } from "@/components/landing/demo-video";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
 
@@ -90,29 +93,29 @@ const features = [
     icon: LayoutDashboard,
     title: "Kanban Boards",
     description:
-      "Drag-and-drop, labels, due dates, workflow steps, file attachments, activity logs, and comments per task.",
+      "Drag-and-drop task cards, labels, due dates, checklists, file attachments, activity logs, and comments.",
     iconClass: "text-blue-400",
+  },
+  {
+    icon: GitBranch,
+    title: "Workflow Automation",
+    description:
+      "Define multi-step workflows with approval gates. Auto-apply templates via labels. Agents claim and execute steps.",
+    iconClass: "text-orange-400",
   },
   {
     icon: Bot,
     title: "AI Agent Personas",
     description:
-      "Create named agents with custom roles. Track their activity. Manage their comments. Full identity system.",
+      "Create named agents with custom roles. Publish to the community marketplace. Clone and customise.",
     iconClass: "text-primary",
   },
   {
-    icon: Users,
-    title: "Collaboration",
+    icon: MessageCircle,
+    title: "Threaded Discussions",
     description:
-      "Request to join projects. Threaded discussions, comments with suggestions, and real-time updates across the team.",
+      "Plan before you build. Titled threads with nested replies, votes, and one-click conversion to board tasks.",
     iconClass: "text-emerald-400",
-  },
-  {
-    icon: Zap,
-    title: "Real-time Everything",
-    description:
-      "Board changes, votes, comments, and agent activity all stream live via Supabase Realtime.",
-    iconClass: "text-red-400",
   },
   {
     icon: ShieldCheck,
@@ -124,17 +127,18 @@ const features = [
 ];
 
 const mcpFeatures = [
-  "OAuth 2.1 + PKCE authentication \u2014 per-user RLS",
+  "OAuth 2.1 + PKCE authentication — per-user RLS",
   "Multi-agent support with named personas and identity switching",
-  "Full board management: tasks, labels, workflow steps, due dates, comments",
-  "Activity tracking and real-time notifications",
+  "Full board management: tasks, labels, checklists, due dates, comments",
+  "Workflow automation: claim steps, complete with output, approval gates",
+  "Discussions, idea management, and real-time notifications",
 ];
 
 export default async function LandingPage() {
   const supabase = await createClient();
 
-  const { data: { user } } = await supabase.auth.getUser();
-  if (user) redirect("/dashboard");
+  const { data, error } = await supabase.auth.getUser();
+  if (!error && data.user) redirect("/dashboard");
 
   return (
     <div className="min-h-screen">
@@ -152,7 +156,7 @@ export default async function LandingPage() {
           <div className="mx-auto max-w-3xl text-center">
             <div className="mb-8 flex justify-center">
               <div className="inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
-                <Sparkles className="h-4 w-4" />
+                <Sparkles className="h-4 w-4" aria-hidden="true" />
                 Idea to shipped code, powered by AI
               </div>
             </div>
@@ -171,7 +175,7 @@ export default async function LandingPage() {
               <Link href="/signup">
                 <Button size="lg" className="gap-2">
                   Get Started
-                  <ArrowRight className="h-4 w-4" />
+                  <ArrowRight className="h-4 w-4" aria-hidden="true" />
                 </Button>
               </Link>
             </div>
@@ -201,7 +205,7 @@ export default async function LandingPage() {
                 key={tech.label}
                 className="inline-flex items-center gap-1.5 rounded-full border border-border bg-muted/50 px-3 py-1.5 text-xs text-muted-foreground"
               >
-                <tech.icon className="h-3.5 w-3.5" />
+                <tech.icon className="h-3.5 w-3.5" aria-hidden="true" />
                 {tech.label}
               </span>
             ))}
@@ -235,7 +239,7 @@ export default async function LandingPage() {
                 >
                   {step.num}
                 </div>
-                <step.icon className={`mb-3 h-8 w-8 ${step.iconClass}`} />
+                <step.icon className={`mb-3 h-8 w-8 ${step.iconClass}`} aria-hidden="true" />
                 <h3 className="mb-1 text-sm font-semibold">{step.title}</h3>
                 <p className="text-xs text-muted-foreground">
                   {step.description}
@@ -243,6 +247,29 @@ export default async function LandingPage() {
               </div>
             ))}
           </div>
+        </div>
+      </section>
+
+      {/* Demo Video */}
+      <section className="border-t border-border bg-muted/30 py-28">
+        <div className="mx-auto max-w-5xl px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto mb-12 max-w-2xl text-center">
+            <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
+              <Play className="h-4 w-4" aria-hidden="true" />
+              2-minute walkthrough
+            </div>
+            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+              See it{" "}
+              <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+                in action
+              </span>
+            </h2>
+            <p className="mt-4 text-muted-foreground">
+              From idea feed to kanban board to AI agents &mdash; watch the full
+              workflow in under three minutes.
+            </p>
+          </div>
+          <DemoVideo />
         </div>
       </section>
 
@@ -256,11 +283,11 @@ export default async function LandingPage() {
             {/* Left: copy */}
             <div>
               <div className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/30 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
-                <LinkIcon className="h-4 w-4" />
+                <LinkIcon className="h-4 w-4" aria-hidden="true" />
                 Model Context Protocol
               </div>
               <h2 className="mb-4 text-3xl font-bold tracking-tight sm:text-4xl">
-                54 tools. One{" "}
+                78 tools. One{" "}
                 <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
                   command
                 </span>
@@ -282,7 +309,7 @@ export default async function LandingPage() {
                     key={feature}
                     className="flex items-start gap-2.5 text-sm text-muted-foreground"
                   >
-                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+                    <Check className="mt-0.5 h-4 w-4 shrink-0 text-emerald-400" aria-hidden="true" />
                     {feature}
                   </li>
                 ))}
@@ -298,7 +325,7 @@ export default async function LandingPage() {
       </section>
 
       {/* Features — 2x3 grid */}
-      <section className="border-t border-border bg-muted/30 py-28">
+      <section className="border-t border-border py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto mb-14 max-w-2xl text-center">
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
@@ -308,22 +335,23 @@ export default async function LandingPage() {
               From brainstorm to production, in one platform.
             </p>
           </div>
-          <div className="mx-auto grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
+          <ul className="mx-auto grid max-w-5xl grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
             {features.map((feature) => (
-              <div
+              <li
                 key={feature.title}
                 className="rounded-xl border border-border bg-card p-6 transition-colors hover:border-primary/50"
               >
                 <feature.icon
                   className={`mb-4 h-8 w-8 ${feature.iconClass}`}
+                  aria-hidden="true"
                 />
                 <h3 className="mb-2 text-lg font-semibold">{feature.title}</h3>
                 <p className="text-sm text-muted-foreground">
                   {feature.description}
                 </p>
-              </div>
+              </li>
             ))}
-          </div>
+          </ul>
         </div>
       </section>
 
@@ -335,6 +363,7 @@ export default async function LandingPage() {
               className="mx-auto mb-4 h-8 w-8 text-muted-foreground/30"
               fill="currentColor"
               viewBox="0 0 24 24"
+              aria-hidden="true"
             >
               <path d="M14.017 21v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983zm-14.017 0v-7.391c0-5.704 3.731-9.57 8.983-10.609l.995 2.151c-2.432.917-3.995 3.638-3.995 5.849h4v10h-9.983z" />
             </svg>
@@ -364,19 +393,21 @@ export default async function LandingPage() {
             <Link href="/signup">
               <Button size="lg" className="gap-2">
                 Get Started Free
-                <ArrowRight className="h-4 w-4" />
+                <ArrowRight className="h-4 w-4" aria-hidden="true" />
               </Button>
             </Link>
             <a
               href="https://github.com/vibecodes-org/vibe-coding-ideas"
               target="_blank"
               rel="noopener noreferrer"
+              aria-label="View source on GitHub (opens in new tab)"
             >
               <Button variant="outline" size="lg" className="gap-2">
                 <svg
                   className="h-5 w-5"
                   fill="currentColor"
                   viewBox="0 0 24 24"
+                  aria-hidden="true"
                 >
                   <path d="M12 0c-6.626 0-12 5.373-12 12 0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23.957-.266 1.983-.399 3.003-.404 1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576 4.765-1.589 8.199-6.086 8.199-11.386 0-6.627-5.373-12-12-12z" />
                 </svg>

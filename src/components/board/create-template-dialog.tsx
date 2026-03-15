@@ -22,6 +22,7 @@ const DEFAULT_STEP: WorkflowTemplateStep = {
   title: "",
   role: "Dev",
   requires_approval: false,
+  deliverables: [],
 };
 
 interface CreateTemplateDialogProps {
@@ -220,6 +221,20 @@ export function CreateTemplateDialog({
                         Approval gate
                       </span>
                     </div>
+                  </div>
+                  <div className="pl-7">
+                    <Input
+                      value={(step.deliverables ?? []).join(", ")}
+                      onChange={(e) =>
+                        updateStep(idx, {
+                          deliverables: e.target.value
+                            ? e.target.value.split(",").map((d) => d.trim()).filter(Boolean)
+                            : [],
+                        })
+                      }
+                      placeholder="Deliverables (optional) — e.g. HTML mockups, API spec"
+                      className="h-7 flex-1 text-xs"
+                    />
                   </div>
                 </div>
 

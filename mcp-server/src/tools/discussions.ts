@@ -172,6 +172,37 @@ export async function addDiscussionReply(
   return { success: true, reply: data };
 }
 
+export const updateDiscussionReplySchema = z.object({
+  reply_id: z.string().uuid().describe("The reply ID to update"),
+  discussion_id: z.string().uuid().describe("The discussion ID"),
+  content: z
+    .string()
+    .min(1)
+    .max(5000)
+    .describe("Updated reply content (markdown)"),
+});
+
+export async function updateDiscussionReply(
+  ctx: McpContext,
+  params: z.infer<typeof updateDiscussionReplySchema>
+) {
+  const { data, error } = await ctx.supabase
+    .from("idea_discussion_replies")
+    .update({ content: params.content })
+    .eq("id", params.reply_id)
+    .eq("author_id", ctx.userId)
+    .select("id, content, discussion_id, updated_at")
+    .single();
+
+  if (error) throw new Error(`Failed to update reply: ${error.message}`);
+  if (!data)
+    throw new Error(
+      "Reply not found or you don't have permission to edit it"
+    );
+
+  return { success: true, reply: data };
+}
+
 export const createDiscussionSchema = z.object({
   idea_id: z.string().uuid().describe("The idea ID"),
   title: z.string().min(1).max(200).describe("Discussion title"),
