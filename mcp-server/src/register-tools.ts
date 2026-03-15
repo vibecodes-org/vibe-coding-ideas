@@ -257,7 +257,7 @@ export function registerTools(
 
   server.tool(
     "get_task",
-    "Get single task detail including workflow steps, comments, and recent activity.",
+    "Get single task detail including workflow steps, comments, and recent activity. If the task has a workflow with pending steps, follow the workflow_instruction in the response — use claim_next_step to execute steps sequentially rather than implementing directly.",
     getTaskSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

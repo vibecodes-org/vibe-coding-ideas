@@ -163,6 +163,23 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
     .eq("task_id", params.task_id)
     .order("created_at");
 
+  // Compute workflow instruction for agents
+  const steps = workflowSteps ?? [];
+  const pendingCount = steps.filter((s: Record<string, unknown>) => s.status === "pending").length;
+  const hasApprovalGates = steps.some(
+    (s: Record<string, unknown>) =>
+      s.human_check_required && s.status !== "completed" && s.status !== "skipped"
+  );
+
+  let workflow_instruction: string | null = null;
+  if (pendingCount > 0) {
+    workflow_instruction =
+      `This task has a workflow with ${steps.length} steps (${pendingCount} pending). ` +
+      `Do NOT begin implementation directly. Use claim_next_step(task_id) to claim and execute steps sequentially — ` +
+      `each step has specific deliverables, role requirements, and instructions that are only revealed when claimed.` +
+      (hasApprovalGates ? ` Some steps require human approval before proceeding.` : ``);
+  }
+
   return {
     ...task,
     assignee: (task as Record<string, unknown>).users ?? null,
@@ -172,7 +189,8 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
         (tl) => tl.board_labels
       ) ?? [],
     board_task_labels: undefined,
-    workflow_steps: workflowSteps ?? [],
+    workflow_steps: steps,
+    workflow_instruction,
     comments:
       comments?.map((c) => ({
         ...c,
