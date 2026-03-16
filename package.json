@@ -16,7 +16,11 @@
     "supabase:stop": "npx supabase stop",
     "supabase:reset": "npx supabase db reset",
     "supabase:migrate": "npx supabase migration up --local",
-    "supabase:studio": "open http://localhost:54323"
+    "supabase:studio": "open http://localhost:54323",
+    "screenshots": "npx playwright test --config e2e/screenshots/playwright.screenshots.config.ts",
+    "demo:record": "npx playwright test --config e2e/videos/playwright.video.config.ts",
+    "demo:assemble": "npx tsx e2e/videos/assemble-video.ts",
+    "demo": "npm run demo:record && npm run demo:assemble"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.44",
