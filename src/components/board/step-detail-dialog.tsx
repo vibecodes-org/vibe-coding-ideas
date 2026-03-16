@@ -235,6 +235,7 @@ export function StepDetailDialog({
         case "approve":
           await approveWorkflowStep(step.id);
           toast.success("Step approved");
+          onOpenChange(false);
           break;
         case "reject": {
           const cascadeTarget = resetToStepId && resetToStepId !== "__none" ? resetToStepId : undefined;
@@ -246,9 +247,7 @@ export function StepDetailDialog({
               ? "Step rejected — pipeline reset to earlier step"
               : "Step rejected — changes requested"
           );
-          setActiveAction(null);
-          setActionText("");
-          setResetToStepId("");
+          onOpenChange(false);
           break;
         }
         case "retry":
