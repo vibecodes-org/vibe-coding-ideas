@@ -480,15 +480,17 @@ export function StepDetailDialog({
               )}
               {step.status === "awaiting_approval" && (
                 <>
-                  <Button
-                    size="sm"
-                    className="gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700"
-                    onClick={() => handleAction("approve")}
-                    disabled={actionLoading}
-                  >
-                    <Check className="h-3 w-3" />
-                    Approve
-                  </Button>
+                  {activeAction !== "reject" && (
+                    <Button
+                      size="sm"
+                      className="gap-1.5 text-xs bg-emerald-600 hover:bg-emerald-700"
+                      onClick={() => handleAction("approve")}
+                      disabled={actionLoading}
+                    >
+                      <Check className="h-3 w-3" />
+                      Approve
+                    </Button>
+                  )}
                   {activeAction === "reject" ? (
                     <div className="flex flex-col gap-2 w-full">
                       <Textarea
