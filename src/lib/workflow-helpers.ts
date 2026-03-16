@@ -3,6 +3,51 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 export const TERMINAL_STATUSES = ["completed", "skipped"] as const;
 
 /**
+ * Check if any auto-rules match a label being added to a task.
+ * If a match is found with auto_run enabled and no active workflow exists,
+ * applies the workflow template. Non-throwing — errors are logged but
+ * label assignment always succeeds.
+ */
+export async function checkAndApplyAutoRules(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  taskId: string,
+  labelId: string,
+  ideaId: string,
+  applyFn: (taskId: string, templateId: string) => Promise<unknown>
+): Promise<void> {
+  try {
+    // Find matching auto-rule for this idea + label
+    const { data: rule } = await supabase
+      .from("workflow_auto_rules")
+      .select("id, template_id, auto_run")
+      .eq("idea_id", ideaId)
+      .eq("label_id", labelId)
+      .eq("auto_run", true)
+      .maybeSingle();
+
+    if (!rule) return;
+
+    // Check for existing active workflow run on this task
+    const { data: activeRun } = await supabase
+      .from("workflow_runs")
+      .select("id")
+      .eq("task_id", taskId)
+      .not("status", "in", '("completed","failed")')
+      .maybeSingle();
+
+    if (activeRun) return;
+
+    await applyFn(taskId, rule.template_id);
+  } catch (err) {
+    console.error(
+      `[checkAndApplyAutoRules] Failed to apply auto-rule for task=${taskId} label=${labelId}:`,
+      err
+    );
+  }
+}
+
+/**
  * Check if all steps in a workflow run are in a terminal state (completed or skipped).
  * If so, mark the run as completed. Failed steps do NOT count as terminal —
  * the run stays running/failed until a retry resolves the failure.

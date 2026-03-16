@@ -2,6 +2,8 @@ import { z } from "zod";
 import { POSITION_GAP, VALID_LABEL_COLORS } from "../constants";
 import { logActivity } from "../activity";
 import type { McpContext } from "../context";
+import { checkAndApplyAutoRules } from "../../../src/lib/workflow-helpers";
+import { applyWorkflowTemplate } from "./workflows";
 
 // --- manage_labels ---
 
@@ -66,6 +68,12 @@ export async function manageLabels(
     await logActivity(ctx, params.task_id, params.idea_id, "label_added", {
       label_name: label?.name ?? params.label_id,
     });
+
+    // Check for auto-rule workflow application
+    await checkAndApplyAutoRules(
+      ctx.supabase, params.task_id, params.label_id, params.idea_id,
+      (taskId, templateId) => applyWorkflowTemplate(ctx, { task_id: taskId, template_id: templateId })
+    );
 
     return { success: true };
   }
@@ -303,6 +311,12 @@ export async function reportBug(ctx: McpContext, params: z.infer<typeof reportBu
   await logActivity(ctx, task.id, params.idea_id, "label_added", {
     label_name: "Bug",
   });
+
+  // Check for auto-rule workflow application
+  await checkAndApplyAutoRules(
+    ctx.supabase, task.id, bugLabel.id, params.idea_id,
+    (taskId, templateId) => applyWorkflowTemplate(ctx, { task_id: taskId, template_id: templateId })
+  );
 
   await logActivity(ctx, task.id, params.idea_id, "assigned", {
     assignee_id: ctx.userId,

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { checkAndCompleteRun, TERMINAL_STATUSES } from "./workflow-helpers";
+import { checkAndCompleteRun, checkAndApplyAutoRules, TERMINAL_STATUSES } from "./workflow-helpers";
 
 function createMockSupabase(steps: { id: string; status: string }[]) {
   const updateChain = {
@@ -136,5 +136,114 @@ describe("checkAndCompleteRun", () => {
     const result = await checkAndCompleteRun(supabase as any, "run-1");
 
     expect(result).toBe(false);
+  });
+});
+
+// --- checkAndApplyAutoRules ---
+
+function createAutoRuleMockSupabase(options: {
+  rule?: { id: string; template_id: string; auto_run: boolean } | null;
+  activeRun?: { id: string } | null;
+}) {
+  const calls: { table: string; method: string }[] = [];
+
+  const makeChain = (resolvedData: unknown) => {
+    const chain: Record<string, unknown> = {};
+    const resolver = () =>
+      Promise.resolve({ data: resolvedData ?? null, error: null });
+
+    for (const m of ["select", "eq", "not", "maybeSingle"]) {
+      chain[m] = vi.fn((..._args: unknown[]) => {
+        if (m === "maybeSingle") return resolver();
+        return chain;
+      });
+    }
+    return chain;
+  };
+
+  const autoRuleChain = makeChain(options.rule ?? null);
+  const activeRunChain = makeChain(options.activeRun ?? null);
+
+  return {
+    from: vi.fn((table: string) => {
+      calls.push({ table, method: "from" });
+      if (table === "workflow_auto_rules") return autoRuleChain;
+      if (table === "workflow_runs") return activeRunChain;
+      return makeChain(null);
+    }),
+    _calls: calls,
+  };
+}
+
+describe("checkAndApplyAutoRules", () => {
+  it("calls applyFn when a matching auto-rule exists", async () => {
+    const applyFn = vi.fn().mockResolvedValue({});
+    const supabase = createAutoRuleMockSupabase({
+      rule: { id: "rule-1", template_id: "tmpl-1", auto_run: true },
+      activeRun: null,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await checkAndApplyAutoRules(supabase as any, "task-1", "label-1", "idea-1", applyFn);
+
+    expect(applyFn).toHaveBeenCalledWith("task-1", "tmpl-1");
+  });
+
+  it("does not call applyFn when no matching rule exists", async () => {
+    const applyFn = vi.fn();
+    const supabase = createAutoRuleMockSupabase({ rule: null });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await checkAndApplyAutoRules(supabase as any, "task-1", "label-1", "idea-1", applyFn);
+
+    expect(applyFn).not.toHaveBeenCalled();
+  });
+
+  it("does not call applyFn when task has active workflow run", async () => {
+    const applyFn = vi.fn();
+    const supabase = createAutoRuleMockSupabase({
+      rule: { id: "rule-1", template_id: "tmpl-1", auto_run: true },
+      activeRun: { id: "run-1" },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await checkAndApplyAutoRules(supabase as any, "task-1", "label-1", "idea-1", applyFn);
+
+    expect(applyFn).not.toHaveBeenCalled();
+  });
+
+  it("does not throw when applyFn fails", async () => {
+    const applyFn = vi.fn().mockRejectedValue(new Error("apply failed"));
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const supabase = createAutoRuleMockSupabase({
+      rule: { id: "rule-1", template_id: "tmpl-1", auto_run: true },
+      activeRun: null,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(
+      checkAndApplyAutoRules(supabase as any, "task-1", "label-1", "idea-1", applyFn)
+    ).resolves.toBeUndefined();
+
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
+  });
+
+  it("does not throw when supabase query fails", async () => {
+    const applyFn = vi.fn();
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const supabase = {
+      from: vi.fn(() => {
+        throw new Error("db error");
+      }),
+    };
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await expect(
+      checkAndApplyAutoRules(supabase as any, "task-1", "label-1", "idea-1", applyFn)
+    ).resolves.toBeUndefined();
+
+    expect(applyFn).not.toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 });

@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_BOARD_COLUMNS, POSITION_GAP } from "@/lib/constants";
 import { validateTitle, validateOptionalDescription, validateLabelName, validateLabelColor, validateComment } from "@/lib/validation";
+import { checkAndApplyAutoRules } from "@/lib/workflow-helpers";
+import { applyWorkflowTemplate } from "@/actions/workflow-templates";
 
 export async function initializeBoardColumns(ideaId: string) {
   const supabase = await createClient();
@@ -436,6 +438,9 @@ export async function addLabelToTask(
 
   if (error) throw new Error(error.message);
 
+  // Check for auto-rule workflow application
+  await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate);
+
   revalidatePath(`/ideas/${ideaId}/board`);
 }
 
@@ -461,6 +466,11 @@ export async function addLabelsToTask(
   const { error } = await supabase.from("board_task_labels").insert(rows);
 
   if (error) throw new Error(error.message);
+
+  // Check for auto-rule workflow application for each label
+  for (const labelId of labelIds) {
+    await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate);
+  }
 
   revalidatePath(`/ideas/${ideaId}/board`);
 }
