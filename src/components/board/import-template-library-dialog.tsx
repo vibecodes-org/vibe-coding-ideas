@@ -37,7 +37,7 @@ interface ImportTemplateLibraryDialogProps {
   onOpenChange: (open: boolean) => void;
   ideaId: string;
   existingTemplateNames: string[];
-  onImported: () => void;
+  onImported: (templateId?: string) => void;
 }
 
 export function ImportTemplateLibraryDialog({
@@ -98,6 +98,14 @@ export function ImportTemplateLibraryDialog({
     const succeeded = results.filter((r) => r.status === "fulfilled").length;
     const failed = results.filter((r) => r.status === "rejected").length;
 
+    // Get the last successfully created template ID
+    let lastCreatedId: string | undefined;
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        lastCreatedId = result.value.id;
+      }
+    }
+
     if (succeeded > 0) {
       toast.success(`Imported ${succeeded} template${succeeded !== 1 ? "s" : ""}`);
     }
@@ -108,7 +116,7 @@ export function ImportTemplateLibraryDialog({
     setImporting(false);
     setSelected(new Set());
     onOpenChange(false);
-    onImported();
+    onImported(lastCreatedId);
   }
 
   function handleOpenChange(nextOpen: boolean) {

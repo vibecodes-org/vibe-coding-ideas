@@ -29,7 +29,7 @@ interface CreateTemplateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   ideaId: string;
-  onCreated: () => void;
+  onCreated: (templateId: string) => void;
 }
 
 export function CreateTemplateDialog({
@@ -93,7 +93,7 @@ export function CreateTemplateDialog({
 
     setSaving(true);
     try {
-      await createWorkflowTemplate(
+      const result = await createWorkflowTemplate(
         ideaId,
         name.trim(),
         description.trim() || null,
@@ -102,7 +102,7 @@ export function CreateTemplateDialog({
       toast.success("Workflow template created");
       reset();
       onOpenChange(false);
-      onCreated();
+      onCreated(result.id);
     } catch {
       toast.error("Failed to create workflow template");
     } finally {

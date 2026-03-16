@@ -644,8 +644,11 @@ export function WorkflowsTab({
     }
   }
 
-  function handleCreated() {
-    fetchData();
+  async function handleCreated(templateId?: string) {
+    await fetchData();
+    if (templateId) {
+      setSelectedId(templateId);
+    }
   }
 
   if (loading) {
