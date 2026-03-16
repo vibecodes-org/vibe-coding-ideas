@@ -414,13 +414,13 @@ export async function claimNextStep(
       // Extract format hint from parenthetical like "Design document (HTML)"
       const formatMatch = d.match(/\(([^)]+)\)\s*$/);
       const formatNote = formatMatch
-        ? ` — your output format MUST be ${formatMatch[1]}.`
+        ? ` — write this as a ${formatMatch[1]} file (not markdown).`
         : "";
       return `- ${d}${formatNote}`;
     });
     contextParts.push(
       `EXPECTED DELIVERABLES: You MUST produce the following:\n${deliverableLines.join("\n")}\n` +
-      `Respect any format specified in parentheses (e.g. "(HTML)" means output valid HTML markup, not markdown).`
+      `Respect any format specified in parentheses (e.g. "(HTML)" means write a valid HTML file, not markdown).`
     );
   }
 
@@ -439,7 +439,11 @@ export async function claimNextStep(
 
   if (hasFileDeliverable) {
     contextParts.push(
-      `DELIVERABLE: For file-based deliverables (HTML, JSON, etc.), write the file to the project directory (e.g. docs/ or an appropriate location) and pass a summary + the file path as the "output" parameter of complete_step. Do NOT paste the full file content into the output parameter.`
+      `DELIVERABLE: This step requires file-based output. For each deliverable with a format in parentheses (e.g. "(HTML)", "(JSON)"):\n` +
+      `1. Write the file to the docs/ directory using a descriptive filename based on the step title (e.g. docs/design-review.html)\n` +
+      `2. Pass a brief summary of what you produced + the file path as the "output" parameter of complete_step\n` +
+      `3. Do NOT paste the full file content into the output parameter — it will be truncated and unreadable\n` +
+      `The output parameter is for a summary and file path reference only.`
     );
   } else {
     contextParts.push(

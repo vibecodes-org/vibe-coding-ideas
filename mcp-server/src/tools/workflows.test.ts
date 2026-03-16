@@ -363,10 +363,10 @@ describe("claimNextStep", () => {
 
     const r = result as { instruction: string };
     expect(r.instruction).toContain("EXPECTED DELIVERABLES");
-    expect(r.instruction).toContain("output format MUST be HTML");
+    expect(r.instruction).toContain("write this as a HTML file");
     expect(r.instruction).toContain("not markdown");
     // Non-parenthetical deliverable should not get a format note
-    expect(r.instruction).not.toContain("output format MUST be Component");
+    expect(r.instruction).not.toContain("write this as a Component file");
   });
 
   it("omits format constraint for deliverables without parenthetical", async () => {
@@ -385,7 +385,7 @@ describe("claimNextStep", () => {
 
     const r = result as { instruction: string };
     expect(r.instruction).toContain("EXPECTED DELIVERABLES");
-    expect(r.instruction).not.toContain("output format MUST be");
+    expect(r.instruction).not.toContain("write this as a");
   });
 
   it("instructs agent to write file for HTML deliverable", async () => {
@@ -403,7 +403,7 @@ describe("claimNextStep", () => {
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
     const r = result as { instruction: string };
-    expect(r.instruction).toContain("write the file");
+    expect(r.instruction).toContain("docs/");
     expect(r.instruction).toContain("Do NOT paste the full file content");
   });
 
@@ -422,7 +422,7 @@ describe("claimNextStep", () => {
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
     const r = result as { instruction: string };
-    expect(r.instruction).toContain("write the file");
+    expect(r.instruction).toContain("docs/");
     expect(r.instruction).toContain("Do NOT paste the full file content");
   });
 
@@ -442,7 +442,7 @@ describe("claimNextStep", () => {
 
     const r = result as { instruction: string };
     expect(r.instruction).toContain("Pass your full deliverable");
-    expect(r.instruction).not.toContain("write the file");
+    expect(r.instruction).not.toContain("docs/");
   });
 
   it("returns done when no pending steps", async () => {
