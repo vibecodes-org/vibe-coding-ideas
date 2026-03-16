@@ -24,7 +24,7 @@ export const maxDuration = 120;
 
 interface PageProps {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ taskId?: string }>;
+  searchParams: Promise<{ taskId?: string; tab?: string }>;
 }
 
 export async function generateMetadata({ params }: PageProps): Promise<Metadata> {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { WorkflowsTab } from "./workflows-tab";
 import type { BoardLabel } from "@/types";
@@ -21,8 +21,23 @@ export function BoardPageTabs({
   isAdmin,
   children,
 }: BoardPageTabsProps) {
-  const [activeTab, setActiveTab] = useState("board");
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+
+  const activeTab = searchParams.get("tab") === "workflows" ? "workflows" : "board";
   const showWorkflows = !!isAdmin;
+
+  function setActiveTab(tab: string) {
+    const params = new URLSearchParams(searchParams.toString());
+    if (tab === "board") {
+      params.delete("tab");
+    } else {
+      params.set("tab", tab);
+    }
+    const qs = params.toString();
+    router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
+  }
 
   if (!showWorkflows) {
     return <div className="flex min-h-0 flex-1 flex-col">{children}</div>;
