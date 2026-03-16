@@ -142,12 +142,14 @@ function StepEditor({ steps, onChange }: StepEditorProps) {
               <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground">
                 {idx + 1}
               </span>
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap">Title</span>
               <Input
                 value={step.title}
                 onChange={(e) => updateStep(idx, { title: e.target.value })}
                 placeholder="Step title"
                 className="h-7 flex-1 text-xs"
               />
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap">Role</span>
               <Input
                 value={step.role}
                 onChange={(e) => updateStep(idx, { role: e.target.value })}
@@ -156,6 +158,7 @@ function StepEditor({ steps, onChange }: StepEditorProps) {
               />
             </div>
             <div className="flex items-center gap-3 pl-7">
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap">Description</span>
               <Input
                 value={step.description ?? ""}
                 onChange={(e) =>
@@ -177,7 +180,8 @@ function StepEditor({ steps, onChange }: StepEditorProps) {
                 </span>
               </div>
             </div>
-            <div className="pl-7">
+            <div className="flex items-center gap-3 pl-7">
+              <span className="text-[10px] text-muted-foreground whitespace-nowrap">Deliverables</span>
               <Input
                 value={(step.deliverables ?? []).join(", ")}
                 onChange={(e) =>
@@ -189,7 +193,7 @@ function StepEditor({ steps, onChange }: StepEditorProps) {
                   })
                 }
                 placeholder="Deliverables (comma-separated, optional)"
-                className="h-7 text-xs"
+                className="h-7 flex-1 text-xs"
               />
             </div>
           </div>
