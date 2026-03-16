@@ -486,21 +486,6 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                 </span>
 
                 {/* Inline action buttons — shown on hover for key statuses */}
-                {!isReadOnly && step.status === "pending" && (
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="h-6 gap-1 px-2 text-xs text-zinc-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleInlineAction(step.id, "skip");
-                    }}
-                    disabled={isActionLoading}
-                  >
-                    {isActionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <SkipForward className="h-3 w-3" />}
-                    Skip
-                  </Button>
-                )}
                 {!isReadOnly && step.status === "failed" && (
                   <Button
                     size="sm"
