@@ -259,7 +259,7 @@ export async function failWorkflowStep(
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Step is not in a state that can be failed (must be in_progress or awaiting_approval)");
 
-  // Cascade rejection: reset all steps from resetToStepId up to (but not including) the failed step
+  // Cascade rejection: reset all steps from resetToStepId onward (including the failed step)
   if (resetToStepId && data.run_id) {
     // Fetch the target step to get its step_order
     const { data: targetStep } = await supabase
@@ -270,7 +270,7 @@ export async function failWorkflowStep(
       .single();
 
     if (targetStep) {
-      // Reset all steps from the target step onward (except the current failed step)
+      // Reset all steps from the target step onward (INCLUDING the current failed step)
       await supabase
         .from("task_workflow_steps")
         .update({
@@ -280,16 +280,15 @@ export async function failWorkflowStep(
           completed_at: null,
         })
         .eq("run_id", data.run_id)
-        .neq("id", stepId)
         .gte("step_order", targetStep.step_order ?? 0);
     }
   }
 
-  // Update the run status to 'failed' if this step belongs to a run
+  // Update run status: 'running' if cascade (workflow continues), 'failed' if no cascade
   if (data.run_id) {
     await supabase
       .from("workflow_runs")
-      .update({ status: "failed" })
+      .update({ status: resetToStepId ? "running" : "failed" })
       .eq("id", data.run_id);
   }
 

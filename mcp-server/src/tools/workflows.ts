@@ -430,9 +430,22 @@ export async function claimNextStep(
     );
   }
 
-  contextParts.push(
-    `DELIVERABLE: Pass your full deliverable as the "output" parameter of complete_step.`
-  );
+  // Detect file-based format hints from deliverables
+  const fileFormats = ["HTML", "JSON", "CSS", "SVG", "XML", "YAML", "CSV", "SQL"];
+  const hasFileDeliverable = expected_deliverables.some((d: string) => {
+    const formatMatch = d.match(/\(([^)]+)\)\s*$/);
+    return formatMatch && fileFormats.some(f => formatMatch[1].toUpperCase().includes(f));
+  });
+
+  if (hasFileDeliverable) {
+    contextParts.push(
+      `DELIVERABLE: For file-based deliverables (HTML, JSON, etc.), write the file to the project directory (e.g. docs/ or an appropriate location) and pass a summary + the file path as the "output" parameter of complete_step. Do NOT paste the full file content into the output parameter.`
+    );
+  } else {
+    contextParts.push(
+      `DELIVERABLE: Pass your full deliverable as the "output" parameter of complete_step.`
+    );
+  }
 
   contextParts.push(
     `TASK DESCRIPTION: After calling complete_step, call update_task to append a summary of your deliverable to the task description under a markdown heading.`
@@ -571,7 +584,6 @@ export async function failStep(
           completed_at: null,
         })
         .eq("run_id", step.run_id)
-        .neq("id", params.step_id)
         .gte("step_order", targetStep.step_order ?? 0)
         .select("id");
 
@@ -579,11 +591,11 @@ export async function failStep(
     }
   }
 
-  // Mark the run as failed
+  // Mark the run as running (cascade continues) or failed (no cascade)
   if (step.run_id) {
     await ctx.supabase
       .from("workflow_runs")
-      .update({ status: "failed" })
+      .update({ status: params.reset_to_step_id ? "running" : "failed" })
       .eq("id", step.run_id);
   }
 
