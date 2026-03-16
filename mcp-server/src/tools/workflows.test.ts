@@ -333,6 +333,47 @@ describe("claimNextStep", () => {
     expect(r.instruction).not.toContain("CONTEXT CHAINING");
   });
 
+  it("includes explicit format constraint for parenthetical deliverables", async () => {
+    const step = makeStepRow({
+      step_order: 1,
+      expected_deliverables: ["Design document (HTML)", "Component inventory"],
+    });
+    const updatedStep = {
+      ...step,
+      status: "in_progress",
+      claimed_by: USER_ID,
+    };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string };
+    expect(r.instruction).toContain("EXPECTED DELIVERABLES");
+    expect(r.instruction).toContain("output format MUST be HTML");
+    expect(r.instruction).toContain("not markdown");
+    // Non-parenthetical deliverable should not get a format note
+    expect(r.instruction).not.toContain("output format MUST be Component");
+  });
+
+  it("omits format constraint for deliverables without parenthetical", async () => {
+    const step = makeStepRow({
+      step_order: 1,
+      expected_deliverables: ["Requirements doc", "Test plan"],
+    });
+    const updatedStep = {
+      ...step,
+      status: "in_progress",
+      claimed_by: USER_ID,
+    };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string };
+    expect(r.instruction).toContain("EXPECTED DELIVERABLES");
+    expect(r.instruction).not.toContain("output format MUST be");
+  });
+
   it("returns done when no pending steps", async () => {
     const ctx = makeContext(((table: string) => {
       const chain = createChain([]);

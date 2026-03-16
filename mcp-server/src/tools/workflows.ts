@@ -410,8 +410,17 @@ export async function claimNextStep(
   }
 
   if (expected_deliverables.length > 0) {
+    const deliverableLines = expected_deliverables.map((d: string) => {
+      // Extract format hint from parenthetical like "Design document (HTML)"
+      const formatMatch = d.match(/\(([^)]+)\)\s*$/);
+      const formatNote = formatMatch
+        ? ` — your output format MUST be ${formatMatch[1]}.`
+        : "";
+      return `- ${d}${formatNote}`;
+    });
     contextParts.push(
-      `EXPECTED DELIVERABLES: You are expected to produce: ${expected_deliverables.join(", ")}.`
+      `EXPECTED DELIVERABLES: You MUST produce the following:\n${deliverableLines.join("\n")}\n` +
+      `Respect any format specified in parentheses (e.g. "(HTML)" means output valid HTML markup, not markdown).`
     );
   }
 
