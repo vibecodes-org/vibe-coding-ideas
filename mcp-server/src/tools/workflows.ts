@@ -445,6 +445,13 @@ export async function claimNextStep(
       `3. Do NOT paste the full file content into the output parameter — it will be truncated and unreadable\n` +
       `The output parameter is for a summary and file path reference only.`
     );
+  } else if (expected_deliverables.length > 0) {
+    contextParts.push(
+      `DELIVERABLE FORMAT: Choose the appropriate format based on task complexity:\n` +
+      `- For substantial UI work (new pages, complex forms, multi-step flows, dashboards): write an HTML mockup to the docs/ directory and pass the file path + summary as the "output" parameter of complete_step\n` +
+      `- For simple changes (adding a button, tweaking a dialog, small UI adjustments, config changes): pass a concise markdown description as the "output" parameter of complete_step\n` +
+      `Use your judgement — prefer the lighter format unless visual review adds clear value.`
+    );
   } else {
     contextParts.push(
       `DELIVERABLE: Pass your full deliverable as the "output" parameter of complete_step.`

@@ -426,7 +426,7 @@ describe("claimNextStep", () => {
     expect(r.instruction).toContain("Do NOT paste the full file content");
   });
 
-  it("instructs agent to pass full output for text deliverable", async () => {
+  it("gives adaptive format guidance for deliverable without format hint", async () => {
     const step = makeStepRow({
       step_order: 1,
       expected_deliverables: ["Requirements doc"],
@@ -441,8 +441,8 @@ describe("claimNextStep", () => {
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
     const r = result as { instruction: string };
-    expect(r.instruction).toContain("Pass your full deliverable");
-    expect(r.instruction).not.toContain("docs/");
+    expect(r.instruction).toContain("DELIVERABLE FORMAT: Choose the appropriate format");
+    expect(r.instruction).toContain("Use your judgement");
   });
 
   it("returns done when no pending steps", async () => {
