@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { checkAndCompleteRun, checkAndApplyAutoRules, TERMINAL_STATUSES } from "./workflow-helpers";
+import { checkAndCompleteRun, checkAndApplyAutoRules, propagateTemplateEdits, TERMINAL_STATUSES } from "./workflow-helpers";
 
 function createMockSupabase(steps: { id: string; status: string }[]) {
   const updateChain = {
@@ -245,5 +245,197 @@ describe("checkAndApplyAutoRules", () => {
 
     expect(applyFn).not.toHaveBeenCalled();
     consoleSpy.mockRestore();
+  });
+});
+
+// --- propagateTemplateEdits ---
+
+function createPropagationMockSupabase(options: {
+  activeRuns: { id: string }[] | null;
+  stepsByRun: Record<string, { id: string; status: string; step_order: number }[]>;
+  updateCounts?: Record<string, number>; // stepId -> count returned by update
+}) {
+  const updateResults = options.updateCounts ?? {};
+
+  return {
+    from: vi.fn((table: string) => {
+      if (table === "workflow_runs") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              not: vi.fn().mockResolvedValue({
+                data: options.activeRuns,
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      if (table === "task_workflow_steps") {
+        // Need to handle both select (for fetching steps) and update (for updating steps)
+        const chain: Record<string, ReturnType<typeof vi.fn>> = {};
+
+        chain.select = vi.fn().mockReturnValue({
+          eq: vi.fn().mockReturnValue({
+            order: vi.fn((_, __) => {
+              // Return steps for the run based on run_id
+              // We track which run was requested via closure
+              return {
+                then: undefined, // not a promise yet
+              };
+            }),
+          }),
+        });
+
+        // Build a smarter mock that tracks eq() calls
+        let currentRunId: string | null = null;
+        let currentStepId: string | null = null;
+        let isUpdateChain = false;
+
+        const eqFn = vi.fn((_col: string, val: string) => {
+          if (_col === "run_id") currentRunId = val;
+          if (_col === "id") currentStepId = val;
+          if (_col === "status" && isUpdateChain) {
+            // This is the concurrency guard — return count
+            const count = currentStepId ? (updateResults[currentStepId] ?? 1) : 1;
+            return Promise.resolve({ count, error: null });
+          }
+          return mockChain;
+        });
+
+        const orderFn = vi.fn(() => {
+          const runId = currentRunId;
+          const steps = runId ? (options.stepsByRun[runId] ?? []) : [];
+          return Promise.resolve({ data: steps, error: null });
+        });
+
+        const updateFn = vi.fn(() => {
+          isUpdateChain = true;
+          return mockChain;
+        });
+
+        const selectFn = vi.fn(() => {
+          isUpdateChain = false;
+          return mockChain;
+        });
+
+        const mockChain = {
+          select: selectFn,
+          eq: eqFn,
+          order: orderFn,
+          update: updateFn,
+        };
+
+        return mockChain;
+      }
+      return {};
+    }),
+  };
+}
+
+const sampleTemplateSteps = [
+  { title: "Step A Updated", role: "Dev", description: "New desc", requires_approval: true, deliverables: ["doc.md"] },
+  { title: "Step B Updated", role: "QA", description: "QA desc", requires_approval: false, deliverables: [] },
+];
+
+describe("propagateTemplateEdits", () => {
+  it("returns zero counts when no active runs exist", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [],
+      stepsByRun: {},
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
+
+    expect(result).toEqual({ runsUpdated: 0, stepsUpdated: 0, skippedStructuralMismatch: 0 });
+  });
+
+  it("returns zero counts when activeRuns is null", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: null,
+      stepsByRun: {},
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
+
+    expect(result).toEqual({ runsUpdated: 0, stepsUpdated: 0, skippedStructuralMismatch: 0 });
+  });
+
+  it("skips runs with step count mismatch", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1" }],
+      stepsByRun: {
+        "run-1": [
+          { id: "s1", status: "pending", step_order: 1 },
+          { id: "s2", status: "pending", step_order: 2 },
+          { id: "s3", status: "pending", step_order: 3 }, // 3 steps vs 2 template steps
+        ],
+      },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
+
+    expect(result.skippedStructuralMismatch).toBe(1);
+    expect(result.stepsUpdated).toBe(0);
+    expect(result.runsUpdated).toBe(0);
+  });
+
+  it("updates all pending steps when counts match", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1" }],
+      stepsByRun: {
+        "run-1": [
+          { id: "s1", status: "pending", step_order: 1 },
+          { id: "s2", status: "pending", step_order: 2 },
+        ],
+      },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
+
+    expect(result.stepsUpdated).toBe(2);
+    expect(result.runsUpdated).toBe(1);
+    expect(result.skippedStructuralMismatch).toBe(0);
+  });
+
+  it("only updates pending steps, skips completed/in_progress", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1" }],
+      stepsByRun: {
+        "run-1": [
+          { id: "s1", status: "completed", step_order: 1 },
+          { id: "s2", status: "pending", step_order: 2 },
+        ],
+      },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
+
+    expect(result.stepsUpdated).toBe(1);
+    expect(result.runsUpdated).toBe(1);
+  });
+
+  it("handles concurrency guard returning count 0", async () => {
+    const supabase = createPropagationMockSupabase({
+      activeRuns: [{ id: "run-1" }],
+      stepsByRun: {
+        "run-1": [
+          { id: "s1", status: "pending", step_order: 1 },
+          { id: "s2", status: "pending", step_order: 2 },
+        ],
+      },
+      updateCounts: { s1: 0, s2: 0 }, // both claimed between select and update
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
+
+    expect(result.stepsUpdated).toBe(0);
+    expect(result.runsUpdated).toBe(0);
   });
 });

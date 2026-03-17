@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
 import { buildRoleMatcher } from "../../../src/lib/role-matching";
-import { checkAndCompleteRun } from "../../../src/lib/workflow-helpers";
+import { checkAndCompleteRun, propagateTemplateEdits } from "../../../src/lib/workflow-helpers";
 
 // --- Shared step schema used by template tools ---
 
@@ -100,7 +100,14 @@ export async function updateWorkflowTemplate(
     .single();
 
   if (error) throw new Error(`Failed to update workflow template: ${error.message}`);
-  return data;
+
+  // Propagate step edits to pending steps in active workflow runs
+  let propagation = null;
+  if (params.steps !== undefined) {
+    propagation = await propagateTemplateEdits(ctx.supabase, params.template_id, params.steps);
+  }
+
+  return { ...data, propagation };
 }
 
 // --- Delete Workflow Template ---

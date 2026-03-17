@@ -9,6 +9,7 @@ import {
   validateOptionalDescription,
 } from "@/lib/validation";
 import { buildRoleMatcher } from "@/lib/role-matching";
+import { propagateTemplateEdits } from "@/lib/workflow-helpers";
 
 // ─── Templates ───
 
@@ -106,6 +107,11 @@ export async function updateWorkflowTemplate(
     .single();
 
   if (error) throw new Error(error.message);
+
+  // Propagate step edits to pending steps in active workflow runs
+  if (updates.steps !== undefined) {
+    await propagateTemplateEdits(supabase, templateId, patch.steps as WorkflowTemplateStep[]);
+  }
 
   revalidatePath(`/ideas/${data.idea_id}/board`);
 

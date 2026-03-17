@@ -1048,7 +1048,7 @@ export function registerTools(
 
   server.tool(
     "update_workflow_template",
-    "Update a workflow template's name, description, or steps. Only changed fields need to be provided.",
+    "Update a workflow template's name, description, or steps. Only changed fields need to be provided. When steps are updated, changes are automatically propagated to pending steps in active workflow runs (structural changes with different step counts are skipped).",
     updateWorkflowTemplateSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

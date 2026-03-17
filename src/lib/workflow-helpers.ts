@@ -1,4 +1,5 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
+import type { WorkflowTemplateStep } from "@/types/database";
 
 export const TERMINAL_STATUSES = ["completed", "skipped"] as const;
 
@@ -85,4 +86,74 @@ export async function checkAndCompleteRun(
   }
 
   return false;
+}
+
+/**
+ * Propagate template step edits to pending steps in active workflow runs.
+ * Only updates steps with status = 'pending'. Skips runs where the step
+ * count differs (structural changes are too risky to propagate).
+ * Does NOT re-match bot_id — use rematch_workflow_agents separately.
+ */
+export async function propagateTemplateEdits(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  templateId: string,
+  newSteps: WorkflowTemplateStep[]
+): Promise<{ runsUpdated: number; stepsUpdated: number; skippedStructuralMismatch: number }> {
+  // Find active runs for this template
+  const { data: activeRuns } = await supabase
+    .from("workflow_runs")
+    .select("id")
+    .eq("template_id", templateId)
+    .not("status", "in", '("completed","failed")');
+
+  if (!activeRuns || activeRuns.length === 0) {
+    return { runsUpdated: 0, stepsUpdated: 0, skippedStructuralMismatch: 0 };
+  }
+
+  let runsUpdated = 0;
+  let stepsUpdated = 0;
+  let skippedStructuralMismatch = 0;
+
+  for (const run of activeRuns) {
+    const { data: steps } = await supabase
+      .from("task_workflow_steps")
+      .select("id, status, step_order")
+      .eq("run_id", run.id)
+      .order("step_order", { ascending: true });
+
+    if (!steps || steps.length !== newSteps.length) {
+      skippedStructuralMismatch++;
+      continue;
+    }
+
+    let runHadUpdates = false;
+
+    for (let i = 0; i < steps.length; i++) {
+      const step = steps[i];
+      if (step.status !== "pending") continue;
+
+      const templateStep = newSteps[i];
+      const { count } = await supabase
+        .from("task_workflow_steps")
+        .update({
+          title: templateStep.title,
+          description: templateStep.description ?? null,
+          agent_role: templateStep.role,
+          human_check_required: templateStep.requires_approval ?? false,
+          expected_deliverables: templateStep.deliverables ?? [],
+        })
+        .eq("id", step.id)
+        .eq("status", "pending");
+
+      if (count && count > 0) {
+        stepsUpdated++;
+        runHadUpdates = true;
+      }
+    }
+
+    if (runHadUpdates) runsUpdated++;
+  }
+
+  return { runsUpdated, stepsUpdated, skippedStructuralMismatch };
 }
