@@ -4,9 +4,9 @@ export const TERMINAL_STATUSES = ["completed", "skipped"] as const;
 
 /**
  * Check if any auto-rules match a label being added to a task.
- * If a match is found with auto_run enabled and no active workflow exists,
- * applies the workflow template. Non-throwing — errors are logged but
- * label assignment always succeeds.
+ * If a match is found and no active workflow exists, applies the
+ * workflow template. Non-throwing — errors are logged but label
+ * assignment always succeeds.
  */
 export async function checkAndApplyAutoRules(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -20,10 +20,9 @@ export async function checkAndApplyAutoRules(
     // Find matching auto-rule for this idea + label
     const { data: rule } = await supabase
       .from("workflow_auto_rules")
-      .select("id, template_id, auto_run")
+      .select("id, template_id")
       .eq("idea_id", ideaId)
       .eq("label_id", labelId)
-      .eq("auto_run", true)
       .maybeSingle();
 
     if (!rule) return;

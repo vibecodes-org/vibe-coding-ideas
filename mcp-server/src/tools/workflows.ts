@@ -1044,7 +1044,6 @@ export const createWorkflowAutoRuleSchema = z.object({
   idea_id: z.string().uuid().describe("The idea ID"),
   label_id: z.string().uuid().describe("The board label ID that triggers this rule"),
   template_id: z.string().uuid().describe("The workflow template ID to apply when the label is added"),
-  auto_run: z.boolean().optional().default(false).describe("Whether to auto-start the workflow run after applying (default: false)"),
 });
 
 export async function createWorkflowAutoRule(
@@ -1057,7 +1056,6 @@ export async function createWorkflowAutoRule(
       idea_id: params.idea_id,
       label_id: params.label_id,
       template_id: params.template_id,
-      auto_run: params.auto_run,
     })
     .select("*, workflow_templates(id, name), board_labels(id, name, color)")
     .single();
@@ -1076,7 +1074,6 @@ export async function createWorkflowAutoRule(
 export const updateWorkflowAutoRuleSchema = z.object({
   rule_id: z.string().uuid().describe("The auto rule ID"),
   template_id: z.string().uuid().optional().describe("New workflow template ID"),
-  auto_run: z.boolean().optional().describe("Whether to auto-start the workflow run after applying"),
 });
 
 export async function updateWorkflowAutoRule(
@@ -1085,7 +1082,6 @@ export async function updateWorkflowAutoRule(
 ) {
   const patch: Record<string, unknown> = {};
   if (params.template_id !== undefined) patch.template_id = params.template_id;
-  if (params.auto_run !== undefined) patch.auto_run = params.auto_run;
 
   if (Object.keys(patch).length === 0) {
     return { success: true, message: "No changes to apply" };

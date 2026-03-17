@@ -359,8 +359,7 @@ export async function listWorkflowAutoRules(ideaId: string) {
 export async function createWorkflowAutoRule(
   ideaId: string,
   labelId: string,
-  templateId: string,
-  autoRun: boolean = false
+  templateId: string
 ) {
   const supabase = await createClient();
   const {
@@ -375,7 +374,6 @@ export async function createWorkflowAutoRule(
       idea_id: ideaId,
       label_id: labelId,
       template_id: templateId,
-      auto_run: autoRun,
     })
     .select("*, workflow_templates(*), board_labels(*)")
     .single();
@@ -396,7 +394,7 @@ export async function createWorkflowAutoRule(
 
 export async function updateWorkflowAutoRule(
   ruleId: string,
-  updates: { template_id?: string; auto_run?: boolean }
+  updates: { template_id?: string }
 ) {
   const supabase = await createClient();
   const {

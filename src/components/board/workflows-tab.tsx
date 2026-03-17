@@ -248,18 +248,16 @@ function AutoRulesSection({
   const [labelId, setLabelId] = useState("");
   const [templateId, setTemplateId] = useState(selectedTemplateId);
   const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
-  const [autoRun, setAutoRun] = useState(false);
   const [saving, setSaving] = useState(false);
 
   async function handleAddRule() {
     if (!labelId || !templateId) return;
     setSaving(true);
     try {
-      const rule = await createWorkflowAutoRule(ideaId, labelId, templateId, autoRun);
+      const rule = await createWorkflowAutoRule(ideaId, labelId, templateId);
       setAddingRule(false);
       setLabelId("");
       setTemplateId("");
-      setAutoRun(false);
       onRulesChange();
 
       // Auto-apply to existing tasks that already have this label
@@ -349,7 +347,6 @@ function AutoRulesSection({
             onClick={() => {
               setTemplateId(selectedTemplateId);
               setLabelId("");
-              setAutoRun(false);
               setAddingRule(true);
             }}
           >
@@ -382,14 +379,6 @@ function AutoRulesSection({
             <span className="text-xs">
               {template?.name ?? "Unknown template"}
             </span>
-            {rule.auto_run && (
-              <Badge
-                variant="outline"
-                className="text-[10px] border-emerald-500/25 bg-emerald-500/15 text-emerald-400"
-              >
-                Auto-run
-              </Badge>
-            )}
             {!isReadOnly && (
               <div className="ml-auto flex items-center gap-0.5">
                 <button
@@ -438,17 +427,7 @@ function AutoRulesSection({
               {templates.find((t) => t.id === selectedTemplateId)?.name ?? "This template"}
             </span>
           </div>
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-1.5">
-              <Switch
-                size="sm"
-                checked={autoRun}
-                onCheckedChange={setAutoRun}
-              />
-              <span className="text-xs text-muted-foreground">
-                Auto-run when label applied
-              </span>
-            </div>
+          <div className="flex items-center justify-end">
             <div className="flex gap-1">
               <Button
                 variant="ghost"

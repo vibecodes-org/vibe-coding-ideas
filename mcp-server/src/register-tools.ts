@@ -1276,7 +1276,7 @@ export function registerTools(
 
   server.tool(
     "update_workflow_auto_rule",
-    "Update an auto-rule's template or auto_run setting. Only changed fields need to be provided.",
+    "Update an auto-rule's template. Only changed fields need to be provided.",
     updateWorkflowAutoRuleSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

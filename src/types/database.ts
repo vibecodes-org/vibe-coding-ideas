@@ -595,7 +595,6 @@ export type Database = {
           idea_id: string;
           label_id: string;
           template_id: string;
-          auto_run: boolean;
           created_at: string;
         };
         Insert: {
@@ -603,7 +602,6 @@ export type Database = {
           idea_id: string;
           label_id: string;
           template_id: string;
-          auto_run?: boolean;
           created_at?: string;
         };
         Update: {
@@ -611,7 +609,6 @@ export type Database = {
           idea_id?: string;
           label_id?: string;
           template_id?: string;
-          auto_run?: boolean;
           created_at?: string;
         };
         Relationships: [

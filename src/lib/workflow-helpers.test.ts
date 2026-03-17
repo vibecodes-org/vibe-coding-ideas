@@ -142,7 +142,7 @@ describe("checkAndCompleteRun", () => {
 // --- checkAndApplyAutoRules ---
 
 function createAutoRuleMockSupabase(options: {
-  rule?: { id: string; template_id: string; auto_run: boolean } | null;
+  rule?: { id: string; template_id: string } | null;
   activeRun?: { id: string } | null;
 }) {
   const calls: { table: string; method: string }[] = [];
@@ -179,7 +179,7 @@ describe("checkAndApplyAutoRules", () => {
   it("calls applyFn when a matching auto-rule exists", async () => {
     const applyFn = vi.fn().mockResolvedValue({});
     const supabase = createAutoRuleMockSupabase({
-      rule: { id: "rule-1", template_id: "tmpl-1", auto_run: true },
+      rule: { id: "rule-1", template_id: "tmpl-1" },
       activeRun: null,
     });
 
@@ -202,7 +202,7 @@ describe("checkAndApplyAutoRules", () => {
   it("does not call applyFn when task has active workflow run", async () => {
     const applyFn = vi.fn();
     const supabase = createAutoRuleMockSupabase({
-      rule: { id: "rule-1", template_id: "tmpl-1", auto_run: true },
+      rule: { id: "rule-1", template_id: "tmpl-1" },
       activeRun: { id: "run-1" },
     });
 
@@ -216,7 +216,7 @@ describe("checkAndApplyAutoRules", () => {
     const applyFn = vi.fn().mockRejectedValue(new Error("apply failed"));
     const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
     const supabase = createAutoRuleMockSupabase({
-      rule: { id: "rule-1", template_id: "tmpl-1", auto_run: true },
+      rule: { id: "rule-1", template_id: "tmpl-1" },
       activeRun: null,
     });
 
