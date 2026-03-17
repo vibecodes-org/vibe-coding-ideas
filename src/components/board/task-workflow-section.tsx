@@ -541,7 +541,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
       {selectedStep && (
         <StepDetailDialog
           open={!!selectedStep}
-          onOpenChange={(open) => { if (!open) setSelectedStep(null); }}
+          onOpenChange={(open) => { if (!open) { setSelectedStep(null); fetchData(); } }}
           step={selectedStep}
           stepNumber={steps!.findIndex((s) => s.id === selectedStep.id) + 1}
           ideaId={ideaId}
