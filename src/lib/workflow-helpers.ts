@@ -48,6 +48,78 @@ export async function checkAndApplyAutoRules(
 }
 
 /**
+ * Check if removing a label would orphan a workflow applied by an auto-rule.
+ * If so, returns info about the active workflow run. Does NOT delete anything.
+ */
+export async function checkAutoRuleWorkflow(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  taskId: string,
+  labelId: string,
+  ideaId: string
+): Promise<{ hasActiveWorkflow: boolean; runId?: string; templateName?: string }> {
+  // Find matching auto-rule for this idea + label
+  const { data: rule } = await supabase
+    .from("workflow_auto_rules")
+    .select("id, template_id, workflow_templates(name)")
+    .eq("idea_id", ideaId)
+    .eq("label_id", labelId)
+    .maybeSingle();
+
+  if (!rule) return { hasActiveWorkflow: false };
+
+  // Check for active workflow run on this task matching the rule's template
+  const { data: activeRun } = await supabase
+    .from("workflow_runs")
+    .select("id")
+    .eq("task_id", taskId)
+    .eq("template_id", rule.template_id)
+    .not("status", "in", '("completed","failed")')
+    .maybeSingle();
+
+  if (!activeRun) return { hasActiveWorkflow: false };
+
+  const templateName =
+    (rule.workflow_templates as unknown as { name: string } | null)?.name ?? undefined;
+
+  return { hasActiveWorkflow: true, runId: activeRun.id, templateName };
+}
+
+/**
+ * Remove the workflow run applied by an auto-rule when its label is removed.
+ * Only removes active runs (pending/running/paused) — completed/failed are preserved.
+ * Steps cascade-delete via FK.
+ */
+export async function removeAutoRuleWorkflow(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  taskId: string,
+  labelId: string,
+  ideaId: string
+): Promise<{ removed: boolean; templateName?: string }> {
+  const check = await checkAutoRuleWorkflow(supabase, taskId, labelId, ideaId);
+
+  if (!check.hasActiveWorkflow || !check.runId) {
+    return { removed: false };
+  }
+
+  const { error } = await supabase
+    .from("workflow_runs")
+    .delete()
+    .eq("id", check.runId);
+
+  if (error) {
+    console.error(
+      `[removeAutoRuleWorkflow] Failed to delete workflow run=${check.runId}:`,
+      error
+    );
+    return { removed: false };
+  }
+
+  return { removed: true, templateName: check.templateName };
+}
+
+/**
  * Check if all steps in a workflow run are in a terminal state (completed or skipped).
  * If so, mark the run as completed. Failed steps do NOT count as terminal —
  * the run stays running/failed until a retry resolves the failure.

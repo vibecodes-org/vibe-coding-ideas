@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_BOARD_COLUMNS, POSITION_GAP } from "@/lib/constants";
 import { validateTitle, validateOptionalDescription, validateLabelName, validateLabelColor, validateComment } from "@/lib/validation";
-import { checkAndApplyAutoRules } from "@/lib/workflow-helpers";
+import { checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow } from "@/lib/workflow-helpers";
 import { applyWorkflowTemplate } from "@/actions/workflow-templates";
 
 export async function initializeBoardColumns(ideaId: string) {
@@ -477,10 +477,26 @@ export async function addLabelsToTask(
   revalidatePath(`/ideas/${ideaId}/board`);
 }
 
-export async function removeLabelFromTask(
+export async function checkLabelAutoRuleWorkflow(
   taskId: string,
   labelId: string,
   ideaId: string
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  return checkAutoRuleWorkflow(supabase, taskId, labelId, ideaId);
+}
+
+export async function removeLabelFromTask(
+  taskId: string,
+  labelId: string,
+  ideaId: string,
+  removeWorkflow?: boolean
 ) {
   const supabase = await createClient();
   const {
@@ -497,7 +513,15 @@ export async function removeLabelFromTask(
 
   if (error) throw new Error(error.message);
 
+  // Remove associated auto-rule workflow if requested
+  let workflowRemoved = false;
+  if (removeWorkflow) {
+    const result = await removeAutoRuleWorkflow(supabase, taskId, labelId, ideaId);
+    workflowRemoved = result.removed;
+  }
+
   revalidatePath(`/ideas/${ideaId}/board`);
+  return { workflowRemoved };
 }
 
 // ============================================================

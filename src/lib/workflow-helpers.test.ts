@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { checkAndCompleteRun, checkAndApplyAutoRules, propagateTemplateEdits, TERMINAL_STATUSES } from "./workflow-helpers";
+import { checkAndCompleteRun, checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow, propagateTemplateEdits, TERMINAL_STATUSES } from "./workflow-helpers";
 
 function createMockSupabase(steps: { id: string; status: string }[]) {
   const updateChain = {
@@ -437,5 +437,194 @@ describe("propagateTemplateEdits", () => {
 
     expect(result.stepsUpdated).toBe(0);
     expect(result.runsUpdated).toBe(0);
+  });
+});
+
+// --- checkAutoRuleWorkflow ---
+
+function createCheckRemoveMockSupabase(options: {
+  rule?: { id: string; template_id: string; workflow_templates: { name: string } | null } | null;
+  activeRun?: { id: string } | null;
+}) {
+  const makeChain = (resolvedData: unknown) => {
+    const chain: Record<string, unknown> = {};
+    const resolver = () =>
+      Promise.resolve({ data: resolvedData ?? null, error: null });
+
+    for (const m of ["select", "eq", "not", "maybeSingle"]) {
+      chain[m] = vi.fn((..._args: unknown[]) => {
+        if (m === "maybeSingle") return resolver();
+        return chain;
+      });
+    }
+    return chain;
+  };
+
+  const autoRuleChain = makeChain(options.rule ?? null);
+  const activeRunChain = makeChain(options.activeRun ?? null);
+
+  return {
+    from: vi.fn((table: string) => {
+      if (table === "workflow_auto_rules") return autoRuleChain;
+      if (table === "workflow_runs") return activeRunChain;
+      return makeChain(null);
+    }),
+  };
+}
+
+describe("checkAutoRuleWorkflow", () => {
+  it("returns hasActiveWorkflow: false when no auto-rule exists", async () => {
+    const supabase = createCheckRemoveMockSupabase({ rule: null });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await checkAutoRuleWorkflow(supabase as any, "task-1", "label-1", "idea-1");
+
+    expect(result).toEqual({ hasActiveWorkflow: false });
+  });
+
+  it("returns hasActiveWorkflow: false when rule exists but no active run", async () => {
+    const supabase = createCheckRemoveMockSupabase({
+      rule: { id: "rule-1", template_id: "tmpl-1", workflow_templates: { name: "My Workflow" } },
+      activeRun: null,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await checkAutoRuleWorkflow(supabase as any, "task-1", "label-1", "idea-1");
+
+    expect(result).toEqual({ hasActiveWorkflow: false });
+  });
+
+  it("returns hasActiveWorkflow: true with run details when active run exists", async () => {
+    const supabase = createCheckRemoveMockSupabase({
+      rule: { id: "rule-1", template_id: "tmpl-1", workflow_templates: { name: "Bug Triage" } },
+      activeRun: { id: "run-1" },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await checkAutoRuleWorkflow(supabase as any, "task-1", "label-1", "idea-1");
+
+    expect(result).toEqual({
+      hasActiveWorkflow: true,
+      runId: "run-1",
+      templateName: "Bug Triage",
+    });
+  });
+
+  it("returns templateName as undefined when workflow_templates is null", async () => {
+    const supabase = createCheckRemoveMockSupabase({
+      rule: { id: "rule-1", template_id: "tmpl-1", workflow_templates: null },
+      activeRun: { id: "run-1" },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await checkAutoRuleWorkflow(supabase as any, "task-1", "label-1", "idea-1");
+
+    expect(result).toEqual({
+      hasActiveWorkflow: true,
+      runId: "run-1",
+      templateName: undefined,
+    });
+  });
+});
+
+// --- removeAutoRuleWorkflow ---
+
+function createRemoveWorkflowMockSupabase(options: {
+  rule?: { id: string; template_id: string; workflow_templates: { name: string } | null } | null;
+  activeRun?: { id: string } | null;
+  deleteError?: { message: string } | null;
+}) {
+  const deleteCalled: string[] = [];
+
+  const makeSelectChain = (resolvedData: unknown) => {
+    const chain: Record<string, ReturnType<typeof vi.fn>> = {};
+    const resolver = () =>
+      Promise.resolve({ data: resolvedData ?? null, error: null });
+
+    for (const m of ["select", "eq", "not", "maybeSingle"]) {
+      chain[m] = vi.fn(() => {
+        if (m === "maybeSingle") return resolver();
+        return chain;
+      });
+    }
+    return chain;
+  };
+
+  const autoRuleChain = makeSelectChain(options.rule ?? null);
+  const activeRunSelectChain = makeSelectChain(options.activeRun ?? null);
+
+  // For delete chain
+  const deleteEqFn = vi.fn((_col: string, val: string) => {
+    deleteCalled.push(val);
+    return Promise.resolve({ error: options.deleteError ?? null });
+  });
+
+  return {
+    from: vi.fn((table: string) => {
+      if (table === "workflow_auto_rules") return autoRuleChain;
+      if (table === "workflow_runs") {
+        return {
+          select: activeRunSelectChain.select,
+          eq: activeRunSelectChain.eq,
+          not: activeRunSelectChain.not,
+          maybeSingle: activeRunSelectChain.maybeSingle,
+          delete: vi.fn(() => ({ eq: deleteEqFn })),
+        };
+      }
+      return makeSelectChain(null);
+    }),
+    _deleteCalled: deleteCalled,
+  };
+}
+
+describe("removeAutoRuleWorkflow", () => {
+  it("returns removed: false when no auto-rule exists", async () => {
+    const supabase = createRemoveWorkflowMockSupabase({ rule: null });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await removeAutoRuleWorkflow(supabase as any, "task-1", "label-1", "idea-1");
+
+    expect(result).toEqual({ removed: false });
+  });
+
+  it("returns removed: false when no active run exists", async () => {
+    const supabase = createRemoveWorkflowMockSupabase({
+      rule: { id: "rule-1", template_id: "tmpl-1", workflow_templates: { name: "Test" } },
+      activeRun: null,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await removeAutoRuleWorkflow(supabase as any, "task-1", "label-1", "idea-1");
+
+    expect(result).toEqual({ removed: false });
+  });
+
+  it("deletes the workflow run and returns removed: true", async () => {
+    const supabase = createRemoveWorkflowMockSupabase({
+      rule: { id: "rule-1", template_id: "tmpl-1", workflow_templates: { name: "Bug Triage" } },
+      activeRun: { id: "run-1" },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await removeAutoRuleWorkflow(supabase as any, "task-1", "label-1", "idea-1");
+
+    expect(result).toEqual({ removed: true, templateName: "Bug Triage" });
+    expect(supabase._deleteCalled).toContain("run-1");
+  });
+
+  it("returns removed: false when delete fails", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const supabase = createRemoveWorkflowMockSupabase({
+      rule: { id: "rule-1", template_id: "tmpl-1", workflow_templates: { name: "Test" } },
+      activeRun: { id: "run-1" },
+      deleteError: { message: "permission denied" },
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const result = await removeAutoRuleWorkflow(supabase as any, "task-1", "label-1", "idea-1");
+
+    expect(result).toEqual({ removed: false });
+    expect(consoleSpy).toHaveBeenCalled();
+    consoleSpy.mockRestore();
   });
 });

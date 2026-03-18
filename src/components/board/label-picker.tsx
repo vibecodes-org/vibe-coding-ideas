@@ -13,8 +13,19 @@ import { LABEL_COLORS } from "@/lib/constants";
 import { getLabelColorConfig } from "@/lib/utils";
 import { logTaskActivity } from "@/lib/activity";
 import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
+import {
   addLabelToTask,
   removeLabelFromTask,
+  checkLabelAutoRuleWorkflow,
   createBoardLabel,
   updateBoardLabel,
   deleteBoardLabel,
@@ -47,6 +58,12 @@ export function LabelPicker({
   const [newColor, setNewColor] = useState("blue");
   const [saving, setSaving] = useState(false);
 
+  // Workflow removal confirmation state
+  const [confirmRemove, setConfirmRemove] = useState<{
+    labelId: string;
+    templateName?: string;
+  } | null>(null);
+
   // Optimistic local state for assigned label IDs
   const [localLabelIds, setLocalLabelIds] = useState<Set<string>>(() => new Set(taskLabels.map((l) => l.id)));
 
@@ -69,6 +86,23 @@ export function LabelPicker({
   async function handleToggleLabel(labelId: string) {
     const isCurrentlyAssigned = localLabelIds.has(labelId);
 
+    // When removing a label, check if it has an auto-rule with an active workflow
+    if (isCurrentlyAssigned) {
+      try {
+        const check = await checkLabelAutoRuleWorkflow(taskId, labelId, ideaId);
+        if (check.hasActiveWorkflow) {
+          setConfirmRemove({ labelId, templateName: check.templateName });
+          return;
+        }
+      } catch {
+        // If check fails, proceed without confirmation
+      }
+    }
+
+    await executeToggleLabel(labelId, isCurrentlyAssigned, false);
+  }
+
+  async function executeToggleLabel(labelId: string, isCurrentlyAssigned: boolean, removeWorkflow: boolean) {
     // Optimistic update
     setLocalLabelIds((prev) => {
       const next = new Set(prev);
@@ -82,7 +116,7 @@ export function LabelPicker({
 
     try {
       if (isCurrentlyAssigned) {
-        await removeLabelFromTask(taskId, labelId, ideaId);
+        await removeLabelFromTask(taskId, labelId, ideaId, removeWorkflow);
       } else {
         await addLabelToTask(taskId, labelId, ideaId);
       }
@@ -104,6 +138,19 @@ export function LabelPicker({
         return next;
       });
     }
+  }
+
+  function handleConfirmRemoveWorkflow() {
+    if (!confirmRemove) return;
+    executeToggleLabel(confirmRemove.labelId, true, true);
+    setConfirmRemove(null);
+  }
+
+  function handleCancelRemoveWorkflow() {
+    if (!confirmRemove) return;
+    // Remove label without removing workflow
+    executeToggleLabel(confirmRemove.labelId, true, false);
+    setConfirmRemove(null);
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -300,22 +347,53 @@ export function LabelPicker({
     "z-50 w-64 rounded-md border bg-popover p-2 text-popover-foreground shadow-md outline-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95";
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{children}</PopoverTrigger>
-      {inDialog ? (
-        <PopoverPrimitive.Content
-          align="start"
-          sideOffset={4}
-          className={popoverContentClass}
-          onOpenAutoFocus={(e) => e.preventDefault()}
-        >
-          {pickerContent}
-        </PopoverPrimitive.Content>
-      ) : (
-        <PopoverContent className="w-64 p-2" align="start">
-          {pickerContent}
-        </PopoverContent>
-      )}
-    </Popover>
+    <>
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger asChild>{children}</PopoverTrigger>
+        {inDialog ? (
+          <PopoverPrimitive.Content
+            align="start"
+            sideOffset={4}
+            className={popoverContentClass}
+            onOpenAutoFocus={(e) => e.preventDefault()}
+          >
+            {pickerContent}
+          </PopoverPrimitive.Content>
+        ) : (
+          <PopoverContent className="w-64 p-2" align="start">
+            {pickerContent}
+          </PopoverContent>
+        )}
+      </Popover>
+
+      <AlertDialog open={!!confirmRemove} onOpenChange={(open) => !open && setConfirmRemove(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Remove label with active workflow?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This label has an auto-rule that applied the{" "}
+              <span className="font-medium text-foreground">
+                {confirmRemove?.templateName ?? "workflow"}
+              </span>{" "}
+              workflow to this task. Do you also want to remove the active workflow?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={() => setConfirmRemove(null)}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction onClick={handleCancelRemoveWorkflow}>
+              Keep workflow
+            </AlertDialogAction>
+            <AlertDialogAction
+              variant="destructive"
+              onClick={handleConfirmRemoveWorkflow}
+            >
+              Remove workflow
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }

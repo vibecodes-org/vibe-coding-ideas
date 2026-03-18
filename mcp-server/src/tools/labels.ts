@@ -2,7 +2,7 @@ import { z } from "zod";
 import { POSITION_GAP, VALID_LABEL_COLORS } from "../constants";
 import { logActivity } from "../activity";
 import type { McpContext } from "../context";
-import { checkAndApplyAutoRules } from "../../../src/lib/workflow-helpers";
+import { checkAndApplyAutoRules, removeAutoRuleWorkflow } from "../../../src/lib/workflow-helpers";
 import { applyWorkflowTemplate } from "./workflows";
 
 // --- manage_labels ---
@@ -25,6 +25,10 @@ export const manageLabelsSchema = z.object({
     .uuid()
     .optional()
     .describe("Label ID (for add/remove)"),
+  remove_workflow: z
+    .boolean()
+    .optional()
+    .describe("When removing a label, also remove the workflow applied by an auto-rule for this label (default false)"),
 });
 
 export async function manageLabels(
@@ -101,7 +105,16 @@ export async function manageLabels(
       label_name: label?.name ?? params.label_id,
     });
 
-    return { success: true };
+    // Remove associated auto-rule workflow if requested
+    let workflowRemoved = false;
+    if (params.remove_workflow) {
+      const result = await removeAutoRuleWorkflow(
+        ctx.supabase, params.task_id, params.label_id, params.idea_id
+      );
+      workflowRemoved = result.removed;
+    }
+
+    return { success: true, workflow_removed: workflowRemoved };
   }
 
   throw new Error(`Unknown action: ${params.action}`);
