@@ -2,6 +2,12 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { checkAndCompleteRun } from "@/lib/workflow-helpers";
+import {
+  validateTitle,
+  validateOptionalDescription,
+  validateDeliverables,
+  MAX_WORKFLOW_ROLE_LENGTH,
+} from "@/lib/validation";
 
 // ─── Workflow Steps ───
 
@@ -58,6 +64,7 @@ export async function updateWorkflowStep(
     description?: string | null;
     agent_role?: string | null;
     human_check_required?: boolean;
+    expected_deliverables?: string[];
     bot_id?: string | null;
   }
 ) {
@@ -72,14 +79,35 @@ export async function updateWorkflowStep(
     throw new Error("No fields to update");
   }
 
+  // Validate inputs
+  const patch: Record<string, unknown> = {};
+  if (updates.title !== undefined) patch.title = validateTitle(updates.title);
+  if (updates.description !== undefined) patch.description = validateOptionalDescription(updates.description);
+  if (updates.agent_role !== undefined) {
+    if (updates.agent_role !== null) {
+      const trimmed = updates.agent_role.trim();
+      if (trimmed.length > MAX_WORKFLOW_ROLE_LENGTH) {
+        throw new Error(`Agent role must be ${MAX_WORKFLOW_ROLE_LENGTH} characters or less`);
+      }
+      patch.agent_role = trimmed || null;
+    } else {
+      patch.agent_role = null;
+    }
+  }
+  if (updates.human_check_required !== undefined) patch.human_check_required = updates.human_check_required;
+  if (updates.expected_deliverables !== undefined) patch.expected_deliverables = validateDeliverables(updates.expected_deliverables);
+  if (updates.bot_id !== undefined) patch.bot_id = updates.bot_id;
+
   const { data, error } = await supabase
     .from("task_workflow_steps")
-    .update(updates)
+    .update(patch)
     .eq("id", stepId)
+    .eq("status", "pending")
     .select("*")
-    .single();
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Step not found or is no longer pending");
 
   return data;
 }

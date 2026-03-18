@@ -80,7 +80,8 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - **Rework instructions**: MCP `claim_next_step` returns `rework_instructions` (previous failure output + `changes_requested` comments) when claiming a step that was previously failed, giving agents context for retry
 - **Agent match feedback**: `TaskWorkflowSection` shows a warning banner when pending steps have roles with no matching agent in the idea's pool
 - Server actions in `src/actions/workflow.ts` (step lifecycle) and `src/actions/workflow-templates.ts` (template CRUD + auto-rules)
-- MCP tools: 21 tools in `mcp-server/src/tools/workflows.ts` — template CRUD, apply, claim_next_step, complete_step, fail_step, skip_step, approve_step, get_step_context, add_step_comment, get_step_comments, rematch_workflow_agents, reset_workflow, remove_workflow, list_workflow_auto_rules, create_workflow_auto_rule, update_workflow_auto_rule, delete_workflow_auto_rule, apply_auto_rule_retroactively
+- **Editable pending steps**: Pending workflow steps can be edited (title, description, role, deliverables, approval gate) from the step detail dialog UI and via MCP `update_step` tool. Non-pending steps are read-only
+- MCP tools: 22 tools in `mcp-server/src/tools/workflows.ts` — template CRUD, apply, claim_next_step, complete_step, fail_step, skip_step, update_step, approve_step, get_step_context, add_step_comment, get_step_comments, rematch_workflow_agents, reset_workflow, remove_workflow, list_workflow_auto_rules, create_workflow_auto_rule, update_workflow_auto_rule, delete_workflow_auto_rule, apply_auto_rule_retroactively
 
 ### Idea Agent Pool
 - `idea_agents` junction table: `(idea_id, bot_id, added_by)` with `UNIQUE(idea_id, bot_id)`
@@ -260,7 +261,7 @@ See `docs/release-process.md` for full details.
 
 ## MCP Server
 
-Two modes sharing 78 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI:
+Two modes sharing 79 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI:
 - **Local (stdio)**: `mcp-server/src/index.ts` — service-role client, bypasses RLS
 - **Remote (HTTP)**: `src/app/api/mcp/[[...transport]]/route.ts` — OAuth 2.1 + PKCE, per-user RLS
 

@@ -9,6 +9,8 @@ import {
   approveStepSchema,
   failStep,
   failStepSchema,
+  updateStep,
+  updateStepSchema,
 } from "./workflows";
 
 // ---------------------------------------------------------------------------
@@ -1003,5 +1005,117 @@ describe("failStep", () => {
     });
 
     expect(runUpdateData).toEqual({ status: "failed" });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// updateStep tests
+// ---------------------------------------------------------------------------
+
+describe("updateStep", () => {
+  it("successfully updates a pending step's title", async () => {
+    const updatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: RUN_ID,
+      title: "New Title",
+      description: null,
+      agent_role: "developer",
+      human_check_required: false,
+      expected_deliverables: [],
+      status: "pending",
+    };
+
+    const ctx = makeContext(((table: string) => {
+      const chain = createChain(null);
+      chain.chain.maybeSingle = vi.fn(() =>
+        Promise.resolve({ data: updatedStep, error: null })
+      );
+      return chain.chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = await updateStep(ctx, { step_id: STEP_ID, title: "New Title" });
+    expect(result.title).toBe("New Title");
+  });
+
+  it("successfully updates multiple fields at once", async () => {
+    const updatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: RUN_ID,
+      title: "Updated Title",
+      description: "Updated description",
+      agent_role: "designer",
+      human_check_required: true,
+      expected_deliverables: ["Mockup", "Spec"],
+      status: "pending",
+    };
+
+    let capturedPatch: unknown = null;
+    const ctx = makeContext(((table: string) => {
+      const chain = createChain(null);
+      chain.chain.update = vi.fn((data: unknown) => {
+        capturedPatch = data;
+        return chain.chain;
+      });
+      chain.chain.maybeSingle = vi.fn(() =>
+        Promise.resolve({ data: updatedStep, error: null })
+      );
+      return chain.chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = await updateStep(ctx, {
+      step_id: STEP_ID,
+      title: "Updated Title",
+      description: "Updated description",
+      agent_role: "designer",
+      human_check_required: true,
+      expected_deliverables: ["Mockup", "Spec"],
+    });
+
+    expect(result.title).toBe("Updated Title");
+    expect(result.agent_role).toBe("designer");
+    expect(capturedPatch).toMatchObject({
+      title: "Updated Title",
+      description: "Updated description",
+      agent_role: "designer",
+      human_check_required: true,
+      expected_deliverables: ["Mockup", "Spec"],
+    });
+  });
+
+  it("rejects update when step is not pending", async () => {
+    const ctx = makeContext(((table: string) => {
+      const chain = createChain(null);
+      chain.chain.maybeSingle = vi.fn(() =>
+        Promise.resolve({ data: null, error: null })
+      );
+      return chain.chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await expect(
+      updateStep(ctx, { step_id: STEP_ID, title: "New Title" })
+    ).rejects.toThrow("Step not found or is no longer pending");
+  });
+
+  it("rejects update with no fields provided", async () => {
+    const ctx = makeContext((() => createChain(null).chain) as unknown as McpContext["supabase"]["from"]);
+
+    await expect(
+      updateStep(ctx, { step_id: STEP_ID })
+    ).rejects.toThrow("No fields to update");
+  });
+
+  describe("updateStepSchema", () => {
+    it("accepts valid input with title only", () => {
+      const result = updateStepSchema.parse({ step_id: STEP_ID, title: "New Title" });
+      expect(result.title).toBe("New Title");
+    });
+
+    it("rejects invalid UUID", () => {
+      expect(() =>
+        updateStepSchema.parse({ step_id: "not-a-uuid", title: "Test" })
+      ).toThrow();
+    });
   });
 });

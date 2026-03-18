@@ -1,0 +1,834 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VibeCodes Workflow Database Schema</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface2: #1a1a26;
+    --border: #2a2a3a;
+    --border-accent: #3a3a5a;
+    --text: #e0e0f0;
+    --text-muted: #8888aa;
+    --text-dim: #5a5a7a;
+    --pk: #f0c040;
+    --fk: #60a0ff;
+    --col: #c0c0d8;
+    --type: #888aaa;
+    --trigger: #e07030;
+    --index: #40c090;
+    --blue: #4080ff;
+    --purple: #9060e0;
+    --emerald: #30c080;
+    --amber: #e0a030;
+    --red: #e04040;
+    --pink: #e060a0;
+    --cyan: #40c8e0;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'SF Mono', 'Cascadia Code', 'JetBrains Mono', 'Fira Code', Consolas, monospace;
+    font-size: 13px;
+    line-height: 1.5;
+    padding: 40px;
+    min-height: 100vh;
+  }
+
+  h1 {
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 8px;
+    color: var(--text);
+    letter-spacing: -0.5px;
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 14px;
+    margin-bottom: 40px;
+  }
+
+  /* ── Legend ── */
+  .legend {
+    display: flex;
+    gap: 24px;
+    flex-wrap: wrap;
+    margin-bottom: 40px;
+    padding: 16px 20px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-muted);
+  }
+  .legend-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  /* ── Section Headers ── */
+  .section-header {
+    font-size: 16px;
+    font-weight: 600;
+    color: var(--text);
+    margin: 48px 0 24px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+  .section-header span {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-size: 13px;
+  }
+
+  /* ── Table Cards ── */
+  .schema-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(420px, 1fr));
+    gap: 24px;
+    margin-bottom: 24px;
+  }
+
+  .table-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .table-card:hover {
+    border-color: var(--border-accent);
+  }
+
+  .table-header {
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .table-name {
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  .table-badge {
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    background: var(--surface2);
+    border: 1px solid var(--border);
+  }
+
+  .columns-list {
+    padding: 6px 0;
+  }
+  .col-row {
+    display: grid;
+    grid-template-columns: 20px 1fr auto;
+    align-items: center;
+    padding: 4px 18px;
+    gap: 8px;
+    font-size: 12px;
+  }
+  .col-row:hover {
+    background: rgba(255,255,255,0.02);
+  }
+  .col-icon {
+    width: 16px;
+    height: 16px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+    border-radius: 3px;
+    flex-shrink: 0;
+  }
+  .col-icon.pk { background: rgba(240,192,64,0.15); color: var(--pk); }
+  .col-icon.fk { background: rgba(96,160,255,0.15); color: var(--fk); }
+  .col-icon.col { background: transparent; color: transparent; }
+  .col-name { color: var(--col); }
+  .col-name.pk { color: var(--pk); }
+  .col-name.fk { color: var(--fk); }
+  .col-type { color: var(--type); font-size: 11px; text-align: right; }
+
+  .table-footer {
+    padding: 10px 18px;
+    border-top: 1px solid var(--border);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .footer-tag {
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 3px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+  }
+  .footer-tag.trigger { background: rgba(224,112,48,0.1); color: var(--trigger); border: 1px solid rgba(224,112,48,0.2); }
+  .footer-tag.index { background: rgba(64,192,144,0.1); color: var(--index); border: 1px solid rgba(64,192,144,0.2); }
+  .footer-tag.realtime { background: rgba(144,96,224,0.1); color: var(--purple); border: 1px solid rgba(144,96,224,0.2); }
+  .footer-tag.rls { background: rgba(64,128,255,0.1); color: var(--blue); border: 1px solid rgba(64,128,255,0.2); }
+
+  /* ── Relationship Diagram ── */
+  .er-diagram {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 32px;
+    margin: 24px 0;
+    overflow-x: auto;
+  }
+  .er-diagram svg {
+    display: block;
+    margin: 0 auto;
+  }
+
+  /* ── UI Mapping ── */
+  .screen-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(360px, 1fr));
+    gap: 20px;
+    margin: 24px 0;
+  }
+
+  .screen-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .screen-name {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .screen-path {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+  .screen-tables {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 12px;
+  }
+  .screen-table-tag {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-weight: 600;
+  }
+  .tag-primary { background: rgba(64,128,255,0.12); color: var(--blue); border: 1px solid rgba(64,128,255,0.25); }
+  .tag-secondary { background: rgba(144,96,224,0.12); color: var(--purple); border: 1px solid rgba(144,96,224,0.25); }
+  .tag-read { background: rgba(64,192,144,0.12); color: var(--emerald); border: 1px solid rgba(64,192,144,0.25); }
+  .tag-write { background: rgba(224,160,48,0.12); color: var(--amber); border: 1px solid rgba(224,160,48,0.25); }
+
+  .screen-details {
+    list-style: none;
+  }
+  .screen-details li {
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 3px 0;
+    padding-left: 16px;
+    position: relative;
+  }
+  .screen-details li::before {
+    content: ">";
+    position: absolute;
+    left: 0;
+    color: var(--text-dim);
+  }
+
+  /* ── Flow Diagram ── */
+  .flow-section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 32px;
+    margin: 24px 0;
+  }
+  .flow-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 8px 0;
+    flex-wrap: wrap;
+  }
+  .flow-box {
+    padding: 8px 14px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+  }
+  .flow-arrow {
+    color: var(--text-dim);
+    font-size: 16px;
+    flex-shrink: 0;
+  }
+  .flow-label {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-style: italic;
+  }
+  .fb-blue { background: rgba(64,128,255,0.12); color: var(--blue); border: 1px solid rgba(64,128,255,0.25); }
+  .fb-purple { background: rgba(144,96,224,0.12); color: var(--purple); border: 1px solid rgba(144,96,224,0.25); }
+  .fb-emerald { background: rgba(48,192,128,0.12); color: var(--emerald); border: 1px solid rgba(48,192,128,0.25); }
+  .fb-amber { background: rgba(224,160,48,0.12); color: var(--amber); border: 1px solid rgba(224,160,48,0.25); }
+  .fb-red { background: rgba(224,64,64,0.12); color: var(--red); border: 1px solid rgba(224,64,64,0.25); }
+  .fb-pink { background: rgba(224,96,160,0.12); color: var(--pink); border: 1px solid rgba(224,96,160,0.25); }
+  .fb-cyan { background: rgba(64,200,224,0.12); color: var(--cyan); border: 1px solid rgba(64,200,224,0.25); }
+</style>
+</head>
+<body>
+
+<h1>VibeCodes Workflow Schema</h1>
+<p class="subtitle">6 core tables, 4 supporting tables, 7 triggers, 1 unique index concurrency guard</p>
+
+<!-- Legend -->
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--pk)"></div> Primary Key</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--fk)"></div> Foreign Key</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--trigger)"></div> Trigger</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--index)"></div> Index</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--purple)"></div> Realtime</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--blue)"></div> RLS</div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- RELATIONSHIP DIAGRAM                       -->
+<!-- ═══════════════════════════════════════════ -->
+
+<div class="section-header">Entity Relationships</div>
+
+<div class="er-diagram">
+<svg viewBox="0 0 960 620" width="960" height="620" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#5a5a7a"/>
+    </marker>
+    <marker id="arrow-blue" viewBox="0 0 10 7" refX="10" refY="3.5" markerWidth="8" markerHeight="6" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 3.5 L 0 7 z" fill="#4080ff"/>
+    </marker>
+    <marker id="diamond" viewBox="0 0 12 8" refX="0" refY="4" markerWidth="10" markerHeight="7" orient="auto">
+      <path d="M 0 4 L 6 0 L 12 4 L 6 8 z" fill="#e07030" stroke="none"/>
+    </marker>
+  </defs>
+
+  <!-- Table boxes -->
+  <g font-family="'SF Mono', Consolas, monospace" font-size="12">
+
+    <!-- workflow_library_templates (top-left, standalone) -->
+    <rect x="20" y="20" width="230" height="36" rx="6" fill="#1a1a26" stroke="#3a3a5a"/>
+    <text x="135" y="43" text-anchor="middle" fill="#9060e0" font-weight="700">workflow_library_templates</text>
+    <text x="135" y="72" text-anchor="middle" fill="#5a5a7a" font-size="10">Admin-managed template library</text>
+
+    <!-- workflow_templates -->
+    <rect x="60" y="140" width="200" height="36" rx="6" fill="#1a1a26" stroke="#4080ff"/>
+    <text x="160" y="163" text-anchor="middle" fill="#4080ff" font-weight="700">workflow_templates</text>
+
+    <!-- workflow_auto_rules -->
+    <rect x="60" y="280" width="200" height="36" rx="6" fill="#1a1a26" stroke="#e0a030"/>
+    <text x="160" y="303" text-anchor="middle" fill="#e0a030" font-weight="700">workflow_auto_rules</text>
+
+    <!-- board_labels -->
+    <rect x="60" y="420" width="160" height="36" rx="6" fill="#1a1a26" stroke="#5a5a7a"/>
+    <text x="140" y="443" text-anchor="middle" fill="#8888aa" font-weight="700">board_labels</text>
+
+    <!-- board_task_labels -->
+    <rect x="60" y="540" width="180" height="36" rx="6" fill="#1a1a26" stroke="#5a5a7a"/>
+    <text x="150" y="563" text-anchor="middle" fill="#8888aa" font-weight="700">board_task_labels</text>
+
+    <!-- workflow_runs -->
+    <rect x="400" y="140" width="180" height="36" rx="6" fill="#1a1a26" stroke="#30c080"/>
+    <text x="490" y="163" text-anchor="middle" fill="#30c080" font-weight="700">workflow_runs</text>
+
+    <!-- board_tasks -->
+    <rect x="400" y="20" width="160" height="36" rx="6" fill="#1a1a26" stroke="#5a5a7a"/>
+    <text x="480" y="43" text-anchor="middle" fill="#8888aa" font-weight="700">board_tasks</text>
+
+    <!-- task_workflow_steps -->
+    <rect x="680" y="140" width="210" height="36" rx="6" fill="#1a1a26" stroke="#e04040"/>
+    <text x="785" y="163" text-anchor="middle" fill="#e04040" font-weight="700">task_workflow_steps</text>
+
+    <!-- workflow_step_comments -->
+    <rect x="700" y="300" width="220" height="36" rx="6" fill="#1a1a26" stroke="#e060a0"/>
+    <text x="810" y="323" text-anchor="middle" fill="#e060a0" font-weight="700">workflow_step_comments</text>
+
+    <!-- idea_agents + bot_profiles -->
+    <rect x="680" y="20" width="170" height="36" rx="6" fill="#1a1a26" stroke="#5a5a7a"/>
+    <text x="765" y="43" text-anchor="middle" fill="#8888aa" font-weight="700">idea_agents</text>
+    <text x="765" y="72" text-anchor="middle" fill="#5a5a7a" font-size="10">+ bot_profiles (role matching)</text>
+
+    <!-- ideas -->
+    <rect x="370" y="420" width="120" height="36" rx="6" fill="#1a1a26" stroke="#5a5a7a"/>
+    <text x="430" y="443" text-anchor="middle" fill="#8888aa" font-weight="700">ideas</text>
+
+  </g>
+
+  <!-- Relationship lines -->
+  <g fill="none" stroke-width="1.5">
+
+    <!-- workflow_templates -> ideas (idea_id) -->
+    <path d="M 160 176 L 160 230 Q 160 240 170 240 L 410 240 Q 420 240 420 250 L 420 420" stroke="#5a5a7a" stroke-dasharray="6 3" marker-end="url(#arrow)"/>
+    <text x="300" y="235" fill="#5a5a7a" font-size="10" font-family="monospace">idea_id</text>
+
+    <!-- workflow_auto_rules -> workflow_templates (template_id) -->
+    <path d="M 160 280 L 160 176" stroke="#e0a030" marker-end="url(#arrow)"/>
+    <text x="115" y="230" fill="#e0a030" font-size="10" font-family="monospace">template_id</text>
+
+    <!-- workflow_auto_rules -> board_labels (label_id) -->
+    <path d="M 140 316 L 140 420" stroke="#e0a030" marker-end="url(#arrow)"/>
+    <text x="96" y="370" fill="#e0a030" font-size="10" font-family="monospace">label_id</text>
+
+    <!-- board_task_labels TRIGGER -> workflow_auto_rules -->
+    <path d="M 240 555 Q 300 555 300 470 Q 300 380 280 316" stroke="#e07030" stroke-dasharray="4 3" marker-start="url(#diamond)"/>
+    <text x="306" y="440" fill="#e07030" font-size="10" font-family="monospace" font-style="italic">trigger: auto_apply</text>
+
+    <!-- workflow_runs -> board_tasks (task_id) -->
+    <path d="M 490 140 L 490 56" stroke="#30c080" marker-end="url(#arrow)"/>
+    <text x="496" y="100" fill="#30c080" font-size="10" font-family="monospace">task_id</text>
+
+    <!-- workflow_runs -> workflow_templates (template_id) -->
+    <path d="M 400 158 L 260 158" stroke="#30c080" marker-end="url(#arrow)"/>
+    <text x="310" y="150" fill="#30c080" font-size="10" font-family="monospace">template_id</text>
+
+    <!-- task_workflow_steps -> workflow_runs (run_id) -->
+    <path d="M 680 158 L 580 158" stroke="#e04040" marker-end="url(#arrow)"/>
+    <text x="610" y="150" fill="#e04040" font-size="10" font-family="monospace">run_id</text>
+
+    <!-- task_workflow_steps -> board_tasks (task_id) -->
+    <path d="M 785 140 Q 785 90 650 60 Q 570 42 560 42" stroke="#e04040" stroke-dasharray="6 3" marker-end="url(#arrow)"/>
+    <text x="660" y="78" fill="#e04040" font-size="10" font-family="monospace">task_id</text>
+
+    <!-- task_workflow_steps -> bot_profiles via idea_agents (bot_id) -->
+    <path d="M 850 140 Q 850 90 850 56" stroke="#5a5a7a" stroke-dasharray="6 3" marker-end="url(#arrow)"/>
+    <text x="856" y="100" fill="#5a5a7a" font-size="10" font-family="monospace">bot_id</text>
+
+    <!-- workflow_step_comments -> task_workflow_steps (step_id) -->
+    <path d="M 810 300 L 810 176" stroke="#e060a0" marker-end="url(#arrow)"/>
+    <text x="816" y="240" fill="#e060a0" font-size="10" font-family="monospace">step_id</text>
+
+    <!-- Denormalized counters: task_workflow_steps TRIGGER -> board_tasks -->
+    <path d="M 700 176 Q 600 210 530 210 Q 500 210 500 180 Q 500 65 490 56" stroke="#e07030" stroke-dasharray="4 3" marker-start="url(#diamond)"/>
+    <text x="540" y="222" fill="#e07030" font-size="10" font-family="monospace" font-style="italic">trigger: step_counts</text>
+
+  </g>
+
+  <!-- Cardinality labels -->
+  <g font-family="monospace" font-size="10" fill="#5a5a7a">
+    <text x="162" y="270">1</text>
+    <text x="162" y="190">N</text>
+
+    <text x="132" y="330">1</text>
+    <text x="132" y="410">N</text>
+
+    <text x="404" y="150">N</text>
+    <text x="268" y="150">1</text>
+
+    <text x="492" y="130">N</text>
+    <text x="492" y="66">1</text>
+
+    <text x="670" y="150">N</text>
+    <text x="588" y="150">1</text>
+
+    <text x="810" y="290">N</text>
+    <text x="810" y="186">1</text>
+  </g>
+</svg>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- CORE WORKFLOW TABLES                       -->
+<!-- ═══════════════════════════════════════════ -->
+
+<div class="section-header">Core Workflow Tables <span>(6 tables)</span></div>
+
+<div class="schema-grid">
+
+  <!-- workflow_templates -->
+  <div class="table-card">
+    <div class="table-header">
+      <span class="table-name" style="color:var(--blue)">workflow_templates</span>
+      <span class="table-badge">Migration 00071</span>
+    </div>
+    <div class="columns-list">
+      <div class="col-row"><div class="col-icon pk">PK</div><span class="col-name pk">id</span><span class="col-type">uuid</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">idea_id</span><span class="col-type">uuid -> ideas</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">name</span><span class="col-type">text</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">description</span><span class="col-type">text?</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">steps</span><span class="col-type">jsonb []</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">usage_count</span><span class="col-type">integer = 0</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">created_by</span><span class="col-type">uuid -> users</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">updated_at</span><span class="col-type">timestamptz</span></div>
+    </div>
+    <div class="table-footer">
+      <span class="footer-tag trigger">auto updated_at</span>
+      <span class="footer-tag index">idx idea_id</span>
+      <span class="footer-tag rls">RLS: team + public</span>
+    </div>
+  </div>
+
+  <!-- workflow_auto_rules -->
+  <div class="table-card">
+    <div class="table-header">
+      <span class="table-name" style="color:var(--amber)">workflow_auto_rules</span>
+      <span class="table-badge">Migration 00071</span>
+    </div>
+    <div class="columns-list">
+      <div class="col-row"><div class="col-icon pk">PK</div><span class="col-name pk">id</span><span class="col-type">uuid</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">idea_id</span><span class="col-type">uuid -> ideas</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">label_id</span><span class="col-type">uuid -> board_labels</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">template_id</span><span class="col-type">uuid -> workflow_templates</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">auto_run</span><span class="col-type">boolean = false</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+    </div>
+    <div class="table-footer">
+      <span class="footer-tag index">UNIQUE(idea_id, label_id)</span>
+      <span class="footer-tag trigger">trigger on board_task_labels</span>
+      <span class="footer-tag rls">RLS: team members</span>
+    </div>
+  </div>
+
+  <!-- workflow_runs -->
+  <div class="table-card">
+    <div class="table-header">
+      <span class="table-name" style="color:var(--emerald)">workflow_runs</span>
+      <span class="table-badge">Migration 00071 + 00081 + 00082</span>
+    </div>
+    <div class="columns-list">
+      <div class="col-row"><div class="col-icon pk">PK</div><span class="col-name pk">id</span><span class="col-type">uuid</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">task_id</span><span class="col-type">uuid -> board_tasks</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">template_id</span><span class="col-type">uuid? -> workflow_templates</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">status</span><span class="col-type">pending|running|paused|completed|failed</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">current_step</span><span class="col-type">integer = 0</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">started_by</span><span class="col-type">uuid? -> users</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">started_at</span><span class="col-type">timestamptz?</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">completed_at</span><span class="col-type">timestamptz?</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">created_at</span><span class="col-type">timestamptz</span></div>
+    </div>
+    <div class="table-footer">
+      <span class="footer-tag index" style="font-weight:700">UNIQUE active per task</span>
+      <span class="footer-tag rls">RLS: CRUD for team</span>
+    </div>
+  </div>
+
+  <!-- task_workflow_steps -->
+  <div class="table-card">
+    <div class="table-header">
+      <span class="table-name" style="color:var(--red)">task_workflow_steps</span>
+      <span class="table-badge">00071 + 00076-00078</span>
+    </div>
+    <div class="columns-list">
+      <div class="col-row"><div class="col-icon pk">PK</div><span class="col-name pk">id</span><span class="col-type">uuid</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">task_id</span><span class="col-type">uuid -> board_tasks</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">idea_id</span><span class="col-type">uuid -> ideas</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">run_id</span><span class="col-type">uuid? -> workflow_runs</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">bot_id</span><span class="col-type">uuid? -> users (pre-matched)</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">claimed_by</span><span class="col-type">uuid? -> users (executor)</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">title</span><span class="col-type">text</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">description</span><span class="col-type">text?</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">status</span><span class="col-type">pending|in_progress|completed|failed|awaiting_approval|skipped</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">agent_role</span><span class="col-type">text?</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">output</span><span class="col-type">text?</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">human_check_required</span><span class="col-type">boolean = false</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">expected_deliverables</span><span class="col-type">text[] = {}</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">position / step_order</span><span class="col-type">integer</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">comment_count</span><span class="col-type">integer = 0</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">started_at / completed_at</span><span class="col-type">timestamptz?</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">created_at / updated_at</span><span class="col-type">timestamptz</span></div>
+    </div>
+    <div class="table-footer">
+      <span class="footer-tag trigger">step_counts -> board_tasks</span>
+      <span class="footer-tag trigger">auto updated_at</span>
+      <span class="footer-tag realtime">Realtime + REPLICA IDENTITY FULL</span>
+      <span class="footer-tag rls">RLS: team + public</span>
+    </div>
+  </div>
+
+  <!-- workflow_step_comments -->
+  <div class="table-card">
+    <div class="table-header">
+      <span class="table-name" style="color:var(--pink)">workflow_step_comments</span>
+      <span class="table-badge">Migration 00071</span>
+    </div>
+    <div class="columns-list">
+      <div class="col-row"><div class="col-icon pk">PK</div><span class="col-name pk">id</span><span class="col-type">uuid</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">step_id</span><span class="col-type">uuid -> task_workflow_steps</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">idea_id</span><span class="col-type">uuid -> ideas</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">author_id</span><span class="col-type">uuid -> users</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">type</span><span class="col-type">comment|output|failure|approval|changes_requested</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">content</span><span class="col-type">text</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">created_at / updated_at</span><span class="col-type">timestamptz</span></div>
+    </div>
+    <div class="table-footer">
+      <span class="footer-tag trigger">comment_count -> steps</span>
+      <span class="footer-tag realtime">Realtime + REPLICA IDENTITY FULL</span>
+      <span class="footer-tag rls">RLS: team read, author write</span>
+    </div>
+  </div>
+
+  <!-- workflow_library_templates -->
+  <div class="table-card">
+    <div class="table-header">
+      <span class="table-name" style="color:var(--purple)">workflow_library_templates</span>
+      <span class="table-badge">Migration 00072</span>
+    </div>
+    <div class="columns-list">
+      <div class="col-row"><div class="col-icon pk">PK</div><span class="col-name pk">id</span><span class="col-type">uuid</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">name</span><span class="col-type">text (unique lower)</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">description</span><span class="col-type">text?</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">steps</span><span class="col-type">jsonb []</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">is_active</span><span class="col-type">boolean = true</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">display_order</span><span class="col-type">integer = 0</span></div>
+      <div class="col-row"><div class="col-icon fk">FK</div><span class="col-name fk">created_by</span><span class="col-type">uuid? -> users</span></div>
+      <div class="col-row"><div class="col-icon col"></div><span class="col-name">created_at / updated_at</span><span class="col-type">timestamptz</span></div>
+    </div>
+    <div class="table-footer">
+      <span class="footer-tag index">UNIQUE lower(name)</span>
+      <span class="footer-tag rls">RLS: auth read, admin write</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- AUTO-RULE TRIGGER FLOW                     -->
+<!-- ═══════════════════════════════════════════ -->
+
+<div class="section-header">Auto-Rule Trigger Flow <span>(Postgres trigger chain)</span></div>
+
+<div class="flow-section">
+  <div class="flow-row">
+    <div class="flow-box fb-blue">Label added to task</div>
+    <span class="flow-arrow">-></span>
+    <div class="flow-box fb-amber">INSERT on board_task_labels</div>
+    <span class="flow-arrow">-></span>
+    <div class="flow-box" style="background:rgba(224,112,48,0.12);color:var(--trigger);border:1px solid rgba(224,112,48,0.25)">TRIGGER: auto_apply_workflow_on_label()</div>
+  </div>
+  <div class="flow-row" style="margin-left: 40px;">
+    <span class="flow-arrow">|</span>
+  </div>
+  <div class="flow-row" style="margin-left: 40px;">
+    <span class="flow-arrow">v</span>
+    <span class="flow-label">Looks up matching rule in workflow_auto_rules for that label_id</span>
+  </div>
+  <div class="flow-row" style="margin-left: 40px;">
+    <span class="flow-arrow">|</span>
+    <span class="flow-label">Checks no active workflow_run exists on the task</span>
+  </div>
+  <div class="flow-row" style="margin-left: 40px;">
+    <span class="flow-arrow">v</span>
+  </div>
+  <div class="flow-row">
+    <div class="flow-box fb-emerald">INSERT workflow_run</div>
+    <span class="flow-arrow">+</span>
+    <div class="flow-box fb-red">INSERT task_workflow_steps (from template JSONB)</div>
+    <span class="flow-arrow">+</span>
+    <div class="flow-box fb-purple">UPDATE template usage_count++</div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- STEP STATUS LIFECYCLE                      -->
+<!-- ═══════════════════════════════════════════ -->
+
+<div class="section-header">Step Status Lifecycle <span>(task_workflow_steps.status)</span></div>
+
+<div class="flow-section">
+  <div class="flow-row">
+    <div class="flow-box fb-blue">pending</div>
+    <span class="flow-arrow">-- claim/start --></span>
+    <div class="flow-box fb-cyan">in_progress</div>
+    <span class="flow-arrow">-- complete --></span>
+    <div class="flow-box fb-emerald">completed</div>
+  </div>
+  <div class="flow-row" style="margin-left: 300px; margin-top: -4px;">
+    <span class="flow-arrow">|</span>
+  </div>
+  <div class="flow-row" style="margin-left: 268px;">
+    <span class="flow-arrow">|-- if human_check_required --></span>
+    <div class="flow-box fb-amber">awaiting_approval</div>
+    <span class="flow-arrow">-- approve --></span>
+    <div class="flow-box fb-emerald">completed</div>
+  </div>
+  <div class="flow-row" style="margin-left: 300px; margin-top: -4px;">
+    <span class="flow-arrow">|</span>
+  </div>
+  <div class="flow-row" style="margin-left: 268px;">
+    <span class="flow-arrow">|-- fail --></span>
+    <div class="flow-box fb-red">failed</div>
+    <span class="flow-arrow">-- retry --></span>
+    <div class="flow-box fb-blue">pending</div>
+  </div>
+  <div class="flow-row" style="margin-top: -4px;">
+    <div class="flow-box fb-blue">pending</div>
+    <span class="flow-arrow">-- skip --></span>
+    <div class="flow-box" style="background:rgba(128,128,160,0.12);color:#888aaa;border:1px solid rgba(128,128,160,0.25)">skipped</div>
+    <span class="flow-label">(counts as completed for run progress)</span>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- UI SCREEN MAPPING                          -->
+<!-- ═══════════════════════════════════════════ -->
+
+<div class="section-header">Where Data Appears in the App</div>
+
+<div class="screen-grid">
+
+  <div class="screen-card">
+    <div class="screen-name">Task Detail Dialog</div>
+    <div class="screen-path">/ideas/[id]/board -> click task -> TaskWorkflowSection</div>
+    <div class="screen-tables">
+      <span class="screen-table-tag tag-primary">task_workflow_steps</span>
+      <span class="screen-table-tag tag-primary">workflow_runs</span>
+      <span class="screen-table-tag tag-secondary">workflow_templates</span>
+    </div>
+    <ul class="screen-details">
+      <li>Run status badge (pending/running/completed/failed)</li>
+      <li>Template name from joined workflow_templates</li>
+      <li>Progress bar: completed+skipped / total steps</li>
+      <li>Step list with status badges, role badges, gate icons</li>
+      <li>Inline skip/approve/retry buttons</li>
+      <li>Apply template selector (when no workflow)</li>
+      <li>Reset/Remove workflow actions</li>
+      <li>Agent match warning banner</li>
+      <li>Realtime updates via Supabase channels</li>
+    </ul>
+  </div>
+
+  <div class="screen-card">
+    <div class="screen-name">Step Detail Dialog</div>
+    <div class="screen-path">TaskWorkflowSection -> click step -> StepDetailDialog</div>
+    <div class="screen-tables">
+      <span class="screen-table-tag tag-primary">task_workflow_steps</span>
+      <span class="screen-table-tag tag-primary">workflow_step_comments</span>
+    </div>
+    <ul class="screen-details">
+      <li>Step title, description, status, role, deliverables</li>
+      <li>Step output (styled text block)</li>
+      <li>Timestamps (started, completed)</li>
+      <li>Start/Complete/Fail/Approve/Skip action buttons</li>
+      <li>Cascade rejection: reject back to earlier step</li>
+      <li>Comments thread with type badges (output/failure/approval)</li>
+      <li>Realtime comment updates</li>
+    </ul>
+  </div>
+
+  <div class="screen-card">
+    <div class="screen-name">Workflows Tab</div>
+    <div class="screen-path">/ideas/[id]/board -> "Workflows" tab -> WorkflowsTab</div>
+    <div class="screen-tables">
+      <span class="screen-table-tag tag-primary">workflow_templates</span>
+      <span class="screen-table-tag tag-primary">workflow_auto_rules</span>
+      <span class="screen-table-tag tag-read">board_labels</span>
+    </div>
+    <ul class="screen-details">
+      <li>Template list: name, step count, gate count</li>
+      <li>Template detail: description, steps, usage count</li>
+      <li>Inline template editor (name, description, steps)</li>
+      <li>Auto-rules section: label -> template mapping</li>
+      <li>Auto-run badge, run-now, delete rule actions</li>
+      <li>Create template dialog, import from library</li>
+      <li>Onboarding guidance when empty</li>
+    </ul>
+  </div>
+
+  <div class="screen-card">
+    <div class="screen-name">Import Library Dialog</div>
+    <div class="screen-path">WorkflowsTab -> "Library" button -> ImportTemplateLibraryDialog</div>
+    <div class="screen-tables">
+      <span class="screen-table-tag tag-primary">workflow_library_templates</span>
+      <span class="screen-table-tag tag-write">workflow_templates</span>
+    </div>
+    <ul class="screen-details">
+      <li>Library template list with descriptions</li>
+      <li>Step preview (expandable)</li>
+      <li>"Imported" badge detection</li>
+      <li>Multi-select + batch import</li>
+    </ul>
+  </div>
+
+  <div class="screen-card">
+    <div class="screen-name">Admin Templates Dashboard</div>
+    <div class="screen-path">/admin?tab=templates -> AdminTemplatesDashboard</div>
+    <div class="screen-tables">
+      <span class="screen-table-tag tag-primary">workflow_library_templates</span>
+    </div>
+    <ul class="screen-details">
+      <li>Table: name, description, step/gate counts</li>
+      <li>Active toggle switch per template</li>
+      <li>Create / Edit / Delete actions</li>
+      <li>TemplateEditorDialog for full CRUD</li>
+    </ul>
+  </div>
+
+  <div class="screen-card">
+    <div class="screen-name">Board Task Cards</div>
+    <div class="screen-path">/ideas/[id]/board -> kanban card</div>
+    <div class="screen-tables">
+      <span class="screen-table-tag tag-read">board_tasks</span>
+    </div>
+    <ul class="screen-details">
+      <li>workflow_step_total (denormalized from steps trigger)</li>
+      <li>workflow_step_completed (denormalized from steps trigger)</li>
+      <li>Progress indicator on task cards</li>
+    </ul>
+  </div>
+
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<!-- CONCURRENCY GUARDS                         -->
+<!-- ═══════════════════════════════════════════ -->
+
+<div class="section-header">Concurrency Guards <span>(migration 00081)</span></div>
+
+<div class="flow-section">
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+    <div>
+      <div style="font-weight:700; color:var(--emerald); margin-bottom:8px;">Database Level</div>
+      <ul class="screen-details">
+        <li>Partial unique index on workflow_runs(task_id) WHERE status NOT IN ('completed','failed') -- prevents multiple active runs per task</li>
+      </ul>
+    </div>
+    <div>
+      <div style="font-weight:700; color:var(--blue); margin-bottom:8px;">Application Level</div>
+      <ul class="screen-details">
+        <li>.eq("status", "pending") on claim -- prevents double-claim</li>
+        <li>.eq("status", "in_progress") on complete -- prevents double-complete</li>
+        <li>.in("status", [...]) on fail -- prevents invalid transitions</li>
+        <li>.maybeSingle() returns null instead of error if guard blocks</li>
+        <li>checkAndCompleteRun() shared helper for consistent run completion</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

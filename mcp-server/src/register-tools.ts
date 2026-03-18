@@ -166,6 +166,8 @@ import {
   failStepSchema,
   skipStep,
   skipStepSchema,
+  updateStep,
+  updateStepSchema,
   approveStep,
   approveStepSchema,
   getStepContext,
@@ -1140,6 +1142,20 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await skipStep(ctx, skipStepSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "update_step",
+    "Edit a workflow step that is still in pending status. Use this to customise step titles, descriptions, roles, deliverables, or approval gates for a specific task. Only pending steps can be edited.",
+    updateStepSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await updateStep(ctx, updateStepSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

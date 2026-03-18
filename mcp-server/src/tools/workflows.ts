@@ -664,6 +664,47 @@ export async function skipStep(
   return { step: updated, run_complete: runComplete };
 }
 
+// --- Update Step (pending only) ---
+
+export const updateStepSchema = z.object({
+  step_id: z.string().uuid().describe("The workflow step ID (must be in pending status)"),
+  title: z.string().min(1).max(200).optional().describe("New step title"),
+  description: z.string().max(5000).nullable().optional().describe("New description (null to clear)"),
+  agent_role: z.string().max(100).nullable().optional().describe("New agent role (null to clear)"),
+  human_check_required: z.boolean().optional().describe("Whether human approval is required after completion"),
+  expected_deliverables: z.array(z.string().max(200)).max(20).nullable().optional()
+    .describe("Expected deliverables (null to clear)"),
+});
+
+export async function updateStep(
+  ctx: McpContext,
+  params: z.infer<typeof updateStepSchema>
+) {
+  const patch: Record<string, unknown> = {};
+  if (params.title !== undefined) patch.title = params.title;
+  if (params.description !== undefined) patch.description = params.description;
+  if (params.agent_role !== undefined) patch.agent_role = params.agent_role;
+  if (params.human_check_required !== undefined) patch.human_check_required = params.human_check_required;
+  if (params.expected_deliverables !== undefined) patch.expected_deliverables = params.expected_deliverables ?? [];
+
+  if (Object.keys(patch).length === 0) {
+    throw new Error("No fields to update — provide at least one field to change");
+  }
+
+  const { data: updated, error } = await ctx.supabase
+    .from("task_workflow_steps")
+    .update(patch)
+    .eq("id", params.step_id)
+    .eq("status", "pending")
+    .select("id, task_id, run_id, title, description, agent_role, human_check_required, expected_deliverables, status")
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to update step: ${error.message}`);
+  if (!updated) throw new Error("Step not found or is no longer pending — only pending steps can be edited");
+
+  return updated;
+}
+
 // --- Approve Step ---
 
 export const approveStepSchema = z.object({

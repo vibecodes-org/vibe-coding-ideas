@@ -19,6 +19,7 @@ import {
   CheckCircle2,
   X,
   SkipForward,
+  Pencil,
 } from "lucide-react";
 import {
   Dialog,
@@ -28,6 +29,9 @@ import {
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -46,6 +50,7 @@ import {
   approveWorkflowStep,
   retryWorkflowStep,
   skipWorkflowStep,
+  updateWorkflowStep,
   addStepComment,
 } from "@/actions/workflow";
 import { getInitials } from "@/lib/utils";
@@ -127,6 +132,13 @@ export function StepDetailDialog({
   const [activeAction, setActiveAction] = useState<"complete" | "fail" | "reject" | null>(null);
   const [actionText, setActionText] = useState("");
   const [resetToStepId, setResetToStepId] = useState<string>("");
+  const [isEditing, setIsEditing] = useState(false);
+  const [editTitle, setEditTitle] = useState("");
+  const [editDescription, setEditDescription] = useState("");
+  const [editRole, setEditRole] = useState("");
+  const [editDeliverables, setEditDeliverables] = useState("");
+  const [editHumanCheck, setEditHumanCheck] = useState(false);
+  const [saving, setSaving] = useState(false);
   const supabaseRef = useRef(createClient());
   const commentsEndRef = useRef<HTMLDivElement>(null);
 
@@ -190,6 +202,43 @@ export function StepDetailDialog({
   useEffect(() => {
     commentsEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [comments.length]);
+
+  // Reset edit state when step changes
+  useEffect(() => {
+    setIsEditing(false);
+  }, [step.id]);
+
+  function startEditing() {
+    setEditTitle(step.title);
+    setEditDescription(step.description ?? "");
+    setEditRole(step.agent_role ?? "");
+    setEditDeliverables((step.expected_deliverables ?? []).join(", "));
+    setEditHumanCheck(step.human_check_required);
+    setIsEditing(true);
+  }
+
+  async function handleSaveEdit() {
+    setSaving(true);
+    try {
+      const deliverables = editDeliverables
+        .split(",")
+        .map((d) => d.trim())
+        .filter(Boolean);
+      await updateWorkflowStep(step.id, {
+        title: editTitle,
+        description: editDescription || null,
+        agent_role: editRole || null,
+        human_check_required: editHumanCheck,
+        expected_deliverables: deliverables,
+      });
+      toast.success("Step updated");
+      setIsEditing(false);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "Failed to update step");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleAddComment() {
     if (!newComment.trim()) return;
@@ -308,62 +357,148 @@ export function StepDetailDialog({
                 )}
               </div>
             </div>
+            {step.status === "pending" && !isReadOnly && !isEditing && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="shrink-0 h-7 w-7"
+                onClick={startEditing}
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </Button>
+            )}
           </div>
         </DialogHeader>
 
         {/* Content */}
         <div className="flex-1 overflow-y-auto px-5 py-4 space-y-4">
-          {/* Description */}
-          {step.description && (
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Description</p>
-              <p className="text-sm whitespace-pre-wrap">{step.description}</p>
-            </div>
-          )}
-
-          {/* Expected Deliverables */}
-          {step.expected_deliverables && step.expected_deliverables.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Expected Deliverables</p>
-              <div className="flex flex-wrap gap-1.5">
-                {step.expected_deliverables.map((d, i) => (
-                  <Badge
-                    key={i}
-                    variant="outline"
-                    className="text-[10px] bg-violet-500/10 text-violet-400 border-violet-500/20"
-                  >
-                    {d}
-                  </Badge>
-                ))}
+          {isEditing ? (
+            <div className="space-y-3">
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-title" className="text-xs">Title</Label>
+                <Input
+                  id="edit-title"
+                  value={editTitle}
+                  onChange={(e) => setEditTitle(e.target.value)}
+                  className="text-sm"
+                  maxLength={200}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-description" className="text-xs">Description</Label>
+                <Textarea
+                  id="edit-description"
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  className="text-sm min-h-[60px]"
+                  rows={3}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-role" className="text-xs">Agent Role</Label>
+                <Input
+                  id="edit-role"
+                  value={editRole}
+                  onChange={(e) => setEditRole(e.target.value)}
+                  className="text-sm"
+                  placeholder="e.g. developer, designer"
+                  maxLength={100}
+                />
+              </div>
+              <div className="space-y-1.5">
+                <Label htmlFor="edit-deliverables" className="text-xs">Expected Deliverables</Label>
+                <Input
+                  id="edit-deliverables"
+                  value={editDeliverables}
+                  onChange={(e) => setEditDeliverables(e.target.value)}
+                  className="text-sm"
+                  placeholder="Comma-separated, e.g. Design doc, API schema"
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="edit-human-check"
+                  checked={editHumanCheck}
+                  onCheckedChange={setEditHumanCheck}
+                />
+                <Label htmlFor="edit-human-check" className="text-xs">Requires human approval</Label>
+              </div>
+              <div className="flex gap-2 pt-1">
+                <Button
+                  size="sm"
+                  className="text-xs"
+                  onClick={handleSaveEdit}
+                  disabled={saving || !editTitle.trim()}
+                >
+                  {saving ? <Loader2 className="h-3 w-3 animate-spin mr-1" /> : null}
+                  Save
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="text-xs"
+                  onClick={() => setIsEditing(false)}
+                  disabled={saving}
+                >
+                  Cancel
+                </Button>
               </div>
             </div>
-          )}
+          ) : (
+            <>
+              {/* Description */}
+              {step.description && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Description</p>
+                  <p className="text-sm whitespace-pre-wrap">{step.description}</p>
+                </div>
+              )}
 
-          {/* Output */}
-          {step.output && (
-            <div className="space-y-1">
-              <p className="text-xs font-medium text-muted-foreground">Output</p>
-              <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-sm prose-sm">
-                <Markdown>{step.output}</Markdown>
+              {/* Expected Deliverables */}
+              {step.expected_deliverables && step.expected_deliverables.length > 0 && (
+                <div className="space-y-1.5">
+                  <p className="text-xs font-medium text-muted-foreground">Expected Deliverables</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {step.expected_deliverables.map((d, i) => (
+                      <Badge
+                        key={i}
+                        variant="outline"
+                        className="text-[10px] bg-violet-500/10 text-violet-400 border-violet-500/20"
+                      >
+                        {d}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Output */}
+              {step.output && (
+                <div className="space-y-1">
+                  <p className="text-xs font-medium text-muted-foreground">Output</p>
+                  <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-sm prose-sm">
+                    <Markdown>{step.output}</Markdown>
+                  </div>
+                </div>
+              )}
+
+              {/* Timestamps */}
+              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
+                {step.started_at && (
+                  <span>Started: {new Date(step.started_at).toLocaleString()}</span>
+                )}
+                {step.completed_at && (
+                  <span>
+                    {step.status === "failed" ? "Failed" : "Completed"}:{" "}
+                    {new Date(step.completed_at).toLocaleString()}
+                  </span>
+                )}
               </div>
-            </div>
+            </>
           )}
-
-          {/* Timestamps */}
-          <div className="flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
-            {step.started_at && (
-              <span>Started: {new Date(step.started_at).toLocaleString()}</span>
-            )}
-            {step.completed_at && (
-              <span>
-                {step.status === "failed" ? "Failed" : "Completed"}:{" "}
-                {new Date(step.completed_at).toLocaleString()}
-              </span>
-            )}
-          </div>
 
           {/* Action buttons */}
-          {!isReadOnly && (
+          {!isReadOnly && !isEditing && (
             <div className="flex flex-wrap gap-2">
               {step.status === "pending" && (
                 <>
