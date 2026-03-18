@@ -8,7 +8,7 @@ import { CollapsibleTools } from "@/components/guide/collapsible-tools";
 export const metadata: Metadata = {
   title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
   description:
-    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, and agents from your terminal with 54 tools.",
+    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 78 tools.",
 };
 
 function ToolTable({
@@ -273,7 +273,7 @@ export default function McpIntegrationPage() {
           <h2 className="mb-4 text-2xl font-semibold">Available Tools</h2>
           <p className="mb-4 text-muted-foreground">
             Once connected, Claude Code has access to{" "}
-            <strong className="text-foreground">54 tools</strong> across 8
+            <strong className="text-foreground">78 tools</strong> across 9
             categories:
           </p>
 
@@ -313,10 +313,37 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Workflow Steps & Comments" toolCount={3}>
+            <CollapsibleTools title="Workflows" toolCount={21}>
               <ToolTable
                 tools={[
-                  { name: "manage_checklist", description: "Add, update, or delete workflow steps on a task" },
+                  { name: "list_workflow_templates", description: "List all workflow templates for an idea" },
+                  { name: "create_workflow_template", description: "Create a new workflow template with steps" },
+                  { name: "update_workflow_template", description: "Update a template's name, description, or steps" },
+                  { name: "delete_workflow_template", description: "Delete a workflow template" },
+                  { name: "apply_workflow_template", description: "Apply a template to a task, creating a workflow run" },
+                  { name: "claim_next_step", description: "Claim the next pending step for execution (orchestration entry point)" },
+                  { name: "complete_step", description: "Mark a step as complete with optional output" },
+                  { name: "fail_step", description: "Fail a step with optional cascade rejection to an earlier step" },
+                  { name: "skip_step", description: "Skip a pending step that isn't applicable" },
+                  { name: "approve_step", description: "Approve a step awaiting human review (humans only)" },
+                  { name: "get_step_context", description: "Get step details, task info, comments, and prior step outputs" },
+                  { name: "get_step_comments", description: "List all comments on a workflow step" },
+                  { name: "add_step_comment", description: "Add a comment to a workflow step" },
+                  { name: "rematch_workflow_agents", description: "Re-match unmatched pending steps against the agent pool" },
+                  { name: "reset_workflow", description: "Reset all steps to pending and restart the workflow" },
+                  { name: "remove_workflow", description: "Delete a workflow run and all its steps" },
+                  { name: "list_workflow_auto_rules", description: "List auto-rules that map labels to templates" },
+                  { name: "create_workflow_auto_rule", description: "Create an auto-rule (label → template)" },
+                  { name: "update_workflow_auto_rule", description: "Update an auto-rule's template mapping" },
+                  { name: "delete_workflow_auto_rule", description: "Delete an auto-rule" },
+                  { name: "apply_auto_rule_retroactively", description: "Apply an auto-rule to existing tasks with matching label" },
+                ]}
+              />
+            </CollapsibleTools>
+
+            <CollapsibleTools title="Comments" toolCount={2}>
+              <ToolTable
+                tools={[
                   { name: "add_idea_comment", description: "Comment on an idea (comment, suggestion, or question)" },
                   { name: "add_task_comment", description: "Comment on a board task" },
                 ]}
@@ -622,10 +649,10 @@ export default function McpIntegrationPage() {
       </div>
 
       <div className="mt-12 flex justify-between border-t border-border pt-6">
-        <Link href="/guide/kanban-boards">
+        <Link href="/guide/workflows">
           <Button variant="outline" className="gap-2">
             <ArrowLeft className="h-4 w-4" />
-            Kanban Boards
+            Workflows
           </Button>
         </Link>
         <Link href="/guide/ai-agent-teams">

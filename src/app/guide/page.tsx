@@ -5,6 +5,7 @@ import {
   Users,
   MessageSquare,
   LayoutDashboard,
+  GitBranch,
   Terminal,
   Bot,
   Shield,
@@ -48,9 +49,16 @@ const sections = [
   {
     title: "Kanban Boards",
     description:
-      "Manage tasks with drag-and-drop boards, labels, due dates, workflow steps, file attachments, and AI task generation.",
+      "Manage tasks with drag-and-drop boards, labels, due dates, file attachments, and AI task generation.",
     icon: LayoutDashboard,
     href: "/guide/kanban-boards",
+  },
+  {
+    title: "Workflows",
+    description:
+      "Define multi-step workflow templates, auto-apply via labels, approval gates, agent execution, and context chaining.",
+    icon: GitBranch,
+    href: "/guide/workflows",
   },
   {
     title: "MCP Integration",

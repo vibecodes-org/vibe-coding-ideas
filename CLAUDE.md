@@ -61,7 +61,7 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 
 ### Board Workflows
 - **Templates**: `workflow_templates` table (idea-scoped) — reusable step sequences with role, description, approval gates
-- **Auto-Rules**: `workflow_auto_rules` table — maps labels to templates; Postgres trigger on `board_task_labels` INSERT auto-applies template when a task gets a matching label
+- **Auto-Rules**: `workflow_auto_rules` table — maps labels to templates; application code (`checkAndApplyAutoRules` in `src/lib/workflow-helpers.ts`) applies template when a matching label is added (original Postgres trigger removed in migration 00083 because it couldn't do fuzzy agent matching; `auto_run` toggle removed in migration 00085 — rules always fire)
 - **Workflow Runs**: `workflow_runs` tracks each application of a template to a task (pending → running → paused → completed → failed)
 - **Task Workflow Steps**: `task_workflow_steps` replaces old checklists — steps have status lifecycle (pending → in_progress → completed/failed/awaiting_approval/skipped), agent_role, bot_id, output, human_check_required
 - **Skip steps**: Pending steps can be skipped when not applicable to a task. Skipped steps count toward progress and allow workflow runs to complete. UI shows skip button on pending steps (inline + detail dialog). MCP tool: `skip_step`
