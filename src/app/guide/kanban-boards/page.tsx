@@ -259,9 +259,9 @@ export default function KanbanBoardsPage() {
             Discussions
           </Button>
         </Link>
-        <Link href="/guide/workflows">
+        <Link href="/guide/mcp-integration">
           <Button variant="outline" className="gap-2">
-            Workflows
+            MCP Integration
             <ArrowRight className="h-4 w-4" />
           </Button>
         </Link>

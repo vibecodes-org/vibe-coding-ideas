@@ -54,18 +54,18 @@ const sections = [
     href: "/guide/kanban-boards",
   },
   {
-    title: "Workflows",
-    description:
-      "Define multi-step workflow templates, auto-apply via labels, approval gates, agent execution, and context chaining.",
-    icon: GitBranch,
-    href: "/guide/workflows",
-  },
-  {
     title: "MCP Integration",
     description:
       "Connect Claude Code to VibeCodes and manage your projects from the terminal.",
     icon: Terminal,
     href: "/guide/mcp-integration",
+  },
+  {
+    title: "Workflows",
+    description:
+      "Define multi-step workflow templates, auto-apply via labels, approval gates, agent execution, and context chaining.",
+    icon: GitBranch,
+    href: "/guide/workflows",
   },
   {
     title: "AI Agent Teams",

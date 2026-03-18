@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { checkAndCompleteRun } from "@/lib/workflow-helpers";
 
@@ -49,8 +48,6 @@ export async function createWorkflowStep(
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
-
   return data;
 }
 
@@ -84,8 +81,6 @@ export async function updateWorkflowStep(
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${data.idea_id}/board`);
-
   return data;
 }
 
@@ -97,23 +92,12 @@ export async function deleteWorkflowStep(stepId: string) {
 
   if (!user) throw new Error("Not authenticated");
 
-  // Fetch idea_id for revalidation before deleting
-  const { data: step } = await supabase
-    .from("task_workflow_steps")
-    .select("idea_id")
-    .eq("id", stepId)
-    .single();
-
   const { error } = await supabase
     .from("task_workflow_steps")
     .delete()
     .eq("id", stepId);
 
   if (error) throw new Error(error.message);
-
-  if (step) {
-    revalidatePath(`/ideas/${step.idea_id}/board`);
-  }
 }
 
 export async function startWorkflowStep(stepId: string) {
@@ -149,8 +133,6 @@ export async function startWorkflowStep(stepId: string) {
       .eq("id", data.run_id)
       .in("status", ["pending", "paused"]);
   }
-
-  revalidatePath(`/ideas/${data.idea_id}/board`);
 
   return data;
 }
@@ -194,8 +176,6 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
     await checkAndCompleteRun(supabase, data.run_id);
   }
 
-  revalidatePath(`/ideas/${data.idea_id}/board`);
-
   return data;
 }
 
@@ -226,8 +206,6 @@ export async function skipWorkflowStep(stepId: string, reason?: string) {
   if (data.run_id) {
     await checkAndCompleteRun(supabase, data.run_id);
   }
-
-  revalidatePath(`/ideas/${data.idea_id}/board`);
 
   return data;
 }
@@ -292,8 +270,6 @@ export async function failWorkflowStep(
       .eq("id", data.run_id);
   }
 
-  revalidatePath(`/ideas/${data.idea_id}/board`);
-
   return data;
 }
 
@@ -328,8 +304,6 @@ export async function approveWorkflowStep(stepId: string, output?: string) {
   if (data.run_id) {
     await checkAndCompleteRun(supabase, data.run_id);
   }
-
-  revalidatePath(`/ideas/${data.idea_id}/board`);
 
   return data;
 }
@@ -366,8 +340,6 @@ export async function retryWorkflowStep(stepId: string) {
       .eq("status", "failed");
   }
 
-  revalidatePath(`/ideas/${data.idea_id}/board`);
-
   return data;
 }
 
@@ -380,17 +352,6 @@ export async function resetWorkflow(runId: string) {
   } = await supabase.auth.getUser();
 
   if (!user) throw new Error("Not authenticated");
-
-  // Fetch run + task for idea_id (for revalidation)
-  const { data: run, error: runError } = await supabase
-    .from("workflow_runs")
-    .select("id, task_id, board_tasks!inner(idea_id)")
-    .eq("id", runId)
-    .single();
-
-  if (runError || !run) throw new Error("Workflow run not found");
-
-  const ideaId = (run.board_tasks as unknown as { idea_id: string }).idea_id;
 
   // Reset all steps
   const { error: stepsError } = await supabase
@@ -417,8 +378,6 @@ export async function resetWorkflow(runId: string) {
     .eq("id", runId);
 
   if (resetError) throw new Error(resetError.message);
-
-  revalidatePath(`/ideas/${ideaId}/board`);
 }
 
 export async function removeWorkflow(runId: string) {
@@ -429,17 +388,6 @@ export async function removeWorkflow(runId: string) {
 
   if (!user) throw new Error("Not authenticated");
 
-  // Fetch run + task for idea_id (for revalidation)
-  const { data: run, error: runError } = await supabase
-    .from("workflow_runs")
-    .select("id, task_id, board_tasks!inner(idea_id)")
-    .eq("id", runId)
-    .single();
-
-  if (runError || !run) throw new Error("Workflow run not found");
-
-  const ideaId = (run.board_tasks as unknown as { idea_id: string }).idea_id;
-
   // Delete run — steps cascade via FK ON DELETE CASCADE
   const { error } = await supabase
     .from("workflow_runs")
@@ -447,8 +395,6 @@ export async function removeWorkflow(runId: string) {
     .eq("id", runId);
 
   if (error) throw new Error(error.message);
-
-  revalidatePath(`/ideas/${ideaId}/board`);
 }
 
 // ─── Step Comments ───
@@ -480,8 +426,6 @@ export async function addStepComment(
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
-
   return data;
 }
 
@@ -493,21 +437,10 @@ export async function deleteStepComment(commentId: string) {
 
   if (!user) throw new Error("Not authenticated");
 
-  // Fetch idea_id for revalidation before deleting
-  const { data: comment } = await supabase
-    .from("workflow_step_comments")
-    .select("idea_id")
-    .eq("id", commentId)
-    .single();
-
   const { error } = await supabase
     .from("workflow_step_comments")
     .delete()
     .eq("id", commentId);
 
   if (error) throw new Error(error.message);
-
-  if (comment) {
-    revalidatePath(`/ideas/${comment.idea_id}/board`);
-  }
 }

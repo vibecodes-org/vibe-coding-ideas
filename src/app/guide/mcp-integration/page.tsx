@@ -649,15 +649,15 @@ export default function McpIntegrationPage() {
       </div>
 
       <div className="mt-12 flex justify-between border-t border-border pt-6">
-        <Link href="/guide/workflows">
+        <Link href="/guide/kanban-boards">
           <Button variant="outline" className="gap-2">
             <ArrowLeft className="h-4 w-4" />
-            Workflows
+            Kanban Boards
           </Button>
         </Link>
-        <Link href="/guide/ai-agent-teams">
+        <Link href="/guide/workflows">
           <Button variant="outline" className="gap-2">
-            AI Agent Teams
+            Workflows
             <ArrowRight className="h-4 w-4" />
           </Button>
         </Link>
