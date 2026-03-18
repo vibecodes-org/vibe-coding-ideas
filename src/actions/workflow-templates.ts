@@ -257,8 +257,6 @@ export async function applyWorkflowTemplate(
     .update({ usage_count: template.usage_count + 1 })
     .eq("id", templateId);
 
-  revalidatePath(`/ideas/${task.idea_id}/board`);
-
   return { run, steps: createdSteps };
 }
 
