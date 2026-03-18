@@ -188,8 +188,8 @@ function StepEditor({ steps, onChange }: StepEditorProps) {
                   updateStep(idx, {
                     deliverables: e.target.value
                       .split(",")
-                      .map((d) => d.trim())
-                      .filter(Boolean),
+                      .map((d, i, arr) => (i < arr.length - 1 ? d.trim() : d))
+                      .filter((d, i, arr) => i === arr.length - 1 || d.length > 0),
                   })
                 }
                 placeholder="Deliverables (comma-separated, optional)"
