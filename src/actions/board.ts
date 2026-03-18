@@ -312,7 +312,9 @@ export async function deleteBoardTask(taskId: string, ideaId: string) {
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — Realtime subscription in BoardRealtime handles the
+  // refresh for other users. The deleting user already removed the task
+  // optimistically, and the pendingOps guard prevents premature state sync.
 }
 
 export async function moveBoardTask(
