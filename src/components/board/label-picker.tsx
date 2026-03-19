@@ -40,6 +40,7 @@ interface LabelPickerProps {
   currentUserId?: string;
   children: React.ReactNode;
   inDialog?: boolean;
+  onLabelsChange?: (labelIds: string[]) => void;
 }
 
 export function LabelPicker({
@@ -50,6 +51,7 @@ export function LabelPicker({
   currentUserId,
   children,
   inDialog = false,
+  onLabelsChange,
 }: LabelPickerProps) {
   const [open, setOpen] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -104,15 +106,14 @@ export function LabelPicker({
 
   async function executeToggleLabel(labelId: string, isCurrentlyAssigned: boolean, removeWorkflow: boolean) {
     // Optimistic update
-    setLocalLabelIds((prev) => {
-      const next = new Set(prev);
-      if (isCurrentlyAssigned) {
-        next.delete(labelId);
-      } else {
-        next.add(labelId);
-      }
-      return next;
-    });
+    const nextIds = new Set(localLabelIds);
+    if (isCurrentlyAssigned) {
+      nextIds.delete(labelId);
+    } else {
+      nextIds.add(labelId);
+    }
+    setLocalLabelIds(nextIds);
+    onLabelsChange?.([...nextIds]);
 
     try {
       if (isCurrentlyAssigned) {
@@ -128,15 +129,14 @@ export function LabelPicker({
       }
     } catch {
       toast.error("Failed to update label");
-      setLocalLabelIds((prev) => {
-        const next = new Set(prev);
-        if (isCurrentlyAssigned) {
-          next.add(labelId);
-        } else {
-          next.delete(labelId);
-        }
-        return next;
-      });
+      const rolledBack = new Set(localLabelIds);
+      if (isCurrentlyAssigned) {
+        rolledBack.add(labelId);
+      } else {
+        rolledBack.delete(labelId);
+      }
+      setLocalLabelIds(rolledBack);
+      onLabelsChange?.([...rolledBack]);
     }
   }
 

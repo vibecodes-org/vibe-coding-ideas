@@ -377,6 +377,30 @@ export function TaskDetailDialog({
       .filter((l): l is BoardLabel => l !== undefined);
   }, [task.labels, boardLabels]);
 
+  // Optimistic label IDs from LabelPicker callback (null = use server data)
+  const [optimisticLabelIds, setOptimisticLabelIds] = useState<string[] | null>(null);
+
+  // Reset when server data catches up
+  const [lastTaskLabelsKey, setLastTaskLabelsKey] = useState(() =>
+    task.labels.map((l) => l.id).sort().join(",")
+  );
+  const taskLabelsKey = task.labels.map((l) => l.id).sort().join(",");
+  if (taskLabelsKey !== lastTaskLabelsKey) {
+    setOptimisticLabelIds(null);
+    setLastTaskLabelsKey(taskLabelsKey);
+  }
+
+  // Compute display labels: optimistic if available, otherwise server-derived
+  const displayLabels = useMemo(() => {
+    if (optimisticLabelIds) {
+      const labelMap = new Map(boardLabels.map((l) => [l.id, l]));
+      return optimisticLabelIds
+        .map((id) => labelMap.get(id))
+        .filter((l): l is BoardLabel => l !== undefined);
+    }
+    return currentLabels;
+  }, [optimisticLabelIds, boardLabels, currentLabels]);
+
   const commentCount = task.comment_count;
   const attachmentCount = task.attachment_count;
   const propCoverPath = task.cover_image_path ?? null;
@@ -551,6 +575,7 @@ export function TaskDetailDialog({
                       ideaId={ideaId}
                       currentUserId={currentUserId}
                       inDialog
+                      onLabelsChange={setOptimisticLabelIds}
                     >
                       <Button variant="outline" size="sm" className="h-6 gap-1 text-xs">
                         <Tag className="h-3 w-3" />
@@ -559,8 +584,8 @@ export function TaskDetailDialog({
                     </LabelPicker>
                   )}
                 </div>
-                {currentLabels.length > 0 ? (
-                  <TaskLabelBadges labels={currentLabels} maxVisible={6} />
+                {displayLabels.length > 0 ? (
+                  <TaskLabelBadges labels={displayLabels} maxVisible={6} />
                 ) : isReadOnly ? (
                   <p className="text-xs text-muted-foreground">None</p>
                 ) : null}
