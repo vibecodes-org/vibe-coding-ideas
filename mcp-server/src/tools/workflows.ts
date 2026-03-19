@@ -582,6 +582,18 @@ export async function failStep(
   if (updateError) throw new Error(`Failed to fail step: ${updateError.message}`);
   if (!updated) throw new Error("Step is not in a state that can be failed (must be in_progress or awaiting_approval)");
 
+  // Auto-create a failure comment so the output is preserved as a comment
+  // (especially important before cascade wipes the step's output column)
+  if (params.output) {
+    await ctx.supabase.from("workflow_step_comments").insert({
+      step_id: params.step_id,
+      task_id: updated.task_id,
+      author_id: ctx.userId,
+      type: "failure",
+      content: params.output,
+    });
+  }
+
   // Cascade rejection: reset all steps from the target step onward
   let stepsReset = 0;
   if (params.reset_to_step_id && step.run_id) {
@@ -600,6 +612,7 @@ export async function failStep(
           output: null,
           started_at: null,
           completed_at: null,
+          claimed_by: null,
         })
         .eq("run_id", step.run_id)
         .gte("step_order", targetStep.step_order ?? 0)

@@ -284,6 +284,7 @@ export async function failWorkflowStep(
           output: null,
           started_at: null,
           completed_at: null,
+          claimed_by: null,
         })
         .eq("run_id", data.run_id)
         .gte("step_order", targetStep.step_order ?? 0);

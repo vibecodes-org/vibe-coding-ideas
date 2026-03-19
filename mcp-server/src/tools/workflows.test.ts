@@ -1006,6 +1006,191 @@ describe("failStep", () => {
 
     expect(runUpdateData).toEqual({ status: "failed" });
   });
+
+  it("auto-creates failure comment when output is provided", async () => {
+    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3 };
+    const updatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: RUN_ID,
+      title: "Design Review",
+      agent_role: "reviewer",
+      status: "failed",
+      output: "Design does not meet requirements",
+    };
+
+    const tableCounts: Record<string, number> = {};
+    let commentInserted: unknown = null;
+
+    const ctx = makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      const callNum = tableCounts[table]!;
+
+      if (table === "task_workflow_steps") {
+        if (callNum === 1) {
+          return createChain(stepFetched).chain;
+        }
+        if (callNum === 2) {
+          const chain = createChain(null);
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: updatedStep, error: null })
+          );
+          return chain.chain;
+        }
+      }
+
+      if (table === "workflow_step_comments") {
+        const chain = createChain(null);
+        chain.chain.insert = vi.fn((data: unknown) => {
+          commentInserted = data;
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+
+      if (table === "workflow_runs") {
+        return createChain(null).chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await failStep(ctx, {
+      step_id: STEP_ID,
+      output: "Design does not meet requirements",
+    });
+
+    expect(commentInserted).toEqual({
+      step_id: STEP_ID,
+      task_id: TASK_ID,
+      author_id: USER_ID,
+      type: "failure",
+      content: "Design does not meet requirements",
+    });
+  });
+
+  it("does not create failure comment when no output", async () => {
+    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3 };
+    const updatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: RUN_ID,
+      title: "Design Review",
+      agent_role: "reviewer",
+      status: "failed",
+      output: null,
+    };
+
+    const tableCounts: Record<string, number> = {};
+    let commentTableAccessed = false;
+
+    const ctx = makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      const callNum = tableCounts[table]!;
+
+      if (table === "task_workflow_steps") {
+        if (callNum === 1) {
+          return createChain(stepFetched).chain;
+        }
+        if (callNum === 2) {
+          const chain = createChain(null);
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: updatedStep, error: null })
+          );
+          return chain.chain;
+        }
+      }
+
+      if (table === "workflow_step_comments") {
+        commentTableAccessed = true;
+        return createChain(null).chain;
+      }
+
+      if (table === "workflow_runs") {
+        return createChain(null).chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await failStep(ctx, {
+      step_id: STEP_ID,
+    });
+
+    expect(commentTableAccessed).toBe(false);
+  });
+
+  it("clears claimed_by on cascade-reset steps", async () => {
+    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3 };
+    const updatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: RUN_ID,
+      title: "Design Review",
+      agent_role: "reviewer",
+      status: "failed",
+      output: "Needs rework",
+    };
+    const targetStep = { step_order: 2, position: 2000 };
+
+    const tableCounts: Record<string, number> = {};
+    let cascadeUpdateData: unknown = null;
+
+    const ctx = makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      const callNum = tableCounts[table]!;
+
+      if (table === "task_workflow_steps") {
+        if (callNum === 1) {
+          return createChain(stepFetched).chain;
+        }
+        if (callNum === 2) {
+          const chain = createChain(null);
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: updatedStep, error: null })
+          );
+          return chain.chain;
+        }
+        if (callNum === 3) {
+          // Fetch target step for cascade
+          return createChain(targetStep).chain;
+        }
+        if (callNum === 4) {
+          // Cascade reset update
+          const chain = createChain([{ id: STEP_ID }, { id: RESET_TO_STEP_ID }]);
+          chain.chain.update = vi.fn((data: unknown) => {
+            cascadeUpdateData = data;
+            return chain.chain;
+          });
+          return chain.chain;
+        }
+      }
+
+      if (table === "workflow_step_comments") {
+        return createChain(null).chain;
+      }
+
+      if (table === "workflow_runs") {
+        return createChain(null).chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await failStep(ctx, {
+      step_id: STEP_ID,
+      output: "Needs rework",
+      reset_to_step_id: RESET_TO_STEP_ID,
+    });
+
+    expect(cascadeUpdateData).toEqual({
+      status: "pending",
+      output: null,
+      started_at: null,
+      completed_at: null,
+      claimed_by: null,
+    });
+  });
 });
 
 // ---------------------------------------------------------------------------
