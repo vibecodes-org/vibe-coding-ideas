@@ -465,6 +465,19 @@ export async function claimNextStep(
     );
   }
 
+  if (rework_instructions) {
+    const reworkParts: string[] = [
+      `⚠️ REWORK REQUIRED: This step was previously attempted and failed. Address the feedback below before proceeding.`,
+    ];
+    if (rework_instructions.previous_failure_output) {
+      reworkParts.push(`Previous failure: ${rework_instructions.previous_failure_output}`);
+    }
+    for (const cr of rework_instructions.changes_requested) {
+      reworkParts.push(`Feedback: ${cr.content}`);
+    }
+    contextParts.push(reworkParts.join("\n"));
+  }
+
   contextParts.push(
     `TASK DESCRIPTION: After calling complete_step, call update_task to append a summary of your deliverable to the task description under a markdown heading.`
   );

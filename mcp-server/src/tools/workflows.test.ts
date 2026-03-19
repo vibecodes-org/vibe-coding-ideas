@@ -746,6 +746,94 @@ describe("claimNextStep — human approval directive", () => {
 });
 
 // ---------------------------------------------------------------------------
+// claimNextStep — rework instructions in instruction string
+// ---------------------------------------------------------------------------
+
+describe("claimNextStep — rework instructions", () => {
+  /** Extended makeClaimContext that returns rework comments from workflow_step_comments */
+  function makeClaimContextWithRework(opts: {
+    pendingStep: ReturnType<typeof makeStepRow>;
+    updatedStep: Record<string, unknown>;
+    priorSteps: { id: string; title: string; step_order: number; output: string | null }[];
+    reworkComments: { content: string; author_id: string; created_at: string; type: string }[];
+  }) {
+    const tableCounts: Record<string, number> = {};
+
+    return makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      const callNum = tableCounts[table];
+
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        if (callNum === 1) {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [opts.pendingStep], error: null }).then(resolve);
+        } else if (callNum === 2) {
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: opts.updatedStep, error: null })
+          );
+        } else if (callNum === 3) {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: opts.priorSteps, error: null }).then(resolve);
+        }
+        return chain.chain;
+      }
+
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: null, error: null }).then(resolve);
+        return chain.chain;
+      }
+
+      if (table === "workflow_step_comments") {
+        return createChain(opts.reworkComments).chain;
+      }
+
+      if (table === "idea_agents") {
+        return createChain([]).chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+  }
+
+  it("includes rework warning and feedback in instruction when rework_instructions present", async () => {
+    const step = makeStepRow({ output: "Previous attempt failed", comment_count: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const ctx = makeClaimContextWithRework({
+      pendingStep: step,
+      updatedStep,
+      priorSteps: [],
+      reworkComments: [
+        { content: "Please fix the validation logic", author_id: USER_ID, created_at: "2026-01-01T00:00:00Z", type: "failure" },
+        { content: "Also handle edge case for empty input", author_id: USER_ID, created_at: "2026-01-01T01:00:00Z", type: "changes_requested" },
+      ],
+    });
+
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const r = result as { instruction: string };
+
+    expect(r.instruction).toContain("REWORK REQUIRED");
+    expect(r.instruction).toContain("Previous failure: Previous attempt failed");
+    expect(r.instruction).toContain("Feedback: Please fix the validation logic");
+    expect(r.instruction).toContain("Feedback: Also handle edge case for empty input");
+  });
+
+  it("does not include rework section when no rework_instructions", async () => {
+    const step = makeStepRow();
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string };
+    expect(r.instruction).not.toContain("REWORK REQUIRED");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // approveStep — bot rejection test
 // ---------------------------------------------------------------------------
 
