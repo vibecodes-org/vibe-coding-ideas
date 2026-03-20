@@ -759,7 +759,7 @@ export function StepDetailDialog({
                         {new Date(comment.created_at).toLocaleString()}
                       </span>
                     </div>
-                    <p className="text-xs whitespace-pre-wrap">{comment.content}</p>
+                    <div className="text-xs"><Markdown>{comment.content}</Markdown></div>
                   </div>
                 ))}
                 <div ref={commentsEndRef} />
