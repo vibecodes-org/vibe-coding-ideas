@@ -1,0 +1,873 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workflow Rework Loop — Architecture Analysis</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-2: #242736;
+    --border: #2e3245;
+    --text: #e2e4eb;
+    --text-muted: #8b8fa3;
+    --accent: #7c6aef;
+    --accent-dim: #5b4cc4;
+    --green: #34d399;
+    --green-dim: rgba(52,211,153,0.15);
+    --red: #f87171;
+    --red-dim: rgba(248,113,113,0.15);
+    --amber: #fbbf24;
+    --amber-dim: rgba(251,191,36,0.15);
+    --blue: #60a5fa;
+    --blue-dim: rgba(96,165,250,0.15);
+    --cyan: #22d3ee;
+    --cyan-dim: rgba(34,211,238,0.15);
+    --pink: #f472b6;
+    --pink-dim: rgba(244,114,182,0.15);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, var(--accent), var(--cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.95rem;
+    margin-bottom: 2.5rem;
+  }
+
+  h2 {
+    font-size: 1.35rem;
+    font-weight: 600;
+    margin: 2.5rem 0 1rem;
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  h2 .badge {
+    font-size: 0.7rem;
+    font-weight: 500;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  h3 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    margin: 1.5rem 0 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  /* ─── Flow Diagrams ─── */
+  .flow {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    position: relative;
+    padding: 1rem 0;
+  }
+
+  .flow-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 1rem;
+    position: relative;
+    padding-bottom: 0.5rem;
+  }
+
+  .flow-step:not(:last-child)::before {
+    content: '';
+    position: absolute;
+    left: 15px;
+    top: 32px;
+    bottom: 0;
+    width: 2px;
+    background: var(--border);
+  }
+
+  .flow-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.8rem;
+    font-weight: 700;
+    flex-shrink: 0;
+    z-index: 1;
+  }
+
+  .flow-icon.action { background: var(--blue-dim); color: var(--blue); border: 2px solid var(--blue); }
+  .flow-icon.comment { background: var(--amber-dim); color: var(--amber); border: 2px solid var(--amber); }
+  .flow-icon.cascade { background: var(--red-dim); color: var(--red); border: 2px solid var(--red); }
+  .flow-icon.claim { background: var(--green-dim); color: var(--green); border: 2px solid var(--green); }
+  .flow-icon.gap { background: var(--pink-dim); color: var(--pink); border: 2px solid var(--pink); }
+  .flow-icon.neutral { background: var(--surface-2); color: var(--text-muted); border: 2px solid var(--border); }
+
+  .flow-content {
+    flex: 1;
+    padding-bottom: 1rem;
+  }
+
+  .flow-content .label {
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 0.25rem;
+  }
+
+  .flow-content .detail {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+  }
+
+  .flow-content code {
+    background: var(--surface-2);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    color: var(--cyan);
+  }
+
+  /* ─── Pipeline Diagram ─── */
+  .pipeline {
+    display: flex;
+    gap: 0;
+    overflow-x: auto;
+    padding: 1.5rem 0;
+    align-items: flex-start;
+  }
+
+  .pipe-step {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 120px;
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .pipe-step:not(:last-child)::after {
+    content: '→';
+    position: absolute;
+    right: -12px;
+    top: 20px;
+    color: var(--text-muted);
+    font-size: 1.2rem;
+    z-index: 1;
+  }
+
+  .pipe-box {
+    width: 100px;
+    height: 50px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.72rem;
+    font-weight: 600;
+    text-align: center;
+    padding: 0.25rem;
+    line-height: 1.2;
+  }
+
+  .pipe-box.completed { background: var(--green-dim); border: 2px solid var(--green); color: var(--green); }
+  .pipe-box.failed { background: var(--red-dim); border: 2px solid var(--red); color: var(--red); }
+  .pipe-box.pending { background: var(--surface-2); border: 2px solid var(--border); color: var(--text-muted); }
+  .pipe-box.pending-rework { background: var(--amber-dim); border: 2px solid var(--amber); color: var(--amber); }
+  .pipe-box.claimed { background: var(--blue-dim); border: 2px solid var(--blue); color: var(--blue); }
+  .pipe-box.approval { background: var(--accent-dim); border: 2px solid var(--accent); color: #a78bfa; }
+
+  .pipe-label {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-top: 0.4rem;
+    text-align: center;
+    max-width: 110px;
+  }
+
+  .pipe-annotation {
+    font-size: 0.6rem;
+    margin-top: 0.25rem;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    font-weight: 500;
+  }
+
+  .pipe-annotation.comment-here { background: var(--amber-dim); color: var(--amber); }
+  .pipe-annotation.wiped { background: var(--red-dim); color: var(--red); }
+  .pipe-annotation.no-context { background: var(--pink-dim); color: var(--pink); }
+
+  /* ─── Cascade Arrow ─── */
+  .cascade-arrow {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 1rem 0;
+    margin: 0.5rem 0;
+  }
+
+  .cascade-line {
+    flex: 1;
+    height: 2px;
+    background: repeating-linear-gradient(90deg, var(--red) 0, var(--red) 8px, transparent 8px, transparent 14px);
+  }
+
+  .cascade-label {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--red);
+    white-space: nowrap;
+    padding: 0.25rem 0.5rem;
+    background: var(--red-dim);
+    border-radius: 4px;
+  }
+
+  /* ─── Data Table ─── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.82rem;
+  }
+
+  th {
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--border);
+  }
+
+  td {
+    padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  .tag {
+    display: inline-block;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    font-size: 0.7rem;
+    font-weight: 600;
+  }
+
+  .tag.green { background: var(--green-dim); color: var(--green); }
+  .tag.red { background: var(--red-dim); color: var(--red); }
+  .tag.amber { background: var(--amber-dim); color: var(--amber); }
+  .tag.blue { background: var(--blue-dim); color: var(--blue); }
+  .tag.muted { background: var(--surface-2); color: var(--text-muted); }
+
+  /* ─── Gap callout ─── */
+  .callout {
+    border-radius: 8px;
+    padding: 1rem 1.25rem;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+  }
+
+  .callout.bug {
+    background: var(--red-dim);
+    border-left: 4px solid var(--red);
+  }
+
+  .callout.info {
+    background: var(--blue-dim);
+    border-left: 4px solid var(--blue);
+  }
+
+  .callout.success {
+    background: var(--green-dim);
+    border-left: 4px solid var(--green);
+  }
+
+  .callout strong {
+    display: block;
+    margin-bottom: 0.35rem;
+  }
+
+  /* ─── File reference ─── */
+  .file-ref {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--cyan);
+    background: var(--surface-2);
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+  }
+
+  /* ─── Two-column layout ─── */
+  .columns {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.5rem;
+  }
+
+  @media (max-width: 900px) {
+    .columns { grid-template-columns: 1fr; }
+    .pipeline { flex-wrap: wrap; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Workflow Rework Loop — Architecture Analysis</h1>
+<p class="subtitle">How cascade rejection flows through the system, and where rework context gets lost</p>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>1. Normal Workflow Lifecycle</h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">A workflow template is applied to a task, creating a sequence of steps. Each step is claimed, executed, and completed in order.</p>
+
+  <div class="pipeline">
+    <div class="pipe-step">
+      <div class="pipe-box completed">Requirements</div>
+      <div class="pipe-label">PO</div>
+      <div class="pipe-annotation" style="background:var(--green-dim);color:var(--green);">output saved</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-box completed">UX Design</div>
+      <div class="pipe-label">UX</div>
+      <div class="pipe-annotation" style="background:var(--green-dim);color:var(--green);">output saved</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-box completed">Design Review</div>
+      <div class="pipe-label">PO (approval gate)</div>
+      <div class="pipe-annotation" style="background:var(--green-dim);color:var(--green);">approved</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-box completed">Implementation</div>
+      <div class="pipe-label">Developer</div>
+      <div class="pipe-annotation" style="background:var(--green-dim);color:var(--green);">output saved</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-box completed">QA Testing</div>
+      <div class="pipe-label">QA</div>
+      <div class="pipe-annotation" style="background:var(--green-dim);color:var(--green);">output saved</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-box approval">Final Sign-off</div>
+      <div class="pipe-label">PO (approval gate)</div>
+      <div class="pipe-annotation" style="background:var(--accent-dim);color:#a78bfa;">awaiting approval</div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>2. Cascade Rejection <span class="badge" style="background:var(--red-dim);color:var(--red);">Two paths</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="columns">
+  <!-- UI Path -->
+  <div class="section">
+    <h3 style="color:var(--blue);">UI Path (step-detail-dialog.tsx)</h3>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-icon action">1</div>
+        <div class="flow-content">
+          <div class="label">User clicks "Request Changes" on Step 6</div>
+          <div class="detail">Types rejection message, selects cascade target (Step 4)</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-icon comment">2</div>
+        <div class="flow-content">
+          <div class="label">addStepComment(step6.id, msg, "changes_requested")</div>
+          <div class="detail">Comment created on <strong style="color:var(--amber);">Step 6</strong> (the rejected step)</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-icon cascade">3</div>
+        <div class="flow-content">
+          <div class="label">failWorkflowStep(step6.id, undefined, step4.id)</div>
+          <div class="detail">
+            <code>output: undefined</code> → step output set to <code>null</code><br>
+            Server action: <span class="file-ref">src/actions/workflow.ts:241</span>
+          </div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-icon cascade">4</div>
+        <div class="flow-content">
+          <div class="label">Cascade: steps 4, 5, 6 → pending</div>
+          <div class="detail">
+            Wipes: <code>output</code>, <code>started_at</code>, <code>completed_at</code>, <code>claimed_by</code><br>
+            Step 6 goes from "failed" → "pending" (overwritten by cascade)
+          </div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-icon neutral">5</div>
+        <div class="flow-content">
+          <div class="label">Run status → "running"</div>
+          <div class="detail">Workflow continues from the cascade target</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MCP Path -->
+  <div class="section">
+    <h3 style="color:var(--cyan);">MCP Path (fail_step tool)</h3>
+    <div class="flow">
+      <div class="flow-step">
+        <div class="flow-icon action">1</div>
+        <div class="flow-content">
+          <div class="label">Agent calls fail_step(step6, output, step4.id)</div>
+          <div class="detail">Provides failure reason as <code>output</code> parameter</div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-icon action">2</div>
+        <div class="flow-content">
+          <div class="label">Step 6 → status "failed", output saved</div>
+          <div class="detail">Server: <span class="file-ref">mcp-server/src/tools/workflows.ts:587</span></div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-icon comment">3</div>
+        <div class="flow-content">
+          <div class="label">Auto-insert "failure" comment on Step 6</div>
+          <div class="detail">
+            Comment on <strong style="color:var(--amber);">Step 6</strong> with <code>type: "failure"</code><br>
+            Inserted BEFORE cascade (survives output wipe)
+          </div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-icon cascade">4</div>
+        <div class="flow-content">
+          <div class="label">Cascade: steps 4, 5, 6 → pending</div>
+          <div class="detail">
+            Same wipe as UI path + <code>claimed_by: null</code><br>
+            Step 6's output wiped, but comment preserved
+          </div>
+        </div>
+      </div>
+      <div class="flow-step">
+        <div class="flow-icon neutral">5</div>
+        <div class="flow-content">
+          <div class="label">Run status → "running"</div>
+          <div class="detail">Workflow continues from the cascade target</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>3. Post-Cascade State <span class="badge" style="background:var(--amber-dim);color:var(--amber);">Key moment</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">After rejection of Step 6 with cascade back to Step 4, here's the state of every step and where comments live:</p>
+
+  <div class="pipeline">
+    <div class="pipe-step">
+      <div class="pipe-box completed">Requirements</div>
+      <div class="pipe-label">Step 1 — completed</div>
+      <div class="pipe-annotation" style="background:var(--green-dim);color:var(--green);">untouched</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-box completed">UX Design</div>
+      <div class="pipe-label">Step 2 — completed</div>
+      <div class="pipe-annotation" style="background:var(--green-dim);color:var(--green);">untouched</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-box completed">Design Review</div>
+      <div class="pipe-label">Step 3 — completed</div>
+      <div class="pipe-annotation" style="background:var(--green-dim);color:var(--green);">untouched</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-box pending-rework">Implement</div>
+      <div class="pipe-label">Step 4 — pending</div>
+      <div class="pipe-annotation no-context">0 comments</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-box pending">QA Testing</div>
+      <div class="pipe-label">Step 5 — pending</div>
+      <div class="pipe-annotation wiped">output wiped</div>
+    </div>
+    <div class="pipe-step">
+      <div class="pipe-box pending">Sign-off</div>
+      <div class="pipe-label">Step 6 — pending</div>
+      <div class="pipe-annotation comment-here">comment lives here</div>
+    </div>
+  </div>
+
+  <div class="cascade-arrow">
+    <div class="cascade-label">← CASCADE RESET</div>
+    <div class="cascade-line"></div>
+    <div class="cascade-label">REJECTION SOURCE →</div>
+  </div>
+
+  <table>
+    <tr>
+      <th>Step</th>
+      <th>Status</th>
+      <th>Output</th>
+      <th>claimed_by</th>
+      <th>Comments</th>
+    </tr>
+    <tr>
+      <td>Step 1 — Requirements</td>
+      <td><span class="tag green">completed</span></td>
+      <td><span class="tag green">preserved</span></td>
+      <td>original agent</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td>Step 2 — UX Design</td>
+      <td><span class="tag green">completed</span></td>
+      <td><span class="tag green">preserved</span></td>
+      <td>original agent</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td>Step 3 — Design Review</td>
+      <td><span class="tag green">completed</span></td>
+      <td><span class="tag green">preserved</span></td>
+      <td>original agent</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td style="font-weight:600;">Step 4 — Implementation</td>
+      <td><span class="tag amber">pending</span></td>
+      <td><span class="tag red">null (wiped)</span></td>
+      <td><span class="tag red">null (wiped)</span></td>
+      <td><span class="tag muted">none on this step</span></td>
+    </tr>
+    <tr>
+      <td>Step 5 — QA Testing</td>
+      <td><span class="tag amber">pending</span></td>
+      <td><span class="tag red">null (wiped)</span></td>
+      <td><span class="tag red">null (wiped)</span></td>
+      <td><span class="tag muted">none on this step</span></td>
+    </tr>
+    <tr>
+      <td>Step 6 — Final Sign-off</td>
+      <td><span class="tag amber">pending</span></td>
+      <td><span class="tag red">null (wiped)</span></td>
+      <td><span class="tag red">null (wiped)</span></td>
+      <td><span class="tag amber">changes_requested ✓</span></td>
+    </tr>
+  </table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>4. The Bug: claim_next_step Rework Detection <span class="badge" style="background:var(--red-dim);color:var(--red);">Gap</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <h3>Current Detection Logic</h3>
+  <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">
+    <span class="file-ref">mcp-server/src/tools/workflows.ts:335-354</span>
+  </p>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="flow-icon claim">1</div>
+      <div class="flow-content">
+        <div class="label">claim_next_step(task_id) picks up Step 4</div>
+        <div class="detail">Step 4 is the first pending step in the run</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-icon action">2</div>
+      <div class="flow-content">
+        <div class="label">Check: <code>step.output || step.comment_count > 0</code></div>
+        <div class="detail">
+          <code>step.output</code> = <span class="tag red">null</span> (wiped by cascade)<br>
+          <code>step.comment_count</code> = <span class="tag red">0</span> (comments are on Step 6, not Step 4)
+        </div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-icon gap">3</div>
+      <div class="flow-content">
+        <div class="label" style="color:var(--pink);">Condition is FALSE → rework check skipped entirely</div>
+        <div class="detail">
+          <code>rework_instructions = null</code><br>
+          No REWORK REQUIRED section in instruction string
+        </div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-icon gap">4</div>
+      <div class="flow-content">
+        <div class="label" style="color:var(--pink);">Agent starts from scratch with zero rejection context</div>
+        <div class="detail">
+          The agent has no idea why this step was reset. It re-implements everything instead of making the targeted fix the reviewer requested.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout bug">
+    <strong>Root Cause: Comments live on the wrong step</strong>
+    The rejection comment (<code>changes_requested</code>) is placed on <strong>Step 6</strong> (the step that was rejected),
+    but <code>claim_next_step</code> only looks for comments on <strong>Step 4</strong> (the step being claimed).
+    In a cascade scenario, these are different steps — the rework context never reaches the agent.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>5. Where Comments End Up</h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <table>
+    <tr>
+      <th>Trigger</th>
+      <th>Comment Type</th>
+      <th>Placed On</th>
+      <th>Content</th>
+      <th>Survives Cascade?</th>
+    </tr>
+    <tr>
+      <td>UI "Request Changes"</td>
+      <td><span class="tag amber">changes_requested</span></td>
+      <td>The <strong>rejected</strong> step (Step 6)</td>
+      <td>User's rejection message</td>
+      <td><span class="tag green">Yes</span> (comments table)</td>
+    </tr>
+    <tr>
+      <td>MCP fail_step (with output)</td>
+      <td><span class="tag red">failure</span></td>
+      <td>The <strong>failed</strong> step (Step 6)</td>
+      <td>params.output</td>
+      <td><span class="tag green">Yes</span> (comments table)</td>
+    </tr>
+    <tr>
+      <td style="color:var(--pink); font-weight:600;">Neither path</td>
+      <td style="color:var(--pink);">—</td>
+      <td style="color:var(--pink);">The <strong>cascade target</strong> step (Step 4)</td>
+      <td style="color:var(--pink);">Nothing placed here</td>
+      <td style="color:var(--pink);">N/A — no comment exists</td>
+    </tr>
+  </table>
+
+  <div class="callout info">
+    <strong>The disconnect</strong>
+    Comments survive cascade (they're in a separate table). But <code>claim_next_step</code> only queries
+    <code>.eq("step_id", step.id)</code> — it never looks at comments on other steps in the run.
+    The rework context exists in the database, but the query doesn't find it.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>6. What Cascade Wipes vs. Preserves</h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="columns">
+    <div>
+      <h3 style="color:var(--red);">Wiped by Cascade</h3>
+      <table>
+        <tr><td><code>status</code></td><td>→ <span class="tag amber">pending</span></td></tr>
+        <tr><td><code>output</code></td><td>→ <span class="tag red">null</span></td></tr>
+        <tr><td><code>started_at</code></td><td>→ <span class="tag red">null</span></td></tr>
+        <tr><td><code>completed_at</code></td><td>→ <span class="tag red">null</span></td></tr>
+        <tr><td><code>claimed_by</code></td><td>→ <span class="tag red">null</span></td></tr>
+      </table>
+    </div>
+    <div>
+      <h3 style="color:var(--green);">Preserved</h3>
+      <table>
+        <tr><td><code>bot_id</code></td><td>Pre-matched agent from template</td></tr>
+        <tr><td><code>title, description</code></td><td>Step metadata</td></tr>
+        <tr><td><code>agent_role</code></td><td>Role assignment</td></tr>
+        <tr><td><code>expected_deliverables</code></td><td>What's expected</td></tr>
+        <tr><td><code>step_order, position</code></td><td>Ordering</td></tr>
+        <tr><td><code>workflow_step_comments</code></td><td>All comments (separate table)</td></tr>
+        <tr><td><code>comment_count</code></td><td>Denormalized count (not reset)</td></tr>
+      </table>
+    </div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>7. Fix: Look for Failed Steps Later in the Run <span class="badge" style="background:var(--green-dim);color:var(--green);">Proposed</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">
+    The fix adds a second check in <code>claim_next_step</code>: if no rework context is found on the claimed step itself,
+    look for <strong>failed steps later in the same run</strong> — that's where the cascade originated from.
+  </p>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="flow-icon claim">1</div>
+      <div class="flow-content">
+        <div class="label">Scenario A: Check the claimed step itself</div>
+        <div class="detail">Existing logic — works when step was directly failed & retried</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-icon claim">2</div>
+      <div class="flow-content">
+        <div class="label" style="color:var(--green);">Scenario B (NEW): Check for failed steps later in the run</div>
+        <div class="detail">
+          Query <code>task_workflow_steps</code> in same run where <code>status = "failed"</code>
+          and <code>step_order > current</code><br>
+          If found, fetch that step's output + <code>failure</code>/<code>changes_requested</code> comments
+        </div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-icon action">3</div>
+      <div class="flow-content">
+        <div class="label">Build rework_instructions from the source step</div>
+        <div class="detail">
+          <code>previous_failure_output</code> = failed step's output<br>
+          <code>changes_requested</code> = comments on the failed step
+        </div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-icon action">4</div>
+      <div class="flow-content">
+        <div class="label">Include in instruction string</div>
+        <div class="detail">
+          The existing P2 code formats rework_instructions into the instruction string with
+          REWORK REQUIRED warning + feedback content
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <strong>Wait — will a failed step exist later in the run?</strong>
+    In the UI path: Step 6 is set to "failed" first, then the cascade resets steps 4-6 back to "pending".
+    Step 6 ends up as <strong>"pending"</strong>, not "failed" — the cascade overwrites the failed status.<br><br>
+    This means Scenario B <strong>won't work for the UI path either</strong>, because there's no failed step left to find.
+    The cascade resets ALL steps from the target onward, including the step that was just failed.
+  </div>
+
+  <div class="callout bug">
+    <strong>Deeper problem: the failed step doesn't stay failed</strong>
+    Both <code>failWorkflowStep</code> (server action) and <code>failStep</code> (MCP tool) first set the step to "failed",
+    then the cascade update uses <code>.gte("step_order", target)</code> which includes the failed step itself
+    (since it has a higher step_order than the target). The failed step gets overwritten back to "pending".<br><br>
+    <strong>This means:</strong> after cascade, there is NO record of which step was rejected or why —
+    except for comments on that step (which survive, but aren't queried by claim_next_step).
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>8. Implemented Fix — Option B: Cascade propagates <code>changes_requested</code> comment</h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="callout success">
+    <strong>Status: IMPLEMENTED</strong> — Both MCP <code>failStep</code> and server action <code>failWorkflowStep</code>
+    now insert a <code>changes_requested</code> comment on the cascade target step during rejection.
+    The existing <code>claim_next_step</code> rework detection picks it up without modification.
+  </div>
+
+  <h3 style="color:var(--green); margin-top:1rem;">How it works</h3>
+  <ol style="font-size:0.85rem; margin:0.75rem 0 0.75rem 1.5rem; color:var(--text-muted);">
+    <li>Reviewer rejects Step 6 with message "Please fix the validation" and cascades to Step 4</li>
+    <li><code>failStep</code> / <code>failWorkflowStep</code> marks Step 6 as <code>failed</code> with <code>completed_at</code></li>
+    <li>A <code>failure</code> comment is created on Step 6 (preserves the rejection reason)</li>
+    <li>Cascade resets steps 4, 5, 6 → <code>pending</code> (clears output, claimed_by, timestamps)</li>
+    <li><strong>NEW:</strong> A <code>changes_requested</code> comment is inserted on Step 4 (the cascade target)</li>
+    <li>When an agent calls <code>claim_next_step</code> and claims Step 4, the existing rework detection
+        finds the <code>changes_requested</code> comment on Step 4 and populates <code>rework_instructions</code></li>
+    <li>The <code>instruction</code> string includes "REWORK REQUIRED" with the reviewer's feedback</li>
+  </ol>
+
+  <h3 style="color:var(--blue); margin-top:1rem;">Additional MCP/UI parity fixes</h3>
+  <ul style="font-size:0.85rem; margin:0.75rem 0 0 1.5rem; color:var(--text-muted);">
+    <li><strong>MCP <code>failStep</code>:</strong> Fixed broken FK (<code>idea_id</code> instead of <code>task_id</code>), added <code>completed_at</code></li>
+    <li><strong>Server action <code>failWorkflowStep</code>:</strong> Now creates failure comment (was missing)</li>
+    <li><strong>Server action <code>completeWorkflowStep</code>:</strong> Now creates output comment, conditional output field</li>
+    <li><strong>Server action <code>startWorkflowStep</code>:</strong> Sets <code>claimed_by</code>, accepts <code>failed</code> run status</li>
+    <li><strong>Server action <code>retryWorkflowStep</code>:</strong> Clears <code>claimed_by</code></li>
+    <li><strong>UI reject handler:</strong> Simplified to single <code>failWorkflowStep</code> call (no separate <code>addStepComment</code>)</li>
+  </ul>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>9. File Reference</h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <table>
+    <tr>
+      <th>File</th>
+      <th>Function</th>
+      <th>Role</th>
+    </tr>
+    <tr>
+      <td><span class="file-ref">src/components/board/step-detail-dialog.tsx</span></td>
+      <td>reject action handler (line ~289)</td>
+      <td>UI: addStepComment + failWorkflowStep</td>
+    </tr>
+    <tr>
+      <td><span class="file-ref">src/actions/workflow.ts</span></td>
+      <td>failWorkflowStep (line ~241)</td>
+      <td>Server action: fail step + cascade reset</td>
+    </tr>
+    <tr>
+      <td><span class="file-ref">mcp-server/src/tools/workflows.ts</span></td>
+      <td>failStep (line ~571)</td>
+      <td>MCP: fail step + auto-comment + cascade</td>
+    </tr>
+    <tr>
+      <td><span class="file-ref">mcp-server/src/tools/workflows.ts</span></td>
+      <td>claimNextStep (line ~328)</td>
+      <td>Rework detection + instruction builder</td>
+    </tr>
+    <tr>
+      <td><span class="file-ref">src/lib/workflow-helpers.ts</span></td>
+      <td>resetWorkflow, checkAndCompleteRun</td>
+      <td>Shared helpers (full reset, run completion)</td>
+    </tr>
+  </table>
+</div>
+
+</body>
+</html>

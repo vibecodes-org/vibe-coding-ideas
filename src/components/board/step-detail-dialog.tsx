@@ -266,6 +266,7 @@ export function StepDetailDialog({
         case "skip":
           await skipWorkflowStep(step.id);
           toast.success("Step skipped");
+          onOpenChange(false);
           break;
         case "complete":
           await completeWorkflowStep(step.id, actionText.trim() || undefined);
@@ -274,12 +275,14 @@ export function StepDetailDialog({
           );
           setActiveAction(null);
           setActionText("");
+          onOpenChange(false);
           break;
         case "fail":
           await failWorkflowStep(step.id, actionText.trim() || undefined);
           toast.success("Step marked as failed");
           setActiveAction(null);
           setActionText("");
+          onOpenChange(false);
           break;
         case "approve":
           await approveWorkflowStep(step.id);
@@ -289,8 +292,9 @@ export function StepDetailDialog({
         case "reject": {
           const cascadeTarget = resetToStepId && resetToStepId !== "__none" ? resetToStepId : undefined;
           const rejectMessage = actionText.trim() || "Changes requested";
-          await addStepComment(step.id, ideaId, rejectMessage, "changes_requested");
-          await failWorkflowStep(step.id, undefined, cascadeTarget);
+          // Server action now handles both the failure comment on the source step
+          // AND the changes_requested comment on the cascade target step
+          await failWorkflowStep(step.id, rejectMessage, cascadeTarget);
           toast.success(
             cascadeTarget
               ? "Step rejected — pipeline reset to earlier step"

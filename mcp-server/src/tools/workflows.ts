@@ -575,13 +575,16 @@ export async function failStep(
   // Fetch current step to get run_id and step_order
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order")
+    .select("id, run_id, step_order, idea_id")
     .eq("id", params.step_id)
     .single();
 
   if (fetchError || !step) throw new Error(`Step not found: ${params.step_id}`);
 
-  const updateFields: Record<string, unknown> = { status: "failed" };
+  const updateFields: Record<string, unknown> = {
+    status: "failed",
+    completed_at: new Date().toISOString(),
+  };
   if (params.output !== undefined) updateFields.output = params.output;
 
   const { data: updated, error: updateError } = await ctx.supabase
@@ -600,7 +603,7 @@ export async function failStep(
   if (params.output) {
     await ctx.supabase.from("workflow_step_comments").insert({
       step_id: params.step_id,
-      task_id: updated.task_id,
+      idea_id: step.idea_id,
       author_id: ctx.userId,
       type: "failure",
       content: params.output,
@@ -632,6 +635,17 @@ export async function failStep(
         .select("id");
 
       stepsReset = resetSteps?.length ?? 0;
+
+      // Propagate rework context to the cascade target step
+      if (stepsReset > 0) {
+        await ctx.supabase.from("workflow_step_comments").insert({
+          step_id: params.reset_to_step_id,
+          idea_id: step.idea_id,
+          author_id: ctx.userId,
+          type: "changes_requested",
+          content: params.output || "Rework required — step was rejected and sent back for revision.",
+        });
+      }
     }
   }
 

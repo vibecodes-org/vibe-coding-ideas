@@ -141,6 +141,7 @@ export async function startWorkflowStep(stepId: string) {
     .update({
       status: "in_progress",
       started_at: new Date().toISOString(),
+      claimed_by: user.id,
     })
     .eq("id", stepId)
     .eq("status", "pending")
@@ -159,7 +160,7 @@ export async function startWorkflowStep(stepId: string) {
         current_step: data.step_order ?? undefined,
       })
       .eq("id", data.run_id)
-      .in("status", ["pending", "paused"]);
+      .in("status", ["pending", "running", "failed"]);
   }
 
   return data;
@@ -176,7 +177,7 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
   // Fetch the step to check human_check_required
   const { data: existing } = await supabase
     .from("task_workflow_steps")
-    .select("human_check_required")
+    .select("human_check_required, idea_id")
     .eq("id", stepId)
     .single();
 
@@ -184,13 +185,15 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
   const newStatus =
     existing?.human_check_required ? "awaiting_approval" : "completed";
 
+  const updateFields: Record<string, unknown> = {
+    status: newStatus,
+    completed_at: newStatus === "completed" ? new Date().toISOString() : null,
+  };
+  if (output !== undefined) updateFields.output = output;
+
   const { data, error } = await supabase
     .from("task_workflow_steps")
-    .update({
-      status: newStatus,
-      completed_at: newStatus === "completed" ? new Date().toISOString() : null,
-      output: output ?? null,
-    })
+    .update(updateFields)
     .eq("id", stepId)
     .eq("status", "in_progress")
     .select("*")
@@ -198,6 +201,17 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
 
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Step is no longer in progress — it may have been modified by another agent");
+
+  // Create output comment when output is provided
+  if (output && existing?.idea_id) {
+    await supabase.from("workflow_step_comments").insert({
+      step_id: stepId,
+      idea_id: existing.idea_id,
+      author_id: user.id,
+      type: "output",
+      content: output,
+    });
+  }
 
   // If step belongs to a run, check if all steps in that run are completed
   if (data.run_id && newStatus === "completed") {
@@ -265,6 +279,17 @@ export async function failWorkflowStep(
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Step is not in a state that can be failed (must be in_progress or awaiting_approval)");
 
+  // Auto-create a failure comment so the output is preserved as a comment
+  if (output && data.idea_id) {
+    await supabase.from("workflow_step_comments").insert({
+      step_id: stepId,
+      idea_id: data.idea_id,
+      author_id: user.id,
+      type: "failure",
+      content: output,
+    });
+  }
+
   // Cascade rejection: reset all steps from resetToStepId onward (including the failed step)
   if (resetToStepId && data.run_id) {
     // Fetch the target step to get its step_order
@@ -288,6 +313,15 @@ export async function failWorkflowStep(
         })
         .eq("run_id", data.run_id)
         .gte("step_order", targetStep.step_order ?? 0);
+
+      // Propagate rework context to the cascade target step
+      await supabase.from("workflow_step_comments").insert({
+        step_id: resetToStepId,
+        idea_id: data.idea_id,
+        author_id: user.id,
+        type: "changes_requested",
+        content: output || "Rework required — step was rejected and sent back for revision.",
+      });
     }
   }
 
@@ -352,6 +386,7 @@ export async function retryWorkflowStep(stepId: string) {
       output: null,
       started_at: null,
       completed_at: null,
+      claimed_by: null,
     })
     .eq("id", stepId)
     .eq("status", "failed")
