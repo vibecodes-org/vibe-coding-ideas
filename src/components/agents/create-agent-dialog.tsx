@@ -13,6 +13,7 @@ import {
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { RoleCombobox } from "@/components/ui/role-combobox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BOT_ROLE_TEMPLATES } from "@/lib/constants";
 import { createBot } from "@/actions/bots";
@@ -299,16 +300,14 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
           {/* Role */}
           <div className="space-y-1">
             <Label htmlFor="bot-role" className="text-xs">Role</Label>
-            <Input
-              id="bot-role"
+            <RoleCombobox
               value={role}
-              onChange={(e) => setRole(e.target.value)}
+              onChange={setRole}
               placeholder="e.g. Developer, QA Tester"
               maxLength={50}
+              showHelperText
+              helperText="Used to auto-assign workflow steps. Use short roles like &ldquo;Developer&rdquo; or &ldquo;QA&rdquo;."
             />
-            <p className="text-[10px] text-muted-foreground">
-              Short role label shown as a badge next to the agent&apos;s name.
-            </p>
           </div>
 
           {/* Skills (comma-separated) */}

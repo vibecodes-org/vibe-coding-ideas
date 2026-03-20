@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { RoleCombobox } from "@/components/ui/role-combobox";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -402,13 +403,14 @@ export function StepDetailDialog({
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="edit-role" className="text-xs">Agent Role</Label>
-                <Input
-                  id="edit-role"
+                <RoleCombobox
                   value={editRole}
-                  onChange={(e) => setEditRole(e.target.value)}
-                  className="text-sm"
+                  onChange={setEditRole}
                   placeholder="e.g. developer, designer"
                   maxLength={100}
+                  ideaId={ideaId}
+                  showHelperText
+                  helperText="Matched against agents when template is applied"
                 />
               </div>
               <div className="space-y-1.5">

@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UX Design: Agent Role Autocomplete & Helper Text</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --card: #18181b;
+    --border: #27272a;
+    --text: #fafafa;
+    --muted: #a1a1aa;
+    --accent: #7c3aed;
+    --accent-hover: #6d28d9;
+    --input-bg: #09090b;
+    --input-border: #3f3f46;
+    --popover-bg: #18181b;
+    --popover-border: #27272a;
+    --highlight: rgba(124, 58, 237, 0.15);
+    --helper: #71717a;
+    --badge-blue: #1e3a5f;
+    --badge-blue-text: #93c5fd;
+    --badge-violet: #2e1065;
+    --badge-violet-text: #c4b5fd;
+    --badge-zinc: #27272a;
+    --badge-zinc-text: #a1a1aa;
+    --success: #22c55e;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); padding: 40px; line-height: 1.6; }
+
+  h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  h2 { font-size: 22px; font-weight: 600; margin: 48px 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+  h3 { font-size: 17px; font-weight: 600; margin: 32px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.5px; font-size: 13px; }
+  p, li { color: var(--muted); font-size: 14px; }
+  p { margin-bottom: 12px; }
+  ul { padding-left: 20px; margin-bottom: 16px; }
+  li { margin-bottom: 4px; }
+  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+  .meta { display: flex; gap: 24px; margin-bottom: 40px; font-size: 13px; color: var(--helper); }
+  .meta span { display: flex; align-items: center; gap: 6px; }
+
+  /* Layout */
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; margin: 24px 0; }
+  @media (max-width: 900px) { .grid { grid-template-columns: 1fr; } }
+
+  /* Mockup cards */
+  .mockup {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 24px;
+    position: relative;
+  }
+  .mockup-label {
+    position: absolute;
+    top: -10px;
+    left: 16px;
+    background: var(--accent);
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    padding: 2px 10px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .mockup-caption {
+    font-size: 12px;
+    color: var(--helper);
+    margin-top: 12px;
+    font-style: italic;
+  }
+
+  /* Form elements */
+  .form-group { margin-bottom: 16px; }
+  .form-label {
+    display: block;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 6px;
+  }
+  .form-input {
+    width: 100%;
+    height: 36px;
+    background: var(--input-bg);
+    border: 1px solid var(--input-border);
+    border-radius: 6px;
+    padding: 0 12px;
+    color: var(--text);
+    font-size: 14px;
+    outline: none;
+  }
+  .form-input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.2);
+  }
+  .form-input-compact {
+    height: 28px;
+    font-size: 12px;
+    padding: 0 8px;
+    width: 120px;
+    border-radius: 4px;
+  }
+  .helper-text {
+    font-size: 12px;
+    color: var(--helper);
+    margin-top: 4px;
+  }
+
+  /* Popover dropdown */
+  .popover {
+    background: var(--popover-bg);
+    border: 1px solid var(--popover-border);
+    border-radius: 8px;
+    box-shadow: 0 8px 30px rgba(0,0,0,0.4);
+    margin-top: 4px;
+    overflow: hidden;
+    max-height: 260px;
+  }
+  .popover-search {
+    border-bottom: 1px solid var(--border);
+    padding: 8px 12px;
+  }
+  .popover-search input {
+    width: 100%;
+    background: transparent;
+    border: none;
+    color: var(--text);
+    font-size: 13px;
+    outline: none;
+  }
+  .popover-group-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--helper);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 8px 12px 4px;
+  }
+  .popover-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    font-size: 13px;
+    color: var(--text);
+    cursor: pointer;
+    transition: background 0.1s;
+  }
+  .popover-item:hover, .popover-item.highlighted {
+    background: var(--highlight);
+  }
+  .popover-item .match-badge {
+    font-size: 10px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    margin-left: auto;
+  }
+  .match-exact { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
+  .match-pool { background: rgba(96, 165, 250, 0.15); color: #93c5fd; }
+  .match-standard { background: var(--badge-zinc); color: var(--badge-zinc-text); }
+  .popover-empty {
+    padding: 16px 12px;
+    font-size: 13px;
+    color: var(--helper);
+    text-align: center;
+  }
+
+  /* Badges */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 4px;
+  }
+  .badge-violet { background: var(--badge-violet); color: var(--badge-violet-text); }
+  .badge-blue { background: var(--badge-blue); color: var(--badge-blue-text); }
+
+  /* Template chips */
+  .chip-grid { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .chip {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    font-size: 12px;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--text); }
+  .chip.active { border-color: var(--accent); background: var(--highlight); color: var(--text); }
+
+  /* Step row (compact) */
+  .step-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .step-number {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--helper);
+    min-width: 18px;
+  }
+  .step-title-input {
+    flex: 1;
+  }
+
+  /* Tooltip */
+  .tooltip-trigger {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    background: var(--border);
+    font-size: 10px;
+    color: var(--muted);
+    cursor: help;
+    margin-left: 4px;
+    position: relative;
+  }
+  .tooltip-content {
+    display: none;
+    position: absolute;
+    bottom: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--popover-bg);
+    border: 1px solid var(--popover-border);
+    border-radius: 6px;
+    padding: 8px 12px;
+    font-size: 12px;
+    color: var(--muted);
+    white-space: nowrap;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+    z-index: 10;
+  }
+  .tooltip-trigger:hover .tooltip-content { display: block; }
+
+  /* Annotation callouts */
+  .annotation {
+    background: rgba(124, 58, 237, 0.08);
+    border-left: 3px solid var(--accent);
+    padding: 12px 16px;
+    border-radius: 0 6px 6px 0;
+    margin: 16px 0;
+    font-size: 13px;
+  }
+  .annotation strong { color: var(--text); }
+
+  /* Flow diagram */
+  .flow {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+    margin: 16px 0;
+  }
+  .flow-step {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 8px 14px;
+    font-size: 12px;
+    color: var(--text);
+  }
+  .flow-arrow { color: var(--helper); font-size: 18px; }
+
+  /* State table */
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+  th, td { text-align: left; padding: 8px 12px; font-size: 13px; border-bottom: 1px solid var(--border); }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; }
+  td { color: var(--text); }
+
+  .section-divider {
+    height: 1px;
+    background: var(--border);
+    margin: 48px 0;
+  }
+</style>
+</head>
+<body>
+
+<h1>Agent Role Autocomplete & Helper Text</h1>
+<p class="subtitle">UX Design Document &mdash; building on the Requirements step</p>
+<div class="meta">
+  <span>Step: UX Design</span>
+  <span>Agent: Compass (UX Designer)</span>
+  <span>Task: Improve agent role UX</span>
+</div>
+
+<!-- ============================================ -->
+<h2>1. Component Design: RoleCombobox</h2>
+
+<p>A single reusable component that replaces all role <code>&lt;Input&gt;</code> fields. It behaves as a <strong>free-text input with contextual suggestions</strong> &mdash; not a locked dropdown. Users can always type any value.</p>
+
+<h3>Full-size variant (Agent dialogs)</h3>
+
+<div class="grid">
+  <div class="mockup">
+    <div class="mockup-label">Idle / Blurred</div>
+    <div class="form-group">
+      <label class="form-label">Role</label>
+      <input class="form-input" type="text" value="" placeholder="e.g. Developer, QA Tester" readonly>
+      <p class="helper-text">Used to auto-assign workflow steps. Use short roles like "Developer" or "QA".</p>
+    </div>
+    <p class="mockup-caption">Standard input appearance when not focused. Helper text always visible.</p>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-label">Focused / Typing</div>
+    <div class="form-group">
+      <label class="form-label">Role</label>
+      <input class="form-input" type="text" value="Dev" placeholder="e.g. Developer, QA Tester" style="border-color: var(--accent); box-shadow: 0 0 0 2px rgba(124,58,237,0.2);" readonly>
+      <div class="popover" style="position: relative;">
+        <div class="popover-group-label">Idea Pool</div>
+        <div class="popover-item highlighted">
+          <span>Full Stack Developer</span>
+          <span class="match-badge match-pool">pool</span>
+        </div>
+        <div class="popover-item">
+          <span>DevOps</span>
+          <span class="match-badge match-pool">pool</span>
+        </div>
+        <div class="popover-group-label">Standard Roles</div>
+        <div class="popover-item">
+          <span>Developer</span>
+          <span class="match-badge match-standard">standard</span>
+        </div>
+      </div>
+      <p class="helper-text">Used to auto-assign workflow steps. Use short roles like "Developer" or "QA".</p>
+    </div>
+    <p class="mockup-caption">Popover appears on focus. Filters as user types. Groups show source of each suggestion.</p>
+  </div>
+</div>
+
+<div class="annotation">
+  <strong>Key interaction:</strong> The popover opens on focus and filters as the user types. Pressing Enter or clicking a suggestion fills the input. Pressing Escape or clicking outside closes the popover. The input always accepts free text &mdash; suggestions are never enforced.
+</div>
+
+<h3>Compact variant (Template step roles)</h3>
+
+<div class="grid">
+  <div class="mockup">
+    <div class="mockup-label">Template Step Row</div>
+    <div class="step-row">
+      <span class="step-number">1</span>
+      <input class="form-input form-input-compact step-title-input" value="Requirements" readonly>
+      <input class="form-input form-input-compact" value="Product Owner" style="width: 130px; border-color: var(--accent); box-shadow: 0 0 0 2px rgba(124,58,237,0.2);" readonly>
+      <span class="tooltip-trigger">?
+        <span class="tooltip-content">Matched against agent roles when template is applied</span>
+      </span>
+    </div>
+    <div style="margin-left: 26px;">
+      <div class="popover" style="position: relative; width: 200px;">
+        <div class="popover-group-label">Idea Agents</div>
+        <div class="popover-item highlighted">
+          <span>Product Owner</span>
+        </div>
+        <div class="popover-item">
+          <span>Full Stack Developer</span>
+        </div>
+        <div class="popover-item">
+          <span>UX Designer</span>
+        </div>
+        <div class="popover-item">
+          <span>QA Engineer</span>
+        </div>
+        <div class="popover-group-label">Standard</div>
+        <div class="popover-item">
+          <span>Business Analyst</span>
+        </div>
+        <div class="popover-item">
+          <span>DevOps</span>
+        </div>
+      </div>
+    </div>
+    <p class="mockup-caption">Compact input with narrower popover. Tooltip (?) explains role matching. Idea pool agents shown first since they're what gets matched.</p>
+  </div>
+
+  <div class="mockup">
+    <div class="mockup-label">Step Detail Dialog</div>
+    <div class="form-group">
+      <label class="form-label">Agent Role</label>
+      <input class="form-input" value="Developer" style="border-color: var(--accent); box-shadow: 0 0 0 2px rgba(124,58,237,0.2);" readonly>
+      <div class="popover" style="position: relative;">
+        <div class="popover-group-label">Idea Agents</div>
+        <div class="popover-item highlighted">
+          <span>Full Stack Developer</span>
+          <span class="match-badge match-pool">Atlas</span>
+        </div>
+        <div class="popover-group-label">Standard</div>
+        <div class="popover-item">
+          <span>Developer</span>
+          <span class="match-badge match-standard">standard</span>
+        </div>
+        <div class="popover-item">
+          <span>DevOps</span>
+          <span class="match-badge match-standard">standard</span>
+        </div>
+      </div>
+      <p class="helper-text">Matched against agents when template is applied</p>
+    </div>
+    <p class="mockup-caption">Full-width in step detail dialog. Shows agent name badge for pool agents so users know which bot will be matched.</p>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<h2>2. Interaction Flow</h2>
+
+<div class="flow">
+  <div class="flow-step">User clicks role input</div>
+  <span class="flow-arrow">&rarr;</span>
+  <div class="flow-step">Popover opens with all suggestions</div>
+  <span class="flow-arrow">&rarr;</span>
+  <div class="flow-step">User types to filter</div>
+  <span class="flow-arrow">&rarr;</span>
+  <div class="flow-step">Suggestions filter in real-time</div>
+  <span class="flow-arrow">&rarr;</span>
+  <div class="flow-step">Select or keep typing</div>
+</div>
+
+<h3>Keyboard interactions</h3>
+<table>
+  <tr><th>Key</th><th>Action</th></tr>
+  <tr><td><code>Focus / Click</code></td><td>Open popover with all suggestions</td></tr>
+  <tr><td><code>Type</code></td><td>Filter suggestions, update input value</td></tr>
+  <tr><td><code>&uarr; / &darr;</code></td><td>Navigate highlighted suggestion</td></tr>
+  <tr><td><code>Enter</code></td><td>If suggestion highlighted: select it. If no highlight: keep current text, close popover</td></tr>
+  <tr><td><code>Escape</code></td><td>Close popover, keep current text</td></tr>
+  <tr><td><code>Tab</code></td><td>Close popover, move to next field, keep current text</td></tr>
+</table>
+
+<!-- ============================================ -->
+<h2>3. Suggestion Grouping & Sources</h2>
+
+<p>Suggestions are grouped by source to help users understand where each role comes from. Groups appear in priority order:</p>
+
+<table>
+  <tr><th>Group</th><th>Source</th><th>When shown</th><th>Badge</th></tr>
+  <tr><td><strong>Idea Pool</strong></td><td>Agents allocated to the current idea</td><td>When <code>ideaId</code> prop is provided</td><td><span class="badge badge-blue">pool</span> + agent name</td></tr>
+  <tr><td><strong>My Agents</strong></td><td>User's own bot profiles</td><td>Always (agent dialogs)</td><td><span class="badge badge-violet">mine</span></td></tr>
+  <tr><td><strong>Standard Roles</strong></td><td>8 <code>BOT_ROLE_TEMPLATES</code></td><td>Always (as fallback)</td><td>None (implicit)</td></tr>
+</table>
+
+<div class="annotation">
+  <strong>Deduplication:</strong> If a role appears in multiple groups, show it in the highest-priority group only. E.g., if "Developer" is both a pool agent role and a standard role, show it only under "Idea Pool".
+</div>
+
+<div class="annotation">
+  <strong>Compact variant simplification:</strong> In the compact template step context, collapse to just two groups: "Idea Agents" (pool) and "Standard". Skip "My Agents" since template step roles should match idea pool agents, not the template author's personal agents.
+</div>
+
+<!-- ============================================ -->
+<h2>4. States</h2>
+
+<table>
+  <tr><th>State</th><th>Behavior</th></tr>
+  <tr><td><strong>Empty, blurred</strong></td><td>Shows placeholder text. Popover hidden.</td></tr>
+  <tr><td><strong>Empty, focused</strong></td><td>Popover opens showing all suggestions (unfiltered).</td></tr>
+  <tr><td><strong>Typing</strong></td><td>Suggestions filter. If no matches, show "No matching roles. Type to use a custom role."</td></tr>
+  <tr><td><strong>Value selected</strong></td><td>Input shows selected text. Popover closes. Focusing re-opens with current text as filter.</td></tr>
+  <tr><td><strong>Custom value</strong></td><td>User typed something not in suggestions. Input keeps their text. No error state.</td></tr>
+  <tr><td><strong>Loading suggestions</strong></td><td>If idea pool agents need fetching: show skeleton lines in pool group. Standard roles are static, shown immediately.</td></tr>
+  <tr><td><strong>No ideaId</strong></td><td>Pool group hidden. Shows "My Agents" + "Standard Roles" only.</td></tr>
+  <tr><td><strong>No agents in pool</strong></td><td>Pool group hidden entirely (no empty state for it).</td></tr>
+</table>
+
+<!-- ============================================ -->
+<h2>5. Surface-by-Surface Integration</h2>
+
+<h3>Create Agent Dialog</h3>
+<div class="mockup" style="max-width: 500px;">
+  <div class="mockup-label">Before &amp; After</div>
+  <p style="font-size: 13px; color: var(--muted); margin-bottom: 16px;">Template chips remain above the role field. Chips set role + system prompt. RoleCombobox below handles just the role name.</p>
+
+  <div class="chip-grid">
+    <span class="chip active">&#x1F4BB; Developer</span>
+    <span class="chip">&#x1F3A8; UX Designer</span>
+    <span class="chip">&#x1F50D; QA Tester</span>
+    <span class="chip">&#x1F4CB; Product Owner</span>
+    <span class="chip">&#x1F4CA; Business Analyst</span>
+    <span class="chip">&#x2699; DevOps</span>
+  </div>
+
+  <div class="form-group">
+    <label class="form-label">Role</label>
+    <input class="form-input" value="Developer" readonly>
+    <p class="helper-text">Used to auto-assign workflow steps. Use short roles like "Developer" or "QA".</p>
+  </div>
+  <p class="mockup-caption">Chip selection fills the RoleCombobox. User can then modify the role text freely or pick from autocomplete. The chip sets both role AND prompt template; the combobox only affects the role.</p>
+</div>
+
+<h3>Edit Agent Dialog</h3>
+<div class="mockup" style="max-width: 500px;">
+  <div class="mockup-label">New: Autocomplete</div>
+  <div class="form-group">
+    <label class="form-label">Role</label>
+    <input class="form-input" value="QA" style="border-color: var(--accent); box-shadow: 0 0 0 2px rgba(124,58,237,0.2);" readonly>
+    <div class="popover" style="position: relative;">
+      <div class="popover-group-label">My Agents</div>
+      <div class="popover-item highlighted">
+        <span>QA Engineer</span>
+        <span class="match-badge" style="background: var(--badge-violet); color: var(--badge-violet-text);">mine</span>
+      </div>
+      <div class="popover-group-label">Standard Roles</div>
+      <div class="popover-item">
+        <span>QA Tester</span>
+      </div>
+    </div>
+    <p class="helper-text">Used to auto-assign workflow steps. Use short roles like "Developer" or "QA".</p>
+  </div>
+  <p class="mockup-caption">Biggest improvement: edit dialog currently has zero suggestions. Now shows the user's other agent roles and standard roles.</p>
+</div>
+
+<!-- ============================================ -->
+<h2>6. Component Props API</h2>
+
+<table>
+  <tr><th>Prop</th><th>Type</th><th>Default</th><th>Description</th></tr>
+  <tr><td><code>value</code></td><td><code>string</code></td><td>&mdash;</td><td>Current role value (controlled)</td></tr>
+  <tr><td><code>onChange</code></td><td><code>(value: string) =&gt; void</code></td><td>&mdash;</td><td>Called on every change (typing or selection)</td></tr>
+  <tr><td><code>maxLength</code></td><td><code>number</code></td><td><code>50</code></td><td>Max character length</td></tr>
+  <tr><td><code>placeholder</code></td><td><code>string</code></td><td><code>"e.g. Developer"</code></td><td>Placeholder text</td></tr>
+  <tr><td><code>ideaId</code></td><td><code>string?</code></td><td>&mdash;</td><td>If set, fetches and shows idea pool agent roles</td></tr>
+  <tr><td><code>compact</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Compact mode for inline template step rows</td></tr>
+  <tr><td><code>showHelperText</code></td><td><code>boolean</code></td><td><code>false</code></td><td>Show helper text below input (agent dialogs set true)</td></tr>
+  <tr><td><code>helperText</code></td><td><code>string?</code></td><td>Auto-assignment text</td><td>Override default helper text</td></tr>
+  <tr><td><code>className</code></td><td><code>string?</code></td><td>&mdash;</td><td>Additional CSS classes for the root wrapper</td></tr>
+</table>
+
+<!-- ============================================ -->
+<h2>7. Data Fetching Strategy</h2>
+
+<div class="annotation">
+  <strong>Principle:</strong> Minimize network requests. Standard roles are static constants. User agent roles and idea pool roles are fetched once per dialog mount, not per keystroke.
+</div>
+
+<table>
+  <tr><th>Data source</th><th>Fetch method</th><th>Cache</th></tr>
+  <tr><td>Standard roles</td><td>Import from <code>BOT_ROLE_TEMPLATES</code></td><td>Static, no fetch needed</td></tr>
+  <tr><td>User's agent roles</td><td>Supabase query on mount: <code>bot_profiles</code> where <code>owner_id = user.id</code></td><td>Per dialog session</td></tr>
+  <tr><td>Idea pool roles</td><td>Supabase query on mount: <code>idea_agents</code> join <code>bot_profiles</code> where <code>idea_id</code></td><td>Per dialog session</td></tr>
+</table>
+
+<!-- ============================================ -->
+<h2>8. Accessibility</h2>
+
+<table>
+  <tr><th>Requirement</th><th>Implementation</th></tr>
+  <tr><td>WCAG 2.1 AA</td><td>All text meets 4.5:1 contrast ratio against backgrounds</td></tr>
+  <tr><td>Screen readers</td><td><code>role="combobox"</code>, <code>aria-expanded</code>, <code>aria-activedescendant</code>, <code>aria-controls</code></td></tr>
+  <tr><td>Keyboard nav</td><td>Full arrow key, Enter, Escape, Tab support (see interaction table)</td></tr>
+  <tr><td>Focus management</td><td>Focus stays in input during popover navigation. Popover traps no focus.</td></tr>
+  <tr><td>Reduced motion</td><td>No animations on the popover &mdash; appears/disappears instantly</td></tr>
+</table>
+
+<div class="section-divider"></div>
+
+<h2>9. Design Decisions & Rationale</h2>
+
+<ul>
+  <li><strong>Popover + Command (not a custom dropdown):</strong> Leverages existing shadcn/ui primitives already in the project. cmdk handles filtering, keyboard navigation, and accessibility out of the box.</li>
+  <li><strong>Groups with badges:</strong> Users need to understand <em>why</em> a role is suggested. "Pool" roles mean "this will auto-match". "Mine" roles mean "I already use this". "Standard" roles are just common suggestions.</li>
+  <li><strong>Agent name in pool badges:</strong> In the step detail dialog, showing which agent will match (e.g., "Atlas") gives immediate feedback on the fuzzy matching system.</li>
+  <li><strong>No enforcement:</strong> The combobox never blocks custom input. This preserves the flexibility of the fuzzy matching system identified in the Requirements step.</li>
+  <li><strong>Helper text on agent dialogs, tooltip on step roles:</strong> Different surfaces have different space budgets. Agent dialog role fields have room for inline helper text. Compact step role inputs use a (?) tooltip to avoid cluttering the row layout.</li>
+  <li><strong>Two groups in compact mode:</strong> Template steps match against idea pool agents, so "My Agents" is noise in that context. Simplifying to "Idea Agents" + "Standard" reduces cognitive load.</li>
+</ul>
+
+</body>
+</html>

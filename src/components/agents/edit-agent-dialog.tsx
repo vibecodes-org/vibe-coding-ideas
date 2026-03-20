@@ -13,6 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
+import { RoleCombobox } from "@/components/ui/role-combobox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { updateBot, deleteBot } from "@/actions/bots";
 import { PromptBuilder } from "@/components/profile/prompt-builder";
@@ -198,12 +199,13 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
           {/* Role */}
           <div className="space-y-1">
             <Label htmlFor="edit-bot-role" className="text-xs">Role</Label>
-            <Input
-              id="edit-bot-role"
+            <RoleCombobox
               value={role}
-              onChange={(e) => setRole(e.target.value)}
+              onChange={setRole}
               placeholder="e.g. Developer"
               maxLength={50}
+              showHelperText
+              helperText="Used to auto-assign workflow steps. Use short roles like &ldquo;Developer&rdquo; or &ldquo;QA&rdquo;."
             />
           </div>
 

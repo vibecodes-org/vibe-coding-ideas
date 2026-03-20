@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { createLibraryTemplate, updateLibraryTemplate } from "@/actions/admin-templates";
+import { RoleCombobox } from "@/components/ui/role-combobox";
 import type { WorkflowTemplateStep } from "@/types/database";
 import type { WorkflowLibraryTemplate } from "@/types";
 
@@ -210,11 +211,13 @@ export function TemplateEditorDialog({
                       placeholder="Step title"
                       className="h-7 flex-1 text-xs"
                     />
-                    <Input
+                    <RoleCombobox
                       value={step.role}
-                      onChange={(e) => updateStep(idx, { role: e.target.value })}
+                      onChange={(val) => updateStep(idx, { role: val })}
                       placeholder="Role"
-                      className="h-7 w-28 text-xs"
+                      compact
+                      maxLength={100}
+                      className="w-32"
                     />
                   </div>
                   <div className="flex items-center gap-3 pl-7">

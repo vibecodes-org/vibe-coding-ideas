@@ -16,6 +16,7 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog";
 import { createWorkflowTemplate } from "@/actions/workflow-templates";
+import { RoleCombobox, useRoleSuggestions } from "@/components/ui/role-combobox";
 import type { WorkflowTemplateStep } from "@/types/database";
 
 const DEFAULT_STEP: WorkflowTemplateStep = {
@@ -44,6 +45,7 @@ export function CreateTemplateDialog({
     { ...DEFAULT_STEP },
   ]);
   const [saving, setSaving] = useState(false);
+  const { poolRoles, userRoles } = useRoleSuggestions(ideaId);
 
   function reset() {
     setName("");
@@ -189,13 +191,16 @@ export function CreateTemplateDialog({
                       placeholder="Step title"
                       className="h-7 flex-1 text-xs"
                     />
-                    <Input
+                    <RoleCombobox
                       value={step.role}
-                      onChange={(e) =>
-                        updateStep(idx, { role: e.target.value })
-                      }
+                      onChange={(val) => updateStep(idx, { role: val })}
                       placeholder="Role"
-                      className="h-7 w-24 text-xs"
+                      compact
+                      maxLength={100}
+                      ideaId={ideaId}
+                      poolRoles={poolRoles}
+                      userRoles={userRoles}
+                      className="w-32"
                     />
                   </div>
                   <div className="flex items-center gap-3 pl-7">

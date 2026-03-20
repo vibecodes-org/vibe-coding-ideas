@@ -18,6 +18,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
+import { RoleCombobox, useRoleSuggestions } from "@/components/ui/role-combobox";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -86,9 +87,12 @@ function StepRow({ step, index }: { step: WorkflowTemplateStep; index: number })
 interface StepEditorProps {
   steps: WorkflowTemplateStep[];
   onChange: (steps: WorkflowTemplateStep[]) => void;
+  ideaId?: string;
+  poolRoles?: import("@/components/ui/role-combobox").RoleSuggestion[];
+  userRoles?: import("@/components/ui/role-combobox").RoleSuggestion[];
 }
 
-function StepEditor({ steps, onChange }: StepEditorProps) {
+function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: StepEditorProps) {
   function updateStep(idx: number, patch: Partial<WorkflowTemplateStep>) {
     const next = steps.map((s, i) => (i === idx ? { ...s, ...patch } : s));
     onChange(next);
@@ -150,11 +154,16 @@ function StepEditor({ steps, onChange }: StepEditorProps) {
                 className="h-7 flex-1 text-xs"
               />
               <span className="text-[10px] text-muted-foreground whitespace-nowrap">Role</span>
-              <Input
+              <RoleCombobox
                 value={step.role}
-                onChange={(e) => updateStep(idx, { role: e.target.value })}
+                onChange={(val) => updateStep(idx, { role: val })}
                 placeholder="Role"
-                className="h-7 w-24 text-xs"
+                compact
+                maxLength={100}
+                ideaId={ideaId}
+                poolRoles={poolRoles}
+                userRoles={userRoles}
+                className="w-32"
               />
             </div>
             <div className="flex items-center gap-3 pl-7">
@@ -545,6 +554,7 @@ export function WorkflowsTab({
   const [saving, setSaving] = useState(false);
 
   const selected = templates.find((t) => t.id === selectedId) ?? null;
+  const { poolRoles, userRoles } = useRoleSuggestions(ideaId);
 
   const fetchData = useCallback(async () => {
     try {
@@ -792,7 +802,7 @@ export function WorkflowsTab({
             </div>
             <div className="space-y-2">
               <Label className="text-xs">Steps</Label>
-              <StepEditor steps={editSteps} onChange={setEditSteps} />
+              <StepEditor steps={editSteps} onChange={setEditSteps} ideaId={ideaId} poolRoles={poolRoles} userRoles={userRoles} />
             </div>
             <div className="flex items-center gap-2 pt-2">
               <Button
