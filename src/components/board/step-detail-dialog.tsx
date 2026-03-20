@@ -37,6 +37,11 @@ import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Select,
   SelectContent,
   SelectItem,
@@ -103,7 +108,7 @@ const STATUS_CONFIG = {
 } as const;
 
 type CommentWithAuthor = WorkflowStepComment & {
-  author?: { full_name: string | null; avatar_url: string | null; is_bot: boolean } | null;
+  author?: { full_name: string | null; avatar_url: string | null; is_bot: boolean; bot_role?: string | null } | null;
 };
 
 interface StepDetailDialogProps {
@@ -168,12 +173,31 @@ export function StepDetailDialog({
         .order("created_at", { ascending: true });
 
       if (data) {
+        // Fetch bot roles for bot authors
+        const botAuthorIds = data
+          .filter((c) => (c.users as { is_bot: boolean } | null)?.is_bot)
+          .map((c) => c.author_id);
+
+        let botRoles: Record<string, string | null> = {};
+        if (botAuthorIds.length > 0) {
+          const { data: profiles } = await supabase
+            .from("bot_profiles")
+            .select("id, role")
+            .in("id", botAuthorIds);
+          if (profiles) {
+            botRoles = Object.fromEntries(profiles.map((p) => [p.id, p.role]));
+          }
+        }
+
         setComments(
-          data.map((c) => ({
-            ...c,
-            author: c.users as CommentWithAuthor["author"],
-            users: undefined,
-          })) as CommentWithAuthor[]
+          data.map((c) => {
+            const user = c.users as { full_name: string | null; avatar_url: string | null; is_bot: boolean } | null;
+            return {
+              ...c,
+              author: user ? { ...user, bot_role: user.is_bot ? (botRoles[c.author_id] ?? null) : null } : null,
+              users: undefined,
+            };
+          }) as CommentWithAuthor[]
         );
       }
       setLoadingComments(false);
@@ -748,7 +772,14 @@ export function StepDetailDialog({
                         {comment.author?.full_name ?? "Unknown"}
                       </span>
                       {comment.author?.is_bot && (
-                        <Bot className="h-2.5 w-2.5 text-primary" />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Bot className="h-2.5 w-2.5 text-primary cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {comment.author.bot_role ?? "Agent"}
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                       {comment.type !== "comment" && (
                         <Badge variant="outline" className="text-[9px] py-0 h-4">
