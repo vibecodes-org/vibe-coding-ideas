@@ -1164,7 +1164,7 @@ export function registerTools(
 
   server.tool(
     "approve_step",
-    "Approve a workflow step that is awaiting human approval. HUMAN-ONLY: This tool must only be called when a human user has explicitly instructed you to approve — never self-approve. Bot calls will be rejected. Moves the step to completed. The step's existing output (set by the agent) is preserved through approval. Optionally adds an approval comment.",
+    "Approve a workflow step that is awaiting human approval. HUMAN-ONLY: Only call when a human user has explicitly instructed you to approve — never self-approve. Bot identities are rejected; if you are currently acting as a bot, first call set_agent_identity with no agent_id/agent_name to reset to the human (owner) identity, then call approve_step. Moves the step to completed. The step's existing output is preserved. Optionally adds an approval comment.",
     approveStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
