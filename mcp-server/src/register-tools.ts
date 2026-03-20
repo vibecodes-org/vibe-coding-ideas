@@ -1127,6 +1127,11 @@ export function registerTools(
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
         const ctx = await getContext(extra);
+        // Agents often send `reason` instead of `output` (confused by skip_step's `reason` param)
+        if ("reason" in args && !("output" in args)) {
+          args.output = args.reason;
+          delete args.reason;
+        }
         return jsonResult(await failStep(ctx, failStepSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
