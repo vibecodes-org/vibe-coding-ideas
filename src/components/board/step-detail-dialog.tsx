@@ -262,6 +262,7 @@ export function StepDetailDialog({
         case "start":
           await startWorkflowStep(step.id);
           toast.success("Step started");
+          onOpenChange(false);
           break;
         case "skip":
           await skipWorkflowStep(step.id);
@@ -306,6 +307,7 @@ export function StepDetailDialog({
         case "retry":
           await retryWorkflowStep(step.id);
           toast.success("Step reset for retry");
+          onOpenChange(false);
           break;
       }
     } catch (err) {
