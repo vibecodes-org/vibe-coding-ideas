@@ -409,7 +409,7 @@ export async function claimNextStep(
   // Fetch context from prior completed/skipped steps in the same run
   // Reads directly from the step's `output` column (the single source of truth),
   // not from workflow_step_comments which are a UI display feature only.
-  let context: { step_title: string; output: string }[] = [];
+  let context: { step_id: string; step_title: string; output: string }[] = [];
   if (step.run_id) {
     const { data: priorSteps } = await ctx.supabase
       .from("task_workflow_steps")
@@ -422,7 +422,7 @@ export async function claimNextStep(
     if (priorSteps && priorSteps.length > 0) {
       context = priorSteps
         .filter((s) => s.output)
-        .map((s) => ({ step_title: s.title, output: s.output! }));
+        .map((s) => ({ step_id: s.id, step_title: s.title, output: s.output! }));
     }
   }
 
@@ -469,6 +469,14 @@ export async function claimNextStep(
   if (updated.human_check_required) {
     contextParts.push(
       `HUMAN APPROVAL REQUIRED: This step requires human approval. After producing your deliverable and calling complete_step, you MUST STOP. Do NOT call approve_step yourself. Present your deliverable to the user and wait for them to explicitly instruct you to approve it.`
+    );
+  }
+
+  if (context.length > 0) {
+    const priorStepList = context.map((c) => `- "${c.step_title}" (step_id: ${c.step_id})`).join("\n");
+    contextParts.push(
+      `CASCADE REJECTION: If you find issues with prior work, use fail_step with reset_to_step_id to send work back to the responsible step instead of fixing it yourself. ` +
+      `Prior steps:\n${priorStepList}`
     );
   }
 

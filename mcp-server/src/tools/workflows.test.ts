@@ -258,10 +258,10 @@ describe("claimNextStep", () => {
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
     expect(result).toHaveProperty("context");
-    const r = result as { context: { step_title: string; output: string }[] };
+    const r = result as { context: { step_id: string; step_title: string; output: string }[] };
     expect(r.context).toHaveLength(2);
-    expect(r.context[0]).toEqual({ step_title: "Step 1", output: "Output from step 1" });
-    expect(r.context[1]).toEqual({ step_title: "Step 2", output: "Output from step 2" });
+    expect(r.context[0]).toEqual({ step_id: "s1", step_title: "Step 1", output: "Output from step 1" });
+    expect(r.context[1]).toEqual({ step_id: "s2", step_title: "Step 2", output: "Output from step 2" });
   });
 
   it("returns empty context for first step (no prior steps)", async () => {
@@ -271,7 +271,7 @@ describe("claimNextStep", () => {
     const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
-    const r = result as { context: { step_title: string; output: string }[] };
+    const r = result as { context: { step_id: string; step_title: string; output: string }[] };
     expect(r.context).toEqual([]);
   });
 
@@ -286,9 +286,9 @@ describe("claimNextStep", () => {
     const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps });
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
-    const r = result as { context: { step_title: string; output: string }[] };
+    const r = result as { context: { step_id: string; step_title: string; output: string }[] };
     expect(r.context).toHaveLength(2);
-    expect(r.context[1]).toEqual({ step_title: "Skipped Step", output: "Skipped: not applicable" });
+    expect(r.context[1]).toEqual({ step_id: "s2", step_title: "Skipped Step", output: "Skipped: not applicable" });
   });
 
   it("excludes completed steps with null output from context", async () => {
@@ -302,7 +302,7 @@ describe("claimNextStep", () => {
     const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps });
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
-    const r = result as { context: { step_title: string; output: string }[] };
+    const r = result as { context: { step_id: string; step_title: string; output: string }[] };
     expect(r.context).toHaveLength(1);
     expect(r.context[0].step_title).toBe("Step 1");
   });
@@ -319,7 +319,7 @@ describe("claimNextStep", () => {
     const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps });
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
-    const r = result as { context: { step_title: string; output: string }[] };
+    const r = result as { context: { step_id: string; step_title: string; output: string }[] };
     expect(r.context).toHaveLength(3);
     expect(r.context.map((c) => c.step_title)).toEqual(["First", "Second", "Third"]);
   });
@@ -351,6 +351,28 @@ describe("claimNextStep", () => {
 
     const r = result as { instruction: string };
     expect(r.instruction).not.toContain("CONTEXT CHAINING");
+    expect(r.instruction).not.toContain("CASCADE REJECTION");
+  });
+
+  it("includes cascade rejection guidance with prior step IDs", async () => {
+    const step = makeStepRow({ step_order: 3 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const priorSteps = [
+      { id: "s1", title: "Implementation", step_order: 1, output: "code written" },
+      { id: "s2", title: "Unit Tests", step_order: 2, output: "tests passing" },
+    ];
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string };
+    expect(r.instruction).toContain("CASCADE REJECTION");
+    expect(r.instruction).toContain("fail_step");
+    expect(r.instruction).toContain("reset_to_step_id");
+    expect(r.instruction).toContain("step_id: s1");
+    expect(r.instruction).toContain("step_id: s2");
+    expect(r.instruction).toContain('"Implementation"');
+    expect(r.instruction).toContain('"Unit Tests"');
   });
 
   it("includes explicit format constraint for parenthetical deliverables", async () => {
