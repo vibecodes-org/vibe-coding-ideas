@@ -215,7 +215,11 @@ function makeClaimContext(opts: {
           Promise.resolve({ data: opts.updatedStep, error: null })
         );
       } else if (callNum === 3) {
-        // 3rd: context query — prior completed/skipped steps (thenable)
+        // 3rd: Tier 2 run-scoped step ID query (fires when output=null, comment_count=0)
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [{ id: opts.pendingStep.id }], error: null }).then(resolve);
+      } else if (callNum === 4) {
+        // 4th: context query — prior completed/skipped steps (thenable)
         chain.chain.then = (resolve: (val: unknown) => void) =>
           Promise.resolve({ data: opts.priorSteps, error: null }).then(resolve);
       }
@@ -829,6 +833,125 @@ describe("claimNextStep — rework instructions", () => {
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
     const r = result as { instruction: string };
+    expect(r.instruction).not.toContain("REWORK REQUIRED");
+  });
+
+  it("includes run-level rework instructions for intermediate cascade-reset steps", async () => {
+    // Step has no local output or comments (intermediate step reset by cascade)
+    const step = makeStepRow({ output: null, comment_count: 0 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const tableCounts: Record<string, number> = {};
+
+    const ctx = makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      const callNum = tableCounts[table];
+
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        if (callNum === 1) {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [step], error: null }).then(resolve);
+        } else if (callNum === 2) {
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: updatedStep, error: null })
+          );
+        } else if (callNum === 3) {
+          // Tier 2: run-scoped step IDs
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [{ id: step.id }, { id: "sibling-step" }], error: null }).then(resolve);
+        } else if (callNum === 4) {
+          // Context query — no prior steps
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [], error: null }).then(resolve);
+        }
+        return chain.chain;
+      }
+
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: null, error: null }).then(resolve);
+        return chain.chain;
+      }
+
+      if (table === "workflow_step_comments") {
+        // Tier 2 run-scoped comments query — return failure + changes_requested from sibling steps
+        return createChain([
+          { content: "Validation logic is wrong", author_id: USER_ID, created_at: "2026-01-01T00:00:00Z", type: "failure" },
+          { content: "Fix the edge case handling", author_id: USER_ID, created_at: "2026-01-01T01:00:00Z", type: "changes_requested" },
+        ]).chain;
+      }
+
+      if (table === "idea_agents") {
+        return createChain([]).chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const r = result as { instruction: string; rework_instructions: unknown };
+
+    expect(r.rework_instructions).not.toBeNull();
+    expect(r.instruction).toContain("REWORK REQUIRED");
+    expect(r.instruction).toContain("Feedback: Fix the edge case handling");
+  });
+
+  it("no false positives when run has no cascade comments", async () => {
+    // Step has no local output or comments, and run siblings have no failure/changes_requested
+    const step = makeStepRow({ output: null, comment_count: 0 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const tableCounts: Record<string, number> = {};
+
+    const ctx = makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      const callNum = tableCounts[table];
+
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        if (callNum === 1) {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [step], error: null }).then(resolve);
+        } else if (callNum === 2) {
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: updatedStep, error: null })
+          );
+        } else if (callNum === 3) {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [], error: null }).then(resolve);
+        } else if (callNum === 4) {
+          // Tier 2: run-scoped step IDs
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [{ id: step.id }], error: null }).then(resolve);
+        }
+        return chain.chain;
+      }
+
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: null, error: null }).then(resolve);
+        return chain.chain;
+      }
+
+      if (table === "workflow_step_comments") {
+        // No cascade comments in the run
+        return createChain([]).chain;
+      }
+
+      if (table === "idea_agents") {
+        return createChain([]).chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const r = result as { instruction: string; rework_instructions: unknown };
+
+    expect(r.rework_instructions).toBeNull();
     expect(r.instruction).not.toContain("REWORK REQUIRED");
   });
 });

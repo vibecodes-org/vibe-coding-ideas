@@ -353,6 +353,41 @@ export async function claimNextStep(
     }
   }
 
+  // Tier 2: Run-scoped fallback for intermediate cascade-reset steps.
+  // These steps have no local failure/changes_requested comments but the run
+  // has them on sibling steps from the cascade rejection.
+  if (!rework_instructions && step.run_id) {
+    const { data: runSteps } = await ctx.supabase
+      .from("task_workflow_steps")
+      .select("id")
+      .eq("run_id", step.run_id);
+
+    if (runSteps && runSteps.length > 0) {
+      const stepIds = runSteps.map((s: { id: string }) => s.id);
+      const { data: runComments } = await ctx.supabase
+        .from("workflow_step_comments")
+        .select("content, author_id, created_at, type")
+        .in("step_id", stepIds)
+        .in("type", ["failure", "changes_requested"])
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (runComments && runComments.length > 0) {
+        const latestFailure = runComments.find((c) => c.type === "failure");
+        rework_instructions = {
+          previous_failure_output: latestFailure?.content ?? null,
+          changes_requested: runComments
+            .filter((c) => c.type === "changes_requested")
+            .map((c) => ({
+              content: c.content,
+              author_id: c.author_id,
+              created_at: c.created_at,
+            })),
+        };
+      }
+    }
+  }
+
   // Fetch available agents on this idea so Claude Code can reason about
   // which agent persona to assume for the step's agent_role
   const { data: ideaAgents } = await ctx.supabase
