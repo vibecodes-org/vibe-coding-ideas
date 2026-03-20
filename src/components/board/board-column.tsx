@@ -45,7 +45,6 @@ interface BoardColumnProps {
   ideaDescription?: string;
   isReadOnly?: boolean;
   isDragTarget?: boolean;
-  isAdmin?: boolean;
 }
 
 export const BoardColumn = memo(function BoardColumn({
@@ -65,7 +64,6 @@ export const BoardColumn = memo(function BoardColumn({
   ideaDescription = "",
   isReadOnly = false,
   isDragTarget = false,
-  isAdmin = false,
 }: BoardColumnProps) {
   const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
@@ -225,7 +223,7 @@ export const BoardColumn = memo(function BoardColumn({
                 canUseAi={canUseAi}
                 hasByokKey={hasByokKey}
                 starterCredits={starterCredits}
-                isAdmin={isAdmin}
+
               />
             ))}
           </SortableContext>

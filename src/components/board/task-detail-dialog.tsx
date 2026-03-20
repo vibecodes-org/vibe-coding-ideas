@@ -46,7 +46,6 @@ interface TaskDetailDialogProps {
   canUseAi?: boolean;
   hasByokKey?: boolean;
   starterCredits?: number;
-  isAdmin?: boolean;
 }
 
 export function TaskDetailDialog({
@@ -63,7 +62,6 @@ export function TaskDetailDialog({
   canUseAi = false,
   hasByokKey = false,
   starterCredits = 0,
-  isAdmin = false,
 }: TaskDetailDialogProps) {
   const botRoles = useBotRoles();
   const ops = useBoardOps();
@@ -790,7 +788,7 @@ export function TaskDetailDialog({
 
               <Separator />
 
-              {isAdmin && <TaskWorkflowSection taskId={task.id} ideaId={ideaId} isReadOnly={isReadOnly} />}
+              <TaskWorkflowSection taskId={task.id} ideaId={ideaId} isReadOnly={isReadOnly} />
             </div>
           </TabsContent>
 

@@ -127,7 +127,6 @@ interface KanbanBoardProps {
   userBotProfiles?: BotProfile[];
   coverImageUrls?: Record<string, string>;
   isReadOnly?: boolean;
-  isAdmin?: boolean;
 }
 
 // Edge-scroll constants
@@ -238,7 +237,6 @@ export function KanbanBoard({
   userBotProfiles = [],
   coverImageUrls = {},
   isReadOnly = false,
-  isAdmin = false,
 }: KanbanBoardProps) {
   // Build botRoles map from botProfiles for @mention autocomplete
   const botRoles = useMemo(() => {
@@ -950,7 +948,7 @@ export function KanbanBoard({
                       ideaDescription={ideaDescription}
                       isReadOnly={isReadOnly}
                       isDragTarget={dragOverColumnId === filteredCol.id}
-                      isAdmin={isAdmin}
+
                     />
                   );
                 })}

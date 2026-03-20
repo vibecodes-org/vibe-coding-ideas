@@ -9,7 +9,6 @@ interface BoardPageTabsProps {
   ideaId: string;
   boardLabels: BoardLabel[];
   isReadOnly: boolean;
-  isAdmin?: boolean;
   /** The kanban board content rendered as children */
   children: React.ReactNode;
 }
@@ -18,7 +17,6 @@ export function BoardPageTabs({
   ideaId,
   boardLabels,
   isReadOnly,
-  isAdmin,
   children,
 }: BoardPageTabsProps) {
   const searchParams = useSearchParams();
@@ -26,7 +24,6 @@ export function BoardPageTabs({
   const pathname = usePathname();
 
   const activeTab = searchParams.get("tab") === "workflows" ? "workflows" : "board";
-  const showWorkflows = !!isAdmin;
 
   function setActiveTab(tab: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -37,10 +34,6 @@ export function BoardPageTabs({
     }
     const qs = params.toString();
     router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
-  }
-
-  if (!showWorkflows) {
-    return <div className="flex min-h-0 flex-1 flex-col">{children}</div>;
   }
 
   return (

@@ -43,7 +43,6 @@ interface BoardTaskCardProps {
   canUseAi?: boolean;
   hasByokKey?: boolean;
   starterCredits?: number;
-  isAdmin?: boolean;
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
@@ -85,7 +84,6 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   canUseAi = false,
   hasByokKey = false,
   starterCredits = 0,
-  isAdmin = false,
 }: BoardTaskCardProps) {
   const botRoles = useBotRoles();
   // Use context for auto-open — bypasses memo chain and reacts to URL navigation
@@ -403,7 +401,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
           canUseAi={canUseAi}
           hasByokKey={hasByokKey}
           starterCredits={starterCredits}
-          isAdmin={isAdmin}
+
         />
       )}
       {/* Cover image lightbox */}
