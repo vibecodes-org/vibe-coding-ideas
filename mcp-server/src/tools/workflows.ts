@@ -558,13 +558,15 @@ export async function completeStep(
 
 export const failStepSchema = z.object({
   step_id: z.string().uuid().describe("The workflow step ID"),
-  output: z.string().max(10000).optional().describe("Failure reason or error details"),
+  output: z.string().max(10000).optional().describe(
+    "Failure reason or error details (use `output`, not `reason`). Stored on the step's `output` column and auto-posted as a 'failure' comment. When cascade rejection is used and this step is re-claimed, this text is returned as `rework_instructions` to give the next agent context for retry."
+  ),
   reset_to_step_id: z
     .string()
     .uuid()
     .optional()
     .describe(
-      "Cascade rejection: reset all steps from this step onward back to pending. Use this to send work back to an earlier step in the pipeline."
+      "Cascade rejection: reset all steps from this step onward back to pending, allowing the workflow to be reworked from that point. The workflow run stays 'running' (not failed). Without this parameter, the workflow run is marked as 'failed' and stops entirely. Typically set to the ID of the step that produced the bad output."
     ),
 });
 

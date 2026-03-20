@@ -2,6 +2,8 @@ import { z } from "zod";
 import { POSITION_GAP } from "../constants";
 import { logActivity } from "../activity";
 import type { McpContext } from "../context";
+import { checkAndApplyAutoRules } from "../../../src/lib/workflow-helpers";
+import { applyWorkflowTemplate } from "./workflows";
 
 /** Auto-add a user as collaborator on an idea if they aren't already (author or collaborator). */
 async function ensureCollaborator(ctx: McpContext, ideaId: string, userId: string) {
@@ -59,6 +61,10 @@ export const createTaskSchema = z.object({
     .uuid()
     .optional()
     .describe("Link task back to a source discussion (for converted discussions)"),
+  labels: z
+    .array(z.string().min(1).max(50))
+    .optional()
+    .describe("Label names to attach (e.g. [\"bug\", \"frontend\"]). Matched case-insensitively against existing board labels."),
 });
 
 export async function createTask(ctx: McpContext, params: z.infer<typeof createTaskSchema>) {
@@ -96,7 +102,40 @@ export async function createTask(ctx: McpContext, params: z.infer<typeof createT
     });
   }
 
-  return { success: true, task };
+  // Attach labels by name (case-insensitive match against existing board labels)
+  const attachedLabels: { id: string; name: string }[] = [];
+  if (params.labels && params.labels.length > 0) {
+    const { data: boardLabels } = await ctx.supabase
+      .from("board_labels")
+      .select("id, name")
+      .eq("idea_id", params.idea_id);
+
+    const labelMap = new Map(
+      (boardLabels ?? []).map((l) => [l.name.toLowerCase(), l])
+    );
+
+    for (const labelName of params.labels) {
+      const match = labelMap.get(labelName.toLowerCase());
+      if (!match) continue;
+
+      const { error: linkError } = await ctx.supabase
+        .from("board_task_labels")
+        .insert({ task_id: task.id, label_id: match.id });
+
+      if (!linkError) {
+        attachedLabels.push({ id: match.id, name: match.name });
+        await logActivity(ctx, task.id, params.idea_id, "label_added", {
+          label_name: match.name,
+        });
+        await checkAndApplyAutoRules(
+          ctx.supabase, task.id, match.id, params.idea_id,
+          (taskId, templateId) => applyWorkflowTemplate(ctx, { task_id: taskId, template_id: templateId })
+        );
+      }
+    }
+  }
+
+  return { success: true, task, labels: attachedLabels };
 }
 
 export const updateTaskSchema = z.object({

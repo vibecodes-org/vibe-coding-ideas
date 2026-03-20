@@ -1122,7 +1122,7 @@ export function registerTools(
 
   server.tool(
     "fail_step",
-    "Mark a workflow step as failed with an optional failure reason. Also marks the parent workflow run as failed.",
+    "Mark a workflow step as failed. Pass the failure reason in the `output` parameter (NOT `reason`). Use `reset_to_step_id` for cascade rejection — resets that step and all subsequent steps back to pending so the workflow can be reworked from that point (the run stays 'running'). Without `reset_to_step_id`, the entire workflow run is marked as failed and stops. The `output` text is saved as a 'failure' comment on the step and becomes rework context when the step is later re-claimed via `claim_next_step`.",
     failStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

@@ -327,7 +327,7 @@ export function TaskEditDialog({
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent
         ref={dialogRef}
-        className={`sm:max-w-md ${isDragging ? "ring-2 ring-primary ring-offset-2" : ""}`}
+        className={`sm:max-w-md max-h-[85vh] overflow-y-auto ${isDragging ? "ring-2 ring-primary ring-offset-2" : ""}`}
         onDragEnter={handleDragEnter}
         onDragLeave={handleDragLeave}
         onDragOver={handleDragOver}
@@ -387,7 +387,7 @@ export function TaskEditDialog({
               </div>
             </div>
             {previewDesc ? (
-              <div className="min-h-[78px] rounded-md border border-input px-3 py-2 text-sm">
+              <div className="min-h-[78px] max-h-[40vh] overflow-y-auto rounded-md border border-input px-3 py-2 text-sm">
                 <Markdown>{description}</Markdown>
               </div>
             ) : (
@@ -396,6 +396,7 @@ export function TaskEditDialog({
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 placeholder="Optional description... (supports markdown)"
+                className="max-h-[40vh]"
                 rows={3}
               />
             )}
