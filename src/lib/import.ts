@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/client";
 import { POSITION_GAP, LABEL_COLORS } from "@/lib/constants";
+import { triggerAutoRulesForTasks } from "@/actions/board";
 import type { BoardColumnWithTasks, BoardLabel, User } from "@/types";
 
 // ── Types ──────────────────────────────────────────────────────────────
@@ -623,6 +624,23 @@ export async function executeBulkImport(
     }
   }
 
+  // Phase 9: Trigger auto-rules for labelled tasks
+  if (taskLabelRows.length > 0) {
+    // Group by task_id
+    const pairMap = new Map<string, string[]>();
+    for (const row of taskLabelRows) {
+      const existing = pairMap.get(row.task_id) ?? [];
+      existing.push(row.label_id);
+      pairMap.set(row.task_id, existing);
+    }
+    const pairs = Array.from(pairMap.entries()).map(([taskId, labelIds]) => ({ taskId, labelIds }));
+    try {
+      await triggerAutoRulesForTasks(pairs, ideaId);
+    } catch (err) {
+      console.error("Auto-rule trigger failed:", err);
+    }
+  }
+
   onProgress?.({ phase: "Done!", current: total, total });
 
   return { created, errors };
@@ -859,6 +877,7 @@ export async function insertTasksSequentially(
   // ── Sequential insert loop ─────────────────────────────────────────
 
   let created = 0;
+  const autoRulePairs: { taskId: string; labelIds: string[] }[] = [];
 
   for (let i = 0; i < cappedTasks.length; i++) {
     if (signal?.aborted) break;
@@ -920,6 +939,11 @@ export async function insertTasksSequentially(
 
       if (labelRows.length > 0) {
         await supabase.from("board_task_labels").insert(labelRows);
+        // Collect for auto-rule triggering after all tasks are inserted
+        autoRulePairs.push({
+          taskId: taskId!,
+          labelIds: labelRows.map((r) => r.label_id),
+        });
       }
     }
 
@@ -954,6 +978,15 @@ export async function insertTasksSequentially(
     // Throttle between inserts (skip after last task)
     if (i < cappedTasks.length - 1 && !signal?.aborted) {
       await new Promise((r) => setTimeout(r, THROTTLE_MS));
+    }
+  }
+
+  // ── Trigger auto-rules for labelled tasks ──────────────────────────
+  if (autoRulePairs.length > 0) {
+    try {
+      await triggerAutoRulesForTasks(autoRulePairs, ideaId);
+    } catch (err) {
+      console.error("Auto-rule trigger failed:", err);
     }
   }
 

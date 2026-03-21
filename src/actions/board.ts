@@ -478,6 +478,30 @@ export async function addLabelsToTask(
   revalidatePath(`/ideas/${ideaId}/board`);
 }
 
+/**
+ * Trigger auto-rules for tasks that already have labels assigned.
+ * Used by import flows where labels are inserted directly (not via addLabelsToTask).
+ */
+export async function triggerAutoRulesForTasks(
+  taskLabelPairs: { taskId: string; labelIds: string[] }[],
+  ideaId: string
+) {
+  if (taskLabelPairs.length === 0) return;
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  for (const { taskId, labelIds } of taskLabelPairs) {
+    for (const labelId of labelIds) {
+      await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate);
+    }
+  }
+}
+
 export async function checkLabelAutoRuleWorkflow(
   taskId: string,
   labelId: string,

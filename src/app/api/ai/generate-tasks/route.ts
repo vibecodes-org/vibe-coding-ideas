@@ -7,6 +7,7 @@ import {
   decrementStarterCredit,
   resolveAiProvider,
 } from "@/lib/ai-helpers";
+import { buildPromptContextParts, buildAutoRuleMappings } from "@/lib/ai-prompt-helpers";
 
 export const maxDuration = 300;
 
@@ -82,13 +83,31 @@ export async function POST(req: Request) {
     }
 
     // Fetch existing board state for context
-    const { data: columns } = await supabase
-      .from("board_columns")
-      .select("title")
-      .eq("idea_id", ideaId)
-      .order("position");
+    const [{ data: columns }, { data: labels }, { data: autoRules }] = await Promise.all([
+      supabase
+        .from("board_columns")
+        .select("title")
+        .eq("idea_id", ideaId)
+        .order("position"),
+      supabase
+        .from("board_labels")
+        .select("id, name")
+        .eq("idea_id", ideaId),
+      supabase
+        .from("workflow_auto_rules")
+        .select("label_id, template:workflow_templates!workflow_auto_rules_template_id_fkey(name, description)")
+        .eq("idea_id", ideaId),
+    ]);
 
     const existingColumns = (columns ?? []).map((c) => c.title);
+    const existingLabels = (labels ?? []).map((l) => l.name);
+    const autoRuleMappings = buildAutoRuleMappings(
+      (labels ?? []) as { id: string; name: string }[],
+      (autoRules ?? []).map((r) => ({
+        label_id: r.label_id,
+        template: r.template as { name: string; description: string | null } | null,
+      }))
+    );
 
     const hasAgent = !!(personaPrompt || agentRole || agentSkills?.length);
 
@@ -96,32 +115,17 @@ export async function POST(req: Request) {
       ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a software project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
       : "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").";
 
-    const contextParts = [
-      `${prompt}`,
-      `---`,
-      `**Idea Title:** ${idea.title}`,
-      `**Idea Description:**\n${idea.description}`,
-    ];
-
-    // Include agent expertise so it meaningfully influences task generation
-    if (hasAgent) {
-      const agentParts: string[] = [];
-      if (agentRole) agentParts.push(`**Agent Role:** ${agentRole}`);
-      if (agentSkills?.length) agentParts.push(`**Agent Skills:** ${agentSkills.join(", ")}`);
-      if (agentBio) agentParts.push(`**Agent Bio:** ${agentBio}`);
-      contextParts.push(
-        `---`,
-        `The tasks should be generated from the perspective of the following specialist agent. Emphasize tasks relevant to their role and skills. De-prioritize or omit tasks outside their expertise.`,
-        ...agentParts
-      );
-    }
-
-    if (existingColumns.length > 0) {
-      contextParts.push(
-        `**Existing Board Columns:** ${existingColumns.join(", ")}`,
-        `Use existing column names where appropriate, or suggest new ones if needed.`
-      );
-    }
+    const contextParts = buildPromptContextParts({
+      prompt,
+      ideaTitle: idea.title,
+      ideaDescription: idea.description,
+      existingColumns,
+      existingLabels,
+      autoRuleMappings,
+      agentRole,
+      agentSkills,
+      agentBio,
+    });
 
     const result = streamObject({
       model: anthropic(AI_MODEL),
