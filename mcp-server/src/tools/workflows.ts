@@ -303,7 +303,6 @@ export async function claimNextStep(
     .update({
       status: "in_progress",
       started_at: new Date().toISOString(),
-      claimed_by: ctx.userId,
     })
     .eq("id", step.id)
     .eq("status", "pending")
@@ -553,7 +552,7 @@ export async function completeStep(
   // Determine new status: awaiting_approval if human check required, else completed
   const newStatus = step.human_check_required ? "awaiting_approval" : "completed";
 
-  const updateFields: Record<string, unknown> = { status: newStatus };
+  const updateFields: Record<string, unknown> = { status: newStatus, claimed_by: ctx.userId };
   if (params.output !== undefined) updateFields.output = params.output;
   if (newStatus === "completed") updateFields.completed_at = new Date().toISOString();
 
