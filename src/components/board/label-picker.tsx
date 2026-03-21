@@ -60,6 +60,17 @@ export function LabelPicker({
   const [newColor, setNewColor] = useState("blue");
   const [saving, setSaving] = useState(false);
 
+  // Local copy of board labels for optimistic updates after edit/create/delete
+  const [localBoardLabels, setLocalBoardLabels] = useState(boardLabels);
+  const [lastBoardLabelsKey, setLastBoardLabelsKey] = useState(() =>
+    boardLabels.map((l) => `${l.id}:${l.color}:${l.name}`).sort().join(",")
+  );
+  const currentBoardLabelsKey = boardLabels.map((l) => `${l.id}:${l.color}:${l.name}`).sort().join(",");
+  if (currentBoardLabelsKey !== lastBoardLabelsKey) {
+    setLocalBoardLabels(boardLabels);
+    setLastBoardLabelsKey(currentBoardLabelsKey);
+  }
+
   // Workflow removal confirmation state
   const [confirmRemove, setConfirmRemove] = useState<{
     labelId: string;
@@ -122,7 +133,7 @@ export function LabelPicker({
         await addLabelToTask(taskId, labelId, ideaId);
       }
       if (currentUserId) {
-        const label = boardLabels.find((l) => l.id === labelId);
+        const label = localBoardLabels.find((l) => l.id === labelId);
         logTaskActivity(taskId, ideaId, currentUserId, isCurrentlyAssigned ? "label_removed" : "label_added", {
           label_name: label?.name ?? "Unknown",
         });
@@ -179,6 +190,10 @@ export function LabelPicker({
         name: newName.trim(),
         color: newColor,
       });
+      // Optimistically update local labels so color/name change is reflected immediately
+      setLocalBoardLabels((prev) =>
+        prev.map((l) => (l.id === labelId ? { ...l, name: newName.trim(), color: newColor } : l))
+      );
       setEditingId(null);
       setNewName("");
       setNewColor("blue");
@@ -193,6 +208,7 @@ export function LabelPicker({
     setSaving(true);
     try {
       await deleteBoardLabel(labelId, ideaId);
+      setLocalBoardLabels((prev) => prev.filter((l) => l.id !== labelId));
       setEditingId(null);
     } catch {
       toast.error("Failed to delete label");
@@ -231,7 +247,7 @@ export function LabelPicker({
 
       {/* Existing labels */}
       <div className="max-h-[200px] space-y-1 overflow-y-auto">
-        {boardLabels.map((label) => {
+        {localBoardLabels.map((label) => {
           if (editingId === label.id) {
             return (
               <div key={label.id} className="space-y-2 rounded-md border p-2">
