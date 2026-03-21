@@ -390,9 +390,11 @@ function AutoRulesSection({
             className="flex items-center gap-2 rounded-md border border-border bg-muted/20 px-3 py-2"
           >
             <Tag className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
-            <span className="text-xs font-medium">
+            <Badge
+              className={`text-[10px] py-0 h-5 ${label ? getLabelColorConfig(label.color).badgeClass : ""}`}
+            >
               {label?.name ?? "Unknown label"}
-            </span>
+            </Badge>
             <span className="text-xs text-muted-foreground">→</span>
             <span className="text-xs">
               {template?.name ?? "Unknown template"}
