@@ -1,8 +1,15 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { createClient } from "@supabase/supabase-js";
 import { registerTools } from "../../../../../mcp-server/src/register-tools";
+import { instrumentServer } from "../../../../../mcp-server/src/instrument";
 import type { McpContext } from "../../../../../mcp-server/src/context";
 import type { Database } from "@/types/database";
+
+// Service-role client for fire-and-forget logging (bypasses RLS)
+const serviceClient = createClient<Database>(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 const handler = createMcpHandler(
   (server) => {
@@ -10,8 +17,28 @@ const handler = createMcpHandler(
     let activeBotId: string | null = null;
     let identityInitialized = false;
 
-    registerTools(
+    const instrumentedServer = instrumentServer(
       server,
+      async (extra) => {
+        const authInfo = extra.authInfo;
+        if (!authInfo) throw new Error("Authentication required");
+        const realUserId = authInfo.extra?.userId as string;
+        // Lightweight context just for identity — not the full per-request client
+        return { supabase: serviceClient, userId: activeBotId || realUserId, ownerUserId: realUserId } as McpContext;
+      },
+      (entry) => {
+        serviceClient
+          .from("mcp_tool_log")
+          .insert(entry)
+          .then(({ error }) => {
+            if (error) console.error("[MCP Tool Log] Insert failed:", error.message);
+          });
+      },
+      "remote"
+    );
+
+    registerTools(
+      instrumentedServer,
       async (extra) => {
         const authInfo = extra.authInfo;
         if (!authInfo) {

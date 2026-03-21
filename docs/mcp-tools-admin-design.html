@@ -1,0 +1,777 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MCP Tools — Admin Dashboard</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #171717;
+      --surface-2: #1e1e1e;
+      --border: #2a2a2a;
+      --border-hover: #3a3a3a;
+      --text: #e4e4e7;
+      --text-secondary: #a1a1aa;
+      --muted: #71717a;
+      --accent: #a78bfa;
+      --accent-dim: rgba(167,139,250,0.12);
+      --green: #22c55e;
+      --green-dim: rgba(34,197,94,0.12);
+      --amber: #f59e0b;
+      --amber-dim: rgba(245,158,11,0.12);
+      --red: #ef4444;
+      --red-dim: rgba(239,68,68,0.12);
+      --blue: #3b82f6;
+      --blue-dim: rgba(59,130,246,0.12);
+      --cyan: #06b6d4;
+      --cyan-dim: rgba(6,182,212,0.12);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+    }
+
+    /* Page wrapper simulating the admin layout */
+    .page-wrapper {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    .page-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1.5rem;
+      letter-spacing: -0.01em;
+    }
+
+    /* Tab bar (simulating existing admin tabs) */
+    .tab-bar {
+      display: flex;
+      gap: 2px;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+      overflow-x: auto;
+    }
+
+    .tab {
+      padding: 0.5rem 1rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--muted);
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      white-space: nowrap;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .tab:hover { color: var(--text-secondary); }
+    .tab.active {
+      color: var(--text);
+      border-bottom-color: var(--accent);
+    }
+    .tab.dimmed { opacity: 0.4; pointer-events: none; }
+
+    /* Sub-tabs (Recent / Trends) */
+    .sub-tabs {
+      display: inline-flex;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 3px;
+      gap: 2px;
+      margin-bottom: 1.25rem;
+    }
+
+    .sub-tab {
+      padding: 0.35rem 0.85rem;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: var(--muted);
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.15s;
+      border: none;
+      background: none;
+    }
+    .sub-tab:hover { color: var(--text-secondary); }
+    .sub-tab.active {
+      background: var(--surface-2);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    /* Stats grid */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.75rem;
+      margin-bottom: 1.25rem;
+    }
+
+    .stat-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+    }
+
+    .stat-label {
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.35rem;
+    }
+
+    .stat-value {
+      font-size: 1.5rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      line-height: 1.2;
+    }
+
+    .stat-sub {
+      font-size: 0.7rem;
+      color: var(--muted);
+      margin-top: 0.15rem;
+    }
+
+    /* Filter bar */
+    .filter-bar {
+      display: flex;
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+      align-items: end;
+    }
+
+    .filter-group {
+      display: flex;
+      flex-direction: column;
+      gap: 0.3rem;
+    }
+
+    .filter-label {
+      font-size: 0.7rem;
+      font-weight: 500;
+      color: var(--muted);
+    }
+
+    .filter-input {
+      height: 32px;
+      padding: 0 0.625rem;
+      font-size: 0.8rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      outline: none;
+      min-width: 160px;
+      transition: border-color 0.15s;
+    }
+    .filter-input:focus { border-color: var(--accent); }
+    .filter-input::placeholder { color: var(--muted); }
+
+    /* Table */
+    .table-wrap {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 1.5rem;
+    }
+
+    .table-scroll {
+      max-height: 500px;
+      overflow-y: auto;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.8rem;
+    }
+
+    thead {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+    }
+
+    th {
+      background: var(--surface);
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      font-weight: 600;
+      font-size: 0.7rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    td {
+      padding: 0.55rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      vertical-align: middle;
+    }
+
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.015); }
+
+    /* Monospace tool names */
+    .tool-name {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', 'JetBrains Mono', monospace;
+      font-size: 0.75rem;
+      color: var(--text);
+      font-weight: 500;
+    }
+
+    /* User cell */
+    .user-cell {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .avatar {
+      width: 24px;
+      height: 24px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.6rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .avatar-human { background: #374151; color: #9ca3af; }
+    .avatar-bot { background: var(--accent-dim); color: var(--accent); }
+
+    .user-name {
+      font-size: 0.8rem;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+
+    .bot-icon {
+      display: inline-flex;
+      align-items: center;
+      margin-left: 2px;
+    }
+
+    .bot-icon svg {
+      width: 11px;
+      height: 11px;
+      color: var(--accent);
+    }
+
+    /* Duration colors */
+    .dur-fast { color: var(--green); }
+    .dur-mid { color: var(--amber); }
+    .dur-slow { color: var(--red); }
+
+    /* Status dot */
+    .status-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      display: inline-block;
+    }
+    .status-ok { background: var(--green); box-shadow: 0 0 4px rgba(34,197,94,0.4); }
+    .status-err { background: var(--red); box-shadow: 0 0 4px rgba(239,68,68,0.4); }
+
+    /* Mode badge */
+    .mode-badge {
+      display: inline-block;
+      padding: 1px 6px;
+      border-radius: 4px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.03em;
+    }
+    .mode-stdio { background: var(--blue-dim); color: var(--blue); }
+    .mode-remote { background: var(--cyan-dim); color: var(--cyan); }
+
+    /* Timestamp */
+    .timestamp {
+      font-size: 0.75rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* Error rate coloring */
+    .err-rate-high { color: var(--red); font-weight: 600; }
+    .err-rate-ok { color: var(--text-secondary); }
+
+    /* Section heading */
+    .section-heading {
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-secondary);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.75rem;
+      margin-top: 0.5rem;
+    }
+
+    /* Bar chart (simple inline) */
+    .bar-cell {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .bar-track {
+      flex: 1;
+      height: 6px;
+      background: var(--surface-2);
+      border-radius: 3px;
+      overflow: hidden;
+      min-width: 60px;
+      max-width: 120px;
+    }
+
+    .bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--accent);
+      transition: width 0.3s ease;
+    }
+
+    .bar-value {
+      font-size: 0.75rem;
+      font-weight: 600;
+      color: var(--text);
+      min-width: 40px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* Hidden views */
+    .view { display: none; }
+    .view.active { display: block; }
+
+    /* Responsive */
+    @media (max-width: 768px) {
+      .stats-grid { grid-template-columns: repeat(2, 1fr); }
+      .filter-bar { flex-wrap: wrap; }
+      .page-wrapper { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+<div class="page-wrapper">
+  <h1 class="page-title">Admin</h1>
+
+  <!-- Main admin tabs -->
+  <div class="tab-bar">
+    <div class="tab dimmed">AI Usage</div>
+    <div class="tab dimmed">Feedback</div>
+    <div class="tab dimmed">Agents</div>
+    <div class="tab dimmed">Teams</div>
+    <div class="tab dimmed">Workflows</div>
+    <div class="tab active">MCP Tools</div>
+    <div class="tab dimmed">Credits</div>
+  </div>
+
+  <!-- Sub-tabs: Recent / Trends -->
+  <div class="sub-tabs">
+    <button class="sub-tab active" onclick="switchView('recent')">Recent Activity</button>
+    <button class="sub-tab" onclick="switchView('trends')">Trends</button>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- RECENT ACTIVITY VIEW                        -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div id="view-recent" class="view active">
+
+    <!-- Stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Calls Today</div>
+        <div class="stat-value">247</div>
+        <div class="stat-sub">↑ 12% vs yesterday</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Error Rate</div>
+        <div class="stat-value" style="color: var(--green)">1.2%</div>
+        <div class="stat-sub">3 errors / 247 calls</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Avg Latency</div>
+        <div class="stat-value">89<span style="font-size:0.85rem;color:var(--muted)">ms</span></div>
+        <div class="stat-sub">p95: 340ms</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Active Users</div>
+        <div class="stat-value">4</div>
+        <div class="stat-sub">2 humans, 5 agents</div>
+      </div>
+    </div>
+
+    <!-- Filters -->
+    <div class="filter-bar">
+      <div class="filter-group">
+        <span class="filter-label">Tool name</span>
+        <input type="text" class="filter-input" placeholder="Search tools..." style="min-width:200px">
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">From</span>
+        <input type="date" class="filter-input" value="2026-03-14">
+      </div>
+      <div class="filter-group">
+        <span class="filter-label">To</span>
+        <input type="date" class="filter-input" value="2026-03-21">
+      </div>
+    </div>
+
+    <!-- Recent calls table -->
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:180px">Tool</th>
+              <th style="width:180px">User / Agent</th>
+              <th style="width:90px">Duration</th>
+              <th style="width:60px">Status</th>
+              <th style="width:70px">Mode</th>
+              <th>Timestamp</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tool-name">get_board</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-bot">A</div><span class="user-name">Atlas</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/><line x1="8" y1="16" x2="8" y2="16"/><line x1="16" y1="16" x2="16" y2="16"/></svg></span></div></td>
+              <td><span class="dur-fast">42ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-stdio">stdio</span></td>
+              <td><span class="timestamp">2 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">complete_step</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-bot">A</div><span class="user-name">Atlas</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><span class="dur-mid">287ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-stdio">stdio</span></td>
+              <td><span class="timestamp">3 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">claim_next_step</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-bot">A</div><span class="user-name">Atlas</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><span class="dur-mid">195ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-stdio">stdio</span></td>
+              <td><span class="timestamp">3 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">set_agent_identity</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-human">NB</div><span class="user-name">Nick Ball</span></div></td>
+              <td><span class="dur-fast">68ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-stdio">stdio</span></td>
+              <td><span class="timestamp">4 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">get_task</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-bot">S</div><span class="user-name">Sentinel</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><span class="dur-fast">53ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-remote">remote</span></td>
+              <td><span class="timestamp">8 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">create_task</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-bot">C</div><span class="user-name">Compass</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><span class="dur-mid">412ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-stdio">stdio</span></td>
+              <td><span class="timestamp">12 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">move_task</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-human">NB</div><span class="user-name">Nick Ball</span></div></td>
+              <td><span class="dur-fast">91ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-stdio">stdio</span></td>
+              <td><span class="timestamp">15 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">update_task</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-bot">V</div><span class="user-name">VibeCodes</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><span class="dur-slow">2,341ms</span></td>
+              <td><span class="status-dot status-err"></span></td>
+              <td><span class="mode-badge mode-remote">remote</span></td>
+              <td><span class="timestamp">18 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">get_board</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-human">NB</div><span class="user-name">Nick Ball</span></div></td>
+              <td><span class="dur-fast">38ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-stdio">stdio</span></td>
+              <td><span class="timestamp">22 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">add_step_comment</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-bot">S</div><span class="user-name">Sentinel</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><span class="dur-mid">156ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-stdio">stdio</span></td>
+              <td><span class="timestamp">25 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">approve_step</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-human">NB</div><span class="user-name">Nick Ball</span></div></td>
+              <td><span class="dur-mid">203ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-stdio">stdio</span></td>
+              <td><span class="timestamp">31 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">fail_step</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-bot">A</div><span class="user-name">Atlas</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><span class="dur-slow">1,892ms</span></td>
+              <td><span class="status-dot status-err"></span></td>
+              <td><span class="mode-badge mode-stdio">stdio</span></td>
+              <td><span class="timestamp">45 min ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">list_ideas</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-human">DR</div><span class="user-name">Damian R</span></div></td>
+              <td><span class="dur-fast">67ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-remote">remote</span></td>
+              <td><span class="timestamp">1h ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">get_step_context</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-bot">A</div><span class="user-name">Atlas</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><span class="dur-fast">82ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-stdio">stdio</span></td>
+              <td><span class="timestamp">1h ago</span></td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">toggle_vote</span></td>
+              <td><div class="user-cell"><div class="avatar avatar-human">DR</div><span class="user-name">Damian R</span></div></td>
+              <td><span class="dur-fast">15ms</span></td>
+              <td><span class="status-dot status-ok"></span></td>
+              <td><span class="mode-badge mode-remote">remote</span></td>
+              <td><span class="timestamp">2h ago</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- TRENDS VIEW                                 -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div id="view-trends" class="view">
+
+    <!-- All-time stats -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Calls</div>
+        <div class="stat-value">14,832</div>
+        <div class="stat-sub">Since 21 Mar 2026</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Unique Tools Used</div>
+        <div class="stat-value">43</div>
+        <div class="stat-sub">of 79 registered</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Most Used Tool</div>
+        <div class="stat-value" style="font-size:1.1rem"><span class="tool-name" style="font-size:1.1rem">get_board</span></div>
+        <div class="stat-sub">2,847 calls</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Highest Error Rate</div>
+        <div class="stat-value" style="font-size:1.1rem;color:var(--red)"><span class="tool-name" style="font-size:1.1rem;color:var(--red)">fail_step</span></div>
+        <div class="stat-sub" style="color:var(--red)">8.3% error rate</div>
+      </div>
+    </div>
+
+    <!-- Top tools -->
+    <div class="section-heading">Top Tools by Usage</div>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:200px">Tool</th>
+              <th style="width:140px">Total Calls</th>
+              <th style="width:90px">Errors</th>
+              <th style="width:90px">Error Rate</th>
+              <th style="width:100px">Avg Duration</th>
+              <th style="width:100px">Max Duration</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><span class="tool-name">get_board</span></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="bar-value">2,847</span></div></td>
+              <td>12</td>
+              <td><span class="err-rate-ok">0.4%</span></td>
+              <td><span class="dur-fast">45ms</span></td>
+              <td>892ms</td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">get_task</span></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:72%"></div></div><span class="bar-value">2,051</span></div></td>
+              <td>8</td>
+              <td><span class="err-rate-ok">0.4%</span></td>
+              <td><span class="dur-fast">52ms</span></td>
+              <td>1,203ms</td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">set_agent_identity</span></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:58%"></div></div><span class="bar-value">1,654</span></div></td>
+              <td>3</td>
+              <td><span class="err-rate-ok">0.2%</span></td>
+              <td><span class="dur-fast">61ms</span></td>
+              <td>445ms</td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">claim_next_step</span></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:45%"></div></div><span class="bar-value">1,283</span></div></td>
+              <td>15</td>
+              <td><span class="err-rate-ok">1.2%</span></td>
+              <td><span class="dur-mid">178ms</span></td>
+              <td>2,105ms</td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">complete_step</span></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:42%"></div></div><span class="bar-value">1,198</span></div></td>
+              <td>22</td>
+              <td><span class="err-rate-ok">1.8%</span></td>
+              <td><span class="dur-mid">245ms</span></td>
+              <td>3,402ms</td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">move_task</span></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:35%"></div></div><span class="bar-value">998</span></div></td>
+              <td>5</td>
+              <td><span class="err-rate-ok">0.5%</span></td>
+              <td><span class="dur-fast">89ms</span></td>
+              <td>672ms</td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">create_task</span></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:30%"></div></div><span class="bar-value">854</span></div></td>
+              <td>11</td>
+              <td><span class="err-rate-ok">1.3%</span></td>
+              <td><span class="dur-mid">312ms</span></td>
+              <td>2,890ms</td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">add_step_comment</span></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:26%"></div></div><span class="bar-value">741</span></div></td>
+              <td>4</td>
+              <td><span class="err-rate-ok">0.5%</span></td>
+              <td><span class="dur-mid">134ms</span></td>
+              <td>890ms</td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">update_task</span></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:22%"></div></div><span class="bar-value">627</span></div></td>
+              <td>9</td>
+              <td><span class="err-rate-ok">1.4%</span></td>
+              <td><span class="dur-mid">198ms</span></td>
+              <td>2,341ms</td>
+            </tr>
+            <tr>
+              <td><span class="tool-name">fail_step</span></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:8%"></div></div><span class="bar-value">229</span></div></td>
+              <td>19</td>
+              <td><span class="err-rate-high">8.3%</span></td>
+              <td><span class="dur-mid">456ms</span></td>
+              <td>4,102ms</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- Per-user breakdown -->
+    <div class="section-heading">Usage by User / Agent</div>
+    <div class="table-wrap">
+      <div class="table-scroll">
+        <table>
+          <thead>
+            <tr>
+              <th style="width:200px">User / Agent</th>
+              <th style="width:140px">Total Calls</th>
+              <th style="width:90px">Errors</th>
+              <th>Most Used Tool</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><div class="user-cell"><div class="avatar avatar-bot">A</div><span class="user-name">Atlas</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:100%"></div></div><span class="bar-value">5,234</span></div></td>
+              <td>42</td>
+              <td><span class="tool-name">get_board</span></td>
+            </tr>
+            <tr>
+              <td><div class="user-cell"><div class="avatar avatar-human">NB</div><span class="user-name">Nick Ball</span></div></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:70%"></div></div><span class="bar-value">3,667</span></div></td>
+              <td>18</td>
+              <td><span class="tool-name">get_board</span></td>
+            </tr>
+            <tr>
+              <td><div class="user-cell"><div class="avatar avatar-bot">S</div><span class="user-name">Sentinel</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:48%"></div></div><span class="bar-value">2,512</span></div></td>
+              <td>21</td>
+              <td><span class="tool-name">get_task</span></td>
+            </tr>
+            <tr>
+              <td><div class="user-cell"><div class="avatar avatar-bot">C</div><span class="user-name">Compass</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:32%"></div></div><span class="bar-value">1,678</span></div></td>
+              <td>14</td>
+              <td><span class="tool-name">claim_next_step</span></td>
+            </tr>
+            <tr>
+              <td><div class="user-cell"><div class="avatar avatar-bot">V</div><span class="user-name">VibeCodes</span><span class="bot-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><circle cx="12" cy="5" r="3"/></svg></span></div></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:18%"></div></div><span class="bar-value">952</span></div></td>
+              <td>9</td>
+              <td><span class="tool-name">create_task</span></td>
+            </tr>
+            <tr>
+              <td><div class="user-cell"><div class="avatar avatar-human">DR</div><span class="user-name">Damian R</span></div></td>
+              <td><div class="bar-cell"><div class="bar-track"><div class="bar-fill" style="width:15%"></div></div><span class="bar-value">789</span></div></td>
+              <td>4</td>
+              <td><span class="tool-name">list_ideas</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  function switchView(view) {
+    document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+    document.querySelectorAll('.sub-tab').forEach(t => t.classList.remove('active'));
+    document.getElementById('view-' + view).classList.add('active');
+    event.target.classList.add('active');
+  }
+</script>
+
+</body>
+</html>

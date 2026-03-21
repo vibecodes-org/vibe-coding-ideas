@@ -3,6 +3,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { supabase, BOT_USER_ID, OWNER_USER_ID } from "./supabase";
 import { registerTools } from "./register-tools";
+import { instrumentServer } from "./instrument";
 import type { McpContext } from "./context";
 
 const server = new McpServer(
@@ -32,7 +33,16 @@ const getContext = (): McpContext => ({
   ownerUserId: OWNER_USER_ID || (activeBotId ? BOT_USER_ID : undefined),
 });
 
-registerTools(server, getContext, setActiveBotId);
+const instrumentedServer = instrumentServer(server, getContext, (entry) => {
+  supabase
+    .from("mcp_tool_log")
+    .insert(entry)
+    .then(({ error }) => {
+      if (error) console.error("[MCP Tool Log] Insert failed:", error.message);
+    });
+}, "stdio");
+
+registerTools(instrumentedServer, getContext, setActiveBotId);
 
 // --- Start server ---
 

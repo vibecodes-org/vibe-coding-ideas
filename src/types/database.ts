@@ -1346,6 +1346,111 @@ export type Database = {
           },
         ];
       };
+      mcp_tool_log: {
+        Row: {
+          id: string;
+          tool_name: string;
+          user_id: string;
+          owner_user_id: string | null;
+          duration_ms: number;
+          is_error: boolean;
+          mode: string;
+          idea_id: string | null;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          tool_name: string;
+          user_id: string;
+          owner_user_id?: string | null;
+          duration_ms?: number;
+          is_error?: boolean;
+          mode?: string;
+          idea_id?: string | null;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          tool_name?: string;
+          user_id?: string;
+          owner_user_id?: string | null;
+          duration_ms?: number;
+          is_error?: boolean;
+          mode?: string;
+          idea_id?: string | null;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "mcp_tool_log_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "mcp_tool_log_owner_user_id_fkey";
+            columns: ["owner_user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "mcp_tool_log_idea_id_fkey";
+            columns: ["idea_id"];
+            isOneToOne: false;
+            referencedRelation: "ideas";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      mcp_tool_stats: {
+        Row: {
+          id: string;
+          tool_name: string;
+          user_id: string;
+          date: string;
+          call_count: number;
+          error_count: number;
+          avg_duration_ms: number;
+          max_duration_ms: number;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          tool_name: string;
+          user_id: string;
+          date: string;
+          call_count?: number;
+          error_count?: number;
+          avg_duration_ms?: number;
+          max_duration_ms?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          tool_name?: string;
+          user_id?: string;
+          date?: string;
+          call_count?: number;
+          error_count?: number;
+          avg_duration_ms?: number;
+          max_duration_ms?: number;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "mcp_tool_stats_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       bot_profiles: {
         Row: {
           id: string;

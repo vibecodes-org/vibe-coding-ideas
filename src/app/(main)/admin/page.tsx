@@ -132,6 +132,22 @@ export default async function AdminPage({ searchParams }: PageProps) {
 
   const userCredits = (userCreditsData ?? []) as UserCreditInfo[];
 
+  // Fetch MCP tool logs (last 30 days)
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+  const { data: mcpToolLogs } = await supabase
+    .from("mcp_tool_log")
+    .select("*, user:users!mcp_tool_log_user_id_fkey(full_name, avatar_url, is_bot)")
+    .gte("created_at", thirtyDaysAgo)
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  // Fetch MCP tool stats (all time, aggregated)
+  const { data: mcpToolStats } = await supabase
+    .from("mcp_tool_stats")
+    .select("tool_name, user_id, call_count, error_count, avg_duration_ms, max_duration_ms, user:users!mcp_tool_stats_user_id_fkey(full_name, avatar_url, is_bot)")
+    .order("call_count", { ascending: false })
+    .limit(1000);
+
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
       <h1 className="mb-6 text-2xl font-bold">Admin</h1>
@@ -148,6 +164,8 @@ export default async function AdminPage({ searchParams }: PageProps) {
         libraryTemplates={libraryTemplates}
         userCredits={userCredits}
         allPlatformLogs={(allPlatformLogs ?? []) as PlatformLogEntry[]}
+        mcpToolLogs={(mcpToolLogs ?? []) as import("@/components/admin/admin-mcp-tools-dashboard").McpToolLogWithUser[]}
+        mcpToolStats={(mcpToolStats ?? []) as import("@/components/admin/admin-mcp-tools-dashboard").McpToolStatsRow[]}
       />
     </div>
   );
