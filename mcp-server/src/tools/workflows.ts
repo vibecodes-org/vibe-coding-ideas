@@ -303,6 +303,7 @@ export async function claimNextStep(
     .update({
       status: "in_progress",
       started_at: new Date().toISOString(),
+      claimed_by: ctx.userId,
     })
     .eq("id", step.id)
     .eq("status", "pending")
@@ -540,14 +541,31 @@ export async function completeStep(
   ctx: McpContext,
   params: z.infer<typeof completeStepSchema>
 ) {
-  // Fetch current step
+  // Fetch current step (include bot_id + agent_role for identity enforcement)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, idea_id, human_check_required, status")
+    .select("id, run_id, idea_id, human_check_required, status, bot_id, agent_role")
     .eq("id", params.step_id)
     .single();
 
   if (fetchError || !step) throw new Error(`Step not found: ${params.step_id}`);
+
+  // Identity guard: reject if caller doesn't match the pre-matched agent
+  if (step.bot_id && ctx.userId !== step.bot_id) {
+    // Look up the expected agent's name for a helpful error message
+    const { data: agent } = await ctx.supabase
+      .from("bot_profiles")
+      .select("name, role")
+      .eq("user_id", step.bot_id)
+      .maybeSingle();
+
+    const agentName = agent?.name ?? "unknown";
+    const agentRole = agent?.role ?? step.agent_role ?? "unknown";
+    throw new Error(
+      `Identity mismatch: this step is assigned to ${agentName} (${agentRole}). ` +
+      `Call set_agent_identity with agent_id "${step.bot_id}" before completing this step.`
+    );
+  }
 
   // Determine new status: awaiting_approval if human check required, else completed
   const newStatus = step.human_check_required ? "awaiting_approval" : "completed";
@@ -603,14 +621,30 @@ export async function failStep(
   ctx: McpContext,
   params: z.infer<typeof failStepSchema>
 ) {
-  // Fetch current step to get run_id and step_order
+  // Fetch current step to get run_id, step_order, and bot_id for identity check
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order, idea_id")
+    .select("id, run_id, step_order, idea_id, bot_id, agent_role")
     .eq("id", params.step_id)
     .single();
 
   if (fetchError || !step) throw new Error(`Step not found: ${params.step_id}`);
+
+  // Identity guard: reject if caller doesn't match the pre-matched agent
+  if (step.bot_id && ctx.userId !== step.bot_id) {
+    const { data: agent } = await ctx.supabase
+      .from("bot_profiles")
+      .select("name, role")
+      .eq("user_id", step.bot_id)
+      .maybeSingle();
+
+    const agentName = agent?.name ?? "unknown";
+    const agentRole = agent?.role ?? step.agent_role ?? "unknown";
+    throw new Error(
+      `Identity mismatch: this step is assigned to ${agentName} (${agentRole}). ` +
+      `Call set_agent_identity with agent_id "${step.bot_id}" before failing this step.`
+    );
+  }
 
   const updateFields: Record<string, unknown> = {
     status: "failed",

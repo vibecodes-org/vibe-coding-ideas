@@ -174,12 +174,20 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
 
   if (!user) throw new Error("Not authenticated");
 
-  // Fetch the step to check human_check_required
+  // Fetch the step to check human_check_required and bot_id for identity enforcement
   const { data: existing } = await supabase
     .from("task_workflow_steps")
-    .select("human_check_required, idea_id")
+    .select("human_check_required, idea_id, bot_id, agent_role")
     .eq("id", stepId)
     .single();
+
+  // Identity guard: reject if caller doesn't match the pre-matched agent
+  if (existing?.bot_id && user.id !== existing.bot_id) {
+    throw new Error(
+      `Identity mismatch: this step is assigned to a different agent (${existing.agent_role ?? "unknown"}). ` +
+      `Switch identity before completing this step.`
+    );
+  }
 
   // If step requires human approval, route to awaiting_approval instead of completed
   const newStatus =
@@ -252,6 +260,21 @@ export async function failWorkflowStep(
   } = await supabase.auth.getUser();
 
   if (!user) throw new Error("Not authenticated");
+
+  // Pre-fetch step for identity enforcement
+  const { data: existing } = await supabase
+    .from("task_workflow_steps")
+    .select("bot_id, agent_role")
+    .eq("id", stepId)
+    .single();
+
+  // Identity guard: reject if caller doesn't match the pre-matched agent
+  if (existing?.bot_id && user.id !== existing.bot_id) {
+    throw new Error(
+      `Identity mismatch: this step is assigned to a different agent (${existing.agent_role ?? "unknown"}). ` +
+      `Switch identity before failing this step.`
+    );
+  }
 
   const { data, error } = await supabase
     .from("task_workflow_steps")

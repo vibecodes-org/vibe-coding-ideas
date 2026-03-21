@@ -1751,3 +1751,317 @@ describe("updateStep", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// completeStep — identity enforcement tests
+// ---------------------------------------------------------------------------
+
+const BOT_ID = "00000000-0000-4000-a000-000000000099";
+
+describe("completeStep — identity enforcement", () => {
+  function makeCompleteContext(opts: {
+    stepData: Record<string, unknown>;
+    updatedStep: Record<string, unknown>;
+    agentProfile?: { name: string; role: string } | null;
+  }) {
+    const tableCounts: Record<string, number> = {};
+
+    return makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() =>
+          Promise.resolve({ data: opts.stepData, error: null })
+        );
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: opts.updatedStep, error: null })
+        );
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [], error: null }).then(resolve);
+        return chain.chain;
+      }
+
+      if (table === "bot_profiles") {
+        const chain = createChain(null);
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: opts.agentProfile ?? null, error: null })
+        );
+        return chain.chain;
+      }
+
+      if (table === "workflow_step_comments") {
+        return createChain(null).chain;
+      }
+
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [], error: null }).then(resolve);
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: null, error: null })
+        );
+        return chain.chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+  }
+
+  it("rejects when ctx.userId does not match step.bot_id", async () => {
+    const stepData = {
+      id: STEP_ID,
+      run_id: RUN_ID,
+      idea_id: IDEA_ID,
+      human_check_required: false,
+      status: "in_progress",
+      bot_id: BOT_ID,
+      agent_role: "Developer",
+    };
+
+    const ctx = makeCompleteContext({
+      stepData,
+      updatedStep: {},
+      agentProfile: { name: "Atlas", role: "Full Stack Developer" },
+    });
+
+    await expect(
+      completeStep(ctx, { step_id: STEP_ID, output: "Done" })
+    ).rejects.toThrow("Identity mismatch");
+  });
+
+  it("includes agent name and bot_id in error message", async () => {
+    const stepData = {
+      id: STEP_ID,
+      run_id: RUN_ID,
+      idea_id: IDEA_ID,
+      human_check_required: false,
+      status: "in_progress",
+      bot_id: BOT_ID,
+      agent_role: "Developer",
+    };
+
+    const ctx = makeCompleteContext({
+      stepData,
+      updatedStep: {},
+      agentProfile: { name: "Atlas", role: "Full Stack Developer" },
+    });
+
+    await expect(
+      completeStep(ctx, { step_id: STEP_ID })
+    ).rejects.toThrow(/Atlas.*Full Stack Developer.*set_agent_identity/);
+  });
+
+  it("succeeds when ctx.userId matches step.bot_id", async () => {
+    const stepData = {
+      id: STEP_ID,
+      run_id: RUN_ID,
+      idea_id: IDEA_ID,
+      human_check_required: false,
+      status: "in_progress",
+      bot_id: USER_ID, // matches ctx.userId
+      agent_role: "Developer",
+    };
+    const updatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: RUN_ID,
+      title: "Test Step",
+      agent_role: "Developer",
+      status: "completed",
+      output: "Done",
+      completed_at: "2026-01-01T00:00:00Z",
+    };
+
+    const ctx = makeCompleteContext({ stepData, updatedStep });
+
+    const result = await completeStep(ctx, { step_id: STEP_ID, output: "Done" });
+    expect(result.status).toBe("completed");
+  });
+
+  it("succeeds when step.bot_id is null (no pre-matched agent)", async () => {
+    const stepData = {
+      id: STEP_ID,
+      run_id: RUN_ID,
+      idea_id: IDEA_ID,
+      human_check_required: false,
+      status: "in_progress",
+      bot_id: null,
+      agent_role: "Developer",
+    };
+    const updatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: RUN_ID,
+      title: "Test Step",
+      agent_role: "Developer",
+      status: "completed",
+      output: "Done",
+      completed_at: "2026-01-01T00:00:00Z",
+    };
+
+    const ctx = makeCompleteContext({ stepData, updatedStep });
+
+    const result = await completeStep(ctx, { step_id: STEP_ID, output: "Done" });
+    expect(result.status).toBe("completed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// failStep — identity enforcement tests
+// ---------------------------------------------------------------------------
+
+describe("failStep — identity enforcement", () => {
+  it("rejects when ctx.userId does not match step.bot_id", async () => {
+    const stepFetched = {
+      id: STEP_ID,
+      run_id: RUN_ID,
+      step_order: 3,
+      idea_id: IDEA_ID,
+      bot_id: BOT_ID,
+      agent_role: "Developer",
+    };
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(stepFetched);
+        return chain.chain;
+      }
+
+      if (table === "bot_profiles") {
+        const chain = createChain(null);
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: { name: "Atlas", role: "Developer" }, error: null })
+        );
+        return chain.chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await expect(
+      failStep(ctx, { step_id: STEP_ID, output: "Failed" })
+    ).rejects.toThrow("Identity mismatch");
+  });
+
+  it("succeeds when step.bot_id is null", async () => {
+    const stepFetched = {
+      id: STEP_ID,
+      run_id: RUN_ID,
+      step_order: 3,
+      idea_id: IDEA_ID,
+      bot_id: null,
+      agent_role: "Developer",
+    };
+    const updatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: RUN_ID,
+      title: "Test Step",
+      agent_role: "Developer",
+      status: "failed",
+      output: "Failed",
+    };
+
+    const tableCounts: Record<string, number> = {};
+
+    const ctx = makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      const callNum = tableCounts[table];
+
+      if (table === "task_workflow_steps") {
+        if (callNum === 1) {
+          return createChain(stepFetched).chain;
+        }
+        if (callNum === 2) {
+          const chain = createChain(null);
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: updatedStep, error: null })
+          );
+          return chain.chain;
+        }
+      }
+
+      if (table === "workflow_step_comments") {
+        return createChain(null).chain;
+      }
+
+      if (table === "workflow_runs") {
+        return createChain(null).chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = await failStep(ctx, { step_id: STEP_ID, output: "Failed" });
+    expect(result.step.status).toBe("failed");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// claimNextStep — claimed_by tests
+// ---------------------------------------------------------------------------
+
+describe("claimNextStep — claimed_by", () => {
+  it("sets claimed_by to ctx.userId when claiming a step", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    let capturedUpdate: unknown = null;
+    const tableCounts: Record<string, number> = {};
+
+    const ctx = makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      const callNum = tableCounts[table];
+
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        if (callNum === 1) {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [step], error: null }).then(resolve);
+        } else if (callNum === 2) {
+          chain.chain.update = vi.fn((data: unknown) => {
+            capturedUpdate = data;
+            return chain.chain;
+          });
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: updatedStep, error: null })
+          );
+        } else if (callNum === 3) {
+          // Tier 2 run-scoped step ID query
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [{ id: step.id }], error: null }).then(resolve);
+        } else if (callNum === 4) {
+          // context query
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [], error: null }).then(resolve);
+        }
+        return chain.chain;
+      }
+
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: null, error: null }).then(resolve);
+        return chain.chain;
+      }
+
+      if (table === "workflow_step_comments") {
+        return createChain([]).chain;
+      }
+
+      if (table === "idea_agents") {
+        return createChain([]).chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await claimNextStep(ctx, { task_id: TASK_ID });
+
+    expect(capturedUpdate).toMatchObject({
+      status: "in_progress",
+      claimed_by: USER_ID,
+    });
+  });
+});
