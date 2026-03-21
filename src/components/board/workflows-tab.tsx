@@ -14,6 +14,8 @@ import {
   Loader2,
   BookOpen,
   Play,
+  Check,
+  ChevronsUpDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -24,12 +26,18 @@ import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
+import {
+  Command,
+  CommandInput,
+  CommandList,
+  CommandEmpty,
+  CommandItem,
+} from "@/components/ui/command";
+import { getLabelColorConfig } from "@/lib/utils";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -255,6 +263,7 @@ function AutoRulesSection({
 }: AutoRulesSectionProps) {
   const [addingRule, setAddingRule] = useState(false);
   const [labelId, setLabelId] = useState("");
+  const [labelPickerOpen, setLabelPickerOpen] = useState(false);
   const [templateId, setTemplateId] = useState(selectedTemplateId);
   const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -419,18 +428,60 @@ function AutoRulesSection({
       {addingRule && (
         <div className="space-y-2 rounded-md border border-dashed border-border p-3">
           <div className="flex items-center gap-2">
-            <Select value={labelId} onValueChange={setLabelId}>
-              <SelectTrigger className="h-7 flex-1 text-xs">
-                <SelectValue placeholder="Select label" />
-              </SelectTrigger>
-              <SelectContent>
-                {boardLabels.map((l) => (
-                  <SelectItem key={l.id} value={l.id}>
-                    {l.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+            <Popover open={labelPickerOpen} onOpenChange={setLabelPickerOpen}>
+              <PopoverTrigger asChild>
+                <Button
+                  variant="outline"
+                  role="combobox"
+                  aria-expanded={labelPickerOpen}
+                  className="h-7 flex-1 justify-between text-xs font-normal"
+                >
+                  {labelId ? (
+                    <span className="flex items-center gap-1.5">
+                      <span
+                        className={`h-2 w-2 rounded-full ${getLabelColorConfig(boardLabels.find((l) => l.id === labelId)?.color ?? "").swatchColor}`}
+                      />
+                      {boardLabels.find((l) => l.id === labelId)?.name}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Select label…</span>
+                  )}
+                  <ChevronsUpDown className="ml-1 h-3 w-3 shrink-0 opacity-50" />
+                </Button>
+              </PopoverTrigger>
+              <PopoverContent className="w-[200px] p-0" align="start">
+                <Command>
+                  <CommandInput placeholder="Search labels…" className="h-8 text-xs" />
+                  <CommandList>
+                    <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+                      No labels found.
+                    </CommandEmpty>
+                    {boardLabels.map((l) => {
+                      const colorConfig = getLabelColorConfig(l.color);
+                      return (
+                        <CommandItem
+                          key={l.id}
+                          value={l.name}
+                          onSelect={() => {
+                            setLabelId(l.id === labelId ? "" : l.id);
+                            setLabelPickerOpen(false);
+                          }}
+                          className="text-xs"
+                        >
+                          <span
+                            className={`mr-2 h-2.5 w-2.5 rounded-full ${colorConfig.swatchColor}`}
+                          />
+                          {l.name}
+                          {l.id === labelId && (
+                            <Check className="ml-auto h-3 w-3" />
+                          )}
+                        </CommandItem>
+                      );
+                    })}
+                  </CommandList>
+                </Command>
+              </PopoverContent>
+            </Popover>
             <span className="text-xs text-muted-foreground">→</span>
             <span className="flex h-7 flex-1 items-center rounded-md border border-border bg-muted/30 px-2 text-xs font-medium">
               {templates.find((t) => t.id === selectedTemplateId)?.name ?? "This template"}
