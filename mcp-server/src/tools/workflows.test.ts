@@ -79,6 +79,8 @@ function createChain(resolveWith: unknown = null) {
     return chain;
   });
 
+  chain.not = vi.fn(() => chain);
+
   chain.insert = vi.fn((data: unknown) => {
     captured.inserted = data;
     return chain;
@@ -489,7 +491,7 @@ describe("claimNextStep", () => {
 // ---------------------------------------------------------------------------
 
 describe("completeStep", () => {
-  it("creates output comment when output is provided", async () => {
+  it("does not create output comment on completion (output column is sufficient)", async () => {
     const stepData = {
       id: STEP_ID,
       run_id: RUN_ID,
@@ -509,20 +511,16 @@ describe("completeStep", () => {
     };
 
     let commentInserted = false;
-    let insertedData: Record<string, unknown> | null = null;
 
     const ctx = makeContext(((table: string) => {
       if (table === "task_workflow_steps") {
         const chain = createChain(null);
-        // single() for the initial fetch
         chain.chain.single = vi.fn(() =>
           Promise.resolve({ data: stepData, error: null })
         );
-        // maybeSingle() for the update
         chain.chain.maybeSingle = vi.fn(() =>
           Promise.resolve({ data: updatedStep, error: null })
         );
-        // then for the run completion check
         chain.chain.then = (resolve: (val: unknown) => void) =>
           Promise.resolve({ data: [], error: null }).then(resolve);
         return chain.chain;
@@ -530,16 +528,13 @@ describe("completeStep", () => {
 
       if (table === "workflow_step_comments") {
         const chain = createChain(null);
-        const origInsert = chain.chain.insert;
-        chain.chain.insert = vi.fn((data: unknown) => {
+        chain.chain.insert = vi.fn(() => {
           commentInserted = true;
-          insertedData = data as Record<string, unknown>;
           return chain.chain;
         });
         return chain.chain;
       }
 
-      // workflow_runs for checkAndCompleteRun
       if (table === "workflow_runs") {
         const chain = createChain(null);
         chain.chain.then = (resolve: (val: unknown) => void) =>
@@ -555,14 +550,8 @@ describe("completeStep", () => {
 
     await completeStep(ctx, { step_id: STEP_ID, output: "My output" });
 
-    expect(commentInserted).toBe(true);
-    expect(insertedData).toMatchObject({
-      step_id: STEP_ID,
-      idea_id: IDEA_ID,
-      author_id: USER_ID,
-      type: "output",
-      content: "My output",
-    });
+    // Output is stored on the step's output column only — no duplicate comment
+    expect(commentInserted).toBe(false);
   });
 
   it("returns stop message when step routes to awaiting_approval", async () => {
@@ -1101,7 +1090,11 @@ describe("failStep", () => {
           return createChain(targetStep).chain;
         }
         if (callNum === 4) {
-          // 4th: cascade reset update
+          // 4th: snapshot steps with output
+          return createChain([]).chain;
+        }
+        if (callNum === 5) {
+          // 5th: cascade reset update
           cascadeResetChain = createChain([{ id: STEP_ID }, { id: RESET_TO_STEP_ID }]);
           return cascadeResetChain.chain;
         }
@@ -1167,6 +1160,10 @@ describe("failStep", () => {
           return createChain(targetStep).chain;
         }
         if (callNum === 4) {
+          // snapshot steps with output
+          return createChain([]).chain;
+        }
+        if (callNum === 5) {
           return createChain([{ id: STEP_ID }]).chain;
         }
       }
@@ -1397,6 +1394,10 @@ describe("failStep", () => {
           return createChain(targetStep).chain;
         }
         if (callNum === 4) {
+          // Snapshot steps with output
+          return createChain([]).chain;
+        }
+        if (callNum === 5) {
           // Cascade reset update
           const chain = createChain([{ id: STEP_ID }, { id: RESET_TO_STEP_ID }]);
           chain.chain.update = vi.fn((data: unknown) => {
@@ -1588,6 +1589,10 @@ describe("failStep", () => {
           return createChain(targetStep).chain;
         }
         if (callNum === 4) {
+          // Snapshot steps with output
+          return createChain([]).chain;
+        }
+        if (callNum === 5) {
           return createChain([{ id: "s3" }, { id: "s4" }, { id: STEP_ID }]).chain;
         }
       }

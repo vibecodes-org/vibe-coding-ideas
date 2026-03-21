@@ -567,19 +567,6 @@ export async function completeStep(
   if (updateError) throw new Error(`Failed to complete step: ${updateError.message}`);
   if (!updated) throw new Error("Step is no longer in progress — it may have been modified by another agent");
 
-  // Store output as a step comment for context chaining
-  if (params.output && step.idea_id) {
-    await ctx.supabase
-      .from("workflow_step_comments")
-      .insert({
-        step_id: params.step_id,
-        idea_id: step.idea_id,
-        author_id: ctx.userId,
-        type: "output",
-        content: params.output,
-      });
-  }
-
   // Check if all steps in the run are done
   let runComplete = false;
   if (step.run_id && newStatus === "completed") {
@@ -665,6 +652,26 @@ export async function failStep(
       .single();
 
     if (targetStep) {
+      // Snapshot outputs from steps that will be wiped — preserves work history as comments
+      const { data: stepsWithOutput } = await ctx.supabase
+        .from("task_workflow_steps")
+        .select("id, output, claimed_by")
+        .eq("run_id", step.run_id)
+        .gte("step_order", targetStep.step_order ?? 0)
+        .not("output", "is", null);
+
+      if (stepsWithOutput?.length) {
+        await ctx.supabase.from("workflow_step_comments").insert(
+          stepsWithOutput.map((s) => ({
+            step_id: s.id,
+            idea_id: step.idea_id,
+            author_id: s.claimed_by || ctx.userId,
+            type: "output" as const,
+            content: s.output!,
+          }))
+        );
+      }
+
       const { data: resetSteps } = await ctx.supabase
         .from("task_workflow_steps")
         .update({

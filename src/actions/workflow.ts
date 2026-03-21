@@ -202,17 +202,6 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
   if (error) throw new Error(error.message);
   if (!data) throw new Error("Step is no longer in progress — it may have been modified by another agent");
 
-  // Create output comment when output is provided
-  if (output && existing?.idea_id) {
-    await supabase.from("workflow_step_comments").insert({
-      step_id: stepId,
-      idea_id: existing.idea_id,
-      author_id: user.id,
-      type: "output",
-      content: output,
-    });
-  }
-
   // If step belongs to a run, check if all steps in that run are completed
   if (data.run_id && newStatus === "completed") {
     await checkAndCompleteRun(supabase, data.run_id);
@@ -301,6 +290,26 @@ export async function failWorkflowStep(
       .single();
 
     if (targetStep) {
+      // Snapshot outputs from steps that will be wiped — preserves work history as comments
+      const { data: stepsWithOutput } = await supabase
+        .from("task_workflow_steps")
+        .select("id, output, claimed_by")
+        .eq("run_id", data.run_id)
+        .gte("step_order", targetStep.step_order ?? 0)
+        .not("output", "is", null);
+
+      if (stepsWithOutput?.length) {
+        await supabase.from("workflow_step_comments").insert(
+          stepsWithOutput.map((s) => ({
+            step_id: s.id,
+            idea_id: data.idea_id,
+            author_id: s.claimed_by || user.id,
+            type: "output" as const,
+            content: s.output!,
+          }))
+        );
+      }
+
       // Reset all steps from the target step onward (INCLUDING the current failed step)
       await supabase
         .from("task_workflow_steps")
