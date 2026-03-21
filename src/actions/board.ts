@@ -361,15 +361,16 @@ export async function createBoardLabel(
   name = validateLabelName(name);
   color = validateLabelColor(color);
 
-  const { error } = await supabase.from("board_labels").insert({
+  const { data, error } = await supabase.from("board_labels").insert({
     idea_id: ideaId,
     name,
     color,
-  });
+  }).select().single();
 
   if (error) throw new Error(error.message);
 
   revalidatePath(`/ideas/${ideaId}/board`);
+  return data;
 }
 
 export async function updateBoardLabel(

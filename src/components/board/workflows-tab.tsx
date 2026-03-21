@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   Plus,
@@ -60,6 +61,8 @@ import {
   deleteWorkflowAutoRule,
   applyAutoRuleRetroactively,
 } from "@/actions/workflow-templates";
+import { createBoardLabel } from "@/actions/board";
+import { LABEL_COLORS } from "@/lib/constants";
 import { getRoleBadgeClasses } from "./task-workflow-section";
 import type { WorkflowTemplate, WorkflowAutoRule, BoardLabel } from "@/types";
 import type { WorkflowTemplateStep } from "@/types/database";
@@ -261,12 +264,34 @@ function AutoRulesSection({
   onRulesChange,
   selectedTemplateId,
 }: AutoRulesSectionProps) {
+  const router = useRouter();
   const [addingRule, setAddingRule] = useState(false);
   const [labelId, setLabelId] = useState("");
   const [labelPickerOpen, setLabelPickerOpen] = useState(false);
+  const [creatingLabel, setCreatingLabel] = useState(false);
+  const [newLabelName, setNewLabelName] = useState("");
+  const [newLabelColor, setNewLabelColor] = useState("blue");
   const [templateId, setTemplateId] = useState(selectedTemplateId);
   const [runningRuleId, setRunningRuleId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+
+  async function handleCreateLabel() {
+    if (!newLabelName.trim()) return;
+    setSaving(true);
+    try {
+      const label = await createBoardLabel(ideaId, newLabelName.trim(), newLabelColor);
+      setLabelId(label.id);
+      setCreatingLabel(false);
+      setNewLabelName("");
+      setNewLabelColor("blue");
+      setLabelPickerOpen(false);
+      router.refresh();
+    } catch {
+      toast.error("Failed to create label");
+    } finally {
+      setSaving(false);
+    }
+  }
 
   async function handleAddRule() {
     if (!labelId || !templateId) return;
@@ -430,7 +455,7 @@ function AutoRulesSection({
       {addingRule && (
         <div className="space-y-2 rounded-md border border-dashed border-border p-3">
           <div className="flex items-center gap-2">
-            <Popover open={labelPickerOpen} onOpenChange={setLabelPickerOpen}>
+            <Popover open={labelPickerOpen} onOpenChange={(open) => { setLabelPickerOpen(open); if (!open) setCreatingLabel(false); }}>
               <PopoverTrigger asChild>
                 <Button
                   variant="outline"
@@ -480,6 +505,63 @@ function AutoRulesSection({
                         </CommandItem>
                       );
                     })}
+                    {/* Create new label inline */}
+                    {creatingLabel ? (
+                      <div className="border-t p-2 space-y-2" onClick={(e) => e.stopPropagation()}>
+                        <Input
+                          value={newLabelName}
+                          onChange={(e) => setNewLabelName(e.target.value)}
+                          className="h-7 text-xs"
+                          placeholder="Label name"
+                          autoFocus
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleCreateLabel();
+                            }
+                          }}
+                        />
+                        <div className="flex flex-wrap gap-1">
+                          {LABEL_COLORS.map((c) => (
+                            <button
+                              key={c.value}
+                              type="button"
+                              className={`h-4 w-4 rounded-sm ${c.swatchColor} ${
+                                newLabelColor === c.value ? "ring-2 ring-primary ring-offset-1 ring-offset-background" : ""
+                              }`}
+                              onClick={() => setNewLabelColor(c.value)}
+                            />
+                          ))}
+                        </div>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            className="h-6 flex-1 text-xs"
+                            onClick={handleCreateLabel}
+                            disabled={saving || !newLabelName.trim()}
+                          >
+                            Create
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 text-xs"
+                            onClick={() => setCreatingLabel(false)}
+                          >
+                            Cancel
+                          </Button>
+                        </div>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        className="flex w-full items-center gap-1.5 border-t px-2 py-2 text-xs text-muted-foreground hover:text-foreground"
+                        onClick={() => setCreatingLabel(true)}
+                      >
+                        <Plus className="h-3 w-3" />
+                        Create new label
+                      </button>
+                    )}
                   </CommandList>
                 </Command>
               </PopoverContent>
