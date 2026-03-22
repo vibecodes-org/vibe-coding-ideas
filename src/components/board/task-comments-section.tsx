@@ -10,6 +10,7 @@ import { Markdown } from "@/components/ui/markdown";
 import { MentionAutocomplete } from "./mention-autocomplete";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
+import { logger } from "@/lib/logger";
 import { formatRelativeTime, getInitials } from "@/lib/utils";
 import { logTaskActivity } from "@/lib/activity";
 import { createTaskComment, deleteTaskComment, updateTaskComment } from "@/actions/board";
@@ -250,7 +251,7 @@ export function TaskCommentsSection({
               task_id: taskId,
             })
             .then(({ error }) => {
-              if (error) console.error("Failed to send mention notification:", error.message);
+              if (error) logger.error("Failed to send mention notification", { error: error.message, userId });
             });
         }
       }

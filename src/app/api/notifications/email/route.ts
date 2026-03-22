@@ -1,6 +1,7 @@
 export const dynamic = "force-dynamic";
 
 import { createClient } from "@supabase/supabase-js";
+import { logger } from "@/lib/logger";
 import { buildEmailHtml } from "@/lib/email-template";
 import type { Database } from "@/types/database";
 
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
   const expectedSecret = process.env.NOTIFICATION_WEBHOOK_SECRET;
 
   if (!expectedSecret) {
-    console.error("NOTIFICATION_WEBHOOK_SECRET not configured");
+    logger.error("NOTIFICATION_WEBHOOK_SECRET not configured");
     return jsonResponse({ error: "Server misconfigured" }, 500);
   }
 
@@ -44,7 +45,7 @@ export async function POST(request: Request) {
 
   const resendApiKey = process.env.RESEND_API_KEY;
   if (!resendApiKey) {
-    console.error("RESEND_API_KEY not configured");
+    logger.error("RESEND_API_KEY not configured");
     return jsonResponse({ error: "Server misconfigured" }, 500);
   }
 
@@ -176,7 +177,7 @@ export async function POST(request: Request) {
 
     if (!res.ok) {
       const errorText = await res.text();
-      console.error("Resend API error:", res.status, errorText);
+      logger.error("Resend API error", { status: res.status, response: errorText });
       return jsonResponse(
         { error: "Email send failed", details: errorText },
         502,
@@ -186,7 +187,7 @@ export async function POST(request: Request) {
     const result = await res.json();
     return jsonResponse({ sent: true, id: result.id });
   } catch (err) {
-    console.error("Failed to send email:", err);
+    logger.error("Failed to send email", { error: err instanceof Error ? err.message : String(err) });
     return jsonResponse({ error: "Email send failed" }, 500);
   }
 }

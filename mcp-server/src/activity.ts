@@ -1,3 +1,4 @@
+import { logger } from "../../src/lib/logger";
 import type { McpContext } from "./context";
 import type { Json } from "../../src/types/database";
 
@@ -16,6 +17,6 @@ export async function logActivity(
     details: details ?? null,
   });
   if (error) {
-    console.error("Failed to log activity:", error.message);
+    logger.error("Failed to log activity", { error: error.message, taskId, action });
   }
 }

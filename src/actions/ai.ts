@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { generateText, generateObject } from "ai";
 import { z } from "zod";
+import { logger } from "@/lib/logger";
 import {
   AI_MODEL,
   logAiUsage,
@@ -15,7 +16,7 @@ const AI_TIMEOUT_MS = 90_000; // 90s — fail gracefully before Vercel's 120s fu
 
 /** Re-throw AI SDK errors as plain Error so Next.js RSC can serialize them. */
 function toPlainError(err: unknown): never {
-  console.error("[AI Action Error]", err);
+  logger.error("AI action error", { error: err instanceof Error ? err.message : String(err) });
   if (err instanceof Error) {
     if (err.name === "TimeoutError" || err.name === "AbortError") {
       throw new Error("The AI request timed out. Please try again — the service may be under heavy load.");

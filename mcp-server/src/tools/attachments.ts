@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { randomUUID } from "crypto";
+import { logger } from "../../../src/lib/logger";
 import { logActivity } from "../activity";
 import type { McpContext } from "../context";
 
@@ -220,7 +221,7 @@ export async function deleteAttachment(
     .remove([attachment.storage_path]);
 
   if (storageError) {
-    console.error("Failed to delete file from storage:", storageError.message);
+    logger.error("Failed to delete file from storage", { error: storageError.message, attachmentId: params.attachment_id });
   }
 
   // Delete DB row

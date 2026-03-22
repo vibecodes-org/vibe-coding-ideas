@@ -29,11 +29,13 @@ export default async function AdminPage({ searchParams }: PageProps) {
   // Check admin
   const { data: currentUser } = await supabase
     .from("users")
-    .select("is_admin")
+    .select("is_admin, is_super_admin")
     .eq("id", user.id)
     .single();
 
   if (!currentUser?.is_admin) redirect("/dashboard");
+
+  const isSuperAdmin = currentUser?.is_super_admin ?? false;
 
   // Fetch usage logs with filters
   let usageQuery = supabase
@@ -153,6 +155,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
       <h1 className="mb-6 text-2xl font-bold">Admin</h1>
       <AdminTabs
         activeTab={tab ?? "ai-usage"}
+        isSuperAdmin={isSuperAdmin}
         usageLogs={(usageLogs ?? []) as UsageLogWithUser[]}
         usageFilters={{ from: from ?? "", to: to ?? "", action: action ?? "all", source: source ?? "all" }}
         feedback={(feedback ?? []) as FeedbackWithUser[]}

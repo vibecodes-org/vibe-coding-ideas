@@ -1,0 +1,435 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Structured Logging — Developer Experience Design</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #1e1e1e;
+      --border: #2a2a2a;
+      --text: #e4e4e7;
+      --text-muted: #a1a1aa;
+      --accent: #a78bfa;
+      --green: #4ade80;
+      --amber: #fbbf24;
+      --red: #f87171;
+      --blue: #60a5fa;
+      --cyan: #22d3ee;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.25rem; margin: 2rem 0 0.75rem; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+    h3 { font-size: 1rem; margin: 1.25rem 0 0.5rem; color: var(--text); }
+    p, li { color: var(--text-muted); font-size: 0.9rem; }
+    p { margin-bottom: 0.75rem; }
+    ul, ol { padding-left: 1.5rem; margin-bottom: 1rem; }
+    li { margin-bottom: 0.35rem; }
+    .badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .badge-infra { background: rgba(167, 139, 250, 0.15); color: var(--accent); }
+    .badge-dx { background: rgba(34, 211, 238, 0.15); color: var(--cyan); }
+    .meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 2rem; }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .card-header {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+    }
+    .card-header h3 { margin: 0; }
+    pre {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 1rem;
+      overflow-x: auto;
+      font-size: 0.82rem;
+      line-height: 1.5;
+      margin-bottom: 1rem;
+    }
+    code {
+      font-family: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+      color: var(--green);
+    }
+    pre code { color: var(--text); }
+    .comment { color: var(--text-muted); }
+    .keyword { color: var(--accent); }
+    .string { color: var(--green); }
+    .type { color: var(--cyan); }
+    .num { color: var(--amber); }
+    .error-text { color: var(--red); }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+    }
+    th, td {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    th { color: var(--text); font-weight: 600; }
+    td { color: var(--text-muted); }
+    .level-error { color: var(--red); font-weight: 600; }
+    .level-warn { color: var(--amber); font-weight: 600; }
+    .level-info { color: var(--blue); font-weight: 600; }
+    .level-debug { color: var(--text-muted); font-weight: 600; }
+    .section-note {
+      background: rgba(96, 165, 250, 0.08);
+      border-left: 3px solid var(--blue);
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+    }
+    .decision {
+      background: rgba(251, 191, 36, 0.08);
+      border-left: 3px solid var(--amber);
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+    }
+    .flow-diagram {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin: 1rem 0;
+      font-size: 0.85rem;
+    }
+    .flow-box {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.5rem 0.75rem;
+      text-align: center;
+      min-width: 120px;
+    }
+    .flow-arrow { color: var(--text-muted); font-size: 1.2rem; }
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .comparison > div { min-width: 0; }
+    .comparison h4 {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.5rem;
+    }
+    .comparison .before h4 { color: var(--red); }
+    .comparison .after h4 { color: var(--green); }
+    @media (max-width: 640px) {
+      .comparison { grid-template-columns: 1fr; }
+      body { padding: 1rem; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Structured Logging — DX Design</h1>
+  <p class="meta">
+    <span class="badge badge-infra">Infrastructure</span>
+    <span class="badge badge-dx">Developer Experience</span>
+    &mdash; Building on Requirements from Product Owner
+  </p>
+
+  <div class="section-note">
+    <strong>Note:</strong> This is a backend infrastructure task with no user-facing UI. This design document covers the <strong>developer experience</strong> &mdash; API surface, usage patterns, output format, and migration guide.
+  </div>
+
+  <h2>1. API Surface</h2>
+
+  <div class="card">
+    <div class="card-header">
+      <h3>Logger Interface</h3>
+    </div>
+    <pre><code><span class="comment">// src/lib/logger.ts</span>
+<span class="keyword">import</span> { logger } <span class="keyword">from</span> <span class="string">"@/lib/logger"</span>;
+
+<span class="comment">// Each method: (message: string, context?: Record&lt;string, unknown&gt;) =&gt; void</span>
+logger.<span class="error-text">error</span>(<span class="string">"Failed to send email"</span>, { userId, error: err.message });
+logger.<span class="level-warn">warn</span>(<span class="string">"AI output truncated"</span>, { tokenCount, maxTokens });
+logger.<span class="level-info">info</span>(<span class="string">"Workflow step completed"</span>, { stepId, taskId });
+logger.<span class="level-debug">debug</span>(<span class="string">"Cache miss"</span>, { key, ttl });</code></pre>
+  </div>
+
+  <h3>Level Hierarchy &amp; Defaults</h3>
+  <table>
+    <thead>
+      <tr><th>Level</th><th>Priority</th><th>Console Method</th><th>Use Case</th></tr>
+    </thead>
+    <tbody>
+      <tr><td class="level-error">error</td><td>0 (highest)</td><td><code>console.error</code></td><td>Failures requiring attention</td></tr>
+      <tr><td class="level-warn">warn</td><td>1</td><td><code>console.warn</code></td><td>Degraded behavior, unusual conditions</td></tr>
+      <tr><td class="level-info">info</td><td>2</td><td><code>console.info</code></td><td>Significant operations (future use)</td></tr>
+      <tr><td class="level-debug">debug</td><td>3 (lowest)</td><td><code>console.debug</code></td><td>Development diagnostics (future use)</td></tr>
+    </tbody>
+  </table>
+
+  <table>
+    <thead>
+      <tr><th>Environment</th><th>Default LOG_LEVEL</th><th>What gets emitted</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Production</td><td><code>warn</code></td><td>error + warn</td></tr>
+      <tr><td>Development</td><td><code>debug</code></td><td>All levels</td></tr>
+    </tbody>
+  </table>
+
+  <div class="decision">
+    <strong>Design decision:</strong> Default to <code>warn</code> in production (not <code>error</code>) so that existing <code>console.warn</code> calls continue to emit after migration. This matches current behavior &mdash; both <code>console.error</code> and <code>console.warn</code> output in production today.
+  </div>
+
+  <h2>2. Output Format</h2>
+
+  <div class="card">
+    <div class="card-header">
+      <h3>Structured JSON Output</h3>
+    </div>
+    <pre><code><span class="comment">// logger.error("Failed to send email", { userId: "abc", error: "Connection refused" })</span>
+<span class="comment">// outputs to console.error:</span>
+{
+  <span class="string">"level"</span>: <span class="string">"error"</span>,
+  <span class="string">"message"</span>: <span class="string">"Failed to send email"</span>,
+  <span class="string">"context"</span>: {
+    <span class="string">"userId"</span>: <span class="string">"abc"</span>,
+    <span class="string">"error"</span>: <span class="string">"Connection refused"</span>
+  },
+  <span class="string">"timestamp"</span>: <span class="string">"2026-03-21T16:30:00.000Z"</span>
+}
+
+<span class="comment">// logger.warn("AI output truncated") — no context</span>
+<span class="comment">// outputs to console.warn:</span>
+{
+  <span class="string">"level"</span>: <span class="string">"warn"</span>,
+  <span class="string">"message"</span>: <span class="string">"AI output truncated"</span>,
+  <span class="string">"timestamp"</span>: <span class="string">"2026-03-21T16:30:00.000Z"</span>
+}</code></pre>
+    <p>When no <code>context</code> is provided, the key is omitted entirely (not <code>null</code>). This keeps log lines clean and grep-friendly.</p>
+  </div>
+
+  <h2>3. Data Flow</h2>
+
+  <div class="flow-diagram">
+    <div class="flow-box">
+      <strong>Application code</strong><br />
+      <code>logger.error(msg, ctx)</code>
+    </div>
+    <span class="flow-arrow">&rarr;</span>
+    <div class="flow-box">
+      <strong>Level check</strong><br />
+      <code>level &ge; LOG_LEVEL?</code>
+    </div>
+    <span class="flow-arrow">&rarr;</span>
+    <div class="flow-box">
+      <strong>Build JSON</strong><br />
+      <code>{ level, message, context?, timestamp }</code>
+    </div>
+    <span class="flow-arrow">&rarr;</span>
+    <div class="flow-box">
+      <strong>Console method</strong><br />
+      <code>console[level](json)</code>
+    </div>
+    <span class="flow-arrow">&rarr;</span>
+    <div class="flow-box">
+      <strong>Vercel / stdout</strong><br />
+      Log drain ready
+    </div>
+  </div>
+
+  <h2>4. Migration Examples (Before &rarr; After)</h2>
+
+  <h3>4a. Simple error with message</h3>
+  <div class="comparison">
+    <div class="before">
+      <h4>Before</h4>
+      <pre><code><span class="comment">// src/lib/activity.ts:23</span>
+<span class="keyword">if</span> (error) console.<span class="error-text">error</span>(<span class="string">"Failed to log activity:"</span>, error.message);</code></pre>
+    </div>
+    <div class="after">
+      <h4>After</h4>
+      <pre><code><span class="keyword">if</span> (error) logger.<span class="error-text">error</span>(<span class="string">"Failed to log activity"</span>, {
+  error: error.message,
+});</code></pre>
+    </div>
+  </div>
+
+  <h3>4b. Tagged error with context</h3>
+  <div class="comparison">
+    <div class="before">
+      <h4>Before</h4>
+      <pre><code><span class="comment">// src/app/api/notifications/email/route.ts</span>
+console.<span class="error-text">error</span>(<span class="string">"[Email] Resend API error:"</span>, resp.status, text);</code></pre>
+    </div>
+    <div class="after">
+      <h4>After</h4>
+      <pre><code>logger.<span class="error-text">error</span>(<span class="string">"Resend API error"</span>, {
+  status: resp.status,
+  response: text,
+});</code></pre>
+    </div>
+  </div>
+
+  <h3>4c. Catch-all with error object</h3>
+  <div class="comparison">
+    <div class="before">
+      <h4>Before</h4>
+      <pre><code><span class="comment">// src/actions/ai.ts:18</span>
+console.<span class="error-text">error</span>(<span class="string">"[AI Action Error]"</span>, err);</code></pre>
+    </div>
+    <div class="after">
+      <h4>After</h4>
+      <pre><code>logger.<span class="error-text">error</span>(<span class="string">"AI action failed"</span>, {
+  error: err <span class="keyword">instanceof</span> Error ? err.message : String(err),
+});</code></pre>
+    </div>
+  </div>
+
+  <h3>4d. Warning</h3>
+  <div class="comparison">
+    <div class="before">
+      <h4>Before</h4>
+      <pre><code><span class="comment">// src/app/api/ai/enhance/route.ts:121</span>
+console.<span class="level-warn">warn</span>(<span class="string">"[AI Enhance] Output truncated"</span>);</code></pre>
+    </div>
+    <div class="after">
+      <h4>After</h4>
+      <pre><code>logger.<span class="level-warn">warn</span>(<span class="string">"AI enhance output truncated"</span>);</code></pre>
+    </div>
+  </div>
+
+  <h3>4e. Client-side components &mdash; NO migration</h3>
+  <div class="section-note">
+    <strong>Important:</strong> 5 <code>console.error</code> calls live in client components (<code>"use client"</code> files). The logger module uses <code>process.env.NODE_ENV</code> which is available in both server and client contexts in Next.js, but <code>process.env.LOG_LEVEL</code> is only available server-side unless prefixed with <code>NEXT_PUBLIC_</code>. <br/><br/>
+    <strong>Decision:</strong> Migrate client-side calls too &mdash; the logger should fall back to <code>"debug"</code> when <code>LOG_LEVEL</code> is undefined (which it will be on the client in dev). This means all client-side logs always emit in dev, and in production builds, <code>NODE_ENV === "production"</code> will set the default to <code>"warn"</code>. No <code>NEXT_PUBLIC_</code> prefix needed.
+  </div>
+
+  <h2>5. MCP Server Exclusions</h2>
+
+  <table>
+    <thead>
+      <tr><th>File</th><th>Line</th><th>Call</th><th>Action</th><th>Reason</th></tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>mcp-server/src/index.ts</code></td><td>41</td>
+        <td><code>console.error("[MCP Tool Log] Insert failed:", ...)</code></td>
+        <td class="level-warn">KEEP</td>
+        <td>Stdio protocol &mdash; must use stderr</td>
+      </tr>
+      <tr>
+        <td><code>mcp-server/src/index.ts</code></td><td>68</td>
+        <td><code>console.error(`Bot identity restored: ...`)</code></td>
+        <td class="level-warn">KEEP</td>
+        <td>Stdio startup info &mdash; must use stderr</td>
+      </tr>
+      <tr>
+        <td><code>mcp-server/src/index.ts</code></td><td>75</td>
+        <td><code>console.error("VibeCodes MCP server running...")</code></td>
+        <td class="level-warn">KEEP</td>
+        <td>Stdio startup info &mdash; must use stderr</td>
+      </tr>
+      <tr>
+        <td><code>mcp-server/src/index.ts</code></td><td>79</td>
+        <td><code>console.error("Fatal error:", ...)</code></td>
+        <td class="level-warn">KEEP</td>
+        <td>Fatal crash before logger available</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p>The remaining <strong>3 calls</strong> in <code>mcp-server/src/</code> (activity.ts, attachments.ts, workflows.ts) <strong>will be migrated</strong> &mdash; they are inside tool handlers that run in both stdio and remote mode, and the logger's <code>console.error</code>/<code>console.warn</code> output goes to stderr regardless.</p>
+
+  <h2>6. Import Path Considerations</h2>
+
+  <div class="card">
+    <h3>Shared module between Next.js and MCP server</h3>
+    <p>The logger lives at <code>src/lib/logger.ts</code>. The MCP server (<code>mcp-server/src/</code>) already imports from <code>src/</code> indirectly via relative paths in some places, but for clean separation:</p>
+    <ul>
+      <li><strong>Next.js code</strong> (<code>src/</code>): imports via <code>@/lib/logger</code> (existing path alias)</li>
+      <li><strong>MCP server code</strong> (<code>mcp-server/src/</code>): imports via relative path <code>../../src/lib/logger</code> (same pattern as existing cross-boundary imports)</li>
+    </ul>
+    <p>No new package, no new tsconfig path. Follows existing conventions.</p>
+  </div>
+
+  <h2>7. Context Object Guidelines</h2>
+
+  <div class="card">
+    <h3>What to include in context</h3>
+    <table>
+      <thead><tr><th>Key</th><th>When to include</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td><code>error</code></td><td>Always in error handlers</td><td><code>err.message</code> or <code>String(err)</code></td></tr>
+        <tr><td><code>userId</code></td><td>When available in scope</td><td>UUID string</td></tr>
+        <tr><td><code>ideaId</code></td><td>Idea-scoped operations</td><td>UUID string</td></tr>
+        <tr><td><code>taskId</code></td><td>Task-scoped operations</td><td>UUID string</td></tr>
+        <tr><td><code>status</code></td><td>HTTP errors</td><td>Response status code</td></tr>
+        <tr><td><code>toolName</code></td><td>MCP tool context</td><td>Tool name string</td></tr>
+      </tbody>
+    </table>
+    <p><strong>Rules:</strong></p>
+    <ul>
+      <li>Never log sensitive data (tokens, passwords, API keys, email addresses)</li>
+      <li>Use <code>err.message</code> not the full error object (avoids circular refs in JSON.stringify)</li>
+      <li>Keep context shallow &mdash; no nested objects deeper than 1 level</li>
+      <li>Prefer semantic keys over generic ones (<code>stepId</code> not <code>id</code>)</li>
+    </ul>
+  </div>
+
+  <h2>8. Testing Strategy</h2>
+
+  <div class="card">
+    <h3>Unit tests for <code>src/lib/logger.test.ts</code></h3>
+    <ol>
+      <li><strong>Level filtering</strong> &mdash; verify that calls below the configured level are suppressed</li>
+      <li><strong>Output format</strong> &mdash; verify JSON structure has <code>level</code>, <code>message</code>, <code>timestamp</code>, and optionally <code>context</code></li>
+      <li><strong>Console method routing</strong> &mdash; <code>logger.error</code> &rarr; <code>console.error</code>, <code>logger.warn</code> &rarr; <code>console.warn</code>, etc.</li>
+      <li><strong>Default level selection</strong> &mdash; <code>warn</code> when <code>NODE_ENV=production</code>, <code>debug</code> otherwise</li>
+      <li><strong>LOG_LEVEL override</strong> &mdash; env var takes precedence over defaults</li>
+      <li><strong>Context omission</strong> &mdash; no <code>context</code> key when none provided</li>
+      <li><strong>Timestamp format</strong> &mdash; valid ISO 8601 string</li>
+    </ol>
+    <p>Use <code>vi.spyOn(console, "error")</code> etc. to assert calls without polluting test output.</p>
+  </div>
+
+  <h2>9. Future Compatibility (Phase 2 — not in scope)</h2>
+
+  <p>The structured JSON output is intentionally compatible with:</p>
+  <ul>
+    <li><strong>Vercel Log Drains</strong> &mdash; JSON lines parsed automatically</li>
+    <li><strong>Axiom / Betterstack</strong> &mdash; structured fields become queryable columns</li>
+    <li><strong>pino swap</strong> &mdash; same API signature (<code>logger.error(msg, ctx)</code>) means a future pino migration only changes the implementation, not call sites</li>
+  </ul>
+
+</body>
+</html>

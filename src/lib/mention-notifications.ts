@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { logger } from "@/lib/logger";
 import type { User } from "@/types";
 
 /**
@@ -34,10 +35,11 @@ export function sendDiscussionMentionNotifications(
       })
       .then(({ error }) => {
         if (error)
-          console.error(
-            "Failed to send mention notification:",
-            error.message
-          );
+          logger.error("Failed to send mention notification", {
+            error: error.message,
+            userId,
+            discussionId,
+          });
       });
   }
 }

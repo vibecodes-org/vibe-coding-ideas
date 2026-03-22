@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { logger } from "@/lib/logger";
 import type { Json } from "@/types/database";
 
 export function logTaskActivity(
@@ -20,6 +21,6 @@ export function logTaskActivity(
       details: details ?? null,
     })
     .then(({ error }) => {
-      if (error) console.error("Failed to log activity:", error.message);
+      if (error) logger.error("Failed to log activity", { error: error.message, taskId, action });
     });
 }

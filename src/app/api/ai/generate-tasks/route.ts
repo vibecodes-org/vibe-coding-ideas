@@ -1,6 +1,7 @@
 import { streamObject } from "ai";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/logger";
 import {
   AI_MODEL,
   logAiUsage,
@@ -170,7 +171,7 @@ export async function POST(req: Request) {
       headers: { "Content-Type": "application/x-ndjson; charset=utf-8" },
     });
   } catch (err) {
-    console.error("[AI Generate Tasks API Error]", err);
+    logger.error("AI generate tasks API error", { error: err instanceof Error ? err.message : String(err) });
     return Response.json(
       { error: err instanceof Error ? err.message : "An unexpected error occurred" },
       { status: 500 }

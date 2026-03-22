@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
 import { generateText } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { logger } from "@/lib/logger";
 import {
   AI_MODEL,
   logAiUsage,
@@ -191,7 +192,7 @@ export async function enhanceOnboardingDescription(data: {
     text = result.text;
     usage = result.usage ?? {};
   } catch (err) {
-    console.error("[Onboarding AI Error]", err);
+    logger.error("Onboarding AI error", { error: err instanceof Error ? err.message : String(err) });
     if (err instanceof Error && (err.name === "TimeoutError" || err.name === "AbortError")) {
       throw new Error("AI request timed out — please try again");
     }

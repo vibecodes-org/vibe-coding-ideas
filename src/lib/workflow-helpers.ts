@@ -1,3 +1,4 @@
+import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WorkflowTemplateStep } from "@/types/database";
 
@@ -40,10 +41,11 @@ export async function checkAndApplyAutoRules(
 
     await applyFn(taskId, rule.template_id);
   } catch (err) {
-    console.error(
-      `[checkAndApplyAutoRules] Failed to apply auto-rule for task=${taskId} label=${labelId}:`,
-      err
-    );
+    logger.error("Failed to apply auto-rule", {
+      error: err instanceof Error ? err.message : String(err),
+      taskId,
+      labelId,
+    });
   }
 }
 
@@ -109,10 +111,12 @@ export async function removeAutoRuleWorkflow(
     .eq("id", check.runId);
 
   if (error) {
-    console.error(
-      `[removeAutoRuleWorkflow] Failed to delete workflow run=${check.runId}:`,
-      error
-    );
+    logger.error("Failed to delete auto-rule workflow run", {
+      error: error.message,
+      runId: check.runId,
+      taskId,
+      labelId,
+    });
     return { removed: false };
   }
 

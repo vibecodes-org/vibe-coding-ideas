@@ -1,5 +1,6 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { decrypt } from "@/lib/encryption";
+import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
@@ -106,7 +107,7 @@ export async function decrementStarterCredit(
     p_user_id: userId,
   });
   if (error) {
-    console.error("[AI Starter Credits] Failed to decrement:", error.message);
+    logger.error("Failed to decrement starter credit", { userId, error: error.message });
     return 0;
   }
   return data ?? 0;
@@ -134,7 +135,8 @@ export async function logAiUsage(
     idea_id: params.ideaId,
   });
   if (error) {
-    console.error("[AI Usage Log] Failed to log usage:", error.message, {
+    logger.error("Failed to log AI usage", {
+      error: error.message,
       actionType: params.actionType,
       keyType: params.keyType ?? "byok",
       userId: params.userId,

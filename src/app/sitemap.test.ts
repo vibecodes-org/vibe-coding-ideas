@@ -160,7 +160,9 @@ describe("sitemap", () => {
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
-    expect(console.error).toHaveBeenCalledWith("[sitemap] ideas query failed:", "connection refused");
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining("Sitemap ideas query failed")
+    );
     // Should still return static pages
     expect(result.length).toBeGreaterThan(0);
     // No idea entries
@@ -181,7 +183,9 @@ describe("sitemap", () => {
     const { default: sitemap } = await import("./sitemap");
     const result = await sitemap();
 
-    expect(console.error).toHaveBeenCalledWith("[sitemap] users query failed:", "timeout");
+    expect(console.error).toHaveBeenCalledWith(
+      expect.stringContaining("Sitemap users query failed")
+    );
     // Ideas should still appear
     expect(result.some((e) => e.url.includes("/ideas/idea-1"))).toBe(true);
     // No profile entries since users query failed

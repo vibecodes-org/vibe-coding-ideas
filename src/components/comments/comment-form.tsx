@@ -13,6 +13,7 @@ import {
 import { MentionAutocomplete } from "@/components/board/mention-autocomplete";
 import { createComment } from "@/actions/comments";
 import { createClient } from "@/lib/supabase/client";
+import { logger } from "@/lib/logger";
 import { COMMENT_TYPE_CONFIG } from "@/lib/constants";
 import type { CommentType, User } from "@/types";
 
@@ -132,7 +133,7 @@ export function CommentForm({
               idea_id: ideaId,
             })
             .then(({ error }) => {
-              if (error) console.error("Failed to send mention notification:", error.message);
+              if (error) logger.error("Failed to send mention notification", { error: error.message, userId });
             });
         }
       }

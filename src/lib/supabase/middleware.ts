@@ -1,5 +1,6 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
+import { logger } from "@/lib/logger";
 
 export async function updateSession(request: NextRequest) {
   try {
@@ -69,7 +70,7 @@ export async function updateSession(request: NextRequest) {
 
     return supabaseResponse;
   } catch (err) {
-    console.error("Middleware error on", request.nextUrl.pathname, err);
+    logger.error("Middleware error", { pathname: request.nextUrl.pathname, error: err instanceof Error ? err.message : String(err) });
     // Always return a response — crashing here causes "No response is returned" 500s
     return NextResponse.next({ request });
   }

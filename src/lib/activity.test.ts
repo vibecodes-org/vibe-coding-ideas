@@ -62,8 +62,7 @@ describe("logTaskActivity", () => {
     logTaskActivity("task-1", "idea-1", "actor-1", "created");
 
     expect(consoleSpy).toHaveBeenCalledWith(
-      "Failed to log activity:",
-      "RLS violation"
+      expect.stringContaining("Failed to log activity")
     );
     consoleSpy.mockRestore();
   });

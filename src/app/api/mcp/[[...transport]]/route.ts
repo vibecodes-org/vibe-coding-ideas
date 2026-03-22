@@ -2,6 +2,7 @@ import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { createClient } from "@supabase/supabase-js";
 import { registerTools } from "../../../../../mcp-server/src/register-tools";
 import { instrumentServer } from "../../../../../mcp-server/src/instrument";
+import { logger } from "@/lib/logger";
 import type { McpContext } from "../../../../../mcp-server/src/context";
 import type { Database } from "@/types/database";
 
@@ -31,7 +32,7 @@ const handler = createMcpHandler(
           .from("mcp_tool_log")
           .insert(entry)
           .then(({ error }) => {
-            if (error) console.error("[MCP Tool Log] Insert failed:", error.message);
+            if (error) logger.error("MCP tool log insert failed", { error: error.message });
           });
       },
       "remote"

@@ -1,5 +1,6 @@
 import { streamText } from "ai";
 import { createClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/logger";
 import {
   AI_MODEL,
   logAiUsage,
@@ -118,7 +119,7 @@ Use the answers above to inform your enhanced description. Make the enhancement 
           await decrementStarterCredit(supabase, user.id);
         }
         if (finishReason === "length") {
-          console.warn(`[AI Enhance] Output truncated for idea ${ideaId}`);
+          logger.warn("AI enhance output truncated", { ideaId });
         }
       },
     });
@@ -142,7 +143,7 @@ Use the answers above to inform your enhanced description. Make the enhancement 
       headers: { "Content-Type": "text/plain; charset=utf-8" },
     });
   } catch (err) {
-    console.error("[AI Enhance API Error]", err);
+    logger.error("AI enhance API error", { error: err instanceof Error ? err.message : String(err) });
     return Response.json(
       { error: err instanceof Error ? err.message : "An unexpected error occurred" },
       { status: 500 }

@@ -26,6 +26,7 @@ import { updateBoardTask, deleteBoardTask } from "@/actions/board";
 import { enhanceTaskDescription } from "@/actions/ai";
 import { useBoardOps } from "./board-context";
 import { createClient } from "@/lib/supabase/client";
+import { logger } from "@/lib/logger";
 import { logTaskActivity } from "@/lib/activity";
 import { useBotRoles } from "@/components/bot-roles-context";
 import { getRoleColor } from "@/lib/agent-colors";
@@ -270,7 +271,7 @@ export function TaskDetailDialog({
               task_id: task.id,
             })
             .then(({ error }) => {
-              if (error) console.error("Failed to send mention notification:", error.message);
+              if (error) logger.error("Failed to send mention notification", { error: error.message, userId });
             });
         }
       }

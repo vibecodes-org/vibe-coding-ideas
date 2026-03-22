@@ -18,6 +18,7 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { createClient } from "@/lib/supabase/client";
+import { logger } from "@/lib/logger";
 import { formatRelativeTime } from "@/lib/utils";
 import { logTaskActivity } from "@/lib/activity";
 import type { BoardTaskAttachment } from "@/types";
@@ -165,7 +166,7 @@ export function TaskAttachmentsSection({
     const { error: uploadError } = await supabase.storage.from("task-attachments").upload(storagePath, file);
 
     if (uploadError) {
-      console.error("Upload failed:", uploadError.message);
+      logger.error("Upload failed", { error: uploadError.message, taskId, fileName: file.name });
       setUploadingFiles((prev) => prev.filter((f) => f.id !== placeholderId));
       setUploading(false);
       return;

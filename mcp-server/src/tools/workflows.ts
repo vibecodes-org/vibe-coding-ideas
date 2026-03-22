@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
 import { buildRoleMatcher } from "../../../src/lib/role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits } from "../../../src/lib/workflow-helpers";
@@ -896,7 +897,7 @@ export async function approveStep(
       });
     if (commentError) {
       // Non-fatal: step is already approved, just log
-      console.warn(`Failed to insert approval comment: ${commentError.message}`);
+      logger.warn("Failed to insert approval comment", { error: commentError.message, stepId: params.step_id });
     }
   }
 

@@ -20,6 +20,7 @@ import { getLabelColorConfig } from "@/lib/utils";
 import { createBoardTask, addLabelsToTask } from "@/actions/board";
 import { useBoardOps } from "./board-context";
 import { createClient } from "@/lib/supabase/client";
+import { logger } from "@/lib/logger";
 import { logTaskActivity } from "@/lib/activity";
 import { enhanceTaskDescription } from "@/actions/ai";
 import { POSITION_GAP } from "@/lib/constants";
@@ -287,7 +288,7 @@ export function TaskEditDialog({
           .upload(storagePath, file);
 
         if (uploadError) {
-          console.error("Upload failed:", uploadError.message);
+          logger.error("Upload failed", { error: uploadError.message });
           toast.error(`Failed to upload ${file.name}`);
           continue;
         }

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/client";
+import { logger } from "@/lib/logger";
 import { POSITION_GAP, LABEL_COLORS } from "@/lib/constants";
 import { triggerAutoRulesForTasks } from "@/actions/board";
 import type { BoardColumnWithTasks, BoardLabel, User } from "@/types";
@@ -619,7 +620,7 @@ export async function executeBulkImport(
         .from("board_task_activity")
         .insert(batch)
         .then(({ error }) => {
-          if (error) console.error("Activity log failed:", error.message);
+          if (error) logger.error("Activity log failed", { error: error.message });
         });
     }
   }
@@ -637,7 +638,7 @@ export async function executeBulkImport(
     try {
       await triggerAutoRulesForTasks(pairs, ideaId);
     } catch (err) {
-      console.error("Auto-rule trigger failed:", err);
+      logger.error("Auto-rule trigger failed during bulk import", { error: err instanceof Error ? err.message : String(err), ideaId });
     }
   }
 
@@ -969,7 +970,7 @@ export async function insertTasksSequentially(
         details: null,
       })
       .then(({ error }) => {
-        if (error) console.error("Activity log failed:", error.message);
+        if (error) logger.error("Activity log failed", { error: error.message });
       });
 
     created++;
@@ -986,7 +987,7 @@ export async function insertTasksSequentially(
     try {
       await triggerAutoRulesForTasks(autoRulePairs, ideaId);
     } catch (err) {
-      console.error("Auto-rule trigger failed:", err);
+      logger.error("Auto-rule trigger failed during sequential import", { error: err instanceof Error ? err.message : String(err), ideaId });
     }
   }
 
