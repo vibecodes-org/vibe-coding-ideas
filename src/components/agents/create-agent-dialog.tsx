@@ -24,12 +24,14 @@ import { cn, getInitials } from "@/lib/utils";
 import type { StructuredPromptFields } from "@/lib/prompt-builder";
 
 const TEMPLATE_CHIPS: { role: string; icon: string }[] = [
-  { role: "Developer", icon: "\u{1F4BB}" },
+  { role: "Full Stack Engineer", icon: "\u{1F4BB}" },
+  { role: "Front End Engineer", icon: "\u{1F310}" },
   { role: "UX Designer", icon: "\u{1F3A8}" },
-  { role: "QA Tester", icon: "\u{1F50D}" },
+  { role: "QA Engineer", icon: "\u{1F50D}" },
+  { role: "DevOps Engineer", icon: "\u{2699}" },
+  { role: "Security Engineer", icon: "\u{1F6E1}" },
   { role: "Product Owner", icon: "\u{1F4CB}" },
   { role: "Business Analyst", icon: "\u{1F4CA}" },
-  { role: "DevOps", icon: "\u{2699}" },
 ];
 
 interface CreateAgentDialogProps {
@@ -277,7 +279,7 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
           {/* Template picker chips */}
           <div className="space-y-2">
             <Label className="text-xs">Start from a template</Label>
-            <div className="grid grid-cols-3 gap-1.5">
+            <div className="grid grid-cols-4 gap-1.5">
               {TEMPLATE_CHIPS.map((t) => (
                 <button
                   key={t.role}
@@ -303,10 +305,10 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
             <RoleCombobox
               value={role}
               onChange={setRole}
-              placeholder="e.g. Developer, QA Tester"
+              placeholder="e.g. Full Stack Engineer, QA Engineer"
               maxLength={50}
               showHelperText
-              helperText="Used to auto-assign workflow steps. Use short roles like &ldquo;Developer&rdquo; or &ldquo;QA&rdquo;."
+              helperText="Used to auto-assign workflow steps. Use roles that match your workflow template steps."
             />
           </div>
 

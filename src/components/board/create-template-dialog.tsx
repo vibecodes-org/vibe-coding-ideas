@@ -21,7 +21,7 @@ import type { WorkflowTemplateStep } from "@/types/database";
 
 const DEFAULT_STEP: WorkflowTemplateStep = {
   title: "",
-  role: "Dev",
+  role: "",
   requires_approval: false,
   deliverables: [],
 };

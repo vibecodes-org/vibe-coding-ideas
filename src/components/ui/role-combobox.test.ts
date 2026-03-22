@@ -194,11 +194,10 @@ describe("buildSuggestions", () => {
       ...result.mine.map((r) => r.role),
       ...result.standard.map((r) => r.role),
     ];
-    // "Developer" and "DevOps" contain "dev"
-    expect(allRoles).toContain("Developer");
-    expect(allRoles).toContain("DevOps");
-    // "QA Tester" does not contain "dev"
-    expect(allRoles).not.toContain("QA Tester");
+    // "DevOps Engineer" contains "dev"
+    expect(allRoles).toContain("DevOps Engineer");
+    // "QA Engineer" does not contain "dev"
+    expect(allRoles).not.toContain("QA Engineer");
   });
 
   it("shows all suggestions when filter text is empty", () => {
@@ -225,23 +224,23 @@ describe("buildSuggestions", () => {
     expect(result.pool[0].role).toBe("QA Lead");
     expect(result.mine).toHaveLength(1);
     expect(result.mine[0].role).toBe("QA Automation");
-    // Standard "QA Tester" should also match
-    expect(result.standard.map((r) => r.role)).toContain("QA Tester");
+    // Standard "QA Engineer" should also match
+    expect(result.standard.map((r) => r.role)).toContain("QA Engineer");
     // "Developer" should be filtered out
     expect(result.mine.map((r) => r.role)).not.toContain("Developer");
   });
 
   it("deduplication still works with filter applied", () => {
     const pool: RoleSuggestion[] = [
-      { role: "Developer", source: "pool", agentName: "Atlas" },
+      { role: "Full Stack Engineer", source: "pool", agentName: "Atlas" },
     ];
-    const result = buildSuggestions(pool, [], false, "dev");
+    const result = buildSuggestions(pool, [], false, "engineer");
 
-    // "Developer" in pool matches filter
+    // "Full Stack Engineer" in pool matches filter
     expect(result.pool).toHaveLength(1);
-    // Standard "Developer" should be deduped (even though it matches filter)
-    expect(result.standard.map((r) => r.role)).not.toContain("Developer");
-    // Standard "DevOps" should still appear
-    expect(result.standard.map((r) => r.role)).toContain("DevOps");
+    // Standard "Full Stack Engineer" should be deduped (even though it matches filter)
+    expect(result.standard.map((r) => r.role)).not.toContain("Full Stack Engineer");
+    // Standard "DevOps Engineer" should still appear
+    expect(result.standard.map((r) => r.role)).toContain("DevOps Engineer");
   });
 });

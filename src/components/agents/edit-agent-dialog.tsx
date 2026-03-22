@@ -202,10 +202,10 @@ export function EditAgentDialog({ bot, open, onOpenChange }: EditAgentDialogProp
             <RoleCombobox
               value={role}
               onChange={setRole}
-              placeholder="e.g. Developer"
+              placeholder="e.g. Full Stack Engineer"
               maxLength={50}
               showHelperText
-              helperText="Used to auto-assign workflow steps. Use short roles like &ldquo;Developer&rdquo; or &ldquo;QA&rdquo;."
+              helperText="Used to auto-assign workflow steps. Use roles that match your workflow template steps."
             />
           </div>
 
