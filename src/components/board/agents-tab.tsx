@@ -45,6 +45,8 @@ interface AgentStats {
 interface RoleCoverage {
   role: string;
   covered: boolean;
+  matchedAgentName: string | null;
+  matchedAgentRole: string | null;
 }
 
 export function AgentsTab({
@@ -133,11 +135,22 @@ export function AgentsTab({
         .map((a) => ({ botId: a.bot_id, role: a.bot.role! }));
       const matcher = buildRoleMatcher(agentCandidates);
 
+      // Build a botId → agent details lookup
+      const agentLookup = new Map(
+        ideaAgentDetails.map((a) => [a.bot_id, { name: a.bot?.name ?? "Unknown", role: a.bot?.role ?? "Agent" }])
+      );
+
       const coverage: RoleCoverage[] = Array.from(templateRoles).map(
-        (role) => ({
-          role,
-          covered: matcher(role).tier !== "none",
-        })
+        (role) => {
+          const match = matcher(role);
+          const agent = match.botId ? agentLookup.get(match.botId) : null;
+          return {
+            role,
+            covered: match.tier !== "none",
+            matchedAgentName: agent?.name ?? null,
+            matchedAgentRole: agent?.role ?? null,
+          };
+        }
       );
 
       // Sort: uncovered first, then alphabetical
@@ -325,6 +338,13 @@ export function AgentsTab({
                   <AlertTriangle className="h-3 w-3" />
                 )}
                 {rc.role}
+                {rc.covered && rc.matchedAgentName ? (
+                  <span className="text-muted-foreground font-normal">
+                    &rarr; {rc.matchedAgentName} ({rc.matchedAgentRole})
+                  </span>
+                ) : !rc.covered ? (
+                  <span className="font-normal">— no agent</span>
+                ) : null}
               </Badge>
             ))}
           </div>
