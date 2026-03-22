@@ -92,8 +92,8 @@ export function AdminTemplatesDashboard({ templates, onRefresh }: AdminTemplates
       </div>
 
       {/* Table */}
-      <div className="max-h-[500px] overflow-y-auto rounded-lg border">
-        <Table>
+      <div className="max-h-[500px] overflow-auto rounded-lg border">
+        <Table className="table-fixed w-full">
           <TableHeader>
             <TableRow>
               <TableHead className="w-[180px]">Name</TableHead>
