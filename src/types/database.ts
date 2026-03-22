@@ -35,6 +35,7 @@ export type Database = {
           };
           default_board_columns: { title: string; is_done_column: boolean }[] | null;
           is_admin: boolean;
+          is_super_admin: boolean;
           is_bot: boolean;
           ai_enabled: boolean;
           encrypted_anthropic_key: string | null;
@@ -68,6 +69,7 @@ export type Database = {
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           is_admin?: boolean;
+          is_super_admin?: boolean;
           is_bot?: boolean;
           ai_enabled?: boolean;
           encrypted_anthropic_key?: string | null;
@@ -101,6 +103,7 @@ export type Database = {
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           is_admin?: boolean;
+          is_super_admin?: boolean;
           is_bot?: boolean;
           ai_enabled?: boolean;
           encrypted_anthropic_key?: string | null;

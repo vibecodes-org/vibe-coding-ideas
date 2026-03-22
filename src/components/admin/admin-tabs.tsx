@@ -14,6 +14,7 @@ import type { BotProfile, FeaturedTeamWithAgents, WorkflowLibraryTemplate } from
 
 interface AdminTabsProps {
   activeTab: string;
+  isSuperAdmin: boolean;
   usageLogs: UsageLogWithUser[];
   usageFilters: { from: string; to: string; action: string; source: string };
   feedback: FeedbackWithUser[];
@@ -31,6 +32,7 @@ interface AdminTabsProps {
 
 export function AdminTabs({
   activeTab,
+  isSuperAdmin,
   usageLogs,
   usageFilters,
   feedback,
@@ -77,7 +79,7 @@ export function AdminTabs({
         <TabsTrigger value="mcp-tools">MCP Tools</TabsTrigger>
       </TabsList>
       <TabsContent value="ai-usage" className="mt-6">
-        <AiUsageDashboard usageLogs={usageLogs} filters={usageFilters} userCredits={userCredits} allPlatformLogs={allPlatformLogs} />
+        <AiUsageDashboard usageLogs={usageLogs} filters={usageFilters} userCredits={userCredits} allPlatformLogs={allPlatformLogs} isSuperAdmin={isSuperAdmin} />
       </TabsContent>
       <TabsContent value="feedback" className="mt-6">
         <FeedbackDashboard feedback={feedback} filters={feedbackFilters} />

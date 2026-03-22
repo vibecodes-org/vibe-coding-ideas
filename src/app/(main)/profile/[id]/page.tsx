@@ -144,6 +144,7 @@ export default async function ProfilePage({ params }: PageProps) {
   // Get current user's votes and admin status
   let userVotes: string[] = [];
   let isCurrentUserAdmin = false;
+  let isCurrentUserSuperAdmin = false;
   if (currentUser) {
     const { data: votes } = await supabase
       .from("votes")
@@ -153,10 +154,11 @@ export default async function ProfilePage({ params }: PageProps) {
 
     const { data: adminCheck } = await supabase
       .from("users")
-      .select("is_admin")
+      .select("is_admin, is_super_admin")
       .eq("id", currentUser.id)
       .single();
     isCurrentUserAdmin = adminCheck?.is_admin ?? false;
+    isCurrentUserSuperAdmin = adminCheck?.is_super_admin ?? false;
   }
 
   // Fetch task counts for displayed ideas
@@ -176,7 +178,7 @@ export default async function ProfilePage({ params }: PageProps) {
   }
 
   const showDeleteButton =
-    isCurrentUserAdmin &&
+    isCurrentUserSuperAdmin &&
     currentUser?.id !== id &&
     !profileUser.is_admin;
 

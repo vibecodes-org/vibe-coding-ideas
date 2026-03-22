@@ -16,14 +16,14 @@ export async function grantStarterCredits(userId: string, credits: number) {
 
   if (!user) throw new Error("Not authenticated");
 
-  // Verify admin
+  // Verify super admin
   const { data: profile } = await supabase
     .from("users")
-    .select("is_admin")
+    .select("is_super_admin")
     .eq("id", user.id)
     .single();
 
-  if (!profile?.is_admin) throw new Error("Admin access required");
+  if (!profile?.is_super_admin) throw new Error("Super admin access required");
 
   const { error } = await supabase.rpc("grant_starter_credits", {
     p_user_id: userId,

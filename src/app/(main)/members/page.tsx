@@ -26,13 +26,14 @@ export default async function MembersPage({
   const page = Math.max(1, parseInt(params.page || "1", 10));
   const { user, supabase } = await requireAuth();
 
-  // Check if current user is admin
+  // Check if current user is admin / super admin
   const { data: profile } = await supabase
     .from("users")
-    .select("is_admin")
+    .select("is_admin, is_super_admin")
     .eq("id", user.id)
     .single();
   const isAdmin = profile?.is_admin ?? false;
+  const isSuperAdmin = profile?.is_super_admin ?? false;
 
   // Build query — exclude bots
   let query = supabase
@@ -105,6 +106,7 @@ export default async function MembersPage({
         currentPage={page}
         totalPages={totalPages}
         isAdmin={isAdmin}
+        isSuperAdmin={isSuperAdmin}
         currentUserId={user?.id}
       />
     </div>

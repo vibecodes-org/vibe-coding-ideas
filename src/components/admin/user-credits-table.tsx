@@ -33,6 +33,7 @@ import type { PlatformLogEntry, UserCreditInfo } from "@/app/(main)/admin/page";
 interface UserCreditsTableProps {
   userCredits: UserCreditInfo[];
   allPlatformLogs: PlatformLogEntry[];
+  isSuperAdmin: boolean;
 }
 
 interface UserStats {
@@ -42,7 +43,7 @@ interface UserStats {
   creditsUsed: number;
 }
 
-export function UserCreditsTable({ userCredits, allPlatformLogs }: UserCreditsTableProps) {
+export function UserCreditsTable({ userCredits, allPlatformLogs, isSuperAdmin }: UserCreditsTableProps) {
   const router = useRouter();
 
   // Compute per-user platform stats from all-time platform logs (unfiltered)
@@ -107,7 +108,7 @@ export function UserCreditsTable({ userCredits, allPlatformLogs }: UserCreditsTa
               <TableHead className="text-right">Platform Calls</TableHead>
               <TableHead className="text-right">Est. Cost</TableHead>
               <TableHead>Key Type</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
+              {isSuperAdmin && <TableHead className="text-right">Actions</TableHead>}
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -155,13 +156,15 @@ export function UserCreditsTable({ userCredits, allPlatformLogs }: UserCreditsTa
                       </Badge>
                     )}
                   </TableCell>
-                  <TableCell className="text-right">
-                    <GrantCreditsButton
-                      userId={user.id}
-                      userName={user.full_name ?? user.email}
-                      onGranted={() => router.refresh()}
-                    />
-                  </TableCell>
+                  {isSuperAdmin && (
+                    <TableCell className="text-right">
+                      <GrantCreditsButton
+                        userId={user.id}
+                        userName={user.full_name ?? user.email}
+                        onGranted={() => router.refresh()}
+                      />
+                    </TableCell>
+                  )}
                 </TableRow>
               );
             })}

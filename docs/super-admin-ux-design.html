@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Super Admin Role — UX Design</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #1e1e1e;
+      --border: #2a2a2a;
+      --text: #e4e4e7;
+      --text-muted: #a1a1aa;
+      --accent: #a78bfa;
+      --green: #4ade80;
+      --amber: #fbbf24;
+      --red: #f87171;
+      --blue: #60a5fa;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.25rem; margin: 2rem 0 0.75rem; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+    h3 { font-size: 1rem; margin: 1.25rem 0 0.5rem; }
+    p, li { color: var(--text-muted); font-size: 0.9rem; }
+    p { margin-bottom: 0.75rem; }
+    ul { padding-left: 1.5rem; margin-bottom: 1rem; }
+    li { margin-bottom: 0.35rem; }
+    .meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 2rem; }
+    .badge { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+    .badge-security { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+    .badge-ux { background: rgba(167, 139, 250, 0.15); color: var(--accent); }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    .note {
+      background: rgba(96, 165, 250, 0.08);
+      border-left: 3px solid var(--blue);
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+    }
+    .decision {
+      background: rgba(251, 191, 36, 0.08);
+      border-left: 3px solid var(--amber);
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      margin-bottom: 1rem;
+      font-size: 0.85rem;
+    }
+    code {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      color: var(--green);
+      font-size: 0.85rem;
+    }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 1rem; font-size: 0.85rem; }
+    th, td { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); }
+    th { color: var(--text); font-weight: 600; }
+    td { color: var(--text-muted); }
+    .mockup {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.5rem;
+      margin-bottom: 1rem;
+      position: relative;
+    }
+    .mockup-label {
+      position: absolute;
+      top: -10px;
+      left: 12px;
+      background: var(--surface-2);
+      padding: 0 8px;
+      font-size: 0.7rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+    }
+    .btn {
+      display: inline-block;
+      padding: 0.4rem 0.8rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      cursor: default;
+    }
+    .btn-destructive { background: rgba(248, 113, 113, 0.15); color: var(--red); border-color: rgba(248, 113, 113, 0.3); }
+    .btn-muted { background: var(--surface); color: var(--text-muted); }
+    .btn-disabled { opacity: 0.4; }
+    .member-row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      padding: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .member-info { flex: 1; }
+    .member-name { font-size: 0.9rem; color: var(--text); }
+    .member-email { font-size: 0.75rem; color: var(--text-muted); }
+    .admin-badge {
+      display: inline-block;
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      font-size: 0.65rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-left: 0.5rem;
+    }
+    .admin-badge-admin { background: rgba(167, 139, 250, 0.15); color: var(--accent); }
+    .admin-badge-super { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+    .credits-row {
+      display: grid;
+      grid-template-columns: 2fr 1fr 1fr 1fr;
+      gap: 0.5rem;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      align-items: center;
+      font-size: 0.85rem;
+    }
+    .hidden-action { color: var(--text-muted); font-style: italic; font-size: 0.8rem; }
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .comparison > div { min-width: 0; }
+    .comparison h4 { font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem; }
+    .comparison .before h4 { color: var(--red); }
+    .comparison .after h4 { color: var(--green); }
+    @media (max-width: 640px) {
+      .comparison { grid-template-columns: 1fr; }
+      body { padding: 1rem; }
+      .credits-row { grid-template-columns: 1fr 1fr; }
+    }
+  </style>
+</head>
+<body>
+
+  <h1>Super Admin Role — UX Design</h1>
+  <p class="meta">
+    <span class="badge badge-security">Security</span>
+    <span class="badge badge-ux">UX Design</span>
+    &mdash; Building on Requirements from Product Owner
+  </p>
+
+  <h2>1. Design Principles</h2>
+  <div class="card">
+    <ul>
+      <li><strong>Invisible when irrelevant</strong> &mdash; regular admins should not see disabled buttons or locked-out UI. Destructive actions simply don't appear.</li>
+      <li><strong>No new badge</strong> &mdash; no "Super Admin" badge in the UI. The distinction is internal/security only. Both admin types see the same "Admin" badge.</li>
+      <li><strong>Graceful degradation</strong> &mdash; if a regular admin somehow reaches a super-admin action (direct API call), the server action returns a clear error message.</li>
+      <li><strong>Minimal surface change</strong> &mdash; only 3 UI touchpoints change. Everything else stays identical.</li>
+    </ul>
+  </div>
+
+  <h2>2. Affected Screens</h2>
+
+  <h3>2a. Member Card (member-card.tsx)</h3>
+  <p>Building on Requirements R3: Delete user buttons hidden for non-super-admins.</p>
+
+  <div class="comparison">
+    <div class="before">
+      <h4>Before (any admin)</h4>
+      <div class="mockup">
+        <div class="member-row">
+          <div class="avatar">DR</div>
+          <div class="member-info">
+            <div class="member-name">Damian R</div>
+            <div class="member-email">damian@example.com</div>
+          </div>
+        </div>
+        <div style="padding: 0.5rem 0.75rem;">
+          <span class="btn btn-destructive">Delete User</span>
+        </div>
+      </div>
+    </div>
+    <div class="after">
+      <h4>After (regular admin)</h4>
+      <div class="mockup">
+        <div class="member-row">
+          <div class="avatar">DR</div>
+          <div class="member-info">
+            <div class="member-name">Damian R</div>
+            <div class="member-email">damian@example.com</div>
+          </div>
+        </div>
+        <div style="padding: 0.5rem 0.75rem;">
+          <span class="hidden-action">&mdash; no delete button &mdash;</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="decision">
+    <strong>Design decision:</strong> The delete button is completely removed from the DOM, not just visually hidden or disabled. This matches the existing pattern where non-admins never see the button at all.
+  </div>
+
+  <h3>2b. Profile Page (profile/[id]/page.tsx)</h3>
+  <p>Same change as member card — delete button only renders for super admins.</p>
+
+  <div class="note">
+    <strong>Prop change:</strong> <code>isAdmin</code> prop stays for general admin features. Add <code>isSuperAdmin</code> prop for delete-gating. Both are fetched in the same query: <code>.select("is_admin, is_super_admin")</code>
+  </div>
+
+  <h3>2c. Admin Credits Tab (user-credits-table.tsx)</h3>
+  <p>Building on Requirements R3: hide grant form for non-super-admins, keep table read-only.</p>
+
+  <div class="comparison">
+    <div class="before">
+      <h4>Before (any admin)</h4>
+      <div class="mockup">
+        <div class="mockup-label">Credits Tab</div>
+        <div class="credits-row" style="font-weight: 600; color: var(--text);">
+          <span>User</span>
+          <span>Credits</span>
+          <span>Platform Calls</span>
+          <span>Actions</span>
+        </div>
+        <div class="credits-row">
+          <span>Damian R</span>
+          <span>8</span>
+          <span>2</span>
+          <span><span class="btn" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">Grant Credits</span></span>
+        </div>
+        <div class="credits-row">
+          <span>Jane S</span>
+          <span>10</span>
+          <span>0</span>
+          <span><span class="btn" style="font-size: 0.7rem; padding: 0.2rem 0.5rem;">Grant Credits</span></span>
+        </div>
+      </div>
+    </div>
+    <div class="after">
+      <h4>After (regular admin)</h4>
+      <div class="mockup">
+        <div class="mockup-label">Credits Tab</div>
+        <div class="credits-row" style="font-weight: 600; color: var(--text);">
+          <span>User</span>
+          <span>Credits</span>
+          <span>Platform Calls</span>
+          <span>&nbsp;</span>
+        </div>
+        <div class="credits-row">
+          <span>Damian R</span>
+          <span>8</span>
+          <span>2</span>
+          <span>&nbsp;</span>
+        </div>
+        <div class="credits-row">
+          <span>Jane S</span>
+          <span>10</span>
+          <span>0</span>
+          <span>&nbsp;</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="decision">
+    <strong>Design decision:</strong> The "Actions" column header and grant buttons are completely omitted for regular admins. The table remains fully visible as read-only &mdash; regular admins can still monitor credit usage and platform costs. No tooltip or "locked" indicator needed.
+  </div>
+
+  <h2>3. Unchanged Screens</h2>
+
+  <table>
+    <thead>
+      <tr><th>Screen</th><th>Current Behaviour</th><th>Change?</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>Admin page access (<code>/admin</code>)</td><td>Redirect non-admins to /dashboard</td><td>No change &mdash; regular admins keep access</td></tr>
+      <tr><td>Admin tabs (AI, Feedback, Agents, Teams, Workflows, MCP, Credits)</td><td>All visible to admins</td><td>No change &mdash; all tabs stay visible</td></tr>
+      <tr><td>Admin badge in navbar/profile</td><td>Shows "Admin" for is_admin users</td><td>No change &mdash; no "Super Admin" badge</td></tr>
+      <tr><td>Agent CRUD</td><td>Admin-only</td><td>No change</td></tr>
+      <tr><td>Team CRUD</td><td>Admin-only</td><td>No change</td></tr>
+      <tr><td>Template CRUD</td><td>Admin-only</td><td>No change</td></tr>
+      <tr><td>Feedback management</td><td>Admin-only</td><td>No change</td></tr>
+      <tr><td>Idea/discussion moderation</td><td>Admin-only</td><td>No change</td></tr>
+    </tbody>
+  </table>
+
+  <h2>4. Data Flow</h2>
+
+  <div class="card">
+    <h3>Query changes</h3>
+    <p>Three places currently query <code>.select("is_admin")</code> for the current user. These need to also fetch <code>is_super_admin</code>:</p>
+    <ul>
+      <li><code>src/app/(main)/members/page.tsx</code> &mdash; passes <code>isSuperAdmin</code> to <code>MemberDirectory</code> &rarr; <code>MemberCard</code></li>
+      <li><code>src/app/(main)/profile/[id]/page.tsx</code> &mdash; uses <code>isSuperAdmin</code> for delete button guard</li>
+      <li><code>src/app/(main)/admin/page.tsx</code> &mdash; passes <code>isSuperAdmin</code> to <code>AdminTabs</code> &rarr; <code>UserCreditsTable</code></li>
+    </ul>
+  </div>
+
+  <div class="card">
+    <h3>Prop threading</h3>
+    <table>
+      <thead>
+        <tr><th>Component</th><th>New Prop</th><th>Used For</th></tr>
+      </thead>
+      <tbody>
+        <tr><td><code>MemberDirectory</code></td><td><code>isSuperAdmin: boolean</code></td><td>Forwards to MemberCard</td></tr>
+        <tr><td><code>MemberCard</code></td><td><code>isSuperAdmin: boolean</code></td><td>Gates delete button</td></tr>
+        <tr><td><code>AdminTabs</code></td><td><code>isSuperAdmin: boolean</code></td><td>Forwards to UserCreditsTable</td></tr>
+        <tr><td><code>UserCreditsTable</code></td><td><code>isSuperAdmin: boolean</code></td><td>Gates grant credits column</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>5. Error States</h2>
+
+  <div class="card">
+    <h3>Server-side rejection</h3>
+    <p>If a regular admin somehow calls <code>deleteUser</code> or <code>grantStarterCredits</code> directly (e.g. via curl or manipulated form):</p>
+    <ul>
+      <li>Server action returns <code>throw new Error("Super admin access required")</code></li>
+      <li>RPC returns <code>RAISE EXCEPTION 'Super admin privileges required'</code></li>
+      <li>UI shows toast error via existing catch block patterns</li>
+    </ul>
+    <p>No special error UI needed &mdash; existing error handling covers this.</p>
+  </div>
+
+  <h2>6. Accessibility Checklist</h2>
+
+  <table>
+    <thead>
+      <tr><th>Check</th><th>Status</th></tr>
+    </thead>
+    <tbody>
+      <tr><td>No disabled buttons (removed entirely instead)</td><td style="color: var(--green);">Pass</td></tr>
+      <tr><td>No new visual patterns introduced</td><td style="color: var(--green);">Pass</td></tr>
+      <tr><td>Read-only table still keyboard navigable</td><td style="color: var(--green);">Pass (no change)</td></tr>
+      <tr><td>Screen readers not affected (elements removed, not aria-hidden)</td><td style="color: var(--green);">Pass</td></tr>
+      <tr><td>No colour-only distinction between admin levels</td><td style="color: var(--green);">Pass (no badge difference)</td></tr>
+    </tbody>
+  </table>
+
+</body>
+</html>

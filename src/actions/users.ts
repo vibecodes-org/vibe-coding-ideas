@@ -13,15 +13,15 @@ export async function deleteUser(userId: string) {
     throw new Error("Not authenticated");
   }
 
-  // Verify caller is admin
+  // Verify caller is super admin
   const { data: callerProfile } = await supabase
     .from("users")
-    .select("is_admin")
+    .select("is_super_admin")
     .eq("id", user.id)
     .single();
 
-  if (!callerProfile?.is_admin) {
-    throw new Error("Not authorized: only admins can delete users");
+  if (!callerProfile?.is_super_admin) {
+    throw new Error("Not authorized: only super admins can delete users");
   }
 
   // Prevent deleting self

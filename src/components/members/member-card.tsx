@@ -9,10 +9,11 @@ import type { MemberWithCounts } from "./member-directory";
 interface MemberCardProps {
   member: MemberWithCounts;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   isCurrentUser: boolean;
 }
 
-export function MemberCard({ member, isAdmin, isCurrentUser }: MemberCardProps) {
+export function MemberCard({ member, isAdmin, isSuperAdmin, isCurrentUser }: MemberCardProps) {
   const initials = getInitials(member.full_name);
 
   const joinDate = new Date(member.created_at).toLocaleDateString("en-GB", {
@@ -20,7 +21,7 @@ export function MemberCard({ member, isAdmin, isCurrentUser }: MemberCardProps) 
     year: "numeric",
   });
 
-  const canDelete = isAdmin && !isCurrentUser && !member.is_admin;
+  const canDelete = isSuperAdmin && !isCurrentUser && !member.is_admin;
 
   return (
     <Link

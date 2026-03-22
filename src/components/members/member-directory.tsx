@@ -40,6 +40,7 @@ interface MemberDirectoryProps {
   currentPage: number;
   totalPages: number;
   isAdmin: boolean;
+  isSuperAdmin: boolean;
   currentUserId?: string;
 }
 
@@ -50,6 +51,7 @@ export function MemberDirectory({
   currentPage,
   totalPages,
   isAdmin,
+  isSuperAdmin,
   currentUserId,
 }: MemberDirectoryProps) {
   const router = useRouter();
@@ -160,6 +162,7 @@ export function MemberDirectory({
               key={member.id}
               member={member}
               isAdmin={isAdmin}
+              isSuperAdmin={isSuperAdmin}
               isCurrentUser={member.id === currentUserId}
             />
           ))}

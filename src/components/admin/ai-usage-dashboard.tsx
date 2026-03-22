@@ -33,6 +33,7 @@ interface AiUsageDashboardProps {
   filters: { from: string; to: string; action: string; source: string };
   userCredits: UserCreditInfo[];
   allPlatformLogs: PlatformLogEntry[];
+  isSuperAdmin: boolean;
 }
 
 const ACTION_LABELS: Record<string, string> = {
@@ -52,6 +53,7 @@ export function AiUsageDashboard({
   filters,
   userCredits,
   allPlatformLogs,
+  isSuperAdmin,
 }: AiUsageDashboardProps) {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -264,7 +266,7 @@ export function AiUsageDashboard({
       </div>
 
       {/* User Credits & Platform Costs — all-time, not affected by filters */}
-      <UserCreditsTable userCredits={userCredits} allPlatformLogs={allPlatformLogs} />
+      <UserCreditsTable userCredits={userCredits} allPlatformLogs={allPlatformLogs} isSuperAdmin={isSuperAdmin} />
     </div>
   );
 }
