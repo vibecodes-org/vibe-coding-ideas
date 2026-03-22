@@ -72,10 +72,11 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - **Step Comments**: `workflow_step_comments` for inter-agent communication (types: comment, output, failure, approval, changes_requested)
 - **Claude Code as Orchestrator**: No designated orchestrator agent — Claude Code reads steps via `claim_next_step`, assumes agent personas per step's `agent_role`, executes, calls `complete_step`, loops
 - **Claim tracking**: `claimed_by` column on `task_workflow_steps` tracks who actually claimed/executed the step; `bot_id` preserves the pre-matched agent from template application. `claim_next_step` sets `claimed_by` (not `bot_id`), returns `bot_id` + `available_agents` for client-side identity switching via `set_agent_identity`
-- **Role-based Auto-Matching**: When applying a template, agents from the idea's pool are auto-matched to steps by role (case-insensitive)
-- **Template Library**: `workflow_library_templates` DB table (admin-managed) — seeded with 7 built-in templates; admin CRUD via `/admin?tab=templates` (`AdminTemplatesDashboard` + `TemplateEditorDialog`); `ImportTemplateLibraryDialog` fetches active templates from DB; RLS: all authenticated SELECT, admin-only write
-- **Board UI**: `BoardPageTabs` wraps board in tabs (Board / Workflows); `WorkflowsTab` for template CRUD + auto-rules + library import + onboarding guidance; `CreateTemplateDialog` for new templates; `TaskWorkflowSection` in task detail dialog shows live workflow steps with status badges, progress bar, realtime updates, inline approve/retry buttons, and "Apply Workflow" CTA when no workflow exists; `StepDetailDialog` shows step description, output, comments, timestamps, and action buttons (start/complete/approve/reject/retry); `getRoleBadgeClasses` shared between components
-- **Identity enforcement**: MCP `complete_step` and `fail_step` tools + `completeWorkflowStep` and `failWorkflowStep` server actions reject calls where `ctx.userId` / `user.id` doesn't match `step.bot_id` (when bot_id is set). Error includes agent name, role, and bot_id for easy `set_agent_identity` retry. Steps with `bot_id = null` are not affected
+- **Role-based Auto-Matching**: When applying a template, agents from the idea's pool are auto-matched to steps by role. Matching uses 3 tiers: (1) exact case-insensitive, (2) AI semantic matching via Claude if user has API key/credits (`matchRolesWithAiOrFuzzy` in `src/lib/ai-role-matching.ts`), (3) fuzzy fallback via `buildRoleMatcher` in `src/lib/role-matching.ts` (substring + word-overlap). AI is only called for roles that don't exact-match, saving credits.
+- **Standard Roles**: 8 core roles defined in `BOT_ROLE_TEMPLATES` (`src/lib/constants.ts`): Full Stack Engineer, Front End Engineer, UX Designer, QA Engineer, DevOps Engineer, Security Engineer, Product Owner, Business Analyst. Used by Create Agent dialog, RoleCombobox suggestions, and workflow library templates.
+- **Template Library**: `workflow_library_templates` DB table (admin-managed) — seeded with 8 built-in templates; admin CRUD via `/admin?tab=templates` (`AdminTemplatesDashboard` + `TemplateEditorDialog`); `ImportTemplateLibraryDialog` fetches active templates from DB; RLS: all authenticated SELECT, admin-only write
+- **Board UI**: `BoardPageTabs` wraps board in tabs (Board / Workflows / Agents); `WorkflowsTab` for template CRUD + auto-rules + library import + onboarding guidance; `AgentsTab` for agent pool grid with per-agent task/step stats, role coverage panel showing agent-role mappings, and add/remove agents; `CreateTemplateDialog` for new templates; `TaskWorkflowSection` in task detail dialog shows live workflow steps with status badges, progress bar, realtime updates, inline approve/retry buttons, and "Apply Workflow" CTA when no workflow exists; `StepDetailDialog` shows step description, output, comments, timestamps, and action buttons (start/complete/approve/reject/retry); `getRoleBadgeClasses` shared between components
+- **Identity enforcement**: MCP `complete_step` and `fail_step` tools + `completeWorkflowStep` and `failWorkflowStep` server actions reject calls where `ctx.userId` / `user.id` doesn't match `step.bot_id` (when bot_id is set). Exception: `awaiting_approval` steps skip the identity check (humans reject those). Error includes agent name, role, and bot_id for easy `set_agent_identity` retry. Steps with `bot_id = null` are not affected
 - **Approval gates**: Both MCP `complete_step` tool and `completeWorkflowStep` server action respect `human_check_required` — routes to `awaiting_approval` instead of `completed`
 - **Cascade rejection**: `failWorkflowStep` server action and MCP `fail_step` tool accept optional `reset_to_step_id` — resets all steps from target onward back to `pending`, enabling reviewers to send work back to any earlier step in the pipeline
 - **Rework instructions**: MCP `claim_next_step` returns `rework_instructions` (previous failure output + `changes_requested` comments) when claiming a step that was previously failed, giving agents context for retry
@@ -162,6 +163,20 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - Credit badge shown on AI Generate button when `!hasByokKey && starterCredits > 0`
 - Admin credits dashboard (`/admin?tab=credits`): view/grant credits via `UserCreditsTable` component
 
+### Structured Logging
+- `src/lib/logger.ts` — thin wrapper with `logger.error()`, `logger.warn()`, `logger.info()`, `logger.debug()`
+- Outputs structured JSON: `{ level, message, context?, timestamp }` to the appropriate console method
+- Log level configurable via `LOG_LEVEL` env var (default: `warn` in production, `debug` in development)
+- All `console.error`/`console.warn` calls migrated to logger (except 4 MCP stdio lifecycle calls in `mcp-server/src/index.ts`)
+
+### MCP Tool Analytics
+- `mcp_tool_log` — raw invocation log (tool_name, user_id, duration_ms, is_error, mode)
+- `mcp_tool_stats` — daily rollups via pg_cron (call_count, error_count, avg/max_duration per tool per user per day)
+- `instrumentServer()` in `mcp-server/src/instrument.ts` wraps all tool handlers with timing and logging
+- Admin dashboard tab "MCP Tools" (`/admin?tab=mcp-tools`): Recent Activity + Trends views
+- Trends shows Top Tools, Least Used Tools (with never-invoked tools from runtime registry), Per-User Breakdown
+- pg_cron: rollup at 02:00 UTC, cleanup (30-day retention) at 03:00 UTC
+
 ### Validation
 - `src/lib/validation.ts` — all server actions validate before DB ops
 - Limits: title 200, description 50K, comment 5K, discussion body 10K, discussion reply 5K, bio 500, tags 50 chars / 10 max, skills 30 chars / 10 max, team name 200, team description 1K
@@ -169,7 +184,7 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 
 ## Database
 
-37 tables with RLS (`supabase/migrations/`):
+39 tables with RLS (`supabase/migrations/`):
 - **Core**: users, ideas, comments, collaborators, votes, notifications, feedback, idea_attachments
 - **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_task_activity, board_task_comments, board_task_attachments
 - **Workflows**: workflow_templates, workflow_auto_rules, workflow_runs, task_workflow_steps, workflow_step_comments, workflow_library_templates
@@ -177,13 +192,15 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - **Agents**: bot_profiles, idea_agents, agent_votes, featured_teams, featured_team_agents
 - **AI**: ai_usage_log, ai_prompt_templates
 - **MCP/OAuth**: mcp_oauth_clients, mcp_oauth_codes
+- **MCP Analytics**: mcp_tool_log (raw invocations, 30-day retention), mcp_tool_stats (daily rollups via pg_cron)
 - **Collaboration**: collaboration_requests
 
 Key columns:
-- `users.is_bot`, `users.is_admin`, `users.ai_daily_limit` (default 10), `users.ai_enabled`, `users.ai_starter_credits` (default 10, lifetime), `users.default_board_columns`, `users.email_notifications`, `users.active_bot_id`, `users.encrypted_anthropic_key`
+- `users.is_bot`, `users.is_admin`, `users.is_super_admin`, `users.ai_daily_limit` (default 10), `users.ai_enabled`, `users.ai_starter_credits` (default 10, lifetime), `users.default_board_columns`, `users.email_notifications`, `users.active_bot_id`, `users.encrypted_anthropic_key`
 - `ideas.visibility` (public/private) enforced by RLS
 - Denormalized counts on ideas (upvotes, comment_count, collaborator_count, discussion_count, attachment_count) via triggers
-- `admin_delete_user` RPC cascades from auth.users; `admin_delete_bot_user` + `admin_update_bot_user` RPCs for admin agent management
+- `admin_delete_user` RPC cascades from auth.users (requires `is_super_admin`); `grant_starter_credits` RPC (requires `is_super_admin`); `admin_delete_bot_user` + `admin_update_bot_user` RPCs for admin agent management
+- `is_super_admin` separates destructive user-management (delete users, grant credits, modify privilege fields) from general admin access. Regular admins keep dashboard access, agent/team/template CRUD, feedback management
 - Board tables use `is_idea_team_member()` RLS function
 
 ## Server Actions (src/actions/)
@@ -262,7 +279,7 @@ See `docs/release-process.md` for full details.
 
 ## MCP Server
 
-Two modes sharing 79 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI:
+Two modes sharing 77 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI. Tool names auto-discovered at runtime via `getRegisteredToolNames()` in `register-tools.ts` (used by admin MCP Tools dashboard):
 - **Local (stdio)**: `mcp-server/src/index.ts` — service-role client, bypasses RLS
 - **Remote (HTTP)**: `src/app/api/mcp/[[...transport]]/route.ts` — OAuth 2.1 + PKCE, per-user RLS
 
@@ -282,7 +299,7 @@ Auto-inject `idea_id` into MCP tool calls from `.vibecodes/config.json`.
 
 ## Testing Convention
 
-Write tests for all new pure logic, validators, parsers, utilities. Tests co-located as `*.test.ts`. Component changes verified via build + manual testing. Currently 24 unit test files (19 in `src/` + 5 in `mcp-server/src/`) and 43 E2E spec files across 21 directories.
+Write tests for all new pure logic, validators, parsers, utilities. Tests co-located as `*.test.ts`. Component changes verified via build + manual testing. Currently 34 unit test files and 43 E2E spec files across 21 directories.
 
 ### E2E Test Conventions
 - Shared constants in `e2e/fixtures/constants.ts`: `EXPECT_TIMEOUT` (15s)
