@@ -264,12 +264,13 @@ export async function failWorkflowStep(
   // Pre-fetch step for identity enforcement
   const { data: existing } = await supabase
     .from("task_workflow_steps")
-    .select("bot_id, agent_role")
+    .select("bot_id, agent_role, status")
     .eq("id", stepId)
     .single();
 
   // Identity guard: reject if caller doesn't match the pre-matched agent
-  if (existing?.bot_id && user.id !== existing.bot_id) {
+  // Skip for awaiting_approval steps — humans reject those regardless of bot_id
+  if (existing?.bot_id && existing.status !== "awaiting_approval" && user.id !== existing.bot_id) {
     throw new Error(
       `Identity mismatch: this step is assigned to a different agent (${existing.agent_role ?? "unknown"}). ` +
       `Switch identity before failing this step.`

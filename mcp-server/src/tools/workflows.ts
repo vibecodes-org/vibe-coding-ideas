@@ -622,17 +622,18 @@ export async function failStep(
   ctx: McpContext,
   params: z.infer<typeof failStepSchema>
 ) {
-  // Fetch current step to get run_id, step_order, and bot_id for identity check
+  // Fetch current step to get run_id, step_order, status, and bot_id for identity check
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order, idea_id, bot_id, agent_role")
+    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status")
     .eq("id", params.step_id)
     .single();
 
   if (fetchError || !step) throw new Error(`Step not found: ${params.step_id}`);
 
   // Identity guard: reject if caller doesn't match the pre-matched agent
-  if (step.bot_id && ctx.userId !== step.bot_id) {
+  // Skip for awaiting_approval steps — humans reject those regardless of bot_id
+  if (step.bot_id && step.status !== "awaiting_approval" && ctx.userId !== step.bot_id) {
     const { data: agent } = await ctx.supabase
       .from("bot_profiles")
       .select("name, role")
