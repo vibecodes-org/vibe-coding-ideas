@@ -693,6 +693,7 @@ export async function failStep(
         .from("task_workflow_steps")
         .select("id, output, claimed_by")
         .eq("run_id", step.run_id)
+        .neq("id", params.step_id)
         .gte("step_order", targetStep.step_order ?? 0)
         .not("output", "is", null);
 
