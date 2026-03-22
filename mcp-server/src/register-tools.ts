@@ -208,6 +208,14 @@ function errorResult(error: unknown) {
   };
 }
 
+/** Returns all MCP tool names by running registerTools with a stub server. */
+export function getRegisteredToolNames(): string[] {
+  const names: string[] = [];
+  const stub = { tool: (name: string) => { names.push(name); } };
+  registerTools(stub as AnyMcpServer, (() => { throw new Error("stub"); }) as never);
+  return names;
+}
+
 export function registerTools(
   server: AnyMcpServer,
   getContext: (extra: ServerExtra) => McpContext | Promise<McpContext>,

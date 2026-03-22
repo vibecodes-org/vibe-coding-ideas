@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { AdminTabs } from "@/components/admin/admin-tabs";
 import { VIBECODES_USER_ID } from "@/lib/constants";
-import { ALL_MCP_TOOL_NAMES } from "../../../../mcp-server/src/tool-names";
+import { getRegisteredToolNames } from "../../../../mcp-server/src/register-tools";
 import type { BotProfile, FeaturedTeamWithAgents, WorkflowLibraryTemplate } from "@/types";
 import type { Metadata } from "next";
 
@@ -170,7 +170,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
         allPlatformLogs={(allPlatformLogs ?? []) as PlatformLogEntry[]}
         mcpToolLogs={(mcpToolLogs ?? []) as import("@/components/admin/admin-mcp-tools-dashboard").McpToolLogWithUser[]}
         mcpToolStats={(mcpToolStats ?? []) as import("@/components/admin/admin-mcp-tools-dashboard").McpToolStatsRow[]}
-        allMcpToolNames={ALL_MCP_TOOL_NAMES as unknown as string[]}
+        allMcpToolNames={getRegisteredToolNames()}
       />
     </div>
   );
