@@ -8,7 +8,7 @@ import {
   validateWorkflowTemplateSteps,
   validateOptionalDescription,
 } from "@/lib/validation";
-import { buildRoleMatcher } from "@/lib/role-matching";
+import { matchRolesWithAiOrFuzzy } from "@/lib/ai-role-matching";
 import { propagateTemplateEdits } from "@/lib/workflow-helpers";
 
 // ─── Templates ───
@@ -208,24 +208,29 @@ export async function applyWorkflowTemplate(
     throw new Error(runError?.message ?? "Failed to create workflow run");
   }
 
-  // Fetch idea agent pool for auto-matching
+  // Fetch idea agent pool for auto-matching (include name for AI matching)
   const { data: poolAgents } = await supabase
     .from("idea_agents")
-    .select("bot_id, bot_profiles!inner(id, role)")
+    .select("bot_id, bot_profiles!inner(id, name, role)")
     .eq("idea_id", task.idea_id);
 
-  // Build fuzzy role matcher from idea agent pool
+  // Build agent candidates with names for AI role matching
   const candidates = (poolAgents ?? [])
     .map((agent) => {
-      const profile = agent.bot_profiles as unknown as { id: string; role: string | null };
-      return profile?.role ? { botId: agent.bot_id, role: profile.role } : null;
+      const profile = agent.bot_profiles as unknown as { id: string; name: string | null; role: string | null };
+      return profile?.role ? { botId: agent.bot_id, name: profile.name ?? "", role: profile.role } : null;
     })
-    .filter((c): c is { botId: string; role: string } => c !== null);
+    .filter((c): c is { botId: string; name: string; role: string } => c !== null);
 
-  const matchRole = buildRoleMatcher(candidates);
+  // Collect unique step roles for matching
+  const templateSteps = template.steps as WorkflowTemplateStep[];
+  const stepRoles = [...new Set(templateSteps.map((s) => s.role).filter(Boolean))];
+
+  // Match roles using AI (with fuzzy fallback)
+  const roleMatches = await matchRolesWithAiOrFuzzy(supabase, user.id, stepRoles, candidates);
 
   // Create workflow steps from template steps
-  const steps = (template.steps as WorkflowTemplateStep[]).map(
+  const steps = templateSteps.map(
     (step, index) => ({
       task_id: taskId,
       idea_id: task.idea_id,
@@ -238,7 +243,7 @@ export async function applyWorkflowTemplate(
       position: index * 1000,
       step_order: index + 1,
       status: "pending" as const,
-      bot_id: matchRole(step.role).botId,
+      bot_id: step.role ? (roleMatches[step.role] ?? null) : null,
     })
   );
 
@@ -294,25 +299,30 @@ export async function rematchWorkflowAgents(taskId: string) {
 
   if (taskError || !task) throw new Error("Task not found");
 
-  // Fetch idea agent pool
+  // Fetch idea agent pool (include name for AI matching)
   const { data: poolAgents } = await supabase
     .from("idea_agents")
-    .select("bot_id, bot_profiles!inner(id, role)")
+    .select("bot_id, bot_profiles!inner(id, name, role)")
     .eq("idea_id", task.idea_id);
 
   const candidates = (poolAgents ?? [])
     .map((agent) => {
       const profile = agent.bot_profiles as unknown as {
         id: string;
+        name: string | null;
         role: string | null;
       };
       return profile?.role
-        ? { botId: agent.bot_id, role: profile.role }
+        ? { botId: agent.bot_id, name: profile.name ?? "", role: profile.role }
         : null;
     })
-    .filter((c): c is { botId: string; role: string } => c !== null);
+    .filter((c): c is { botId: string; name: string; role: string } => c !== null);
 
-  const matchRole = buildRoleMatcher(candidates);
+  // Collect unique step roles for matching
+  const stepRoles = [...new Set(unmatchedSteps.map((s) => s.agent_role!))];
+
+  // Match roles using AI (with fuzzy fallback)
+  const roleMatches = await matchRolesWithAiOrFuzzy(supabase, user.id, stepRoles, candidates);
 
   let matched = 0;
   let unmatched = 0;
@@ -320,15 +330,15 @@ export async function rematchWorkflowAgents(taskId: string) {
 
   for (const step of unmatchedSteps) {
     const role = step.agent_role!;
-    const result = matchRole(role);
+    const matchedBotId = roleMatches[role] ?? null;
 
-    if (result.botId) {
+    if (matchedBotId) {
       await supabase
         .from("task_workflow_steps")
-        .update({ bot_id: result.botId })
+        .update({ bot_id: matchedBotId })
         .eq("id", step.id);
 
-      matches[role] = result.botId;
+      matches[role] = matchedBotId;
       matched++;
     } else {
       unmatched++;

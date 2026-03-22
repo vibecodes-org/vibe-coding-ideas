@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
-import { buildRoleMatcher } from "../../../src/lib/role-matching";
+import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits } from "../../../src/lib/workflow-helpers";
 
 // --- Shared step schema used by template tools ---
@@ -207,31 +207,33 @@ export async function applyWorkflowTemplate(
     .select("bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role)")
     .eq("idea_id", task.idea_id);
 
-  // Build fuzzy role matcher from idea agent pool
+  // Build agent candidates with names for AI role matching
   const candidates = (ideaAgents ?? [])
     .map((entry) => {
       const bot = (entry as Record<string, unknown>).bot as Record<string, unknown> | null;
       return bot?.role && entry.bot_id
-        ? { botId: entry.bot_id, role: String(bot.role) }
+        ? { botId: entry.bot_id, name: String(bot.name ?? ""), role: String(bot.role) }
         : null;
     })
-    .filter((c): c is { botId: string; role: string } => c !== null);
-
-  const matchRole = buildRoleMatcher(candidates);
+    .filter((c): c is { botId: string; name: string; role: string } => c !== null);
 
   // Create workflow steps from template steps array
   const steps = (template.steps ?? []) as unknown as Array<Record<string, unknown>>;
+
+  // Collect unique step roles for AI/fuzzy matching
+  const stepRoles = [...new Set(
+    steps.map((s) => (s.role ? String(s.role) : null)).filter((r): r is string => r !== null)
+  )];
+
+  // Match roles using AI (with fuzzy fallback)
+  const agentMatches = await matchRolesWithAiOrFuzzy(ctx.supabase, actorId, stepRoles, candidates);
+
   const createdSteps: Record<string, unknown>[] = [];
-  const agentMatches: Record<string, string | null> = {};
 
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     const role = step.role ? String(step.role) : null;
-    const matchedBotId = role ? (matchRole(role).botId) : null;
-
-    if (role) {
-      agentMatches[role] = matchedBotId;
-    }
+    const matchedBotId = role ? (agentMatches[role] ?? null) : null;
 
     const { data: createdStep, error: stepError } = await ctx.supabase
       .from("task_workflow_steps")
@@ -1045,12 +1047,17 @@ export async function rematchWorkflowAgents(
     .map((entry) => {
       const bot = (entry as Record<string, unknown>).bot as Record<string, unknown> | null;
       return bot?.role && entry.bot_id
-        ? { botId: entry.bot_id, role: String(bot.role) }
+        ? { botId: entry.bot_id, name: String(bot.name ?? ""), role: String(bot.role) }
         : null;
     })
-    .filter((c): c is { botId: string; role: string } => c !== null);
+    .filter((c): c is { botId: string; name: string; role: string } => c !== null);
 
-  const matchRole = buildRoleMatcher(candidates);
+  // Collect unique step roles for AI/fuzzy matching
+  const stepRoles = [...new Set(unmatchedSteps.map((s) => s.agent_role!))];
+
+  // Match roles using AI (with fuzzy fallback)
+  const matchUserId = ctx.ownerUserId ?? ctx.userId;
+  const roleMatches = await matchRolesWithAiOrFuzzy(ctx.supabase, matchUserId, stepRoles, candidates);
 
   let matched = 0;
   let unmatched = 0;
@@ -1058,15 +1065,15 @@ export async function rematchWorkflowAgents(
 
   for (const step of unmatchedSteps) {
     const role = step.agent_role!;
-    const result = matchRole(role);
+    const matchedBotId = roleMatches[role] ?? null;
 
-    if (result.botId) {
+    if (matchedBotId) {
       await ctx.supabase
         .from("task_workflow_steps")
-        .update({ bot_id: result.botId })
+        .update({ bot_id: matchedBotId })
         .eq("id", step.id);
 
-      matches[role] = result.botId;
+      matches[role] = matchedBotId;
       matched++;
     } else {
       unmatched++;
