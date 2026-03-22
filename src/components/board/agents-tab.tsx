@@ -23,6 +23,7 @@ import {
 import { getRoleColor } from "@/lib/agent-colors";
 import { allocateAgent, removeIdeaAgent } from "@/actions/idea-agents";
 import { createClient } from "@/lib/supabase/client";
+import { buildRoleMatcher } from "@/lib/role-matching";
 import type { IdeaAgentWithDetails, BotProfile } from "@/types";
 
 interface AgentsTabProps {
@@ -127,16 +128,15 @@ export function AgentsTab({
         }
       }
 
-      const agentRoles = new Set(
-        ideaAgentDetails
-          .map((a) => a.bot?.role?.toLowerCase())
-          .filter((r): r is string => !!r)
-      );
+      const agentCandidates = ideaAgentDetails
+        .filter((a) => a.bot?.role)
+        .map((a) => ({ botId: a.bot_id, role: a.bot.role! }));
+      const matcher = buildRoleMatcher(agentCandidates);
 
       const coverage: RoleCoverage[] = Array.from(templateRoles).map(
         (role) => ({
           role,
-          covered: agentRoles.has(role),
+          covered: matcher(role).tier !== "none",
         })
       );
 
