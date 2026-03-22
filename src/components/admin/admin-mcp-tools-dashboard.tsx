@@ -394,6 +394,61 @@ export function AdminMcpToolsDashboard({ recentLogs, stats }: AdminMcpToolsDashb
             </div>
           </div>
 
+          {/* Least Used Tools Table */}
+          <div>
+            <h2 className="mb-3 text-lg font-semibold">Least Used Tools</h2>
+            <div className="max-h-[500px] overflow-y-auto rounded-lg border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tool Name</TableHead>
+                    <TableHead className="text-right">Total Calls</TableHead>
+                    <TableHead className="text-right">Errors</TableHead>
+                    <TableHead className="text-right">Error Rate</TableHead>
+                    <TableHead className="text-right">Avg Duration</TableHead>
+                    <TableHead className="text-right">Max Duration</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {[...toolAggregates].sort((a, b) => a.total_calls - b.total_calls).slice(0, 10).map((row) => (
+                    <TableRow key={row.tool_name} className={row.total_calls <= 2 ? "bg-amber-500/5" : undefined}>
+                      <TableCell>
+                        <span className="font-mono text-xs">{row.tool_name}</span>
+                      </TableCell>
+                      <TableCell className={cn("text-right text-xs", row.total_calls <= 2 && "text-amber-500 font-medium")}>
+                        {row.total_calls}
+                      </TableCell>
+                      <TableCell className="text-right text-xs">{row.errors}</TableCell>
+                      <TableCell className="text-right">
+                        <span
+                          className={cn(
+                            "text-xs",
+                            row.error_rate > 5 ? "text-red-500 font-medium" : "text-muted-foreground"
+                          )}
+                        >
+                          {row.error_rate.toFixed(1)}%
+                        </span>
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DurationBadge ms={row.avg_duration} />
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <DurationBadge ms={row.max_duration} />
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {toolAggregates.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={6} className="p-8 text-center text-sm text-muted-foreground">
+                        No tool stats available.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
+
           {/* Per-User Table */}
           <div>
             <h2 className="mb-3 text-lg font-semibold">Per-User Breakdown</h2>
