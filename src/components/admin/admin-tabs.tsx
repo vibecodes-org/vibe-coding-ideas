@@ -28,6 +28,7 @@ interface AdminTabsProps {
   allPlatformLogs: PlatformLogEntry[];
   mcpToolLogs: McpToolLogWithUser[];
   mcpToolStats: McpToolStatsRow[];
+  allMcpToolNames: string[];
 }
 
 export function AdminTabs({
@@ -46,6 +47,7 @@ export function AdminTabs({
   allPlatformLogs,
   mcpToolLogs,
   mcpToolStats,
+  allMcpToolNames,
 }: AdminTabsProps) {
   const router = useRouter();
 
@@ -99,7 +101,7 @@ export function AdminTabs({
         <AdminTemplatesDashboard templates={libraryTemplates} onRefresh={handleRefresh} />
       </TabsContent>
       <TabsContent value="mcp-tools" className="mt-6">
-        <AdminMcpToolsDashboard recentLogs={mcpToolLogs} stats={mcpToolStats} />
+        <AdminMcpToolsDashboard recentLogs={mcpToolLogs} stats={mcpToolStats} allToolNames={allMcpToolNames} />
       </TabsContent>
     </Tabs>
   );

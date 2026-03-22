@@ -41,9 +41,10 @@ export type McpToolStatsRow = {
 interface AdminMcpToolsDashboardProps {
   recentLogs: McpToolLogWithUser[];
   stats: McpToolStatsRow[];
+  allToolNames?: string[];
 }
 
-export function AdminMcpToolsDashboard({ recentLogs, stats }: AdminMcpToolsDashboardProps) {
+export function AdminMcpToolsDashboard({ recentLogs, stats, allToolNames }: AdminMcpToolsDashboardProps) {
   const [view, setView] = useState<"recent" | "trends">("recent");
   const [toolFilter, setToolFilter] = useState("");
 
@@ -395,59 +396,85 @@ export function AdminMcpToolsDashboard({ recentLogs, stats }: AdminMcpToolsDashb
           </div>
 
           {/* Least Used Tools Table */}
-          <div>
-            <h2 className="mb-3 text-lg font-semibold">Least Used Tools</h2>
-            <div className="max-h-[500px] overflow-y-auto rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Tool Name</TableHead>
-                    <TableHead className="text-right">Total Calls</TableHead>
-                    <TableHead className="text-right">Errors</TableHead>
-                    <TableHead className="text-right">Error Rate</TableHead>
-                    <TableHead className="text-right">Avg Duration</TableHead>
-                    <TableHead className="text-right">Max Duration</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {[...toolAggregates].sort((a, b) => a.total_calls - b.total_calls).slice(0, 10).map((row) => (
-                    <TableRow key={row.tool_name} className={row.total_calls <= 2 ? "bg-amber-500/5" : undefined}>
-                      <TableCell>
-                        <span className="font-mono text-xs">{row.tool_name}</span>
-                      </TableCell>
-                      <TableCell className={cn("text-right text-xs", row.total_calls <= 2 && "text-amber-500 font-medium")}>
-                        {row.total_calls}
-                      </TableCell>
-                      <TableCell className="text-right text-xs">{row.errors}</TableCell>
-                      <TableCell className="text-right">
-                        <span
-                          className={cn(
-                            "text-xs",
-                            row.error_rate > 5 ? "text-red-500 font-medium" : "text-muted-foreground"
-                          )}
-                        >
-                          {row.error_rate.toFixed(1)}%
-                        </span>
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DurationBadge ms={row.avg_duration} />
-                      </TableCell>
-                      <TableCell className="text-right">
-                        <DurationBadge ms={row.max_duration} />
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {toolAggregates.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={6} className="p-8 text-center text-sm text-muted-foreground">
-                        No tool stats available.
-                      </TableCell>
-                    </TableRow>
+          {(() => {
+            const usedToolNames = new Set(toolAggregates.map((t) => t.tool_name));
+            const neverUsed = (allToolNames ?? [])
+              .filter((name) => !usedToolNames.has(name))
+              .map((name) => ({
+                tool_name: name,
+                total_calls: 0,
+                errors: 0,
+                error_rate: 0,
+                avg_duration: 0,
+                max_duration: 0,
+              }));
+            const leastUsed = [
+              ...neverUsed,
+              ...[...toolAggregates].sort((a, b) => a.total_calls - b.total_calls).slice(0, 10),
+            ];
+            return (
+              <div>
+                <h2 className="mb-3 text-lg font-semibold">
+                  Least Used Tools
+                  {neverUsed.length > 0 && (
+                    <span className="ml-2 text-sm font-normal text-amber-500">
+                      {neverUsed.length} never invoked
+                    </span>
                   )}
-                </TableBody>
-              </Table>
-            </div>
-          </div>
+                </h2>
+                <div className="max-h-[500px] overflow-y-auto rounded-lg border">
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Tool Name</TableHead>
+                        <TableHead className="text-right">Total Calls</TableHead>
+                        <TableHead className="text-right">Errors</TableHead>
+                        <TableHead className="text-right">Error Rate</TableHead>
+                        <TableHead className="text-right">Avg Duration</TableHead>
+                        <TableHead className="text-right">Max Duration</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {leastUsed.map((row) => (
+                        <TableRow key={row.tool_name} className={row.total_calls === 0 ? "bg-amber-500/10" : row.total_calls <= 2 ? "bg-amber-500/5" : undefined}>
+                          <TableCell>
+                            <span className="font-mono text-xs">{row.tool_name}</span>
+                          </TableCell>
+                          <TableCell className={cn("text-right text-xs", row.total_calls === 0 ? "text-amber-500 font-bold" : row.total_calls <= 2 ? "text-amber-500 font-medium" : "")}>
+                            {row.total_calls}
+                          </TableCell>
+                          <TableCell className="text-right text-xs">{row.errors}</TableCell>
+                          <TableCell className="text-right">
+                            <span
+                              className={cn(
+                                "text-xs",
+                                row.error_rate > 5 ? "text-red-500 font-medium" : "text-muted-foreground"
+                              )}
+                            >
+                              {row.error_rate.toFixed(1)}%
+                            </span>
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {row.total_calls === 0 ? <span className="text-xs text-muted-foreground">—</span> : <DurationBadge ms={row.avg_duration} />}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {row.total_calls === 0 ? <span className="text-xs text-muted-foreground">—</span> : <DurationBadge ms={row.max_duration} />}
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                      {leastUsed.length === 0 && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="p-8 text-center text-sm text-muted-foreground">
+                            No tool stats available.
+                          </TableCell>
+                        </TableRow>
+                      )}
+                    </TableBody>
+                  </Table>
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Per-User Table */}
           <div>
