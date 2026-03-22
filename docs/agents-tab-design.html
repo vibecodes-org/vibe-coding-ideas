@@ -1,0 +1,551 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Agents Tab — Board UX Design</title>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #1a1a1a;
+      --surface-3: #1e1e1e;
+      --border: #2a2a2a;
+      --border-hover: #3a3a3a;
+      --text: #e4e4e7;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --accent: #a78bfa;
+      --accent-dim: rgba(167, 139, 250, 0.12);
+      --green: #4ade80;
+      --green-dim: rgba(74, 222, 128, 0.1);
+      --amber: #fbbf24;
+      --amber-dim: rgba(251, 191, 36, 0.1);
+      --red: #f87171;
+      --red-dim: rgba(248, 113, 113, 0.08);
+      --blue: #60a5fa;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'DM Sans', -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      min-height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    .page-container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    /* ─── Tab Bar ─── */
+    .tab-bar {
+      display: flex;
+      align-items: center;
+      gap: 0;
+      background: var(--surface);
+      border-radius: 8px;
+      padding: 4px;
+      margin-bottom: 1.5rem;
+      width: fit-content;
+    }
+
+    .tab {
+      padding: 0.5rem 1.25rem;
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.2s;
+      border: none;
+      background: none;
+      font-family: inherit;
+      letter-spacing: 0.01em;
+    }
+
+    .tab:hover { color: var(--text); }
+
+    .tab.active {
+      background: var(--surface-3);
+      color: var(--text);
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+
+    /* ─── Header Row ─── */
+    .header-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 1.25rem;
+    }
+
+    .header-row h2 {
+      font-size: 1.1rem;
+      font-weight: 600;
+      letter-spacing: -0.01em;
+    }
+
+    .header-row h2 .count {
+      color: var(--text-muted);
+      font-weight: 400;
+      font-size: 0.9rem;
+      margin-left: 0.5rem;
+    }
+
+    .btn-add {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 0.9rem;
+      font-size: 0.8rem;
+      font-weight: 500;
+      color: var(--text);
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+
+    .btn-add:hover {
+      background: var(--surface-2);
+      border-color: var(--border-hover);
+    }
+
+    .btn-add .plus {
+      font-size: 1rem;
+      line-height: 1;
+      color: var(--accent);
+    }
+
+    /* ─── Role Coverage ─── */
+    .role-coverage {
+      display: flex;
+      gap: 0.5rem;
+      flex-wrap: wrap;
+      margin-bottom: 1.75rem;
+      padding: 1rem;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+    }
+
+    .role-coverage-title {
+      width: 100%;
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      margin-bottom: 0.25rem;
+    }
+
+    .role-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.35rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      border: 1px solid;
+      transition: transform 0.15s;
+    }
+
+    .role-chip:hover { transform: translateY(-1px); }
+
+    .role-chip.covered {
+      background: var(--green-dim);
+      border-color: rgba(74, 222, 128, 0.2);
+      color: var(--green);
+    }
+
+    .role-chip.gap {
+      background: var(--amber-dim);
+      border-color: rgba(251, 191, 36, 0.25);
+      color: var(--amber);
+    }
+
+    .role-chip .icon {
+      font-size: 0.85rem;
+      line-height: 1;
+    }
+
+    /* ─── Agent Grid ─── */
+    .agent-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 0.75rem;
+    }
+
+    @media (max-width: 900px) { .agent-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 560px) { .agent-grid { grid-template-columns: 1fr; } }
+
+    .agent-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1.1rem;
+      transition: all 0.2s;
+      position: relative;
+    }
+
+    .agent-card:hover {
+      border-color: var(--border-hover);
+      background: var(--surface-2);
+    }
+
+    .agent-card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.75rem;
+      margin-bottom: 0.85rem;
+    }
+
+    .agent-avatar {
+      width: 40px;
+      height: 40px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.8rem;
+      font-weight: 600;
+      flex-shrink: 0;
+      border: 2px solid;
+    }
+
+    .agent-avatar.dev { background: rgba(96, 165, 250, 0.12); border-color: rgba(96, 165, 250, 0.3); color: var(--blue); }
+    .agent-avatar.ux { background: rgba(244, 114, 182, 0.12); border-color: rgba(244, 114, 182, 0.3); color: #f472b6; }
+    .agent-avatar.qa { background: rgba(74, 222, 128, 0.12); border-color: rgba(74, 222, 128, 0.3); color: var(--green); }
+    .agent-avatar.po { background: rgba(167, 139, 250, 0.12); border-color: rgba(167, 139, 250, 0.3); color: var(--accent); }
+    .agent-avatar.security { background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.3); color: var(--amber); }
+
+    .agent-info { flex: 1; min-width: 0; }
+
+    .agent-name {
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      letter-spacing: -0.01em;
+    }
+
+    .agent-role {
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      margin-top: 0.1rem;
+    }
+
+    .agent-owner {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      margin-top: 0.2rem;
+    }
+
+    .agent-stats {
+      display: flex;
+      gap: 0.75rem;
+      padding: 0.6rem 0;
+      border-top: 1px solid var(--border);
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 0.7rem;
+    }
+
+    .stat {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      flex: 1;
+    }
+
+    .stat-value {
+      font-size: 1.1rem;
+      font-weight: 700;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .stat-label {
+      font-size: 0.65rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-top: 0.15rem;
+    }
+
+    .agent-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .link-profile {
+      font-size: 0.75rem;
+      color: var(--accent);
+      text-decoration: none;
+      font-weight: 500;
+      transition: opacity 0.15s;
+    }
+
+    .link-profile:hover { opacity: 0.8; }
+
+    .btn-remove {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      background: none;
+      border: 1px solid transparent;
+      border-radius: 4px;
+      padding: 0.2rem 0.5rem;
+      cursor: pointer;
+      font-family: inherit;
+      transition: all 0.15s;
+    }
+
+    .btn-remove:hover {
+      color: var(--red);
+      border-color: rgba(248, 113, 113, 0.3);
+      background: var(--red-dim);
+    }
+
+    /* ─── Empty State ─── */
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 4rem 2rem;
+      text-align: center;
+      border: 1px dashed var(--border);
+      border-radius: 12px;
+      background: var(--surface);
+    }
+
+    .empty-state .icon-wrap {
+      width: 56px;
+      height: 56px;
+      border-radius: 50%;
+      background: var(--accent-dim);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 1rem;
+    }
+
+    .empty-state .icon-wrap svg {
+      width: 28px;
+      height: 28px;
+      color: var(--accent);
+    }
+
+    .empty-state h3 {
+      font-size: 1rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+    }
+
+    .empty-state p {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      max-width: 300px;
+      margin-bottom: 1.25rem;
+    }
+
+    .btn-browse {
+      padding: 0.5rem 1.2rem;
+      font-size: 0.82rem;
+      font-weight: 500;
+      color: #fff;
+      background: var(--accent);
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-family: inherit;
+      transition: opacity 0.15s;
+    }
+
+    .btn-browse:hover { opacity: 0.9; }
+
+    /* ─── Section divider ─── */
+    .section-divider {
+      margin: 3rem 0 2rem;
+      padding-top: 2rem;
+      border-top: 1px dashed var(--border);
+    }
+
+    .section-divider h3 {
+      font-size: 0.85rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 1rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="page-container">
+
+    <!-- Tab Bar -->
+    <div class="tab-bar">
+      <button class="tab">Board</button>
+      <button class="tab">Workflows</button>
+      <button class="tab active">Agents</button>
+    </div>
+
+    <!-- Header -->
+    <div class="header-row">
+      <h2>Agent Pool <span class="count">5 agents</span></h2>
+      <button class="btn-add"><span class="plus">+</span> Add Agent</button>
+    </div>
+
+    <!-- Role Coverage -->
+    <div class="role-coverage">
+      <div class="role-coverage-title">Role Coverage</div>
+      <span class="role-chip covered"><span class="icon">&#10003;</span> Product Owner</span>
+      <span class="role-chip covered"><span class="icon">&#10003;</span> UX Designer</span>
+      <span class="role-chip covered"><span class="icon">&#10003;</span> Full Stack Developer</span>
+      <span class="role-chip covered"><span class="icon">&#10003;</span> QA Engineer</span>
+      <span class="role-chip covered"><span class="icon">&#10003;</span> Security Analyst</span>
+      <span class="role-chip gap"><span class="icon">&#9888;</span> Business Analyst &mdash; no agent</span>
+    </div>
+
+    <!-- Agent Grid -->
+    <div class="agent-grid">
+
+      <!-- Atlas -->
+      <div class="agent-card">
+        <div class="agent-card-header">
+          <div class="agent-avatar dev">AT</div>
+          <div class="agent-info">
+            <div class="agent-name">Atlas</div>
+            <div class="agent-role">Full Stack Developer</div>
+            <div class="agent-owner">Added by Nick</div>
+          </div>
+        </div>
+        <div class="agent-stats">
+          <div class="stat"><span class="stat-value">3</span><span class="stat-label">Tasks</span></div>
+          <div class="stat"><span class="stat-value">2</span><span class="stat-label">Pending</span></div>
+          <div class="stat"><span class="stat-value">5</span><span class="stat-label">Completed</span></div>
+        </div>
+        <div class="agent-actions">
+          <a href="#" class="link-profile">View Profile &rarr;</a>
+          <button class="btn-remove">Remove</button>
+        </div>
+      </div>
+
+      <!-- Compass -->
+      <div class="agent-card">
+        <div class="agent-card-header">
+          <div class="agent-avatar ux">CO</div>
+          <div class="agent-info">
+            <div class="agent-name">Compass</div>
+            <div class="agent-role">UX Designer</div>
+            <div class="agent-owner">Added by Nick</div>
+          </div>
+        </div>
+        <div class="agent-stats">
+          <div class="stat"><span class="stat-value">1</span><span class="stat-label">Tasks</span></div>
+          <div class="stat"><span class="stat-value">0</span><span class="stat-label">Pending</span></div>
+          <div class="stat"><span class="stat-value">3</span><span class="stat-label">Completed</span></div>
+        </div>
+        <div class="agent-actions">
+          <a href="#" class="link-profile">View Profile &rarr;</a>
+          <button class="btn-remove">Remove</button>
+        </div>
+      </div>
+
+      <!-- Sentinel -->
+      <div class="agent-card">
+        <div class="agent-card-header">
+          <div class="agent-avatar qa">SE</div>
+          <div class="agent-info">
+            <div class="agent-name">Sentinel</div>
+            <div class="agent-role">QA Engineer</div>
+            <div class="agent-owner">Added by Nick</div>
+          </div>
+        </div>
+        <div class="agent-stats">
+          <div class="stat"><span class="stat-value">2</span><span class="stat-label">Tasks</span></div>
+          <div class="stat"><span class="stat-value">1</span><span class="stat-label">Pending</span></div>
+          <div class="stat"><span class="stat-value">4</span><span class="stat-label">Completed</span></div>
+        </div>
+        <div class="agent-actions">
+          <a href="#" class="link-profile">View Profile &rarr;</a>
+          <button class="btn-remove">Remove</button>
+        </div>
+      </div>
+
+      <!-- Nick's Product Owner -->
+      <div class="agent-card">
+        <div class="agent-card-header">
+          <div class="agent-avatar po">PO</div>
+          <div class="agent-info">
+            <div class="agent-name">Nick's Product Owner</div>
+            <div class="agent-role">Product Owner</div>
+            <div class="agent-owner">Added by Nick</div>
+          </div>
+        </div>
+        <div class="agent-stats">
+          <div class="stat"><span class="stat-value">4</span><span class="stat-label">Tasks</span></div>
+          <div class="stat"><span class="stat-value">3</span><span class="stat-label">Pending</span></div>
+          <div class="stat"><span class="stat-value">8</span><span class="stat-label">Completed</span></div>
+        </div>
+        <div class="agent-actions">
+          <a href="#" class="link-profile">View Profile &rarr;</a>
+          <button class="btn-remove">Remove</button>
+        </div>
+      </div>
+
+      <!-- Shield -->
+      <div class="agent-card">
+        <div class="agent-card-header">
+          <div class="agent-avatar security">SH</div>
+          <div class="agent-info">
+            <div class="agent-name">Shield</div>
+            <div class="agent-role">Security Analyst</div>
+            <div class="agent-owner">Added by Nick</div>
+          </div>
+        </div>
+        <div class="agent-stats">
+          <div class="stat"><span class="stat-value">0</span><span class="stat-label">Tasks</span></div>
+          <div class="stat"><span class="stat-value">0</span><span class="stat-label">Pending</span></div>
+          <div class="stat"><span class="stat-value">0</span><span class="stat-label">Completed</span></div>
+        </div>
+        <div class="agent-actions">
+          <a href="#" class="link-profile">View Profile &rarr;</a>
+          <button class="btn-remove">Remove</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Empty State (alternate view) -->
+    <div class="section-divider">
+      <h3>Empty State (when no agents pooled)</h3>
+    </div>
+
+    <div class="empty-state">
+      <div class="icon-wrap">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>
+        </svg>
+      </div>
+      <h3>No agents assigned</h3>
+      <p>Add agents to your pool to enable workflow automation and task assignment.</p>
+      <button class="btn-browse">Browse Agents</button>
+    </div>
+
+  </div>
+</body>
+</html>

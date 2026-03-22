@@ -156,7 +156,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       : Promise.resolve({ data: null }),
   ]);
 
-  const { teamMembers, ideaAgents, botProfiles: ideaAgentBotProfiles } = ideaTeam;
+  const { teamMembers, ideaAgents, botProfiles: ideaAgentBotProfiles, ideaAgentDetails } = ideaTeam;
 
   // Phase 3: Queries that depend on Phase 2 results
   const taskIds = (rawTasks ?? []).map((t) => t.id);
@@ -238,6 +238,11 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
         ideaId={id}
         boardLabels={(boardLabels ?? []) as BoardLabel[]}
         isReadOnly={isReadOnly}
+        ideaAgentDetails={ideaAgentDetails}
+        userBotProfiles={(userBotProfiles ?? []) as import("@/types").BotProfile[]}
+        currentUserId={user.id}
+        isAuthor={isAuthor}
+        isTeamMember={isTeamMember}
       >
         <KanbanBoard
           columns={columns}
