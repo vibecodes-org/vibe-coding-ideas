@@ -114,10 +114,11 @@ export async function matchRolesWithAi(
 }
 
 /**
- * Match roles using AI when available, falling back to fuzzy matching.
+ * Match roles using exact match first, then AI for remaining, then fuzzy fallback.
  *
- * Tries AI-powered semantic matching first. If AI is unavailable or errors,
- * falls back to the existing `buildRoleMatcher()` for each role.
+ * 1. Exact match (case-insensitive) — free, no AI needed
+ * 2. AI semantic matching for unmatched roles — only if user has API key/credits
+ * 3. Fuzzy matching for any still unmatched — if AI unavailable or errors
  */
 export async function matchRolesWithAiOrFuzzy(
   supabase: SupabaseClient<Database>,
@@ -125,19 +126,42 @@ export async function matchRolesWithAiOrFuzzy(
   stepRoles: string[],
   agents: AiRoleMatchAgent[]
 ): Promise<Record<string, string | null>> {
-  // Try AI matching first
-  const aiResult = await matchRolesWithAi(supabase, userId, stepRoles, agents);
-  if (aiResult) {
-    return aiResult;
+  const result: Record<string, string | null> = {};
+
+  // Tier 1: Exact match (case-insensitive) — no AI cost
+  const agentsByRole = new Map(
+    agents.map((a) => [a.role.trim().toLowerCase(), a.botId])
+  );
+  const unmatchedRoles: string[] = [];
+
+  for (const role of stepRoles) {
+    const exactMatch = agentsByRole.get(role.trim().toLowerCase());
+    if (exactMatch) {
+      result[role] = exactMatch;
+    } else {
+      unmatchedRoles.push(role);
+    }
   }
 
-  // Fall back to fuzzy matching
+  // All matched exactly — no need for AI or fuzzy
+  if (unmatchedRoles.length === 0) {
+    return result;
+  }
+
+  // Tier 2: AI matching for unmatched roles only
+  const aiResult = await matchRolesWithAi(supabase, userId, unmatchedRoles, agents);
+  if (aiResult) {
+    for (const role of unmatchedRoles) {
+      result[role] = aiResult[role] ?? null;
+    }
+    return result;
+  }
+
+  // Tier 3: Fuzzy matching fallback for unmatched roles
   const fuzzyMatcher = buildRoleMatcher(
     agents.map((a) => ({ botId: a.botId, role: a.role }))
   );
-
-  const result: Record<string, string | null> = {};
-  for (const role of stepRoles) {
+  for (const role of unmatchedRoles) {
     result[role] = fuzzyMatcher(role).botId;
   }
   return result;
