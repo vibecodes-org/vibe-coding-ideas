@@ -13,6 +13,7 @@ import {
 } from "@/components/ui/table";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { formatRelativeTime, cn } from "@/lib/utils";
 
 export type McpToolLogWithUser = {
@@ -542,7 +543,14 @@ function UserCell({
         </AvatarFallback>
       </Avatar>
       <span className="text-xs">{user?.full_name ?? "Unknown"}</span>
-      {user?.is_bot && <Bot className="h-3 w-3 text-primary" />}
+      {user?.is_bot && (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Bot className="h-3 w-3 text-primary cursor-help" />
+          </TooltipTrigger>
+          <TooltipContent>Agent</TooltipContent>
+        </Tooltip>
+      )}
     </div>
   );
 }

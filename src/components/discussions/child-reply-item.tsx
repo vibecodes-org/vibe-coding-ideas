@@ -6,6 +6,7 @@ import { toast } from "sonner";
 import { Paperclip, Pencil, Reply, Trash2 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Markdown } from "@/components/ui/markdown";
@@ -13,6 +14,7 @@ import { MentionAutocomplete } from "@/components/board/mention-autocomplete";
 import { updateDiscussionReply } from "@/actions/discussions";
 import { useMentionState } from "@/hooks/use-mentions";
 import { sendDiscussionMentionNotifications } from "@/lib/mention-notifications";
+import { useBotRoles } from "@/components/bot-roles-context";
 import { formatRelativeTime, getInitials } from "@/lib/utils";
 import {
   DiscussionAttachmentsSection,
@@ -46,6 +48,7 @@ export function ChildReplyItem({
   teamMembers = [],
 }: ChildReplyItemProps) {
   const router = useRouter();
+  const botRoles = useBotRoles();
   const attachmentsRef = useRef<DiscussionAttachmentsHandle>(null);
   const canDeleteReply =
     currentUser?.id === reply.author_id || isAuthorOrOwner || currentUser?.is_admin;
@@ -111,9 +114,16 @@ export function ChildReplyItem({
             {reply.author.full_name ?? "Anonymous"}
           </span>
           {reply.author.is_bot && (
-            <Badge variant="outline" className="text-[10px]">
-              Agent
-            </Badge>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className="text-[10px] cursor-help">
+                  Agent
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {reply.author.full_name ?? "Agent"} ({botRoles?.[reply.author.id] ?? "Agent"})
+              </TooltipContent>
+            </Tooltip>
           )}
           {reply.author_id === discussionAuthorId && (
             <Badge variant="outline" className="bg-violet-500/10 border-violet-500/20 text-violet-400 text-[10px]">

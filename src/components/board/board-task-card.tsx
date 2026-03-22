@@ -378,7 +378,9 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                   </TooltipTrigger>
                   <TooltipContent>
                     {task.assignee.full_name ?? "Assigned"}
-                    {task.assignee.is_bot ? " (agent)" : ""}
+                    {task.assignee.is_bot
+                      ? ` (${botRoles?.[task.assignee.id] ?? "Agent"})`
+                      : ""}
                   </TooltipContent>
                 </Tooltip>
               )}

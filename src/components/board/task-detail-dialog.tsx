@@ -605,7 +605,14 @@ export function TaskDetailDialog({
                               <AvatarFallback className={`text-[10px] ${ac ? `${ac.avatarBg} ${ac.avatarText}` : ""}`}>{assigneeInitials}</AvatarFallback>
                             </Avatar>
                             {localAssignee.is_bot && (
-                              <Bot className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-primary" />
+                              <Tooltip>
+                                <TooltipTrigger asChild>
+                                  <Bot className="absolute -bottom-0.5 -right-0.5 h-3 w-3 text-primary cursor-help" />
+                                </TooltipTrigger>
+                                <TooltipContent>
+                                  {localAssignee.full_name ?? "Agent"} ({botRoles?.[localAssignee.id] ?? "Agent"})
+                                </TooltipContent>
+                              </Tooltip>
                             )}
                           </div>
                         );

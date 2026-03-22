@@ -15,7 +15,9 @@ import {
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
+import { useBotRoles } from "@/components/bot-roles-context";
 import { formatRelativeTime, getInitials } from "@/lib/utils";
 import type { IdeaDiscussionWithAuthor } from "@/types";
 
@@ -91,6 +93,7 @@ interface DiscussionListProps {
 }
 
 export function DiscussionList({ discussions, ideaId }: DiscussionListProps) {
+  const botRoles = useBotRoles();
   const [filter, setFilter] = useState<FilterStatus>("open");
   const [search, setSearch] = useState("");
 
@@ -189,10 +192,17 @@ export function DiscussionList({ discussions, ideaId }: DiscussionListProps) {
                       {discussion.title}
                     </h3>
                     {discussion.author.is_bot && (
-                      <Badge variant="outline" className="shrink-0 text-[10px] gap-0.5">
-                        <Bot className="h-2.5 w-2.5" />
-                        Bot
-                      </Badge>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge variant="outline" className="shrink-0 text-[10px] gap-0.5 cursor-help">
+                            <Bot className="h-2.5 w-2.5" />
+                            Bot
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {discussion.author.full_name ?? "Agent"} ({botRoles?.[discussion.author.id] ?? "Agent"})
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                     {discussion.pinned && (
                       <Badge

@@ -15,6 +15,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import {
   Select,
   SelectContent,
@@ -22,6 +23,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { useBotRoles } from "@/components/bot-roles-context";
 import { markReadyToConvert } from "@/actions/discussions";
 import type { IdeaDiscussion, BoardColumn, User } from "@/types";
 
@@ -39,6 +41,7 @@ export function ReadyToConvertDialog({
   teamMembers,
 }: ReadyToConvertDialogProps) {
   const router = useRouter();
+  const botRoles = useBotRoles();
   const [open, setOpen] = useState(false);
   const [columnId, setColumnId] = useState(columns[0]?.id ?? "");
   const [assigneeId, setAssigneeId] = useState<string>("unassigned");
@@ -137,7 +140,14 @@ export function ReadyToConvertDialog({
                     {bots.map((bot) => (
                       <SelectItem key={bot.id} value={bot.id}>
                         <span className="inline-flex items-center gap-1">
-                          <Bot className="h-3 w-3" />
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Bot className="h-3 w-3 cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {bot.full_name ?? "Agent"} ({botRoles?.[bot.id] ?? "Agent"})
+                            </TooltipContent>
+                          </Tooltip>
                           {bot.full_name ?? bot.email}
                         </span>
                       </SelectItem>
@@ -168,7 +178,14 @@ export function ReadyToConvertDialog({
               {selectedAssignee && (
                 <div className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                   {selectedAssignee.is_bot ? (
-                    <Bot className="h-3 w-3" />
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <Bot className="h-3 w-3 cursor-help" />
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {selectedAssignee.full_name ?? "Agent"} ({botRoles?.[selectedAssignee.id] ?? "Agent"})
+                      </TooltipContent>
+                    </Tooltip>
                   ) : null}
                   <span>{selectedAssignee.full_name ?? selectedAssignee.email}</span>
                 </div>

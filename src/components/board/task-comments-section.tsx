@@ -15,6 +15,7 @@ import { formatRelativeTime, getInitials } from "@/lib/utils";
 import { logTaskActivity } from "@/lib/activity";
 import { createTaskComment, deleteTaskComment, updateTaskComment } from "@/actions/board";
 import { undoableAction } from "@/lib/undo-toast";
+import { useBotRoles } from "@/components/bot-roles-context";
 import type { BoardTaskCommentWithAuthor, User } from "@/types";
 
 interface TaskCommentsSectionProps {
@@ -34,6 +35,7 @@ export function TaskCommentsSection({
   userBotIds = [],
   isReadOnly = false,
 }: TaskCommentsSectionProps) {
+  const botRoles = useBotRoles();
   const [comments, setComments] = useState<BoardTaskCommentWithAuthor[]>([]);
   const [loading, setLoading] = useState(true);
   const [content, setContent] = useState("");
@@ -359,7 +361,16 @@ export function TaskCommentsSection({
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
                       <span className="text-xs font-medium inline-flex items-center gap-1">
-                        {comment.author?.is_bot && <Bot className="h-3 w-3 text-primary" />}
+                        {comment.author?.is_bot && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Bot className="h-3 w-3 text-primary cursor-help" />
+                            </TooltipTrigger>
+                            <TooltipContent>
+                              {comment.author.full_name ?? "Agent"} ({botRoles?.[comment.author.id] ?? "Agent"})
+                            </TooltipContent>
+                          </Tooltip>
+                        )}
                         {comment.author?.full_name ?? "Unknown"}
                       </span>
                       <span className="text-[10px] text-muted-foreground">

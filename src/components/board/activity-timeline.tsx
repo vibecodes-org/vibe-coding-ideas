@@ -24,7 +24,9 @@ import {
   Bot,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { useBotRoles } from "@/components/bot-roles-context";
 import { createClient } from "@/lib/supabase/client";
 import { formatRelativeTime } from "@/lib/utils";
 import { formatActivityDetails } from "@/lib/activity-format";
@@ -59,6 +61,7 @@ interface ActivityTimelineProps {
 }
 
 export function ActivityTimeline({ taskId, ideaId }: ActivityTimelineProps) {
+  const botRoles = useBotRoles();
   const [activities, setActivities] = useState<BoardTaskActivityWithActor[]>([]);
   const [loading, setLoading] = useState(true);
   const [hasMore, setHasMore] = useState(false);
@@ -179,7 +182,14 @@ export function ActivityTimeline({ taskId, ideaId }: ActivityTimelineProps) {
                   <p className="text-xs">
                     <span className="font-medium inline-flex items-center gap-1">
                       {activity.actor?.is_bot && (
-                        <Bot className="h-3 w-3 text-primary" />
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Bot className="h-3 w-3 text-primary cursor-help" />
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            {activity.actor.full_name ?? "Agent"} ({botRoles?.[activity.actor.id] ?? "Agent"})
+                          </TooltipContent>
+                        </Tooltip>
                       )}
                       {activity.actor?.full_name ?? "Someone"}
                     </span>{" "}

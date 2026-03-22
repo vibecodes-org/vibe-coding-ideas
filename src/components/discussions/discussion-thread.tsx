@@ -19,6 +19,7 @@ import {
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -33,6 +34,7 @@ import {
 import { enhanceDiscussionBody } from "@/actions/ai";
 import { useMentionState } from "@/hooks/use-mentions";
 import { sendDiscussionMentionNotifications } from "@/lib/mention-notifications";
+import { useBotRoles } from "@/components/bot-roles-context";
 import { formatRelativeTime, getInitials } from "@/lib/utils";
 import {
   DiscussionAttachmentsSection,
@@ -131,6 +133,7 @@ export function DiscussionThread({
   canUseAi = false,
 }: DiscussionThreadProps) {
   const router = useRouter();
+  const botRoles = useBotRoles();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(discussion.title);
@@ -451,9 +454,16 @@ export function DiscussionThread({
             {discussion.author.full_name ?? "Anonymous"}
           </span>
           {discussion.author.is_bot && (
-            <Badge variant="outline" className="text-[10px]">
-              Agent
-            </Badge>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Badge variant="outline" className="text-[10px] cursor-help">
+                  Agent
+                </Badge>
+              </TooltipTrigger>
+              <TooltipContent>
+                {discussion.author.full_name ?? "Agent"} ({botRoles?.[discussion.author.id] ?? "Agent"})
+              </TooltipContent>
+            </Tooltip>
           )}
           <Badge variant="outline" className="bg-violet-500/10 border-violet-500/20 text-violet-400 text-[10px]">
             Author
