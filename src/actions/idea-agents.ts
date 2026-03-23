@@ -77,7 +77,8 @@ export async function allocateAgent(ideaId: string, botId: string) {
   revalidatePath(`/ideas/${ideaId}/board`);
 
   // R1: Rematch all active workflows — fire-and-forget (don't block UI)
-  rematchActiveWorkflows(supabase, user.id, validIdeaId).catch(() => {});
+  // Await rematch — must run after insert is committed so new agent is visible in pool
+  await rematchActiveWorkflows(supabase, user.id, validIdeaId);
 }
 
 export async function removeIdeaAgent(ideaId: string, botId: string) {
@@ -108,7 +109,8 @@ export async function removeIdeaAgent(ideaId: string, botId: string) {
   revalidatePath(`/ideas/${ideaId}/board`);
 
   // R2: Rematch all active workflows — fire-and-forget (don't block UI)
-  rematchActiveWorkflows(supabase, user.id, validIdeaId).catch(() => {});
+  // Await rematch — must run after insert is committed so new agent is visible in pool
+  await rematchActiveWorkflows(supabase, user.id, validIdeaId);
 }
 
 export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
@@ -174,7 +176,8 @@ export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
   revalidatePath(`/ideas/${ideaId}/board`);
 
   // Single rematch for all agents — fire-and-forget (don't block UI)
-  rematchActiveWorkflows(supabase, user.id, validIdeaId).catch(() => {});
+  // Await rematch — must run after insert is committed so new agent is visible in pool
+  await rematchActiveWorkflows(supabase, user.id, validIdeaId);
 
   return { added: idsToAllocate.length };
 }
