@@ -36,7 +36,9 @@ function emit(
   if (context !== undefined) entry.context = context;
   entry.timestamp = new Date().toISOString();
 
-  console[level](JSON.stringify(entry));
+  // Vercel only captures console.log/warn/error — map info/debug to console.log
+  const method = level === "info" || level === "debug" ? "log" : level;
+  console[method](JSON.stringify(entry));
 }
 
 export const logger = {
