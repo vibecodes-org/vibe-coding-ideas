@@ -23,9 +23,8 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { getRoleColor } from "@/lib/agent-colors";
-import { allocateAllAgents, removeIdeaAgent } from "@/actions/idea-agents";
+import { allocateAllAgents, removeIdeaAgent, getRoleCoverage, type RoleCoverageResult } from "@/actions/idea-agents";
 import { createClient } from "@/lib/supabase/client";
-import { buildRoleMatcher } from "@/lib/role-matching";
 import type { IdeaAgentWithDetails, BotProfile } from "@/types";
 
 interface AgentsTabProps {
@@ -44,12 +43,7 @@ interface AgentStats {
   completedSteps: number;
 }
 
-interface RoleCoverage {
-  role: string;
-  covered: boolean;
-  matchedAgentName: string | null;
-  matchedAgentRole: string | null;
-}
+type RoleCoverage = RoleCoverageResult;
 
 export function AgentsTab({
   ideaId,
@@ -129,45 +123,18 @@ export function AgentsTab({
 
       setAgentStats(stats);
 
-      // Build role coverage
-      const templateRoles = new Set<string>();
-      for (const tmpl of templateResult.data ?? []) {
-        const steps = tmpl.steps as { role?: string }[];
-        for (const step of steps ?? []) {
-          if (step.role) templateRoles.add(step.role.toLowerCase());
-        }
+      // Build role coverage using AI-powered matching (same algorithm as workflow steps)
+      const agentPool = ideaAgentDetails
+        .filter((a) => a.bot?.role)
+        .map((a) => ({ botId: a.bot_id, name: a.bot?.name ?? "Unknown", role: a.bot.role! }));
+
+      try {
+        const coverage = await getRoleCoverage(ideaId, agentPool);
+        if (!cancelled) setRoleCoverage(coverage);
+      } catch {
+        // Silently fall through — coverage panel just won't show
       }
 
-      const agentCandidates = ideaAgentDetails
-        .filter((a) => a.bot?.role)
-        .map((a) => ({ botId: a.bot_id, role: a.bot.role! }));
-      const matcher = buildRoleMatcher(agentCandidates);
-
-      // Build a botId → agent details lookup
-      const agentLookup = new Map(
-        ideaAgentDetails.map((a) => [a.bot_id, { name: a.bot?.name ?? "Unknown", role: a.bot?.role ?? "Agent" }])
-      );
-
-      const coverage: RoleCoverage[] = Array.from(templateRoles).map(
-        (role) => {
-          const match = matcher(role);
-          const agent = match.botId ? agentLookup.get(match.botId) : null;
-          return {
-            role,
-            covered: match.tier !== "none",
-            matchedAgentName: agent?.name ?? null,
-            matchedAgentRole: agent?.role ?? null,
-          };
-        }
-      );
-
-      // Sort: uncovered first, then alphabetical
-      coverage.sort((a, b) => {
-        if (a.covered !== b.covered) return a.covered ? 1 : -1;
-        return a.role.localeCompare(b.role);
-      });
-
-      setRoleCoverage(coverage);
       setLoading(false);
     }
 

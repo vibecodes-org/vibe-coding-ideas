@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateUuid } from "@/lib/validation";
 import { rematchWorkflowAgents } from "@/actions/workflow-templates";
+import { matchRolesWithAiOrFuzzy, type AiRoleMatchAgent } from "@/lib/ai-role-matching";
 import { logger } from "@/lib/logger";
 
 /**
@@ -172,4 +173,72 @@ export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
   rematchActiveWorkflows(validIdeaId).catch(() => {});
 
   return { added: idsToAllocate.length };
+}
+
+export interface RoleCoverageResult {
+  role: string;
+  covered: boolean;
+  matchedAgentName: string | null;
+  matchedAgentRole: string | null;
+}
+
+export async function getRoleCoverage(
+  ideaId: string,
+  agentPool: { botId: string; name: string; role: string }[]
+): Promise<RoleCoverageResult[]> {
+  const validIdeaId = validateUuid(ideaId, "Idea ID");
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // Fetch workflow templates to extract unique step roles
+  const { data: templates } = await supabase
+    .from("workflow_templates")
+    .select("steps")
+    .eq("idea_id", validIdeaId);
+
+  const templateRoles = new Set<string>();
+  for (const tmpl of templates ?? []) {
+    const steps = tmpl.steps as { role?: string }[];
+    for (const step of steps ?? []) {
+      if (step.role) templateRoles.add(step.role);
+    }
+  }
+
+  if (templateRoles.size === 0 || agentPool.length === 0) {
+    return [];
+  }
+
+  // Use the same matching algorithm as workflow step assignment
+  const candidates: AiRoleMatchAgent[] = agentPool.filter((a) => a.role);
+  const stepRoles = Array.from(templateRoles);
+  const matches = await matchRolesWithAiOrFuzzy(supabase, user.id, stepRoles, candidates);
+
+  // Build botId → agent details lookup
+  const agentLookup = new Map(
+    agentPool.map((a) => [a.botId, { name: a.name, role: a.role }])
+  );
+
+  const coverage: RoleCoverageResult[] = stepRoles.map((role) => {
+    const match = matches[role];
+    const agent = match?.botId ? agentLookup.get(match.botId) : null;
+    return {
+      role,
+      covered: !!match?.botId,
+      matchedAgentName: agent?.name ?? null,
+      matchedAgentRole: agent?.role ?? null,
+    };
+  });
+
+  // Sort: uncovered first, then alphabetical
+  coverage.sort((a, b) => {
+    if (a.covered !== b.covered) return a.covered ? 1 : -1;
+    return a.role.localeCompare(b.role);
+  });
+
+  return coverage;
 }
