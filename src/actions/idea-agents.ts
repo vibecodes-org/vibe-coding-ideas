@@ -71,8 +71,8 @@ export async function allocateAgent(ideaId: string, botId: string) {
   revalidatePath(`/ideas/${ideaId}`);
   revalidatePath(`/ideas/${ideaId}/board`);
 
-  // R1: Rematch all active workflows to find better matches
-  await rematchActiveWorkflows(validIdeaId);
+  // R1: Rematch all active workflows — fire-and-forget (don't block UI)
+  rematchActiveWorkflows(validIdeaId).catch(() => {});
 }
 
 export async function removeIdeaAgent(ideaId: string, botId: string) {
@@ -102,8 +102,8 @@ export async function removeIdeaAgent(ideaId: string, botId: string) {
   revalidatePath(`/ideas/${ideaId}`);
   revalidatePath(`/ideas/${ideaId}/board`);
 
-  // R2: Rematch all active workflows to find replacements from remaining pool
-  await rematchActiveWorkflows(validIdeaId);
+  // R2: Rematch all active workflows — fire-and-forget (don't block UI)
+  rematchActiveWorkflows(validIdeaId).catch(() => {});
 }
 
 export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
@@ -168,8 +168,8 @@ export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
   revalidatePath(`/ideas/${ideaId}`);
   revalidatePath(`/ideas/${ideaId}/board`);
 
-  // Single rematch for all agents (not per-bot)
-  await rematchActiveWorkflows(validIdeaId);
+  // Single rematch for all agents — fire-and-forget (don't block UI)
+  rematchActiveWorkflows(validIdeaId).catch(() => {});
 
   return { added: idsToAllocate.length };
 }
