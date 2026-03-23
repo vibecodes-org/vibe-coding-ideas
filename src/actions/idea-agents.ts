@@ -1,5 +1,6 @@
 "use server";
 
+import { after } from "next/server";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateUuid } from "@/lib/validation";
@@ -76,9 +77,9 @@ export async function allocateAgent(ideaId: string, botId: string) {
   revalidatePath(`/ideas/${ideaId}`);
   revalidatePath(`/ideas/${ideaId}/board`);
 
-  // R1: Rematch all active workflows — fire-and-forget (don't block UI)
-  // Await rematch — must run after insert is committed so new agent is visible in pool
-  await rematchActiveWorkflows(supabase, user.id, validIdeaId);
+  // Rematch all active workflows in the background via after() — runs after the
+  // response is sent, so the insert is committed and visible to the rematch query
+  after(() => rematchActiveWorkflows(supabase, user.id, validIdeaId));
 }
 
 export async function removeIdeaAgent(ideaId: string, botId: string) {
@@ -108,9 +109,9 @@ export async function removeIdeaAgent(ideaId: string, botId: string) {
   revalidatePath(`/ideas/${ideaId}`);
   revalidatePath(`/ideas/${ideaId}/board`);
 
-  // R2: Rematch all active workflows — fire-and-forget (don't block UI)
-  // Await rematch — must run after insert is committed so new agent is visible in pool
-  await rematchActiveWorkflows(supabase, user.id, validIdeaId);
+  // Rematch all active workflows in the background via after() — runs after the
+  // response is sent, so the delete is committed and visible to the rematch query
+  after(() => rematchActiveWorkflows(supabase, user.id, validIdeaId));
 }
 
 export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
@@ -175,9 +176,9 @@ export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
   revalidatePath(`/ideas/${ideaId}`);
   revalidatePath(`/ideas/${ideaId}/board`);
 
-  // Single rematch for all agents — fire-and-forget (don't block UI)
-  // Await rematch — must run after insert is committed so new agent is visible in pool
-  await rematchActiveWorkflows(supabase, user.id, validIdeaId);
+  // Rematch all active workflows in the background via after() — runs after the
+  // response is sent, so the upsert is committed and visible to the rematch query
+  after(() => rematchActiveWorkflows(supabase, user.id, validIdeaId));
 
   return { added: idsToAllocate.length };
 }
