@@ -844,21 +844,21 @@ export function WorkflowsTab({
         <div className="flex-1 overflow-y-auto p-1.5">
           {templates.length === 0 ? (
             <div className="flex flex-col items-center gap-3 px-3 py-6 text-center">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-violet-500/10">
-                <Zap className="h-5 w-5 text-violet-400" />
+              {/* Dashed amber icon circle */}
+              <div className="flex h-10 w-10 items-center justify-center rounded-full border-[1.5px] border-dashed border-amber-500/25 bg-amber-500/[0.06]">
+                <Zap className="h-5 w-5 text-amber-400" />
               </div>
               <div className="space-y-1">
-                <p className="text-xs font-medium">No workflow templates yet</p>
+                <p className="text-xs font-medium text-amber-400">No templates yet</p>
                 <p className="text-[11px] text-muted-foreground leading-relaxed max-w-[180px]">
-                  Workflows define step-by-step processes for tasks. Create a template, then apply it to tasks manually or automatically via labels.
+                  Automate your process with step-by-step workflows.
                 </p>
               </div>
               {!isReadOnly && (
-                <div className="flex flex-col items-center gap-1.5 pt-1">
+                <div className="flex w-full flex-col items-center gap-1.5 pt-1">
                   <Button
-                    variant="outline"
                     size="sm"
-                    className="h-7 gap-1 text-xs"
+                    className="h-8 w-full gap-1.5 text-xs"
                     onClick={() => setLibraryOpen(true)}
                   >
                     <BookOpen className="h-3 w-3" />
@@ -871,7 +871,7 @@ export function WorkflowsTab({
                     onClick={() => setCreateOpen(true)}
                   >
                     <Plus className="h-3 w-3" />
-                    Create template
+                    Create from scratch
                   </Button>
                 </div>
               )}
@@ -913,22 +913,66 @@ export function WorkflowsTab({
       <div className="flex flex-1 flex-col overflow-y-auto rounded-lg border border-border bg-muted/10 p-4">
         {!selected ? (
           <div className="flex flex-1 items-center justify-center">
-            <div className="max-w-xs space-y-3 text-center">
-              <p className="text-sm text-muted-foreground">
-                {templates.length > 0
-                  ? "Select a template to view details"
-                  : "Create a template or import from the library to get started"}
-              </p>
-              {templates.length === 0 && (
-                <div className="space-y-2 text-left rounded-md border border-border bg-muted/20 p-3">
-                  <p className="text-xs font-medium">How workflows work:</p>
-                  <ol className="list-decimal list-inside space-y-1.5 text-xs text-muted-foreground">
-                    <li>Create a <strong className="text-foreground">template</strong> with ordered steps and roles</li>
-                    <li><strong className="text-foreground">Apply</strong> it to tasks manually or set up auto-rules</li>
-                    <li>Agents <strong className="text-foreground">execute</strong> steps via MCP, or manage them from the UI</li>
-                    <li>Steps with <strong className="text-foreground">approval gates</strong> pause for human review</li>
-                  </ol>
-                </div>
+            <div className="max-w-sm space-y-4 text-center">
+              {templates.length > 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  Select a template to view details
+                </p>
+              ) : (
+                <>
+                  {/* Dashed amber icon circle */}
+                  <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border-2 border-dashed border-amber-500/25 bg-amber-500/[0.06]">
+                    <Zap className="h-6 w-6 text-amber-400" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold">Automate your process</h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Import a proven template or create your own from scratch.
+                    </p>
+                  </div>
+                  <div className="space-y-3 text-left rounded-lg border border-amber-500/20 bg-amber-500/[0.05] p-4">
+                    <p className="text-xs font-semibold uppercase tracking-wide text-amber-400">How workflows work</p>
+                    <ol className="list-none space-y-2 text-xs text-muted-foreground">
+                      <li className="flex items-baseline gap-2">
+                        <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-amber-500/12 text-[10px] font-bold text-amber-400">1</span>
+                        <span>Create a <strong className="text-foreground font-medium">template</strong> with ordered steps and roles</span>
+                      </li>
+                      <li className="flex items-baseline gap-2">
+                        <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-amber-500/12 text-[10px] font-bold text-amber-400">2</span>
+                        <span><strong className="text-foreground font-medium">Apply</strong> it to tasks manually or set up auto-rules</span>
+                      </li>
+                      <li className="flex items-baseline gap-2">
+                        <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-amber-500/12 text-[10px] font-bold text-amber-400">3</span>
+                        <span>Agents <strong className="text-foreground font-medium">execute</strong> steps via MCP, or manage them from the UI</span>
+                      </li>
+                      <li className="flex items-baseline gap-2">
+                        <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-amber-500/12 text-[10px] font-bold text-amber-400">4</span>
+                        <span>Steps with <strong className="text-foreground font-medium">approval gates</strong> pause for human review</span>
+                      </li>
+                    </ol>
+                  </div>
+                  {!isReadOnly && (
+                    <div className="flex items-center justify-center gap-2 pt-1">
+                      <Button
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setLibraryOpen(true)}
+                      >
+                        <BookOpen className="h-3.5 w-3.5" />
+                        Import from library
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setCreateOpen(true)}
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        Create template
+                      </Button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           </div>

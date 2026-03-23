@@ -1,6 +1,6 @@
 "use client";
 
-import { Sparkles, LayoutList, Bot, Workflow } from "lucide-react";
+import { Sparkles, LayoutList, Bot, Workflow, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
@@ -37,8 +37,9 @@ export function BoardEmptyState({
   return (
     <div className="flex flex-1 items-center justify-center">
       <div className="text-center max-w-md">
-        <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-full bg-primary/15">
-          <Sparkles className="h-7 w-7 text-primary" />
+        {/* Dashed violet icon circle */}
+        <div className="mx-auto flex h-[72px] w-[72px] items-center justify-center rounded-full border-2 border-dashed border-violet-500/25 bg-violet-500/[0.06]">
+          <Sparkles className="h-7 w-7 text-violet-400" />
         </div>
         <h3 className="mt-5 text-lg font-semibold">
           Get started with AI
@@ -50,6 +51,7 @@ export function BoardEmptyState({
         {canUseAi ? (
           <div className="mt-6">
             <Button
+              size="lg"
               className="gap-2"
               onClick={onAiGenerate}
             >
@@ -57,7 +59,7 @@ export function BoardEmptyState({
               AI Generate Tasks
             </Button>
             {!hasByokKey && starterCredits > 0 && (
-              <p className="mt-1.5 text-xs text-muted-foreground">
+              <p className="mt-2 text-xs text-muted-foreground">
                 {starterCredits} free credit{starterCredits !== 1 ? "s" : ""} available
               </p>
             )}
@@ -73,23 +75,36 @@ export function BoardEmptyState({
             </p>
           </div>
         )}
-        <div className="mt-5 flex items-center justify-center gap-3">
-          <Link href="?tab=agents">
-            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
-              <Bot className="h-3.5 w-3.5" />
-              Add AI Agents
-            </Button>
+
+        {/* Nudge tile cards */}
+        <div className="mt-7 grid grid-cols-2 gap-3 max-w-sm mx-auto">
+          <Link
+            href="?tab=agents"
+            className="group rounded-lg border border-emerald-500/20 bg-emerald-500/[0.05] p-4 text-left transition-all hover:border-emerald-500/35 hover:bg-emerald-500/[0.1]"
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15">
+              <Bot className="h-4 w-4 text-emerald-400" />
+            </div>
+            <p className="mt-2.5 text-[13px] font-semibold text-emerald-400">Add AI Agents</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">Build your team to automate workflow steps</p>
+            <ArrowRight className="mt-2 h-3.5 w-3.5 text-emerald-400/40 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-400/70" />
           </Link>
-          <Link href="?tab=workflows">
-            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
-              <Workflow className="h-3.5 w-3.5" />
-              Set Up Workflows
-            </Button>
+          <Link
+            href="?tab=workflows"
+            className="group rounded-lg border border-amber-500/20 bg-amber-500/[0.05] p-4 text-left transition-all hover:border-amber-500/35 hover:bg-amber-500/[0.1]"
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15">
+              <Workflow className="h-4 w-4 text-amber-400" />
+            </div>
+            <p className="mt-2.5 text-[13px] font-semibold text-amber-400">Set Up Workflows</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">Define step-by-step processes for tasks</p>
+            <ArrowRight className="mt-2 h-3.5 w-3.5 text-amber-400/40 transition-transform group-hover:translate-x-0.5 group-hover:text-amber-400/70" />
           </Link>
         </div>
+
         <button
           type="button"
-          className="mt-4 text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors"
+          className="mt-5 text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors"
           onClick={onDismiss}
         >
           Show columns &amp; add tasks manually

@@ -295,27 +295,22 @@ export function AgentsTab({
   // Empty state
   if (ideaAgentDetails.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center gap-4 py-20 text-center">
-        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-muted">
-          <Bot className="h-8 w-8 text-muted-foreground" />
+      <div className="flex flex-col items-center justify-center gap-5 py-16 text-center">
+        {/* Dashed emerald icon circle */}
+        <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full border-2 border-dashed border-emerald-500/25 bg-emerald-500/[0.06]">
+          <Bot className="h-8 w-8 text-emerald-400" />
         </div>
         <div>
-          <h3 className="text-lg font-semibold">No agents assigned</h3>
-          <p className="mt-1 max-w-sm text-sm text-muted-foreground">
+          <h3 className="text-lg font-semibold">Build your AI team</h3>
+          <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
             Add AI agents to this idea&apos;s pool to automate workflow steps
             and collaborate on tasks.
           </p>
         </div>
-        <div className="flex gap-2">
-          <Link href="/agents">
-            <Button variant="outline" size="sm" className="gap-2">
-              <ExternalLink className="h-4 w-4" />
-              Browse Agents
-            </Button>
-          </Link>
+        <div className="flex flex-wrap items-center justify-center gap-2">
           {isTeamMember && unallocatedBots.length >= 2 && (
             <Button
-              size="sm"
+              size="lg"
               className="gap-2"
               onClick={handleAllocateAll}
               disabled={pending}
@@ -331,6 +326,12 @@ export function AgentsTab({
           {isTeamMember && unallocatedBots.length > 0 && (
             renderAddAgentPopover("center")
           )}
+          <Link href="/agents">
+            <Button variant="outline" size="sm" className="gap-2">
+              <ExternalLink className="h-4 w-4" />
+              Browse Agents
+            </Button>
+          </Link>
         </div>
       </div>
     );

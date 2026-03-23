@@ -1,0 +1,676 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Board Empty States — Design Proposals</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --card: #18181b;
+    --border: #27272a;
+    --muted: #71717a;
+    --foreground: #fafafa;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--foreground);
+    line-height: 1.5;
+    padding: 40px 24px;
+  }
+
+  h1 {
+    font-size: 28px;
+    font-weight: 700;
+    margin-bottom: 8px;
+  }
+  h1 span { color: var(--muted); font-weight: 400; font-size: 16px; }
+
+  .meta {
+    color: var(--muted);
+    font-size: 13px;
+    margin-bottom: 40px;
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 20px;
+  }
+
+  .section-title {
+    font-size: 20px;
+    font-weight: 600;
+    margin: 48px 0 8px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title .badge {
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 100px;
+    font-weight: 500;
+  }
+  .badge-violet { background: rgba(139,92,246,0.15); color: #a78bfa; }
+  .badge-emerald { background: rgba(16,185,129,0.15); color: #6ee7b7; }
+  .badge-amber { background: rgba(245,158,11,0.15); color: #fbbf24; }
+
+  .section-desc {
+    color: var(--muted);
+    font-size: 14px;
+    margin-bottom: 24px;
+    max-width: 700px;
+  }
+
+  .pain-ref {
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 16px;
+  }
+  .pain-ref code {
+    background: rgba(255,255,255,0.06);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 11px;
+  }
+
+  /* ── Mockup containers ── */
+  .mockup-frame {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 32px;
+    background: var(--bg);
+  }
+  .mockup-header {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 10px 16px;
+    font-size: 12px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .mockup-header .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--border);
+  }
+  .mockup-body {
+    padding: 48px 32px;
+    min-height: 400px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  /* ── Shared empty state patterns ── */
+  .glow-icon {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    margin: 0 auto 24px;
+  }
+  .glow-icon .glow {
+    position: absolute;
+    inset: -8px;
+    border-radius: 50%;
+    filter: blur(20px);
+    opacity: 0.4;
+  }
+  .glow-icon .circle {
+    position: relative;
+    width: 80px;
+    height: 80px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 36px;
+  }
+
+  .gradient-heading {
+    font-size: 22px;
+    font-weight: 600;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    margin-bottom: 8px;
+  }
+
+  .empty-desc {
+    color: var(--muted);
+    font-size: 14px;
+    max-width: 360px;
+    margin: 0 auto 24px;
+  }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    border: none;
+    transition: all 0.15s;
+    text-decoration: none;
+  }
+  .btn-lg { padding: 12px 24px; font-size: 15px; }
+  .btn-sm { padding: 6px 14px; font-size: 13px; }
+
+  .btn-violet-gradient {
+    background: linear-gradient(135deg, #7c3aed, #3b82f6);
+    color: white;
+    box-shadow: 0 4px 20px rgba(124,58,237,0.25);
+  }
+  .btn-violet-gradient:hover { box-shadow: 0 4px 24px rgba(124,58,237,0.4); }
+
+  .btn-emerald-gradient {
+    background: linear-gradient(135deg, #059669, #06b6d4);
+    color: white;
+    box-shadow: 0 4px 20px rgba(5,150,105,0.25);
+  }
+
+  .btn-amber-gradient {
+    background: linear-gradient(135deg, #d97706, #ea580c);
+    color: white;
+    box-shadow: 0 4px 20px rgba(217,119,6,0.2);
+  }
+
+  .btn-outline {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--foreground);
+  }
+  .btn-outline:hover { background: rgba(255,255,255,0.04); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border: none;
+    padding: 6px 12px;
+    font-size: 13px;
+  }
+
+  /* ── Board tab specific ── */
+  .nudge-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    max-width: 380px;
+    margin: 32px auto 0;
+  }
+  .nudge-card {
+    border-radius: 10px;
+    padding: 16px;
+    text-align: left;
+    transition: all 0.2s;
+    cursor: pointer;
+    text-decoration: none;
+    display: block;
+  }
+  .nudge-card:hover { transform: translateY(-1px); }
+  .nudge-card-emerald {
+    border: 1px solid rgba(16,185,129,0.2);
+    background: rgba(16,185,129,0.05);
+  }
+  .nudge-card-emerald:hover {
+    border-color: rgba(16,185,129,0.4);
+    background: rgba(16,185,129,0.1);
+  }
+  .nudge-card-amber {
+    border: 1px solid rgba(245,158,11,0.2);
+    background: rgba(245,158,11,0.05);
+  }
+  .nudge-card-amber:hover {
+    border-color: rgba(245,158,11,0.4);
+    background: rgba(245,158,11,0.1);
+  }
+  .nudge-icon { font-size: 20px; margin-bottom: 8px; }
+  .nudge-title { font-size: 14px; font-weight: 500; }
+  .nudge-subtitle { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .nudge-arrow { font-size: 12px; margin-top: 8px; opacity: 0.5; }
+  .nudge-card-emerald .nudge-title { color: #6ee7b7; }
+  .nudge-card-emerald .nudge-arrow { color: #6ee7b7; }
+  .nudge-card-amber .nudge-title { color: #fbbf24; }
+  .nudge-card-amber .nudge-arrow { color: #fbbf24; }
+
+  /* ── Workflows tab specific ── */
+  .workflow-layout {
+    display: flex;
+    gap: 16px;
+    width: 100%;
+    align-items: stretch;
+    min-height: 400px;
+  }
+  .workflow-left {
+    width: 220px;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    padding: 12px;
+    display: flex;
+    flex-direction: column;
+  }
+  .workflow-left-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 12px;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--muted);
+  }
+  .workflow-right {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(24,24,27,0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+  }
+  .workflow-right-inner {
+    max-width: 380px;
+    text-align: center;
+  }
+
+  .how-it-works {
+    border-radius: 10px;
+    padding: 16px;
+    text-align: left;
+    margin: 20px 0;
+  }
+  .how-it-works-amber {
+    border: 1px solid rgba(245,158,11,0.15);
+    background: rgba(245,158,11,0.05);
+  }
+  .how-it-works h4 {
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 10px;
+  }
+  .how-it-works ol {
+    list-style: decimal;
+    padding-left: 20px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .how-it-works li { margin-bottom: 6px; }
+  .how-it-works strong { color: rgba(251,191,36,0.9); }
+  .how-it-works-amber h4 { color: #fbbf24; }
+
+  /* ── Side-by-side CTAs ── */
+  .cta-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    margin-top: 20px;
+  }
+
+  /* Left panel small glow */
+  .glow-icon-sm {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    margin: 0 auto 12px;
+  }
+  .glow-icon-sm .glow {
+    position: absolute;
+    inset: -4px;
+    border-radius: 50%;
+    filter: blur(12px);
+    opacity: 0.4;
+  }
+  .glow-icon-sm .circle {
+    position: relative;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+  }
+
+  /* Left panel full-width buttons */
+  .left-btn-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    margin-top: 12px;
+  }
+  .left-btn-stack .btn {
+    width: 100%;
+    justify-content: center;
+    font-size: 12px;
+    padding: 8px 12px;
+  }
+
+  /* Annotation */
+  .annotation {
+    margin-top: 16px;
+    padding: 12px 16px;
+    background: rgba(139,92,246,0.06);
+    border: 1px solid rgba(139,92,246,0.15);
+    border-radius: 8px;
+    font-size: 13px;
+    color: #a78bfa;
+  }
+  .annotation-emerald {
+    background: rgba(16,185,129,0.06);
+    border-color: rgba(16,185,129,0.15);
+    color: #6ee7b7;
+  }
+  .annotation-amber {
+    background: rgba(245,158,11,0.06);
+    border-color: rgba(245,158,11,0.15);
+    color: #fbbf24;
+  }
+  .annotation strong { color: inherit; }
+
+  .credits { font-size: 12px; color: var(--muted); margin-top: 8px; }
+</style>
+</head>
+<body>
+
+<h1>Board Empty States — Design Proposals <span>by Compass</span></h1>
+<div class="meta">
+  Building on the <strong>Audit Current UX</strong> step findings (12 pain points, 7 recommendations).<br>
+  Each proposal directly addresses the prioritised issues from the audit.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- BOARD TAB -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<div class="section-title">
+  1. Board Tab — Empty State
+  <span class="badge badge-violet">Violet / Blue</span>
+</div>
+<div class="section-desc">
+  The primary onboarding surface. Users land here first when they create a new idea.
+</div>
+<div class="pain-ref">
+  Addresses: <code>P1</code> invisible nudge buttons, <code>P2</code> monochrome icon, <code>P3</code> no hierarchy, <code>P4</code> void background
+</div>
+
+<div class="mockup-frame">
+  <div class="mockup-header">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    Board tab — empty state (proposed)
+  </div>
+  <div class="mockup-body">
+    <div style="text-align:center; max-width:480px;">
+      <!-- Gradient glow icon -->
+      <div class="glow-icon">
+        <div class="glow" style="background: linear-gradient(135deg, #7c3aed, #3b82f6);"></div>
+        <div class="circle" style="background: linear-gradient(135deg, rgba(124,58,237,0.2), rgba(59,130,246,0.2)); border: 1px solid rgba(124,58,237,0.2);">
+          ✨
+        </div>
+      </div>
+
+      <!-- Gradient heading -->
+      <div class="gradient-heading" style="background: linear-gradient(90deg, #c4b5fd, #93c5fd);">
+        Get started with AI
+      </div>
+      <div class="empty-desc">
+        Describe your idea and let AI generate a full task board for you — columns, tasks, and labels, all in one click.
+      </div>
+
+      <!-- Primary CTA with gradient -->
+      <button class="btn btn-lg btn-violet-gradient">
+        ✨ AI Generate Tasks
+      </button>
+      <div class="credits">7 free credits available</div>
+
+      <!-- Nudge cards (the key improvement) -->
+      <div class="nudge-grid">
+        <a class="nudge-card nudge-card-emerald" href="#">
+          <div class="nudge-icon">🤖</div>
+          <div class="nudge-title">Add AI Agents</div>
+          <div class="nudge-subtitle">Build your team</div>
+          <div class="nudge-arrow">→</div>
+        </a>
+        <a class="nudge-card nudge-card-amber" href="#">
+          <div class="nudge-icon">⚡</div>
+          <div class="nudge-title">Set Up Workflows</div>
+          <div class="nudge-subtitle">Automate your process</div>
+          <div class="nudge-arrow">→</div>
+        </a>
+      </div>
+
+      <button class="btn-ghost" style="margin-top:24px;">
+        Show columns & add tasks manually
+      </button>
+    </div>
+  </div>
+</div>
+
+<div class="annotation">
+  <strong>Key changes:</strong> Gradient glow icon replaces flat grey circle. Gradient heading adds colour.
+  Nudge buttons replaced with coloured bordered cards — visually distinct, clearly "recommended next steps" not throwaway links.
+  Each card has its own colour identity (emerald=agents, amber=workflows) that carries through to their respective tabs.
+  Primary CTA gets gradient background + shadow for clear hierarchy.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- AGENTS TAB -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<div class="section-title" style="margin-top:56px;">
+  2. Agents Tab — Empty State
+  <span class="badge badge-emerald">Emerald / Cyan</span>
+</div>
+<div class="section-desc">
+  Shown when no agents are allocated to this idea's pool.
+</div>
+<div class="pain-ref">
+  Addresses: <code>P5</code> grey icon, <code>P6</code> negative heading, <code>P7</code> no primary CTA, <code>P8</code> no context
+</div>
+
+<div class="mockup-frame">
+  <div class="mockup-header">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    Agents tab — empty state (proposed)
+  </div>
+  <div class="mockup-body">
+    <div style="text-align:center; max-width:420px;">
+      <!-- Emerald glow icon -->
+      <div class="glow-icon">
+        <div class="glow" style="background: linear-gradient(135deg, #059669, #06b6d4);"></div>
+        <div class="circle" style="background: linear-gradient(135deg, rgba(5,150,105,0.2), rgba(6,182,212,0.2)); border: 1px solid rgba(5,150,105,0.2);">
+          🤖
+        </div>
+      </div>
+
+      <!-- Positive framing -->
+      <div class="gradient-heading" style="background: linear-gradient(90deg, #6ee7b7, #67e8f9);">
+        Build your AI team
+      </div>
+      <div class="empty-desc">
+        Add AI agents to this idea's pool to automate workflow steps and collaborate on tasks.
+      </div>
+
+      <!-- Clear primary CTA -->
+      <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px;">
+        <button class="btn btn-lg btn-emerald-gradient">
+          👥 Add All My Agents (10)
+        </button>
+        <button class="btn btn-sm btn-outline">
+          ＋ Add Agent
+        </button>
+        <button class="btn btn-sm btn-outline">
+          ↗ Browse Agents
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="annotation annotation-emerald">
+  <strong>Key changes:</strong> "No agents assigned" → "Build your AI team" (positive framing).
+  Emerald/cyan gradient glow icon replaces flat grey. "Add All My Agents" promoted to large gradient primary CTA —
+  it's the fastest path to a populated agent pool. Other actions become secondary outline buttons.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- WORKFLOWS TAB -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<div class="section-title" style="margin-top:56px;">
+  3. Workflows Tab — Empty State
+  <span class="badge badge-amber">Amber / Orange</span>
+</div>
+<div class="section-desc">
+  Split-panel layout: left panel (template list) + right panel (detail / guide).
+</div>
+<div class="pain-ref">
+  Addresses: <code>P9</code> no right panel CTAs, <code>P10</code> tiny left buttons, <code>P11</code> flat guide box, <code>P12</code> no visual connection
+</div>
+
+<div class="mockup-frame">
+  <div class="mockup-header">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    Workflows tab — empty state (proposed)
+  </div>
+  <div class="mockup-body" style="padding: 24px; align-items: stretch;">
+    <div class="workflow-layout">
+      <!-- Left panel -->
+      <div class="workflow-left">
+        <div class="workflow-left-header">
+          <span>TEMPLATES</span>
+          <span style="margin-left:auto; color: var(--muted);">📚 Library</span>
+          <span style="color: var(--muted);">＋ New</span>
+        </div>
+
+        <!-- Warning banner (existing) -->
+        <div style="background: rgba(245,158,11,0.1); border: 1px solid rgba(245,158,11,0.25); border-radius: 8px; padding: 10px; margin-bottom: 12px; font-size: 11px; color: #fbbf24;">
+          ⚠ <strong>Agents needed:</strong> Workflow steps are executed by AI agents. <a href="#" style="color:#fbbf24;">Add agents to your pool</a> before creating workflow templates.
+        </div>
+
+        <!-- Glowing icon -->
+        <div style="flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center;">
+          <div class="glow-icon-sm">
+            <div class="glow" style="background: linear-gradient(135deg, #d97706, #ea580c);"></div>
+            <div class="circle" style="background: linear-gradient(135deg, rgba(217,119,6,0.15), rgba(234,88,12,0.15)); border: 1px solid rgba(217,119,6,0.2);">
+              ⚡
+            </div>
+          </div>
+          <div style="font-size:12px; font-weight:500; color:#fbbf24; margin-bottom:4px;">No templates yet</div>
+          <div style="font-size:11px; color:var(--muted); max-width:170px; line-height:1.4;">
+            Automate your process with step-by-step workflows.
+          </div>
+
+          <!-- Full-width buttons with import as primary -->
+          <div class="left-btn-stack">
+            <button class="btn btn-amber-gradient" style="font-size:12px; padding:8px 12px; box-shadow: 0 2px 12px rgba(217,119,6,0.15);">
+              📚 Import from library
+            </button>
+            <button class="btn btn-ghost" style="font-size:12px; padding:6px 12px;">
+              ＋ Create from scratch
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right panel -->
+      <div class="workflow-right">
+        <div class="workflow-right-inner">
+          <!-- Glow icon -->
+          <div class="glow-icon" style="width:64px; height:64px; margin-bottom:20px;">
+            <div class="glow" style="background: linear-gradient(135deg, #d97706, #ea580c); inset:-6px;"></div>
+            <div class="circle" style="width:64px; height:64px; font-size:28px; background: linear-gradient(135deg, rgba(217,119,6,0.15), rgba(234,88,12,0.15)); border: 1px solid rgba(217,119,6,0.2);">
+              ⚡
+            </div>
+          </div>
+
+          <div class="gradient-heading" style="font-size:20px; background: linear-gradient(90deg, #fcd34d, #fb923c);">
+            Automate your process
+          </div>
+          <div style="color:var(--muted); font-size:14px; margin-bottom:4px;">
+            Import a proven workflow template from the library or create your own from scratch.
+          </div>
+
+          <!-- How it works with amber accent -->
+          <div class="how-it-works how-it-works-amber">
+            <h4>How workflows work</h4>
+            <ol>
+              <li>Create a <strong>template</strong> with ordered steps and roles</li>
+              <li><strong>Apply</strong> it to tasks manually or set up auto-rules</li>
+              <li>Agents <strong>execute</strong> steps via MCP, or manage from the UI</li>
+              <li>Steps with <strong>approval gates</strong> pause for human review</li>
+            </ol>
+          </div>
+
+          <!-- Side-by-side CTAs — import promoted equally -->
+          <div class="cta-row">
+            <button class="btn btn-amber-gradient">
+              📚 Import from library
+            </button>
+            <button class="btn btn-outline">
+              ＋ Create template
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="annotation annotation-amber">
+  <strong>Key changes:</strong><br>
+  <strong>Left panel:</strong> Amber gradient glow icon. "Import from library" is now the primary CTA with gradient background, full width.
+  "Create from scratch" is secondary ghost button below. Positive framing ("No templates yet" with encouraging subtitle).<br>
+  <strong>Right panel:</strong> Gradient heading + glow icon. "How workflows work" box now has amber-tinted border/background.
+  Two side-by-side CTAs added — "Import from library" (gradient primary) and "Create template" (outline) —
+  so users who read the guide can immediately act. Library import is promoted equally to creating from scratch.
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- IMPLEMENTATION NOTES -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<div class="section-title" style="margin-top:56px;">
+  Implementation Notes
+</div>
+
+<div style="font-size:14px; color: var(--muted); line-height: 1.7; max-width: 700px;">
+  <p style="margin-bottom:12px;">
+    <strong style="color: var(--foreground);">Tailwind classes used:</strong>
+    All designs use existing Tailwind utilities — no custom CSS needed.
+  </p>
+  <ul style="list-style: disc; padding-left: 20px;">
+    <li><strong style="color: var(--foreground);">Gradient glow:</strong> <code style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; font-size:12px;">absolute inset-0 rounded-full bg-gradient-to-br from-{color}-500/30 to-{color}-500/30 blur-xl</code></li>
+    <li><strong style="color: var(--foreground);">Gradient heading:</strong> <code style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; font-size:12px;">bg-gradient-to-r from-{color}-300 to-{color}-300 bg-clip-text text-transparent</code></li>
+    <li><strong style="color: var(--foreground);">Gradient button:</strong> <code style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; font-size:12px;">bg-gradient-to-r from-{color}-600 to-{color}-600 hover:from-{color}-500 hover:to-{color}-500 text-white shadow-lg shadow-{color}-500/20</code></li>
+    <li><strong style="color: var(--foreground);">Nudge cards:</strong> <code style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; font-size:12px;">rounded-lg border border-{color}-500/20 bg-{color}-500/5 hover:border-{color}-500/40 hover:bg-{color}-500/10</code></li>
+    <li><strong style="color: var(--foreground);">Tinted info box:</strong> <code style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; font-size:12px;">rounded-lg border border-amber-500/15 bg-amber-500/5</code></li>
+  </ul>
+  <p style="margin-top:16px;">
+    <strong style="color: var(--foreground);">Files to modify:</strong>
+  </p>
+  <ul style="list-style: disc; padding-left: 20px;">
+    <li><code style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; font-size:12px;">src/components/board/board-empty-state.tsx</code> — gradient icon, gradient heading, gradient CTA, nudge cards replacing ghost buttons</li>
+    <li><code style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; font-size:12px;">src/components/board/agents-tab.tsx</code> — gradient icon, positive heading, primary CTA hierarchy</li>
+    <li><code style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:4px; font-size:12px;">src/components/board/workflows-tab.tsx</code> — both left panel (gradient import CTA) and right panel (glow icon, heading, tinted guide, side-by-side CTAs)</li>
+  </ul>
+  <p style="margin-top:16px;">
+    <strong style="color: var(--foreground);">No new dependencies.</strong> All patterns use existing Tailwind + Lucide icons.
+  </p>
+</div>
+
+</body>
+</html>

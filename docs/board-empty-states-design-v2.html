@@ -1,0 +1,633 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Board Empty States — Design V2</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #09090b;
+    --card: #18181b;
+    --border: rgba(255,255,255,0.10);
+    --border-hover: rgba(255,255,255,0.18);
+    --muted: #71717a;
+    --muted-fg: #a1a1aa;
+    --foreground: #fafafa;
+    --primary: #fafafa;
+    --primary-fg: #09090b;
+
+    /* Semantic accents — matching existing palette */
+    --violet: #a78bfa;
+    --violet-dim: rgba(139,92,246,0.10);
+    --violet-border: rgba(139,92,246,0.20);
+    --emerald: #6ee7b7;
+    --emerald-dim: rgba(16,185,129,0.08);
+    --emerald-border: rgba(16,185,129,0.20);
+    --amber: #fbbf24;
+    --amber-dim: rgba(245,158,11,0.08);
+    --amber-border: rgba(245,158,11,0.20);
+    --blue: #60a5fa;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--foreground);
+    line-height: 1.5;
+    padding: 48px 32px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  h1 { font-size: 24px; font-weight: 700; margin-bottom: 4px; letter-spacing: -0.02em; }
+  .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 48px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+
+  .section-label {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+  .section-title {
+    font-size: 18px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    letter-spacing: -0.01em;
+  }
+  .section-desc { color: var(--muted-fg); font-size: 13px; margin-bottom: 20px; }
+
+  /* ── Mockup chrome ── */
+  .mockup {
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    margin-bottom: 16px;
+    background: var(--bg);
+  }
+  .mockup-bar {
+    background: var(--card);
+    border-bottom: 1px solid var(--border);
+    padding: 8px 14px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .mockup-bar .dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.12); }
+  .mockup-bar span { font-size: 11px; color: var(--muted); margin-left: 8px; }
+  .mockup-body {
+    padding: 56px 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 420px;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Very subtle atmospheric orb — matches welcome-experience.tsx pattern */
+  .mockup-body::before {
+    content: '';
+    position: absolute;
+    width: 400px;
+    height: 400px;
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    filter: blur(120px);
+    pointer-events: none;
+  }
+  .mockup-body.atmo-violet::before { background: rgba(139,92,246,0.04); }
+  .mockup-body.atmo-emerald::before { background: rgba(16,185,129,0.04); }
+  .mockup-body.atmo-amber::before { background: rgba(245,158,11,0.04); }
+
+  .note {
+    font-size: 13px;
+    color: var(--muted-fg);
+    padding: 12px 16px;
+    border-radius: 8px;
+    border: 1px solid var(--border);
+    background: var(--card);
+    margin-bottom: 56px;
+    line-height: 1.6;
+  }
+  .note strong { color: var(--foreground); }
+
+  /* ── Shared empty state atoms ── */
+  .icon-container {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 20px;
+    font-size: 28px;
+    border: 2px dashed;
+  }
+  .icon-container.violet { border-color: rgba(139,92,246,0.25); background: rgba(139,92,246,0.06); }
+  .icon-container.emerald { border-color: rgba(16,185,129,0.25); background: rgba(16,185,129,0.06); }
+  .icon-container.amber { border-color: rgba(245,158,11,0.25); background: rgba(245,158,11,0.06); }
+
+  .empty-heading {
+    font-size: 20px;
+    font-weight: 600;
+    margin-bottom: 8px;
+    letter-spacing: -0.01em;
+  }
+  .empty-desc {
+    color: var(--muted-fg);
+    font-size: 14px;
+    max-width: 340px;
+    margin: 0 auto 24px;
+    line-height: 1.5;
+  }
+
+  /* ── Buttons (matching shadcn conventions) ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s;
+    text-decoration: none;
+    font-family: inherit;
+    line-height: 1;
+  }
+  .btn-primary {
+    background: var(--primary);
+    color: var(--primary-fg);
+    border: none;
+    padding: 10px 18px;
+    height: 36px;
+  }
+  .btn-primary:hover { opacity: 0.9; }
+
+  .btn-outline {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+    padding: 9px 16px;
+    height: 36px;
+  }
+  .btn-outline:hover { background: rgba(255,255,255,0.06); border-color: var(--border-hover); }
+
+  .btn-sm { height: 32px; padding: 7px 14px; font-size: 13px; }
+  .btn-lg { height: 40px; padding: 11px 22px; font-size: 15px; }
+
+  .btn-ghost {
+    background: none;
+    border: none;
+    color: var(--muted-fg);
+    padding: 7px 12px;
+    font-size: 13px;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  .btn-ghost:hover { color: var(--foreground); }
+
+  .credits { font-size: 12px; color: var(--muted); margin-top: 8px; }
+
+  /* ── Nudge tiles (inspired by welcome-experience action tiles) ── */
+  .nudge-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+    max-width: 400px;
+    margin: 28px auto 0;
+  }
+  .nudge-tile {
+    border-radius: 10px;
+    padding: 16px;
+    text-align: left;
+    cursor: pointer;
+    text-decoration: none;
+    display: block;
+    transition: all 0.2s;
+    position: relative;
+  }
+  .nudge-tile:hover { transform: translateY(-1px); }
+
+  .nudge-tile.emerald {
+    border: 1px solid var(--emerald-border);
+    background: var(--emerald-dim);
+  }
+  .nudge-tile.emerald:hover { border-color: rgba(16,185,129,0.35); background: rgba(16,185,129,0.12); }
+
+  .nudge-tile.amber {
+    border: 1px solid var(--amber-border);
+    background: var(--amber-dim);
+  }
+  .nudge-tile.amber:hover { border-color: rgba(245,158,11,0.35); background: rgba(245,158,11,0.12); }
+
+  .nudge-tile-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 16px;
+    margin-bottom: 10px;
+  }
+  .nudge-tile.emerald .nudge-tile-icon { background: rgba(16,185,129,0.15); }
+  .nudge-tile.amber .nudge-tile-icon { background: rgba(245,158,11,0.15); }
+
+  .nudge-tile-title { font-size: 13px; font-weight: 600; }
+  .nudge-tile.emerald .nudge-tile-title { color: var(--emerald); }
+  .nudge-tile.amber .nudge-tile-title { color: var(--amber); }
+  .nudge-tile-sub { font-size: 11px; color: var(--muted); margin-top: 2px; line-height: 1.3; }
+
+  .nudge-tile-arrow {
+    position: absolute;
+    bottom: 14px;
+    right: 14px;
+    font-size: 14px;
+    opacity: 0.4;
+    transition: all 0.2s;
+  }
+  .nudge-tile.emerald .nudge-tile-arrow { color: var(--emerald); }
+  .nudge-tile.amber .nudge-tile-arrow { color: var(--amber); }
+  .nudge-tile:hover .nudge-tile-arrow { opacity: 0.8; transform: translateX(2px); }
+
+  /* ── Workflows layout ── */
+  .wf-layout {
+    display: flex;
+    gap: 16px;
+    width: 100%;
+    align-items: stretch;
+    min-height: 380px;
+  }
+  .wf-left {
+    width: 220px;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--card);
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+  .wf-left-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--muted);
+    font-weight: 600;
+  }
+  .wf-left-head .action { margin-left: auto; font-size: 11px; font-weight: 500; text-transform: none; letter-spacing: 0; cursor: pointer; }
+
+  .wf-left-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 20px 16px;
+    text-align: center;
+  }
+  .wf-left-body .small-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 18px;
+    margin-bottom: 12px;
+    border: 1.5px dashed rgba(245,158,11,0.25);
+    background: rgba(245,158,11,0.06);
+  }
+  .wf-left-body h4 { font-size: 12px; font-weight: 600; margin-bottom: 4px; }
+  .wf-left-body p { font-size: 11px; color: var(--muted); line-height: 1.4; max-width: 170px; }
+
+  .wf-left-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    width: 100%;
+    margin-top: 16px;
+  }
+  .wf-left-actions .btn { width: 100%; justify-content: center; }
+
+  .wf-right {
+    flex: 1;
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: rgba(24,24,27,0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .wf-right::before {
+    content: '';
+    position: absolute;
+    width: 300px;
+    height: 300px;
+    border-radius: 50%;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    background: rgba(245,158,11,0.03);
+    filter: blur(80px);
+    pointer-events: none;
+  }
+  .wf-right-inner {
+    max-width: 360px;
+    text-align: center;
+    position: relative;
+  }
+
+  .how-box {
+    border: 1px solid var(--amber-border);
+    background: var(--amber-dim);
+    border-radius: 10px;
+    padding: 16px;
+    text-align: left;
+    margin: 20px 0;
+  }
+  .how-box h4 {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--amber);
+    margin-bottom: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+  .how-box ol {
+    list-style: none;
+    counter-reset: steps;
+    padding: 0;
+  }
+  .how-box li {
+    counter-increment: steps;
+    font-size: 13px;
+    color: var(--muted-fg);
+    padding: 4px 0;
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+  .how-box li::before {
+    content: counter(steps);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: rgba(245,158,11,0.12);
+    color: var(--amber);
+    font-size: 10px;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .how-box strong { color: var(--foreground); font-weight: 500; }
+
+  .cta-pair {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 20px;
+  }
+
+  /* ── Comparison strip ── */
+  .compare { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 56px; }
+  .compare-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin-bottom: 8px; }
+  .compare .mockup { margin-bottom: 0; }
+  .compare .mockup-body { min-height: 320px; padding: 40px 24px; }
+
+  @media (max-width: 700px) {
+    .compare { grid-template-columns: 1fr; }
+    .nudge-row { grid-template-columns: 1fr; }
+    .wf-layout { flex-direction: column; }
+    .wf-left { width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<h1>Board Empty States — V2</h1>
+<p class="subtitle">Staying within VibeCodes' existing design system — tinted accents, dashed icon containers, solid buttons, subtle atmosphere. No gradient fills.</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 1. BOARD TAB -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<div class="section-label">Tab 1</div>
+<div class="section-title">Board — Empty State</div>
+<div class="section-desc">Primary onboarding surface. Nudges for agents &amp; workflows promoted from invisible ghost buttons to tinted tile cards.</div>
+
+<div class="mockup">
+  <div class="mockup-bar">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <span>Board tab — proposed</span>
+  </div>
+  <div class="mockup-body atmo-violet">
+    <div style="text-align:center; max-width:480px; position:relative;">
+      <!-- Dashed icon circle with violet tint -->
+      <div class="icon-container violet">✨</div>
+
+      <div class="empty-heading">Get started with AI</div>
+      <div class="empty-desc">
+        Describe your idea and let AI generate a full task board — columns, tasks, and labels, all in one click.
+      </div>
+
+      <button class="btn btn-primary btn-lg" style="gap:8px;">✨ AI Generate Tasks</button>
+      <div class="credits">7 free credits available</div>
+
+      <!-- Nudge tiles — tinted cards like welcome-experience action tiles -->
+      <div class="nudge-row">
+        <a class="nudge-tile emerald" href="#">
+          <div class="nudge-tile-icon">🤖</div>
+          <div class="nudge-tile-title">Add AI Agents</div>
+          <div class="nudge-tile-sub">Build your team to automate workflow steps</div>
+          <div class="nudge-tile-arrow">→</div>
+        </a>
+        <a class="nudge-tile amber" href="#">
+          <div class="nudge-tile-icon">⚡</div>
+          <div class="nudge-tile-title">Set Up Workflows</div>
+          <div class="nudge-tile-sub">Define step-by-step processes for tasks</div>
+          <div class="nudge-tile-arrow">→</div>
+        </a>
+      </div>
+
+      <button class="btn-ghost" style="margin-top:20px;">Show columns &amp; add tasks manually</button>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <strong>What changed:</strong> Ghost buttons → tinted bordered cards (emerald for agents, amber for workflows) using the same pattern as welcome-experience action tiles.
+  Icon gets a dashed violet circle (matching the agents empty-state pattern). Primary CTA stays a solid white button (standard). Subtle 4% violet atmospheric blur behind — same technique as the welcome card.
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 2. AGENTS TAB -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<div class="section-label">Tab 2</div>
+<div class="section-title">Agents — Empty State</div>
+<div class="section-desc">Positive heading, clear primary CTA, emerald accent consistent with the board tab's agent nudge card.</div>
+
+<div class="mockup">
+  <div class="mockup-bar">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <span>Agents tab — proposed</span>
+  </div>
+  <div class="mockup-body atmo-emerald">
+    <div style="text-align:center; max-width:420px; position:relative;">
+      <div class="icon-container emerald">🤖</div>
+
+      <div class="empty-heading">Build your AI team</div>
+      <div class="empty-desc">
+        Add AI agents to this idea's pool to automate workflow steps and collaborate on tasks.
+      </div>
+
+      <div style="display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:8px;">
+        <button class="btn btn-primary btn-lg">👥 Add All My Agents (10)</button>
+        <button class="btn btn-outline btn-sm">＋ Add Agent</button>
+        <button class="btn btn-outline btn-sm">↗ Browse Agents</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <strong>What changed:</strong> "No agents assigned" → "Build your AI team" (positive framing).
+  Grey bg-muted circle → emerald dashed circle. "Add All My Agents" promoted to primary button (solid white, standard pattern).
+  Other actions stay as outline buttons. Subtle emerald atmospheric blur.
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- 3. WORKFLOWS TAB -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<div class="section-label">Tab 3</div>
+<div class="section-title">Workflows — Empty State</div>
+<div class="section-desc">Left panel promotes "Import from library" as primary action. Right panel gets CTAs + an amber-tinted how-it-works guide.</div>
+
+<div class="mockup">
+  <div class="mockup-bar">
+    <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    <span>Workflows tab — proposed</span>
+  </div>
+  <div class="mockup-body" style="padding:20px; align-items:stretch;">
+    <div class="wf-layout">
+      <!-- Left panel -->
+      <div class="wf-left">
+        <div class="wf-left-head">
+          <span>Templates</span>
+          <span class="action" style="color:var(--amber);">📚 Library</span>
+          <span class="action">＋ New</span>
+        </div>
+
+        <!-- Agent warning banner (existing, keep as-is) -->
+        <div style="margin: 8px 12px; background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.20); border-radius: 8px; padding: 10px; font-size: 11px; color: var(--amber);">
+          ⚠ <strong>Agents needed:</strong> <a href="#" style="color:var(--amber); text-decoration:underline;">Add agents to your pool</a> before creating workflow templates.
+        </div>
+
+        <div class="wf-left-body">
+          <div class="small-icon">⚡</div>
+          <h4>No templates yet</h4>
+          <p>Automate your process with step-by-step workflows.</p>
+
+          <div class="wf-left-actions">
+            <button class="btn btn-primary btn-sm" style="gap:6px;">📚 Import from library</button>
+            <button class="btn-ghost" style="font-size:12px;">＋ Create from scratch</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right panel -->
+      <div class="wf-right">
+        <div class="wf-right-inner">
+          <div class="icon-container amber" style="width:56px; height:56px; font-size:22px; margin-bottom:16px;">⚡</div>
+
+          <div class="empty-heading" style="font-size:18px;">Automate your process</div>
+          <div style="color:var(--muted-fg); font-size:13px; margin-bottom:4px;">
+            Import a proven template or create your own from scratch.
+          </div>
+
+          <div class="how-box">
+            <h4>How workflows work</h4>
+            <ol>
+              <li><span>Create a <strong>template</strong> with ordered steps and roles</span></li>
+              <li><span><strong>Apply</strong> it to tasks manually or set up auto-rules</span></li>
+              <li><span>Agents <strong>execute</strong> steps via MCP or the UI</span></li>
+              <li><span>Steps with <strong>approval gates</strong> pause for review</span></li>
+            </ol>
+          </div>
+
+          <div class="cta-pair">
+            <button class="btn btn-primary btn-sm" style="gap:6px;">📚 Import from library</button>
+            <button class="btn btn-outline btn-sm" style="gap:6px;">＋ Create template</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="note">
+  <strong>What changed:</strong><br>
+  <strong>Left panel:</strong> "Import from library" promoted to primary solid button (was outline). "Create from scratch" demoted to ghost (was also undersized). Dashed amber icon circle replaces flat violet circle.<br>
+  <strong>Right panel:</strong> Now has a heading, amber icon, tinted how-it-works guide with numbered step indicators, and two CTAs — "Import from library" (primary) + "Create template" (outline) side by side.
+  Library import is equally prominent in both panels. Subtle amber atmospheric blur.
+</div>
+
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- DESIGN RATIONALE -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<div style="margin-top:56px; padding-top:32px; border-top: 1px solid var(--border);">
+  <div class="section-title" style="margin-bottom:16px;">Design Rationale</div>
+  <div style="font-size:14px; color: var(--muted-fg); line-height:1.7; max-width:640px;">
+    <p style="margin-bottom:12px;">
+      This revision stays within VibeCodes' existing visual language:
+    </p>
+    <ul style="list-style: none; padding: 0;">
+      <li style="padding:4px 0;">
+        <strong style="color:var(--foreground);">Dashed icon circles</strong> — matches the agents empty-state pattern (<code style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px; font-size:12px;">border-2 border-dashed bg-{color}/5</code>)
+      </li>
+      <li style="padding:4px 0;">
+        <strong style="color:var(--foreground);">Tinted tile cards</strong> — matches welcome-experience action tiles (<code style="background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px; font-size:12px;">border-{color}-500/20 bg-{color}-500/5</code>)
+      </li>
+      <li style="padding:4px 0;">
+        <strong style="color:var(--foreground);">Solid primary buttons</strong> — standard white-on-dark, no gradients
+      </li>
+      <li style="padding:4px 0;">
+        <strong style="color:var(--foreground);">Atmospheric blurs at 3-4%</strong> — same opacity as welcome card and landing hero
+      </li>
+      <li style="padding:4px 0;">
+        <strong style="color:var(--foreground);">Accent colours are informational</strong> — emerald = agents, amber = workflows, violet = AI/generation. Consistent across all surfaces.
+      </li>
+    </ul>
+    <p style="margin-top:16px;">
+      <strong style="color:var(--foreground);">No gradient fills, no coloured shadows, no glow effects.</strong> The colour comes from tinted borders, tinted backgrounds at low opacity, and the accent colour on icon containers. This matches how the rest of VibeCodes uses colour.
+    </p>
+  </div>
+</div>
+
+</body>
+</html>
