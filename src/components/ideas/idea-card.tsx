@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { MessageSquare, Users, LayoutDashboard, Github, Lock, ShieldCheck } from "lucide-react";
+import { MessageSquare, MessagesSquare, Users, LayoutDashboard, Github, Lock, ShieldCheck } from "lucide-react";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -115,6 +115,20 @@ export function IdeaCard({ idea, hasVoted, taskCount }: IdeaCardProps) {
               </TooltipTrigger>
               <TooltipContent>Collaborators</TooltipContent>
             </Tooltip>
+            {idea.discussion_count > 0 && (
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Link
+                    href={`/ideas/${idea.id}/discussions`}
+                    className="flex items-center gap-1 hover:text-primary transition-colors"
+                  >
+                    <MessagesSquare className="h-3.5 w-3.5" />
+                    {idea.discussion_count}
+                  </Link>
+                </TooltipTrigger>
+                <TooltipContent>Discussions</TooltipContent>
+              </Tooltip>
+            )}
             {taskCount != null && taskCount > 0 && (
               <Tooltip>
                 <TooltipTrigger asChild>

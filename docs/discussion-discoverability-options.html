@@ -1,0 +1,866 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Discussion Discoverability — UX Options</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #1a1a1a;
+      --surface-3: #1e1e1e;
+      --border: #2a2a2a;
+      --border-hover: #3a3a3a;
+      --text: #e4e4e7;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --accent: #a78bfa;
+      --accent-dim: rgba(167, 139, 250, 0.12);
+      --green: #4ade80;
+      --green-dim: rgba(74, 222, 128, 0.1);
+      --amber: #fbbf24;
+      --amber-dim: rgba(251, 191, 36, 0.08);
+      --red: #f87171;
+      --blue: #60a5fa;
+      --blue-dim: rgba(96, 165, 250, 0.1);
+      --pink: #f472b6;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    .meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 3rem; }
+    .context-note {
+      padding: 1rem;
+      background: var(--accent-dim);
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      border-radius: 8px;
+      font-size: 0.85rem;
+      margin-bottom: 3rem;
+      color: var(--text-muted);
+    }
+    .context-note strong { color: var(--accent); }
+    .option-section {
+      margin-bottom: 3.5rem;
+      border-top: 1px solid var(--border);
+      padding-top: 2rem;
+    }
+    .option-section h2 {
+      font-size: 1.15rem;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+    }
+    .option-section .subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+    .mockup-frame {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      position: relative;
+    }
+    .mockup-label {
+      position: absolute;
+      top: -10px;
+      left: 16px;
+      background: var(--surface);
+      padding: 0 8px;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+    }
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      margin-bottom: 0.75rem;
+    }
+
+    /* ─── Info boxes ─── */
+    .info-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+      font-size: 0.82rem;
+    }
+    .info-box { padding: 0.6rem 0; }
+    .info-box h4 {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 0.35rem;
+    }
+    .info-box.rationale h4 { color: var(--blue); }
+    .info-box.effort h4 { color: var(--amber); }
+    .info-box.tradeoffs h4 { color: var(--pink); }
+    .info-box p, .info-box li { color: var(--text-muted); font-size: 0.82rem; }
+    .info-box ul { margin-left: 1rem; }
+    .info-box li { margin-bottom: 0.2rem; }
+    .effort-badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+    }
+    .effort-low { background: var(--green-dim); color: var(--green); border: 1px solid rgba(74,222,128,0.15); }
+    .effort-med { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(251,191,36,0.15); }
+    .effort-high { background: rgba(248,113,113,0.08); color: var(--red); border: 1px solid rgba(248,113,113,0.15); }
+
+    /* ─── Option A: Idea detail discussion section ─── */
+    .idea-hero {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      margin-bottom: 0.75rem;
+    }
+    .idea-hero-title { font-size: 1rem; font-weight: 600; }
+    .idea-hero-meta { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem; }
+    .nav-buttons {
+      display: flex;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+    }
+    .nav-btn {
+      padding: 0.4rem 0.85rem;
+      border-radius: 6px;
+      font-size: 0.8rem;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+    }
+    .discussions-section {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      background: var(--surface-2);
+      margin-bottom: 1rem;
+    }
+    .discussions-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .discussions-header-left {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+    }
+    .discussions-header h3 {
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .count-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 20px;
+      height: 20px;
+      padding: 0 6px;
+      border-radius: 10px;
+      font-size: 0.68rem;
+      font-weight: 600;
+      background: var(--accent-dim);
+      color: var(--accent);
+      border: 1px solid rgba(167,139,250,0.2);
+    }
+    .discussions-header-right {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .view-all-link {
+      font-size: 0.78rem;
+      color: var(--accent);
+      text-decoration: none;
+      cursor: pointer;
+    }
+    .new-disc-btn {
+      padding: 0.3rem 0.65rem;
+      border-radius: 5px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      background: var(--accent);
+      color: #0a0a0a;
+      border: none;
+      cursor: pointer;
+    }
+    .disc-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+    }
+    .disc-row:last-child { border-bottom: none; }
+    .disc-row:hover { background: var(--surface-3); }
+    .disc-row-left {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      min-width: 0;
+      flex: 1;
+    }
+    .pin-icon { font-size: 0.7rem; color: var(--amber); flex-shrink: 0; }
+    .disc-title {
+      font-size: 0.82rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .disc-row-right {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      flex-shrink: 0;
+      margin-left: 1rem;
+    }
+    .status-badge {
+      padding: 0.15rem 0.45rem;
+      border-radius: 4px;
+      font-size: 0.68rem;
+      font-weight: 600;
+    }
+    .status-open { background: var(--green-dim); color: var(--green); border: 1px solid rgba(74,222,128,0.15); }
+    .status-resolved { background: var(--blue-dim); color: var(--blue); border: 1px solid rgba(96,165,250,0.15); }
+    .reply-count {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .time-ago {
+      font-size: 0.72rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+    }
+    .empty-state {
+      padding: 1.25rem 1rem;
+      text-align: center;
+      color: var(--text-dim);
+      font-size: 0.82rem;
+      font-style: italic;
+    }
+    .desc-placeholder {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1rem;
+      color: var(--text-dim);
+      font-size: 0.82rem;
+    }
+
+    /* ─── Option B: Board breadcrumb ─── */
+    .board-header {
+      padding: 0.75rem 0;
+      margin-bottom: 1rem;
+    }
+    .breadcrumb {
+      display: flex;
+      align-items: center;
+      gap: 0.4rem;
+      font-size: 0.82rem;
+      color: var(--text-dim);
+    }
+    .breadcrumb a {
+      color: var(--text-muted);
+      text-decoration: none;
+    }
+    .breadcrumb a:hover { color: var(--text); }
+    .breadcrumb .disc-link {
+      color: var(--accent);
+    }
+    .breadcrumb .disc-link:hover {
+      color: #c4b5fd;
+    }
+    .breadcrumb .separator { color: var(--text-dim); }
+    .board-title {
+      font-size: 1.15rem;
+      font-weight: 600;
+      margin-top: 0.35rem;
+    }
+    .board-tabs {
+      display: flex;
+      gap: 0;
+      margin-top: 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .board-tab {
+      padding: 0.5rem 1rem;
+      font-size: 0.82rem;
+      color: var(--text-dim);
+      border-bottom: 2px solid transparent;
+      cursor: pointer;
+    }
+    .board-tab.active {
+      color: var(--text);
+      border-bottom-color: var(--accent);
+    }
+    .board-columns-placeholder {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+    .col-placeholder {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 0.75rem;
+      min-height: 80px;
+    }
+    .col-placeholder-title {
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    /* ─── Option C: Idea card ─── */
+    .idea-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 1rem;
+      max-width: 380px;
+      cursor: pointer;
+    }
+    .idea-card:hover { border-color: var(--border-hover); }
+    .idea-card-title {
+      font-size: 0.95rem;
+      font-weight: 600;
+      margin-bottom: 0.35rem;
+    }
+    .idea-card-desc {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      margin-bottom: 0.65rem;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+    .idea-card-stats {
+      display: flex;
+      align-items: center;
+      gap: 0.85rem;
+      font-size: 0.72rem;
+      color: var(--text-dim);
+    }
+    .stat-item {
+      display: flex;
+      align-items: center;
+      gap: 0.25rem;
+    }
+    .disc-preview {
+      margin-top: 0.6rem;
+      padding-top: 0.6rem;
+      border-top: 1px solid var(--border);
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .disc-preview-label { color: var(--accent); }
+
+    /* ─── Option D: Dashboard widget ─── */
+    .dashboard-widget {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      max-width: 440px;
+    }
+    .widget-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.85rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .widget-header h3 {
+      font-size: 0.9rem;
+      font-weight: 600;
+    }
+    .widget-row {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      padding: 0.65rem 1rem;
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      gap: 0.75rem;
+    }
+    .widget-row:last-child { border-bottom: none; }
+    .widget-row:hover { background: var(--surface-2); }
+    .widget-row-left { min-width: 0; flex: 1; }
+    .widget-idea-name {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      margin-bottom: 0.15rem;
+    }
+    .widget-disc-title {
+      font-size: 0.82rem;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .widget-row-right {
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 0.15rem;
+      flex-shrink: 0;
+    }
+    .widget-time {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+    }
+    .widget-replies {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+    }
+
+    /* ─── Decision Matrix ─── */
+    .matrix-section {
+      margin-top: 3rem;
+      border-top: 1px solid var(--border);
+      padding-top: 2rem;
+    }
+    .matrix-section h2 {
+      font-size: 1.15rem;
+      color: var(--accent);
+      margin-bottom: 1.25rem;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    thead th {
+      text-align: left;
+      padding: 0.6rem 0.75rem;
+      border-bottom: 2px solid var(--border);
+      color: var(--text-dim);
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 600;
+    }
+    tbody td {
+      padding: 0.65rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+      vertical-align: top;
+    }
+    tbody tr:hover { background: var(--surface); }
+    .rec-badge {
+      display: inline-block;
+      padding: 0.15rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+    .rec-now { background: var(--green-dim); color: var(--green); border: 1px solid rgba(74,222,128,0.15); }
+    .rec-defer { background: var(--amber-dim); color: var(--amber); border: 1px solid rgba(251,191,36,0.15); }
+    .rec-no { background: rgba(113,113,122,0.1); color: var(--text-dim); border: 1px solid rgba(113,113,122,0.2); }
+    .option-name { color: var(--text); font-weight: 600; }
+  </style>
+</head>
+<body>
+
+  <h1>Discussion Discoverability &mdash; UX Options</h1>
+  <p class="meta">4 approaches to surface discussions as an upstream planning activity, between Idea and Board in the workflow.</p>
+
+  <div class="context-note">
+    <strong>Design principle:</strong> Discussions are an <em>upstream planning activity</em> that feeds INTO the board. They should NOT appear on the board page tabs. The board tabs (Board, Workflows, Agents) are execution tools. Discussions live between the Idea and the Board in the workflow: <strong>Idea &rarr; Discussions &rarr; Board</strong>.
+  </div>
+
+  <!-- ════════════ Option A ════════════ -->
+  <div class="option-section">
+    <h2>Option A: "Recent Discussions" Preview on Idea Detail Page</h2>
+    <p class="subtitle">Replace the simple "Discussions" button with a richer inline section showing recent threads, pinned items, and a quick-start empty state.</p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Idea Detail Page &mdash; discussions section</div>
+
+      <!-- Idea hero card -->
+      <div class="idea-hero">
+        <div class="idea-hero-title">VibeCodes &mdash; AI-Powered Project Management</div>
+        <div class="idea-hero-meta">by nicholasmball &middot; 24 upvotes &middot; 8 collaborators &middot; Public</div>
+      </div>
+
+      <!-- Nav buttons -->
+      <div class="nav-buttons">
+        <button class="nav-btn">Board &rarr;</button>
+      </div>
+
+      <!-- Discussions section (the new thing) -->
+      <div class="discussions-section">
+        <div class="discussions-header">
+          <div class="discussions-header-left">
+            <h3>Discussions</h3>
+            <span class="count-badge">5</span>
+          </div>
+          <div class="discussions-header-right">
+            <a class="view-all-link">View All &rarr;</a>
+            <button class="new-disc-btn">+ New Discussion</button>
+          </div>
+        </div>
+
+        <!-- Pinned discussion -->
+        <div class="disc-row">
+          <div class="disc-row-left">
+            <span class="pin-icon" title="Pinned">&#128204;</span>
+            <span class="disc-title">Architecture decision: monorepo vs polyrepo</span>
+          </div>
+          <div class="disc-row-right">
+            <span class="status-badge status-open">Open</span>
+            <span class="reply-count">&#128172; 12</span>
+            <span class="time-ago">2h ago</span>
+          </div>
+        </div>
+
+        <!-- Recent discussion -->
+        <div class="disc-row">
+          <div class="disc-row-left">
+            <span class="disc-title">Should we use WebSockets or SSE for realtime?</span>
+          </div>
+          <div class="disc-row-right">
+            <span class="status-badge status-open">Open</span>
+            <span class="reply-count">&#128172; 7</span>
+            <span class="time-ago">5h ago</span>
+          </div>
+        </div>
+
+        <!-- Resolved discussion -->
+        <div class="disc-row">
+          <div class="disc-row-left">
+            <span class="disc-title">Email notification frequency &mdash; digest vs instant</span>
+          </div>
+          <div class="disc-row-right">
+            <span class="status-badge status-resolved">Resolved</span>
+            <span class="reply-count">&#128172; 3</span>
+            <span class="time-ago">1d ago</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Description placeholder -->
+      <div class="desc-placeholder">
+        <div class="section-title">Description</div>
+        A collaborative platform for managing AI-powered development projects with multi-agent workflows...
+      </div>
+    </div>
+
+    <!-- Empty state variant -->
+    <div class="mockup-frame" style="margin-top: 1rem;">
+      <div class="mockup-label">Empty state variant</div>
+      <div class="discussions-section">
+        <div class="discussions-header">
+          <div class="discussions-header-left">
+            <h3>Discussions</h3>
+            <span class="count-badge">0</span>
+          </div>
+          <div class="discussions-header-right">
+            <button class="new-disc-btn">+ New Discussion</button>
+          </div>
+        </div>
+        <div class="empty-state">
+          Start a discussion to plan features, debate approaches, or gather feedback before creating board tasks.
+        </div>
+      </div>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-box rationale">
+        <h4>Rationale</h4>
+        <p>The idea detail page is the natural "home base" before entering the board. Surfacing discussions here reinforces the Idea &rarr; Discussion &rarr; Board flow and makes them impossible to miss.</p>
+      </div>
+      <div class="info-box effort">
+        <h4>Effort</h4>
+        <span class="effort-badge effort-med">Medium</span>
+        <p style="margin-top: 0.35rem;">Requires fetching recent discussions with a query, new section component, empty state, and adjusting the existing idea detail layout.</p>
+      </div>
+      <div class="info-box tradeoffs">
+        <h4>Trade-offs</h4>
+        <ul>
+          <li>Adds vertical height to the idea page</li>
+          <li>Needs a data fetch even when no discussions exist</li>
+          <li>Replaces the simple button &mdash; slightly heavier first impression</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ Option B ════════════ -->
+  <div class="option-section">
+    <h2>Option B: "Discussions" Link in Board Page Breadcrumb</h2>
+    <p class="subtitle">Add a secondary breadcrumb link on the board page so users can jump to discussions without going back through the idea page first.</p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Board Page &mdash; enhanced breadcrumb</div>
+
+      <div class="board-header">
+        <div class="breadcrumb">
+          <a>&larr; Back to idea</a>
+          <span class="separator">&middot;</span>
+          <a class="disc-link">Discussions (3)</a>
+        </div>
+        <div class="board-title">VibeCodes &mdash; Board</div>
+        <div class="board-tabs">
+          <div class="board-tab active">Board</div>
+          <div class="board-tab">Workflows</div>
+          <div class="board-tab">Agents</div>
+        </div>
+      </div>
+
+      <div class="board-columns-placeholder">
+        <div class="col-placeholder">
+          <div class="col-placeholder-title">Backlog</div>
+        </div>
+        <div class="col-placeholder">
+          <div class="col-placeholder-title">In Progress</div>
+        </div>
+        <div class="col-placeholder">
+          <div class="col-placeholder-title">Verify</div>
+        </div>
+        <div class="col-placeholder">
+          <div class="col-placeholder-title">Done</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-box rationale">
+        <h4>Rationale</h4>
+        <p>Users on the board may need to reference or start discussions. This link is a low-friction escape hatch back to the planning layer, reinforcing the upstream relationship without polluting the board tabs.</p>
+      </div>
+      <div class="info-box effort">
+        <h4>Effort</h4>
+        <span class="effort-badge effort-low">Low</span>
+        <p style="margin-top: 0.35rem;">A single link added to the existing breadcrumb. Requires only the discussion count from the idea data already loaded.</p>
+      </div>
+      <div class="info-box tradeoffs">
+        <h4>Trade-offs</h4>
+        <ul>
+          <li>Very subtle &mdash; easy to overlook</li>
+          <li>Shows count but no preview of content</li>
+          <li>Only helps users who are already on the board</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ Option C ════════════ -->
+  <div class="option-section">
+    <h2>Option C: Idea Card Discussion Preview</h2>
+    <p class="subtitle">When an idea has discussions, show the most recent discussion title as a truncated preview line on the idea card in the feed.</p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Idea Feed &mdash; card with discussion preview</div>
+
+      <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+        <!-- Card WITH discussion preview -->
+        <div class="idea-card" style="flex: 1;">
+          <div class="idea-card-title">VibeCodes &mdash; AI Project Mgmt</div>
+          <div class="idea-card-desc">A collaborative platform for managing AI-powered development projects with multi-agent workflows and kanban boards.</div>
+          <div class="idea-card-stats">
+            <span class="stat-item">&#9650; 24</span>
+            <span class="stat-item">&#128172; 12</span>
+            <span class="stat-item">&#128101; 8</span>
+            <span class="stat-item">&#128488; 5</span>
+          </div>
+          <div class="disc-preview">
+            <span class="disc-preview-label">Latest discussion:</span> Should we use WebSockets or SSE for realtime?
+          </div>
+        </div>
+
+        <!-- Card WITHOUT discussion (for comparison) -->
+        <div class="idea-card" style="flex: 1; opacity: 0.7;">
+          <div class="idea-card-title">Recipe Sharing App</div>
+          <div class="idea-card-desc">Share and discover recipes with friends. AI-powered ingredient substitutions and meal planning.</div>
+          <div class="idea-card-stats">
+            <span class="stat-item">&#9650; 8</span>
+            <span class="stat-item">&#128172; 3</span>
+            <span class="stat-item">&#128101; 2</span>
+            <span class="stat-item">&#128488; 0</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-box rationale">
+        <h4>Rationale</h4>
+        <p>The idea feed is the entry point for discovery. Showing an active discussion teaser creates curiosity and signals that the idea has engaged planning activity &mdash; social proof that draws users in.</p>
+      </div>
+      <div class="info-box effort">
+        <h4>Effort</h4>
+        <span class="effort-badge effort-low">Low</span>
+        <p style="margin-top: 0.35rem;">Requires joining the latest discussion title in the idea feed query and a conditional render line on the card. Minimal UI work.</p>
+      </div>
+      <div class="info-box tradeoffs">
+        <h4>Trade-offs</h4>
+        <ul>
+          <li>Only shows the latest &mdash; no sense of overall discussion activity</li>
+          <li>Adds visual noise to cards that already have stats</li>
+          <li>Title alone may not convey enough context</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ Option D ════════════ -->
+  <div class="option-section">
+    <h2>Option D: Dashboard "Active Discussions" Widget</h2>
+    <p class="subtitle">A compact widget on the user's dashboard showing discussions with recent activity across all their ideas.</p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Dashboard &mdash; active discussions widget</div>
+
+      <div class="dashboard-widget">
+        <div class="widget-header">
+          <h3>Active Discussions</h3>
+          <span class="count-badge">4</span>
+        </div>
+
+        <div class="widget-row">
+          <div class="widget-row-left">
+            <div class="widget-idea-name">VibeCodes</div>
+            <div class="widget-disc-title">Architecture decision: monorepo vs polyrepo</div>
+          </div>
+          <div class="widget-row-right">
+            <span class="widget-replies">12 replies</span>
+            <span class="widget-time">2h ago</span>
+          </div>
+        </div>
+
+        <div class="widget-row">
+          <div class="widget-row-left">
+            <div class="widget-idea-name">VibeCodes</div>
+            <div class="widget-disc-title">Should we use WebSockets or SSE for realtime?</div>
+          </div>
+          <div class="widget-row-right">
+            <span class="widget-replies">7 replies</span>
+            <span class="widget-time">5h ago</span>
+          </div>
+        </div>
+
+        <div class="widget-row">
+          <div class="widget-row-left">
+            <div class="widget-idea-name">Recipe App</div>
+            <div class="widget-disc-title">Ingredient substitution API options</div>
+          </div>
+          <div class="widget-row-right">
+            <span class="widget-replies">4 replies</span>
+            <span class="widget-time">1d ago</span>
+          </div>
+        </div>
+
+        <div class="widget-row">
+          <div class="widget-row-left">
+            <div class="widget-idea-name">VibeCodes</div>
+            <div class="widget-disc-title">Email notification frequency &mdash; digest vs instant</div>
+          </div>
+          <div class="widget-row-right">
+            <span class="widget-replies">3 replies</span>
+            <span class="widget-time">2d ago</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="info-grid">
+      <div class="info-box rationale">
+        <h4>Rationale</h4>
+        <p>The dashboard is where users start their session. Surfacing active discussions here creates a "pull" to participate and ensures nothing falls through the cracks across multiple ideas.</p>
+      </div>
+      <div class="info-box effort">
+        <h4>Effort</h4>
+        <span class="effort-badge effort-med">Medium</span>
+        <p style="margin-top: 0.35rem;">New dashboard component, cross-idea discussion query with activity ordering, and direct navigation links to individual threads.</p>
+      </div>
+      <div class="info-box tradeoffs">
+        <h4>Trade-offs</h4>
+        <ul>
+          <li>Dashboard real estate is limited &mdash; competes with task widgets</li>
+          <li>Low-activity users may see an empty widget often</li>
+          <li>Needs careful query design to avoid N+1 across ideas</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ Decision Matrix ════════════ -->
+  <div class="matrix-section">
+    <h2>Decision Matrix</h2>
+
+    <table>
+      <thead>
+        <tr>
+          <th>Option</th>
+          <th>Impact</th>
+          <th>Effort</th>
+          <th>Recommendation</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="option-name">A. Recent Discussions on Idea Page</td>
+          <td>High &mdash; puts discussions front and center on the natural entry point; reinforces Idea &rarr; Discussion &rarr; Board flow</td>
+          <td><span class="effort-badge effort-med">Medium</span></td>
+          <td><span class="rec-badge rec-now">Do now</span></td>
+        </tr>
+        <tr>
+          <td class="option-name">B. Breadcrumb Link on Board</td>
+          <td>Low-Med &mdash; useful escape hatch for board users, but subtle and easy to miss</td>
+          <td><span class="effort-badge effort-low">Low</span></td>
+          <td><span class="rec-badge rec-now">Do now</span></td>
+        </tr>
+        <tr>
+          <td class="option-name">C. Card Discussion Preview</td>
+          <td>Low &mdash; nice social proof signal on the feed, but minor and only shows one title</td>
+          <td><span class="effort-badge effort-low">Low</span></td>
+          <td><span class="rec-badge rec-defer">Defer</span></td>
+        </tr>
+        <tr>
+          <td class="option-name">D. Dashboard Active Discussions</td>
+          <td>Med-High &mdash; drives engagement across all ideas, but competes for dashboard space</td>
+          <td><span class="effort-badge effort-med">Medium</span></td>
+          <td><span class="rec-badge rec-defer">Defer</span></td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="context-note" style="margin-top: 1.5rem;">
+      <strong>Recommended approach:</strong> Implement <strong>A + B</strong> together. Option A is the highest-impact change &mdash; it makes discussions visible right where users plan their work. Option B is nearly free and provides a useful shortcut from the board back to the planning layer. Options C and D are nice-to-haves that can be added later once discussion adoption grows.
+    </div>
+  </div>
+
+</body>
+</html>
