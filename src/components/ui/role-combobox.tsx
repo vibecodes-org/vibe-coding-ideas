@@ -2,11 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Check } from "lucide-react";
-import {
-  Popover,
-  PopoverContent,
-  PopoverAnchor,
-} from "@/components/ui/popover";
+import { Popover as PopoverPrimitive } from "radix-ui";
 import {
   Command,
   CommandEmpty,
@@ -218,8 +214,8 @@ export function RoleCombobox({
 
   return (
     <div className={cn("relative", className)}>
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverAnchor asChild>
+      <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
+        <PopoverPrimitive.Anchor asChild>
           <Input
             ref={inputRef}
             value={value}
@@ -233,14 +229,16 @@ export function RoleCombobox({
             aria-haspopup="listbox"
             autoComplete="off"
           />
-        </PopoverAnchor>
+        </PopoverPrimitive.Anchor>
         {hasAnyGroup && (
-          <PopoverContent
+          <PopoverPrimitive.Content
             className={cn(
-              "p-0",
+              "bg-popover text-popover-foreground z-[100] rounded-md border p-0 shadow-md outline-hidden",
+              "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
               compact ? "w-[200px]" : "w-[var(--radix-popover-trigger-width)]"
             )}
             align="start"
+            sideOffset={4}
             onOpenAutoFocus={(e) => e.preventDefault()}
             onInteractOutside={() => setOpen(false)}
           >
@@ -309,9 +307,9 @@ export function RoleCombobox({
                 )}
               </CommandList>
             </Command>
-          </PopoverContent>
+          </PopoverPrimitive.Content>
         )}
-      </Popover>
+      </PopoverPrimitive.Root>
       {showHelperText && (
         <p className="mt-1 text-[10px] text-muted-foreground">{helperText}</p>
       )}
