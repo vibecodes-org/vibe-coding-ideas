@@ -16,8 +16,7 @@ describe("logger", () => {
     vi.resetModules();
     vi.spyOn(console, "error").mockImplementation(() => {});
     vi.spyOn(console, "warn").mockImplementation(() => {});
-    vi.spyOn(console, "info").mockImplementation(() => {});
-    vi.spyOn(console, "debug").mockImplementation(() => {});
+    vi.spyOn(console, "log").mockImplementation(() => {});
     vi.useFakeTimers();
     vi.setSystemTime(new Date("2026-03-21T12:00:00.000Z"));
   });
@@ -56,22 +55,30 @@ describe("logger", () => {
     expect(output.level).toBe("warn");
   });
 
-  it("routes info to console.info", async () => {
+  it("routes info to console.log (Vercel compatibility)", async () => {
     process.env.LOG_LEVEL = "debug";
     logger = await loadLogger();
 
     logger.info("started");
 
-    expect(console.info).toHaveBeenCalledOnce();
+    expect(console.log).toHaveBeenCalledOnce();
+    const output = JSON.parse(
+      (console.log as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    );
+    expect(output.level).toBe("info");
   });
 
-  it("routes debug to console.debug", async () => {
+  it("routes debug to console.log (Vercel compatibility)", async () => {
     process.env.LOG_LEVEL = "debug";
     logger = await loadLogger();
 
     logger.debug("cache miss");
 
-    expect(console.debug).toHaveBeenCalledOnce();
+    expect(console.log).toHaveBeenCalledTimes(1);
+    const output = JSON.parse(
+      (console.log as ReturnType<typeof vi.fn>).mock.calls[0][0]
+    );
+    expect(output.level).toBe("debug");
   });
 
   it("suppresses levels below the configured threshold", async () => {
@@ -83,8 +90,7 @@ describe("logger", () => {
     logger.debug("should not appear");
 
     expect(console.warn).not.toHaveBeenCalled();
-    expect(console.info).not.toHaveBeenCalled();
-    expect(console.debug).not.toHaveBeenCalled();
+    expect(console.log).not.toHaveBeenCalled();
 
     logger.error("should appear");
     expect(console.error).toHaveBeenCalledOnce();
@@ -97,8 +103,7 @@ describe("logger", () => {
 
     logger.info("suppressed");
     logger.debug("suppressed");
-    expect(console.info).not.toHaveBeenCalled();
-    expect(console.debug).not.toHaveBeenCalled();
+    expect(console.log).not.toHaveBeenCalled();
 
     logger.warn("visible");
     logger.error("visible");
@@ -112,7 +117,7 @@ describe("logger", () => {
     logger = await loadLogger();
 
     logger.debug("visible in dev");
-    expect(console.debug).toHaveBeenCalledOnce();
+    expect(console.log).toHaveBeenCalledOnce();
   });
 
   it("omits context key when not provided", async () => {
@@ -149,6 +154,6 @@ describe("logger", () => {
     logger = await loadLogger();
 
     logger.debug("should appear despite production");
-    expect(console.debug).toHaveBeenCalledOnce();
+    expect(console.log).toHaveBeenCalledOnce();
   });
 });

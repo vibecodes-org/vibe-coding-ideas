@@ -109,9 +109,15 @@ export async function updateWorkflowTemplate(
 
   if (error) throw new Error(error.message);
 
-  // Propagate step edits to pending steps in active workflow runs
+  // Propagate step edits to pending steps in active workflow runs, then rematch
   if (updates.steps !== undefined) {
-    await propagateTemplateEdits(supabase, templateId, patch.steps as WorkflowTemplateStep[]);
+    const propagation = await propagateTemplateEdits(supabase, templateId, patch.steps as WorkflowTemplateStep[]);
+    // Rematch bot_id on affected tasks (roles may have changed)
+    for (const taskId of propagation.affectedTaskIds) {
+      try {
+        await rematchWorkflowAgents(taskId);
+      } catch { /* fire-and-forget */ }
+    }
   }
 
   revalidatePath(`/ideas/${data.idea_id}/board`);
@@ -364,6 +370,49 @@ export async function rematchWorkflowAgents(taskId: string) {
   revalidatePath(`/ideas/${task.idea_id}/board`);
 
   return { matched, unmatched, upgraded, matches };
+}
+
+// ─── Resync Template ───
+
+export async function resyncWorkflowTemplate(templateId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // Fetch template with its steps
+  const { data: template, error } = await supabase
+    .from("workflow_templates")
+    .select("id, idea_id, steps")
+    .eq("id", templateId)
+    .single();
+
+  if (error || !template) throw new Error("Template not found");
+
+  const steps = template.steps as WorkflowTemplateStep[];
+
+  // Propagate edits to pending steps
+  const propagation = await propagateTemplateEdits(supabase, templateId, steps);
+
+  // Rematch bot_id on all affected tasks
+  let rematched = 0;
+  for (const taskId of propagation.affectedTaskIds) {
+    try {
+      await rematchWorkflowAgents(taskId);
+      rematched++;
+    } catch { /* continue on error */ }
+  }
+
+  revalidatePath(`/ideas/${template.idea_id}/board`);
+
+  return {
+    runsUpdated: propagation.runsUpdated,
+    stepsUpdated: propagation.stepsUpdated,
+    skippedStructuralMismatch: propagation.skippedStructuralMismatch,
+    rematched,
+  };
 }
 
 // ─── Auto-Rules ───

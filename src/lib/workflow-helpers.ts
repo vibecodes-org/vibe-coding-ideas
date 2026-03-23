@@ -175,21 +175,22 @@ export async function propagateTemplateEdits(
   supabase: SupabaseClient<any, any, any>,
   templateId: string,
   newSteps: WorkflowTemplateStep[]
-): Promise<{ runsUpdated: number; stepsUpdated: number; skippedStructuralMismatch: number }> {
+): Promise<{ runsUpdated: number; stepsUpdated: number; skippedStructuralMismatch: number; affectedTaskIds: string[] }> {
   // Find active runs for this template
   const { data: activeRuns } = await supabase
     .from("workflow_runs")
-    .select("id")
+    .select("id, task_id")
     .eq("template_id", templateId)
     .not("status", "in", '("completed","failed")');
 
   if (!activeRuns || activeRuns.length === 0) {
-    return { runsUpdated: 0, stepsUpdated: 0, skippedStructuralMismatch: 0 };
+    return { runsUpdated: 0, stepsUpdated: 0, skippedStructuralMismatch: 0, affectedTaskIds: [] };
   }
 
   let runsUpdated = 0;
   let stepsUpdated = 0;
   let skippedStructuralMismatch = 0;
+  const affectedTaskIds: string[] = [];
 
   for (const run of activeRuns) {
     const { data: steps } = await supabase
@@ -228,8 +229,11 @@ export async function propagateTemplateEdits(
       }
     }
 
-    if (runHadUpdates) runsUpdated++;
+    if (runHadUpdates) {
+      runsUpdated++;
+      affectedTaskIds.push(run.task_id);
+    }
   }
 
-  return { runsUpdated, stepsUpdated, skippedStructuralMismatch };
+  return { runsUpdated, stepsUpdated, skippedStructuralMismatch, affectedTaskIds };
 }

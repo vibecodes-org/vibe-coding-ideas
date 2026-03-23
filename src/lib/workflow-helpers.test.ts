@@ -251,7 +251,7 @@ describe("checkAndApplyAutoRules", () => {
 // --- propagateTemplateEdits ---
 
 function createPropagationMockSupabase(options: {
-  activeRuns: { id: string }[] | null;
+  activeRuns: { id: string; task_id: string }[] | null;
   stepsByRun: Record<string, { id: string; status: string; step_order: number }[]>;
   updateCounts?: Record<string, number>; // stepId -> count returned by update
 }) {
@@ -348,7 +348,7 @@ describe("propagateTemplateEdits", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
 
-    expect(result).toEqual({ runsUpdated: 0, stepsUpdated: 0, skippedStructuralMismatch: 0 });
+    expect(result).toEqual({ runsUpdated: 0, stepsUpdated: 0, skippedStructuralMismatch: 0, affectedTaskIds: [] });
   });
 
   it("returns zero counts when activeRuns is null", async () => {
@@ -360,12 +360,12 @@ describe("propagateTemplateEdits", () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const result = await propagateTemplateEdits(supabase as any, "tmpl-1", sampleTemplateSteps);
 
-    expect(result).toEqual({ runsUpdated: 0, stepsUpdated: 0, skippedStructuralMismatch: 0 });
+    expect(result).toEqual({ runsUpdated: 0, stepsUpdated: 0, skippedStructuralMismatch: 0, affectedTaskIds: [] });
   });
 
   it("skips runs with step count mismatch", async () => {
     const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1" }],
+      activeRuns: [{ id: "run-1", task_id: "task-1" }],
       stepsByRun: {
         "run-1": [
           { id: "s1", status: "pending", step_order: 1 },
@@ -385,7 +385,7 @@ describe("propagateTemplateEdits", () => {
 
   it("updates all pending steps when counts match", async () => {
     const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1" }],
+      activeRuns: [{ id: "run-1", task_id: "task-1" }],
       stepsByRun: {
         "run-1": [
           { id: "s1", status: "pending", step_order: 1 },
@@ -404,7 +404,7 @@ describe("propagateTemplateEdits", () => {
 
   it("only updates pending steps, skips completed/in_progress", async () => {
     const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1" }],
+      activeRuns: [{ id: "run-1", task_id: "task-1" }],
       stepsByRun: {
         "run-1": [
           { id: "s1", status: "completed", step_order: 1 },
@@ -422,7 +422,7 @@ describe("propagateTemplateEdits", () => {
 
   it("handles concurrency guard returning count 0", async () => {
     const supabase = createPropagationMockSupabase({
-      activeRuns: [{ id: "run-1" }],
+      activeRuns: [{ id: "run-1", task_id: "task-1" }],
       stepsByRun: {
         "run-1": [
           { id: "s1", status: "pending", step_order: 1 },

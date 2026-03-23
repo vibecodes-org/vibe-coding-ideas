@@ -158,6 +158,8 @@ import {
   updateWorkflowTemplateSchema,
   deleteWorkflowTemplate,
   deleteWorkflowTemplateSchema,
+  resyncWorkflowTemplate,
+  resyncWorkflowTemplateSchema,
   applyWorkflowTemplate,
   applyWorkflowTemplateSchema,
   claimNextStep,
@@ -1094,6 +1096,20 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await deleteWorkflowTemplate(ctx, deleteWorkflowTemplateSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "resync_workflow_template",
+    "Re-apply a template's current step definitions to all active workflow runs using it. Updates pending steps (title, description, role, deliverables, approval gate) and re-matches agents. Use after editing template roles or to fix stale agent assignments.",
+    resyncWorkflowTemplateSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await resyncWorkflowTemplate(ctx, resyncWorkflowTemplateSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

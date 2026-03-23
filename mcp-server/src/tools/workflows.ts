@@ -103,13 +103,67 @@ export async function updateWorkflowTemplate(
 
   if (error) throw new Error(`Failed to update workflow template: ${error.message}`);
 
-  // Propagate step edits to pending steps in active workflow runs
+  // Propagate step edits to pending steps in active workflow runs, then rematch
   let propagation = null;
   if (params.steps !== undefined) {
     propagation = await propagateTemplateEdits(ctx.supabase, params.template_id, params.steps);
+    // Rematch bot_id on affected tasks (roles may have changed)
+    for (const taskId of propagation.affectedTaskIds) {
+      try {
+        await rematchWorkflowAgents(ctx, { task_id: taskId });
+      } catch { /* fire-and-forget */ }
+    }
   }
 
   return { ...data, propagation };
+}
+
+// --- Resync Workflow Template ---
+
+export const resyncWorkflowTemplateSchema = z.object({
+  template_id: z.string().uuid().describe("The template ID to resync"),
+});
+
+export async function resyncWorkflowTemplate(
+  ctx: McpContext,
+  params: z.infer<typeof resyncWorkflowTemplateSchema>
+) {
+  // Fetch template
+  const { data: template, error } = await ctx.supabase
+    .from("workflow_templates")
+    .select("id, idea_id, steps")
+    .eq("id", params.template_id)
+    .single();
+
+  if (error || !template) throw new Error(`Template not found: ${params.template_id}`);
+
+  const steps = (template.steps ?? []) as unknown as Array<Record<string, unknown>>;
+  const templateSteps = steps.map((s) => ({
+    title: String(s.title ?? ""),
+    description: s.description ? String(s.description) : undefined,
+    role: String(s.role ?? ""),
+    requires_approval: Boolean(s.requires_approval ?? false),
+    deliverables: Array.isArray(s.deliverables) ? s.deliverables.map(String) : undefined,
+  }));
+
+  // Propagate edits to pending steps
+  const propagation = await propagateTemplateEdits(ctx.supabase, params.template_id, templateSteps);
+
+  // Rematch bot_id on all affected tasks
+  let rematched = 0;
+  for (const taskId of propagation.affectedTaskIds) {
+    try {
+      await rematchWorkflowAgents(ctx, { task_id: taskId });
+      rematched++;
+    } catch { /* continue on error */ }
+  }
+
+  return {
+    runsUpdated: propagation.runsUpdated,
+    stepsUpdated: propagation.stepsUpdated,
+    skippedStructuralMismatch: propagation.skippedStructuralMismatch,
+    rematched,
+  };
 }
 
 // --- Delete Workflow Template ---

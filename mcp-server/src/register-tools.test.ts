@@ -63,6 +63,7 @@ const EXPECTED_TOOL_NAMES = [
   "create_workflow_template",
   "update_workflow_template",
   "delete_workflow_template",
+  "resync_workflow_template",
   "apply_workflow_template",
   "claim_next_step",
   "complete_step",
@@ -94,7 +95,7 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(78);
+    expect(server.tool).toHaveBeenCalledTimes(79);
   });
 
   it("registers all expected tool names", () => {
