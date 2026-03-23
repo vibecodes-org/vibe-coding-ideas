@@ -3,18 +3,22 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateUuid } from "@/lib/validation";
-import { rematchWorkflowAgents } from "@/actions/workflow-templates";
+import { rematchWorkflowAgentsWithClient } from "@/actions/workflow-templates";
 import { matchRolesWithAiOrFuzzy, type AiRoleMatchAgent } from "@/lib/ai-role-matching";
 import { logger } from "@/lib/logger";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 
 /**
  * Find all tasks in an idea with active workflow runs and rematch their steps.
- * Fire-and-forget — errors are logged but don't propagate.
+ * Fire-and-forget — accepts pre-authenticated client to avoid session loss.
  */
-async function rematchActiveWorkflows(ideaId: string) {
+async function rematchActiveWorkflows(
+  supabase: SupabaseClient<Database>,
+  userId: string,
+  ideaId: string
+) {
   try {
-    const supabase = await createClient();
-
     // Find tasks with active workflow runs in this idea
     const { data: activeRuns } = await supabase
       .from("workflow_runs")
@@ -29,7 +33,7 @@ async function rematchActiveWorkflows(ideaId: string) {
 
     for (const taskId of taskIds) {
       try {
-        await rematchWorkflowAgents(taskId);
+        await rematchWorkflowAgentsWithClient(supabase, userId, taskId);
       } catch (err) {
         logger.warn("Rematch failed for task during agent pool change", {
           taskId,
@@ -73,7 +77,7 @@ export async function allocateAgent(ideaId: string, botId: string) {
   revalidatePath(`/ideas/${ideaId}/board`);
 
   // R1: Rematch all active workflows — fire-and-forget (don't block UI)
-  rematchActiveWorkflows(validIdeaId).catch(() => {});
+  rematchActiveWorkflows(supabase, user.id, validIdeaId).catch(() => {});
 }
 
 export async function removeIdeaAgent(ideaId: string, botId: string) {
@@ -104,7 +108,7 @@ export async function removeIdeaAgent(ideaId: string, botId: string) {
   revalidatePath(`/ideas/${ideaId}/board`);
 
   // R2: Rematch all active workflows — fire-and-forget (don't block UI)
-  rematchActiveWorkflows(validIdeaId).catch(() => {});
+  rematchActiveWorkflows(supabase, user.id, validIdeaId).catch(() => {});
 }
 
 export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
@@ -170,7 +174,7 @@ export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
   revalidatePath(`/ideas/${ideaId}/board`);
 
   // Single rematch for all agents — fire-and-forget (don't block UI)
-  rematchActiveWorkflows(validIdeaId).catch(() => {});
+  rematchActiveWorkflows(supabase, user.id, validIdeaId).catch(() => {});
 
   return { added: idsToAllocate.length };
 }

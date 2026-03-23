@@ -112,10 +112,10 @@ export async function updateWorkflowTemplate(
   // Propagate step edits to pending steps in active workflow runs, then rematch
   if (updates.steps !== undefined) {
     const propagation = await propagateTemplateEdits(supabase, templateId, patch.steps as WorkflowTemplateStep[]);
-    // Rematch bot_id on affected tasks (roles may have changed)
+    // Rematch bot_id on affected tasks (use internal variant — we already have auth)
     for (const taskId of propagation.affectedTaskIds) {
       try {
-        await rematchWorkflowAgents(taskId);
+        await rematchWorkflowAgentsWithClient(supabase, user.id, taskId);
       } catch { /* fire-and-forget */ }
     }
   }
@@ -278,14 +278,16 @@ export async function applyWorkflowTemplate(
 
 // ─── Rematch Agents ───
 
-export async function rematchWorkflowAgents(taskId: string) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) throw new Error("Not authenticated");
-
+/**
+ * Core rematch logic — accepts an authenticated Supabase client + userId.
+ * Used by fire-and-forget callers that already have auth context.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function rematchWorkflowAgentsWithClient(
+  supabase: import("@supabase/supabase-js").SupabaseClient<any>,
+  userId: string,
+  taskId: string
+) {
   // Fetch ALL pending steps with agent_role (not just bot_id IS NULL)
   const { data: pendingSteps, error: stepsError } = await supabase
     .from("task_workflow_steps")
@@ -332,7 +334,7 @@ export async function rematchWorkflowAgents(taskId: string) {
   const stepRoles = [...new Set(pendingSteps.map((s) => s.agent_role!))];
 
   // Match roles using AI (with fuzzy fallback) — returns tier info
-  const roleMatches = await matchRolesWithAiOrFuzzy(supabase, user.id, stepRoles, candidates);
+  const roleMatches = await matchRolesWithAiOrFuzzy(supabase, userId, stepRoles, candidates);
 
   let matched = 0;
   let unmatched = 0;
@@ -367,11 +369,22 @@ export async function rematchWorkflowAgents(taskId: string) {
     }
   }
 
-  // Note: callers are responsible for revalidatePath — this function is often
-  // called fire-and-forget from allocateAgent/removeIdeaAgent which already revalidate.
-  // Calling revalidatePath here during render causes Next.js 16 warnings.
-
   return { matched, unmatched, upgraded, matches };
+}
+
+/**
+ * Public wrapper — creates its own auth context.
+ * Used by MCP tools and direct server action callers.
+ */
+export async function rematchWorkflowAgents(taskId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  return rematchWorkflowAgentsWithClient(supabase, user.id, taskId);
 }
 
 // ─── Resync Template ───
@@ -398,11 +411,11 @@ export async function resyncWorkflowTemplate(templateId: string) {
   // Propagate edits to pending steps
   const propagation = await propagateTemplateEdits(supabase, templateId, steps);
 
-  // Rematch bot_id on all affected tasks
+  // Rematch bot_id on all affected tasks (use internal variant — we already have auth)
   let rematched = 0;
   for (const taskId of propagation.affectedTaskIds) {
     try {
-      await rematchWorkflowAgents(taskId);
+      await rematchWorkflowAgentsWithClient(supabase, user.id, taskId);
       rematched++;
     } catch { /* continue on error */ }
   }
