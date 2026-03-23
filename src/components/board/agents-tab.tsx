@@ -22,6 +22,11 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { getRoleColor } from "@/lib/agent-colors";
 import { allocateAllAgents, removeIdeaAgent, getRoleCoverage, type RoleCoverageResult } from "@/actions/idea-agents";
 import { createClient } from "@/lib/supabase/client";
@@ -385,15 +390,24 @@ export function AgentsTab({
                   <span className="text-muted-foreground font-normal">
                     &rarr; {rc.matchedAgentName} ({rc.matchedAgentRole})
                     {rc.matchTier && rc.matchTier !== "exact" && (
-                      <span
-                        className={`ml-1 rounded px-1 py-0.5 text-[8px] font-semibold ${
-                          rc.matchTier === "ai"
-                            ? "bg-violet-500/10 text-violet-400"
-                            : "bg-amber-500/10 text-amber-400"
-                        }`}
-                      >
-                        {rc.matchTier === "ai" ? "AI" : "fuzzy"}
-                      </span>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span
+                            className={`ml-1 cursor-help rounded px-1 py-0.5 text-[8px] font-semibold ${
+                              rc.matchTier === "ai"
+                                ? "bg-violet-500/10 text-violet-400"
+                                : "bg-amber-500/10 text-amber-400"
+                            }`}
+                          >
+                            {rc.matchTier === "ai" ? "AI" : "fuzzy"}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {rc.matchTier === "ai"
+                            ? "Matched by AI semantic understanding — not an exact role name match"
+                            : "Matched by fuzzy text similarity — consider adding an agent with this exact role"}
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </span>
                 ) : !rc.covered ? (

@@ -411,16 +411,25 @@ export function StepDetailDialog({
                     </Avatar>
                     {assignedAgent.name}
                     {step.match_tier && step.match_tier !== "exact" && (
-                      <Badge
-                        variant="outline"
-                        className={`text-[8px] py-0 h-3.5 ${
-                          step.match_tier === "ai"
-                            ? "border-violet-500/30 text-violet-400"
-                            : "border-amber-500/30 text-amber-400"
-                        }`}
-                      >
-                        {step.match_tier === "ai" ? "AI" : "fuzzy"}
-                      </Badge>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Badge
+                            variant="outline"
+                            className={`cursor-help text-[8px] py-0 h-3.5 ${
+                              step.match_tier === "ai"
+                                ? "border-violet-500/30 text-violet-400"
+                                : "border-amber-500/30 text-amber-400"
+                            }`}
+                          >
+                            {step.match_tier === "ai" ? "AI" : "fuzzy"}
+                          </Badge>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {step.match_tier === "ai"
+                            ? "Matched by AI semantic understanding — not an exact role name match"
+                            : "Matched by fuzzy text similarity — consider adding an agent with this exact role"}
+                        </TooltipContent>
+                      </Tooltip>
                     )}
                   </span>
                 ) : step.agent_role && !step.bot_id ? (
