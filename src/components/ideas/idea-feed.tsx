@@ -24,6 +24,7 @@ interface IdeaFeedProps {
   ideas: IdeaWithAuthor[];
   userVotes: string[];
   taskCounts: Record<string, number>;
+  latestDiscussions?: Record<string, { id: string; title: string }>;
   currentSort: SortOption;
   currentSearch: string;
   currentTag: string;
@@ -44,6 +45,7 @@ export function IdeaFeed({
   ideas,
   userVotes,
   taskCounts,
+  latestDiscussions,
   currentSort,
   currentSearch,
   currentTag,
@@ -308,6 +310,7 @@ export function IdeaFeed({
               idea={idea}
               hasVoted={userVotes.includes(idea.id)}
               taskCount={taskCounts[idea.id]}
+              latestDiscussion={latestDiscussions?.[idea.id]}
             />
           ))}
         </div>

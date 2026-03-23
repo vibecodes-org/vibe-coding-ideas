@@ -17,9 +17,10 @@ interface IdeaCardProps {
   idea: IdeaWithAuthor;
   hasVoted: boolean;
   taskCount?: number;
+  latestDiscussion?: { id: string; title: string };
 }
 
-export function IdeaCard({ idea, hasVoted, taskCount }: IdeaCardProps) {
+export function IdeaCard({ idea, hasVoted, taskCount, latestDiscussion }: IdeaCardProps) {
   const initials = getInitials(idea.author.full_name);
 
   return (
@@ -154,6 +155,15 @@ export function IdeaCard({ idea, hasVoted, taskCount }: IdeaCardProps) {
               </Tooltip>
             )}
           </div>
+          {latestDiscussion && (
+            <Link
+              href={`/ideas/${idea.id}/discussions/${latestDiscussion.id}`}
+              className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <MessagesSquare className="h-3 w-3 shrink-0" />
+              <span className="truncate">{latestDiscussion.title}</span>
+            </Link>
+          )}
         </div>
       </CardContent>
     </Card>

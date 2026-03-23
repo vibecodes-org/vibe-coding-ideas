@@ -117,7 +117,7 @@ export default async function FeedPage({
 
   // Get all unique tags for the filter and task counts
   const ideaIds = (ideas ?? []).map((i) => i.id);
-  const [allIdeasResult, taskCountsResult] = await Promise.all([
+  const [allIdeasResult, taskCountsResult, latestDiscussionsResult] = await Promise.all([
     supabase.from("ideas").select("tags"),
     ideaIds.length > 0
       ? supabase
@@ -125,11 +125,24 @@ export default async function FeedPage({
           .select("idea_id")
           .in("idea_id", ideaIds)
       : Promise.resolve({ data: [] }),
+    ideaIds.length > 0
+      ? supabase
+          .from("idea_discussions")
+          .select("idea_id, id, title, last_activity_at")
+          .in("idea_id", ideaIds)
+          .order("last_activity_at", { ascending: false })
+      : Promise.resolve({ data: [] }),
   ]);
   const allTags = [...new Set((allIdeasResult.data ?? []).flatMap((i) => i.tags))].sort();
   const taskCounts: Record<string, number> = {};
   for (const row of taskCountsResult.data ?? []) {
     taskCounts[row.idea_id] = (taskCounts[row.idea_id] ?? 0) + 1;
+  }
+  const latestDiscussions: Record<string, { id: string; title: string }> = {};
+  for (const row of latestDiscussionsResult.data ?? []) {
+    if (!latestDiscussions[row.idea_id]) {
+      latestDiscussions[row.idea_id] = { id: row.id, title: row.title };
+    }
   }
 
   return (
@@ -141,6 +154,7 @@ export default async function FeedPage({
         ideas={(ideas as unknown as IdeaWithAuthor[]) ?? []}
         userVotes={userVotes}
         taskCounts={taskCounts}
+        latestDiscussions={latestDiscussions}
         currentSort={sort}
         currentSearch={search}
         currentTag={tag}

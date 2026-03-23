@@ -11,6 +11,7 @@ import {
   Lightbulb,
   Plus,
   Users,
+  MessagesSquare,
 } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
 import { getDueDateStatus } from "@/lib/utils";
@@ -24,6 +25,8 @@ import type { ActiveBoard } from "@/components/dashboard/active-boards";
 import { MyBots } from "@/components/dashboard/my-bots";
 import { MyTasksList } from "@/components/dashboard/my-tasks-list";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
+import { ActiveDiscussions } from "@/components/dashboard/active-discussions";
+import type { ActiveDiscussion } from "@/components/dashboard/active-discussions";
 import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
 import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
 import { IdeaCard } from "@/components/ideas/idea-card";
@@ -174,7 +177,7 @@ export default async function DashboardPage() {
   const allUserIdeaIds = [...new Set([...myIdeaIds, ...collabIdeaIds])];
 
   // Phase 2: Dependent queries
-  const [collabIdeasResult, taskLabelsResult, boardColumnsResult, boardTasksResult, botTasksResult, botActivityResult, displayedTaskCountsResult] = await Promise.all([
+  const [collabIdeasResult, taskLabelsResult, boardColumnsResult, boardTasksResult, botTasksResult, botActivityResult, displayedTaskCountsResult, activeDiscussionsResult] = await Promise.all([
     // Collaboration idea details
     collabIdeaIds.length > 0
       ? supabase
@@ -237,9 +240,31 @@ export default async function DashboardPage() {
           .select("idea_id")
           .in("idea_id", allUserIdeaIds)
       : Promise.resolve({ data: [] }),
+    // Active discussions across user's ideas
+    allUserIdeaIds.length > 0
+      ? supabase
+          .from("idea_discussions")
+          .select("id, idea_id, title, status, reply_count, last_activity_at, idea:ideas!idea_discussions_idea_id_fkey(id, title)")
+          .in("idea_id", allUserIdeaIds)
+          .in("status", ["open", "ready_to_convert"])
+          .order("last_activity_at", { ascending: false })
+          .limit(5)
+      : Promise.resolve({ data: [] }),
   ]);
 
   const collabIdeas = (collabIdeasResult.data ?? []) as unknown as IdeaWithAuthor[];
+
+  // Process active discussions
+  type DiscussionRow = { id: string; idea_id: string; title: string; status: string; reply_count: number; last_activity_at: string; idea: { id: string; title: string } };
+  const activeDiscussions: ActiveDiscussion[] = ((activeDiscussionsResult.data ?? []) as unknown as DiscussionRow[]).map((d) => ({
+    id: d.id,
+    idea_id: d.idea_id,
+    title: d.title,
+    status: d.status,
+    reply_count: d.reply_count,
+    last_activity_at: d.last_activity_at,
+    idea_title: d.idea.title,
+  }));
 
   // Process bot dashboard data
   type BotTaskRow = { id: string; title: string; assignee_id: string; updated_at: string; column: { title: string; is_done_column: boolean }; idea: { id: string; title: string } };
@@ -531,6 +556,20 @@ export default async function DashboardPage() {
       </CollapsibleSection>
     ),
   };
+
+  // Conditionally add active-discussions section
+  if (activeDiscussions.length > 0) {
+    sections["active-discussions"] = (
+      <CollapsibleSection
+        sectionId="active-discussions"
+        title="Active Discussions"
+        icon={<MessagesSquare className="h-5 w-5" />}
+        count={activeDiscussions.length}
+      >
+        <ActiveDiscussions discussions={activeDiscussions} />
+      </CollapsibleSection>
+    );
+  }
 
   // Conditionally add my-bots section
   if (dashboardBots.length > 0) {

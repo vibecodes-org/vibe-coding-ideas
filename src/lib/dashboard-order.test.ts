@@ -41,15 +41,15 @@ describe("dashboard-order", () => {
   });
 
   describe("DEFAULT_PANEL_ORDER", () => {
-    it("has 6 sections", () => {
-      expect(DEFAULT_PANEL_ORDER).toHaveLength(6);
+    it("has 7 sections", () => {
+      expect(DEFAULT_PANEL_ORDER).toHaveLength(7);
     });
 
-    it("has 3 sections in each column", () => {
+    it("has 3 sections in column 0 and 4 in column 1", () => {
       const col0 = DEFAULT_PANEL_ORDER.filter((p) => p.column === 0);
       const col1 = DEFAULT_PANEL_ORDER.filter((p) => p.column === 1);
       expect(col0).toHaveLength(3);
-      expect(col1).toHaveLength(3);
+      expect(col1).toHaveLength(4);
     });
 
     it("has unique IDs", () => {
@@ -310,7 +310,7 @@ describe("dashboard-order", () => {
     it("returns items for column 1", () => {
       const items = getColumnItems(DEFAULT_PANEL_ORDER, 1);
       expect(items.every((p) => p.column === 1)).toBe(true);
-      expect(items).toHaveLength(3);
+      expect(items).toHaveLength(4);
     });
 
     it("preserves order", () => {

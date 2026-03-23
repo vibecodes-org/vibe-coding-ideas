@@ -9,6 +9,7 @@ export const SECTION_LABELS: Record<string, string> = {
   "my-tasks": "My Tasks",
   "my-ideas": "My Ideas",
   collaborations: "Collaborations",
+  "active-discussions": "Active Discussions",
   "recent-activity": "Recent Activity",
 };
 
@@ -18,6 +19,7 @@ export const DEFAULT_PANEL_ORDER: PanelPlacement[] = [
   { id: "my-tasks", column: 0 },
   { id: "my-ideas", column: 1 },
   { id: "collaborations", column: 1 },
+  { id: "active-discussions", column: 1 },
   { id: "recent-activity", column: 1 },
 ];
 
