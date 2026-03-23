@@ -13,7 +13,7 @@ vi.mock("@/lib/ai-helpers", () => ({
 }));
 
 vi.mock("@/lib/logger", () => ({
-  logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn() },
+  logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
 import { matchRolesWithAi, matchRolesWithAiOrFuzzy } from "./ai-role-matching";
@@ -242,8 +242,8 @@ describe("matchRolesWithAiOrFuzzy", () => {
     );
 
     expect(result).toEqual({
-      "UI Developer": "bot-1",
-      "API Developer": "bot-2",
+      "UI Developer": { botId: "bot-1", tier: "ai" },
+      "API Developer": { botId: "bot-2", tier: "ai" },
     });
 
     // Verify AI path was taken
@@ -264,10 +264,10 @@ describe("matchRolesWithAiOrFuzzy", () => {
       testAgents
     );
 
-    // Fuzzy should match "Frontend Developer" exactly
-    expect(result["Frontend Developer"]).toBe("bot-1");
+    // Fuzzy should match "Frontend Developer" exactly — now returns tier info
+    expect(result["Frontend Developer"]).toEqual({ botId: "bot-1", tier: "exact" });
     // "Unknown Role" has no fuzzy match
-    expect(result["Unknown Role"]).toBeNull();
+    expect(result["Unknown Role"]).toEqual({ botId: null, tier: "none" });
 
     // Verify AI was NOT called
     expect(mockGenerateObject).not.toHaveBeenCalled();
@@ -289,7 +289,7 @@ describe("matchRolesWithAiOrFuzzy", () => {
       testAgents
     );
 
-    // Fuzzy should match "Backend Engineer" exactly
-    expect(result["Backend Engineer"]).toBe("bot-2");
+    // Fuzzy should match "Backend Engineer" exactly — now returns tier info
+    expect(result["Backend Engineer"]).toEqual({ botId: "bot-2", tier: "exact" });
   });
 });

@@ -146,6 +146,8 @@ import {
   removeIdeaAgentSchema,
   listIdeaAgents,
   listIdeaAgentsSchema,
+  allocateAllAgents,
+  allocateAllAgentsSchema,
 } from "./tools/idea-agents";
 import {
   listWorkflowTemplates,
@@ -1006,6 +1008,20 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await removeIdeaAgent(ctx, removeIdeaAgentSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "allocate_all_agents",
+    "Bulk-allocate multiple bots to an idea's agent pool in one operation. If bot_ids is omitted, allocates all of the owner's unallocated active bots. Triggers a single workflow rematch at the end.",
+    allocateAllAgentsSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await allocateAllAgents(ctx, allocateAllAgentsSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

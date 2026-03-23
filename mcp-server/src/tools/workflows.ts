@@ -3,6 +3,7 @@ import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits } from "../../../src/lib/workflow-helpers";
+import { tierRank } from "../../../src/lib/role-matching";
 
 // --- Shared step schema used by template tools ---
 
@@ -233,7 +234,8 @@ export async function applyWorkflowTemplate(
   for (let i = 0; i < steps.length; i++) {
     const step = steps[i];
     const role = step.role ? String(step.role) : null;
-    const matchedBotId = role ? (agentMatches[role] ?? null) : null;
+    const match = role ? agentMatches[role] : undefined;
+    const matchedBotId = match?.botId ?? null;
 
     const { data: createdStep, error: stepError } = await ctx.supabase
       .from("task_workflow_steps")
@@ -245,6 +247,7 @@ export async function applyWorkflowTemplate(
         description: step.description ? String(step.description) : null,
         agent_role: role,
         bot_id: matchedBotId,
+        match_tier: matchedBotId ? (match?.tier ?? null) : null,
         human_check_required: Boolean(step.requires_approval ?? false),
         expected_deliverables: Array.isArray(step.deliverables) ? step.deliverables : [],
         position: (i + 1) * 1000,
@@ -1013,19 +1016,18 @@ export async function rematchWorkflowAgents(
   ctx: McpContext,
   params: z.infer<typeof rematchWorkflowAgentsSchema>
 ) {
-  // Fetch pending steps where bot_id IS NULL and agent_role IS NOT NULL
-  const { data: unmatchedSteps, error: stepsError } = await ctx.supabase
+  // Fetch ALL pending steps with agent_role (not just bot_id IS NULL)
+  const { data: pendingSteps, error: stepsError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, agent_role")
+    .select("id, agent_role, bot_id, match_tier")
     .eq("task_id", params.task_id)
     .eq("status", "pending")
-    .is("bot_id", null)
     .not("agent_role", "is", null);
 
-  if (stepsError) throw new Error(`Failed to fetch unmatched steps: ${stepsError.message}`);
+  if (stepsError) throw new Error(`Failed to fetch pending steps: ${stepsError.message}`);
 
-  if (!unmatchedSteps || unmatchedSteps.length === 0) {
-    return { matched: 0, unmatched: 0, matches: {} };
+  if (!pendingSteps || pendingSteps.length === 0) {
+    return { matched: 0, unmatched: 0, upgraded: 0, matches: {} };
   }
 
   // Fetch task to get idea_id
@@ -1053,34 +1055,46 @@ export async function rematchWorkflowAgents(
     .filter((c): c is { botId: string; name: string; role: string } => c !== null);
 
   // Collect unique step roles for AI/fuzzy matching
-  const stepRoles = [...new Set(unmatchedSteps.map((s) => s.agent_role!))];
+  const stepRoles = [...new Set(pendingSteps.map((s) => s.agent_role!))];
 
-  // Match roles using AI (with fuzzy fallback)
+  // Match roles using AI (with fuzzy fallback) — returns tier info
   const matchUserId = ctx.ownerUserId ?? ctx.userId;
   const roleMatches = await matchRolesWithAiOrFuzzy(ctx.supabase, matchUserId, stepRoles, candidates);
 
   let matched = 0;
   let unmatched = 0;
+  let upgraded = 0;
   const matches: Record<string, string> = {};
 
-  for (const step of unmatchedSteps) {
+  for (const step of pendingSteps) {
     const role = step.agent_role!;
-    const matchedBotId = roleMatches[role] ?? null;
+    const newMatch = roleMatches[role];
+    const newBotId = newMatch?.botId ?? null;
+    const newTier = newMatch?.tier ?? "none";
 
-    if (matchedBotId) {
+    if (!newBotId) {
+      if (!step.bot_id) unmatched++;
+      continue;
+    }
+
+    const oldTierRank = tierRank(step.match_tier);
+    const newTierRank = tierRank(newTier);
+
+    // Only update if: no existing match, or new match is strictly better tier
+    if (!step.bot_id || newTierRank > oldTierRank) {
+      if (step.bot_id) upgraded++;
+
       await ctx.supabase
         .from("task_workflow_steps")
-        .update({ bot_id: matchedBotId })
+        .update({ bot_id: newBotId, match_tier: newTier })
         .eq("id", step.id);
 
-      matches[role] = matchedBotId;
+      matches[role] = newBotId;
       matched++;
-    } else {
-      unmatched++;
     }
   }
 
-  return { matched, unmatched, matches };
+  return { matched, unmatched, upgraded, matches };
 }
 
 // --- Get Step Comments ---

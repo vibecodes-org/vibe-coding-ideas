@@ -1,0 +1,436 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UX Design: Reapply Fuzzy Matching on Agent Add/Remove</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #1e1e1e;
+      --border: #2a2a2a;
+      --text: #e4e4e7;
+      --text-muted: #a1a1aa;
+      --accent: #8b5cf6;
+      --accent-muted: #6d28d9;
+      --green: #10b981;
+      --green-bg: rgba(16, 185, 129, 0.1);
+      --amber: #f59e0b;
+      --amber-bg: rgba(245, 158, 11, 0.1);
+      --red: #ef4444;
+      --red-bg: rgba(239, 68, 68, 0.1);
+      --blue: #3b82f6;
+      --blue-bg: rgba(59, 130, 246, 0.1);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.3rem; margin: 2rem 0 0.75rem; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+    h3 { font-size: 1.1rem; margin: 1.5rem 0 0.5rem; }
+    p, li { color: var(--text-muted); }
+    p { margin-bottom: 0.75rem; }
+    ul, ol { padding-left: 1.5rem; margin-bottom: 1rem; }
+    li { margin-bottom: 0.35rem; }
+    code { background: var(--surface-2); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.9em; color: var(--accent); }
+    strong { color: var(--text); }
+
+    .meta {
+      display: flex; gap: 1.5rem; margin-bottom: 2rem; padding: 1rem;
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      font-size: 0.85rem; color: var(--text-muted); flex-wrap: wrap;
+    }
+    .meta span { display: flex; align-items: center; gap: 0.35rem; }
+
+    .badge {
+      display: inline-block; padding: 0.15em 0.6em; border-radius: 9999px;
+      font-size: 0.75rem; font-weight: 600; letter-spacing: 0.02em;
+    }
+    .badge-green { background: var(--green-bg); color: var(--green); border: 1px solid rgba(16, 185, 129, 0.25); }
+    .badge-amber { background: var(--amber-bg); color: var(--amber); border: 1px solid rgba(245, 158, 11, 0.25); }
+    .badge-blue { background: var(--blue-bg); color: var(--blue); border: 1px solid rgba(59, 130, 246, 0.25); }
+
+    .decision-box {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 1.25rem; margin: 1rem 0;
+    }
+    .decision-box h4 {
+      font-size: 0.95rem; margin-bottom: 0.5rem;
+      display: flex; align-items: center; gap: 0.5rem;
+    }
+
+    .flow-diagram {
+      background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+      padding: 1.5rem; margin: 1rem 0; font-family: 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 0.8rem; line-height: 1.8; overflow-x: auto; white-space: pre;
+      color: var(--text-muted);
+    }
+
+    .state-table {
+      width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem;
+    }
+    .state-table th, .state-table td {
+      text-align: left; padding: 0.6rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .state-table th { color: var(--text); font-weight: 600; background: var(--surface); }
+    .state-table td { color: var(--text-muted); }
+    .state-table tr:hover td { background: var(--surface); }
+
+    .callout {
+      padding: 1rem 1.25rem; border-radius: 8px; margin: 1rem 0;
+      border-left: 3px solid;
+    }
+    .callout-green { background: var(--green-bg); border-color: var(--green); }
+    .callout-amber { background: var(--amber-bg); border-color: var(--amber); }
+    .callout-blue { background: var(--blue-bg); border-color: var(--blue); }
+    .callout p { margin-bottom: 0; }
+
+    .section-summary {
+      background: var(--surface-2); border-radius: 8px; padding: 1rem 1.25rem;
+      margin: 1.5rem 0; border: 1px solid var(--border);
+    }
+    .section-summary p { margin: 0; font-size: 0.9rem; }
+  </style>
+</head>
+<body>
+
+  <h1>UX Design v2: Reapply Fuzzy Matching on Agent Add/Remove</h1>
+  <div class="meta">
+    <span><strong>Agent:</strong> Compass (UX Designer)</span>
+    <span><strong>Task:</strong> Reapply fuzzy matching when adding or removing agents</span>
+    <span><strong>Date:</strong> 2026-03-22</span>
+    <span><strong>Version:</strong> v2 (reworked)</span>
+    <span><strong>Status:</strong> <span class="badge badge-green">No UI Changes Required</span></span>
+  </div>
+
+  <h2>1. Summary</h2>
+  <p>
+    Building on the findings from the <strong>Requirements v2</strong> step, this design review confirms that
+    <strong>no UI changes are needed</strong> for this feature. The v2 requirements expand the scope significantly —
+    when an agent is added, ALL pending steps are re-evaluated (not just unmatched ones), and a new
+    <code>match_tier</code> column enables quality-based upgrade decisions. Despite this expanded backend scope,
+    the existing UI components already handle all result states correctly.
+  </p>
+  <p>
+    This document validates that decision by walking through every user flow affected by the change,
+    including the new <strong>tier-based upgrade scenario</strong> (a poorly-matched step being reassigned
+    to a better-fit agent), confirming that all states are handled, and flagging future improvements.
+  </p>
+
+  <h2>2. Affected User Flows</h2>
+
+  <h3>Flow A: Adding an Agent to the Pool (v2 — tier-aware)</h3>
+  <div class="flow-diagram">
+  Agents Tab                  Server Action              Workflow Steps UI
+  ─────────                   ─────────────              ─────────────────
+  User clicks                                            Steps show:
+  "Add Agent" button                                     Step 2: Atlas (word-overlap)
+       │                                                 Step 4: ⚠ no match
+       ▼
+  Selects "Compass"
+  (UX Designer)
+       │
+       ▼
+  allocateAgent()  ──────────►  Insert idea_agents
+                                     │
+                                     ▼
+                               rematchWorkflowAgents()
+                               [NEW — fire-and-forget]
+                                     │
+                                     ▼
+                               Re-evaluate ALL pending
+                               steps with agent_role
+                                     │
+                               ┌─────┴─────┐
+                               ▼           ▼
+                          Step 4:      Step 2:
+                          bot_id=NULL  tier=word-overlap
+                          → assign     new=exact (better!)
+                          Compass      → upgrade to Compass
+       │                       │
+       ▼                       ▼
+  Toast: "Agent          revalidatePath()
+  added to pool"               │
+       │                       ▼
+       ▼                 Steps UI refreshes:
+  Agent grid             ✓ Step 2: Compass (upgraded)
+  shows new agent        ✓ Step 4: Compass (new match)
+                         ✓ Warning banner gone
+  </div>
+
+  <div class="decision-box">
+    <h4>✅ Decision: No UI change needed</h4>
+    <p>The v2 flow now re-evaluates ALL pending steps, not just unmatched ones. When a poor match (e.g.,
+    <code>word-overlap</code> tier) is upgraded to a better one (e.g., <code>exact</code>), the
+    <code>bot_id</code> changes on the step. From the UI's perspective, this is identical to the v1 flow —
+    the warning banner checks <code>bot_id === null</code> and the step list re-renders on revalidation.
+    The tier upgrade is invisible to the user (they just see a better agent assigned). The role coverage
+    panel in the Agents tab also re-fetches on revalidation.</p>
+  </div>
+
+  <h3>Flow B: Removing an Agent from the Pool</h3>
+  <div class="flow-diagram">
+  Agents Tab                  Server / DB                Workflow Steps UI
+  ─────────                   ──────────                 ─────────────────
+  User clicks trash                                      Steps show:
+  icon on agent card                                     Step 3: "Atlas (Dev)"
+       │                                                 Step 5: "Atlas (Dev)"
+       ▼
+  removeIdeaAgent() ─────────► Delete idea_agents
+                                     │
+                                     ▼
+                               DB trigger clears
+                               board_tasks.assignee_id
+                                     │
+                                     ▼
+                               DB trigger clears bot_id
+                               + match_tier on PENDING
+                               steps [NEW — R3 trigger]
+                                     │
+                                     ▼
+                               rematchWorkflowAgents()
+                               [NEW — fire-and-forget]
+                                     │
+                                     ▼
+                               Try matching from
+                               remaining pool
+       │                             │
+       ▼                             ▼
+  Toast: "Agent              revalidatePath()
+  removed from pool"                 │
+       │                      ┌──────┴──────┐
+       ▼                      ▼             ▼
+  Agent grid             Match found:   No match:
+  removes agent          Step updated   ⚠ Warning banner
+                         with new bot   reappears
+  </div>
+
+  <div class="decision-box">
+    <h4>✅ Decision: No UI change needed</h4>
+    <p>When a removed agent's <code>bot_id</code> is cleared from pending steps and rematch runs, two outcomes
+    are possible — both already handled by existing UI:</p>
+    <ul>
+      <li><strong>Replacement found:</strong> Step shows new matched agent. No warning.</li>
+      <li><strong>No replacement:</strong> Warning banner reappears with the unmatched role(s). This is the
+      correct behaviour — it tells the user to add an agent with the missing role.</li>
+    </ul>
+  </div>
+
+  <h3>Flow C: Collaborator Removed (Cascade)</h3>
+  <div class="flow-diagram">
+  Idea Settings              DB Cascade                  Workflow Steps
+  ─────────────              ──────────                  ──────────────
+  Author removes
+  collaborator
+       │
+       ▼
+  removeCollaborator() ─────► Delete collaborator row
+                                     │
+                                     ▼
+                               Trigger: delete all
+                               idea_agents by that user
+                                     │
+                                     ▼
+                               Trigger: clear bot_id
+                               + match_tier on pending
+                               steps [NEW — R3 trigger]
+                                     │
+                                     ▼
+                               App-level rematch
+                               [NOT triggered — cascade
+                                only, no server action]
+  </div>
+
+  <div class="callout callout-amber">
+    <p><strong>Note:</strong> The cascade path (collaborator removal) will clear stale <code>bot_id</code>
+    references via the extended DB trigger, but cannot trigger the app-level rematch. This is acceptable —
+    the warning banner will surface unmatched steps, and the next agent allocation or manual
+    <code>rematchWorkflowAgents</code> call will fill them in.</p>
+  </div>
+
+  <h2>3. State Analysis</h2>
+  <p>Every UI component affected by this change already handles all relevant states:</p>
+
+  <table class="state-table">
+    <thead>
+      <tr>
+        <th>Component</th>
+        <th>State</th>
+        <th>Current Handling</th>
+        <th>Change Needed?</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><code>TaskWorkflowSection</code></td>
+        <td>Steps with <code>bot_id = null</code></td>
+        <td>Amber warning banner listing unmatched roles</td>
+        <td>No</td>
+      </tr>
+      <tr>
+        <td><code>TaskWorkflowSection</code></td>
+        <td>All steps matched</td>
+        <td>No warning banner shown</td>
+        <td>No</td>
+      </tr>
+      <tr>
+        <td><code>StepDetailDialog</code></td>
+        <td>Step with matched agent</td>
+        <td>Shows role badge (not agent name)</td>
+        <td>No*</td>
+      </tr>
+      <tr>
+        <td><code>AgentsTab</code> coverage panel</td>
+        <td>Roles covered</td>
+        <td>Green badge with agent name</td>
+        <td>No</td>
+      </tr>
+      <tr>
+        <td><code>AgentsTab</code> coverage panel</td>
+        <td>Roles uncovered</td>
+        <td>Amber badge "no agent"</td>
+        <td>No</td>
+      </tr>
+      <tr>
+        <td><code>AgentsTab</code> agent grid</td>
+        <td>Agent added/removed</td>
+        <td>Grid updates via revalidation</td>
+        <td>No</td>
+      </tr>
+      <tr>
+        <td>Toast notifications</td>
+        <td>Add/remove success</td>
+        <td>"Agent added/removed from pool"</td>
+        <td>No</td>
+      </tr>
+      <tr>
+        <td>Toast notifications</td>
+        <td>Add/remove error</td>
+        <td>Error toast via catch block</td>
+        <td>No</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <p style="font-size: 0.8rem; color: var(--text-muted);">
+    * The step detail dialog shows the <code>agent_role</code> but not the matched agent's name/avatar.
+    This is a pre-existing gap, not introduced by this change. See Future Improvements below.
+  </p>
+
+  <h2>4. Accessibility & Responsiveness Check</h2>
+
+  <div class="callout callout-green">
+    <p><strong>No new UI elements = no new accessibility concerns.</strong> The existing warning banner
+    uses semantic HTML, has sufficient colour contrast (amber on dark), and the Agents tab controls
+    are already keyboard-navigable. No changes to the responsive layout are needed since the feature
+    is purely backend.</p>
+  </div>
+
+  <h2>5. Edge Cases</h2>
+
+  <table class="state-table">
+    <thead>
+      <tr>
+        <th>Edge Case</th>
+        <th>Expected Behaviour</th>
+        <th>UI Impact</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Agent removed while a step using that agent is <strong>in_progress</strong></td>
+        <td>In-progress step is NOT affected (only pending steps cleared)</td>
+        <td>None — step continues with its current agent</td>
+      </tr>
+      <tr>
+        <td>Agent removed and re-added immediately</td>
+        <td>Remove clears bot_id → rematch may not find replacement → re-add triggers rematch → finds agent again</td>
+        <td>Brief flash of warning banner possible; acceptable</td>
+      </tr>
+      <tr>
+        <td>All agents removed from pool</td>
+        <td>All pending steps get bot_id cleared, no replacements found</td>
+        <td>Warning banner shows all unmatched roles — correct</td>
+      </tr>
+      <tr>
+        <td>Agent added that matches multiple unmatched roles</td>
+        <td>rematchWorkflowAgents assigns same agent to multiple steps</td>
+        <td>Warning banner reduces/disappears — correct</td>
+      </tr>
+      <tr>
+        <td><strong>New agent is exact match, existing is word-overlap</strong></td>
+        <td>Tier comparison: exact (4) > word-overlap (1) → upgrade <code>bot_id</code> + <code>match_tier</code></td>
+        <td>Step silently shows new agent on revalidation — no disruption</td>
+      </tr>
+      <tr>
+        <td><strong>New agent is fuzzy match, existing is exact match</strong></td>
+        <td>Tier comparison: word-overlap (1) < exact (4) → keep existing, no change</td>
+        <td>None — stability preserved</td>
+      </tr>
+      <tr>
+        <td><strong>New agent matches at same tier as existing</strong></td>
+        <td>Equal tier → keep existing assignment (stability rule)</td>
+        <td>None — no churn</td>
+      </tr>
+      <tr>
+        <td><strong>Steps with <code>match_tier = NULL</code> (pre-migration data)</strong></td>
+        <td>NULL treated as tier 0 (lowest) — any match upgrades it</td>
+        <td>Legacy steps get assigned on first rematch — correct</td>
+      </tr>
+      <tr>
+        <td>Rematch is slow (AI matching with API call)</td>
+        <td>Fire-and-forget — UI updates on revalidation after completion</td>
+        <td>Slight delay before warning banner updates; acceptable</td>
+      </tr>
+      <tr>
+        <td>No active workflow runs in the idea</td>
+        <td>Rematch finds no steps to process, returns early</td>
+        <td>None</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>6. Future Improvements (Not in Scope)</h2>
+  <p>These are pre-existing UX gaps surfaced during this review. They are <strong>not blockers</strong> for the
+  current task but worth recording for the backlog.</p>
+
+  <div class="decision-box">
+    <h4>💡 F1: Show matched agent name on workflow steps</h4>
+    <p>Currently, <code>StepDetailDialog</code> and the step list only show the <code>agent_role</code> badge,
+    not which specific bot is assigned. Showing the bot's name and avatar alongside the role would help users
+    understand who is handling each step — especially when multiple agents share a role.</p>
+    <p style="margin-top: 0.5rem;"><span class="badge badge-blue">Backlog</span> — separate task, small effort</p>
+  </div>
+
+  <div class="decision-box">
+    <h4>💡 F2: Toast or inline notification when rematch changes assignments</h4>
+    <p>When an agent is added/removed and the background rematch reassigns steps, the user gets no explicit
+    notification that assignments changed. A subtle toast like "Workflow steps rematched — 2 steps updated"
+    would close the feedback loop. Currently the warning banner appearance/disappearance is the only signal.</p>
+    <p style="margin-top: 0.5rem;"><span class="badge badge-blue">Backlog</span> — nice-to-have, low priority</p>
+  </div>
+
+  <h2>7. Conclusion</h2>
+
+  <div class="section-summary">
+    <p><strong>Recommendation:</strong> Proceed with backend-only implementation as described in the Requirements step.
+    All existing UI components handle the affected states correctly. The <code>revalidatePath</code> calls
+    after rematch ensure the UI reflects the new state without any frontend code changes.</p>
+    <p style="margin-top: 0.5rem;">The two future improvements (F1, F2) should be logged as separate backlog items
+    if the team agrees they add value.</p>
+  </div>
+
+</body>
+</html>

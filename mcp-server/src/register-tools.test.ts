@@ -57,6 +57,7 @@ const EXPECTED_TOOL_NAMES = [
   "list_featured_teams",
   "allocate_agent",
   "remove_idea_agent",
+  "allocate_all_agents",
   "list_idea_agents",
   "list_workflow_templates",
   "create_workflow_template",
@@ -93,7 +94,7 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(77);
+    expect(server.tool).toHaveBeenCalledTimes(78);
   });
 
   it("registers all expected tool names", () => {

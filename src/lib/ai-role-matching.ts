@@ -10,8 +10,13 @@ import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { AI_MODEL, resolveAiProvider, logAiUsage, decrementStarterCredit } from "@/lib/ai-helpers";
-import { buildRoleMatcher } from "@/lib/role-matching";
+import { buildRoleMatcher, type MatchTier } from "@/lib/role-matching";
 import { logger } from "@/lib/logger";
+
+export interface RoleMatchWithTier {
+  botId: string | null;
+  tier: MatchTier;
+}
 
 const AI_TIMEOUT_MS = 90_000;
 
@@ -43,12 +48,20 @@ export async function matchRolesWithAi(
   agents: AiRoleMatchAgent[]
 ): Promise<Record<string, string | null> | null> {
   if (stepRoles.length === 0 || agents.length === 0) {
+    logger.debug("AI role matching skipped: no roles or agents", {
+      stepRoles: stepRoles.length,
+      agents: agents.length,
+    });
     return null;
   }
 
   try {
     const resolved = await resolveAiProvider(supabase, userId);
     if (!resolved.ok) {
+      logger.info("AI role matching skipped: no API key or credits", {
+        userId,
+        error: resolved.error,
+      });
       return null;
     }
 
@@ -115,6 +128,7 @@ export async function matchRolesWithAi(
 
 /**
  * Match roles using exact match first, then AI for remaining, then fuzzy fallback.
+ * Returns both botId and the match tier for quality tracking.
  *
  * 1. Exact match (case-insensitive) — free, no AI needed
  * 2. AI semantic matching for unmatched roles — only if user has API key/credits
@@ -125,8 +139,8 @@ export async function matchRolesWithAiOrFuzzy(
   userId: string,
   stepRoles: string[],
   agents: AiRoleMatchAgent[]
-): Promise<Record<string, string | null>> {
-  const result: Record<string, string | null> = {};
+): Promise<Record<string, RoleMatchWithTier>> {
+  const result: Record<string, RoleMatchWithTier> = {};
 
   // Tier 1: Exact match (case-insensitive) — no AI cost
   const agentsByRole = new Map(
@@ -137,7 +151,7 @@ export async function matchRolesWithAiOrFuzzy(
   for (const role of stepRoles) {
     const exactMatch = agentsByRole.get(role.trim().toLowerCase());
     if (exactMatch) {
-      result[role] = exactMatch;
+      result[role] = { botId: exactMatch, tier: "exact" };
     } else {
       unmatchedRoles.push(role);
     }
@@ -145,24 +159,48 @@ export async function matchRolesWithAiOrFuzzy(
 
   // All matched exactly — no need for AI or fuzzy
   if (unmatchedRoles.length === 0) {
+    logger.debug("Role matching: all roles exact-matched, skipping AI/fuzzy", {
+      matched: Object.keys(result),
+    });
     return result;
   }
+
+  logger.info("Role matching: attempting AI for unmatched roles", {
+    exactMatched: Object.keys(result).filter((r) => result[r].tier === "exact"),
+    unmatchedRoles,
+    agentCount: agents.length,
+  });
 
   // Tier 2: AI matching for unmatched roles only
   const aiResult = await matchRolesWithAi(supabase, userId, unmatchedRoles, agents);
   if (aiResult) {
     for (const role of unmatchedRoles) {
-      result[role] = aiResult[role] ?? null;
+      const botId = aiResult[role] ?? null;
+      result[role] = { botId, tier: botId ? "ai" : "none" };
     }
+    logger.info("Role matching: AI completed", {
+      aiMatches: Object.fromEntries(
+        unmatchedRoles.map((r) => [r, result[r].botId ? "matched" : "no match"])
+      ),
+    });
     return result;
   }
 
   // Tier 3: Fuzzy matching fallback for unmatched roles
+  logger.info("Role matching: AI unavailable, falling back to fuzzy", {
+    unmatchedRoles,
+  });
   const fuzzyMatcher = buildRoleMatcher(
     agents.map((a) => ({ botId: a.botId, role: a.role }))
   );
   for (const role of unmatchedRoles) {
-    result[role] = fuzzyMatcher(role).botId;
+    const match = fuzzyMatcher(role);
+    result[role] = { botId: match.botId, tier: match.tier };
   }
+  logger.info("Role matching: fuzzy completed", {
+    fuzzyResults: Object.fromEntries(
+      unmatchedRoles.map((r) => [r, `${result[r].tier}${result[r].botId ? "" : " (no match)"}`])
+    ),
+  });
   return result;
 }

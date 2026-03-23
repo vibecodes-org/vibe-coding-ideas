@@ -717,6 +717,7 @@ export type Database = {
           completed_at: string | null;
           created_at: string;
           expected_deliverables: string[];
+          match_tier: string | null;
           updated_at: string;
         };
         Insert: {
@@ -735,6 +736,7 @@ export type Database = {
           output?: string | null;
           human_check_required?: boolean;
           expected_deliverables?: string[];
+          match_tier?: string | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
@@ -757,6 +759,7 @@ export type Database = {
           output?: string | null;
           human_check_required?: boolean;
           expected_deliverables?: string[];
+          match_tier?: string | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;

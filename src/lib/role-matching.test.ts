@@ -2,6 +2,8 @@ import { describe, it, expect } from "vitest";
 import {
   matchRoleToAgent,
   buildRoleMatcher,
+  tierRank,
+  MATCH_TIER_RANK,
   type AgentCandidate,
 } from "./role-matching";
 
@@ -194,5 +196,77 @@ describe("role-matching", () => {
       const matcher = buildRoleMatcher(withEmpty);
       expect(matcher("QA Engineer").botId).toBe("bot-3");
     });
+  });
+});
+
+describe("tierRank", () => {
+  it("returns correct ranks for all tiers", () => {
+    expect(tierRank("exact")).toBe(4);
+    expect(tierRank("ai")).toBe(3);
+    expect(tierRank("substring")).toBe(2);
+    expect(tierRank("word-overlap")).toBe(1);
+    expect(tierRank("none")).toBe(0);
+  });
+
+  it("returns 0 for null/undefined", () => {
+    expect(tierRank(null)).toBe(0);
+    expect(tierRank(undefined)).toBe(0);
+  });
+
+  it("returns 0 for unknown tier strings", () => {
+    expect(tierRank("unknown")).toBe(0);
+    expect(tierRank("")).toBe(0);
+  });
+
+  it("exact > ai > substring > word-overlap > none", () => {
+    expect(tierRank("exact")).toBeGreaterThan(tierRank("ai"));
+    expect(tierRank("ai")).toBeGreaterThan(tierRank("substring"));
+    expect(tierRank("substring")).toBeGreaterThan(tierRank("word-overlap"));
+    expect(tierRank("word-overlap")).toBeGreaterThan(tierRank("none"));
+  });
+});
+
+describe("MATCH_TIER_RANK", () => {
+  it("has entries for all 5 tiers", () => {
+    expect(Object.keys(MATCH_TIER_RANK)).toHaveLength(5);
+    expect(MATCH_TIER_RANK).toHaveProperty("exact");
+    expect(MATCH_TIER_RANK).toHaveProperty("ai");
+    expect(MATCH_TIER_RANK).toHaveProperty("substring");
+    expect(MATCH_TIER_RANK).toHaveProperty("word-overlap");
+    expect(MATCH_TIER_RANK).toHaveProperty("none");
+  });
+});
+
+describe("tier comparison for rematch upgrade decisions", () => {
+  it("word-overlap match should be upgraded by exact match", () => {
+    const oldTier = tierRank("word-overlap"); // 1
+    const newTier = tierRank("exact"); // 4
+    expect(newTier > oldTier).toBe(true);
+  });
+
+  it("exact match should NOT be downgraded by word-overlap", () => {
+    const oldTier = tierRank("exact"); // 4
+    const newTier = tierRank("word-overlap"); // 1
+    expect(newTier > oldTier).toBe(false);
+  });
+
+  it("equal tiers should keep existing (stability)", () => {
+    const oldTier = tierRank("substring"); // 2
+    const newTier = tierRank("substring"); // 2
+    expect(newTier > oldTier).toBe(false);
+  });
+
+  it("null/legacy match_tier should be upgraded by any match", () => {
+    const oldTier = tierRank(null); // 0
+    expect(tierRank("word-overlap") > oldTier).toBe(true);
+    expect(tierRank("substring") > oldTier).toBe(true);
+    expect(tierRank("ai") > oldTier).toBe(true);
+    expect(tierRank("exact") > oldTier).toBe(true);
+  });
+
+  it("ai match should be upgraded by exact but not by substring", () => {
+    const aiRank = tierRank("ai"); // 3
+    expect(tierRank("exact") > aiRank).toBe(true);
+    expect(tierRank("substring") > aiRank).toBe(false);
   });
 });

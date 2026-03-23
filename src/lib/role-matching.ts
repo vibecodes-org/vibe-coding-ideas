@@ -12,9 +12,25 @@ export interface AgentCandidate {
   role: string;
 }
 
+export type MatchTier = "exact" | "ai" | "substring" | "word-overlap" | "none";
+
 export interface RoleMatchResult {
   botId: string | null;
-  tier: "exact" | "substring" | "word-overlap" | "none";
+  tier: MatchTier;
+}
+
+/** Numeric ranking for tier comparison — higher is better. */
+export const MATCH_TIER_RANK: Record<string, number> = {
+  exact: 4,
+  ai: 3,
+  substring: 2,
+  "word-overlap": 1,
+  none: 0,
+};
+
+/** Get numeric rank for a tier string (null/unknown = 0). */
+export function tierRank(tier: string | null | undefined): number {
+  return tier ? (MATCH_TIER_RANK[tier] ?? 0) : 0;
 }
 
 const SEPARATOR_RE = /[\s/&]+/;

@@ -10,6 +10,7 @@ import {
 } from "@/lib/validation";
 import { matchRolesWithAiOrFuzzy } from "@/lib/ai-role-matching";
 import { propagateTemplateEdits } from "@/lib/workflow-helpers";
+import { tierRank } from "@/lib/role-matching";
 
 // ─── Templates ───
 
@@ -231,20 +232,24 @@ export async function applyWorkflowTemplate(
 
   // Create workflow steps from template steps
   const steps = templateSteps.map(
-    (step, index) => ({
-      task_id: taskId,
-      idea_id: task.idea_id,
-      run_id: run.id,
-      title: step.title,
-      description: step.description ?? null,
-      agent_role: step.role,
-      human_check_required: step.requires_approval ?? false,
-      expected_deliverables: step.deliverables ?? [],
-      position: index * 1000,
-      step_order: index + 1,
-      status: "pending" as const,
-      bot_id: step.role ? (roleMatches[step.role] ?? null) : null,
-    })
+    (step, index) => {
+      const match = step.role ? roleMatches[step.role] : undefined;
+      return {
+        task_id: taskId,
+        idea_id: task.idea_id,
+        run_id: run.id,
+        title: step.title,
+        description: step.description ?? null,
+        agent_role: step.role,
+        human_check_required: step.requires_approval ?? false,
+        expected_deliverables: step.deliverables ?? [],
+        position: index * 1000,
+        step_order: index + 1,
+        status: "pending" as const,
+        bot_id: match?.botId ?? null,
+        match_tier: match?.botId ? match.tier : null,
+      };
+    }
   );
 
   const { data: createdSteps, error: stepsError } = await supabase
@@ -275,19 +280,18 @@ export async function rematchWorkflowAgents(taskId: string) {
 
   if (!user) throw new Error("Not authenticated");
 
-  // Fetch pending steps where bot_id IS NULL and agent_role IS NOT NULL
-  const { data: unmatchedSteps, error: stepsError } = await supabase
+  // Fetch ALL pending steps with agent_role (not just bot_id IS NULL)
+  const { data: pendingSteps, error: stepsError } = await supabase
     .from("task_workflow_steps")
-    .select("id, agent_role, idea_id")
+    .select("id, agent_role, bot_id, match_tier")
     .eq("task_id", taskId)
     .eq("status", "pending")
-    .is("bot_id", null)
     .not("agent_role", "is", null);
 
   if (stepsError) throw new Error(stepsError.message);
 
-  if (!unmatchedSteps || unmatchedSteps.length === 0) {
-    return { matched: 0, unmatched: 0, matches: {} as Record<string, string> };
+  if (!pendingSteps || pendingSteps.length === 0) {
+    return { matched: 0, unmatched: 0, upgraded: 0, matches: {} as Record<string, string> };
   }
 
   // Fetch task to get idea_id
@@ -319,35 +323,47 @@ export async function rematchWorkflowAgents(taskId: string) {
     .filter((c): c is { botId: string; name: string; role: string } => c !== null);
 
   // Collect unique step roles for matching
-  const stepRoles = [...new Set(unmatchedSteps.map((s) => s.agent_role!))];
+  const stepRoles = [...new Set(pendingSteps.map((s) => s.agent_role!))];
 
-  // Match roles using AI (with fuzzy fallback)
+  // Match roles using AI (with fuzzy fallback) — returns tier info
   const roleMatches = await matchRolesWithAiOrFuzzy(supabase, user.id, stepRoles, candidates);
 
   let matched = 0;
   let unmatched = 0;
+  let upgraded = 0;
   const matches: Record<string, string> = {};
 
-  for (const step of unmatchedSteps) {
+  for (const step of pendingSteps) {
     const role = step.agent_role!;
-    const matchedBotId = roleMatches[role] ?? null;
+    const newMatch = roleMatches[role];
+    const newBotId = newMatch?.botId ?? null;
+    const newTier = newMatch?.tier ?? "none";
 
-    if (matchedBotId) {
+    if (!newBotId) {
+      if (!step.bot_id) unmatched++;
+      continue;
+    }
+
+    const oldTierRank = tierRank(step.match_tier);
+    const newTierRank = tierRank(newTier);
+
+    // Only update if: no existing match, or new match is strictly better tier
+    if (!step.bot_id || newTierRank > oldTierRank) {
+      if (step.bot_id) upgraded++;
+
       await supabase
         .from("task_workflow_steps")
-        .update({ bot_id: matchedBotId })
+        .update({ bot_id: newBotId, match_tier: newTier })
         .eq("id", step.id);
 
-      matches[role] = matchedBotId;
+      matches[role] = newBotId;
       matched++;
-    } else {
-      unmatched++;
     }
   }
 
   revalidatePath(`/ideas/${task.idea_id}/board`);
 
-  return { matched, unmatched, matches };
+  return { matched, unmatched, upgraded, matches };
 }
 
 // ─── Auto-Rules ───
