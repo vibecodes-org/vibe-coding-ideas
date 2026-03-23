@@ -2,7 +2,6 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Check } from "lucide-react";
-import { Popover as PopoverPrimitive } from "radix-ui";
 import {
   Command,
   CommandEmpty,
@@ -212,104 +211,108 @@ export function RoleCombobox({
     [onChange]
   );
 
+  // Close dropdown when clicking outside
+  const containerRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    function handlePointerDown(e: PointerEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("pointerdown", handlePointerDown);
+    return () => document.removeEventListener("pointerdown", handlePointerDown);
+  }, [open]);
+
   return (
-    <div className={cn("relative", className)}>
-      <PopoverPrimitive.Root open={open} onOpenChange={setOpen}>
-        <PopoverPrimitive.Anchor asChild>
-          <Input
-            ref={inputRef}
-            value={value}
-            onChange={(e) => onChange(e.target.value)}
-            onFocus={() => setOpen(true)}
-            placeholder={placeholder}
-            maxLength={maxLength}
-            className={cn(compact && "h-7 text-xs")}
-            role="combobox"
-            aria-expanded={open}
-            aria-haspopup="listbox"
-            autoComplete="off"
-          />
-        </PopoverPrimitive.Anchor>
-        {hasAnyGroup && (
-          <PopoverPrimitive.Content
-            className={cn(
-              "bg-popover text-popover-foreground z-[100] rounded-md border p-0 shadow-md outline-hidden",
-              "data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=top]:slide-in-from-bottom-2",
-              compact ? "w-[200px]" : "w-[var(--radix-popover-trigger-width)]"
-            )}
-            align="start"
-            sideOffset={4}
-            onOpenAutoFocus={(e) => e.preventDefault()}
-            onInteractOutside={() => setOpen(false)}
-          >
-            <Command shouldFilter={false}>
-              <CommandList>
-                <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
-                  No matching roles. Type to use a custom role.
-                </CommandEmpty>
-                {pool.length > 0 && (
-                  <CommandGroup heading={compact ? "Idea Agents" : "Idea Pool"}>
-                    {pool.map((r) => (
-                      <CommandItem
-                        key={`pool-${r.role}`}
-                        value={r.role}
-                        onSelect={handleSelect}
-                        className={cn(compact && "text-xs py-1")}
-                      >
-                        <span className="flex-1 truncate">{r.role}</span>
-                        {r.agentName && !compact && (
-                          <span className="ml-auto shrink-0 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-400">
-                            {r.agentName}
-                          </span>
-                        )}
-                        {value.toLowerCase() === r.role.toLowerCase() && (
-                          <Check className="h-3 w-3 shrink-0 text-green-400" />
-                        )}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-                {mine.length > 0 && (
-                  <CommandGroup heading="My Agents">
-                    {mine.map((r) => (
-                      <CommandItem
-                        key={`mine-${r.role}`}
-                        value={r.role}
-                        onSelect={handleSelect}
-                      >
-                        <span className="flex-1 truncate">{r.role}</span>
-                        <span className="ml-auto shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] text-violet-400">
-                          mine
+    <div ref={containerRef} className={cn("relative", className)}>
+      <Input
+        ref={inputRef}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onFocus={() => setOpen(true)}
+        placeholder={placeholder}
+        maxLength={maxLength}
+        className={cn(compact && "h-7 text-xs")}
+        role="combobox"
+        aria-expanded={open}
+        aria-haspopup="listbox"
+        autoComplete="off"
+      />
+      {open && hasAnyGroup && (
+        <div
+          className={cn(
+            "bg-popover text-popover-foreground absolute top-full left-0 z-[100] mt-1 rounded-md border p-0 shadow-md",
+            compact ? "w-[200px]" : "w-full"
+          )}
+        >
+          <Command shouldFilter={false}>
+            <CommandList>
+              <CommandEmpty className="py-3 text-center text-xs text-muted-foreground">
+                No matching roles. Type to use a custom role.
+              </CommandEmpty>
+              {pool.length > 0 && (
+                <CommandGroup heading={compact ? "Idea Agents" : "Idea Pool"}>
+                  {pool.map((r) => (
+                    <CommandItem
+                      key={`pool-${r.role}`}
+                      value={r.role}
+                      onSelect={handleSelect}
+                      className={cn(compact && "text-xs py-1")}
+                    >
+                      <span className="flex-1 truncate">{r.role}</span>
+                      {r.agentName && !compact && (
+                        <span className="ml-auto shrink-0 rounded bg-blue-500/15 px-1.5 py-0.5 text-[10px] text-blue-400">
+                          {r.agentName}
                         </span>
-                        {value.toLowerCase() === r.role.toLowerCase() && (
-                          <Check className="h-3 w-3 shrink-0 text-green-400" />
-                        )}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-                {standard.length > 0 && (
-                  <CommandGroup heading={compact ? "Standard" : "Standard Roles"}>
-                    {standard.map((r) => (
-                      <CommandItem
-                        key={`standard-${r.role}`}
-                        value={r.role}
-                        onSelect={handleSelect}
-                        className={cn(compact && "text-xs py-1")}
-                      >
-                        <span className="flex-1 truncate">{r.role}</span>
-                        {value.toLowerCase() === r.role.toLowerCase() && (
-                          <Check className="h-3 w-3 shrink-0 text-green-400" />
-                        )}
-                      </CommandItem>
-                    ))}
-                  </CommandGroup>
-                )}
-              </CommandList>
-            </Command>
-          </PopoverPrimitive.Content>
-        )}
-      </PopoverPrimitive.Root>
+                      )}
+                      {value.toLowerCase() === r.role.toLowerCase() && (
+                        <Check className="h-3 w-3 shrink-0 text-green-400" />
+                      )}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {mine.length > 0 && (
+                <CommandGroup heading="My Agents">
+                  {mine.map((r) => (
+                    <CommandItem
+                      key={`mine-${r.role}`}
+                      value={r.role}
+                      onSelect={handleSelect}
+                    >
+                      <span className="flex-1 truncate">{r.role}</span>
+                      <span className="ml-auto shrink-0 rounded bg-violet-500/15 px-1.5 py-0.5 text-[10px] text-violet-400">
+                        mine
+                      </span>
+                      {value.toLowerCase() === r.role.toLowerCase() && (
+                        <Check className="h-3 w-3 shrink-0 text-green-400" />
+                      )}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+              {standard.length > 0 && (
+                <CommandGroup heading={compact ? "Standard" : "Standard Roles"}>
+                  {standard.map((r) => (
+                    <CommandItem
+                      key={`standard-${r.role}`}
+                      value={r.role}
+                      onSelect={handleSelect}
+                      className={cn(compact && "text-xs py-1")}
+                    >
+                      <span className="flex-1 truncate">{r.role}</span>
+                      {value.toLowerCase() === r.role.toLowerCase() && (
+                        <Check className="h-3 w-3 shrink-0 text-green-400" />
+                      )}
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              )}
+            </CommandList>
+          </Command>
+        </div>
+      )}
       {showHelperText && (
         <p className="mt-1 text-[10px] text-muted-foreground">{helperText}</p>
       )}
