@@ -145,8 +145,26 @@ export function StepDetailDialog({
   const [editDeliverables, setEditDeliverables] = useState("");
   const [editHumanCheck, setEditHumanCheck] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [assignedAgent, setAssignedAgent] = useState<{ name: string; avatar_url: string | null; role: string | null } | null>(null);
   const supabaseRef = useRef(createClient());
   const commentsEndRef = useRef<HTMLDivElement>(null);
+
+  // Fetch assigned agent profile
+  useEffect(() => {
+    if (!step.bot_id) {
+      setAssignedAgent(null);
+      return;
+    }
+    const supabase = supabaseRef.current;
+    supabase
+      .from("bot_profiles")
+      .select("name, avatar_url, role")
+      .eq("id", step.bot_id)
+      .maybeSingle()
+      .then(({ data }) => {
+        setAssignedAgent(data ? { name: data.name ?? "Unknown", avatar_url: data.avatar_url, role: data.role } : null);
+      });
+  }, [step.bot_id]);
 
   // Earlier completed/in_progress steps that can be targeted for cascade rejection
   const earlierSteps = allSteps.filter(
@@ -383,6 +401,31 @@ export function StepDetailDialog({
                     {step.agent_role}
                   </Badge>
                 )}
+                {step.bot_id && assignedAgent ? (
+                  <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                    <Avatar className="h-4 w-4">
+                      <AvatarImage src={assignedAgent.avatar_url ?? undefined} />
+                      <AvatarFallback className="text-[8px]">
+                        {assignedAgent.name[0]?.toUpperCase() ?? "?"}
+                      </AvatarFallback>
+                    </Avatar>
+                    {assignedAgent.name}
+                    {step.match_tier && step.match_tier !== "exact" && (
+                      <Badge
+                        variant="outline"
+                        className={`text-[8px] py-0 h-3.5 ${
+                          step.match_tier === "ai"
+                            ? "border-violet-500/30 text-violet-400"
+                            : "border-amber-500/30 text-amber-400"
+                        }`}
+                      >
+                        {step.match_tier === "ai" ? "AI" : "fuzzy"}
+                      </Badge>
+                    )}
+                  </span>
+                ) : step.agent_role && !step.bot_id ? (
+                  <span className="text-[11px] text-amber-400">Unassigned</span>
+                ) : null}
                 {step.human_check_required && (
                   <Lock className="h-3 w-3 text-amber-400" />
                 )}
