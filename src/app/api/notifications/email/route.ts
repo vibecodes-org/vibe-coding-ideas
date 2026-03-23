@@ -3,6 +3,7 @@ export const dynamic = "force-dynamic";
 import { createClient } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { buildEmailHtml } from "@/lib/email-template";
+import { buildNotificationUrl } from "@/lib/notification-url";
 import type { Database } from "@/types/database";
 
 type NotificationType =
@@ -59,6 +60,7 @@ export async function POST(request: Request) {
       comment_id: string | null;
       task_id: string | null;
       discussion_id: string | null;
+      reply_id: string | null;
     };
   };
 
@@ -152,6 +154,9 @@ export async function POST(request: Request) {
     taskTitle,
     notification.idea_id,
     notification.discussion_id,
+    notification.comment_id,
+    notification.task_id,
+    notification.reply_id,
     appUrl,
   );
 
@@ -199,12 +204,14 @@ function buildNotificationEmail(
   taskTitle: string | null,
   ideaId: string | null,
   discussionId: string | null,
+  commentId: string | null,
+  taskId: string | null,
+  replyId: string | null,
   appUrl: string,
 ): { subject: string; html: string } | null {
-  const ideaUrl = ideaId ? `${appUrl}/ideas/${ideaId}` : appUrl;
-  const discussionUrl = ideaId && discussionId
-    ? `${appUrl}/ideas/${ideaId}/discussions/${discussionId}`
-    : ideaId ? `${appUrl}/ideas/${ideaId}/discussions` : appUrl;
+  const ctaUrl = buildNotificationUrl({
+    type, ideaId, commentId, taskId, discussionId, replyId, appUrl,
+  });
   const ideaDisplay = ideaTitle
     ? `<strong style="color:#fafafa;">${escapeBody(ideaTitle)}</strong>`
     : "your idea";
@@ -217,7 +224,7 @@ function buildNotificationEmail(
           heading: "New comment on your idea",
           bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} left a comment on ${ideaDisplay}.</p>`,
           ctaText: "View Comment",
-          ctaUrl: ideaUrl,
+          ctaUrl,
           footerText: "You received this because someone commented on your idea.",
         }),
       };
@@ -230,7 +237,7 @@ function buildNotificationEmail(
           heading: "New collaborator",
           bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} is now collaborating on ${ideaDisplay}.</p>`,
           ctaText: "View Idea",
-          ctaUrl: ideaUrl,
+          ctaUrl,
           footerText: "You received this because of collaborator activity on your idea.",
         }),
       };
@@ -245,7 +252,7 @@ function buildNotificationEmail(
           heading: "Idea status updated",
           bodyHtml: `<p style="margin:0;">The status of ${ideaDisplay} has been updated.</p>`,
           ctaText: "View Idea",
-          ctaUrl: ideaUrl,
+          ctaUrl,
           footerText:
             "You received this because you collaborate on this idea.",
         }),
@@ -262,7 +269,7 @@ function buildNotificationEmail(
           heading: "You were mentioned",
           bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} mentioned you in a comment on ${taskDisplay}${ideaTitle ? ` (${ideaDisplay})` : ""}.</p>`,
           ctaText: "View Task",
-          ctaUrl: ideaId ? `${appUrl}/ideas/${ideaId}/board` : appUrl,
+          ctaUrl,
           footerText: "You received this because you were mentioned in a task comment.",
         }),
       };
@@ -275,7 +282,7 @@ function buildNotificationEmail(
           heading: "You were mentioned",
           bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} mentioned you in a comment on ${ideaDisplay}.</p>`,
           ctaText: "View Comment",
-          ctaUrl: ideaUrl,
+          ctaUrl,
           footerText: "You received this because you were mentioned in a comment.",
         }),
       };
@@ -288,7 +295,7 @@ function buildNotificationEmail(
           heading: "New collaboration request",
           bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} has requested to collaborate on ${ideaDisplay}.</p>`,
           ctaText: "Review Request",
-          ctaUrl: ideaUrl,
+          ctaUrl,
           footerText: "You received this because someone wants to collaborate on your idea.",
         }),
       };
@@ -301,7 +308,7 @@ function buildNotificationEmail(
           heading: "Collaboration request update",
           bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} responded to your collaboration request on ${ideaDisplay}.</p>`,
           ctaText: "View Idea",
-          ctaUrl: ideaUrl,
+          ctaUrl,
           footerText: "You received this because your collaboration request was reviewed.",
         }),
       };
@@ -314,7 +321,7 @@ function buildNotificationEmail(
           heading: "New discussion",
           bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} started a new discussion on ${ideaDisplay}.</p>`,
           ctaText: "View Discussion",
-          ctaUrl: discussionUrl,
+          ctaUrl,
           footerText: "You received this because a new discussion was started on your idea.",
         }),
       };
@@ -327,7 +334,7 @@ function buildNotificationEmail(
           heading: "New discussion reply",
           bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} replied to a discussion on ${ideaDisplay}.</p>`,
           ctaText: "View Discussion",
-          ctaUrl: discussionUrl,
+          ctaUrl,
           footerText: "You received this because someone replied to a discussion you participated in.",
         }),
       };
@@ -340,7 +347,7 @@ function buildNotificationEmail(
           heading: "You were mentioned",
           bodyHtml: `<p style="margin:0;">${escapeBody(actorName)} mentioned you in a discussion on ${ideaDisplay}.</p>`,
           ctaText: "View Discussion",
-          ctaUrl: discussionUrl,
+          ctaUrl,
           footerText: "You received this because you were mentioned in a discussion.",
         }),
       };

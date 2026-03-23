@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Role Coverage UX Spike — Before/After</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #18181b;
+      --border: #27272a;
+      --border-hover: #3a3a3a;
+      --text: #e4e4e7;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --emerald: #34d399;
+      --emerald-bg: rgba(52, 211, 153, 0.1);
+      --emerald-border: rgba(52, 211, 153, 0.3);
+      --amber: #fbbf24;
+      --amber-bg: rgba(251, 191, 36, 0.1);
+      --amber-border: rgba(251, 191, 36, 0.3);
+      --violet: #a78bfa;
+      --violet-bg: rgba(167, 139, 250, 0.1);
+      --violet-border: rgba(167, 139, 250, 0.3);
+      --accent: #a78bfa;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    .meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 3rem; }
+    .section { margin-bottom: 3.5rem; border-top: 1px solid var(--border); padding-top: 2rem; }
+    .section h2 { font-size: 1.15rem; color: var(--accent); margin-bottom: 0.25rem; }
+    .section .subtitle { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 1.5rem; }
+
+    /* Card that mimics the actual Agents tab Role Coverage panel */
+    .card {
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 16px;
+      margin-bottom: 1rem;
+    }
+    .card-label {
+      font-size: 0.85rem;
+      font-weight: 500;
+      color: var(--text-muted);
+      margin-bottom: 12px;
+    }
+
+    /* Chip container — flex wrap, matching actual component */
+    .chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    /* Individual chip — matches <Badge variant="outline"> */
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 10px;
+      border-radius: 9999px;
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+      border: 1px solid;
+    }
+    .chip-matched {
+      color: var(--emerald);
+      background: var(--emerald-bg);
+      border-color: var(--emerald-border);
+    }
+    .chip-unmatched {
+      color: var(--amber);
+      background: var(--amber-bg);
+      border-color: var(--amber-border);
+    }
+    .chip .arrow {
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+    .chip .agent-info {
+      color: var(--text-muted);
+      font-weight: 400;
+    }
+    .chip svg {
+      width: 12px;
+      height: 12px;
+      flex-shrink: 0;
+    }
+
+    /* Tiny tier badge (current 8px style) */
+    .tier-badge {
+      font-size: 8px;
+      font-weight: 600;
+      padding: 1px 4px;
+      border-radius: 3px;
+      margin-left: 2px;
+      cursor: help;
+    }
+    .tier-ai {
+      background: var(--violet-bg);
+      color: var(--violet);
+    }
+    .tier-fuzzy {
+      background: var(--amber-bg);
+      color: var(--amber);
+    }
+
+    /* Proposed: larger tier badge */
+    .tier-badge-lg {
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 4px;
+      cursor: help;
+      position: relative;
+    }
+
+    /* Annotation callouts */
+    .annotation {
+      display: inline-block;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #f87171;
+      font-size: 11px;
+      padding: 4px 8px;
+      border-radius: 4px;
+      margin-top: 8px;
+    }
+    .annotation-group {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 12px;
+    }
+
+    /* Proposed chip variants */
+    .chip-ai {
+      color: var(--violet);
+      background: var(--violet-bg);
+      border-color: var(--violet-border);
+    }
+    .chip-approx {
+      color: var(--amber);
+      background: var(--amber-bg);
+      border-color: var(--amber-border);
+    }
+
+    /* Browse agents CTA */
+    .cta-link {
+      color: var(--accent);
+      font-size: 11px;
+      text-decoration: underline;
+      margin-left: 4px;
+      cursor: pointer;
+    }
+
+    /* Comparison layout */
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin-bottom: 1rem;
+    }
+    @media (max-width: 700px) {
+      .comparison { grid-template-columns: 1fr; }
+    }
+    .comparison-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .comparison-label.before { color: var(--text-dim); }
+    .comparison-label.after { color: var(--emerald); }
+
+    /* Tooltip mockup */
+    .tooltip-mock {
+      display: inline-block;
+      background: var(--text);
+      color: var(--bg);
+      font-size: 11px;
+      padding: 6px 10px;
+      border-radius: 6px;
+      margin-top: 8px;
+      max-width: 280px;
+      line-height: 1.4;
+    }
+
+    /* Decision table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+      margin-top: 1rem;
+    }
+    th, td {
+      padding: 10px 12px;
+      text-align: left;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      color: var(--text-muted);
+      font-weight: 600;
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .do-now { color: var(--emerald); font-weight: 600; }
+    .defer { color: var(--text-dim); }
+
+    /* Spinner mockup */
+    .spinner {
+      display: inline-block;
+      width: 12px;
+      height: 12px;
+      border: 2px solid var(--text-dim);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<h1>Role Coverage UX Spike</h1>
+<p class="meta">Before/after comparison for match tier badge improvements &middot; Agents tab &middot; March 2026</p>
+
+<!-- ─── SECTION 1: Current State ─── -->
+<div class="section">
+  <h2>1. Current State</h2>
+  <p class="subtitle">The Role Coverage panel uses horizontal inline chips. Issues annotated below.</p>
+
+  <div class="card">
+    <div class="card-label">Role Coverage</div>
+    <div class="chips">
+      <!-- Exact match — no tier badge -->
+      <span class="chip chip-matched">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        QA Engineer
+        <span class="arrow">&rarr;</span>
+        <span class="agent-info">Sentinel (QA Engineer)</span>
+      </span>
+
+      <!-- AI match — tiny 8px badge -->
+      <span class="chip chip-matched">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        UX Designer
+        <span class="arrow">&rarr;</span>
+        <span class="agent-info">Compass (UX Designer) <span class="tier-badge tier-ai">AI</span></span>
+      </span>
+
+      <!-- Fuzzy match — tiny 8px badge -->
+      <span class="chip chip-matched">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        DevOps Engineer
+        <span class="arrow">&rarr;</span>
+        <span class="agent-info">Pipeline (DevOps Engineer) <span class="tier-badge tier-fuzzy">fuzzy</span></span>
+      </span>
+
+      <!-- Full Stack Engineer — exact -->
+      <span class="chip chip-matched">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        Full Stack Engineer
+        <span class="arrow">&rarr;</span>
+        <span class="agent-info">Atlas (Full Stack Engineer)</span>
+      </span>
+
+      <!-- Product Owner — exact -->
+      <span class="chip chip-matched">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+        Product Owner
+        <span class="arrow">&rarr;</span>
+        <span class="agent-info">Nick's Product Owner (Product Owner)</span>
+      </span>
+
+      <!-- No match -->
+      <span class="chip chip-unmatched">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Security Analyst
+        <span class="agent-info">— no agent</span>
+      </span>
+    </div>
+  </div>
+
+  <div class="annotation-group">
+    <span class="annotation">&#x26a0; "AI" and "fuzzy" badges are 8px — nearly invisible</span>
+    <span class="annotation">&#x26a0; "fuzzy" is developer jargon — users won't understand</span>
+    <span class="annotation">&#x26a0; "— no agent" has no CTA to browse/add agents</span>
+    <span class="annotation">&#x26a0; AI and exact matches look identical at a glance (both green)</span>
+  </div>
+</div>
+
+<!-- ─── SECTION 2: Proposed Badge Treatment ─── -->
+<div class="section">
+  <h2>2. Proposed — Better Badge Treatment</h2>
+  <p class="subtitle">Larger labels, clearer terminology, color-coded chips per match quality, CTA on unmatched.</p>
+
+  <div class="comparison">
+    <div>
+      <div class="comparison-label before">Before</div>
+      <div class="card">
+        <div class="card-label">Role Coverage</div>
+        <div class="chips">
+          <span class="chip chip-matched">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            UX Designer <span class="arrow">&rarr;</span> <span class="agent-info">Compass (UX Designer) <span class="tier-badge tier-ai">AI</span></span>
+          </span>
+          <span class="chip chip-matched">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            DevOps Engineer <span class="arrow">&rarr;</span> <span class="agent-info">Pipeline (DevOps) <span class="tier-badge tier-fuzzy">fuzzy</span></span>
+          </span>
+          <span class="chip chip-unmatched">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Security Analyst <span class="agent-info">— no agent</span>
+          </span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="comparison-label after">After</div>
+      <div class="card">
+        <div class="card-label">Role Coverage</div>
+        <div class="chips">
+          <!-- AI match — violet chip + larger badge -->
+          <span class="chip chip-ai">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            UX Designer <span class="arrow">&rarr;</span> <span class="agent-info">Compass (UX Designer) <span class="tier-badge-lg tier-ai">AI matched</span></span>
+          </span>
+          <!-- Fuzzy match — amber chip + "Approximate" -->
+          <span class="chip chip-approx">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            DevOps Engineer <span class="arrow">&rarr;</span> <span class="agent-info">Pipeline (DevOps) <span class="tier-badge-lg tier-fuzzy">Approximate</span></span>
+          </span>
+          <!-- No match — with CTA -->
+          <span class="chip chip-unmatched">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Security Analyst <span class="agent-info">— no agent</span> <a class="cta-link">Browse Agents &rarr;</a>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="margin-top: 8px;">
+    <p style="font-size: 0.85rem; color: var(--text-muted); margin-bottom: 8px;">Tooltip examples (on hover):</p>
+    <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+      <div>
+        <span class="tier-badge-lg tier-ai">AI matched</span>
+        <div class="tooltip-mock">Role matched by AI semantic understanding. "Compass" (UX Designer) was matched to the "UX Designer" workflow role.</div>
+      </div>
+      <div>
+        <span class="tier-badge-lg tier-fuzzy">Approximate</span>
+        <div class="tooltip-mock">Matched by similar role name — verify this is correct. Consider adding an agent with this exact role.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── SECTION 3: Matching Spinner ─── -->
+<div class="section">
+  <h2>3. Proposed — Matching In-Progress Indicator</h2>
+  <p class="subtitle">Transient spinner shown while deferred after() rematch runs (2-15 seconds for AI matching).</p>
+
+  <div class="comparison">
+    <div>
+      <div class="comparison-label before">During rematch</div>
+      <div class="card">
+        <div class="card-label">Role Coverage <span class="spinner"></span> <span style="font-size: 11px; color: var(--text-dim);">Matching...</span></div>
+        <div class="chips" style="opacity: 0.5;">
+          <span class="chip chip-matched">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            QA Engineer <span class="arrow">&rarr;</span> <span class="agent-info">Sentinel (QA Engineer)</span>
+          </span>
+          <span class="chip chip-unmatched">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            UX Designer <span class="agent-info">— matching...</span>
+          </span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="comparison-label after">After rematch completes</div>
+      <div class="card">
+        <div class="card-label">Role Coverage <span style="font-size: 10px; background: var(--emerald-bg); color: var(--emerald); padding: 1px 6px; border-radius: 4px; margin-left: 6px;">Updated</span></div>
+        <div class="chips">
+          <span class="chip chip-matched">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            QA Engineer <span class="arrow">&rarr;</span> <span class="agent-info">Sentinel (QA Engineer)</span>
+          </span>
+          <span class="chip chip-ai">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
+            UX Designer <span class="arrow">&rarr;</span> <span class="agent-info">Compass (UX Designer) <span class="tier-badge-lg tier-ai">AI matched</span></span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── SECTION 4: Decision Matrix ─── -->
+<div class="section">
+  <h2>4. Decision Matrix</h2>
+  <p class="subtitle">Prioritized changes with impact/effort assessment.</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Change</th>
+        <th>Impact</th>
+        <th>Effort</th>
+        <th>Recommendation</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Better badge labels + sizing<br><span style="color: var(--text-dim); font-size: 0.75rem;">"fuzzy" &rarr; "Approximate", "AI" &rarr; "AI matched", 8px &rarr; 10px</span></td>
+        <td>High</td>
+        <td>Low</td>
+        <td class="do-now">Do now</td>
+      </tr>
+      <tr>
+        <td>Color-coded chips per tier<br><span style="color: var(--text-dim); font-size: 0.75rem;">Violet for AI, amber for approximate (exact stays green)</span></td>
+        <td>High</td>
+        <td>Low</td>
+        <td class="do-now">Do now</td>
+      </tr>
+      <tr>
+        <td>No-match "Browse Agents" CTA<br><span style="color: var(--text-dim); font-size: 0.75rem;">Link on unmatched chips + warning banner</span></td>
+        <td>Medium</td>
+        <td>Low</td>
+        <td class="do-now">Do now</td>
+      </tr>
+      <tr>
+        <td>Matching-in-progress spinner<br><span style="color: var(--text-dim); font-size: 0.75rem;">Spinner during deferred after() rematch</span></td>
+        <td>Low</td>
+        <td>Medium</td>
+        <td class="defer">Defer</td>
+      </tr>
+      <tr>
+        <td>Manual agent reassignment<br><span style="color: var(--text-dim); font-size: 0.75rem;">Dropdown to pick agent on workflow steps</span></td>
+        <td>Medium</td>
+        <td>High</td>
+        <td class="defer">Defer</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+</body>
+</html>

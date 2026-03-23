@@ -1,6 +1,7 @@
 import { Separator } from "@/components/ui/separator";
 import { CommentItem } from "./comment-item";
 import { CommentForm } from "./comment-form";
+import { ScrollToHash } from "@/components/scroll-to-hash";
 import type { CommentWithAuthor, User } from "@/types";
 
 interface CommentThreadProps {
@@ -22,6 +23,7 @@ export function CommentThread({
 }: CommentThreadProps) {
   return (
     <div>
+      <ScrollToHash />
       <h3 className="mb-4 text-lg font-semibold">
         Comments ({comments.length})
       </h3>

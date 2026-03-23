@@ -17,6 +17,7 @@ import {
   Play,
   Check,
   ChevronsUpDown,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -667,12 +668,14 @@ interface WorkflowsTabProps {
   ideaId: string;
   boardLabels: BoardLabel[];
   isReadOnly?: boolean;
+  hasAgents?: boolean;
 }
 
 export function WorkflowsTab({
   ideaId,
   boardLabels,
   isReadOnly = false,
+  hasAgents = false,
 }: WorkflowsTabProps) {
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [rules, setRules] = useState<WorkflowAutoRule[]>([]);
@@ -822,6 +825,20 @@ export function WorkflowsTab({
             </div>
           )}
         </div>
+
+        {/* Agent nudge — show when no templates AND no agents in pool */}
+        {!loading && templates.length === 0 && !hasAgents && !isReadOnly && (
+          <div className="mx-1.5 mb-2 flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+            <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400 mt-0.5" />
+            <p className="text-xs text-amber-400">
+              <strong>Agents needed:</strong> Workflow steps are executed by AI agents.{" "}
+              <a href="?tab=agents" className="underline hover:text-amber-300">
+                Add agents to your pool
+              </a>{" "}
+              before creating workflow templates.
+            </p>
+          </div>
+        )}
 
         {/* Template list */}
         <div className="flex-1 overflow-y-auto p-1.5">

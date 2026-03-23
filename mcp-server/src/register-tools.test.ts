@@ -26,10 +26,8 @@ const EXPECTED_TOOL_NAMES = [
   "delete_column",
   "reorder_columns",
   "manage_labels",
-  "manage_checklist",
   "add_idea_comment",
   "add_task_comment",
-  "report_bug",
   "list_discussions",
   "get_discussion",
   "add_discussion_reply",
@@ -73,7 +71,6 @@ const EXPECTED_TOOL_NAMES = [
   "approve_step",
   "get_step_context",
   "add_step_comment",
-  "get_step_comments",
   "rematch_workflow_agents",
   "reset_workflow",
   "remove_workflow",
@@ -95,7 +92,7 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(79);
+    expect(server.tool).toHaveBeenCalledTimes(76);
   });
 
   it("registers all expected tool names", () => {

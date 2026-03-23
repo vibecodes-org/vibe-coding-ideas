@@ -107,7 +107,7 @@ export function CommentItem({
   if (removed) return null;
 
   return (
-    <div className={depth > 0 ? "ml-6 border-l border-border pl-4" : ""}>
+    <div id={`comment-${comment.id}`} className={depth > 0 ? "ml-6 border-l border-border pl-4" : ""}>
       <div className="py-3">
         <div className="flex items-start gap-3">
           <Avatar className="h-7 w-7">

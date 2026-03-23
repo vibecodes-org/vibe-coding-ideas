@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import { Bot, Plus, X } from "lucide-react";
+import { useState, useEffect, useTransition } from "react";
+import { Bot, Plus, Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { AgentProfileDialog } from "@/components/agents/agent-profile-dialog";
 import { getRoleColor } from "@/lib/agent-colors";
-import { allocateAgent, removeIdeaAgent } from "@/actions/idea-agents";
+import { allocateAllAgents, removeIdeaAgent } from "@/actions/idea-agents";
 import type { IdeaAgentWithDetails, BotProfile } from "@/types";
 
 interface IdeaAgentsSectionProps {
@@ -32,19 +33,46 @@ export function IdeaAgentsSection({
   const [addOpen, setAddOpen] = useState(false);
   const [pending, startTransition] = useTransition();
   const [selectedBotId, setSelectedBotId] = useState<string | null>(null);
+  const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
 
   // Bots the current user owns that are NOT already in the pool
   const allocatedBotIds = new Set(ideaAgents.map((a) => a.bot_id));
   const unallocatedBots = userBots.filter((b) => !allocatedBotIds.has(b.id));
 
-  function handleAllocate(botId: string) {
+  // Reset selection when popover closes
+  useEffect(() => {
+    if (!addOpen) setSelectedBotIds(new Set());
+  }, [addOpen]);
+
+  function toggleBotSelection(botId: string) {
+    setSelectedBotIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(botId)) next.delete(botId);
+      else next.add(botId);
+      return next;
+    });
+  }
+
+  function toggleSelectAll() {
+    if (selectedBotIds.size === unallocatedBots.length) {
+      setSelectedBotIds(new Set());
+    } else {
+      setSelectedBotIds(new Set(unallocatedBots.map((b) => b.id)));
+    }
+  }
+
+  const allSelected = unallocatedBots.length > 0 && selectedBotIds.size === unallocatedBots.length;
+
+  function handleAllocateSelected() {
+    if (selectedBotIds.size === 0) return;
     startTransition(async () => {
       try {
-        await allocateAgent(ideaId, botId);
-        toast.success("Agent added to pool");
+        const ids = Array.from(selectedBotIds);
+        const result = await allocateAllAgents(ideaId, ids);
+        toast.success(`Added ${result.added} agent${result.added !== 1 ? "s" : ""} to pool`);
         setAddOpen(false);
       } catch {
-        toast.error("Failed to add agent");
+        toast.error("Failed to add agents");
       }
     });
   }
@@ -104,33 +132,69 @@ export function IdeaAgentsSection({
               <Plus className="h-3 w-3" />
             </Button>
           </PopoverTrigger>
-          <PopoverContent className="w-56 p-2" align="start">
-            <p className="mb-2 text-xs font-medium text-muted-foreground">Add your agent</p>
-            <div className="space-y-1">
+          <PopoverContent className="w-60 p-2" align="start">
+            <div className="mb-2 flex items-center justify-between px-1">
+              <p className="text-xs font-medium text-muted-foreground">Your agents</p>
+              {unallocatedBots.length > 1 && (
+                <button
+                  className="text-xs text-primary hover:underline"
+                  onClick={toggleSelectAll}
+                  type="button"
+                >
+                  {allSelected ? "Deselect all" : "Select all"}
+                </button>
+              )}
+            </div>
+            <div className="space-y-0.5">
               {unallocatedBots.map((bot) => {
                 const colors = getRoleColor(bot.role);
+                const isChecked = selectedBotIds.has(bot.id);
                 return (
-                <button
-                  key={bot.id}
-                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
-                  onClick={() => handleAllocate(bot.id)}
-                  disabled={pending}
-                >
-                  <Avatar className="h-5 w-5">
-                    <AvatarImage src={bot.avatar_url ?? undefined} />
-                    <AvatarFallback className={`text-[10px] ${colors.avatarBg} ${colors.avatarText}`}>
-                      {bot.name?.[0]?.toUpperCase() ?? "?"}
-                    </AvatarFallback>
-                  </Avatar>
-                  <div className="flex flex-col leading-tight text-left">
-                    <span>{bot.name}</span>
-                    {bot.role && (
-                      <span className="text-[11px] text-muted-foreground">{bot.role}</span>
-                    )}
-                  </div>
-                </button>
+                  <button
+                    key={bot.id}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50"
+                    onClick={() => toggleBotSelection(bot.id)}
+                    disabled={pending}
+                    type="button"
+                  >
+                    <Checkbox
+                      checked={isChecked}
+                      tabIndex={-1}
+                      className="pointer-events-none"
+                      aria-hidden
+                    />
+                    <Avatar className="h-5 w-5">
+                      <AvatarImage src={bot.avatar_url ?? undefined} />
+                      <AvatarFallback className={`text-[10px] ${colors.avatarBg} ${colors.avatarText}`}>
+                        {bot.name?.[0]?.toUpperCase() ?? "?"}
+                      </AvatarFallback>
+                    </Avatar>
+                    <div className="flex flex-col leading-tight text-left">
+                      <span>{bot.name}</span>
+                      {bot.role && (
+                        <span className="text-[11px] text-muted-foreground">{bot.role}</span>
+                      )}
+                    </div>
+                  </button>
                 );
               })}
+            </div>
+            <div className="mt-2 border-t pt-2">
+              <Button
+                size="sm"
+                className="w-full gap-2"
+                onClick={handleAllocateSelected}
+                disabled={pending || selectedBotIds.size === 0}
+              >
+                {pending ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5" />
+                )}
+                {selectedBotIds.size === 0
+                  ? "Select agents"
+                  : `Add ${selectedBotIds.size} Agent${selectedBotIds.size !== 1 ? "s" : ""}`}
+              </Button>
             </div>
           </PopoverContent>
         </Popover>

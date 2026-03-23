@@ -22,6 +22,7 @@ import { createClient } from "@/lib/supabase/client";
 import { getRoleColor } from "@/lib/agent-colors";
 import { markAllNotificationsRead, markNotificationsRead } from "@/actions/notifications";
 import { RequestActionButtons } from "@/components/layout/request-action-buttons";
+import { buildNotificationUrl } from "@/lib/notification-url";
 import { formatRelativeTime, getInitials } from "@/lib/utils";
 import type { NotificationWithDetails } from "@/types";
 
@@ -264,14 +265,15 @@ export function NotificationBell() {
     }`;
 
     if (notification.idea_id) {
-      let href: string;
-      if (notification.task_id) {
-        href = `/ideas/${notification.idea_id}/board?taskId=${notification.task_id}`;
-      } else if (notification.discussion_id) {
-        href = `/ideas/${notification.idea_id}/discussions/${notification.discussion_id}`;
-      } else {
-        href = `/ideas/${notification.idea_id}`;
-      }
+      const href = buildNotificationUrl({
+        type: notification.type,
+        ideaId: notification.idea_id,
+        commentId: notification.comment_id,
+        taskId: notification.task_id,
+        discussionId: notification.discussion_id,
+        replyId: notification.reply_id,
+        appUrl: "",
+      });
       return (
         <Link
           key={notification.id}

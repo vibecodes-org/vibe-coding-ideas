@@ -33,6 +33,7 @@ import {
 } from "@/actions/discussions";
 import { enhanceDiscussionBody } from "@/actions/ai";
 import { useMentionState } from "@/hooks/use-mentions";
+import { useScrollToHash } from "@/hooks/use-scroll-to-hash";
 import { sendDiscussionMentionNotifications } from "@/lib/mention-notifications";
 import { useBotRoles } from "@/components/bot-roles-context";
 import { formatRelativeTime, getInitials } from "@/lib/utils";
@@ -134,6 +135,7 @@ export function DiscussionThread({
 }: DiscussionThreadProps) {
   const router = useRouter();
   const botRoles = useBotRoles();
+  useScrollToHash();
   const [isDeleting, setIsDeleting] = useState(false);
   const [isEditing, setIsEditing] = useState(false);
   const [editTitle, setEditTitle] = useState(discussion.title);

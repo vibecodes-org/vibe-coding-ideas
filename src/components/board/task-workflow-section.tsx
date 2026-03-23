@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Lock,
@@ -446,7 +447,8 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
               {unmatchedSteps.length} step{unmatchedSteps.length > 1 ? "s have" : " has"} no
               matching agent:{" "}
               {unmatchedSteps.map((s) => s.agent_role).join(", ")}.
-              Allocate agents with matching roles in the idea&apos;s agent pool.
+              Allocate agents with matching roles from the{" "}
+              <Link href="/agents" className="underline hover:text-amber-300">Agents Hub</Link>.
             </p>
           </div>
         )}

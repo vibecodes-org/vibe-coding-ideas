@@ -101,7 +101,7 @@ export function ChildReplyItem({
   }
 
   return (
-    <div className="flex gap-3">
+    <div id={`reply-${reply.id}`} className="flex gap-3">
       <Avatar className="h-6 w-6 shrink-0">
         <AvatarImage src={reply.author.avatar_url ?? undefined} />
         <AvatarFallback className="text-[10px]">

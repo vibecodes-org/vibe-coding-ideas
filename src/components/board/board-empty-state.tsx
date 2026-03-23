@@ -1,6 +1,7 @@
 "use client";
 
-import { Sparkles, LayoutList } from "lucide-react";
+import { Sparkles, LayoutList, Bot, Workflow } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 
 interface BoardEmptyStateProps {
@@ -72,6 +73,20 @@ export function BoardEmptyState({
             </p>
           </div>
         )}
+        <div className="mt-5 flex items-center justify-center gap-3">
+          <Link href="?tab=agents">
+            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
+              <Bot className="h-3.5 w-3.5" />
+              Add AI Agents
+            </Button>
+          </Link>
+          <Link href="?tab=workflows">
+            <Button variant="ghost" size="sm" className="gap-1.5 text-muted-foreground">
+              <Workflow className="h-3.5 w-3.5" />
+              Set Up Workflows
+            </Button>
+          </Link>
+        </div>
         <button
           type="button"
           className="mt-4 text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors"

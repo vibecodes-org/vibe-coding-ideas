@@ -72,10 +72,6 @@ import {
 import {
   manageLabels,
   manageLabelsSchema,
-  manageChecklist,
-  manageChecklistSchema,
-  reportBug,
-  reportBugSchema,
 } from "./tools/labels";
 import {
   listDiscussions,
@@ -178,8 +174,6 @@ import {
   getStepContextSchema,
   addStepComment,
   addStepCommentSchema,
-  getStepComments,
-  getStepCommentsSchema,
   rematchWorkflowAgents,
   rematchWorkflowAgentsSchema,
   resetWorkflow,
@@ -560,22 +554,6 @@ export function registerTools(
   );
 
   server.tool(
-    "manage_checklist",
-    "Add, toggle, or delete workflow steps on a task. Actions: add, toggle, delete.",
-    manageChecklistSchema.shape,
-    async (args: Record<string, unknown>, extra: ServerExtra) => {
-      try {
-        const ctx = await getContext(extra);
-        return jsonResult(
-          await manageChecklist(ctx, manageChecklistSchema.parse(args))
-        );
-      } catch (e) {
-        return errorResult(e);
-      }
-    }
-  );
-
-  server.tool(
     "add_idea_comment",
     "Add a comment to an idea. Types: comment, suggestion, question. Posted as Claude Code bot.",
     addIdeaCommentSchema.shape,
@@ -601,20 +579,6 @@ export function registerTools(
         return jsonResult(
           await addTaskComment(ctx, addTaskCommentSchema.parse(args))
         );
-      } catch (e) {
-        return errorResult(e);
-      }
-    }
-  );
-
-  server.tool(
-    "report_bug",
-    "Convenience tool: creates a task with a red 'Bug' label, assigned to Claude Code. Uses first column (To Do) by default.",
-    reportBugSchema.shape,
-    async (args: Record<string, unknown>, extra: ServerExtra) => {
-      try {
-        const ctx = await getContext(extra);
-        return jsonResult(await reportBug(ctx, reportBugSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }
@@ -1243,20 +1207,6 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await addStepComment(ctx, addStepCommentSchema.parse(args)));
-      } catch (e) {
-        return errorResult(e);
-      }
-    }
-  );
-
-  server.tool(
-    "get_step_comments",
-    "Get all comments on a workflow step with author details. Ordered chronologically.",
-    getStepCommentsSchema.shape,
-    async (args: Record<string, unknown>, extra: ServerExtra) => {
-      try {
-        const ctx = await getContext(extra);
-        return jsonResult(await getStepComments(ctx, getStepCommentsSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

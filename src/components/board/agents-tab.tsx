@@ -376,7 +376,11 @@ export function AgentsTab({
                 variant="outline"
                 className={
                   rc.covered
-                    ? "gap-1 border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
+                    ? rc.matchTier === "ai"
+                      ? "gap-1 border-violet-500/30 bg-violet-500/10 text-violet-400"
+                      : rc.matchTier && rc.matchTier !== "exact"
+                        ? "gap-1 border-amber-500/30 bg-amber-500/10 text-amber-400"
+                        : "gap-1 border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
                     : "gap-1 border-amber-500/30 bg-amber-500/10 text-amber-500"
                 }
               >
@@ -393,25 +397,30 @@ export function AgentsTab({
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <span
-                            className={`ml-1 cursor-help rounded px-1 py-0.5 text-[8px] font-semibold ${
+                            className={`ml-1 cursor-help rounded px-1 py-0.5 text-[10px] font-semibold ${
                               rc.matchTier === "ai"
                                 ? "bg-violet-500/10 text-violet-400"
                                 : "bg-amber-500/10 text-amber-400"
                             }`}
                           >
-                            {rc.matchTier === "ai" ? "AI" : "fuzzy"}
+                            {rc.matchTier === "ai" ? "AI matched" : "Approximate"}
                           </span>
                         </TooltipTrigger>
                         <TooltipContent>
                           {rc.matchTier === "ai"
-                            ? "Matched by AI semantic understanding — not an exact role name match"
-                            : "Matched by fuzzy text similarity — consider adding an agent with this exact role"}
+                            ? "Role matched by AI semantic understanding"
+                            : "Matched by similar role name — verify this is correct"}
                         </TooltipContent>
                       </Tooltip>
                     )}
                   </span>
                 ) : !rc.covered ? (
-                  <span className="font-normal">— no agent</span>
+                  <span className="font-normal">
+                    — no agent
+                    <Link href="/agents" className="ml-1 underline hover:text-amber-300">
+                      Browse Agents &rarr;
+                    </Link>
+                  </span>
                 ) : null}
               </Badge>
             ))}

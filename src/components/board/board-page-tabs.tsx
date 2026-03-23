@@ -75,6 +75,7 @@ export function BoardPageTabs({
             ideaId={ideaId}
             boardLabels={boardLabels}
             isReadOnly={isReadOnly}
+            hasAgents={ideaAgentDetails.length > 0}
           />
         )}
       </TabsContent>

@@ -107,7 +107,7 @@ export function ReplyItem({
   }
 
   return (
-    <div>
+    <div id={`reply-${reply.id}`}>
       <div className="flex gap-3">
         <Avatar className="h-7 w-7 shrink-0">
           <AvatarImage src={reply.author.avatar_url ?? undefined} />

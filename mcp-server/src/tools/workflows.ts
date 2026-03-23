@@ -1151,43 +1151,6 @@ export async function rematchWorkflowAgents(
   return { matched, unmatched, upgraded, matches };
 }
 
-// --- Get Step Comments ---
-
-export const getStepCommentsSchema = z.object({
-  step_id: z.string().uuid().describe("The workflow step ID"),
-});
-
-export async function getStepComments(
-  ctx: McpContext,
-  params: z.infer<typeof getStepCommentsSchema>
-) {
-  const { data, error } = await ctx.supabase
-    .from("workflow_step_comments")
-    .select(
-      "id, step_id, idea_id, author_id, type, content, created_at, updated_at, author:users!workflow_step_comments_author_id_fkey(full_name, avatar_url)"
-    )
-    .eq("step_id", params.step_id)
-    .order("created_at", { ascending: true });
-
-  if (error) throw new Error(`Failed to fetch step comments: ${error.message}`);
-
-  return (data ?? []).map((row) => {
-    const author = (row as Record<string, unknown>).author as Record<string, unknown> | null;
-    return {
-      id: row.id,
-      step_id: row.step_id,
-      idea_id: row.idea_id,
-      author_id: row.author_id,
-      author_name: author?.full_name ?? null,
-      author_avatar_url: author?.avatar_url ?? null,
-      type: row.type,
-      content: row.content,
-      created_at: row.created_at,
-      updated_at: row.updated_at,
-    };
-  });
-}
-
 // ============================================================
 // Workflow Reset & Remove Tools
 // ============================================================
