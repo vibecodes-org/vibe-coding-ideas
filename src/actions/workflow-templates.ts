@@ -367,7 +367,9 @@ export async function rematchWorkflowAgents(taskId: string) {
     }
   }
 
-  revalidatePath(`/ideas/${task.idea_id}/board`);
+  // Note: callers are responsible for revalidatePath — this function is often
+  // called fire-and-forget from allocateAgent/removeIdeaAgent which already revalidate.
+  // Calling revalidatePath here during render causes Next.js 16 warnings.
 
   return { matched, unmatched, upgraded, matches };
 }
