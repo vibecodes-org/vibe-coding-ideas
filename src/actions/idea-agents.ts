@@ -180,6 +180,7 @@ export interface RoleCoverageResult {
   covered: boolean;
   matchedAgentName: string | null;
   matchedAgentRole: string | null;
+  matchTier: string | null;
 }
 
 export async function getRoleCoverage(
@@ -231,6 +232,7 @@ export async function getRoleCoverage(
       covered: !!match?.botId,
       matchedAgentName: agent?.name ?? null,
       matchedAgentRole: agent?.role ?? null,
+      matchTier: match?.botId ? match.tier : null,
     };
   });
 
