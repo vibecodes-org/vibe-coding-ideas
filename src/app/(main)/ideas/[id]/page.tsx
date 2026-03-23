@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { Pencil, LayoutDashboard, MessageSquare } from "lucide-react";
+import { Pencil, LayoutDashboard } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getIdeaTeam } from "@/lib/idea-team";
@@ -31,7 +31,8 @@ import { IdeaAgentsSection } from "@/components/ideas/idea-agents-section";
 import { formatRelativeTime, getInitials, stripMarkdownForMeta } from "@/lib/utils";
 import { BotRolesProvider } from "@/components/bot-roles-context";
 import { PendingRequests } from "@/components/ideas/pending-requests";
-import type { CommentWithAuthor, CollaboratorWithUser, CollaborationRequestWithRequester, BotProfile } from "@/types";
+import { RecentDiscussionsPreview } from "@/components/discussions/recent-discussions-preview";
+import type { CommentWithAuthor, CollaboratorWithUser, CollaborationRequestWithRequester, BotProfile, IdeaDiscussionWithAuthor } from "@/types";
 import type { Metadata } from "next";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
@@ -111,6 +112,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
     { data: profile },
     { data: bots },
     ideaTeam,
+    { data: recentDiscussions },
   ] = await Promise.all([
     supabase
       .from("comments")
@@ -145,6 +147,13 @@ export default async function IdeaDetailPage({ params }: PageProps) {
       .eq("is_active", true)
       .order("created_at", { ascending: true }),
     getIdeaTeam(supabase, id, idea.author_id, user.id),
+    supabase
+      .from("idea_discussions")
+      .select("*, author:users!idea_discussions_author_id_fkey(*)")
+      .eq("idea_id", id)
+      .order("pinned", { ascending: false })
+      .order("last_activity_at", { ascending: false })
+      .limit(3),
   ]);
 
   const hasVoted = !!vote;
@@ -438,18 +447,17 @@ export default async function IdeaDetailPage({ params }: PageProps) {
               Board
             </Button>
           </Link>
-          <Link href={`/ideas/${idea.id}/discussions`}>
-            <Button variant="outline" size="sm" className="gap-2">
-              <MessageSquare className="h-4 w-4" />
-              Discussions
-              {idea.discussion_count > 0 && (
-                <span className="rounded-full bg-violet-500/10 border border-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-violet-400">
-                  {idea.discussion_count}
-                </span>
-              )}
-            </Button>
-          </Link>
         </div>
+      )}
+
+      {/* ══ Discussions Preview ══════════════════════════════ */}
+      {(isAuthor || isCollaborator || idea.visibility === "public") && (
+        <RecentDiscussionsPreview
+          discussions={(recentDiscussions ?? []) as IdeaDiscussionWithAuthor[]}
+          ideaId={idea.id}
+          discussionCount={idea.discussion_count}
+          isTeamMember={isAuthor || isCollaborator}
+        />
       )}
 
       {/* ══ Description (promoted to top of content) ═══════ */}

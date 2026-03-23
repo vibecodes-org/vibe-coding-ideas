@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, MessagesSquare } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { initializeBoardColumns } from "@/actions/board";
@@ -74,7 +74,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
   // Fetch idea (include visibility for access control)
   const { data: idea } = await supabase
     .from("ideas")
-    .select("id, title, description, author_id, visibility")
+    .select("id, title, description, author_id, visibility, discussion_count")
     .eq("id", id)
     .single();
 
@@ -217,12 +217,26 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
 
       {/* Header */}
       <div className="flex shrink-0 items-center gap-4 py-4">
-        <Link href={`/ideas/${id}`}>
-          <Button variant="ghost" size="sm" className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Back to idea
-          </Button>
-        </Link>
+        <div className="flex items-center gap-1">
+          <Link href={`/ideas/${id}`}>
+            <Button variant="ghost" size="sm" className="gap-2">
+              <ArrowLeft className="h-4 w-4" />
+              Back to idea
+            </Button>
+          </Link>
+          {idea.discussion_count > 0 && (
+            <>
+              <span className="text-muted-foreground/40">·</span>
+              <Link
+                href={`/ideas/${id}/discussions`}
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1"
+              >
+                <MessagesSquare className="h-3 w-3" />
+                Discussions ({idea.discussion_count})
+              </Link>
+            </>
+          )}
+        </div>
         <h1 className="text-xl font-bold">{idea.title} — Board</h1>
       </div>
 
