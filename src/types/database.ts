@@ -43,6 +43,7 @@ export type Database = {
           ai_daily_limit: number;
           ai_starter_credits: number;
           onboarding_completed_at: string | null;
+          mcp_connected_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -77,6 +78,7 @@ export type Database = {
           ai_daily_limit?: number;
           ai_starter_credits?: number;
           onboarding_completed_at?: string | null;
+          mcp_connected_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -111,6 +113,7 @@ export type Database = {
           ai_daily_limit?: number;
           ai_starter_credits?: number;
           onboarding_completed_at?: string | null;
+          mcp_connected_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };

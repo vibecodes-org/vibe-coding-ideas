@@ -174,6 +174,100 @@ describe("instrumentServer", () => {
     expect(handler).toHaveBeenCalledOnce();
   });
 
+  it("calls mcpConnectFn with ownerUserId on successful tool call", async () => {
+    const { server, registeredTools } = createMockServer();
+    const logEntries: ToolLogEntry[] = [];
+    const connectedOwners: string[] = [];
+
+    const instrumented = instrumentServer(
+      server,
+      () => mockContext,
+      (entry) => logEntries.push(entry),
+      "stdio",
+      (ownerUserId) => connectedOwners.push(ownerUserId)
+    );
+
+    const handler = vi.fn(async () => ({ content: [] }));
+    instrumented.tool("connect_tool", "desc", {}, handler);
+
+    const wrappedHandler = registeredTools.get("connect_tool")!;
+    await wrappedHandler({}, {});
+
+    // Should call mcpConnectFn with the ownerUserId
+    expect(connectedOwners).toHaveLength(1);
+    expect(connectedOwners[0]).toBe("owner-456");
+  });
+
+  it("falls back to userId when ownerUserId is undefined", async () => {
+    const { server, registeredTools } = createMockServer();
+    const connectedOwners: string[] = [];
+    const ctxNoOwner: McpContext = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: {} as any,
+      userId: "user-123",
+      ownerUserId: undefined,
+    };
+
+    const instrumented = instrumentServer(
+      server,
+      () => ctxNoOwner,
+      () => {},
+      "stdio",
+      (ownerUserId) => connectedOwners.push(ownerUserId)
+    );
+
+    const handler = vi.fn(async () => ({ content: [] }));
+    instrumented.tool("fallback_tool", "desc", {}, handler);
+
+    const wrappedHandler = registeredTools.get("fallback_tool")!;
+    await wrappedHandler({}, {});
+
+    expect(connectedOwners[0]).toBe("user-123");
+  });
+
+  it("does not break tool execution if mcpConnectFn fails", async () => {
+    const { server, registeredTools } = createMockServer();
+
+    const instrumented = instrumentServer(
+      server,
+      () => mockContext,
+      () => {},
+      "stdio",
+      () => { throw new Error("Connect update failed"); }
+    );
+
+    const handler = vi.fn(async () => ({ content: [{ type: "text", text: "ok" }] }));
+    instrumented.tool("safe_connect_tool", "desc", {}, handler);
+
+    const wrappedHandler = registeredTools.get("safe_connect_tool")!;
+    const result = await wrappedHandler({}, {});
+
+    // Tool should still succeed despite mcpConnectFn failure
+    expect(result).toEqual({ content: [{ type: "text", text: "ok" }] });
+  });
+
+  it("does not call mcpConnectFn when not provided", async () => {
+    const { server, registeredTools } = createMockServer();
+    const logEntries: ToolLogEntry[] = [];
+
+    // No mcpConnectFn passed — should work fine (backward compatible)
+    const instrumented = instrumentServer(
+      server,
+      () => mockContext,
+      (entry) => logEntries.push(entry),
+      "stdio"
+    );
+
+    const handler = vi.fn(async () => ({ content: [] }));
+    instrumented.tool("no_connect_tool", "desc", {}, handler);
+
+    const wrappedHandler = registeredTools.get("no_connect_tool")!;
+    await wrappedHandler({}, {});
+
+    expect(logEntries).toHaveLength(1);
+    // No error thrown — backward compatible
+  });
+
   it("does not break tool execution if context resolution fails", async () => {
     const { server, registeredTools } = createMockServer();
     const logEntries: ToolLogEntry[] = [];

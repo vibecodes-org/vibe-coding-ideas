@@ -1,0 +1,1290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VibeCodes UX Redesign Proposals — Compass (UX Designer)</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --surface: #111113;
+    --surface-2: #19191d;
+    --surface-3: #222228;
+    --border: #27272a;
+    --border-focus: #3f3f46;
+    --text: #fafafa;
+    --text-muted: #a1a1aa;
+    --text-dim: #71717a;
+    --violet: #8b5cf6;
+    --violet-dim: rgba(139, 92, 246, 0.12);
+    --violet-border: rgba(139, 92, 246, 0.25);
+    --emerald: #10b981;
+    --emerald-dim: rgba(16, 185, 129, 0.12);
+    --emerald-border: rgba(16, 185, 129, 0.25);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245, 158, 11, 0.12);
+    --amber-border: rgba(245, 158, 11, 0.25);
+    --rose: #f43f5e;
+    --rose-dim: rgba(244, 63, 94, 0.12);
+    --rose-border: rgba(244, 63, 94, 0.25);
+    --cyan: #06b6d4;
+    --cyan-dim: rgba(6, 182, 212, 0.12);
+    --cyan-border: rgba(6, 182, 212, 0.25);
+    --pink: #ec4899;
+    --blue: #3b82f6;
+    --blue-dim: rgba(59, 130, 246, 0.12);
+    --blue-border: rgba(59, 130, 246, 0.25);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.65; }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(160deg, #1a0f2e 0%, #0f1a2e 40%, #091a1f 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 3.5rem 2rem 2.5rem;
+  }
+  .hero-inner { max-width: 1200px; margin: 0 auto; }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: var(--violet-dim); border: 1px solid var(--violet-border);
+    border-radius: 999px; padding: 0.3rem 0.9rem;
+    font-size: 0.78rem; color: var(--violet); font-weight: 600;
+    margin-bottom: 1.25rem;
+  }
+  .hero h1 {
+    font-size: 2.2rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15;
+    margin-bottom: 0.6rem;
+    background: linear-gradient(135deg, #fafafa 30%, var(--violet) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .hero p { color: var(--text-muted); font-size: 1rem; max-width: 750px; }
+  .hero-meta { margin-top: 1.25rem; display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.82rem; color: var(--text-dim); }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+  /* Proposal Navigation */
+  .proposal-nav {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem; margin-bottom: 3rem;
+  }
+  .proposal-nav a {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem 1.25rem; text-decoration: none; transition: all 0.2s;
+    display: flex; align-items: flex-start; gap: 0.75rem;
+  }
+  .proposal-nav a:hover { border-color: var(--border-focus); background: var(--surface-2); transform: translateY(-1px); }
+  .nav-icon { font-size: 1.5rem; line-height: 1; }
+  .nav-label { font-size: 0.82rem; font-weight: 700; color: var(--text); display: block; }
+  .nav-desc { font-size: 0.73rem; color: var(--text-dim); margin-top: 0.15rem; display: block; }
+
+  /* Section */
+  section { margin-bottom: 4rem; scroll-margin-top: 2rem; }
+  section > h2 {
+    font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em;
+    margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.75rem;
+    padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);
+  }
+  .section-tag {
+    font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.6rem;
+    border-radius: 5px; letter-spacing: 0.03em; text-transform: uppercase;
+  }
+  .tag-violet { background: var(--violet-dim); color: var(--violet); }
+  .tag-emerald { background: var(--emerald-dim); color: var(--emerald); }
+  .tag-amber { background: var(--amber-dim); color: var(--amber); }
+  .tag-cyan { background: var(--cyan-dim); color: var(--cyan); }
+  .tag-blue { background: var(--blue-dim); color: var(--blue); }
+  .section-sub { color: var(--text-muted); font-size: 0.92rem; margin-bottom: 1.5rem; max-width: 800px; }
+  h3 { font-size: 1.1rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.6rem; }
+  h4 { font-size: 0.92rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.4rem; color: var(--text-muted); }
+  p { margin-bottom: 0.7rem; color: var(--text-muted); font-size: 0.9rem; }
+  ul, ol { padding-left: 1.5rem; margin-bottom: 0.7rem; }
+  li { margin-bottom: 0.3rem; color: var(--text-muted); font-size: 0.88rem; }
+  li strong { color: var(--text); }
+  code { font-size: 0.82rem; background: var(--surface-3); padding: 0.1rem 0.4rem; border-radius: 4px; color: var(--violet); }
+
+  /* Mockup containers */
+  .mockup-frame {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden; margin: 1.5rem 0;
+  }
+  .mockup-titlebar {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.6rem 1rem; border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .mockup-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .mockup-dot-r { background: #ef4444; }
+  .mockup-dot-y { background: #eab308; }
+  .mockup-dot-g { background: #22c55e; }
+  .mockup-title { font-size: 0.72rem; color: var(--text-dim); margin-left: 0.5rem; }
+  .mockup-body { padding: 1.5rem; }
+
+  /* Interactive tabs */
+  .tab-group { margin: 1.5rem 0; }
+  .tab-bar {
+    display: flex; border-bottom: 1px solid var(--border); margin-bottom: 0;
+  }
+  .tab-btn {
+    background: none; border: none; color: var(--text-dim);
+    padding: 0.6rem 1.25rem; font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; border-bottom: 2px solid transparent;
+    transition: all 0.15s; font-family: inherit;
+  }
+  .tab-btn:hover { color: var(--text-muted); }
+  .tab-btn.active { color: var(--violet); border-bottom-color: var(--violet); }
+  .tab-panel { display: none; padding: 1.5rem 0; }
+  .tab-panel.active { display: block; }
+
+  /* Specific mockup styles */
+  .project-type-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem; margin: 1rem 0;
+  }
+  .project-type-card {
+    background: var(--surface-2); border: 2px solid var(--border); border-radius: 12px;
+    padding: 1.25rem; cursor: pointer; transition: all 0.2s; text-align: center;
+  }
+  .project-type-card:hover { border-color: var(--border-focus); transform: translateY(-2px); }
+  .project-type-card.selected { border-color: var(--violet); background: var(--violet-dim); }
+  .ptc-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+  .ptc-name { font-weight: 700; font-size: 0.9rem; color: var(--text); }
+  .ptc-desc { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.2rem; }
+  .ptc-meta { display: flex; gap: 0.5rem; justify-content: center; margin-top: 0.6rem; flex-wrap: wrap; }
+  .ptc-pill {
+    font-size: 0.65rem; padding: 0.15rem 0.45rem; border-radius: 999px;
+    font-weight: 600;
+  }
+
+  /* Kit preview */
+  .kit-preview {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.5rem; margin: 1rem 0;
+  }
+  .kit-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .kit-title { font-weight: 700; font-size: 1rem; }
+  .kit-section { margin-bottom: 1rem; }
+  .kit-section-label {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-dim); margin-bottom: 0.5rem; font-weight: 700;
+  }
+  .kit-items { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .kit-item {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: var(--surface-3); border: 1px solid var(--border);
+    padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.78rem; color: var(--text-muted);
+  }
+  .kit-item-icon { font-size: 0.85rem; }
+
+  /* Step flow */
+  .step-flow { display: flex; gap: 0; align-items: flex-start; margin: 1.25rem 0; flex-wrap: wrap; }
+  .step-card {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem; min-width: 160px; flex: 1; position: relative;
+  }
+  .step-arrow {
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-dim); padding: 0 0.5rem; font-size: 1.2rem;
+    align-self: center;
+  }
+  .step-num {
+    width: 22px; height: 22px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 0.7rem;
+    font-weight: 800; margin-bottom: 0.4rem;
+  }
+  .step-label { font-weight: 700; font-size: 0.82rem; color: var(--text); }
+  .step-desc { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.2rem; }
+
+  /* MCP connection mockup */
+  .mcp-mockup { margin: 1rem 0; }
+  .mcp-terminal {
+    background: #0c0c0c; border: 1px solid #333; border-radius: 10px;
+    padding: 1.25rem; font-family: 'SF Mono', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.82rem; line-height: 1.8;
+  }
+  .mcp-prompt { color: #22c55e; }
+  .mcp-cmd { color: #fafafa; }
+  .mcp-output { color: #71717a; }
+  .mcp-success { color: #10b981; }
+  .mcp-url { color: #8b5cf6; }
+  .mcp-highlight { color: #f59e0b; }
+
+  /* Dashboard mockup */
+  .dash-grid { display: grid; grid-template-columns: 2fr 1fr; gap: 1rem; margin: 1rem 0; }
+  .dash-card {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1.25rem;
+  }
+  .dash-card-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.75rem;
+  }
+  .dash-card-title { font-weight: 700; font-size: 0.85rem; color: var(--text); }
+  .dash-card-link { font-size: 0.75rem; color: var(--violet); text-decoration: none; }
+
+  /* Nudge banner mockup */
+  .nudge-banner {
+    display: flex; align-items: center; gap: 1rem;
+    border-radius: 10px; padding: 1rem 1.25rem; margin: 0.75rem 0;
+  }
+  .nudge-icon { font-size: 1.5rem; flex-shrink: 0; }
+  .nudge-content { flex: 1; }
+  .nudge-title { font-weight: 700; font-size: 0.85rem; color: var(--text); }
+  .nudge-desc { font-size: 0.78rem; color: var(--text-muted); }
+  .nudge-btn {
+    padding: 0.4rem 0.9rem; border-radius: 6px; font-size: 0.78rem;
+    font-weight: 600; border: none; cursor: pointer; white-space: nowrap;
+    font-family: inherit;
+  }
+
+  /* Rationale */
+  .rationale {
+    background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--cyan);
+    border-radius: 0 10px 10px 0; padding: 1rem 1.25rem; margin: 1.25rem 0;
+  }
+  .rationale-label {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--cyan); font-weight: 700; margin-bottom: 0.35rem;
+  }
+  .rationale p { font-size: 0.85rem; margin-bottom: 0.3rem; }
+
+  /* Impact */
+  .impact-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 0.75rem; margin: 1.25rem 0;
+  }
+  .impact-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem 1.25rem;
+  }
+  .impact-label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.05em; }
+  .impact-value { font-size: 1.4rem; font-weight: 800; margin-top: 0.2rem; }
+  .impact-desc { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.15rem; }
+
+  /* Board preview */
+  .board-preview { display: flex; gap: 0.75rem; overflow-x: auto; padding: 0.5rem 0; }
+  .board-col {
+    min-width: 180px; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.75rem; flex-shrink: 0;
+  }
+  .board-col-header {
+    font-size: 0.72rem; font-weight: 700; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.5rem;
+    display: flex; align-items: center; gap: 0.4rem;
+  }
+  .board-col-count {
+    background: var(--surface-3); padding: 0.05rem 0.35rem; border-radius: 4px;
+    font-size: 0.65rem;
+  }
+  .board-task {
+    background: var(--surface-3); border: 1px solid var(--border);
+    border-radius: 6px; padding: 0.5rem 0.65rem; margin-bottom: 0.4rem;
+    font-size: 0.75rem; color: var(--text-muted);
+  }
+  .board-task-label {
+    display: inline-block; font-size: 0.6rem; padding: 0.1rem 0.35rem;
+    border-radius: 3px; font-weight: 600; margin-bottom: 0.2rem;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .hero { padding: 2rem 1rem; }
+    .hero h1 { font-size: 1.6rem; }
+    .container { padding: 1rem; }
+    .dash-grid { grid-template-columns: 1fr; }
+    .step-flow { flex-direction: column; }
+    .step-arrow { transform: rotate(90deg); padding: 0.3rem; }
+    .board-preview { flex-direction: column; }
+    .board-col { min-width: 100%; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge">&#x1f3a8; Design Proposals</div>
+    <h1>UX Redesign Proposals</h1>
+    <p>Building on the <a href="ux-audit-report.html" style="color: var(--violet)">UX Audit Report</a> (28 findings) and competitive research across Linear, Notion, Vercel, GitHub Copilot Workspace, Cursor, and Shortcut. Incorporates user feedback on MCP centrality and project-type presets.</p>
+    <div class="hero-meta">
+      <span>&#x1f916; Compass (UX Designer)</span>
+      <span>&#x1f4c5; 23 March 2026</span>
+      <span>5 proposals addressing all 5 critical + 8 high-priority findings</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- Navigation -->
+<nav class="proposal-nav">
+  <a href="#p1">
+    <div class="nav-icon">&#x1f3af;</div>
+    <div><span class="nav-label">P1: Project Kits</span><span class="nav-desc">Idea type → agents + workflows + labels in one click</span></div>
+  </a>
+  <a href="#p2">
+    <div class="nav-icon">&#x1f680;</div>
+    <div><span class="nav-label">P2: Golden Path</span><span class="nav-desc">Seamless onboarding → board → agents → MCP</span></div>
+  </a>
+  <a href="#p3">
+    <div class="nav-icon">&#x1f4e1;</div>
+    <div><span class="nav-label">P3: MCP First-Class</span><span class="nav-desc">MCP connection as the activation moment</span></div>
+  </a>
+  <a href="#p4">
+    <div class="nav-icon">&#x1f517;</div>
+    <div><span class="nav-label">P4: Connective Tissue</span><span class="nav-desc">Cross-feature nudges, contextual help, no dead ends</span></div>
+  </a>
+  <a href="#p5">
+    <div class="nav-icon">&#x1f3e0;</div>
+    <div><span class="nav-label">P5: First-Run Dashboard</span><span class="nav-desc">Replace empty dashboard with guided command center</span></div>
+  </a>
+</nav>
+
+<!-- ============================================ -->
+<!-- PROPOSAL 1: PROJECT KITS -->
+<!-- ============================================ -->
+<section id="p1">
+  <h2><span class="section-tag tag-violet">Proposal 1</span> Project Kits — Idea Archetypes</h2>
+  <p class="section-sub">Addresses audit findings F6, F12, F22 (critical) + F1, F18, F19, F24 (high). Inspired by Notion's use-case segmentation, Shortcut's workflow presets, and Linear's opinionated defaults.</p>
+
+  <h3>The Core Idea</h3>
+  <p>When a user creates an idea (during onboarding or later), they select a <strong>project type</strong>. This single choice auto-configures: a workflow template, a recommended agent team composition, suggested board labels, and optionally pre-generated starter tasks. Think of it as "Notion templates but for the entire VibeCodes project setup."</p>
+
+  <div class="rationale">
+    <div class="rationale-label">User Feedback</div>
+    <p><strong>"Workflow templates and agents tend to go together. A website build implies certain workflow templates and certain agents. Other project types need different ones."</strong> — This validates bundling configuration by project type rather than configuring agents, workflows, and labels independently.</p>
+  </div>
+
+  <h3>Project Type Selector</h3>
+  <p>Replaces the current bare "Title + Description + Tags" idea creation form. Appears in both onboarding (Step 3) and the standalone "Create Idea" page.</p>
+
+  <div class="mockup-frame">
+    <div class="mockup-titlebar">
+      <div class="mockup-dot mockup-dot-r"></div>
+      <div class="mockup-dot mockup-dot-y"></div>
+      <div class="mockup-dot mockup-dot-g"></div>
+      <div class="mockup-title">Create New Idea — Step 1: What are you building?</div>
+    </div>
+    <div class="mockup-body">
+      <p style="color: var(--text); font-weight: 700; font-size: 1.1rem; margin-bottom: 0.3rem;">What kind of project is this?</p>
+      <p style="font-size: 0.82rem; margin-bottom: 1rem;">This helps us set up the right workflow, agents, and board for you. You can customise everything later.</p>
+
+      <div class="project-type-grid" id="ptg1">
+        <div class="project-type-card selected" onclick="selectPT(this)">
+          <div class="ptc-icon">&#x1f310;</div>
+          <div class="ptc-name">Web Application</div>
+          <div class="ptc-desc">Full-stack web app with frontend, backend, and deployment</div>
+          <div class="ptc-meta">
+            <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">7 workflow steps</span>
+            <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">5 agent roles</span>
+          </div>
+        </div>
+        <div class="project-type-card" onclick="selectPT(this)">
+          <div class="ptc-icon">&#x1f4f1;</div>
+          <div class="ptc-name">Mobile App</div>
+          <div class="ptc-desc">iOS, Android, or cross-platform mobile application</div>
+          <div class="ptc-meta">
+            <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">8 workflow steps</span>
+            <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">5 agent roles</span>
+          </div>
+        </div>
+        <div class="project-type-card" onclick="selectPT(this)">
+          <div class="ptc-icon">&#x2699;&#xfe0f;</div>
+          <div class="ptc-name">API / Backend</div>
+          <div class="ptc-desc">REST/GraphQL API, microservice, or data pipeline</div>
+          <div class="ptc-meta">
+            <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">6 workflow steps</span>
+            <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">4 agent roles</span>
+          </div>
+        </div>
+        <div class="project-type-card" onclick="selectPT(this)">
+          <div class="ptc-icon">&#x1f3a8;</div>
+          <div class="ptc-name">Design System</div>
+          <div class="ptc-desc">Component library, design tokens, documentation site</div>
+          <div class="ptc-meta">
+            <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">5 workflow steps</span>
+            <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">3 agent roles</span>
+          </div>
+        </div>
+        <div class="project-type-card" onclick="selectPT(this)">
+          <div class="ptc-icon">&#x1f916;</div>
+          <div class="ptc-name">AI / ML Project</div>
+          <div class="ptc-desc">Machine learning, data science, or AI agent system</div>
+          <div class="ptc-meta">
+            <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">7 workflow steps</span>
+            <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">4 agent roles</span>
+          </div>
+        </div>
+        <div class="project-type-card" onclick="selectPT(this)">
+          <div class="ptc-icon">&#x2728;</div>
+          <div class="ptc-name">Custom</div>
+          <div class="ptc-desc">Start from scratch and configure everything yourself</div>
+          <div class="ptc-meta">
+            <span class="ptc-pill" style="background:var(--surface-3);color:var(--text-dim);">Your choice</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Kit Preview — What You Get</h3>
+  <p>After selecting a project type, the user sees a preview of everything that will be configured. This addresses F24 (unexplained team cloning) — users understand exactly what they're getting.</p>
+
+  <div class="mockup-frame">
+    <div class="mockup-titlebar">
+      <div class="mockup-dot mockup-dot-r"></div>
+      <div class="mockup-dot mockup-dot-y"></div>
+      <div class="mockup-dot mockup-dot-g"></div>
+      <div class="mockup-title">Web Application Kit — Preview</div>
+    </div>
+    <div class="mockup-body">
+      <div class="kit-preview">
+        <div class="kit-header">
+          <div>
+            <div class="kit-title">&#x1f310; Web Application Kit</div>
+            <p style="font-size: 0.78rem; margin: 0;">Everything you need to build a full-stack web app with AI agents</p>
+          </div>
+        </div>
+
+        <div class="kit-section">
+          <div class="kit-section-label">&#x1f9d1;&#x200d;&#x1f4bb; Agent Team (5 roles)</div>
+          <div class="kit-items">
+            <div class="kit-item"><span class="kit-item-icon">&#x1f528;</span> Full Stack Engineer</div>
+            <div class="kit-item"><span class="kit-item-icon">&#x1f3a8;</span> UX Designer</div>
+            <div class="kit-item"><span class="kit-item-icon">&#x1f50d;</span> QA Engineer</div>
+            <div class="kit-item"><span class="kit-item-icon">&#x1f6e1;</span> Security Engineer</div>
+            <div class="kit-item"><span class="kit-item-icon">&#x1f680;</span> DevOps Engineer</div>
+          </div>
+          <p style="font-size: 0.75rem; margin-top: 0.4rem; color: var(--text-dim);">Agents will be cloned to your account. You can customise names, prompts, and skills afterwards.</p>
+        </div>
+
+        <div class="kit-section">
+          <div class="kit-section-label">&#x26a1; Workflow Template (7 steps)</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center;">
+            <div class="kit-item">1. UX Review</div>
+            <span style="color: var(--text-dim);">&#x2192;</span>
+            <div class="kit-item">2. Implementation</div>
+            <span style="color: var(--text-dim);">&#x2192;</span>
+            <div class="kit-item">3. Code Review</div>
+            <span style="color: var(--text-dim);">&#x2192;</span>
+            <div class="kit-item">4. Security Scan</div>
+            <span style="color: var(--text-dim);">&#x2192;</span>
+            <div class="kit-item">5. Testing</div>
+            <span style="color: var(--text-dim);">&#x2192;</span>
+            <div class="kit-item" style="border-color: var(--amber-border);">6. Human Review &#x1f512;</div>
+            <span style="color: var(--text-dim);">&#x2192;</span>
+            <div class="kit-item">7. Deploy</div>
+          </div>
+        </div>
+
+        <div class="kit-section">
+          <div class="kit-section-label">&#x1f3f7; Board Labels</div>
+          <div class="kit-items">
+            <span class="ptc-pill" style="background:var(--rose-dim);color:var(--rose);">Bug</span>
+            <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">Feature</span>
+            <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">Enhancement</span>
+            <span class="ptc-pill" style="background:var(--amber-dim);color:var(--amber);">Refactor</span>
+            <span class="ptc-pill" style="background:var(--cyan-dim);color:var(--cyan);">Documentation</span>
+            <span class="ptc-pill" style="background:var(--blue-dim);color:var(--blue);">Infrastructure</span>
+          </div>
+        </div>
+
+        <div class="kit-section">
+          <div class="kit-section-label">&#x1f504; Auto-Rule</div>
+          <p style="font-size: 0.78rem; margin: 0;">When a task is labelled <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">Feature</span> or <span class="ptc-pill" style="background:var(--rose-dim);color:var(--rose);">Bug</span>, the Web App workflow will be automatically applied.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rationale">
+    <div class="rationale-label">Competitive Precedent</div>
+    <p><strong>Notion</strong>: Use-case segmentation pre-loads relevant templates. <strong>Shortcut</strong>: Workflow presets (Standard / Simple / Custom) let users self-select complexity. <strong>Jira</strong>: Project templates bundle work types + workflows + board type simultaneously. VibeCodes' Project Kits take this further by also bundling agent teams.</p>
+  </div>
+
+  <h3>Implementation Notes</h3>
+  <ul>
+    <li><strong>Data model</strong>: New <code>project_kits</code> table (or extend <code>workflow_library_templates</code>) with: name, icon, description, workflow_template_id, agent_roles (jsonb), label_presets (jsonb), board_column_presets (jsonb)</li>
+    <li><strong>Admin-managed</strong>: Kits configured via the existing admin panel (extends the template library concept)</li>
+    <li><strong>"Custom" escape hatch</strong>: Always available for users who want manual control</li>
+    <li><strong>Retroactive</strong>: Existing ideas can adopt a kit via a new "Apply Kit" option on the board's Workflows tab</li>
+    <li><strong>Replaces</strong>: Featured Teams (absorbed into kits) and the separate template library import (kits include templates)</li>
+  </ul>
+
+  <div class="impact-grid">
+    <div class="impact-card">
+      <div class="impact-label">Findings addressed</div>
+      <div class="impact-value" style="color: var(--violet);">7</div>
+      <div class="impact-desc">F6, F12, F22, F1, F18, F19, F24</div>
+    </div>
+    <div class="impact-card">
+      <div class="impact-label">User steps saved</div>
+      <div class="impact-value" style="color: var(--emerald);">~12</div>
+      <div class="impact-desc">vs. manual agent + workflow + label + auto-rule setup</div>
+    </div>
+    <div class="impact-card">
+      <div class="impact-label">Complexity</div>
+      <div class="impact-value" style="color: var(--amber);">High</div>
+      <div class="impact-desc">New DB table, admin UI, onboarding integration</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- PROPOSAL 2: GOLDEN PATH -->
+<!-- ============================================ -->
+<section id="p2">
+  <h2><span class="section-tag tag-emerald">Proposal 2</span> The Golden Path — Seamless First-Run Flow</h2>
+  <p class="section-sub">Addresses all 5 critical findings. Redesigns the journey from onboarding to "agents working on tasks" as a single continuous flow instead of 8 disconnected steps.</p>
+
+  <h3>Current vs. Proposed Journey</h3>
+
+  <h4>Current: 8 disconnected steps</h4>
+  <div class="step-flow">
+    <div class="step-card">
+      <div class="step-num" style="background:var(--emerald-dim);color:var(--emerald);">1</div>
+      <div class="step-label">Signup</div>
+    </div>
+    <div class="step-arrow">&#x2192;</div>
+    <div class="step-card">
+      <div class="step-num" style="background:var(--emerald-dim);color:var(--emerald);">2</div>
+      <div class="step-label">Onboarding</div>
+    </div>
+    <div class="step-arrow">&#x2192;</div>
+    <div class="step-card" style="border-color: var(--rose-border);">
+      <div class="step-num" style="background:var(--rose-dim);color:var(--rose);">3</div>
+      <div class="step-label">Empty dashboard</div>
+      <div class="step-desc">&#x26a0; Drop-off risk</div>
+    </div>
+    <div class="step-arrow">&#x2192;</div>
+    <div class="step-card" style="border-color: var(--rose-border);">
+      <div class="step-num" style="background:var(--rose-dim);color:var(--rose);">4</div>
+      <div class="step-label">Find board</div>
+      <div class="step-desc">&#x26a0; Where is it?</div>
+    </div>
+    <div class="step-arrow">&#x2192;</div>
+    <div class="step-card" style="border-color: var(--rose-border);">
+      <div class="step-num" style="background:var(--rose-dim);color:var(--rose);">5</div>
+      <div class="step-label">Empty board</div>
+      <div class="step-desc">&#x26a0; What now?</div>
+    </div>
+    <div class="step-arrow">&#x2192;</div>
+    <div class="step-card">
+      <div class="step-num" style="background:var(--amber-dim);color:var(--amber);">6</div>
+      <div class="step-label">AI Generate</div>
+    </div>
+    <div class="step-arrow">&#x2192;</div>
+    <div class="step-card" style="border-color: var(--rose-border);">
+      <div class="step-num" style="background:var(--rose-dim);color:var(--rose);">7</div>
+      <div class="step-label">Discover workflows?</div>
+      <div class="step-desc">&#x26a0; No guidance</div>
+    </div>
+    <div class="step-arrow">&#x2192;</div>
+    <div class="step-card" style="border-color: var(--rose-border);">
+      <div class="step-num" style="background:var(--rose-dim);color:var(--rose);">8</div>
+      <div class="step-label">Connect MCP?</div>
+      <div class="step-desc">&#x26a0; Afterthought</div>
+    </div>
+  </div>
+
+  <h4>Proposed: 5 continuous steps (no dead ends)</h4>
+  <div class="step-flow">
+    <div class="step-card" style="border-color: var(--emerald-border);">
+      <div class="step-num" style="background:var(--emerald-dim);color:var(--emerald);">1</div>
+      <div class="step-label">Signup + Profile</div>
+      <div class="step-desc">OAuth, name, bio (30 sec)</div>
+    </div>
+    <div class="step-arrow">&#x2192;</div>
+    <div class="step-card" style="border-color: var(--violet-border);">
+      <div class="step-num" style="background:var(--violet-dim);color:var(--violet);">2</div>
+      <div class="step-label">Create Idea + Pick Kit</div>
+      <div class="step-desc">Title, description, project type (60 sec)</div>
+    </div>
+    <div class="step-arrow">&#x2192;</div>
+    <div class="step-card" style="border-color: var(--violet-border);">
+      <div class="step-num" style="background:var(--violet-dim);color:var(--violet);">3</div>
+      <div class="step-label">AI Generates Board</div>
+      <div class="step-desc">Auto-triggered, shows preview (30 sec)</div>
+    </div>
+    <div class="step-arrow">&#x2192;</div>
+    <div class="step-card" style="border-color: var(--emerald-border);">
+      <div class="step-num" style="background:var(--emerald-dim);color:var(--emerald);">4</div>
+      <div class="step-label">Connect MCP</div>
+      <div class="step-desc">The activation moment (60 sec)</div>
+    </div>
+    <div class="step-arrow">&#x2192;</div>
+    <div class="step-card" style="border-color: var(--emerald-border);">
+      <div class="step-num" style="background:var(--emerald-dim);color:var(--emerald);">5</div>
+      <div class="step-label">Board + Dashboard</div>
+      <div class="step-desc">Populated, agents allocated, ready to go</div>
+    </div>
+  </div>
+
+  <h3>Redesigned Onboarding Wizard</h3>
+  <p>The key changes from the current 5-step wizard:</p>
+
+  <div class="tab-group">
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab(this, 'gp-step1')">Step 1: Welcome</button>
+      <button class="tab-btn" onclick="switchTab(this, 'gp-step2')">Step 2: Profile</button>
+      <button class="tab-btn" onclick="switchTab(this, 'gp-step3')">Step 3: Your Project</button>
+      <button class="tab-btn" onclick="switchTab(this, 'gp-step4')">Step 4: Your Board</button>
+      <button class="tab-btn" onclick="switchTab(this, 'gp-step5')">Step 5: Connect MCP</button>
+      <button class="tab-btn" onclick="switchTab(this, 'gp-step6')">Step 6: You're Live</button>
+    </div>
+    <div class="tab-panel active" id="gp-step1">
+      <div class="mockup-frame">
+        <div class="mockup-titlebar">
+          <div class="mockup-dot mockup-dot-r"></div>
+          <div class="mockup-dot mockup-dot-y"></div>
+          <div class="mockup-dot mockup-dot-g"></div>
+          <div class="mockup-title">Onboarding — Welcome</div>
+        </div>
+        <div class="mockup-body" style="text-align: center; padding: 2.5rem;">
+          <p style="font-size: 2rem; margin-bottom: 0.25rem;">&#x2728;</p>
+          <h3 style="font-size: 1.5rem; margin-top: 0; color: var(--text);">Welcome to VibeCodes</h3>
+          <p style="max-width: 450px; margin: 0.5rem auto 1.5rem;">Your AI agents become real team members. Describe what you want to build, and we'll set up your board, workflows, and agents automatically.</p>
+          <div style="display: flex; gap: 1rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem;">
+            <div style="background: var(--violet-dim); border: 1px solid var(--violet-border); border-radius: 10px; padding: 1rem; width: 180px;">
+              <div style="font-size: 1.25rem; margin-bottom: 0.3rem;">&#x1f4a1;</div>
+              <div style="font-weight: 700; font-size: 0.85rem; color: var(--text);">Describe your idea</div>
+              <div style="font-size: 0.75rem; color: var(--text-dim);">AI refines your vision</div>
+            </div>
+            <div style="background: var(--emerald-dim); border: 1px solid var(--emerald-border); border-radius: 10px; padding: 1rem; width: 180px;">
+              <div style="font-size: 1.25rem; margin-bottom: 0.3rem;">&#x1f3af;</div>
+              <div style="font-weight: 700; font-size: 0.85rem; color: var(--text);">Get a ready-made board</div>
+              <div style="font-size: 0.75rem; color: var(--text-dim);">Tasks, workflows, agents</div>
+            </div>
+            <div style="background: var(--amber-dim); border: 1px solid var(--amber-border); border-radius: 10px; padding: 1rem; width: 180px;">
+              <div style="font-size: 1.25rem; margin-bottom: 0.3rem;">&#x1f916;</div>
+              <div style="font-weight: 700; font-size: 0.85rem; color: var(--text);">Agents do the work</div>
+              <div style="font-size: 0.75rem; color: var(--text-dim);">Via Claude Code + MCP</div>
+            </div>
+          </div>
+          <button style="background: var(--violet); color: white; border: none; padding: 0.7rem 2rem; border-radius: 8px; font-weight: 700; font-size: 0.95rem; cursor: pointer;">Let's get started</button>
+          <p style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.75rem; cursor: pointer;">Skip for now</p>
+        </div>
+      </div>
+      <p><strong>Change from current:</strong> Value prop card 3 now says "Agents do the work — via Claude Code + MCP" instead of the vague "Agents pick up work autonomously." This sets the expectation that MCP is fundamental.</p>
+    </div>
+    <div class="tab-panel" id="gp-step2">
+      <div class="mockup-frame">
+        <div class="mockup-titlebar">
+          <div class="mockup-dot mockup-dot-r"></div>
+          <div class="mockup-dot mockup-dot-y"></div>
+          <div class="mockup-dot mockup-dot-g"></div>
+          <div class="mockup-title">Onboarding — Profile (unchanged)</div>
+        </div>
+        <div class="mockup-body" style="padding: 2rem;">
+          <p style="color: var(--text); font-weight: 700; font-size: 1.1rem; margin-bottom: 0.3rem;">Quick profile setup</p>
+          <p style="font-size: 0.85rem;">Help others know who you are. Takes 10 seconds.</p>
+          <p style="margin-top: 1rem; color: var(--text-dim); font-style: italic; font-size: 0.85rem;">Same as current — name, bio, GitHub username. No changes needed here.</p>
+        </div>
+      </div>
+    </div>
+    <div class="tab-panel" id="gp-step3">
+      <div class="mockup-frame">
+        <div class="mockup-titlebar">
+          <div class="mockup-dot mockup-dot-r"></div>
+          <div class="mockup-dot mockup-dot-y"></div>
+          <div class="mockup-dot mockup-dot-g"></div>
+          <div class="mockup-title">Onboarding — Your Project (NEW: replaces current Steps 2 + 3)</div>
+        </div>
+        <div class="mockup-body" style="padding: 2rem;">
+          <p style="color: var(--text); font-weight: 700; font-size: 1.1rem; margin-bottom: 0.3rem;">What are you building?</p>
+          <p style="font-size: 0.85rem; margin-bottom: 1rem;">Describe your project and we'll set up everything — agents, workflows, and your board.</p>
+
+          <div style="margin-bottom: 1rem;">
+            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.3rem;">Project name</label>
+            <div style="background: var(--surface-3); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.75rem; font-size: 0.9rem; color: var(--text-dim);">e.g., A recipe sharing app with AI suggestions</div>
+          </div>
+
+          <div style="margin-bottom: 1rem;">
+            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.3rem;">Description <span style="color: var(--text-dim); font-weight: 400;">(optional — AI can help)</span></label>
+            <div style="background: var(--surface-3); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.75rem; font-size: 0.85rem; color: var(--text-dim); min-height: 60px;">What's the idea? Don't overthink it.</div>
+          </div>
+
+          <div style="margin-bottom: 1.25rem;">
+            <label style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.3rem;">What kind of project?</label>
+            <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+              <div style="background: var(--violet-dim); border: 2px solid var(--violet); border-radius: 8px; padding: 0.45rem 0.9rem; font-size: 0.82rem; font-weight: 600; color: var(--violet); cursor: pointer;">&#x1f310; Web App</div>
+              <div style="background: var(--surface-3); border: 2px solid var(--border); border-radius: 8px; padding: 0.45rem 0.9rem; font-size: 0.82rem; color: var(--text-dim); cursor: pointer;">&#x1f4f1; Mobile</div>
+              <div style="background: var(--surface-3); border: 2px solid var(--border); border-radius: 8px; padding: 0.45rem 0.9rem; font-size: 0.82rem; color: var(--text-dim); cursor: pointer;">&#x2699;&#xfe0f; API</div>
+              <div style="background: var(--surface-3); border: 2px solid var(--border); border-radius: 8px; padding: 0.45rem 0.9rem; font-size: 0.82rem; color: var(--text-dim); cursor: pointer;">&#x1f3a8; Design</div>
+              <div style="background: var(--surface-3); border: 2px solid var(--border); border-radius: 8px; padding: 0.45rem 0.9rem; font-size: 0.82rem; color: var(--text-dim); cursor: pointer;">&#x1f916; AI/ML</div>
+              <div style="background: var(--surface-3); border: 2px solid var(--border); border-radius: 8px; padding: 0.45rem 0.9rem; font-size: 0.82rem; color: var(--text-dim); cursor: pointer;">&#x2728; Custom</div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; align-items: center;">
+            <button style="background: var(--violet); color: white; border: none; padding: 0.6rem 1.5rem; border-radius: 8px; font-weight: 700; font-size: 0.9rem; cursor: pointer; flex: 1;">Create &amp; Generate Board &#x2192;</button>
+            <span style="font-size: 0.75rem; color: var(--emerald);">&#x2728; Free AI enhance included</span>
+          </div>
+
+          <p style="font-size: 0.75rem; color: var(--text-dim); text-align: center; margin-top: 0.75rem;">This will create your idea, set up agents from the selected kit, and generate an AI-powered task board.</p>
+        </div>
+      </div>
+      <p><strong>Key change:</strong> Merges "Pick Agent Team" (old Step 2) and "Create Idea" (old Step 3) into one step. The project type selector replaces the featured teams carousel — it's more intuitive because users think in terms of "what am I building" not "which agent team do I want."</p>
+    </div>
+    <div class="tab-panel" id="gp-step4">
+      <div class="mockup-frame">
+        <div class="mockup-titlebar">
+          <div class="mockup-dot mockup-dot-r"></div>
+          <div class="mockup-dot mockup-dot-y"></div>
+          <div class="mockup-dot mockup-dot-g"></div>
+          <div class="mockup-title">Onboarding — Your Board (NEW: auto-generated)</div>
+        </div>
+        <div class="mockup-body" style="padding: 2rem;">
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 0.3rem;">
+            <span style="color: var(--emerald); font-size: 1.25rem;">&#x2713;</span>
+            <p style="color: var(--text); font-weight: 700; font-size: 1.1rem; margin: 0;">Your board is ready!</p>
+          </div>
+          <p style="font-size: 0.85rem; margin-bottom: 1rem;">AI generated 8 tasks with the Web Application workflow. Your agents are allocated and ready to work.</p>
+
+          <div class="board-preview">
+            <div class="board-col">
+              <div class="board-col-header">Backlog <span class="board-col-count">2</span></div>
+              <div class="board-task">
+                <div class="board-task-label" style="background:var(--violet-dim);color:var(--violet);">Feature</div>
+                <div>Set up authentication flow</div>
+              </div>
+              <div class="board-task">
+                <div class="board-task-label" style="background:var(--cyan-dim);color:var(--cyan);">Docs</div>
+                <div>Write API documentation</div>
+              </div>
+            </div>
+            <div class="board-col">
+              <div class="board-col-header">To Do <span class="board-col-count">3</span></div>
+              <div class="board-task">
+                <div class="board-task-label" style="background:var(--violet-dim);color:var(--violet);">Feature</div>
+                <div>Design database schema</div>
+              </div>
+              <div class="board-task">
+                <div class="board-task-label" style="background:var(--violet-dim);color:var(--violet);">Feature</div>
+                <div>Build landing page</div>
+              </div>
+              <div class="board-task">
+                <div class="board-task-label" style="background:var(--blue-dim);color:var(--blue);">Infra</div>
+                <div>Set up CI/CD pipeline</div>
+              </div>
+            </div>
+            <div class="board-col">
+              <div class="board-col-header">In Progress <span class="board-col-count">0</span></div>
+              <div style="text-align: center; padding: 1rem; color: var(--text-dim); font-size: 0.75rem;">Your agents will pick up tasks here</div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem; margin-top: 1rem; flex-wrap: wrap;">
+            <div style="display: flex; align-items: center; gap: 0.35rem; background: var(--emerald-dim); border: 1px solid var(--emerald-border); padding: 0.35rem 0.7rem; border-radius: 6px; font-size: 0.78rem; color: var(--emerald); font-weight: 600;">&#x2713; 5 agents allocated</div>
+            <div style="display: flex; align-items: center; gap: 0.35rem; background: var(--violet-dim); border: 1px solid var(--violet-border); padding: 0.35rem 0.7rem; border-radius: 6px; font-size: 0.78rem; color: var(--violet); font-weight: 600;">&#x2713; Web App workflow applied</div>
+            <div style="display: flex; align-items: center; gap: 0.35rem; background: var(--amber-dim); border: 1px solid var(--amber-border); padding: 0.35rem 0.7rem; border-radius: 6px; font-size: 0.78rem; color: var(--amber); font-weight: 600;">&#x2713; Auto-rules active</div>
+          </div>
+
+          <button style="background: var(--violet); color: white; border: none; padding: 0.6rem 1.5rem; border-radius: 8px; font-weight: 700; font-size: 0.9rem; cursor: pointer; margin-top: 1rem; width: 100%;">Next: Connect Claude Code &#x2192;</button>
+        </div>
+      </div>
+      <p><strong>Key change:</strong> Board generation happens INSIDE onboarding, not as a separate discovery step. Users see their populated board with confirmation badges showing agents are allocated and workflows are active. The only remaining step is MCP connection.</p>
+    </div>
+    <div class="tab-panel" id="gp-step5">
+      <div class="mockup-frame">
+        <div class="mockup-titlebar">
+          <div class="mockup-dot mockup-dot-r"></div>
+          <div class="mockup-dot mockup-dot-y"></div>
+          <div class="mockup-dot mockup-dot-g"></div>
+          <div class="mockup-title">Onboarding — Connect Claude Code (NEW: elevated to core step)</div>
+        </div>
+        <div class="mockup-body" style="padding: 2rem;">
+          <p style="color: var(--text); font-weight: 700; font-size: 1.1rem; margin-bottom: 0.3rem;">Connect Claude Code</p>
+          <p style="font-size: 0.85rem; margin-bottom: 0.5rem;">This is how your AI agents come to life. Claude Code is the orchestrator — it reads your board, picks up tasks, and executes workflow steps through your agents.</p>
+
+          <div style="background: var(--amber-dim); border: 1px solid var(--amber-border); border-radius: 10px; padding: 1rem; margin-bottom: 1rem;">
+            <p style="color: var(--amber); font-weight: 700; font-size: 0.85rem; margin-bottom: 0.25rem;">&#x26a1; Why this matters</p>
+            <p style="font-size: 0.8rem; color: var(--text-muted); margin: 0;">Without this connection, your agents can't work. MCP (Model Context Protocol) lets Claude Code read your board, claim tasks, and complete workflow steps as each agent persona.</p>
+          </div>
+
+          <div class="mcp-terminal">
+            <div><span class="mcp-prompt">$</span> <span class="mcp-cmd">claude mcp add vibecodes <span class="mcp-url">https://vibecodes.co.uk/api/mcp</span></span></div>
+            <div class="mcp-output">&#x279c; Connecting to VibeCodes MCP server...</div>
+            <div class="mcp-output">&#x279c; Opening browser for authentication...</div>
+            <div class="mcp-success">&#x2713; Connected as <span class="mcp-highlight">Nick Ball</span></div>
+            <div class="mcp-success">&#x2713; Board: <span class="mcp-highlight">Recipe Sharing App</span> (8 tasks, 5 agents)</div>
+            <div class="mcp-output"></div>
+            <div class="mcp-output">Try: <span class="mcp-cmd">claude</span> then ask it to <span class="mcp-highlight">"check my board and start working"</span></div>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; margin-top: 1rem; align-items: center;">
+            <button style="background: var(--surface-3); border: 1px solid var(--border); color: var(--text); padding: 0.5rem 0.9rem; border-radius: 8px; font-size: 0.82rem; cursor: pointer; font-weight: 600;">&#x1f4cb; Copy command</button>
+            <span style="color: var(--text-dim); font-size: 0.78rem;">Run this in your terminal where you code</span>
+          </div>
+
+          <div style="margin-top: 1.25rem; padding-top: 1rem; border-top: 1px solid var(--border);">
+            <p style="font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.5rem;">Don't use Claude Code?</p>
+            <p style="font-size: 0.78rem; color: var(--text-dim);">You can still manage your board manually and use workflows from the web UI. But for the full agent-powered experience, Claude Code + MCP is the way to go. <a href="/guide/mcp-integration" style="color: var(--violet);">Learn more</a></p>
+          </div>
+
+          <button style="background: var(--violet); color: white; border: none; padding: 0.6rem 1.5rem; border-radius: 8px; font-weight: 700; font-size: 0.9rem; cursor: pointer; margin-top: 1rem; width: 100%;">I've connected — let's go! &#x2192;</button>
+          <p style="font-size: 0.75rem; color: var(--text-dim); text-align: center; margin-top: 0.5rem; cursor: pointer;">I'll do this later</p>
+        </div>
+      </div>
+      <p><strong>Key change:</strong> MCP connection is now a dedicated, prominent onboarding step — not a footnote on the success screen. It explains WHY (agents need it to work), shows WHAT happens (the terminal output), and provides a clear fallback (manual mode). This directly addresses the user feedback that MCP is fundamental.</p>
+    </div>
+    <div class="tab-panel" id="gp-step6">
+      <div class="mockup-frame">
+        <div class="mockup-titlebar">
+          <div class="mockup-dot mockup-dot-r"></div>
+          <div class="mockup-dot mockup-dot-y"></div>
+          <div class="mockup-dot mockup-dot-g"></div>
+          <div class="mockup-title">Onboarding — You're Live</div>
+        </div>
+        <div class="mockup-body" style="text-align: center; padding: 2.5rem;">
+          <p style="font-size: 2.5rem; margin-bottom: 0.5rem;">&#x1f389;</p>
+          <h3 style="font-size: 1.4rem; margin-top: 0; color: var(--text);">You're all set!</h3>
+          <p style="max-width: 400px; margin: 0.5rem auto 1rem;">Your project is configured and your agents are ready. Here's what you have:</p>
+
+          <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-bottom: 1.5rem;">
+            <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; min-width: 120px;">
+              <div style="font-size: 1.5rem; font-weight: 800; color: var(--violet);">8</div>
+              <div style="font-size: 0.75rem; color: var(--text-dim);">Board tasks</div>
+            </div>
+            <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; min-width: 120px;">
+              <div style="font-size: 1.5rem; font-weight: 800; color: var(--emerald);">5</div>
+              <div style="font-size: 0.75rem; color: var(--text-dim);">AI agents</div>
+            </div>
+            <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; text-align: center; min-width: 120px;">
+              <div style="font-size: 1.5rem; font-weight: 800; color: var(--amber);">1</div>
+              <div style="font-size: 0.75rem; color: var(--text-dim);">Active workflow</div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap;">
+            <button style="background: var(--violet); color: white; border: none; padding: 0.7rem 1.5rem; border-radius: 8px; font-weight: 700; font-size: 0.9rem; cursor: pointer;">Go to your board &#x2192;</button>
+            <button style="background: var(--surface-3); border: 1px solid var(--border); color: var(--text); padding: 0.7rem 1.5rem; border-radius: 8px; font-weight: 600; font-size: 0.9rem; cursor: pointer;">Go to dashboard</button>
+          </div>
+        </div>
+      </div>
+      <p><strong>Key change:</strong> The success screen shows concrete numbers (tasks, agents, workflows) instead of generic "next steps" links. The user can see the tangible result of onboarding before choosing where to go. Primary CTA is "Go to your board" (where the action happens), not "Go to dashboard."</p>
+    </div>
+  </div>
+
+  <div class="rationale">
+    <div class="rationale-label">Competitive Precedent</div>
+    <p><strong>v0/Vercel</strong>: "Prompt = onboarding" — type what you want and the product configures itself. Our "Create &amp; Generate Board" CTA follows this pattern. <strong>Cursor</strong>: Makes the core product work immediately, then layers AI. Our kit selection happens once and configures everything. <strong>Figma</strong>: Action-first — users create artifacts within 60 seconds. Our target: populated board within 3 minutes.</p>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- PROPOSAL 3: MCP FIRST-CLASS -->
+<!-- ============================================ -->
+<section id="p3">
+  <h2><span class="section-tag tag-amber">Proposal 3</span> MCP as First-Class Activation Step</h2>
+  <p class="section-sub">Addresses user feedback: "MCP is fundamental — it's the orchestrator." Elevates MCP connection from an optional footnote to the core activation moment.</p>
+
+  <div class="rationale">
+    <div class="rationale-label">User Feedback</div>
+    <p><strong>"Connecting Claude Code via MCP is absolutely essential — it's the way agents are controlled, it's the orchestrator of the work — it's fundamental."</strong> The current UX treats MCP as an optional afterthought (checklist item marked "OPTIONAL", no detection, hardcoded as incomplete). This proposal makes it central.</p>
+  </div>
+
+  <h3>Changes Required</h3>
+
+  <h4>1. Onboarding: Dedicated MCP step (shown in P2 above)</h4>
+  <p>MCP connection becomes Step 5 of the Golden Path, with explanation of why it matters and what happens when you connect.</p>
+
+  <h4>2. Dashboard: Persistent MCP banner for unconnected users</h4>
+  <div class="mockup-frame">
+    <div class="mockup-titlebar">
+      <div class="mockup-dot mockup-dot-r"></div>
+      <div class="mockup-dot mockup-dot-y"></div>
+      <div class="mockup-dot mockup-dot-g"></div>
+      <div class="mockup-title">Dashboard — MCP Connection Banner</div>
+    </div>
+    <div class="mockup-body">
+      <div class="nudge-banner" style="background: var(--amber-dim); border: 1px solid var(--amber-border);">
+        <div class="nudge-icon">&#x1f4e1;</div>
+        <div class="nudge-content">
+          <div class="nudge-title">Your agents are waiting — connect Claude Code</div>
+          <div class="nudge-desc">You have 5 agents and 8 tasks ready to go, but agents need Claude Code (MCP) to work. Run this command in your terminal:</div>
+          <div class="mcp-terminal" style="margin-top: 0.5rem; padding: 0.6rem 0.75rem; font-size: 0.78rem; border-radius: 6px;">
+            <span class="mcp-prompt">$</span> <span class="mcp-cmd">claude mcp add vibecodes https://vibecodes.co.uk/api/mcp</span>
+          </div>
+        </div>
+        <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+          <button class="nudge-btn" style="background: var(--amber); color: var(--bg);">Copy command</button>
+          <button class="nudge-btn" style="background: transparent; color: var(--text-dim); border: 1px solid var(--border);">Learn more</button>
+        </div>
+      </div>
+      <p style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.3rem;">This banner appears until MCP connection is detected. Shows on dashboard and board pages.</p>
+    </div>
+  </div>
+
+  <h4>3. MCP Connection Detection</h4>
+  <p>Instead of hardcoding <code>done: false</code>, detect MCP connection by checking the <code>mcp_tool_log</code> table for any tool invocations by this user. If any exist, the user has connected successfully.</p>
+  <ul>
+    <li><strong>Query</strong>: <code>SELECT EXISTS(SELECT 1 FROM mcp_tool_log WHERE user_id = $1 LIMIT 1)</code></li>
+    <li><strong>Cache</strong>: Store result on <code>users.mcp_connected_at</code> (new column, set on first MCP tool call)</li>
+    <li><strong>UI impact</strong>: Dashboard banner disappears, checklist step auto-completes, board unlocks agent-powered features</li>
+  </ul>
+
+  <h4>4. Board: Conditional agent-work indicator</h4>
+  <p>On the board page, when MCP is connected, show agent activity indicators (which agent is working on what step). When NOT connected, show a subtle bar: "Your agents need Claude Code to work. <a>Connect now</a>"</p>
+
+  <div class="impact-grid">
+    <div class="impact-card">
+      <div class="impact-label">Activation metric</div>
+      <div class="impact-value" style="color: var(--amber);">MCP</div>
+      <div class="impact-desc">First MCP tool call = user activated</div>
+    </div>
+    <div class="impact-card">
+      <div class="impact-label">Detection method</div>
+      <div class="impact-value" style="color: var(--emerald);">Auto</div>
+      <div class="impact-desc">mcp_tool_log check, no manual confirmation needed</div>
+    </div>
+    <div class="impact-card">
+      <div class="impact-label">Complexity</div>
+      <div class="impact-value" style="color: var(--emerald);">Low</div>
+      <div class="impact-desc">New column + query + UI banner</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- PROPOSAL 4: CONNECTIVE TISSUE -->
+<!-- ============================================ -->
+<section id="p4">
+  <h2><span class="section-tag tag-cyan">Proposal 4</span> Cross-Feature Connective Tissue</h2>
+  <p class="section-sub">Addresses F7, F10, F13, F18, F23, F26, F27 — features that exist in isolation without bridges between them.</p>
+
+  <h3>Principle: Every screen tells you what to do next</h3>
+  <p>Instead of dead-end empty states, every screen should show the logical next action based on the user's current state. This follows Notion's "learn by doing" and Linear's "constraint as teacher" patterns.</p>
+
+  <h3>Contextual Nudge System</h3>
+  <p>A consistent nudge banner component that appears across the app based on state conditions:</p>
+
+  <div class="mockup-frame">
+    <div class="mockup-titlebar">
+      <div class="mockup-dot mockup-dot-r"></div>
+      <div class="mockup-dot mockup-dot-y"></div>
+      <div class="mockup-dot mockup-dot-g"></div>
+      <div class="mockup-title">Contextual Nudge Examples</div>
+    </div>
+    <div class="mockup-body">
+      <p style="font-weight: 700; font-size: 0.85rem; color: var(--text); margin-bottom: 0.5rem;">Board page — tasks exist, no workflows:</p>
+      <div class="nudge-banner" style="background: var(--violet-dim); border: 1px solid var(--violet-border);">
+        <div class="nudge-icon">&#x26a1;</div>
+        <div class="nudge-content">
+          <div class="nudge-title">Automate your tasks with workflows</div>
+          <div class="nudge-desc">Workflows let your agents work on tasks automatically — UX review, implementation, testing, and more. Import a template to get started.</div>
+        </div>
+        <button class="nudge-btn" style="background: var(--violet); color: white;">Set up workflows &#x2192;</button>
+      </div>
+
+      <p style="font-weight: 700; font-size: 0.85rem; color: var(--text); margin-bottom: 0.5rem; margin-top: 1.5rem;">Board page — workflows exist, no agents allocated:</p>
+      <div class="nudge-banner" style="background: var(--emerald-dim); border: 1px solid var(--emerald-border);">
+        <div class="nudge-icon">&#x1f916;</div>
+        <div class="nudge-content">
+          <div class="nudge-title">Your workflows need agents</div>
+          <div class="nudge-desc">You have 3 workflow steps waiting for agents. Add agents to your pool so they can pick up work.</div>
+        </div>
+        <button class="nudge-btn" style="background: var(--emerald); color: white;">Add agents &#x2192;</button>
+      </div>
+
+      <p style="font-weight: 700; font-size: 0.85rem; color: var(--text); margin-bottom: 0.5rem; margin-top: 1.5rem;">Idea detail page — no agents in pool:</p>
+      <div class="nudge-banner" style="background: var(--surface-2); border: 1px solid var(--border);">
+        <div class="nudge-icon">&#x1f4a1;</div>
+        <div class="nudge-content">
+          <div class="nudge-title">Add AI agents to this idea</div>
+          <div class="nudge-desc">Agents can automatically work on your board tasks — reviewing designs, writing code, running tests. <a href="/agents" style="color: var(--violet);">Create agents</a> or <a href="/agents?tab=community" style="color: var(--violet);">browse the community</a>.</div>
+        </div>
+      </div>
+
+      <p style="font-weight: 700; font-size: 0.85rem; color: var(--text); margin-bottom: 0.5rem; margin-top: 1.5rem;">Post AI-generation — tasks created, no workflows:</p>
+      <div class="nudge-banner" style="background: var(--amber-dim); border: 1px solid var(--amber-border);">
+        <div class="nudge-icon">&#x2728;</div>
+        <div class="nudge-content">
+          <div class="nudge-title">Tasks generated! Set up workflows to automate them</div>
+          <div class="nudge-desc">Your 8 tasks are ready. Apply a workflow template so your agents know what to do with each task.</div>
+        </div>
+        <button class="nudge-btn" style="background: var(--amber); color: var(--bg);">Set up workflows &#x2192;</button>
+      </div>
+    </div>
+  </div>
+
+  <h3>Contextual Help Links</h3>
+  <p>Add "?" icon links from every feature to its guide page. This addresses F26 (guide pages never linked from features).</p>
+  <ul>
+    <li><strong>Board page header</strong>: <code>(?)</code> → <code>/guide/kanban-boards</code></li>
+    <li><strong>Workflows tab header</strong>: <code>(?)</code> → <code>/guide/workflows</code></li>
+    <li><strong>Agents tab header</strong>: <code>(?)</code> → <code>/guide/ai-agent-teams</code></li>
+    <li><strong>Discussions section</strong>: <code>(?)</code> → <code>/guide/discussions</code></li>
+    <li><strong>MCP banners</strong>: "Learn more" → <code>/guide/mcp-integration</code></li>
+  </ul>
+
+  <h3>Fix: Agent match warning links to board Agents tab</h3>
+  <p>Currently links to <code>/agents</code> (global hub). Should link to <code>?tab=agents</code> (board's own tab) where the Role Coverage panel and "Add Agent" controls live. This is a one-line fix addressing F23 (critical).</p>
+
+  <div class="impact-grid">
+    <div class="impact-card">
+      <div class="impact-label">Findings addressed</div>
+      <div class="impact-value" style="color: var(--cyan);">7</div>
+      <div class="impact-desc">F7, F10, F13, F18, F23, F26, F27</div>
+    </div>
+    <div class="impact-card">
+      <div class="impact-label">New components</div>
+      <div class="impact-value" style="color: var(--violet);">2</div>
+      <div class="impact-desc">NudgeBanner + HelpLink</div>
+    </div>
+    <div class="impact-card">
+      <div class="impact-label">Complexity</div>
+      <div class="impact-value" style="color: var(--amber);">Medium</div>
+      <div class="impact-desc">State logic for nudge conditions + UI components</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================ -->
+<!-- PROPOSAL 5: FIRST-RUN DASHBOARD -->
+<!-- ============================================ -->
+<section id="p5">
+  <h2><span class="section-tag tag-blue">Proposal 5</span> First-Run Dashboard</h2>
+  <p class="section-sub">Addresses F6 (critical) — replace the empty dashboard with a guided command center for new users.</p>
+
+  <h3>Two Dashboard Modes</h3>
+  <p>Instead of showing the same dashboard layout for everyone (with multiple empty sections), detect the user's state and show the appropriate experience:</p>
+
+  <ul>
+    <li><strong>First-Run Mode</strong> — shown until the user has at least 1 idea with 3+ board tasks</li>
+    <li><strong>Standard Mode</strong> — the current customizable dashboard (shown after activation)</li>
+  </ul>
+
+  <div class="mockup-frame">
+    <div class="mockup-titlebar">
+      <div class="mockup-dot mockup-dot-r"></div>
+      <div class="mockup-dot mockup-dot-y"></div>
+      <div class="mockup-dot mockup-dot-g"></div>
+      <div class="mockup-title">First-Run Dashboard</div>
+    </div>
+    <div class="mockup-body" style="padding: 2rem;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 1.5rem;">
+        <div>
+          <h3 style="font-size: 1.25rem; margin: 0; color: var(--text);">Welcome back, Nick &#x1f44b;</h3>
+          <p style="font-size: 0.85rem; margin: 0.25rem 0 0;">Here's where you are with getting set up.</p>
+        </div>
+        <button style="background: var(--surface-3); border: 1px solid var(--border); color: var(--text-dim); padding: 0.4rem 0.8rem; border-radius: 6px; font-size: 0.78rem; cursor: pointer;">Switch to full dashboard</button>
+      </div>
+
+      <!-- Setup progress -->
+      <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 1.25rem; margin-bottom: 1.5rem;">
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;">
+          <span style="font-weight: 700; font-size: 0.9rem;">Your Setup Progress</span>
+          <span style="font-size: 0.82rem; color: var(--violet); font-weight: 600;">3 of 5 complete</span>
+        </div>
+        <div style="background: var(--surface-3); height: 6px; border-radius: 3px; overflow: hidden; margin-bottom: 1rem;">
+          <div style="background: var(--violet); height: 100%; width: 60%; border-radius: 3px; transition: width 0.5s;"></div>
+        </div>
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 0.5rem;">
+          <div style="text-align: center;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--emerald-dim); border: 2px solid var(--emerald); display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; color: var(--emerald);">&#x2713;</div>
+            <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.25rem;">Account</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--emerald-dim); border: 2px solid var(--emerald); display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; color: var(--emerald);">&#x2713;</div>
+            <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.25rem;">Idea</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--emerald-dim); border: 2px solid var(--emerald); display: inline-flex; align-items: center; justify-content: center; font-size: 0.75rem; color: var(--emerald);">&#x2713;</div>
+            <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.25rem;">Board</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--amber-dim); border: 2px solid var(--amber); display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 800; color: var(--amber);">4</div>
+            <div style="font-size: 0.7rem; color: var(--amber); margin-top: 0.25rem; font-weight: 600;">MCP</div>
+          </div>
+          <div style="text-align: center;">
+            <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--surface-3); border: 2px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 0.8rem; font-weight: 800; color: var(--text-dim);">5</div>
+            <div style="font-size: 0.7rem; color: var(--text-dim); margin-top: 0.25rem;">First task</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Main cards -->
+      <div class="dash-grid">
+        <div>
+          <!-- Your Project -->
+          <div class="dash-card" style="margin-bottom: 1rem;">
+            <div class="dash-card-header">
+              <div class="dash-card-title">&#x1f310; Recipe Sharing App</div>
+              <a class="dash-card-link" href="#">Go to board &#x2192;</a>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 0.75rem;">
+              <div style="background: var(--violet-dim); padding: 0.25rem 0.6rem; border-radius: 5px; font-size: 0.75rem; color: var(--violet); font-weight: 600;">8 tasks</div>
+              <div style="background: var(--emerald-dim); padding: 0.25rem 0.6rem; border-radius: 5px; font-size: 0.75rem; color: var(--emerald); font-weight: 600;">5 agents</div>
+              <div style="background: var(--amber-dim); padding: 0.25rem 0.6rem; border-radius: 5px; font-size: 0.75rem; color: var(--amber); font-weight: 600;">1 workflow</div>
+            </div>
+            <div class="board-preview" style="margin: 0;">
+              <div class="board-col" style="min-width: 140px;">
+                <div class="board-col-header">To Do <span class="board-col-count">5</span></div>
+                <div class="board-task">Design database schema</div>
+                <div class="board-task">Build landing page</div>
+                <div style="font-size: 0.7rem; color: var(--text-dim); padding: 0.2rem;">+3 more</div>
+              </div>
+              <div class="board-col" style="min-width: 140px;">
+                <div class="board-col-header">In Progress <span class="board-col-count">0</span></div>
+                <div style="text-align: center; padding: 0.5rem; color: var(--text-dim); font-size: 0.7rem;">Waiting for MCP</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- MCP CTA -->
+          <div class="dash-card" style="background: var(--amber-dim); border-color: var(--amber-border);">
+            <div class="dash-card-header">
+              <div class="dash-card-title" style="color: var(--amber);">&#x1f4e1; Next: Connect Claude Code</div>
+            </div>
+            <p style="font-size: 0.82rem; margin-bottom: 0.75rem;">Your agents can't work until you connect Claude Code via MCP. Run this command:</p>
+            <div class="mcp-terminal" style="padding: 0.6rem 0.75rem; font-size: 0.78rem; border-radius: 6px;">
+              <span class="mcp-prompt">$</span> <span class="mcp-cmd">claude mcp add vibecodes https://vibecodes.co.uk/api/mcp</span>
+            </div>
+            <button style="background: var(--amber); color: var(--bg); border: none; padding: 0.5rem 1rem; border-radius: 6px; font-weight: 700; font-size: 0.82rem; cursor: pointer; margin-top: 0.75rem;">Copy command</button>
+          </div>
+        </div>
+
+        <div>
+          <!-- Your agents -->
+          <div class="dash-card" style="margin-bottom: 1rem;">
+            <div class="dash-card-header">
+              <div class="dash-card-title">Your Agent Team</div>
+              <a class="dash-card-link" href="#">Manage &#x2192;</a>
+            </div>
+            <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+              <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem;">
+                <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--violet-dim); display: flex; align-items: center; justify-content: center; font-size: 0.7rem;">&#x1f528;</div>
+                <div><div style="font-size: 0.8rem; font-weight: 600; color: var(--text);">Atlas</div><div style="font-size: 0.7rem; color: var(--text-dim);">Full Stack Engineer</div></div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem;">
+                <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--pink); background: rgba(236,72,153,0.12); display: flex; align-items: center; justify-content: center; font-size: 0.7rem;">&#x1f3a8;</div>
+                <div><div style="font-size: 0.8rem; font-weight: 600; color: var(--text);">Compass</div><div style="font-size: 0.7rem; color: var(--text-dim);">UX Designer</div></div>
+              </div>
+              <div style="display: flex; align-items: center; gap: 0.5rem; padding: 0.4rem;">
+                <div style="width: 28px; height: 28px; border-radius: 50%; background: var(--cyan-dim); display: flex; align-items: center; justify-content: center; font-size: 0.7rem;">&#x1f50d;</div>
+                <div><div style="font-size: 0.8rem; font-weight: 600; color: var(--text);">Sentinel</div><div style="font-size: 0.7rem; color: var(--text-dim);">QA Engineer</div></div>
+              </div>
+              <p style="font-size: 0.72rem; color: var(--text-dim); margin: 0.25rem 0 0;">+2 more agents</p>
+            </div>
+          </div>
+
+          <!-- Quick links -->
+          <div class="dash-card">
+            <div class="dash-card-title" style="margin-bottom: 0.5rem;">Quick Links</div>
+            <div style="display: flex; flex-direction: column; gap: 0.3rem;">
+              <a href="#" style="font-size: 0.82rem; color: var(--violet); text-decoration: none; padding: 0.3rem 0;">&#x2192; MCP Integration Guide</a>
+              <a href="#" style="font-size: 0.82rem; color: var(--violet); text-decoration: none; padding: 0.3rem 0;">&#x2192; How Workflows Work</a>
+              <a href="#" style="font-size: 0.82rem; color: var(--violet); text-decoration: none; padding: 0.3rem 0;">&#x2192; Browse Community Agents</a>
+              <a href="#" style="font-size: 0.82rem; color: var(--violet); text-decoration: none; padding: 0.3rem 0;">&#x2192; Invite Collaborators</a>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="rationale">
+    <div class="rationale-label">Design Rationale</div>
+    <p>This replaces the current "wall of empty states" with a focused, state-aware dashboard. Key principles: <strong>Linear's "constraint as teacher"</strong> (only show what's relevant), <strong>Notion's interactive checklist</strong> (progress visualization), and the research finding that <strong>hiding 4 of 5 empty state actions increased activation by 34%</strong>. The first-run dashboard shows only what the user needs NOW, not everything the app can do.</p>
+  </div>
+
+  <div class="impact-grid">
+    <div class="impact-card">
+      <div class="impact-label">Replaces</div>
+      <div class="impact-value" style="color: var(--blue);">3</div>
+      <div class="impact-desc">Empty dashboard + checklist FAB + WelcomeExperience (dead code)</div>
+    </div>
+    <div class="impact-card">
+      <div class="impact-label">Exit criteria</div>
+      <div class="impact-value" style="color: var(--emerald);">3+</div>
+      <div class="impact-desc">Board tasks = switch to standard dashboard</div>
+    </div>
+    <div class="impact-card">
+      <div class="impact-label">Complexity</div>
+      <div class="impact-value" style="color: var(--amber);">Medium</div>
+      <div class="impact-desc">New dashboard variant + state detection logic</div>
+    </div>
+  </div>
+</section>
+
+<!-- Summary -->
+<section style="margin-top: 4rem; padding-top: 2rem; border-top: 1px solid var(--border);">
+  <h2>Implementation Priority</h2>
+  <p class="section-sub">Recommended order based on impact-to-effort ratio and dependency chains.</p>
+
+  <table class="inventory-table" style="margin-top: 1rem;">
+    <thead>
+      <tr>
+        <th>Priority</th>
+        <th>Proposal</th>
+        <th>Effort</th>
+        <th>Impact</th>
+        <th>Dependencies</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><span class="ptc-pill" style="background:var(--rose-dim);color:var(--rose);">1 — Now</span></td>
+        <td style="color: var(--text);">P3: MCP First-Class + quick fixes from P4</td>
+        <td>Low</td>
+        <td>High — fixes critical F23, enables activation tracking</td>
+        <td>None</td>
+      </tr>
+      <tr>
+        <td><span class="ptc-pill" style="background:var(--amber-dim);color:var(--amber);">2 — Next</span></td>
+        <td style="color: var(--text);">P4: Connective Tissue (nudge system)</td>
+        <td>Medium</td>
+        <td>High — addresses 7 findings, no dead ends</td>
+        <td>None</td>
+      </tr>
+      <tr>
+        <td><span class="ptc-pill" style="background:var(--amber-dim);color:var(--amber);">3 — Next</span></td>
+        <td style="color: var(--text);">P5: First-Run Dashboard</td>
+        <td>Medium</td>
+        <td>High — fixes the #1 drop-off point</td>
+        <td>P3 (MCP detection)</td>
+      </tr>
+      <tr>
+        <td><span class="ptc-pill" style="background:var(--cyan-dim);color:var(--cyan);">4 — Then</span></td>
+        <td style="color: var(--text);">P1: Project Kits</td>
+        <td>High</td>
+        <td>Very High — biggest single improvement, addresses 7 findings</td>
+        <td>P4 (nudge system for kit promotion)</td>
+      </tr>
+      <tr>
+        <td><span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">5 — Finally</span></td>
+        <td style="color: var(--text);">P2: Golden Path (onboarding redesign)</td>
+        <td>High</td>
+        <td>Transformative — but most impact for NEW users</td>
+        <td>P1 (kits), P3 (MCP step)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="rationale" style="margin-top: 1.5rem;">
+    <div class="rationale-label">Next Step</div>
+    <p>This step requires human approval. Please review the 5 proposals and let me know which direction to take. Once approved, Step 3 (Create Tasks) will break the approved proposals into implementable board tasks with workflows attached.</p>
+  </div>
+</section>
+
+</div>
+
+<script>
+function selectPT(el) {
+  el.closest('.project-type-grid').querySelectorAll('.project-type-card').forEach(c => c.classList.remove('selected'));
+  el.classList.add('selected');
+}
+
+function switchTab(btn, panelId) {
+  const group = btn.closest('.tab-group');
+  group.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  group.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(panelId).classList.add('active');
+}
+</script>
+
+</body>
+</html>

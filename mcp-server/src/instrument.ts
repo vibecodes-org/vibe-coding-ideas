@@ -18,6 +18,14 @@ export interface ToolLogEntry {
 type LogFn = (entry: ToolLogEntry) => void;
 
 /**
+ * Optional callback to mark a user's first MCP connection.
+ * Called with the owner user ID (the real human, not the bot identity)
+ * after each successful tool call. Implementations should be idempotent
+ * (only set mcp_connected_at when it's currently NULL).
+ */
+type McpConnectFn = (ownerUserId: string) => void;
+
+/**
  * Extract idea_id from tool arguments if present.
  * Most VibeCodes MCP tools accept idea_id as a parameter.
  */
@@ -36,12 +44,14 @@ function extractIdeaId(args: Record<string, unknown>): string | null {
  * @param getContext Function to get the current McpContext (for user identity)
  * @param logFn Fire-and-forget logging function
  * @param mode "stdio" or "remote"
+ * @param mcpConnectFn Optional callback to mark first MCP connection for the owner user
  */
 export function instrumentServer(
   server: AnyMcpServer,
   getContext: (extra: ServerExtra) => McpContext | Promise<McpContext>,
   logFn: LogFn,
-  mode: "stdio" | "remote"
+  mode: "stdio" | "remote",
+  mcpConnectFn?: McpConnectFn
 ): AnyMcpServer {
   const originalTool = server.tool.bind(server);
 
@@ -93,6 +103,16 @@ export function instrumentServer(
               });
             } catch {
               // Never let logging break tool execution
+            }
+
+            // Fire-and-forget: mark first MCP connection for the owner user
+            if (mcpConnectFn) {
+              const ownerId = ctx.ownerUserId ?? ctx.userId;
+              try {
+                mcpConnectFn(ownerId);
+              } catch {
+                // Never let connection tracking break tool execution
+              }
             }
           }
 

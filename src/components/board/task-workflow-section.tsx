@@ -448,7 +448,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
               matching agent:{" "}
               {unmatchedSteps.map((s) => s.agent_role).join(", ")}.
               Allocate agents with matching roles from the{" "}
-              <Link href="/agents" className="underline hover:text-amber-300">Agents Hub</Link>.
+              <Link href="?tab=agents" className="underline hover:text-amber-300">Agents tab</Link>.
             </p>
           </div>
         )}

@@ -27,6 +27,7 @@ interface OnboardingChecklistProps {
   hasProfile: boolean;
   hasIdea: boolean;
   hasAgent: boolean;
+  hasMcpConnection: boolean;
 }
 
 const DISMISS_KEY = "onboarding-checklist-dismissed";
@@ -35,6 +36,7 @@ export function OnboardingChecklist({
   hasProfile,
   hasIdea,
   hasAgent,
+  hasMcpConnection,
 }: OnboardingChecklistProps) {
   const [expanded, setExpanded] = useState(false);
   const [dismissed, setDismissed] = useState(false);
@@ -85,10 +87,9 @@ export function OnboardingChecklist({
     {
       key: "mcp",
       label: "Connect Claude Code",
-      done: false,
+      done: hasMcpConnection,
       href: "/guide/mcp-integration",
       icon: Cable,
-      optional: true,
     },
   ];
 

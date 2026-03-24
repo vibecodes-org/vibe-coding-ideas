@@ -40,7 +40,17 @@ const instrumentedServer = instrumentServer(server, getContext, (entry) => {
     .then(({ error }) => {
       if (error) console.error("[MCP Tool Log] Insert failed:", error.message);
     });
-}, "stdio");
+}, "stdio", (ownerUserId) => {
+  // Fire-and-forget: mark first MCP connection (idempotent — only sets when NULL)
+  supabase
+    .from("users")
+    .update({ mcp_connected_at: new Date().toISOString() })
+    .eq("id", ownerUserId)
+    .is("mcp_connected_at", null)
+    .then(({ error }) => {
+      if (error) console.error("[MCP Connect] Update failed:", error.message);
+    });
+});
 
 registerTools(instrumentedServer, getContext, setActiveBotId);
 

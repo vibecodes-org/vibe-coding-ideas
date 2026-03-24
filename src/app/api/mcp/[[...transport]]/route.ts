@@ -35,7 +35,18 @@ const handler = createMcpHandler(
             if (error) logger.error("MCP tool log insert failed", { error: error.message });
           });
       },
-      "remote"
+      "remote",
+      (ownerUserId) => {
+        // Fire-and-forget: mark first MCP connection (idempotent — only sets when NULL)
+        serviceClient
+          .from("users")
+          .update({ mcp_connected_at: new Date().toISOString() })
+          .eq("id", ownerUserId)
+          .is("mcp_connected_at", null)
+          .then(({ error }) => {
+            if (error) logger.error("MCP connect update failed", { error: error.message });
+          });
+      }
     );
 
     registerTools(

@@ -1,0 +1,1286 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VibeCodes UX Audit Report — Compass (UX Designer)</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --surface: #12121a;
+    --surface-2: #1a1a26;
+    --surface-3: #22222f;
+    --border: #2a2a3a;
+    --text: #e4e4ed;
+    --text-muted: #8888a0;
+    --text-dim: #5a5a72;
+    --accent: #a78bfa;
+    --accent-bg: rgba(167, 139, 250, 0.08);
+    --emerald: #34d399;
+    --emerald-bg: rgba(52, 211, 153, 0.08);
+    --amber: #fbbf24;
+    --amber-bg: rgba(251, 191, 36, 0.08);
+    --rose: #fb7185;
+    --rose-bg: rgba(251, 113, 133, 0.08);
+    --cyan: #22d3ee;
+    --cyan-bg: rgba(34, 211, 238, 0.08);
+    --pink: #f472b6;
+    --pink-bg: rgba(244, 114, 182, 0.08);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.7;
+    padding: 0;
+  }
+
+  /* Header */
+  .hero {
+    background: linear-gradient(135deg, #1a1028 0%, #0f1a2e 50%, #0a1a1a 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 4rem 2rem 3rem;
+  }
+  .hero-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--accent-bg);
+    border: 1px solid rgba(167, 139, 250, 0.2);
+    border-radius: 999px;
+    padding: 0.35rem 1rem;
+    font-size: 0.8rem;
+    color: var(--accent);
+    font-weight: 600;
+    letter-spacing: 0.03em;
+    margin-bottom: 1.5rem;
+  }
+  .hero h1 {
+    font-size: 2.5rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    line-height: 1.2;
+    margin-bottom: 0.75rem;
+    background: linear-gradient(135deg, #e4e4ed 30%, #a78bfa 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .hero p {
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    max-width: 700px;
+  }
+  .hero-meta {
+    margin-top: 1.5rem;
+    display: flex;
+    gap: 2rem;
+    flex-wrap: wrap;
+    font-size: 0.85rem;
+    color: var(--text-dim);
+  }
+  .hero-meta span { display: flex; align-items: center; gap: 0.4rem; }
+
+  /* Layout */
+  .container {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 2rem;
+  }
+
+  /* Navigation */
+  .toc {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem 2rem;
+    margin-bottom: 3rem;
+  }
+  .toc h2 {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    margin-bottom: 1rem;
+  }
+  .toc-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.5rem;
+  }
+  .toc a {
+    color: var(--text-muted);
+    text-decoration: none;
+    padding: 0.4rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    transition: all 0.15s;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+  .toc a:hover {
+    background: var(--surface-2);
+    color: var(--text);
+  }
+  .toc a .num {
+    color: var(--accent);
+    font-weight: 700;
+    font-size: 0.8rem;
+    min-width: 1.5rem;
+  }
+
+  /* Sections */
+  section {
+    margin-bottom: 3.5rem;
+  }
+  section > h2 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    margin-bottom: 0.5rem;
+    padding-bottom: 0.75rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  section > h2 .section-num {
+    background: var(--accent-bg);
+    color: var(--accent);
+    font-size: 0.8rem;
+    font-weight: 800;
+    padding: 0.25rem 0.65rem;
+    border-radius: 6px;
+    letter-spacing: 0.02em;
+  }
+  section > p.section-intro {
+    color: var(--text-muted);
+    margin-bottom: 1.5rem;
+    font-size: 0.95rem;
+  }
+
+  h3 {
+    font-size: 1.15rem;
+    font-weight: 700;
+    margin-top: 2rem;
+    margin-bottom: 0.75rem;
+    color: var(--text);
+  }
+  h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    margin-top: 1.25rem;
+    margin-bottom: 0.5rem;
+    color: var(--text-muted);
+  }
+  p { margin-bottom: 0.75rem; }
+
+  /* Cards */
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+  }
+  .card-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.75rem;
+  }
+  .card-icon {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+  }
+  .card-title {
+    font-weight: 700;
+    font-size: 1rem;
+  }
+
+  /* Severity badges */
+  .severity {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.75rem;
+    font-weight: 700;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    letter-spacing: 0.02em;
+  }
+  .severity-critical {
+    background: var(--rose-bg);
+    color: var(--rose);
+    border: 1px solid rgba(251, 113, 133, 0.2);
+  }
+  .severity-high {
+    background: var(--amber-bg);
+    color: var(--amber);
+    border: 1px solid rgba(251, 191, 36, 0.2);
+  }
+  .severity-medium {
+    background: var(--cyan-bg);
+    color: var(--cyan);
+    border: 1px solid rgba(34, 211, 238, 0.2);
+  }
+  .severity-low {
+    background: var(--surface-2);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+
+  /* Finding cards */
+  .finding {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 0.75rem;
+    border-left: 3px solid var(--border);
+  }
+  .finding-critical { border-left-color: var(--rose); }
+  .finding-high { border-left-color: var(--amber); }
+  .finding-medium { border-left-color: var(--cyan); }
+  .finding-low { border-left-color: var(--text-dim); }
+
+  .finding-header {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+    flex-wrap: wrap;
+  }
+  .finding-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+  }
+  .finding-area {
+    font-size: 0.75rem;
+    color: var(--text-dim);
+    background: var(--surface-3);
+    padding: 0.15rem 0.5rem;
+    border-radius: 4px;
+  }
+  .finding p {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 0.4rem;
+  }
+  .finding .recommendation {
+    color: var(--emerald);
+    font-size: 0.85rem;
+    margin-top: 0.5rem;
+  }
+  .finding .recommendation::before {
+    content: "→ ";
+    font-weight: 700;
+  }
+  .finding code {
+    font-size: 0.8rem;
+    background: var(--surface-3);
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    color: var(--accent);
+  }
+
+  /* Journey map */
+  .journey {
+    display: grid;
+    gap: 0;
+    margin: 1.5rem 0;
+  }
+  .journey-step {
+    display: grid;
+    grid-template-columns: 48px 1fr;
+    gap: 0;
+  }
+  .journey-marker {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .journey-dot {
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 800;
+    font-size: 0.75rem;
+    flex-shrink: 0;
+    border: 2px solid;
+  }
+  .journey-line {
+    width: 2px;
+    flex: 1;
+    min-height: 16px;
+  }
+  .journey-content {
+    padding: 0.25rem 0 1.5rem 1rem;
+  }
+  .journey-title {
+    font-weight: 700;
+    font-size: 0.95rem;
+    margin-bottom: 0.25rem;
+  }
+  .journey-desc {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+  }
+  .journey-verdict {
+    font-size: 0.8rem;
+    margin-top: 0.4rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 6px;
+    display: inline-block;
+  }
+  .verdict-good {
+    background: var(--emerald-bg);
+    color: var(--emerald);
+    border: 1px solid rgba(52, 211, 153, 0.15);
+  }
+  .verdict-concern {
+    background: var(--amber-bg);
+    color: var(--amber);
+    border: 1px solid rgba(251, 191, 36, 0.15);
+  }
+  .verdict-gap {
+    background: var(--rose-bg);
+    color: var(--rose);
+    border: 1px solid rgba(251, 113, 133, 0.15);
+  }
+
+  .j-good .journey-dot { background: var(--emerald-bg); color: var(--emerald); border-color: rgba(52, 211, 153, 0.3); }
+  .j-good .journey-line { background: rgba(52, 211, 153, 0.2); }
+  .j-concern .journey-dot { background: var(--amber-bg); color: var(--amber); border-color: rgba(251, 191, 36, 0.3); }
+  .j-concern .journey-line { background: rgba(251, 191, 36, 0.2); }
+  .j-gap .journey-dot { background: var(--rose-bg); color: var(--rose); border-color: rgba(251, 113, 133, 0.3); }
+  .j-gap .journey-line { background: rgba(251, 113, 133, 0.2); }
+
+  /* Stats grid */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1rem;
+    margin: 1.5rem 0;
+  }
+  .stat-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 1.25rem;
+    text-align: center;
+  }
+  .stat-number {
+    font-size: 2rem;
+    font-weight: 800;
+    line-height: 1;
+    margin-bottom: 0.25rem;
+  }
+  .stat-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  /* Inventory table */
+  .inventory-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 1rem 0;
+    font-size: 0.85rem;
+  }
+  .inventory-table th {
+    text-align: left;
+    padding: 0.6rem 1rem;
+    background: var(--surface-2);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid var(--border);
+  }
+  .inventory-table td {
+    padding: 0.6rem 1rem;
+    border-bottom: 1px solid rgba(42, 42, 58, 0.5);
+    color: var(--text-muted);
+  }
+  .inventory-table tr:hover td {
+    background: var(--surface);
+  }
+  .inventory-table td:first-child {
+    color: var(--text);
+    font-weight: 600;
+  }
+
+  /* Pill tags */
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+  }
+  .pill-violet { background: var(--accent-bg); color: var(--accent); }
+  .pill-emerald { background: var(--emerald-bg); color: var(--emerald); }
+  .pill-amber { background: var(--amber-bg); color: var(--amber); }
+  .pill-rose { background: var(--rose-bg); color: var(--rose); }
+  .pill-cyan { background: var(--cyan-bg); color: var(--cyan); }
+  .pill-pink { background: var(--pink-bg); color: var(--pink); }
+
+  /* Callout */
+  .callout {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin: 1.5rem 0;
+    display: flex;
+    gap: 1rem;
+    align-items: flex-start;
+  }
+  .callout-icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+    margin-top: 0.1rem;
+  }
+  .callout-content h4 {
+    margin-top: 0;
+    margin-bottom: 0.3rem;
+    font-size: 0.9rem;
+    color: var(--text);
+  }
+  .callout-content p {
+    font-size: 0.85rem;
+    color: var(--text-muted);
+    margin-bottom: 0;
+  }
+
+  /* Lists */
+  ul, ol { padding-left: 1.5rem; margin-bottom: 0.75rem; }
+  li { margin-bottom: 0.35rem; color: var(--text-muted); font-size: 0.9rem; }
+  li strong { color: var(--text); }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .hero { padding: 2rem 1rem; }
+    .hero h1 { font-size: 1.75rem; }
+    .container { padding: 1rem; }
+    .toc-grid { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+    .hero-meta { gap: 1rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- Hero -->
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge">&#x1f9ed; UX Audit Report</div>
+    <h1>VibeCodes Comprehensive UX Audit</h1>
+    <p>A full review of the user journey from signup through productive use — identifying friction points, coherence gaps, and opportunities to make VibeCodes self-explanatory for new users.</p>
+    <div class="hero-meta">
+      <span>&#x1f916; Compass (UX Designer)</span>
+      <span>&#x1f4c5; 23 March 2026</span>
+      <span>&#x1f50d; 28 findings across 7 areas</span>
+      <span>&#x1f534; 5 critical &middot; &#x1f7e0; 8 high &middot; &#x1f535; 10 medium &middot; &#x26aa; 5 low</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- TOC -->
+<nav class="toc">
+  <h2>Contents</h2>
+  <div class="toc-grid">
+    <a href="#executive"><span class="num">1</span> Executive Summary</a>
+    <a href="#journey"><span class="num">2</span> User Journey Map</a>
+    <a href="#onboarding"><span class="num">3</span> Onboarding Flow</a>
+    <a href="#dashboard"><span class="num">4</span> Dashboard &amp; First-Run</a>
+    <a href="#ideas"><span class="num">5</span> Idea Detail &amp; Discovery</a>
+    <a href="#board"><span class="num">6</span> Board, Tasks &amp; AI Generation</a>
+    <a href="#workflows"><span class="num">7</span> Workflows &amp; Auto-Rules</a>
+    <a href="#agents"><span class="num">8</span> Agents &amp; Teams</a>
+    <a href="#guidance"><span class="num">9</span> Help, Nudges &amp; Guidance</a>
+    <a href="#inventory"><span class="num">10</span> Nudge &amp; Empty State Inventory</a>
+    <a href="#priorities"><span class="num">11</span> Prioritised Findings</a>
+    <a href="#recommendations"><span class="num">12</span> Strategic Recommendations</a>
+  </div>
+</nav>
+
+<!-- 1. Executive Summary -->
+<section id="executive">
+  <h2><span class="section-num">1</span> Executive Summary</h2>
+  <p class="section-intro">VibeCodes has powerful features — AI task generation, multi-agent workflows, collaborative boards — but the user journey from signup to productive use has critical coherence gaps that leave new users stranded.</p>
+
+  <div class="stats-grid">
+    <div class="stat-card">
+      <div class="stat-number" style="color: var(--rose)">5</div>
+      <div class="stat-label">Critical Issues</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" style="color: var(--amber)">8</div>
+      <div class="stat-label">High Priority</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" style="color: var(--cyan)">10</div>
+      <div class="stat-label">Medium Priority</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-number" style="color: var(--text-dim)">5</div>
+      <div class="stat-label">Low Priority</div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <div class="callout-icon">&#x1f3af;</div>
+    <div class="callout-content">
+      <h4>The Core Problem</h4>
+      <p>VibeCodes has <strong>three powerful systems</strong> (Agents, Workflows, Boards) that work brilliantly together — but users encounter them as <strong>three separate islands</strong> with no clear bridge between them. A new user creates an idea, lands on an empty board, and has no guidance connecting them to agents or workflows. The app never tells them: <em>"Here's the complete picture of how this all works together."</em></p>
+    </div>
+  </div>
+
+  <h3>Key Themes</h3>
+  <ul>
+    <li><strong>The "Empty Board Cliff"</strong> — After onboarding, users land on an empty board with no tasks. The AI Generate button exists but isn't automatically prompted. Users who dismiss the empty state see bare columns with no idea what to do.</li>
+    <li><strong>Agent-Workflow Disconnect</strong> — Agents and workflows are deeply connected (agents execute workflow steps) but the UI treats them as separate features. Users can create workflows without agents, create agents without ideas, and never learn how they connect.</li>
+    <li><strong>Progressive Disclosure Gaps</strong> — The app has good empty states individually, but they don't chain together. After completing one action, there's rarely a "next step" nudge pointing to the logical follow-up.</li>
+    <li><strong>Concept Overload</strong> — New users encounter Ideas, Boards, Columns, Tasks, Labels, Workflows, Templates, Auto-Rules, Agents, Roles, Teams, and MCP within their first session. No explanation builds up this mental model incrementally.</li>
+    <li><strong>Help Content is Orphaned</strong> — 9 guide pages exist at <code>/guide</code> but are never linked from the features they describe. No contextual "?" or "Learn more" links.</li>
+  </ul>
+</section>
+
+<!-- 2. User Journey Map -->
+<section id="journey">
+  <h2><span class="section-num">2</span> New User Journey Map</h2>
+  <p class="section-intro">Walking through the complete first-time user experience, from signup to (hopefully) productive board use.</p>
+
+  <div class="journey">
+    <div class="journey-step j-good">
+      <div class="journey-marker"><div class="journey-dot">1</div><div class="journey-line"></div></div>
+      <div class="journey-content">
+        <div class="journey-title">Signup</div>
+        <div class="journey-desc">OAuth (GitHub/Google) or email/password. Clean form, Turnstile CAPTCHA. Redirects to /dashboard.</div>
+        <div class="journey-verdict verdict-good">&#x2713; Works well — standard, fast signup</div>
+      </div>
+    </div>
+
+    <div class="journey-step j-good">
+      <div class="journey-marker"><div class="journey-dot">2</div><div class="journey-line"></div></div>
+      <div class="journey-content">
+        <div class="journey-title">Onboarding Wizard (5 steps)</div>
+        <div class="journey-desc">Non-dismissable modal: Welcome &rarr; Profile &rarr; Pick Agent Team &rarr; Create Idea (with free AI enhance) &rarr; Success with next steps.</div>
+        <div class="journey-verdict verdict-good">&#x2713; Well-designed — skippable steps, clear CTAs, good visual design</div>
+      </div>
+    </div>
+
+    <div class="journey-step j-concern">
+      <div class="journey-marker"><div class="journey-dot">3</div><div class="journey-line"></div></div>
+      <div class="journey-content">
+        <div class="journey-title">Land on Dashboard</div>
+        <div class="journey-desc">Stats cards (mostly zeros), empty Active Boards, empty My Tasks, single idea card. Onboarding checklist FAB in corner.</div>
+        <div class="journey-verdict verdict-concern">&#x26a0; Underwhelming — lots of empty sections, no "what to do next" guidance</div>
+      </div>
+    </div>
+
+    <div class="journey-step j-gap">
+      <div class="journey-marker"><div class="journey-dot">4</div><div class="journey-line"></div></div>
+      <div class="journey-content">
+        <div class="journey-title">Navigate to Board</div>
+        <div class="journey-desc">User must find and click the small "Board" button on the idea detail page, or click "View your board" from onboarding success. Arrives at empty board.</div>
+        <div class="journey-verdict verdict-gap">&#x2717; Gap — no automatic navigation to board after idea creation. Dashboard doesn't prominently surface the board.</div>
+      </div>
+    </div>
+
+    <div class="journey-step j-concern">
+      <div class="journey-marker"><div class="journey-dot">5</div><div class="journey-line"></div></div>
+      <div class="journey-content">
+        <div class="journey-title">Empty Board Experience</div>
+        <div class="journey-desc">AI Generate button is prominent. Two nudge cards for Agents and Workflows tabs. "Manual" option is a tiny text link.</div>
+        <div class="journey-verdict verdict-concern">&#x26a0; Decent but one-shot — if user dismisses, they see bare columns with no re-entry guidance</div>
+      </div>
+    </div>
+
+    <div class="journey-step j-gap">
+      <div class="journey-marker"><div class="journey-dot">6</div><div class="journey-line"></div></div>
+      <div class="journey-content">
+        <div class="journey-title">AI Generate Tasks</div>
+        <div class="journey-desc">Good multi-phase dialog: configure &rarr; preview &rarr; insert. But no automatic suggestion to apply workflows or assign agents after generation.</div>
+        <div class="journey-verdict verdict-gap">&#x2717; Cliff — tasks are created but have no workflows. No post-generation nudge.</div>
+      </div>
+    </div>
+
+    <div class="journey-step j-gap">
+      <div class="journey-marker"><div class="journey-dot">7</div><div class="journey-line"></div></div>
+      <div class="journey-content">
+        <div class="journey-title">Discover Workflows &amp; Agents</div>
+        <div class="journey-desc">User must independently navigate to Workflows tab, understand templates, create or import one, then go to Agents tab, allocate agents, then apply workflows to tasks.</div>
+        <div class="journey-verdict verdict-gap">&#x2717; Major gap — no guided path connecting these steps. Users who don't explore tabs will never find this.</div>
+      </div>
+    </div>
+
+    <div class="journey-step j-gap">
+      <div class="journey-marker"><div class="journey-dot">8</div><div class="journey-line"></div></div>
+      <div class="journey-content">
+        <div class="journey-title">Connect MCP / Claude Code</div>
+        <div class="journey-desc">Mentioned in onboarding success screen and checklist. Copy command provided. But the purpose isn't explained well — why does this matter?</div>
+        <div class="journey-verdict verdict-gap">&#x2717; Gap — "Connect Claude Code" is a step without context. Users who don't use Claude Code are confused; users who do need more explanation.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- 3. Onboarding -->
+<section id="onboarding">
+  <h2><span class="section-num">3</span> Onboarding Flow</h2>
+  <p class="section-intro">The 5-step wizard in <code>src/components/onboarding/onboarding-dialog.tsx</code> is the strongest part of the new-user experience, but has key gaps.</p>
+
+  <h3>What Works Well</h3>
+  <ul>
+    <li><strong>Non-dismissable but skippable</strong> — ensures users see the onboarding without forcing completion of every step</li>
+    <li><strong>Free AI enhance</strong> — lowers the barrier to trying AI features during idea creation, clearly labelled "Free"</li>
+    <li><strong>Agent team quick-start</strong> — featured teams give users functional agents immediately without understanding the agent system</li>
+    <li><strong>Visual polish</strong> — gradient accents, animated step indicator, confetti on completion</li>
+    <li><strong>Value proposition cards</strong> on Step 0 quickly communicate what the app does</li>
+  </ul>
+
+  <h3>Findings</h3>
+
+  <div class="finding finding-high">
+    <div class="finding-header">
+      <span class="severity severity-high">HIGH</span>
+      <span class="finding-title">F1: Post-onboarding "View your board" leads to empty board</span>
+      <span class="finding-area">Onboarding &rarr; Board</span>
+    </div>
+    <p>The success screen's primary CTA is "View your board" but the board is empty. Users who created an idea but didn't generate tasks land on a blank board with no explanation of what happened to their idea. The jump from "idea created with a description" to "empty kanban board" is jarring.</p>
+    <p class="recommendation">Auto-trigger AI task generation when the user clicks "View your board" after creating an idea in onboarding, or add an interstitial asking "Would you like AI to generate tasks from your idea?"</p>
+  </div>
+
+  <div class="finding finding-medium">
+    <div class="finding-header">
+      <span class="severity severity-medium">MEDIUM</span>
+      <span class="finding-title">F2: Agent team step doesn't explain why agents matter</span>
+      <span class="finding-area">Onboarding Step 2</span>
+    </div>
+    <p>Step 2 says "Start with a pre-built team of AI agents. You can customise them later." but doesn't explain what agents actually DO. Users unfamiliar with AI agent concepts may skip this step because the value isn't clear, then miss the entire agent system.</p>
+    <p class="recommendation">Add a brief explanation: "AI agents can automatically work on your tasks — reviewing code, writing tests, designing UX. Pick a team to get started." Show a micro-animation of an agent picking up and completing a task.</p>
+  </div>
+
+  <div class="finding finding-medium">
+    <div class="finding-header">
+      <span class="severity severity-medium">MEDIUM</span>
+      <span class="finding-title">F3: No idea visibility choice during onboarding</span>
+      <span class="finding-area">Onboarding Step 3</span>
+    </div>
+    <p>Ideas created during onboarding are hardcoded as <code>visibility: "public"</code>. Users working on sensitive projects have no option to create a private idea during onboarding, potentially discouraging them from describing their idea in detail.</p>
+    <p class="recommendation">Add a visibility toggle (public/private) to the idea creation step with a brief explanation of what each means.</p>
+  </div>
+
+  <div class="finding finding-low">
+    <div class="finding-header">
+      <span class="severity severity-low">LOW</span>
+      <span class="finding-title">F4: Tag suggestions are limited and hardcoded</span>
+      <span class="finding-area">Onboarding Step 3</span>
+    </div>
+    <p>Only 6 tags are suggested (ai, web, mobile, tool, game, automation) with no option to type custom tags. Users building something that doesn't fit these categories (e.g., data science, IoT, education) have no way to categorize their idea during onboarding.</p>
+    <p class="recommendation">Add a text input for custom tags alongside the suggested pills, or expand suggestions based on popular community tags.</p>
+  </div>
+
+  <div class="finding finding-low">
+    <div class="finding-header">
+      <span class="severity severity-low">LOW</span>
+      <span class="finding-title">F5: Dead code — WelcomeExperience can never render</span>
+      <span class="finding-area">Dashboard</span>
+    </div>
+    <p>In <code>dashboard/page.tsx</code>, the <code>WelcomeExperience</code> component's condition (<code>!onboardingCompleted && ideasCount === 0 && collaborationsCount === 0</code>) is identical to <code>isNewUser</code>, which is checked first in the ternary. The WelcomeExperience branch is unreachable.</p>
+    <p class="recommendation">Remove the dead code branch or differentiate the conditions (e.g., WelcomeExperience for returning users who somehow bypassed onboarding).</p>
+  </div>
+</section>
+
+<!-- 4. Dashboard -->
+<section id="dashboard">
+  <h2><span class="section-num">4</span> Dashboard &amp; First-Run Experience</h2>
+  <p class="section-intro">The dashboard at <code>src/app/(main)/dashboard/page.tsx</code> is the user's home base but provides minimal guidance for new users.</p>
+
+  <div class="finding finding-critical">
+    <div class="finding-header">
+      <span class="severity severity-critical">CRITICAL</span>
+      <span class="finding-title">F6: Post-onboarding dashboard is a wall of empty states</span>
+      <span class="finding-area">Dashboard</span>
+    </div>
+    <p>After completing onboarding (even with an idea created), the dashboard shows: 4 stat cards (mostly zeros), empty Active Boards, empty My Tasks, a single idea in My Ideas, empty Collaborations, empty Activity. The onboarding checklist FAB is a small floating button in the corner — easy to miss. There is no prominent "What to do next" guidance.</p>
+    <p>The user's first impression after the polished onboarding wizard is a mostly-empty page with no clear next action. This is the highest-risk moment for user drop-off.</p>
+    <p class="recommendation">Replace the empty dashboard for new users (first 24 hours or until they have board tasks) with a <strong>guided first-run dashboard</strong> that prominently shows: (1) their idea with a "Generate Board" CTA, (2) their agent team with a "View Agents" link, (3) a 3-step visual showing "Create Idea → Generate Board → Agents Work on Tasks". Only switch to the standard dashboard once the user has board tasks.</p>
+  </div>
+
+  <div class="finding finding-high">
+    <div class="finding-header">
+      <span class="severity severity-high">HIGH</span>
+      <span class="finding-title">F7: Conditionally hidden sections prevent feature discovery</span>
+      <span class="finding-area">Dashboard</span>
+    </div>
+    <p>My Agents, Active Discussions, and Active Boards sections are completely hidden when empty. New users never learn these features exist from the dashboard. The sections only appear when the user has already engaged with the feature through another path.</p>
+    <p class="recommendation">Show all sections with contextual empty states that include a brief explanation + CTA. E.g., "Active Discussions — Plan features with your team before building" with a "Start a Discussion" button, rather than hiding the entire section.</p>
+  </div>
+
+  <div class="finding finding-medium">
+    <div class="finding-header">
+      <span class="severity severity-medium">MEDIUM</span>
+      <span class="finding-title">F8: Onboarding checklist "Connect Claude Code" can never complete</span>
+      <span class="finding-area">Dashboard Checklist</span>
+    </div>
+    <p>The checklist step for "Connect Claude Code" is hardcoded as <code>done: false</code> with no detection mechanism. Users who complete all other steps still see "1 remaining" on the checklist badge. The checklist FAB remains visible indefinitely (unless manually dismissed), creating a permanent sense of incompleteness.</p>
+    <p class="recommendation">Either detect MCP connection (e.g., check if the user's MCP client has made any API calls) or mark the step as complete once dismissed/viewed, or remove it from the required steps and show it as an optional "Pro tip" instead.</p>
+  </div>
+</section>
+
+<!-- 5. Idea Detail -->
+<section id="ideas">
+  <h2><span class="section-num">5</span> Idea Detail &amp; Discovery</h2>
+  <p class="section-intro">The idea detail page at <code>src/app/(main)/ideas/[id]/page.tsx</code> is the hub connecting all features, but the connections aren't visible enough.</p>
+
+  <div class="finding finding-critical">
+    <div class="finding-header">
+      <span class="severity severity-critical">CRITICAL</span>
+      <span class="finding-title">F9: No "Getting Started" guidance on a new idea page</span>
+      <span class="finding-area">Idea Detail</span>
+    </div>
+    <p>A newly created idea with no description, no agents, no discussions, and no board tasks shows a sparse page. There's no suggested workflow like "1. Flesh out your description, 2. Add agents, 3. Generate a board." The user has to already know what to do.</p>
+    <p>The "Board" button — the most important navigation for active projects — is a small outline button with minimal visual weight, easily overlooked between the hero card and discussions section.</p>
+    <p class="recommendation">For ideas with no board tasks, show a prominent "Getting Started" card below the hero with a visual 3-step flow: "Describe your idea → Add AI agents → Generate your board." Make the Board button larger and more prominent, or auto-redirect to the board for new ideas.</p>
+  </div>
+
+  <div class="finding finding-high">
+    <div class="finding-header">
+      <span class="severity severity-high">HIGH</span>
+      <span class="finding-title">F10: Agent section is invisible when empty for team members</span>
+      <span class="finding-area">Idea Detail — Agents</span>
+    </div>
+    <p>The Agents metadata strip shows the "+" button when the user has unallocated bots, but if the user has zero bots, there's no indication that agents exist or should be created. The section just shows "Agents" with nothing next to it. There's no "Create your first agent" nudge, no link to /agents, and no explanation of why agents matter for this idea.</p>
+    <p class="recommendation">When the agent pool is empty, show a subtle nudge: "No agents yet — AI agents can work on your board tasks. <a>Create agents</a> or <a>browse the community</a>." Keep it compact but actionable.</p>
+  </div>
+
+  <div class="finding finding-medium">
+    <div class="finding-header">
+      <span class="severity severity-medium">MEDIUM</span>
+      <span class="finding-title">F11: Discussions not mentioned in onboarding or getting-started</span>
+      <span class="finding-area">Idea Detail — Discussions</span>
+    </div>
+    <p>The discussions feature is never introduced during onboarding. On the idea page, the empty state says "Start a discussion to plan features..." but for solo users, this doesn't seem relevant. The feature's value for collaborative planning is undersold.</p>
+    <p class="recommendation">Include discussions in the idea "Getting Started" card for ideas with collaborators: "Have collaborators? Start a discussion to align on priorities."</p>
+  </div>
+</section>
+
+<!-- 6. Board -->
+<section id="board">
+  <h2><span class="section-num">6</span> Board, Tasks &amp; AI Generation</h2>
+  <p class="section-intro">The kanban board is the operational core of VibeCodes. The AI generation flow is polished, but the post-generation experience leaves users without guidance.</p>
+
+  <div class="finding finding-critical">
+    <div class="finding-header">
+      <span class="severity severity-critical">CRITICAL</span>
+      <span class="finding-title">F12: No post-generation guidance — tasks created but no workflows applied</span>
+      <span class="finding-area">Board — AI Generate</span>
+    </div>
+    <p>After AI generates tasks and populates the board, the dialog closes and the user sees their new tasks. But there's no prompt to: set up workflows, allocate agents, or understand what to do next. Tasks sit as static items with no automation unless the user independently discovers the Workflows tab, imports a template, creates auto-rules, AND allocates agents.</p>
+    <p>This is the single biggest coherence gap in the app. The AI generation is the "wow moment" but it immediately drops the user off a cliff.</p>
+    <p class="recommendation">After AI generates tasks, show a post-generation dialog: "Your board is ready! Next steps:" with (1) "Set up a workflow to automate tasks" → Workflows tab, (2) "Assign agents to work on tasks" → Agents tab. Or better: offer to auto-apply a workflow template and auto-allocate agents as part of the generation flow.</p>
+  </div>
+
+  <div class="finding finding-high">
+    <div class="finding-header">
+      <span class="severity severity-high">HIGH</span>
+      <span class="finding-title">F13: Board empty state dismissal is permanent</span>
+      <span class="finding-area">Board — Empty State</span>
+    </div>
+    <p>The "Show columns & add tasks manually" link at the bottom of the board empty state permanently dismisses it. If a user clicks this without fully reading the empty state, they can never get back to the AI Generate funnel or the agent/workflow nudge cards from the empty state view. The AI Generate button remains in the toolbar, but the contextual nudges are gone.</p>
+    <p class="recommendation">Make the dismissal temporary (session-based) or add persistent nudge cards to the board toolbar/sidebar when the board has zero workflows and zero allocated agents.</p>
+  </div>
+
+  <div class="finding finding-medium">
+    <div class="finding-header">
+      <span class="severity severity-medium">MEDIUM</span>
+      <span class="finding-title">F14: "Apply Workflow" button in task detail is low visibility</span>
+      <span class="finding-area">Board — Task Detail</span>
+    </div>
+    <p>The workflow section in the task detail dialog uses a dashed-border ghost button at the bottom of the Details tab. Users who don't scroll past the description will never see it. When there are no templates, the message "No templates — create one in the Workflows tab" doesn't link to the tab.</p>
+    <p class="recommendation">Make "Apply Workflow" more prominent — either move it above the description or use a more visible button style. The "no templates" message should be a direct link to the Workflows tab.</p>
+  </div>
+
+  <div class="finding finding-medium">
+    <div class="finding-header">
+      <span class="severity severity-medium">MEDIUM</span>
+      <span class="finding-title">F15: No import mention in board empty state</span>
+      <span class="finding-area">Board — Empty State</span>
+    </div>
+    <p>The CSV/JSON/bulk text import feature exists in the board toolbar but isn't mentioned in the empty state. Users migrating from other tools (Trello, Jira) would benefit from knowing this option exists upfront.</p>
+    <p class="recommendation">Add a secondary link in the empty state: "Or import tasks from another tool" linking to the import dialog.</p>
+  </div>
+
+  <div class="finding finding-low">
+    <div class="finding-header">
+      <span class="severity severity-low">LOW</span>
+      <span class="finding-title">F16: 50-task AI generation cap is silent</span>
+      <span class="finding-area">Board — AI Generate</span>
+    </div>
+    <p>AI generation silently truncates to 50 tasks via <code>.slice(0, 50)</code>. Users requesting large boards won't know tasks were cut off.</p>
+    <p class="recommendation">Show a notice: "Generated 50 of ~N tasks (maximum per generation). Run again to generate more."</p>
+  </div>
+
+  <div class="finding finding-low">
+    <div class="finding-header">
+      <span class="severity severity-low">LOW</span>
+      <span class="finding-title">F17: No inline preview of tasks before AI generation applies</span>
+      <span class="finding-area">Board — AI Generate</span>
+    </div>
+    <p>Users can select/deselect generated tasks in the preview but can't edit titles, descriptions, or column assignments before applying. Minor friction for users who want to tweak the AI output.</p>
+    <p class="recommendation">Add inline title editing in the preview table (click-to-edit on the title cell).</p>
+  </div>
+</section>
+
+<!-- 7. Workflows -->
+<section id="workflows">
+  <h2><span class="section-num">7</span> Workflows &amp; Auto-Rules</h2>
+  <p class="section-intro">The Workflows tab in <code>src/components/board/workflows-tab.tsx</code> has excellent contextual help when empty but becomes harder to navigate as complexity grows.</p>
+
+  <h3>What Works Well</h3>
+  <ul>
+    <li><strong>"How workflows work" guide card</strong> — the 4-step explanation is the best piece of in-app education in the entire application</li>
+    <li><strong>"Agents needed" warning</strong> — prevents users from creating templates they can't use</li>
+    <li><strong>Template library import</strong> — one-click access to pre-built templates</li>
+    <li><strong>Inline label creation</strong> in auto-rule form — users don't need to leave the workflow to create labels</li>
+  </ul>
+
+  <div class="finding finding-high">
+    <div class="finding-header">
+      <span class="severity severity-high">HIGH</span>
+      <span class="finding-title">F18: Workflow concept is never introduced outside the Workflows tab</span>
+      <span class="finding-area">Workflows — Discoverability</span>
+    </div>
+    <p>Users encounter "Apply Workflow" in task details, "Set Up Workflows" in the board empty state, and "Workflows" in the tab bar — but there's no explanation of what workflows are until they visit the Workflows tab and see the "How workflows work" card. Users who apply a workflow from a task detail dialog have no prior context.</p>
+    <p class="recommendation">Add a tooltip or brief inline explainer wherever workflows are mentioned outside the Workflows tab. E.g., in the task detail dialog: "Workflows automate your process — agents pick up steps sequentially. <a>Learn more</a>"</p>
+  </div>
+
+  <div class="finding finding-high">
+    <div class="finding-header">
+      <span class="severity severity-high">HIGH</span>
+      <span class="finding-title">F19: Auto-rules concept (label = trigger) is unintuitive</span>
+      <span class="finding-area">Workflows — Auto-Rules</span>
+    </div>
+    <p>Auto-rules map labels to templates: "When label X is added, apply template Y." But most users think of labels as categories, not triggers. The mental model of "labelling a task causes automated workflow application" is non-obvious and only explained in-context within the Workflows tab when no rules exist.</p>
+    <p class="recommendation">Rename or reframe: instead of "Auto-Rules," consider "Workflow Triggers" with clearer language: "Automatically start this workflow when a task is labelled [X]." Add a one-line explainer in the auto-rules section header.</p>
+  </div>
+
+  <div class="finding finding-medium">
+    <div class="finding-header">
+      <span class="severity severity-medium">MEDIUM</span>
+      <span class="finding-title">F20: No template preview when applying from task detail</span>
+      <span class="finding-area">Workflows — Task Detail</span>
+    </div>
+    <p>The template select dropdown in <code>TaskWorkflowSection</code> shows template name and step count but no way to preview the actual steps before applying. Users must blindly choose and apply, then inspect what they got.</p>
+    <p class="recommendation">Add an expandable preview showing step titles, roles, and approval gates when hovering/clicking a template in the selector.</p>
+  </div>
+
+  <div class="finding finding-medium">
+    <div class="finding-header">
+      <span class="severity severity-medium">MEDIUM</span>
+      <span class="finding-title">F21: Workflow step "Retry" is hover-only</span>
+      <span class="finding-area">Workflows — Step UI</span>
+    </div>
+    <p>The inline "Retry" button on failed workflow steps only appears on hover. This is inaccessible on touch devices and violates WCAG interactive element guidelines.</p>
+    <p class="recommendation">Always show action buttons for failed/actionable steps, or use a secondary click target (e.g., right-click menu or kebab menu).</p>
+  </div>
+</section>
+
+<!-- 8. Agents -->
+<section id="agents">
+  <h2><span class="section-num">8</span> Agents &amp; Teams</h2>
+  <p class="section-intro">The Agents Hub at <code>src/components/agents/agents-hub.tsx</code> and idea-level agent allocation are well-built individually, but the connection between agents, ideas, and workflows needs reinforcement.</p>
+
+  <div class="finding finding-critical">
+    <div class="finding-header">
+      <span class="severity severity-critical">CRITICAL</span>
+      <span class="finding-title">F22: No clear path from "I have agents" to "agents are doing work"</span>
+      <span class="finding-area">Agents — End-to-End</span>
+    </div>
+    <p>The journey from agent creation to productive use requires 5 independent steps that the app never connects: (1) Create agent → (2) Allocate to idea → (3) Create workflow template → (4) Apply template to task → (5) Agent executes steps via MCP. Each step is individually documented but there's no guided path through all five. A user who adds a featured team during onboarding may never allocate those agents to their idea.</p>
+    <p class="recommendation">After adding a featured team or creating agents, prompt: "Now allocate agents to your ideas so they can work on tasks." On the idea page, when agents are allocated but no workflows exist: "Your agents are ready! Set up a workflow so they can start working." Create a visual pipeline showing the agent lifecycle.</p>
+  </div>
+
+  <div class="finding finding-critical">
+    <div class="finding-header">
+      <span class="severity severity-critical">CRITICAL</span>
+      <span class="finding-title">F23: Agent match warning links to wrong location</span>
+      <span class="finding-area">Agents — Workflow Steps</span>
+    </div>
+    <p>When workflow steps have roles with no matching agent, the <code>TaskWorkflowSection</code> shows a warning banner that links to <code>/agents</code> (the global Agents Hub) instead of <code>?tab=agents</code> (the board's own Agents tab where they can immediately allocate agents to this idea). This sends users away from their current context.</p>
+    <p class="recommendation">Link to <code>?tab=agents</code> instead of <code>/agents</code>. The board's Agents tab has the Role Coverage panel and "Add Agent" controls — it's the right place to fix the mismatch.</p>
+  </div>
+
+  <div class="finding finding-high">
+    <div class="finding-header">
+      <span class="severity severity-high">HIGH</span>
+      <span class="finding-title">F24: Featured team "Add Team" doesn't explain what happens</span>
+      <span class="finding-area">Agents — Featured Teams</span>
+    </div>
+    <p>Clicking "Add Team" clones the team's agents into the user's account. But the button label and surrounding UI don't explain that this creates copies of the agents in your account (not shared references). Users may be confused about ownership, especially if they later see the same agent names on the Community tab.</p>
+    <p class="recommendation">Change button text to "Clone Team to My Agents" or add a tooltip: "Creates copies of these agents in your account. You can customise them afterwards."</p>
+  </div>
+
+  <div class="finding finding-medium">
+    <div class="finding-header">
+      <span class="severity severity-medium">MEDIUM</span>
+      <span class="finding-title">F25: Agent creation allows functionally useless agents</span>
+      <span class="finding-area">Agents — Create Dialog</span>
+    </div>
+    <p>Only the agent name is required. A user could create an agent with just a name — no role, no system prompt, no skills. This agent would be useless for workflow matching (which relies on roles) and MCP execution (which relies on system prompts). No validation warns about this.</p>
+    <p class="recommendation">Add soft validation: when role or system prompt is empty, show an inline hint like "Add a role so this agent can be auto-assigned to workflow steps" and "Add a system prompt to define how this agent works."</p>
+  </div>
+</section>
+
+<!-- 9. Guidance -->
+<section id="guidance">
+  <h2><span class="section-num">9</span> Help, Nudges &amp; Guidance System</h2>
+  <p class="section-intro">VibeCodes has 9 guide pages and numerous empty-state nudges, but they operate in silos without connecting to each other.</p>
+
+  <div class="finding finding-high">
+    <div class="finding-header">
+      <span class="severity severity-high">HIGH</span>
+      <span class="finding-title">F26: Guide pages are never linked from features</span>
+      <span class="finding-area">Help System</span>
+    </div>
+    <p>Nine comprehensive guide pages exist at <code>/guide/*</code> (Getting Started, Kanban Boards, Workflows, AI Agent Teams, etc.) but are only accessible via the navbar "Guide" link. No feature in the app links to its relevant guide section. The Workflows tab doesn't link to <code>/guide/workflows</code>. The board doesn't link to <code>/guide/kanban-boards</code>. The agents page doesn't link to <code>/guide/ai-agent-teams</code>.</p>
+    <p class="recommendation">Add contextual "Learn more" or "?" icon links from each feature to its guide page. E.g., Workflows tab header: "Workflows <a>(?)</a>", linking to <code>/guide/workflows</code>. Board toolbar: "Need help? <a>Board guide</a>". Agents hub: "How agents work <a>→</a>"</p>
+  </div>
+
+  <div class="finding finding-high">
+    <div class="finding-header">
+      <span class="severity severity-high">HIGH</span>
+      <span class="finding-title">F27: No in-app walkthrough for complex features</span>
+      <span class="finding-area">Help System</span>
+    </div>
+    <p>The board, workflows, and agents pages have no interactive walkthrough or tour for first-time visitors. Users must figure out drag-and-drop, column management, filtering, workflow application, agent allocation, and MCP connection through exploration alone. The static guide pages help, but they require leaving the current context.</p>
+    <p class="recommendation">Implement a lightweight guided tour (e.g., using tooltips that highlight UI elements in sequence) for first-time visitors to the board page. Focus on: column structure, creating tasks, the Workflows tab, the Agents tab, and AI generation. Store completion in localStorage.</p>
+  </div>
+
+  <div class="finding finding-low">
+    <div class="finding-header">
+      <span class="severity severity-low">LOW</span>
+      <span class="finding-title">F28: Guide pages have no inter-page navigation</span>
+      <span class="finding-area">Help System</span>
+    </div>
+    <p>Each guide page is standalone with no sidebar or breadcrumbs to navigate between sections. Users must return to the guide hub to find another section.</p>
+    <p class="recommendation">Add a sidebar navigation or "Next/Previous" links at the bottom of each guide page.</p>
+  </div>
+</section>
+
+<!-- 10. Inventory -->
+<section id="inventory">
+  <h2><span class="section-num">10</span> Nudge &amp; Empty State Inventory</h2>
+  <p class="section-intro">Complete inventory of every guidance pattern in the app, with assessment.</p>
+
+  <table class="inventory-table">
+    <thead>
+      <tr>
+        <th>Location</th>
+        <th>Type</th>
+        <th>Content</th>
+        <th>Assessment</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Onboarding Wizard</td>
+        <td>Modal (5 steps)</td>
+        <td>Welcome → Profile → Teams → Idea → Success</td>
+        <td><span class="pill pill-emerald">Good</span></td>
+      </tr>
+      <tr>
+        <td>Dashboard Checklist FAB</td>
+        <td>Persistent widget</td>
+        <td>5 steps with progress bar</td>
+        <td><span class="pill pill-amber">Fair</span> — small, corner-positioned</td>
+      </tr>
+      <tr>
+        <td>Dashboard — My Ideas empty</td>
+        <td>Empty state + CTA</td>
+        <td>"Share your first idea" + Create/Explore</td>
+        <td><span class="pill pill-emerald">Good</span></td>
+      </tr>
+      <tr>
+        <td>Dashboard — Active Boards empty</td>
+        <td>Empty state + CTA</td>
+        <td>"No active boards" + Create/Browse</td>
+        <td><span class="pill pill-emerald">Good</span></td>
+      </tr>
+      <tr>
+        <td>Dashboard — My Tasks empty</td>
+        <td>Empty state</td>
+        <td>"No tasks assigned to you"</td>
+        <td><span class="pill pill-amber">Fair</span> — no CTA</td>
+      </tr>
+      <tr>
+        <td>Dashboard — My Agents</td>
+        <td>Hidden when empty</td>
+        <td>Not shown at all</td>
+        <td><span class="pill pill-rose">Gap</span> — feature invisible</td>
+      </tr>
+      <tr>
+        <td>Dashboard — Discussions</td>
+        <td>Hidden when empty</td>
+        <td>Not shown at all</td>
+        <td><span class="pill pill-rose">Gap</span> — feature invisible</td>
+      </tr>
+      <tr>
+        <td>Board — Empty state</td>
+        <td>Full-page CTA</td>
+        <td>AI Generate + Agent/Workflow nudge cards</td>
+        <td><span class="pill pill-emerald">Good</span> — but one-shot</td>
+      </tr>
+      <tr>
+        <td>Board — Workflows tab empty</td>
+        <td>"How it works" guide + CTAs</td>
+        <td>4-step explanation + Import/Create</td>
+        <td><span class="pill pill-emerald">Excellent</span></td>
+      </tr>
+      <tr>
+        <td>Board — Workflows "no agents"</td>
+        <td>Warning banner</td>
+        <td>"Agents needed" with explanation</td>
+        <td><span class="pill pill-emerald">Good</span></td>
+      </tr>
+      <tr>
+        <td>Board — Agents tab empty</td>
+        <td>Empty state + CTAs</td>
+        <td>"Build your AI team" + Add/Browse</td>
+        <td><span class="pill pill-emerald">Good</span></td>
+      </tr>
+      <tr>
+        <td>Board — Task workflow section</td>
+        <td>Ghost button</td>
+        <td>"Apply Workflow" dashed button</td>
+        <td><span class="pill pill-amber">Fair</span> — low visibility</td>
+      </tr>
+      <tr>
+        <td>Board — Agent match warning</td>
+        <td>Warning banner in task</td>
+        <td>Lists unmatched roles</td>
+        <td><span class="pill pill-amber">Fair</span> — wrong link target</td>
+      </tr>
+      <tr>
+        <td>Agents Hub — MCP banner</td>
+        <td>Info banner</td>
+        <td>"Connect via MCP" + guide link</td>
+        <td><span class="pill pill-emerald">Good</span></td>
+      </tr>
+      <tr>
+        <td>Agents Hub — Empty state</td>
+        <td>Empty state + CTAs + teams</td>
+        <td>"Build your first agent" + Create/Browse/Teams</td>
+        <td><span class="pill pill-emerald">Good</span></td>
+      </tr>
+      <tr>
+        <td>Agents — Post-creation success</td>
+        <td>Next-step card</td>
+        <td>"Connect via MCP" + guide link</td>
+        <td><span class="pill pill-emerald">Good</span></td>
+      </tr>
+      <tr>
+        <td>Idea — Agent section empty</td>
+        <td>No guidance</td>
+        <td>"Agents" label with empty space</td>
+        <td><span class="pill pill-rose">Gap</span> — no explanation or CTA</td>
+      </tr>
+      <tr>
+        <td>Idea — Discussions empty</td>
+        <td>Inline text + CTA</td>
+        <td>"Start a discussion to plan..." + New button</td>
+        <td><span class="pill pill-emerald">Good</span></td>
+      </tr>
+      <tr>
+        <td>Idea — No board tasks</td>
+        <td>No guidance on idea page</td>
+        <td>Board button exists but no "generate tasks" prompt</td>
+        <td><span class="pill pill-rose">Gap</span> — key action not surfaced</td>
+      </tr>
+      <tr>
+        <td>Guide pages (9)</td>
+        <td>Static help content</td>
+        <td>Comprehensive feature documentation</td>
+        <td><span class="pill pill-amber">Fair</span> — orphaned from features</td>
+      </tr>
+      <tr>
+        <td>Guest board banner</td>
+        <td>Info bar</td>
+        <td>"Read-only mode" + Request Access</td>
+        <td><span class="pill pill-emerald">Good</span></td>
+      </tr>
+    </tbody>
+  </table>
+</section>
+
+<!-- 11. Prioritised Findings -->
+<section id="priorities">
+  <h2><span class="section-num">11</span> Prioritised Findings</h2>
+  <p class="section-intro">All 28 findings ranked by impact on new user activation and retention.</p>
+
+  <h3>Critical — Users likely drop off or get stuck</h3>
+  <div class="finding finding-critical">
+    <div class="finding-header">
+      <span class="severity severity-critical">C1</span>
+      <span class="finding-title">F6: Post-onboarding dashboard is a wall of empty states</span>
+    </div>
+  </div>
+  <div class="finding finding-critical">
+    <div class="finding-header">
+      <span class="severity severity-critical">C2</span>
+      <span class="finding-title">F12: No post-generation guidance — tasks but no workflows</span>
+    </div>
+  </div>
+  <div class="finding finding-critical">
+    <div class="finding-header">
+      <span class="severity severity-critical">C3</span>
+      <span class="finding-title">F9: No "Getting Started" guidance on new idea page</span>
+    </div>
+  </div>
+  <div class="finding finding-critical">
+    <div class="finding-header">
+      <span class="severity severity-critical">C4</span>
+      <span class="finding-title">F22: No clear path from "I have agents" to "agents are doing work"</span>
+    </div>
+  </div>
+  <div class="finding finding-critical">
+    <div class="finding-header">
+      <span class="severity severity-critical">C5</span>
+      <span class="finding-title">F23: Agent match warning links to wrong location</span>
+    </div>
+  </div>
+
+  <h3>High — Significant usability or discoverability issues</h3>
+  <div class="finding finding-high">
+    <div class="finding-header"><span class="severity severity-high">H1</span><span class="finding-title">F1: "View your board" leads to empty board after onboarding</span></div>
+  </div>
+  <div class="finding finding-high">
+    <div class="finding-header"><span class="severity severity-high">H2</span><span class="finding-title">F7: Dashboard sections hidden when empty (prevents discovery)</span></div>
+  </div>
+  <div class="finding finding-high">
+    <div class="finding-header"><span class="severity severity-high">H3</span><span class="finding-title">F10: Agent section invisible when empty on idea page</span></div>
+  </div>
+  <div class="finding finding-high">
+    <div class="finding-header"><span class="severity severity-high">H4</span><span class="finding-title">F13: Board empty state dismissal is permanent</span></div>
+  </div>
+  <div class="finding finding-high">
+    <div class="finding-header"><span class="severity severity-high">H5</span><span class="finding-title">F18: Workflow concept never introduced outside Workflows tab</span></div>
+  </div>
+  <div class="finding finding-high">
+    <div class="finding-header"><span class="severity severity-high">H6</span><span class="finding-title">F19: Auto-rules (label = trigger) is unintuitive</span></div>
+  </div>
+  <div class="finding finding-high">
+    <div class="finding-header"><span class="severity severity-high">H7</span><span class="finding-title">F24: Featured team "Add Team" doesn't explain cloning</span></div>
+  </div>
+  <div class="finding finding-high">
+    <div class="finding-header"><span class="severity severity-high">H8</span><span class="finding-title">F26: Guide pages never linked from features + F27: No in-app walkthroughs</span></div>
+  </div>
+
+  <h3>Medium — Feature friction or missed opportunities</h3>
+  <p style="color: var(--text-muted); font-size: 0.9rem;">F2 (agent team explanation), F3 (no visibility choice), F8 (checklist never completes), F11 (discussions not in onboarding), F14 (Apply Workflow low visibility), F15 (no import in empty state), F20 (no template preview), F21 (hover-only retry), F25 (useless agents allowed), F28 (guide nav)</p>
+
+  <h3>Low — Polish items</h3>
+  <p style="color: var(--text-muted); font-size: 0.9rem;">F4 (tag suggestions), F5 (dead code), F16 (silent 50-task cap), F17 (no inline edit in preview)</p>
+</section>
+
+<!-- 12. Recommendations -->
+<section id="recommendations">
+  <h2><span class="section-num">12</span> Strategic Recommendations</h2>
+  <p class="section-intro">Three high-level initiatives that would address the majority of findings and transform the new-user experience.</p>
+
+  <div class="card" style="border-left: 3px solid var(--accent);">
+    <div class="card-header">
+      <div class="card-icon" style="background: var(--accent-bg); color: var(--accent);">&#x1f680;</div>
+      <div>
+        <div class="card-title">Initiative 1: The "Golden Path" — Guided First-Run Experience</div>
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">Addresses: F1, F6, F9, F12, F22 (all 5 critical findings)</div>
+      </div>
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">Create a seamless guided journey from onboarding through to "agents working on tasks." Instead of dropping users on an empty dashboard after onboarding, create a flow:</p>
+    <ol>
+      <li><strong>Onboarding creates idea</strong> (existing) → immediately offers to <strong>generate tasks with AI</strong></li>
+      <li>After task generation, offer to <strong>import a workflow template</strong> and <strong>auto-allocate agents</strong></li>
+      <li>Show a <strong>"Your project is set up!"</strong> summary with the board, active workflows, and allocated agents</li>
+      <li>Replace the empty dashboard with a <strong>first-run dashboard</strong> that prominently surfaces the user's idea, board, and agents with clear "Next action" prompts</li>
+    </ol>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">This collapses the current 8-step journey into 2 steps after signup, getting users to the "wow moment" (agents working on tasks) within their first session.</p>
+  </div>
+
+  <div class="card" style="border-left: 3px solid var(--emerald);">
+    <div class="card-header">
+      <div class="card-icon" style="background: var(--emerald-bg); color: var(--emerald);">&#x1f517;</div>
+      <div>
+        <div class="card-title">Initiative 2: Cross-Feature Connective Tissue</div>
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">Addresses: F7, F10, F13, F18, F23, F26, F27</div>
+      </div>
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">Add persistent, contextual nudges that connect features to each other:</p>
+    <ul>
+      <li><strong>Dashboard</strong>: Show all sections (even when empty) with contextual CTAs explaining each feature</li>
+      <li><strong>Idea page</strong>: "Getting Started" card when no board tasks exist; agent nudge when pool is empty</li>
+      <li><strong>Board</strong>: Post-generation workflow/agent prompt; persistent sidebar nudges (not just empty-state)</li>
+      <li><strong>Task detail</strong>: Workflow explainer inline; agent match warning linking to the board's Agents tab</li>
+      <li><strong>Every feature header</strong>: "?" icon linking to the relevant guide page</li>
+      <li><strong>Board first visit</strong>: Lightweight tooltip tour highlighting key areas</li>
+    </ul>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">The goal is that every screen tells the user what to do next. No dead ends.</p>
+  </div>
+
+  <div class="card" style="border-left: 3px solid var(--amber);">
+    <div class="card-header">
+      <div class="card-icon" style="background: var(--amber-bg); color: var(--amber);">&#x1f4a1;</div>
+      <div>
+        <div class="card-title">Initiative 3: Concept Simplification &amp; Terminology</div>
+        <div style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.15rem;">Addresses: F2, F19, F24, F25</div>
+      </div>
+    </div>
+    <p style="color: var(--text-muted); font-size: 0.9rem;">Reduce cognitive load by simplifying or reframing complex concepts:</p>
+    <ul>
+      <li><strong>Rename "Auto-Rules"</strong> to "Workflow Triggers" with clearer language about label-based activation</li>
+      <li><strong>Explain agents as "AI team members"</strong> consistently — the onboarding does this but the rest of the app uses technical language</li>
+      <li><strong>Featured team "Add Team"</strong> → "Clone Team to My Agents" with tooltip explaining the copy</li>
+      <li><strong>Agent creation soft validation</strong> — nudge users to add role and system prompt with inline hints</li>
+      <li><strong>Create a "VibeCodes in 60 seconds"</strong> visual explainer (Ideas → Board → Agents → Workflows → MCP) accessible from the landing page, guide, and dashboard</li>
+    </ul>
+  </div>
+
+  <div class="callout" style="border-color: var(--accent);">
+    <div class="callout-icon">&#x1f4cb;</div>
+    <div class="callout-content">
+      <h4>Next Step</h4>
+      <p>This audit feeds into <strong>Step 2: Create Design Proposals</strong> — where I'll research competitors, industry best practices, and produce interactive HTML mockups with rationale for the highest-priority changes. The proposals will focus on the "Golden Path" initiative first, as it addresses all 5 critical findings.</p>
+    </div>
+  </div>
+</section>
+
+</div>
+
+</body>
+</html>

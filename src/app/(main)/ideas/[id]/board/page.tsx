@@ -10,6 +10,7 @@ import { BoardRealtime } from "@/components/board/board-realtime";
 import { GuestBoardBanner } from "@/components/board/guest-board-banner";
 import { BoardPageTabs } from "@/components/board/board-page-tabs";
 import { Button } from "@/components/ui/button";
+import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import type {
   BoardColumnWithTasks,
   BoardTaskWithAssignee,
@@ -142,7 +143,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     isTeamMember
       ? supabase
           .from("users")
-          .select("encrypted_anthropic_key, ai_starter_credits, is_admin")
+          .select("encrypted_anthropic_key, ai_starter_credits, is_admin, mcp_connected_at")
           .eq("id", user.id)
           .single()
       : Promise.resolve({ data: null }),
@@ -244,6 +245,17 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       {isReadOnly && (
         <div className="mb-4 shrink-0">
           <GuestBoardBanner ideaId={id} hasRequested={hasRequested} />
+        </div>
+      )}
+
+      {/* MCP connection banner (compact) for team members */}
+      {isTeamMember && !userProfile?.mcp_connected_at && (
+        <div className="mb-3 shrink-0">
+          <McpConnectionBanner
+            agentCount={ideaAgents.length}
+            taskCount={(rawTasks ?? []).length}
+            compact
+          />
         </div>
       )}
 

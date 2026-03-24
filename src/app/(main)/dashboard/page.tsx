@@ -20,6 +20,7 @@ import { StatsCards } from "@/components/dashboard/stats-cards";
 import { WelcomeExperience } from "@/components/dashboard/welcome-experience";
 import { OnboardingWrapper } from "@/components/onboarding/onboarding-wrapper";
 import { OnboardingChecklist } from "@/components/onboarding/onboarding-checklist";
+import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { ActiveBoards } from "@/components/dashboard/active-boards";
 import type { ActiveBoard } from "@/components/dashboard/active-boards";
 import { MyBots } from "@/components/dashboard/my-bots";
@@ -124,7 +125,7 @@ export default async function DashboardPage() {
     // User profile for onboarding state
     supabase
       .from("users")
-      .select("onboarding_completed_at, full_name, avatar_url, github_username")
+      .select("onboarding_completed_at, mcp_connected_at, full_name, avatar_url, github_username")
       .eq("id", user.id)
       .maybeSingle(),
     // Public ideas count (for community-aware empty states)
@@ -164,6 +165,7 @@ export default async function DashboardPage() {
   // User profile for onboarding
   const userProfile = userProfileResult.data as {
     onboarding_completed_at: string | null;
+    mcp_connected_at: string | null;
     full_name: string | null;
     avatar_url: string | null;
     github_username: string | null;
@@ -609,6 +611,14 @@ export default async function DashboardPage() {
         <WelcomeExperience />
       ) : null}
 
+      {/* MCP connection banner — shown when not connected and user has agents/tasks */}
+      {onboardingCompleted && !userProfile?.mcp_connected_at && (
+        <McpConnectionBanner
+          agentCount={botProfiles.length}
+          taskCount={tasks.length}
+        />
+      )}
+
       {/* Stats — full width */}
       <StatsCards
         ideasCount={ideasCount}
@@ -626,6 +636,7 @@ export default async function DashboardPage() {
           hasProfile={!!userProfile?.full_name}
           hasIdea={ideasCount > 0}
           hasAgent={botProfiles.length > 0}
+          hasMcpConnection={!!userProfile?.mcp_connected_at}
         />
       )}
     </div>
