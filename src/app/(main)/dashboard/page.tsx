@@ -171,7 +171,9 @@ export default async function DashboardPage() {
     github_username: string | null;
   } | null;
   const onboardingCompleted = !!userProfile?.onboarding_completed_at;
-  const isNewUser = !onboardingCompleted && ideasCount === 0 && collaborationsCount === 0;
+  // Users who have content (ideas/collabs) but no onboarding_completed_at predate the wizard — treat as activated
+  const hasExistingContent = ideasCount > 0 || collaborationsCount > 0;
+  const isNewUser = !onboardingCompleted && !hasExistingContent;
   const featuredTeams = (featuredTeamsResult.data ?? []) as unknown as FeaturedTeamWithAgents[];
 
   // All idea IDs the user owns or collaborates on (for board queries)
@@ -387,18 +389,38 @@ export default async function DashboardPage() {
   activeBoards.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
   const topActiveBoards = activeBoards.slice(0, 5);
 
-  // First-run activation check: max board task count across all ideas
+  // First-run activation check: user needs tasks AND at least one advanced feature
   const maxBoardTaskCount = activeBoards.reduce((max, b) => Math.max(max, b.totalTasks), 0);
-  const isActivated = maxBoardTaskCount >= 3;
+  const hasTasks = maxBoardTaskCount >= 3;
+  const hasAgents = botProfiles.length > 0;
+  const hasMcpConnection = !!userProfile?.mcp_connected_at;
 
-  // First-run: workflow template count for the first idea
-  let firstIdeaWorkflowCount = 0;
-  if (myIdeas[0] && !isActivated) {
+  // Workflow count across all user ideas (needed for both activation check and first-run display)
+  let totalWorkflowCount = 0;
+  if (allUserIdeaIds.length > 0) {
     const { count } = await supabase
       .from("workflow_templates")
       .select("*", { head: true, count: "exact" })
-      .eq("idea_id", myIdeas[0].id);
-    firstIdeaWorkflowCount = count ?? 0;
+      .in("idea_id", allUserIdeaIds);
+    totalWorkflowCount = count ?? 0;
+  }
+  const hasWorkflows = totalWorkflowCount > 0;
+
+  // Activated = has meaningful tasks AND has discovered at least one advanced feature
+  const isActivated = hasTasks && (hasAgents || hasWorkflows || hasMcpConnection);
+
+  // First-run: workflow template count for the first idea (for board preview)
+  let firstIdeaWorkflowCount = 0;
+  if (myIdeas[0] && !isActivated) {
+    if (allUserIdeaIds.length === 1) {
+      firstIdeaWorkflowCount = totalWorkflowCount; // only one idea, reuse the count
+    } else {
+      const { count } = await supabase
+        .from("workflow_templates")
+        .select("*", { head: true, count: "exact" })
+        .eq("idea_id", myIdeas[0].id);
+      firstIdeaWorkflowCount = count ?? 0;
+    }
   }
 
   // First-run board preview: task titles grouped by column for the first idea
@@ -640,13 +662,13 @@ export default async function DashboardPage() {
       )}
 
       {/* Dashboard mode: first-run OR standard, never both */}
-      {onboardingCompleted && (
+      {!isNewUser && (
         <DashboardModeSwitch
           isActivated={isActivated}
           firstRunContent={
             <FirstRunDashboard
               userName={userProfile?.full_name ?? null}
-              hasMcpConnection={!!userProfile?.mcp_connected_at}
+              hasMcpConnection={hasMcpConnection}
               ideasCount={ideasCount}
               firstIdea={myIdeas[0] ? { id: myIdeas[0].id, title: myIdeas[0].title } : null}
               activeBoards={topActiveBoards}
@@ -661,7 +683,7 @@ export default async function DashboardPage() {
           }
           standardContent={
             <>
-              {!userProfile?.mcp_connected_at && (
+              {!hasMcpConnection && (
                 <McpConnectionBanner
                   agentCount={botProfiles.length}
                   taskCount={tasks.length}
