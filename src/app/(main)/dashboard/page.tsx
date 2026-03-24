@@ -17,10 +17,9 @@ import { requireAuth } from "@/lib/auth";
 import { getDueDateStatus } from "@/lib/utils";
 import { DEFAULT_PANEL_ORDER } from "@/lib/dashboard-order";
 import { StatsCards } from "@/components/dashboard/stats-cards";
-import { WelcomeExperience } from "@/components/dashboard/welcome-experience";
 import { OnboardingWrapper } from "@/components/onboarding/onboarding-wrapper";
-import { OnboardingChecklist } from "@/components/onboarding/onboarding-checklist";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
+import { FirstRunDashboard } from "@/components/dashboard/first-run-dashboard";
 import { ActiveBoards } from "@/components/dashboard/active-boards";
 import type { ActiveBoard } from "@/components/dashboard/active-boards";
 import { MyBots } from "@/components/dashboard/my-bots";
@@ -207,11 +206,11 @@ export default async function DashboardPage() {
           .in("idea_id", allUserIdeaIds)
           .order("position")
       : Promise.resolve({ data: [] }),
-    // Board tasks for user's ideas (non-archived only)
+    // Board tasks for user's ideas (non-archived only, with title for first-run preview)
     allUserIdeaIds.length > 0
       ? supabase
           .from("board_tasks")
-          .select("idea_id, column_id, updated_at")
+          .select("idea_id, column_id, title, updated_at")
           .in("idea_id", allUserIdeaIds)
           .eq("archived", false)
       : Promise.resolve({ data: [] }),
@@ -328,7 +327,7 @@ export default async function DashboardPage() {
   // Process active boards data
   type BoardColumnRow = { id: string; idea_id: string; title: string; is_done_column: boolean; position: number; idea: { id: string; title: string } };
   const boardColumns = (boardColumnsResult.data ?? []) as unknown as BoardColumnRow[];
-  const boardTasks = (boardTasksResult.data ?? []) as { idea_id: string; column_id: string; updated_at: string }[];
+  const boardTasks = (boardTasksResult.data ?? []) as { idea_id: string; column_id: string; title: string; updated_at: string }[];
 
   // Build idea title map from column joins (covers all ideas with boards)
   const ideaTitleMap = new Map<string, string>();
@@ -386,6 +385,40 @@ export default async function DashboardPage() {
   // Sort by most recent activity and limit to 5
   activeBoards.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
   const topActiveBoards = activeBoards.slice(0, 5);
+
+  // First-run activation check: max board task count across all ideas
+  const maxBoardTaskCount = activeBoards.reduce((max, b) => Math.max(max, b.totalTasks), 0);
+  const isActivated = maxBoardTaskCount >= 3;
+
+  // First-run: workflow template count for the first idea
+  let firstIdeaWorkflowCount = 0;
+  if (myIdeas[0] && !isActivated) {
+    const { count } = await supabase
+      .from("workflow_templates")
+      .select("*", { head: true, count: "exact" })
+      .eq("idea_id", myIdeas[0].id);
+    firstIdeaWorkflowCount = count ?? 0;
+  }
+
+  // First-run board preview: task titles grouped by column for the first idea
+  const firstRunBoardPreview: { columnTitle: string; tasks: string[]; count: number }[] = [];
+  if (myIdeas[0] && !isActivated) {
+    const firstIdeaId = myIdeas[0].id;
+    const firstIdeaCols = columnsByIdea.get(firstIdeaId) ?? [];
+    for (const col of firstIdeaCols.slice(0, 2)) {
+      if (col.is_done_column) continue;
+      const colTasks = boardTasks
+        .filter((t) => t.column_id === col.id)
+        .map((t) => t.title);
+      if (colTasks.length > 0 || firstRunBoardPreview.length === 0) {
+        firstRunBoardPreview.push({
+          columnTitle: col.title,
+          tasks: colTasks.slice(0, 2),
+          count: colTasks.length,
+        });
+      }
+    }
+  }
 
   // Build task counts from Phase 2 result (no extra sequential query needed)
   const taskCounts: Record<string, number> = {};
@@ -595,19 +628,37 @@ export default async function DashboardPage() {
     <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8 sm:px-6 lg:px-8">
       <h1 className="mb-4 sm:mb-6 text-2xl sm:text-3xl font-bold">Dashboard</h1>
 
-      {/* Onboarding: new users get the guided wizard, legacy users get the static card */}
-      {isNewUser ? (
+      {/* Onboarding wizard for brand new users */}
+      {isNewUser && (
         <OnboardingWrapper
           userFullName={userProfile?.full_name ?? null}
           userAvatarUrl={userProfile?.avatar_url ?? null}
           userGithubUsername={userProfile?.github_username ?? null}
           featuredTeams={featuredTeams}
         />
-      ) : !onboardingCompleted && ideasCount === 0 && collaborationsCount === 0 ? (
-        <WelcomeExperience />
-      ) : null}
+      )}
 
-      {/* MCP connection banner — shown when not connected and user has agents/tasks */}
+      {/* First-run dashboard for users who haven't activated yet (< 3 board tasks).
+          Returns null when overridden (user clicked "Switch to full dashboard"),
+          which causes the standard dashboard below to be the only visible content. */}
+      {onboardingCompleted && !isActivated && (
+        <FirstRunDashboard
+          userName={userProfile?.full_name ?? null}
+          hasMcpConnection={!!userProfile?.mcp_connected_at}
+          ideasCount={ideasCount}
+          firstIdea={myIdeas[0] ? { id: myIdeas[0].id, title: myIdeas[0].title } : null}
+          activeBoards={topActiveBoards}
+          maxBoardTaskCount={maxBoardTaskCount}
+          workflowCount={firstIdeaWorkflowCount}
+          boardPreview={firstRunBoardPreview}
+          botProfiles={botProfiles}
+          hasTaskInProgress={tasks.length > 0}
+          agentCount={botProfiles.length}
+          taskCount={tasks.length}
+        />
+      )}
+
+      {/* Standard dashboard — always rendered (visible when activated or first-run dismissed) */}
       {onboardingCompleted && !userProfile?.mcp_connected_at && (
         <McpConnectionBanner
           agentCount={botProfiles.length}
@@ -615,7 +666,6 @@ export default async function DashboardPage() {
         />
       )}
 
-      {/* Stats — full width */}
       <StatsCards
         ideasCount={ideasCount}
         collaborationsCount={collaborationsCount}
@@ -623,18 +673,7 @@ export default async function DashboardPage() {
         tasksAssigned={tasks.length}
       />
 
-      {/* Reorderable two-column grid */}
       <DashboardGrid sections={sections} defaultOrder={DEFAULT_PANEL_ORDER} />
-
-      {/* Persistent onboarding checklist for users who completed the wizard but still have steps */}
-      {onboardingCompleted && (
-        <OnboardingChecklist
-          hasProfile={!!userProfile?.full_name}
-          hasIdea={ideasCount > 0}
-          hasAgent={botProfiles.length > 0}
-          hasMcpConnection={!!userProfile?.mcp_connected_at}
-        />
-      )}
     </div>
   );
 }
