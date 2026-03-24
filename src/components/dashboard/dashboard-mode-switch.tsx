@@ -50,7 +50,10 @@ export function DashboardModeSwitch({
     setShowStandard(true);
   }, []);
 
-  // Avoid flash — don't render until we've checked localStorage
+  // Activated users always see standard — render immediately (no localStorage check needed)
+  if (isActivated) return <>{standardContent}</>;
+
+  // Non-activated: wait for mount to check localStorage before deciding
   if (!mounted) return null;
 
   if (showStandard) return <>{standardContent}</>;
