@@ -1,5 +1,11 @@
 import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
+import {
+  GuideSidebar,
+  GuideMobileNav,
+  GuideBreadcrumbs,
+  GuidePrevNext,
+} from "@/components/guide/guide-nav";
 
 export const metadata = {
   title: "Guide",
@@ -15,9 +21,15 @@ export default function GuideLayout({
   return (
     <div className="min-h-screen">
       <Navbar />
-      <main className="mx-auto max-w-4xl px-4 py-12 sm:px-6 lg:px-8">
-        {children}
-      </main>
+      <div className="mx-auto flex max-w-5xl gap-8 px-4 py-12 sm:px-6 lg:px-8">
+        <GuideSidebar />
+        <main className="min-w-0 flex-1">
+          <GuideMobileNav />
+          <GuideBreadcrumbs />
+          {children}
+          <GuidePrevNext />
+        </main>
+      </div>
       <Footer />
     </div>
   );
