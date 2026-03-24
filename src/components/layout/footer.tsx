@@ -19,6 +19,10 @@ export function Footer() {
             Changelog
           </Link>
           <span className="text-border">&middot;</span>
+          <Link href="/press" prefetch={false} className="px-1 hover:text-foreground">
+            Press Kit
+          </Link>
+          <span className="text-border">&middot;</span>
           <Link href="/terms" prefetch={false} className="px-1 hover:text-foreground">
             Terms of Service
           </Link>
