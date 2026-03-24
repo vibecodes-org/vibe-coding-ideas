@@ -53,11 +53,10 @@ export function DashboardModeSwitch({
   // Activated users always see standard — render immediately (no localStorage check needed)
   if (isActivated) return <>{standardContent}</>;
 
-  // Non-activated: wait for mount to check localStorage before deciding
-  if (!mounted) return null;
+  // Non-activated: if localStorage override detected after mount, show standard
+  if (mounted && showStandard) return <>{standardContent}</>;
 
-  if (showStandard) return <>{standardContent}</>;
-
+  // Server render + pre-mount: default to first-run (no blank flash)
   return (
     <SwitchContext.Provider value={handleSwitchToStandard}>
       {firstRunContent}
