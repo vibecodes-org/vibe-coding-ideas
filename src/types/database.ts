@@ -182,6 +182,13 @@ export type Database = {
             referencedRelation: "users";
             referencedColumns: ["id"];
           },
+          {
+            foreignKeyName: "ideas_project_kit_id_fkey";
+            columns: ["project_kit_id"];
+            isOneToOne: false;
+            referencedRelation: "project_kits";
+            referencedColumns: ["id"];
+          },
         ];
       };
       comments: {
