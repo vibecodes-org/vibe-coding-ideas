@@ -643,7 +643,7 @@ export default async function DashboardPage() {
       {onboardingCompleted && (
         <DashboardModeSwitch
           isActivated={isActivated}
-          firstRunContent={(onSwitch) => (
+          firstRunContent={
             <FirstRunDashboard
               userName={userProfile?.full_name ?? null}
               hasMcpConnection={!!userProfile?.mcp_connected_at}
@@ -657,9 +657,8 @@ export default async function DashboardPage() {
               hasTaskInProgress={tasks.length > 0}
               agentCount={botProfiles.length}
               taskCount={tasks.length}
-              onSwitchToStandard={onSwitch}
             />
-          )}
+          }
           standardContent={
             <>
               {!userProfile?.mcp_connected_at && (

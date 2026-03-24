@@ -1,11 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback, type ReactNode } from "react";
+import { useState, useEffect, useCallback, createContext, useContext, type ReactNode } from "react";
 import { FIRST_RUN_OVERRIDE_KEY } from "./first-run-dashboard";
+
+const SwitchContext = createContext<(() => void) | null>(null);
+
+/** Hook for FirstRunDashboard to trigger switch to standard dashboard */
+export function useSwitchToStandard() {
+  return useContext(SwitchContext);
+}
 
 interface DashboardModeSwitchProps {
   isActivated: boolean;
-  firstRunContent: (onSwitch: () => void) => ReactNode;
+  firstRunContent: ReactNode;
   standardContent: ReactNode;
 }
 
@@ -14,6 +21,7 @@ interface DashboardModeSwitchProps {
  * - Activated users (3+ board tasks) always see standard.
  * - Non-activated users see first-run until they click "Switch to full dashboard".
  * - Override persists in localStorage.
+ * - Provides switch callback via context (avoids passing functions across RSC boundary).
  */
 export function DashboardModeSwitch({
   isActivated,
@@ -45,5 +53,11 @@ export function DashboardModeSwitch({
   // Avoid flash — don't render until we've checked localStorage
   if (!mounted) return null;
 
-  return showStandard ? <>{standardContent}</> : <>{firstRunContent(handleSwitchToStandard)}</>;
+  if (showStandard) return <>{standardContent}</>;
+
+  return (
+    <SwitchContext.Provider value={handleSwitchToStandard}>
+      {firstRunContent}
+    </SwitchContext.Provider>
+  );
 }

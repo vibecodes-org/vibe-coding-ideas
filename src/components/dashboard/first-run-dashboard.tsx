@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { Check, Plus, Bot } from "lucide-react";
+import { useSwitchToStandard } from "./dashboard-mode-switch";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
@@ -31,7 +32,6 @@ export interface FirstRunDashboardProps {
   hasTaskInProgress: boolean;
   agentCount: number;
   taskCount: number;
-  onSwitchToStandard?: () => void;
 }
 
 interface SetupStep {
@@ -52,15 +52,16 @@ export function FirstRunDashboard({
   hasTaskInProgress,
   agentCount,
   taskCount,
-  onSwitchToStandard,
 }: FirstRunDashboardProps) {
+  const switchToStandard = useSwitchToStandard();
+
   const handleSwitch = () => {
     try {
       localStorage.setItem(FIRST_RUN_OVERRIDE_KEY, "true");
     } catch {
       // localStorage unavailable
     }
-    onSwitchToStandard?.();
+    switchToStandard?.();
   };
 
   const steps: SetupStep[] = [
