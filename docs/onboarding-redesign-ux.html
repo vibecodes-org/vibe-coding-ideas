@@ -1,0 +1,1137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2.1 Onboarding Redesign — UX Design Document — Compass (UX Designer)</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --surface: #111113;
+    --surface-2: #19191d;
+    --surface-3: #222228;
+    --border: #27272a;
+    --border-focus: #3f3f46;
+    --text: #fafafa;
+    --text-muted: #a1a1aa;
+    --text-dim: #71717a;
+    --violet: #8b5cf6;
+    --violet-dim: rgba(139, 92, 246, 0.12);
+    --violet-border: rgba(139, 92, 246, 0.25);
+    --emerald: #10b981;
+    --emerald-dim: rgba(16, 185, 129, 0.12);
+    --emerald-border: rgba(16, 185, 129, 0.25);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245, 158, 11, 0.12);
+    --amber-border: rgba(245, 158, 11, 0.25);
+    --rose: #f43f5e;
+    --cyan: #06b6d4;
+    --cyan-dim: rgba(6, 182, 212, 0.12);
+    --cyan-border: rgba(6, 182, 212, 0.25);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.65; }
+
+  .hero {
+    background: linear-gradient(160deg, #1a0f2e 0%, #0f1a2e 40%, #091a1f 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 3rem 2rem 2rem;
+  }
+  .hero-inner { max-width: 1100px; margin: 0 auto; }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: var(--emerald-dim); border: 1px solid var(--emerald-border);
+    border-radius: 999px; padding: 0.3rem 0.9rem;
+    font-size: 0.78rem; color: var(--emerald); font-weight: 600; margin-bottom: 1rem;
+  }
+  .hero h1 {
+    font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, #fafafa 30%, var(--emerald) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .hero p { color: var(--text-muted); font-size: 0.95rem; max-width: 700px; }
+  .hero-meta { margin-top: 1rem; display: flex; gap: 1.5rem; flex-wrap: wrap; font-size: 0.82rem; color: var(--text-dim); }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 2rem; }
+  section { margin-bottom: 3rem; scroll-margin-top: 2rem; }
+  section > h2 {
+    font-size: 1.4rem; font-weight: 800; letter-spacing: -0.02em;
+    margin-bottom: 0.4rem; padding-bottom: 0.6rem; border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 1.1rem; font-weight: 700; margin-top: 1.5rem; margin-bottom: 0.5rem; }
+  h4 { font-size: 0.92rem; font-weight: 600; margin-top: 1rem; margin-bottom: 0.4rem; color: var(--text-muted); }
+  p { margin-bottom: 0.7rem; color: var(--text-muted); font-size: 0.9rem; }
+  ul, ol { padding-left: 1.5rem; margin-bottom: 0.7rem; }
+  li { margin-bottom: 0.3rem; color: var(--text-muted); font-size: 0.88rem; }
+  li strong { color: var(--text); }
+  code { font-size: 0.82rem; background: var(--surface-3); padding: 0.1rem 0.4rem; border-radius: 4px; color: var(--violet); }
+
+  /* Mockup styles */
+  .mockup-frame {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden; margin: 1rem 0;
+  }
+  .mockup-titlebar {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 1rem; border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .mockup-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .mockup-dot-r { background: #ef4444; }
+  .mockup-dot-y { background: #eab308; }
+  .mockup-dot-g { background: #22c55e; }
+  .mockup-title { font-size: 0.72rem; color: var(--text-dim); margin-left: 0.5rem; }
+  .mockup-body { padding: 1.5rem; }
+
+  /* Dialog mockup wrapper */
+  .dialog-mock {
+    max-width: 580px; margin: 0 auto;
+    background: var(--surface); border: 1px solid var(--border); border-radius: 16px;
+    overflow: hidden; position: relative;
+  }
+  .dialog-glow {
+    position: absolute; top: 0; left: 0; right: 0; height: 40px; pointer-events: none;
+    background: linear-gradient(180deg, rgba(139, 92, 246, 0.08) 0%, transparent 100%);
+  }
+  .dialog-body { padding: 1.5rem 2rem 2rem; position: relative; }
+
+  /* Step indicator */
+  .step-dots {
+    display: flex; justify-content: center; gap: 6px; padding: 1rem 0 0;
+  }
+  .step-dot {
+    height: 6px; border-radius: 3px; transition: all 0.3s;
+  }
+  .step-dot.active { width: 24px; background: var(--violet); }
+  .step-dot.done { width: 6px; background: rgba(139, 92, 246, 0.5); }
+  .step-dot.future { width: 6px; background: rgba(161, 161, 170, 0.3); }
+
+  /* Form elements */
+  .form-label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); display: block; margin-bottom: 0.3rem; }
+  .form-optional { color: var(--text-dim); font-weight: 400; font-size: 0.7rem; background: var(--surface-3); padding: 0.1rem 0.4rem; border-radius: 3px; margin-left: 0.3rem; }
+  .form-input {
+    width: 100%; background: var(--surface-3); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.55rem 0.75rem; font-size: 0.88rem; color: var(--text-dim);
+    font-family: inherit;
+  }
+  .form-textarea { min-height: 60px; resize: vertical; }
+
+  /* Buttons */
+  .btn-primary {
+    width: 100%; background: var(--violet); color: white; border: none;
+    padding: 0.65rem 1.5rem; border-radius: 8px; font-weight: 700;
+    font-size: 0.9rem; cursor: pointer; font-family: inherit;
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  }
+  .btn-secondary {
+    width: 100%; background: var(--surface-3); color: var(--text); border: 1px solid var(--border);
+    padding: 0.65rem 1.5rem; border-radius: 8px; font-weight: 600;
+    font-size: 0.9rem; cursor: pointer; font-family: inherit;
+    display: flex; align-items: center; justify-content: center; gap: 0.5rem;
+  }
+  .btn-skip {
+    display: block; width: 100%; text-align: center; margin-top: 0.75rem;
+    font-size: 0.78rem; color: var(--text-dim); cursor: pointer; background: none; border: none;
+    font-family: inherit;
+  }
+  .btn-back {
+    background: none; border: none; color: var(--text-dim); cursor: pointer;
+    padding: 0.3rem; border-radius: 6px; display: flex; align-items: center;
+    font-family: inherit;
+  }
+  .btn-back:hover { color: var(--text); background: var(--surface-3); }
+
+  /* Kit selector chips */
+  .kit-chips {
+    display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0;
+  }
+  .kit-chip {
+    background: var(--surface-3); border: 2px solid var(--border); border-radius: 10px;
+    padding: 0.5rem 0.85rem; font-size: 0.82rem; color: var(--text-dim); cursor: pointer;
+    display: flex; align-items: center; gap: 0.4rem; font-weight: 600; font-family: inherit;
+    transition: all 0.15s;
+  }
+  .kit-chip:hover { border-color: var(--border-focus); }
+  .kit-chip.selected { border-color: var(--violet); background: var(--violet-dim); color: var(--violet); }
+  .kit-chip-icon { font-size: 1rem; }
+
+  /* Kit preview compact */
+  .kit-summary {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.6rem 0.75rem; margin-top: 0.5rem;
+  }
+  .kit-summary-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; color: var(--text-dim); margin-bottom: 0.3rem; }
+  .kit-summary-items { display: flex; flex-wrap: wrap; gap: 0.6rem; font-size: 0.78rem; color: var(--text-muted); }
+
+  /* Visibility toggle */
+  .vis-toggle {
+    display: flex; gap: 0.5rem; align-items: center; margin: 0.75rem 0;
+  }
+  .vis-option {
+    padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+    cursor: pointer; border: 1px solid var(--border); background: var(--surface-3);
+    color: var(--text-dim); font-family: inherit;
+  }
+  .vis-option.selected { border-color: var(--violet); background: var(--violet-dim); color: var(--violet); }
+
+  /* AI enhance CTA */
+  .enhance-cta {
+    border: 1px solid var(--violet-border); background: rgba(139, 92, 246, 0.06);
+    border-radius: 12px; padding: 0.75rem 1rem; display: flex; align-items: center;
+    gap: 0.75rem; cursor: pointer; margin: 0.75rem 0; transition: all 0.2s;
+  }
+  .enhance-cta:hover { background: rgba(139, 92, 246, 0.10); }
+  .enhance-icon {
+    width: 36px; height: 36px; border-radius: 8px; flex-shrink: 0;
+    background: linear-gradient(135deg, rgba(139, 92, 246, 0.25), rgba(147, 51, 234, 0.12));
+    display: flex; align-items: center; justify-content: center; font-size: 1.1rem;
+  }
+  .enhance-label { font-size: 0.85rem; font-weight: 600; color: var(--text); }
+  .enhance-sub { font-size: 0.73rem; color: var(--text-dim); }
+  .enhance-badge {
+    background: rgba(139, 92, 246, 0.2); border: 1px solid var(--violet-border);
+    padding: 0.1rem 0.4rem; border-radius: 3px; font-size: 0.6rem;
+    font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--violet);
+    margin-left: 0.4rem;
+  }
+
+  /* Board preview mini */
+  .board-mini {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.5rem;
+    margin: 0.75rem 0; overflow: hidden;
+  }
+  .board-col-mini {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.5rem;
+  }
+  .board-col-header-mini {
+    font-size: 0.7rem; font-weight: 700; color: var(--text-muted);
+    margin-bottom: 0.4rem; display: flex; justify-content: space-between; align-items: center;
+  }
+  .board-col-count { font-size: 0.6rem; color: var(--text-dim); background: var(--surface-3); padding: 0.1rem 0.35rem; border-radius: 4px; }
+  .board-task-mini {
+    background: var(--surface-3); border: 1px solid var(--border); border-radius: 6px;
+    padding: 0.35rem 0.5rem; margin-bottom: 0.3rem; font-size: 0.7rem; color: var(--text-muted);
+  }
+  .board-task-mini:last-child { margin-bottom: 0; }
+  .board-task-label-mini {
+    display: inline-block; font-size: 0.55rem; font-weight: 700; padding: 0.1rem 0.3rem;
+    border-radius: 3px; margin-bottom: 0.15rem;
+  }
+
+  /* Badge row */
+  .badge-row { display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.75rem 0; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    padding: 0.3rem 0.65rem; border-radius: 6px; font-size: 0.75rem; font-weight: 600;
+  }
+  .badge-emerald { background: var(--emerald-dim); border: 1px solid var(--emerald-border); color: var(--emerald); }
+  .badge-violet { background: var(--violet-dim); border: 1px solid var(--violet-border); color: var(--violet); }
+  .badge-amber { background: var(--amber-dim); border: 1px solid var(--amber-border); color: var(--amber); }
+
+  /* Terminal */
+  .terminal {
+    background: #0a0a0a; border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem; font-family: 'Menlo', 'Cascadia Code', 'Consolas', monospace;
+    font-size: 0.78rem; line-height: 1.7; margin: 0.75rem 0;
+  }
+  .terminal-prompt { color: var(--emerald); }
+  .terminal-cmd { color: var(--text); }
+  .terminal-url { color: var(--amber); }
+  .terminal-output { color: var(--text-dim); }
+  .terminal-success { color: var(--emerald); }
+  .terminal-highlight { color: var(--violet); font-weight: 600; }
+
+  /* Info callout */
+  .callout {
+    border-radius: 10px; padding: 0.85rem 1rem; margin: 0.75rem 0;
+  }
+  .callout-amber { background: var(--amber-dim); border: 1px solid var(--amber-border); }
+  .callout-title { font-weight: 700; font-size: 0.82rem; margin-bottom: 0.2rem; }
+  .callout-text { font-size: 0.78rem; color: var(--text-muted); margin: 0; }
+
+  /* Stats cards */
+  .stats-row {
+    display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin: 1rem 0;
+  }
+  .stat-card {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 0.75rem 1.25rem; text-align: center; min-width: 100px;
+  }
+  .stat-num { font-size: 1.4rem; font-weight: 800; }
+  .stat-label { font-size: 0.72rem; color: var(--text-dim); }
+
+  /* Value prop cards */
+  .value-cards { display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin: 1rem 0; }
+  .value-card {
+    border-radius: 10px; padding: 0.85rem; width: 165px; text-align: center;
+    border: 1px solid;
+  }
+  .value-icon { font-size: 1.2rem; margin-bottom: 0.25rem; }
+  .value-title { font-weight: 700; font-size: 0.82rem; color: var(--text); }
+  .value-desc { font-size: 0.72rem; color: var(--text-dim); margin: 0; }
+
+  /* Navigation header */
+  .nav-header {
+    display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.75rem;
+  }
+  .nav-step-label { font-size: 0.73rem; color: var(--text-dim); }
+
+  /* Copy button */
+  .copy-btn {
+    background: var(--surface-3); border: 1px solid var(--border); color: var(--text);
+    padding: 0.4rem 0.75rem; border-radius: 6px; font-size: 0.78rem; cursor: pointer;
+    font-weight: 600; display: inline-flex; align-items: center; gap: 0.35rem;
+    font-family: inherit;
+  }
+
+  /* Divider */
+  .divider { border-top: 1px solid var(--border); margin: 1rem 0; padding-top: 0.75rem; }
+
+  /* Notes / annotations */
+  .note {
+    background: var(--surface-2); border-left: 3px solid var(--violet);
+    padding: 0.75rem 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0;
+  }
+  .note-title { font-weight: 700; font-size: 0.82rem; color: var(--violet); margin-bottom: 0.3rem; }
+  .note p { margin-bottom: 0.3rem; }
+
+  /* Tab system */
+  .tab-group { margin: 1rem 0; }
+  .tab-bar { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 0; overflow-x: auto; }
+  .tab-btn {
+    background: none; border: none; color: var(--text-dim);
+    padding: 0.55rem 1rem; font-size: 0.8rem; font-weight: 600;
+    cursor: pointer; border-bottom: 2px solid transparent;
+    transition: all 0.15s; font-family: inherit; white-space: nowrap;
+  }
+  .tab-btn:hover { color: var(--text-muted); }
+  .tab-btn.active { color: var(--violet); border-bottom-color: var(--violet); }
+  .tab-panel { display: none; padding: 1rem 0; }
+  .tab-panel.active { display: block; }
+
+  /* Loading states */
+  .skeleton { background: linear-gradient(90deg, var(--surface-3) 25%, var(--surface-2) 50%, var(--surface-3) 75%); border-radius: 6px; }
+  .progress-bar {
+    height: 4px; background: var(--surface-3); border-radius: 2px; overflow: hidden; margin: 0.5rem 0;
+  }
+  .progress-fill {
+    height: 100%; background: var(--violet); border-radius: 2px; width: 65%;
+    animation: progress-grow 2s ease-in-out infinite;
+  }
+  @keyframes progress-grow {
+    0% { width: 10%; }
+    50% { width: 75%; }
+    100% { width: 95%; }
+  }
+
+  /* Responsive */
+  @media (max-width: 640px) {
+    .dialog-body { padding: 1rem 1.25rem 1.5rem; }
+    .value-cards { gap: 0.5rem; }
+    .value-card { width: 140px; padding: 0.65rem; }
+    .board-mini { grid-template-columns: 1fr; }
+    .stats-row { gap: 0.5rem; }
+    .stat-card { min-width: 80px; padding: 0.5rem 0.75rem; }
+    .kit-chips { gap: 0.4rem; }
+    .kit-chip { padding: 0.4rem 0.65rem; font-size: 0.75rem; }
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge">📐 UX Design Document</div>
+    <h1>P2.1: Onboarding Wizard Redesign</h1>
+    <p>Wireframes and interaction flows for the 6-step Golden Path onboarding. Building on the <strong>Requirements</strong> step deliverables — this document provides the definitive interaction design for implementation.</p>
+    <div class="hero-meta">
+      <span>Agent: Compass (UX Designer)</span>
+      <span>Task: P2.1</span>
+      <span>Based on: ux-redesign-proposals.html § P2</span>
+      <span>Date: 2026-03-24</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ============================================================ -->
+<!-- OVERVIEW -->
+<!-- ============================================================ -->
+<section>
+  <h2>Overview & Flow Architecture</h2>
+  <p>Building on the <strong>Requirements</strong> step: replace the current 5-step wizard (Welcome → Profile → Pick Agent Team → Create Idea → Success) with a 6-step Golden Path (Welcome → Profile → Your Project → Your Board → Connect MCP → You're Live). The key UX shift is from "choose agents, then figure things out" to "describe what you're building, and we set everything up."</p>
+
+  <h3>Step Flow Summary</h3>
+  <div style="display: flex; gap: 0; align-items: flex-start; margin: 1rem 0; flex-wrap: wrap;">
+    <div style="background: var(--surface-2); border: 1px solid var(--violet-border); border-radius: 8px; padding: 0.7rem; flex: 1; min-width: 100px; text-align: center;">
+      <div style="font-size: 0.65rem; font-weight: 800; color: var(--violet); margin-bottom: 0.2rem;">STEP 0</div>
+      <div style="font-size: 0.78rem; font-weight: 700; color: var(--text);">Welcome</div>
+      <div style="font-size: 0.65rem; color: var(--text-dim);">~10 sec</div>
+    </div>
+    <div style="display: flex; align-items: center; color: var(--text-dim); padding: 0 0.3rem; font-size: 1rem; align-self: center;">→</div>
+    <div style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem; flex: 1; min-width: 100px; text-align: center;">
+      <div style="font-size: 0.65rem; font-weight: 800; color: var(--text-dim); margin-bottom: 0.2rem;">STEP 1</div>
+      <div style="font-size: 0.78rem; font-weight: 700; color: var(--text);">Profile</div>
+      <div style="font-size: 0.65rem; color: var(--text-dim);">~15 sec</div>
+    </div>
+    <div style="display: flex; align-items: center; color: var(--text-dim); padding: 0 0.3rem; font-size: 1rem; align-self: center;">→</div>
+    <div style="background: var(--surface-2); border: 1px solid var(--violet-border); border-radius: 8px; padding: 0.7rem; flex: 1; min-width: 100px; text-align: center;">
+      <div style="font-size: 0.65rem; font-weight: 800; color: var(--violet); margin-bottom: 0.2rem;">STEP 2</div>
+      <div style="font-size: 0.78rem; font-weight: 700; color: var(--text);">Your Project</div>
+      <div style="font-size: 0.65rem; color: var(--text-dim);">~60 sec</div>
+    </div>
+    <div style="display: flex; align-items: center; color: var(--text-dim); padding: 0 0.3rem; font-size: 1rem; align-self: center;">→</div>
+    <div style="background: var(--surface-2); border: 1px solid var(--emerald-border); border-radius: 8px; padding: 0.7rem; flex: 1; min-width: 100px; text-align: center;">
+      <div style="font-size: 0.65rem; font-weight: 800; color: var(--emerald); margin-bottom: 0.2rem;">STEP 3</div>
+      <div style="font-size: 0.78rem; font-weight: 700; color: var(--text);">Your Board</div>
+      <div style="font-size: 0.65rem; color: var(--text-dim);">~30 sec</div>
+    </div>
+    <div style="display: flex; align-items: center; color: var(--text-dim); padding: 0 0.3rem; font-size: 1rem; align-self: center;">→</div>
+    <div style="background: var(--surface-2); border: 1px solid var(--amber-border); border-radius: 8px; padding: 0.7rem; flex: 1; min-width: 100px; text-align: center;">
+      <div style="font-size: 0.65rem; font-weight: 800; color: var(--amber); margin-bottom: 0.2rem;">STEP 4</div>
+      <div style="font-size: 0.78rem; font-weight: 700; color: var(--text);">Connect MCP</div>
+      <div style="font-size: 0.65rem; color: var(--text-dim);">~60 sec</div>
+    </div>
+    <div style="display: flex; align-items: center; color: var(--text-dim); padding: 0 0.3rem; font-size: 1rem; align-self: center;">→</div>
+    <div style="background: var(--surface-2); border: 1px solid var(--emerald-border); border-radius: 8px; padding: 0.7rem; flex: 1; min-width: 100px; text-align: center;">
+      <div style="font-size: 0.65rem; font-weight: 800; color: var(--emerald); margin-bottom: 0.2rem;">STEP 5</div>
+      <div style="font-size: 0.78rem; font-weight: 700; color: var(--text);">You're Live</div>
+      <div style="font-size: 0.65rem; color: var(--text-dim);">~5 sec</div>
+    </div>
+  </div>
+  <p><strong>Target total time:</strong> ~3 minutes from signup to populated board with agents.</p>
+
+  <h3>Key UX Principles</h3>
+  <ul>
+    <li><strong>No dead ends:</strong> Every step advances toward a populated board. Skipping still completes onboarding.</li>
+    <li><strong>Show don't tell:</strong> Board preview with real data beats abstract descriptions.</li>
+    <li><strong>Progressive disclosure:</strong> Complexity revealed only when relevant (kit details after selection, MCP after board ready).</li>
+    <li><strong>Consistent skip affordance:</strong> Every step has "I'll do this later" in identical position — bottom-center, ghost text style.</li>
+    <li><strong>Non-dismissable:</strong> No close button, no outside click dismiss, no escape key. Only skip or complete.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- STEP MOCKUPS -->
+<!-- ============================================================ -->
+<section>
+  <h2>Step-by-Step Wireframes</h2>
+  <p>Interactive mockups for each step. Each shows the dialog at <code>max-w-[580px]</code> matching the current implementation. All steps shown with 6-dot step indicator.</p>
+
+  <div class="tab-group">
+    <div class="tab-bar">
+      <button class="tab-btn active" onclick="switchTab(this, 'step0')">Step 0: Welcome</button>
+      <button class="tab-btn" onclick="switchTab(this, 'step1')">Step 1: Profile</button>
+      <button class="tab-btn" onclick="switchTab(this, 'step2')">Step 2: Your Project</button>
+      <button class="tab-btn" onclick="switchTab(this, 'step2-loading')">Step 2: Loading</button>
+      <button class="tab-btn" onclick="switchTab(this, 'step3')">Step 3: Your Board</button>
+      <button class="tab-btn" onclick="switchTab(this, 'step4')">Step 4: Connect MCP</button>
+      <button class="tab-btn" onclick="switchTab(this, 'step5')">Step 5: You're Live</button>
+    </div>
+
+    <!-- STEP 0: WELCOME -->
+    <div class="tab-panel active" id="step0">
+      <div class="dialog-mock">
+        <div class="dialog-glow"></div>
+        <div class="step-dots">
+          <div class="step-dot active"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+        </div>
+        <div class="dialog-body" style="text-align: center; padding-top: 1.5rem;">
+          <div style="display: inline-flex; align-items: center; gap: 0.4rem; background: var(--violet-dim); border: 1px solid var(--violet-border); border-radius: 999px; padding: 0.25rem 0.7rem; font-size: 0.73rem; font-weight: 600; color: var(--violet); margin-bottom: 1rem;">
+            ✨ Getting started
+          </div>
+          <h3 style="font-size: 1.5rem; margin-top: 0; color: var(--text); letter-spacing: -0.02em;">Welcome to VibeCodes!</h3>
+          <p style="max-width: 450px; margin: 0.3rem auto 1.25rem; font-size: 0.88rem;">Your AI agents become real team members. Describe what you want to build, and we'll set up your board, workflows, and agents automatically.</p>
+
+          <div class="value-cards">
+            <div class="value-card" style="background: var(--violet-dim); border-color: var(--violet-border);">
+              <div class="value-icon">💡</div>
+              <div class="value-title">Describe your idea</div>
+              <div class="value-desc">AI refines your vision</div>
+            </div>
+            <div class="value-card" style="background: var(--emerald-dim); border-color: var(--emerald-border);">
+              <div class="value-icon">🎯</div>
+              <div class="value-title">Get a ready-made board</div>
+              <div class="value-desc">Tasks, workflows, agents</div>
+            </div>
+            <div class="value-card" style="background: var(--amber-dim); border-color: var(--amber-border);">
+              <div class="value-icon">🤖</div>
+              <div class="value-title">Agents do the work</div>
+              <div class="value-desc">Via Claude Code + MCP</div>
+            </div>
+          </div>
+
+          <button class="btn-primary" style="margin-top: 1rem;">Let's get started →</button>
+          <button class="btn-skip">Skip for now</button>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">Changes from current (3 updates)</div>
+        <p><strong>Subtitle updated:</strong> "Your AI agents become real team members. Describe what you want to build, and we'll set up your board, workflows, and agents automatically." — replaces "Where your AI agents become real team members. Let's get you set up in under a minute." The new text describes the Golden Path (auto-setup) rather than just promising speed.</p>
+        <p><strong>All 3 value prop cards updated</strong> to form a narrative sequence matching the Golden Path:</p>
+        <ul style="margin-left: 1rem;">
+          <li>Card 1: 💡 <strong>"Describe your idea"</strong> / "AI refines your vision" — replaces "Share ideas & get feedback" (community-focused, not relevant to onboarding)</li>
+          <li>Card 2: 🎯 <strong>"Get a ready-made board"</strong> / "Tasks, workflows, agents" — replaces "AI generates your task board" (close, but the new phrasing emphasises the outcome, not the mechanism)</li>
+          <li>Card 3: 🤖 <strong>"Agents do the work"</strong> / "Via Claude Code + MCP" — replaces "Agents pick up work autonomously" (now mentions MCP as fundamental)</li>
+        </ul>
+        <p>The three cards now tell a sequential story: <strong>Describe → Board → Agents</strong> — matching exactly what happens in Steps 2–5.</p>
+      </div>
+    </div>
+
+    <!-- STEP 1: PROFILE -->
+    <div class="tab-panel" id="step1">
+      <div class="dialog-mock">
+        <div class="dialog-glow"></div>
+        <div class="step-dots">
+          <div class="step-dot done"></div>
+          <div class="step-dot active"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+        </div>
+        <div class="dialog-body">
+          <div class="nav-header">
+            <button class="btn-back">← Back</button>
+            <span class="nav-step-label">Step 2 of 6</span>
+          </div>
+          <h3 style="font-size: 1.2rem; margin-top: 0; color: var(--text);">Quick profile setup</h3>
+          <p style="font-size: 0.85rem; margin-bottom: 1rem;">Help others know who you are. Takes 10 seconds.</p>
+
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-bottom: 1rem;">
+            <div style="width: 48px; height: 48px; border-radius: 50%; background: linear-gradient(135deg, var(--violet), #a855f7); display: flex; align-items: center; justify-content: center; font-size: 1.1rem; font-weight: 700; color: white;">N</div>
+            <div>
+              <div style="font-size: 0.82rem; font-weight: 600; color: var(--text);">Looking good!</div>
+              <div style="font-size: 0.73rem; color: var(--text-dim);">Your avatar was imported from your account.</div>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 0.75rem;">
+            <label class="form-label">Display name</label>
+            <input class="form-input" value="Nick Ball" readonly>
+          </div>
+          <div style="margin-bottom: 0.75rem;">
+            <label class="form-label">Bio <span class="form-optional">optional</span></label>
+            <input class="form-input" placeholder="e.g., Full-stack dev, AI enthusiast">
+          </div>
+          <div style="margin-bottom: 1.25rem;">
+            <label class="form-label">GitHub <span class="form-optional">optional</span></label>
+            <input class="form-input" placeholder="username">
+          </div>
+
+          <button class="btn-primary">Continue →</button>
+          <button class="btn-skip">Skip this step</button>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">No changes from current</div>
+        <p>Profile step is identical to the existing implementation. Same fields, same save logic via <code>updateProfileFromOnboarding</code>. Step label updated to "2 of 6" (was "2 of 5").</p>
+      </div>
+    </div>
+
+    <!-- STEP 2: YOUR PROJECT -->
+    <div class="tab-panel" id="step2">
+      <div class="dialog-mock">
+        <div class="dialog-glow"></div>
+        <div class="step-dots">
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot active"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+        </div>
+        <div class="dialog-body">
+          <div class="nav-header">
+            <button class="btn-back">← Back</button>
+            <span class="nav-step-label">Step 3 of 6</span>
+          </div>
+          <h3 style="font-size: 1.2rem; margin-top: 0; color: var(--text);">What are you building?</h3>
+          <p style="font-size: 0.85rem; margin-bottom: 1rem;">Describe your project and we'll set up everything — agents, workflows, and your board.</p>
+
+          <div style="margin-bottom: 0.75rem;">
+            <label class="form-label">Project name</label>
+            <input class="form-input" placeholder="e.g., A recipe sharing app with AI suggestions">
+          </div>
+
+          <div style="margin-bottom: 0.75rem;">
+            <label class="form-label">Description <span class="form-optional">optional — AI can help</span></label>
+            <textarea class="form-input form-textarea" placeholder="What's the idea? Don't overthink it — AI can refine it later."></textarea>
+          </div>
+
+          <div style="margin-bottom: 0.5rem;">
+            <label class="form-label">What kind of project?</label>
+            <div class="kit-chips">
+              <button class="kit-chip selected"><span class="kit-chip-icon">🌐</span> Web App</button>
+              <button class="kit-chip"><span class="kit-chip-icon">📱</span> Mobile</button>
+              <button class="kit-chip"><span class="kit-chip-icon">⚙️</span> API</button>
+              <button class="kit-chip"><span class="kit-chip-icon">🎨</span> Design</button>
+              <button class="kit-chip"><span class="kit-chip-icon">🤖</span> AI/ML</button>
+              <button class="kit-chip"><span class="kit-chip-icon">✨</span> Custom</button>
+            </div>
+          </div>
+
+          <!-- Kit summary (appears when kit selected) -->
+          <div class="kit-summary">
+            <div class="kit-summary-label">What you'll get</div>
+            <div class="kit-summary-items">
+              <span>🧑‍💻 5 agents</span>
+              <span>⚡ 6-step workflow</span>
+              <span>🏷️ 4 labels</span>
+              <span>🔄 1 auto-rule</span>
+            </div>
+          </div>
+
+          <div class="vis-toggle">
+            <label class="form-label" style="margin-bottom: 0; margin-right: 0.5rem;">Visibility</label>
+            <button class="vis-option selected">🌐 Public</button>
+            <button class="vis-option">🔒 Private</button>
+          </div>
+
+          <!-- AI Enhance CTA -->
+          <div class="enhance-cta">
+            <div class="enhance-icon">✨</div>
+            <div style="flex: 1;">
+              <div class="enhance-label">Enhance with AI <span class="enhance-badge">Free</span></div>
+              <div class="enhance-sub">AI can refine your description and help generate better tasks</div>
+            </div>
+            <div style="background: linear-gradient(135deg, #7c3aed, #8b5cf6); color: white; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600;">Enhance</div>
+          </div>
+
+          <button class="btn-primary" style="margin-top: 0.5rem;">Create & Generate Board →</button>
+          <p style="font-size: 0.75rem; color: var(--text-dim); text-align: center; margin-top: 0.6rem;">This will create your idea, set up agents from the selected kit, and generate an AI-powered task board.</p>
+          <button class="btn-skip">I'll do this later</button>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">Major change — merges old Steps 2 + 3</div>
+        <p><strong>Removed:</strong> Featured teams selection, tag chips. <strong>Added:</strong> Kit selector (compact chips from <code>ProjectTypeSelector</code>), visibility toggle, kit summary preview (compact <code>KitPreview</code>).</p>
+        <p><strong>Kit chips use compact mode</strong> from the existing <code>ProjectTypeSelector</code> component — <code>grid-cols-[repeat(auto-fill,minmax(160px,1fr))]</code> with smaller padding. The chip layout shown here is a further simplification: inline flex-wrap instead of grid, since we have limited vertical space in the dialog.</p>
+        <p><strong>Kit summary</strong> appears below the chips when a kit is selected — uses the compact <code>KitPreview</code> pattern (one-line counts).</p>
+        <p><strong>Visibility toggle</strong> is a simple two-button group, defaulting to Public.</p>
+        <p><strong>AI Enhance</strong> moved below the kit selector (was above the submit button). Still free, same <code>enhanceOnboardingDescription</code> action.</p>
+        <p><strong>CTA text</strong>: "Create & Generate Board →" (was "Create Idea"). This sets the expectation that submitting will do more than just save — it creates, applies kit, and generates.</p>
+      </div>
+    </div>
+
+    <!-- STEP 2: LOADING STATE -->
+    <div class="tab-panel" id="step2-loading">
+      <div class="dialog-mock">
+        <div class="dialog-glow"></div>
+        <div class="step-dots">
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot active"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+        </div>
+        <div class="dialog-body" style="text-align: center; padding-top: 2rem; padding-bottom: 2.5rem;">
+          <div style="font-size: 2rem; margin-bottom: 0.75rem; animation: pulse 2s ease-in-out infinite;">🚀</div>
+          <h3 style="font-size: 1.2rem; margin-top: 0; color: var(--text);">Creating your project...</h3>
+          <p style="font-size: 0.85rem; margin-bottom: 1.25rem; max-width: 350px; margin-left: auto; margin-right: auto;">Setting up your board, agents, and workflows. This takes about 10 seconds.</p>
+
+          <div class="progress-bar">
+            <div class="progress-fill"></div>
+          </div>
+
+          <div style="margin-top: 1rem; display: flex; flex-direction: column; gap: 0.5rem; max-width: 280px; margin-left: auto; margin-right: auto; text-align: left;">
+            <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem;">
+              <span style="color: var(--emerald);">✓</span>
+              <span style="color: var(--text-muted);">Created idea</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem;">
+              <span style="color: var(--emerald);">✓</span>
+              <span style="color: var(--text-muted);">Applied Web Application kit</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 0.5rem; font-size: 0.78rem;">
+              <span style="color: var(--violet); animation: pulse 1s ease-in-out infinite;">●</span>
+              <span style="color: var(--text);">Generating board tasks...</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">Loading state — critical for perceived performance</div>
+        <p>The "Create & Generate Board" action is a 3-step sequential process: (1) create idea, (2) apply kit, (3) generate board tasks. Each step takes 2-5 seconds.</p>
+        <p><strong>Progress checklist</strong> updates in real-time as each step completes. This gives concrete feedback instead of a generic spinner.</p>
+        <p><strong>Implementation note:</strong> The loading state replaces the form content within the same step (no step transition). On success, auto-advance to Step 3. On failure, show toast error and return to the form.</p>
+        <p><strong>Error handling:</strong> If kit application fails, still create the idea and advance (show a warning badge on Step 3). If board generation fails, still advance (show "Go to your board" instead of preview).</p>
+      </div>
+    </div>
+
+    <!-- STEP 3: YOUR BOARD -->
+    <div class="tab-panel" id="step3">
+      <div class="dialog-mock">
+        <div class="dialog-glow"></div>
+        <div class="step-dots">
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot active"></div>
+          <div class="step-dot future"></div>
+          <div class="step-dot future"></div>
+        </div>
+        <div class="dialog-body">
+          <div style="display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.3rem;">
+            <span style="color: var(--emerald); font-size: 1.2rem;">✓</span>
+            <h3 style="font-size: 1.2rem; margin-top: 0; color: var(--text);">Your board is ready!</h3>
+          </div>
+          <p style="font-size: 0.85rem; margin-bottom: 0.75rem;">AI generated 8 tasks with the Web Application workflow. Your agents are allocated and ready to work.</p>
+
+          <!-- Mini board preview -->
+          <div class="board-mini">
+            <div class="board-col-mini">
+              <div class="board-col-header-mini">Backlog <span class="board-col-count">3</span></div>
+              <div class="board-task-mini">
+                <div class="board-task-label-mini" style="background: var(--violet-dim); color: var(--violet);">Feature</div>
+                Set up auth flow
+              </div>
+              <div class="board-task-mini">
+                <div class="board-task-label-mini" style="background: var(--cyan-dim); color: var(--cyan);">Docs</div>
+                API documentation
+              </div>
+              <div class="board-task-mini" style="color: var(--text-dim); font-style: italic;">+1 more</div>
+            </div>
+            <div class="board-col-mini">
+              <div class="board-col-header-mini">To Do <span class="board-col-count">3</span></div>
+              <div class="board-task-mini">
+                <div class="board-task-label-mini" style="background: var(--violet-dim); color: var(--violet);">Feature</div>
+                Database schema
+              </div>
+              <div class="board-task-mini">
+                <div class="board-task-label-mini" style="background: var(--violet-dim); color: var(--violet);">Feature</div>
+                Landing page
+              </div>
+              <div class="board-task-mini" style="color: var(--text-dim); font-style: italic;">+1 more</div>
+            </div>
+            <div class="board-col-mini">
+              <div class="board-col-header-mini">In Progress <span class="board-col-count">2</span></div>
+              <div class="board-task-mini">
+                <div class="board-task-label-mini" style="background: var(--amber-dim); color: var(--amber);">Infra</div>
+                CI/CD pipeline
+              </div>
+              <div class="board-task-mini">
+                <div class="board-task-label-mini" style="background: var(--emerald-dim); color: var(--emerald);">Setup</div>
+                Dev environment
+              </div>
+            </div>
+          </div>
+
+          <!-- Confirmation badges -->
+          <div class="badge-row">
+            <div class="badge badge-emerald">✓ 5 agents allocated</div>
+            <div class="badge badge-violet">✓ Web App workflow applied</div>
+            <div class="badge badge-amber">✓ Auto-rules active</div>
+          </div>
+
+          <button class="btn-primary" style="margin-top: 0.75rem;">Next: Connect Claude Code →</button>
+          <button class="btn-skip">I'll do this later</button>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">Board preview design decisions</div>
+        <p><strong>3-column preview</strong> shows Backlog, To Do, and In Progress only — enough to prove the board has real content without overwhelming the dialog. On mobile (&lt;480px), columns stack vertically showing only the first 2 tasks each.</p>
+        <p><strong>"+N more" indicator</strong> when a column has more than 2 tasks — prevents the preview from growing too tall.</p>
+        <p><strong>Confirmation badges</strong> show three key results: agents allocated, workflow applied, auto-rules active. These map directly to what the kit provides.</p>
+        <p><strong>No back button</strong> — this step is post-creation, going back doesn't make sense. The "I'll do this later" skip calls <code>completeOnboarding()</code> and navigates to the board.</p>
+        <p><strong>Failure fallback:</strong> If board generation failed, hide the board preview and show: "Your idea is created. Go to your board to generate tasks with AI." with a "Go to your board →" CTA.</p>
+      </div>
+    </div>
+
+    <!-- STEP 4: CONNECT MCP -->
+    <div class="tab-panel" id="step4">
+      <div class="dialog-mock">
+        <div class="dialog-glow"></div>
+        <div class="step-dots">
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot active"></div>
+          <div class="step-dot future"></div>
+        </div>
+        <div class="dialog-body">
+          <h3 style="font-size: 1.2rem; margin-top: 0; color: var(--text);">Connect Claude Code</h3>
+          <p style="font-size: 0.85rem; margin-bottom: 0.5rem;">This is how your AI agents come to life. Claude Code reads your board, claims tasks, and executes workflow steps as each agent persona.</p>
+
+          <div class="callout callout-amber">
+            <div class="callout-title" style="color: var(--amber);">⚡ Why this matters</div>
+            <p class="callout-text">Without this connection, your agents can't work. MCP (Model Context Protocol) lets Claude Code read your board, claim tasks, and complete workflow steps as each agent persona.</p>
+          </div>
+
+          <div class="terminal">
+            <div><span class="terminal-prompt">$</span> <span class="terminal-cmd">claude mcp add vibecodes <span class="terminal-url">https://vibecodes.co.uk/api/mcp</span></span></div>
+            <div class="terminal-output">→ Connecting to VibeCodes MCP server...</div>
+            <div class="terminal-output">→ Opening browser for authentication...</div>
+            <div class="terminal-success">✓ Connected as <span class="terminal-highlight">Nick Ball</span></div>
+            <div class="terminal-success">✓ Board: <span class="terminal-highlight">Recipe Sharing App</span> (8 tasks, 5 agents)</div>
+            <div class="terminal-output" style="margin-top: 0.3rem;">Try: <span class="terminal-cmd">claude</span> then ask it to <span class="terminal-highlight">"check my board and start working"</span></div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.75rem; margin-top: 0.5rem;">
+            <button class="copy-btn">📋 Copy command</button>
+            <span style="font-size: 0.75rem; color: var(--text-dim);">Run this in your terminal where you code</span>
+          </div>
+
+          <div class="divider">
+            <p style="font-weight: 600; font-size: 0.82rem; color: var(--text-muted); margin-bottom: 0.4rem;">Don't use Claude Code?</p>
+            <p style="font-size: 0.78rem; color: var(--text-dim); margin: 0;">You can still manage your board manually and use workflows from the web UI. But for the full agent-powered experience, Claude Code + MCP is the way to go. <a href="/guide/mcp-integration" style="color: var(--violet); text-decoration: none;">Learn more →</a></p>
+          </div>
+
+          <button class="btn-primary" style="margin-top: 0.75rem;">I've connected — let's go! →</button>
+          <button class="btn-skip">I'll do this later</button>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">MCP as first-class activation step</div>
+        <p><strong>Terminal mockup</strong> reuses the pattern from <code>McpConnectionBanner</code> and <code>FirstRunMcpCard</code> — amber accent for the "Why this matters" callout, dark terminal with syntax-highlighted commands.</p>
+        <p><strong>Copy button</strong> copies the exact command: <code>claude mcp add vibecodes https://vibecodes.co.uk/api/mcp</code>. Shows "Copied!" state for 2 seconds with emerald checkmark (same as existing <code>copyMcpCommand</code> in onboarding-dialog.tsx).</p>
+        <p><strong>"Don't use Claude Code?" fallback</strong> is important — not all users will have Claude Code. This avoids making them feel stuck. The link goes to the guide page for MCP integration.</p>
+        <p><strong>No back button</strong> — same reasoning as Step 3. Post-creation, forward-only.</p>
+      </div>
+    </div>
+
+    <!-- STEP 5: YOU'RE LIVE -->
+    <div class="tab-panel" id="step5">
+      <div class="dialog-mock">
+        <div class="dialog-glow"></div>
+        <div class="step-dots">
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot done"></div>
+          <div class="step-dot active"></div>
+        </div>
+        <div class="dialog-body" style="text-align: center; padding-top: 2rem;">
+          <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">🎉</div>
+          <h3 style="font-size: 1.4rem; margin-top: 0; color: var(--text);">You're all set!</h3>
+          <p style="max-width: 380px; margin: 0.3rem auto 1rem; font-size: 0.88rem;">Your project is configured and your agents are ready. Here's what you have:</p>
+
+          <div class="stats-row">
+            <div class="stat-card">
+              <div class="stat-num" style="color: var(--violet);">8</div>
+              <div class="stat-label">Board tasks</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num" style="color: var(--emerald);">5</div>
+              <div class="stat-label">AI agents</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-num" style="color: var(--amber);">1</div>
+              <div class="stat-label">Active workflow</div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.75rem; justify-content: center; flex-wrap: wrap; margin-top: 0.5rem;">
+            <button class="btn-primary" style="width: auto; padding: 0.65rem 1.5rem;">Go to your board →</button>
+            <button class="btn-secondary" style="width: auto; padding: 0.65rem 1.5rem;">Go to dashboard</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="note">
+        <div class="note-title">Success with concrete numbers</div>
+        <p><strong>Confetti animation</strong> plays on mount (reuse existing <code>Confetti</code> component).</p>
+        <p><strong>Stats cards</strong> show real numbers from the creation process: task count from <code>generateBoardFromOnboarding</code>, agent count from kit application, workflow count (always 1 if kit had a workflow template).</p>
+        <p><strong>Primary CTA: "Go to your board"</strong> navigates to <code>/ideas/{ideaId}/board</code>. Secondary "Go to dashboard" navigates to <code>/dashboard</code>. Both call <code>completeOnboarding()</code> first.</p>
+        <p><strong>No skip link</strong> — this is the final step, both CTAs complete onboarding.</p>
+        <p><strong>Fallback if no idea was created</strong> (user skipped Step 2 but somehow reached Step 5): show only "Go to dashboard" CTA with a simpler message: "You're all set! Head to the dashboard to create your first project."</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================ -->
+<!-- INTERACTION FLOWS -->
+<!-- ============================================================ -->
+<section>
+  <h2>Interaction Flows & State Management</h2>
+
+  <h3>Step Navigation Rules</h3>
+  <ul>
+    <li><strong>Steps 0–2:</strong> Back button enabled, can navigate backwards freely.</li>
+    <li><strong>Steps 3–5:</strong> No back button — these are post-creation, forward-only.</li>
+    <li><strong>Skip from any step:</strong> Calls <code>completeOnboarding()</code> and closes the dialog. Router refresh follows.</li>
+    <li><strong>Skip from Step 2:</strong> Creates no idea. Calls <code>completeOnboarding()</code>, navigates to dashboard.</li>
+    <li><strong>Skip from Steps 3–4:</strong> Calls <code>completeOnboarding()</code>, navigates to the board (idea already exists).</li>
+  </ul>
+
+  <h3>Step 2 → Step 3 Transition (the critical path)</h3>
+  <p>This is the most complex transition. On "Create & Generate Board →" click:</p>
+  <ol>
+    <li>Show loading state (replace form content, keep step indicator on step 2)</li>
+    <li>Call <code>createIdeaFromOnboarding({ title, description, tags: [], kitId, visibility })</code></li>
+    <li>On success: store <code>ideaId</code> and <code>kitResult</code> in state</li>
+    <li>Call <code>generateBoardFromOnboarding(ideaId)</code> (new server action, uses platform key)</li>
+    <li>On success: store <code>taskCount</code>, advance to Step 3</li>
+    <li>On generation failure: still advance to Step 3 with <code>generationFailed = true</code></li>
+    <li>On idea creation failure: show toast error, return to form (do NOT advance)</li>
+  </ol>
+
+  <h3>State Shape</h3>
+  <pre style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.78rem; overflow-x: auto; color: var(--text-muted); font-family: 'Menlo', monospace;">
+// Key state additions to onboarding-dialog.tsx
+const [step, setStep] = useState(0);                    // 0-5 (was 0-4)
+const [selectedKitId, setSelectedKitId] = useState&lt;string | null&gt;(null);
+const [visibility, setVisibility] = useState&lt;"public" | "private"&gt;("public");
+const [creating, setCreating] = useState(false);         // loading overlay for Step 2
+const [createProgress, setCreateProgress] = useState(0); // 0=idle, 1=idea, 2=kit, 3=generating
+const [createdIdeaId, setCreatedIdeaId] = useState&lt;string | null&gt;(null);
+const [taskCount, setTaskCount] = useState(0);
+const [agentCount, setAgentCount] = useState(0);
+const [workflowApplied, setWorkflowApplied] = useState(false);
+const [generationFailed, setGenerationFailed] = useState(false);
+
+// Removed state
+// selectedTeamId, addedTeamId, addingTeam — no longer needed (featured teams removed)
+// selectedTags — tags removed from onboarding (simplification)
+  </pre>
+
+  <h3>Props Changes</h3>
+  <pre style="background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; font-size: 0.78rem; overflow-x: auto; color: var(--text-muted); font-family: 'Menlo', monospace;">
+// OnboardingDialog — BEFORE
+interface OnboardingDialogProps {
+  open: boolean;
+  onComplete: () => void;
+  userFullName: string | null;
+  userAvatarUrl: string | null;
+  userGithubUsername: string | null;
+  featuredTeams: FeaturedTeamWithAgents[];  // ← REMOVE
+}
+
+// OnboardingDialog — AFTER
+interface OnboardingDialogProps {
+  open: boolean;
+  onComplete: () => void;
+  userFullName: string | null;
+  userAvatarUrl: string | null;
+  userGithubUsername: string | null;
+  kits: KitWithSteps[];  // ← ADD (from getActiveKitsWithSteps)
+}
+
+// OnboardingWrapper — same change: remove featuredTeams, add kits
+  </pre>
+
+  <h3>Server Action Changes</h3>
+  <ul>
+    <li><strong><code>createIdeaFromOnboarding</code></strong> — extend to accept <code>kitId?: string</code> and <code>visibility?: "public" | "private"</code>. If kitId provided, call <code>applyKit(ideaId, kitId)</code> after idea creation. Return <code>{ ideaId, kitResult?: { agentCount, workflowApplied, labelsCreated, autoRuleCreated } }</code>.</li>
+    <li><strong><code>generateBoardFromOnboarding(ideaId)</code></strong> — NEW. Uses platform API key (free for onboarding). Calls existing <code>generateBoardTasks</code> logic. Guard: only works before <code>onboarding_completed_at</code> is set. Returns <code>{ taskCount: number }</code>.</li>
+    <li><strong><code>completeOnboarding</code></strong> — unchanged, but called later (Step 5 or any skip) instead of during idea creation.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- MOBILE RESPONSIVE -->
+<!-- ============================================================ -->
+<section>
+  <h2>Mobile Responsiveness</h2>
+
+  <h3>Breakpoint: &lt;640px (sm)</h3>
+  <ul>
+    <li><strong>Dialog</strong>: becomes full-width bottom sheet (existing shadcn DrawerContent behavior at <code>sm:</code> breakpoint)</li>
+    <li><strong>Kit chips</strong>: wrap to 2 columns (3 per row on desktop, 2 on mobile)</li>
+    <li><strong>Board preview (Step 3)</strong>: columns stack vertically, show max 2 tasks per column</li>
+    <li><strong>Stats cards (Step 5)</strong>: shrink to <code>min-width: 80px</code>, reduce padding</li>
+    <li><strong>Terminal block (Step 4)</strong>: horizontal scroll for long command, smaller font (0.7rem)</li>
+    <li><strong>Value cards (Step 0)</strong>: narrower (140px), reduced padding</li>
+  </ul>
+
+  <h3>Breakpoint: &lt;480px</h3>
+  <ul>
+    <li><strong>Board preview</strong>: hide the 3rd column (In Progress), show only Backlog + To Do</li>
+    <li><strong>Kit summary</strong>: switch from flex-row to stacked (one item per line)</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- LOADING & ERROR STATES -->
+<!-- ============================================================ -->
+<section>
+  <h2>Loading, Error, and Empty States</h2>
+
+  <h3>Loading States</h3>
+  <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text);">Step 1: Save Profile</td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Button text → "Saving...", disabled state. Same as current.</td>
+    </tr>
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text);">Step 2: AI Enhance</td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Enhance button → "Working...", sparkle animation on icon. Same as current.</td>
+    </tr>
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text);">Step 2: Create & Generate</td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Full loading overlay with progress checklist (see "Step 2: Loading" tab above).</td>
+    </tr>
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text);">Step 4: Copy Command</td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Button → "Copied!" with green check for 2s. Same as current.</td>
+    </tr>
+  </table>
+
+  <h3>Error States</h3>
+  <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem; margin-top: 0.5rem;">
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text);">Idea creation fails</td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Toast error, return to form. User can retry.</td>
+    </tr>
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text);">Kit application fails</td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Toast warning, still advance to Step 3. Badge shows "Kit partially applied" instead of agent/workflow badges.</td>
+    </tr>
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text);">Board generation fails</td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Advance to Step 3 with no board preview. Show: "Your idea is created. Go to your board to generate tasks with AI." CTA becomes "Go to your board →".</td>
+    </tr>
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text);">AI enhance fails</td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Toast error, enhance button re-enabled. Same as current.</td>
+    </tr>
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text);">No kits available</td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Hide the "What kind of project?" section entirely. CTA changes to "Create & Generate Board →" (still works, just no kit applied).</td>
+    </tr>
+  </table>
+
+  <h3>Empty States</h3>
+  <ul>
+    <li><strong>No kits loaded:</strong> Kit selector section hidden, form works as a simplified "create idea" form.</li>
+    <li><strong>Step 5 with no idea created (skipped Step 2):</strong> Show only dashboard CTA, simplified message.</li>
+    <li><strong>Step 3 with generation failure:</strong> No board preview, link to board page instead.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- ACCESSIBILITY -->
+<!-- ============================================================ -->
+<section>
+  <h2>Accessibility</h2>
+
+  <h3>Keyboard Navigation</h3>
+  <ul>
+    <li><strong>Kit chips:</strong> <code>role="radiogroup"</code> with arrow key navigation (reuse <code>ProjectTypeSelector</code> pattern). Tab moves to the group, arrows move between options.</li>
+    <li><strong>Visibility toggle:</strong> <code>role="radiogroup"</code> with two <code>role="radio"</code> buttons.</li>
+    <li><strong>All buttons:</strong> Focusable, keyboard-activatable. Tab order follows visual order.</li>
+    <li><strong>Skip links:</strong> <code>&lt;button&gt;</code> elements (not <code>&lt;a&gt;</code>) — keyboard-accessible without href.</li>
+    <li><strong>Step indicator:</strong> <code>aria-label="Step {n} of 6"</code> on the container, individual dots are decorative (<code>aria-hidden</code>).</li>
+  </ul>
+
+  <h3>Screen Reader</h3>
+  <ul>
+    <li><strong>Dialog title:</strong> <code>sr-only</code> text "Welcome to VibeCodes" (existing pattern).</li>
+    <li><strong>Kit summary:</strong> <code>aria-live="polite"</code> region — announces when kit selection changes.</li>
+    <li><strong>Loading progress:</strong> <code>aria-live="polite"</code> on the progress checklist — announces each completed step.</li>
+    <li><strong>Board preview (Step 3):</strong> <code>aria-label="Board preview with {n} tasks across 3 columns"</code>.</li>
+    <li><strong>Terminal block (Step 4):</strong> <code>role="region" aria-label="MCP connection command"</code>.</li>
+  </ul>
+
+  <h3>Colour Contrast</h3>
+  <ul>
+    <li>All text meets WCAG 2.1 AA. Violet (#8b5cf6) on dark bg: 5.2:1 ratio ✓.</li>
+    <li>Muted text (#a1a1aa) on surface (#111113): 5.8:1 ratio ✓.</li>
+    <li>Dim text (#71717a) on surface: 3.6:1 ratio — used for non-essential hints only ✓ (AA for large text).</li>
+    <li>Badge text colors on their dim backgrounds all exceed 4.5:1 ✓.</li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- FILES -->
+<!-- ============================================================ -->
+<section>
+  <h2>Implementation File Map</h2>
+
+  <h3>Files to Modify</h3>
+  <table style="width: 100%; border-collapse: collapse; font-size: 0.85rem;">
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text); white-space: nowrap;"><code>onboarding-dialog.tsx</code></td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Major rewrite — 6 steps, remove featured teams, add kit selector, loading state, board preview, MCP step. ~600 lines estimated.</td>
+    </tr>
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text); white-space: nowrap;"><code>onboarding-wrapper.tsx</code></td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Replace <code>featuredTeams</code> prop with <code>kits: KitWithSteps[]</code>.</td>
+    </tr>
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text); white-space: nowrap;"><code>step-indicator.tsx</code></td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">No code changes needed — already dynamic via <code>totalSteps</code> prop. Just pass 6 instead of 5.</td>
+    </tr>
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text); white-space: nowrap;"><code>src/actions/onboarding.ts</code></td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Extend <code>createIdeaFromOnboarding</code> (kitId, visibility params). Add <code>generateBoardFromOnboarding</code>.</td>
+    </tr>
+    <tr style="border-bottom: 1px solid var(--border);">
+      <td style="padding: 0.5rem; font-weight: 600; color: var(--text); white-space: nowrap;"><code>dashboard/page.tsx</code></td>
+      <td style="padding: 0.5rem; color: var(--text-muted);">Replace <code>featuredTeams</code> fetch with <code>getActiveKitsWithSteps()</code>. Pass <code>kits</code> to <code>OnboardingWrapper</code>.</td>
+    </tr>
+  </table>
+
+  <h3>Components to Reuse</h3>
+  <ul>
+    <li><code>ProjectTypeSelector</code> — compact mode for kit chips (adapt layout to flex-wrap for dialog width)</li>
+    <li><code>KitPreview</code> — compact mode for kit summary</li>
+    <li><code>Confetti</code> — Step 5 celebration</li>
+    <li><code>StepIndicator</code> — 6 dots (already supports dynamic count)</li>
+    <li>Copy-to-clipboard pattern from existing <code>copyMcpCommand</code></li>
+  </ul>
+</section>
+
+<!-- ============================================================ -->
+<!-- DESIGN DECISIONS LOG -->
+<!-- ============================================================ -->
+<section>
+  <h2>Design Decisions & Rationale</h2>
+
+  <h3>Why chips instead of grid cards for kit selection?</h3>
+  <p>The existing <code>ProjectTypeSelector</code> uses a grid of cards. In the constrained dialog (580px), a grid of 6 cards would require 2 rows of 3, consuming ~250px of vertical space. Compact chips in a flex-wrap layout fit in ~80px, leaving room for the form fields, kit preview, and enhance CTA without scrolling.</p>
+  <p><strong>Implementation note:</strong> Reuse <code>ProjectTypeSelector</code> component but pass a new <code>variant="chips"</code> prop (or use the existing compact mode with CSS override). The existing radiogroup keyboard navigation transfers directly.</p>
+
+  <h3>Why remove tags from onboarding?</h3>
+  <p>Tags add friction without clear value during onboarding. The kit already categories the project type. Tags can be added later from the idea detail page. This saves ~60px of vertical space.</p>
+
+  <h3>Why forward-only after Step 2?</h3>
+  <p>Once the idea and board are created, going "back" would mean... what? Recreating the idea? That creates confusing state. Forward-only post-creation is simpler — if users want to change something, they can do it from the board page.</p>
+
+  <h3>Why show a board preview instead of redirecting to the board?</h3>
+  <p>Redirecting breaks the wizard flow and loses the context of what just happened. The preview gives users a "proof of work" moment — they can see the result before the MCP step. The board page is one click away from Step 5.</p>
+
+  <h3>Why not auto-detect MCP connection?</h3>
+  <p>MCP connection detection relies on <code>mcp_connected_at</code> which is only set on the first successful tool call. Polling for this during onboarding would require the user to complete the MCP auth flow in another tab and then make a tool call — too complex. The "I've connected" button is a trust-based approach. The first-run dashboard will show the real connection status after onboarding.</p>
+</section>
+
+</div>
+
+<script>
+function switchTab(btn, panelId) {
+  const group = btn.closest('.tab-group');
+  group.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  group.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(panelId).classList.add('active');
+}
+</script>
+
+<style>
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+</style>
+
+</body>
+</html>

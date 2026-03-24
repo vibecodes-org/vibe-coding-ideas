@@ -6,50 +6,33 @@ import {
   Sparkles,
   ArrowRight,
   ChevronLeft,
-  ChevronRight,
   Check,
   Lightbulb,
+  Target,
   Bot,
   Cable,
-  LayoutGrid,
   Copy,
-  Users,
+  Globe,
+  Lock,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { StepIndicator } from "./step-indicator";
 import { Confetti } from "./confetti";
-import { getRoleColor } from "@/lib/agent-colors";
+import { ProjectTypeSelector } from "@/components/kits/project-type-selector";
+import { KitPreview } from "@/components/kits/kit-preview";
 import { cn } from "@/lib/utils";
 import {
   completeOnboarding,
   createIdeaFromOnboarding,
   updateProfileFromOnboarding,
   enhanceOnboardingDescription,
+  generateBoardFromOnboarding,
 } from "@/actions/onboarding";
-import { addFeaturedTeam } from "@/actions/bots";
-import type { FeaturedTeamWithAgents } from "@/types";
-
-const TEAM_ACCENT_COLORS = [
-  { iconBg: "bg-indigo-500/15", border: "border-indigo-500/50", bg: "bg-indigo-500/[0.06]", ring: "ring-indigo-500/25" },
-  { iconBg: "bg-emerald-500/15", border: "border-emerald-500/50", bg: "bg-emerald-500/[0.06]", ring: "ring-emerald-500/25" },
-  { iconBg: "bg-rose-500/15", border: "border-rose-500/50", bg: "bg-rose-500/[0.06]", ring: "ring-rose-500/25" },
-  { iconBg: "bg-amber-500/15", border: "border-amber-500/50", bg: "bg-amber-500/[0.06]", ring: "ring-amber-500/25" },
-  { iconBg: "bg-cyan-500/15", border: "border-cyan-500/50", bg: "bg-cyan-500/[0.06]", ring: "ring-cyan-500/25" },
-  { iconBg: "bg-violet-500/15", border: "border-violet-500/50", bg: "bg-violet-500/[0.06]", ring: "ring-violet-500/25" },
-];
-
-const SUGGESTED_TAGS = [
-  "ai",
-  "web",
-  "mobile",
-  "tool",
-  "game",
-  "automation",
-];
+import type { KitWithSteps } from "@/actions/kits";
+import type { OnboardingGeneratedTask } from "@/actions/onboarding";
 
 interface OnboardingDialogProps {
   open: boolean;
@@ -57,7 +40,7 @@ interface OnboardingDialogProps {
   userFullName: string | null;
   userAvatarUrl: string | null;
   userGithubUsername: string | null;
-  featuredTeams: FeaturedTeamWithAgents[];
+  kits: KitWithSteps[];
 }
 
 export function OnboardingDialog({
@@ -66,7 +49,7 @@ export function OnboardingDialog({
   userFullName,
   userAvatarUrl,
   userGithubUsername,
-  featuredTeams,
+  kits,
 }: OnboardingDialogProps) {
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -78,23 +61,28 @@ export function OnboardingDialog({
     userGithubUsername ?? ""
   );
 
-  // Team selection state
-  const [selectedTeamId, setSelectedTeamId] = useState<string | null>(null);
-  const [addedTeamId, setAddedTeamId] = useState<string | null>(null);
-  const [addingTeam, setAddingTeam] = useState(false);
-  // Idea fields
+  // Project fields (Step 2)
   const [ideaTitle, setIdeaTitle] = useState("");
   const [ideaDescription, setIdeaDescription] = useState("");
-  const [selectedTags, setSelectedTags] = useState<string[]>([]);
-
-  // AI enhance state
+  const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
   const [enhancing, setEnhancing] = useState(false);
 
-  // Success state
+  // Creation state (Step 2 loading → Step 3)
+  const [creating, setCreating] = useState(false);
+  const [createProgress, setCreateProgress] = useState(0); // 0=idle, 1=idea, 2=kit, 3=generating
   const [createdIdeaId, setCreatedIdeaId] = useState<string | null>(null);
+  const [agentCount, setAgentCount] = useState(0);
+  const [workflowApplied, setWorkflowApplied] = useState(false);
+  const [autoRuleCreated, setAutoRuleCreated] = useState(false);
+  const [generatedTasks, setGeneratedTasks] = useState<OnboardingGeneratedTask[]>([]);
+  const [generationFailed, setGenerationFailed] = useState(false);
+
+  // MCP (Step 4)
   const [copied, setCopied] = useState(false);
 
   const avatarInitial = displayName.charAt(0).toUpperCase() || "?";
+  const selectedKit = kits.find((k) => k.id === selectedKitId) ?? null;
 
   const goToStep = useCallback((s: number) => {
     setStep(s);
@@ -107,6 +95,19 @@ export function OnboardingDialog({
       // Non-critical
     }
     onComplete();
+  };
+
+  const handleSkipToBoard = async () => {
+    try {
+      await completeOnboarding();
+    } catch {
+      // Non-critical
+    }
+    if (createdIdeaId) {
+      window.location.href = `/ideas/${createdIdeaId}/board`;
+    } else {
+      onComplete();
+    }
   };
 
   const handleEnhance = async () => {
@@ -151,44 +152,45 @@ export function OnboardingDialog({
     }
   };
 
-  const handleAddTeam = async () => {
-    if (!selectedTeamId || addingTeam) return;
-    setAddingTeam(true);
-    try {
-      const { created, skipped } = await addFeaturedTeam(selectedTeamId);
-      if (created.length > 0) {
-        toast.success(
-          `Created ${created.length} agent${created.length > 1 ? "s" : ""}: ${created.join(", ")}`
-        );
-      }
-      if (created.length === 0 && skipped.length > 0) {
-        toast.info("All agents from this team already exist");
-      }
-      setAddedTeamId(selectedTeamId);
-      goToStep(3);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to add team");
-    } finally {
-      setAddingTeam(false);
-    }
-  };
-
-  const handleCreateIdea = async () => {
-    if (submitting) return;
+  const handleCreateAndGenerate = async () => {
+    if (creating) return;
     if (!ideaTitle.trim()) {
-      toast.error("Give your idea a title");
+      toast.error("Give your project a name");
       return;
     }
-    setSubmitting(true);
+    setCreating(true);
+    setCreateProgress(1);
+
     try {
+      // Step 1: Create idea + apply kit
       const result = await createIdeaFromOnboarding({
         title: ideaTitle,
         description: ideaDescription || undefined,
-        tags: selectedTags,
+        kitId: selectedKitId ?? undefined,
+        visibility,
       });
+
       setCreatedIdeaId(result.ideaId);
-      await completeOnboarding();
-      goToStep(4);
+      if (result.kitResult) {
+        setAgentCount(result.kitResult.agentsCreated + result.kitResult.agentsSkipped);
+        setWorkflowApplied(result.kitResult.templateImported);
+        setAutoRuleCreated(result.kitResult.autoRuleCreated);
+      }
+      setCreateProgress(2);
+
+      // Step 2: Generate board tasks (free)
+      setCreateProgress(3);
+      try {
+        const { tasks } = await generateBoardFromOnboarding(result.ideaId);
+        setGeneratedTasks(tasks);
+      } catch {
+        setGenerationFailed(true);
+      }
+      setCreateProgress(4);
+
+      // Brief pause so user sees completion before transition
+      await new Promise((r) => setTimeout(r, 400));
+      goToStep(3);
     } catch (err) {
       if (err instanceof Error && "digest" in err) {
         const digest = (err as { digest?: string }).digest;
@@ -197,30 +199,34 @@ export function OnboardingDialog({
         }
       }
       toast.error(
-        err instanceof Error ? err.message : "Failed to create idea"
+        err instanceof Error ? err.message : "Failed to create project"
       );
     } finally {
-      setSubmitting(false);
+      setCreating(false);
+      setCreateProgress(0);
     }
   };
 
-  const handleSkipIdea = async () => {
+  const handleFinishToBoard = async () => {
     try {
       await completeOnboarding();
     } catch {
       // Non-critical
     }
-    goToStep(4);
+    if (createdIdeaId) {
+      window.location.href = `/ideas/${createdIdeaId}/board`;
+    } else {
+      onComplete();
+    }
   };
 
-  const handleFinish = () => {
+  const handleFinishToDashboard = async () => {
+    try {
+      await completeOnboarding();
+    } catch {
+      // Non-critical
+    }
     onComplete();
-  };
-
-  const toggleTag = (tag: string) => {
-    setSelectedTags((prev) =>
-      prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
-    );
   };
 
   const copyMcpCommand = async () => {
@@ -245,22 +251,21 @@ export function OnboardingDialog({
         onInteractOutside={(e) => e.preventDefault()}
         onEscapeKeyDown={(e) => e.preventDefault()}
       >
-        {/* Hidden accessible title */}
         <DialogTitle className="sr-only">Welcome to VibeCodes</DialogTitle>
 
-        {/* Ambient glow at top */}
+        {/* Ambient glow */}
         <div className="pointer-events-none absolute top-0 right-0 left-0 z-0">
           <div className="mx-auto h-px w-64 bg-gradient-to-r from-transparent via-primary to-transparent" />
           <div className="mx-auto h-20 w-72 bg-primary/[0.08] blur-3xl" />
         </div>
 
-        <StepIndicator totalSteps={5} currentStep={step} />
+        <StepIndicator totalSteps={6} currentStep={step} />
 
-        {/* Step content — conditionally rendered */}
         <div
           key={step}
           className="animate-in fade-in-0 duration-300 relative z-[1] min-w-0"
         >
+          {/* ── STEP 0: WELCOME ── */}
           {step === 0 && (
             <div className="px-8 pt-6 pb-8 sm:px-10">
               <div className="mb-5 inline-flex items-center gap-1.5 rounded-full border border-primary/20 bg-primary/[0.08] px-3.5 py-1 text-xs font-semibold text-primary">
@@ -274,8 +279,9 @@ export function OnboardingDialog({
                 Welcome to VibeCodes!
               </h2>
               <p className="mb-7 text-[15px] text-muted-foreground">
-                Where your AI agents become real team members. Let&apos;s get
-                you set up in under a minute.
+                Your AI agents become real team members. Describe what you want
+                to build, and we&apos;ll set up your board, workflows, and
+                agents automatically.
               </p>
 
               <div className="mb-8 flex flex-col gap-2.5">
@@ -284,22 +290,22 @@ export function OnboardingDialog({
                     icon: Lightbulb,
                     color: "text-violet-400",
                     bg: "bg-violet-400/10",
-                    title: "Share ideas & get feedback",
-                    desc: "Post concepts, vote on others, and collaborate with the community",
+                    title: "Describe your idea",
+                    desc: "AI refines your vision",
                   },
                   {
-                    icon: LayoutGrid,
-                    color: "text-amber-400",
-                    bg: "bg-amber-400/10",
-                    title: "AI generates your task board",
-                    desc: "Turn ideas into structured kanban boards with tasks, labels, and milestones",
+                    icon: Target,
+                    color: "text-emerald-400",
+                    bg: "bg-emerald-400/10",
+                    title: "Get a ready-made board",
+                    desc: "Tasks, workflows, agents",
                   },
                   {
                     icon: Bot,
-                    color: "text-emerald-400",
-                    bg: "bg-emerald-400/10",
-                    title: "Agents pick up work autonomously",
-                    desc: "Create AI personas that self-assign tasks, write code, and ship features",
+                    color: "text-amber-400",
+                    bg: "bg-amber-400/10",
+                    title: "Agents do the work",
+                    desc: "Via Claude Code + MCP",
                   },
                 ].map((item) => (
                   <div
@@ -342,6 +348,7 @@ export function OnboardingDialog({
             </div>
           )}
 
+          {/* ── STEP 1: PROFILE ── */}
           {step === 1 && (
             <div className="px-8 pt-4 pb-8 sm:px-10">
               <div className="mb-4 flex items-center justify-between">
@@ -354,7 +361,7 @@ export function OnboardingDialog({
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <span className="text-xs text-muted-foreground/60">
-                  Step 2 of 5
+                  Step 2 of 6
                 </span>
               </div>
 
@@ -456,7 +463,8 @@ export function OnboardingDialog({
             </div>
           )}
 
-          {step === 2 && (
+          {/* ── STEP 2: YOUR PROJECT ── */}
+          {step === 2 && !creating && (
             <div className="px-8 pt-3 pb-6 sm:px-10">
               <div className="mb-3 flex items-center justify-between">
                 <Button
@@ -468,177 +476,21 @@ export function OnboardingDialog({
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
                 <span className="text-xs text-muted-foreground/60">
-                  Step 3 of 5
+                  Step 3 of 6
                 </span>
               </div>
 
               <h2 className="-tracking-wide mb-1 text-lg font-bold text-foreground sm:text-xl">
-                Pick your agent team
+                What are you building?
               </h2>
               <p className="mb-3 text-sm text-muted-foreground">
-                Start with a pre-built team of AI agents. You can customise them
-                later.
+                Describe your project and we&apos;ll set up everything — agents,
+                workflows, and your board.
               </p>
 
-              {featuredTeams.length === 0 ? (
-                <div className="mb-6 rounded-xl border border-border/60 bg-card/60 p-6 text-center">
-                  <Users className="mx-auto mb-2 h-8 w-8 text-muted-foreground/40" />
-                  <p className="text-sm text-muted-foreground">
-                    No featured teams available yet.
-                  </p>
-                </div>
-              ) : (
-                <div className="mb-4 flex flex-col gap-1.5">
-                  {featuredTeams.map((team, index) => {
-                    const sortedAgents = [...team.agents].sort(
-                      (a, b) => a.display_order - b.display_order
-                    );
-                    const isSelected = selectedTeamId === team.id;
-                    const isAdded = addedTeamId === team.id;
-                    const accent = TEAM_ACCENT_COLORS[index % TEAM_ACCENT_COLORS.length];
-
-                    return (
-                      <button
-                        key={team.id}
-                        type="button"
-                        onClick={() => {
-                          if (!isAdded) setSelectedTeamId(isSelected ? null : team.id);
-                        }}
-                        className={cn(
-                          "relative flex items-start gap-3 rounded-xl border p-3 text-left transition-all",
-                          isAdded
-                            ? "border-emerald-500/50 bg-emerald-500/[0.06]"
-                            : isSelected
-                              ? cn(accent.border, accent.bg, "ring-1", accent.ring)
-                              : "border-border/60 bg-card/60 hover:border-border hover:bg-card/80"
-                        )}
-                      >
-                        {/* Popular badge on first team */}
-                        {index === 0 && !isAdded && (
-                          <span className="absolute -top-2 right-3 rounded-full bg-primary px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-primary-foreground">
-                            Popular
-                          </span>
-                        )}
-
-                        {/* Added badge */}
-                        {isAdded && (
-                          <span className="absolute -top-2 right-3 flex items-center gap-1 rounded-full bg-emerald-500 px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider text-white">
-                            <Check className="h-2.5 w-2.5" /> Added
-                          </span>
-                        )}
-
-                        {/* Team icon — larger, with colored background */}
-                        <div
-                          className={cn(
-                            "flex h-9 w-9 shrink-0 items-center justify-center rounded-lg",
-                            isAdded ? "bg-emerald-500/15" : accent.iconBg
-                          )}
-                        >
-                          <span className="text-lg leading-none">{team.icon}</span>
-                        </div>
-
-                        {/* Content */}
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-0.5 text-sm font-semibold text-foreground">
-                            {team.name}
-                          </div>
-                          <p className="mb-1.5 text-[11px] leading-snug text-muted-foreground">
-                            {team.description}
-                          </p>
-
-                          {/* Always-visible avatar stack + role names */}
-                          <div className="flex items-center gap-2">
-                            <div className="flex -space-x-1.5">
-                              {sortedAgents.slice(0, 4).map((entry) => {
-                                const bot = entry.bot;
-                                const initial = (bot.role ?? bot.name)?.[0]?.toUpperCase() ?? "?";
-                                const agentColors = getRoleColor(bot.role);
-
-                                return (
-                                  <Avatar key={entry.id} className="h-5.5 w-5.5 ring-2 ring-card">
-                                    <AvatarImage src={bot.avatar_url ?? undefined} />
-                                    <AvatarFallback className={cn("text-[8px]", agentColors.avatarBg, agentColors.avatarText)}>
-                                      {initial}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                );
-                              })}
-                            </div>
-                            <span className="truncate text-[11px] text-muted-foreground">
-                              {sortedAgents.map((e) => e.bot.role ?? e.bot.name).join(" · ")}
-                            </span>
-                          </div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              {selectedTeamId && !addedTeamId && (
-                <Button
-                  className="w-full gap-2 mb-1"
-                  onClick={handleAddTeam}
-                  disabled={addingTeam}
-                >
-                  {addingTeam ? (
-                    "Adding agents..."
-                  ) : (
-                    <>
-                      <Users className="h-4 w-4" />
-                      Add Team & Continue
-                    </>
-                  )}
-                </Button>
-              )}
-
-              {!selectedTeamId && !addedTeamId && (
-                <Button
-                  className="w-full gap-2 mb-1"
-                  variant="outline"
-                  onClick={() => goToStep(3)}
-                >
-                  Continue without a team
-                  <ArrowRight className="h-4 w-4" />
-                </Button>
-              )}
-
-              <button
-                onClick={() => goToStep(3)}
-                className="mt-1 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
-              >
-                Skip this step
-              </button>
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="px-8 pt-4 pb-8 sm:px-10">
-              <div className="mb-4 flex items-center justify-between">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8"
-                  onClick={() => goToStep(2)}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                </Button>
-                <span className="text-xs text-muted-foreground/60">
-                  Step 4 of 5
-                </span>
-              </div>
-
-              <h2 className="-tracking-wide mb-1 text-xl font-bold text-foreground sm:text-[22px]">
-                Drop your first idea
-              </h2>
-              <p className="mb-6 text-sm text-muted-foreground">
-                What would you like to build? Don&apos;t overthink it — AI can
-                help refine it later.
-              </p>
-
-              <div className="mb-4">
+              <div className="mb-3">
                 <label className="mb-1.5 block text-[13px] font-medium text-foreground">
-                  Title
+                  Project name
                 </label>
                 <Input
                   placeholder="e.g., A recipe sharing app with AI suggestions"
@@ -648,55 +500,85 @@ export function OnboardingDialog({
                 />
               </div>
 
-              <div className="mb-4">
+              <div className="mb-3">
                 <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-foreground">
                   Description
                   <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
-                    optional
+                    optional — AI can help
                   </span>
                 </label>
                 <Textarea
-                  placeholder="Briefly describe what it does, who it's for, or what problem it solves..."
+                  placeholder="What's the idea? Don't overthink it — AI can refine it later."
                   value={ideaDescription}
                   onChange={(e) => setIdeaDescription(e.target.value)}
-                  rows={3}
-                  className="max-h-40 overflow-y-auto"
+                  rows={2}
+                  className="max-h-32 overflow-y-auto"
                 />
               </div>
 
-              <div className="mb-4">
-                <label className="mb-1.5 block text-[13px] font-medium text-foreground">
-                  Tags
-                </label>
-                <div className="flex flex-wrap gap-2">
-                  {SUGGESTED_TAGS.map((tag) => (
-                    <button
-                      key={tag}
-                      type="button"
-                      onClick={() => toggleTag(tag)}
-                      className={`rounded-full border px-3.5 py-1 text-[13px] font-medium transition-all ${
-                        selectedTags.includes(tag)
-                          ? "border-primary bg-primary/[0.08] text-primary"
-                          : "border-border text-muted-foreground hover:border-border/80 hover:text-foreground"
-                      }`}
-                    >
-                      {tag}
-                    </button>
-                  ))}
+              {/* Kit selector */}
+              {kits.length > 0 && (
+                <div className="mb-3">
+                  <label className="mb-1.5 block text-[13px] font-medium text-foreground">
+                    What kind of project?
+                  </label>
+                  <ProjectTypeSelector
+                    kits={kits}
+                    selectedKitId={selectedKitId}
+                    onSelect={setSelectedKitId}
+                    compact
+                  />
+                  {selectedKit && (
+                    <KitPreview kit={selectedKit} compact />
+                  )}
                 </div>
+              )}
+
+              {/* Visibility toggle */}
+              <div className="mb-3 flex items-center gap-2">
+                <span className="text-[13px] font-medium text-foreground">
+                  Visibility
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setVisibility("public")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all",
+                    visibility === "public"
+                      ? "border-primary bg-primary/[0.08] text-primary"
+                      : "border-border text-muted-foreground hover:border-border/80"
+                  )}
+                >
+                  <Globe className="h-3 w-3" />
+                  Public
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setVisibility("private")}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all",
+                    visibility === "private"
+                      ? "border-primary bg-primary/[0.08] text-primary"
+                      : "border-border text-muted-foreground hover:border-border/80"
+                  )}
+                >
+                  <Lock className="h-3 w-3" />
+                  Private
+                </button>
               </div>
 
+              {/* AI Enhance CTA */}
               <button
                 type="button"
                 onClick={handleEnhance}
                 disabled={enhancing}
-                className="enhance-cta-border group mb-6 flex w-full flex-col rounded-xl bg-violet-500/[0.06] px-4 py-4 text-left transition-all hover:bg-violet-500/[0.10] hover:shadow-[0_0_32px_-6px_rgba(139,92,246,0.2)] disabled:pointer-events-none disabled:opacity-70 sm:flex-row sm:items-center sm:gap-3.5"
+                className="enhance-cta-border group mb-4 flex w-full flex-col rounded-xl bg-violet-500/[0.06] px-4 py-3 text-left transition-all hover:bg-violet-500/[0.10] hover:shadow-[0_0_32px_-6px_rgba(139,92,246,0.2)] disabled:pointer-events-none disabled:opacity-70 sm:flex-row sm:items-center sm:gap-3.5"
               >
-                <div className="mb-3 flex items-center gap-3 sm:mb-0 sm:contents">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-violet-500/25 to-purple-500/[0.12]">
+                <div className="mb-2 flex items-center gap-3 sm:mb-0 sm:contents">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-violet-500/25 to-purple-500/[0.12]">
                     <Sparkles
                       className={cn(
-                        "h-5 w-5 text-violet-300",
+                        "h-4.5 w-4.5 text-violet-300",
                         enhancing && "animate-spin"
                       )}
                       style={enhancing ? { animationDuration: "2s" } : undefined}
@@ -705,7 +587,7 @@ export function OnboardingDialog({
                   <div className="flex-1 sm:flex-initial">
                     <div className="flex items-center gap-2">
                       <span className="text-sm font-semibold text-zinc-200">
-                        {enhancing ? "Enhancing your idea..." : "Enhance your Idea with AI"}
+                        {enhancing ? "Enhancing..." : "Enhance with AI"}
                       </span>
                       {!enhancing && (
                         <span className="rounded bg-violet-500/20 border border-violet-500/30 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-300">
@@ -716,11 +598,11 @@ export function OnboardingDialog({
                     <span className="text-xs text-zinc-500">
                       {enhancing
                         ? "This may take a moment..."
-                        : "AI can refine your description and auto-generate your task board"}
+                        : "AI can refine your description and help generate better tasks"}
                     </span>
                   </div>
                 </div>
-                <span className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-br from-violet-600 to-violet-700 px-4 py-2 text-[13px] font-semibold text-white shadow-[0_2px_8px_rgba(124,58,237,0.3)] sm:w-auto">
+                <span className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-br from-violet-600 to-violet-700 px-4 py-1.5 text-[13px] font-semibold text-white shadow-[0_2px_8px_rgba(124,58,237,0.3)] sm:w-auto">
                   <Sparkles className="h-3.5 w-3.5" />
                   {enhancing ? "Working..." : "Enhance"}
                 </span>
@@ -729,20 +611,232 @@ export function OnboardingDialog({
               <Button
                 className="w-full gap-2"
                 size="lg"
-                onClick={handleCreateIdea}
-                disabled={submitting}
+                onClick={handleCreateAndGenerate}
+                disabled={creating}
               >
-                {submitting ? (
-                  "Creating..."
-                ) : (
-                  <>
-                    <Sparkles className="h-4 w-4" />
-                    Create Idea
-                  </>
+                <Sparkles className="h-4 w-4" />
+                Create & Generate Board
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+              <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
+                This will create your idea, set up agents from the selected kit,
+                and generate an AI-powered task board.
+              </p>
+              <button
+                onClick={handleSkip}
+                className="mt-2 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+              >
+                I&apos;ll do this later
+              </button>
+            </div>
+          )}
+
+          {/* ── STEP 2: LOADING STATE ── */}
+          {step === 2 && creating && (
+            <div className="px-8 pt-8 pb-10 sm:px-10 text-center">
+              <div
+                className="text-[2rem] mb-3"
+                style={{ animation: "pulse 2s ease-in-out infinite" }}
+              >
+                🚀
+              </div>
+              <h2 className="-tracking-wide mb-1 text-xl font-bold text-foreground">
+                Creating your project...
+              </h2>
+              <p className="mb-5 text-sm text-muted-foreground max-w-[350px] mx-auto">
+                Setting up your board, agents, and workflows. This takes about
+                10 seconds.
+              </p>
+
+              {/* Progress bar */}
+              <div className="h-1 w-full rounded-full bg-muted overflow-hidden mb-5">
+                <div
+                  className="h-full rounded-full bg-primary transition-all duration-1000"
+                  style={{
+                    width:
+                      createProgress >= 4
+                        ? "100%"
+                        : createProgress === 3
+                          ? "85%"
+                          : createProgress === 2
+                            ? "55%"
+                            : createProgress === 1
+                              ? "20%"
+                              : "0%",
+                  }}
+                />
+              </div>
+
+              <div className="flex flex-col gap-2 max-w-[260px] mx-auto text-left">
+                <div className="flex items-center gap-2.5 text-[13px]">
+                  {createProgress >= 2 ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  ) : (
+                    <span className="h-3.5 w-3.5 shrink-0 flex items-center justify-center">
+                      <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                    </span>
+                  )}
+                  <span
+                    className={
+                      createProgress >= 2
+                        ? "text-muted-foreground"
+                        : "text-foreground"
+                    }
+                  >
+                    Created idea
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5 text-[13px]">
+                  {createProgress >= 3 ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  ) : createProgress === 2 ? (
+                    <span className="h-3.5 w-3.5 shrink-0 flex items-center justify-center">
+                      <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                    </span>
+                  ) : (
+                    <span className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span
+                    className={
+                      createProgress >= 3
+                        ? "text-muted-foreground"
+                        : createProgress === 2
+                          ? "text-foreground"
+                          : "text-muted-foreground/50"
+                    }
+                  >
+                    {selectedKit
+                      ? `Applied ${selectedKit.name} kit`
+                      : "Setting up board"}
+                  </span>
+                </div>
+                <div className="flex items-center gap-2.5 text-[13px]">
+                  {createProgress > 3 ? (
+                    <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  ) : createProgress === 3 ? (
+                    <span className="h-3.5 w-3.5 shrink-0 flex items-center justify-center">
+                      <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+                    </span>
+                  ) : (
+                    <span className="h-3.5 w-3.5 shrink-0" />
+                  )}
+                  <span
+                    className={
+                      createProgress === 3
+                        ? "text-foreground"
+                        : "text-muted-foreground/50"
+                    }
+                  >
+                    Generating board tasks...
+                  </span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ── STEP 3: YOUR BOARD ── */}
+          {step === 3 && (
+            <div className="px-8 pt-5 pb-8 sm:px-10">
+              <div className="mb-1 flex items-center gap-2">
+                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-emerald-500/15">
+                  <Check className="h-3.5 w-3.5 text-emerald-400" />
+                </div>
+                <h2 className="-tracking-wide text-xl font-bold text-foreground sm:text-[22px]">
+                  Your board is ready!
+                </h2>
+              </div>
+
+              {!generationFailed && generatedTasks.length > 0 ? (
+                <>
+                  <p className="mb-4 text-sm text-muted-foreground">
+                    AI generated {generatedTasks.length} tasks
+                    {selectedKit ? ` with the ${selectedKit.name} workflow` : ""}.
+                    Your agents are allocated and ready to work.
+                  </p>
+
+                  {/* Mini board preview */}
+                  <div className="grid grid-cols-3 gap-2 mb-3 max-sm:grid-cols-1">
+                    {["Backlog", "To Do", "In Progress"].map((col) => {
+                      const colTasks = generatedTasks.filter(
+                        (t) => (t.columnName ?? "To Do") === col
+                      );
+                      return (
+                        <div
+                          key={col}
+                          className="rounded-lg border border-border bg-card/60 p-2"
+                        >
+                          <div className="mb-1.5 flex items-center justify-between text-[11px] font-bold text-muted-foreground">
+                            {col}
+                            <span className="rounded bg-muted px-1.5 py-0.5 text-[9px]">
+                              {colTasks.length}
+                            </span>
+                          </div>
+                          {colTasks.slice(0, 2).map((task, i) => (
+                            <div
+                              key={i}
+                              className="mb-1.5 rounded border border-border bg-background p-1.5 text-[11px] text-muted-foreground"
+                            >
+                              {task.labels?.[0] && (
+                                <span className="mb-0.5 inline-block rounded bg-violet-500/[0.12] px-1 py-0.5 text-[9px] font-bold text-violet-400">
+                                  {task.labels[0]}
+                                </span>
+                              )}
+                              <div className="truncate">{task.title}</div>
+                            </div>
+                          ))}
+                          {colTasks.length > 2 && (
+                            <p className="text-[10px] text-muted-foreground/60 italic">
+                              +{colTasks.length - 2} more
+                            </p>
+                          )}
+                          {colTasks.length === 0 && (
+                            <p className="py-2 text-center text-[10px] text-muted-foreground/40">
+                              Your agents will pick up tasks here
+                            </p>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </>
+              ) : (
+                <p className="mb-4 text-sm text-muted-foreground">
+                  Your idea is created. Go to your board to generate tasks with AI.
+                </p>
+              )}
+
+              {/* Confirmation badges */}
+              <div className="flex flex-wrap gap-2 mb-4">
+                {agentCount > 0 && (
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500/[0.12] border border-emerald-500/25 px-2.5 py-1 text-xs font-semibold text-emerald-400">
+                    <Check className="h-3 w-3" />
+                    {agentCount} agent{agentCount !== 1 ? "s" : ""} allocated
+                  </span>
                 )}
+                {workflowApplied && (
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-violet-500/[0.12] border border-violet-500/25 px-2.5 py-1 text-xs font-semibold text-violet-400">
+                    <Check className="h-3 w-3" />
+                    {selectedKit ? `${selectedKit.name} workflow` : "Workflow"} applied
+                  </span>
+                )}
+                {autoRuleCreated && (
+                  <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/[0.12] border border-amber-500/25 px-2.5 py-1 text-xs font-semibold text-amber-400">
+                    <Check className="h-3 w-3" />
+                    Auto-rules active
+                  </span>
+                )}
+              </div>
+
+              <Button
+                className="w-full gap-2"
+                size="lg"
+                onClick={() => goToStep(4)}
+              >
+                Next: Connect Claude Code
+                <ArrowRight className="h-4 w-4" />
               </Button>
               <button
-                onClick={handleSkipIdea}
+                onClick={handleSkipToBoard}
                 className="mt-3 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
               >
                 I&apos;ll do this later
@@ -750,109 +844,195 @@ export function OnboardingDialog({
             </div>
           )}
 
+          {/* ── STEP 4: CONNECT MCP ── */}
           {step === 4 && (
-            <div className="overflow-hidden px-6 pt-8 pb-8 sm:px-10">
-              <Confetti />
-
-              <div
-                className="mx-auto mb-5 flex h-16 w-16 items-center justify-center rounded-full border-2 border-emerald-500/30 bg-emerald-500/10"
-                style={{
-                  animation:
-                    "checkPop 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards",
-                }}
-              >
-                <Check className="h-7 w-7 text-emerald-400" />
-              </div>
-
-              <h2 className="-tracking-wide mb-1 text-center text-xl font-bold text-foreground sm:text-[22px]">
-                You&apos;re all set!
+            <div className="px-8 pt-5 pb-8 sm:px-10">
+              <h2 className="-tracking-wide mb-1 text-xl font-bold text-foreground sm:text-[22px]">
+                Connect Claude Code
               </h2>
-              <p className="mb-7 text-center text-sm text-muted-foreground">
-                {createdIdeaId
-                  ? "Your idea is live. Here's what happens next:"
-                  : "Here's what you can do next:"}
+              <p className="mb-3 text-sm text-muted-foreground">
+                This is how your AI agents come to life. Claude Code reads your
+                board, claims tasks, and executes workflow steps as each agent
+                persona.
               </p>
 
-              <div className="mb-7 flex flex-col gap-2.5">
-                {createdIdeaId && (
-                  <a
-                    href={`/ideas/${createdIdeaId}/board`}
-                    className="group flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-3 transition-colors hover:border-border hover:bg-card/80 sm:gap-3.5 sm:p-3.5"
-                  >
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-violet-400/10">
-                      <LayoutGrid className="h-[18px] w-[18px] text-violet-400" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-foreground">
-                        View your board
-                      </p>
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        Use AI Generate to create tasks, labels, and milestones
-                      </p>
-                    </div>
-                    <ChevronRight className="hidden h-4 w-4 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground sm:block" />
-                  </a>
-                )}
+              {/* Why this matters callout */}
+              <div className="mb-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3.5">
+                <p className="mb-1 text-[13px] font-bold text-amber-400">
+                  ⚡ Why this matters
+                </p>
+                <p className="text-xs leading-relaxed text-muted-foreground">
+                  Without this connection, your agents can&apos;t work. MCP
+                  (Model Context Protocol) lets Claude Code read your board,
+                  claim tasks, and complete workflow steps as each agent persona.
+                </p>
+              </div>
 
-                <a
-                  href="/agents"
-                  className="group flex items-center gap-3 rounded-xl border border-border/60 bg-card/60 p-3 transition-colors hover:border-border hover:bg-card/80 sm:gap-3.5 sm:p-3.5"
-                >
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-amber-400/10">
-                    <Bot className="h-[18px] w-[18px] text-amber-400" />
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <p className="text-sm font-semibold text-foreground">
-                      Set up an AI agent
-                    </p>
-                    <p className="text-xs leading-relaxed text-muted-foreground">
-                      Create your agent team to direct through Claude Code via MCP
-                    </p>
-                  </div>
-                  <ChevronRight className="hidden h-4 w-4 shrink-0 text-muted-foreground/40 transition-transform group-hover:translate-x-0.5 group-hover:text-muted-foreground sm:block" />
-                </a>
-
-                <div className="group overflow-hidden rounded-xl border border-border/60 bg-card/60 p-3 transition-colors hover:border-border hover:bg-card/80 sm:p-3.5">
-                  <div className="flex items-center gap-3 sm:gap-3.5">
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sky-400/10">
-                      <Cable className="h-[18px] w-[18px] text-sky-400" />
-                    </div>
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-foreground">
-                        Connect Claude Code
-                      </p>
-                      <p className="text-xs leading-relaxed text-muted-foreground">
-                        Manage tasks, switch agent identities, and ship code
-                      </p>
-                    </div>
-                  </div>
-                  <div className="mt-2.5 sm:pl-[52px]">
-                    <button
-                      onClick={copyMcpCommand}
-                      className={`flex w-full items-center gap-2 rounded-lg border px-3 py-2 font-mono text-[11px] transition-all ${
-                        copied
-                          ? "border-emerald-500/50 text-emerald-400"
-                          : "border-border bg-background text-muted-foreground hover:border-border/80 hover:text-foreground"
-                      }`}
-                    >
-                      <span className="min-w-0 truncate">
-                        claude mcp add vibecodes
-                        https://vibecodes.co.uk/api/mcp
-                      </span>
-                      <Copy className="h-3.5 w-3.5 shrink-0 opacity-60" />
-                    </button>
-                  </div>
+              {/* Terminal block */}
+              <div className="mb-3 rounded-xl border border-border bg-[#0a0a0a] p-4 font-mono text-[12px] leading-relaxed">
+                <div>
+                  <span className="text-emerald-400">$</span>{" "}
+                  <span className="text-foreground">
+                    claude mcp add vibecodes{" "}
+                    <span className="text-amber-400">
+                      https://vibecodes.co.uk/api/mcp
+                    </span>
+                  </span>
                 </div>
+                <div className="text-muted-foreground/60">
+                  → Connecting to VibeCodes MCP server...
+                </div>
+                <div className="text-muted-foreground/60">
+                  → Opening browser for authentication...
+                </div>
+                <div className="text-emerald-400">
+                  ✓ Connected as{" "}
+                  <span className="font-bold text-violet-400">
+                    {displayName || "You"}
+                  </span>
+                </div>
+                {createdIdeaId && (
+                  <div className="text-emerald-400">
+                    ✓ Board:{" "}
+                    <span className="font-bold text-violet-400">
+                      {ideaTitle}
+                    </span>{" "}
+                    ({generatedTasks.length} tasks
+                    {agentCount > 0 ? `, ${agentCount} agents` : ""})
+                  </div>
+                )}
+                <div className="mt-1 text-muted-foreground/60">
+                  Try:{" "}
+                  <span className="text-foreground">claude</span> then ask it to{" "}
+                  <span className="font-bold text-violet-400">
+                    &quot;check my board and start working&quot;
+                  </span>
+                </div>
+              </div>
+
+              <div className="mb-4 flex items-center gap-3">
+                <button
+                  onClick={copyMcpCommand}
+                  className={cn(
+                    "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px] font-semibold transition-all",
+                    copied
+                      ? "border-emerald-500/50 text-emerald-400"
+                      : "border-border bg-card text-foreground hover:bg-card/80"
+                  )}
+                >
+                  {copied ? (
+                    <Check className="h-3.5 w-3.5" />
+                  ) : (
+                    <Copy className="h-3.5 w-3.5" />
+                  )}
+                  {copied ? "Copied!" : "Copy command"}
+                </button>
+                <span className="text-xs text-muted-foreground/60">
+                  Run this in your terminal where you code
+                </span>
+              </div>
+
+              {/* Fallback */}
+              <div className="mb-4 border-t border-border pt-3">
+                <p className="mb-1 text-[13px] font-semibold text-muted-foreground">
+                  Don&apos;t use Claude Code?
+                </p>
+                <p className="text-xs text-muted-foreground/60">
+                  You can still manage your board manually and use workflows
+                  from the web UI. But for the full agent-powered experience,
+                  Claude Code + MCP is the way to go.{" "}
+                  <a
+                    href="/guide/mcp-integration"
+                    className="text-primary hover:underline"
+                  >
+                    Learn more →
+                  </a>
+                </p>
               </div>
 
               <Button
                 className="w-full gap-2"
                 size="lg"
-                onClick={handleFinish}
+                onClick={() => goToStep(5)}
               >
-                Go to Dashboard
+                I&apos;ve connected — let&apos;s go!
                 <ArrowRight className="h-4 w-4" />
               </Button>
+              <button
+                onClick={handleSkipToBoard}
+                className="mt-3 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+              >
+                I&apos;ll do this later
+              </button>
+            </div>
+          )}
+
+          {/* ── STEP 5: YOU'RE LIVE ── */}
+          {step === 5 && (
+            <div className="overflow-hidden px-6 pt-8 pb-8 sm:px-10">
+              <Confetti />
+
+              <div className="text-center">
+                <div className="mb-3 text-[2.5rem]">🎉</div>
+                <h2 className="-tracking-wide mb-1 text-xl font-bold text-foreground sm:text-[22px]">
+                  You&apos;re all set!
+                </h2>
+                <p className="mb-5 text-sm text-muted-foreground max-w-[380px] mx-auto">
+                  {createdIdeaId
+                    ? "Your project is configured and your agents are ready. Here's what you have:"
+                    : "You're all set! Head to the dashboard to create your first project."}
+                </p>
+
+                {createdIdeaId && (
+                  <div className="mb-6 flex justify-center gap-3 flex-wrap">
+                    <div className="rounded-xl border border-border bg-card/60 px-5 py-3 text-center min-w-[100px]">
+                      <div className="text-2xl font-extrabold text-violet-400">
+                        {generatedTasks.length}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Board tasks
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border bg-card/60 px-5 py-3 text-center min-w-[100px]">
+                      <div className="text-2xl font-extrabold text-emerald-400">
+                        {agentCount}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        AI agents
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-border bg-card/60 px-5 py-3 text-center min-w-[100px]">
+                      <div className="text-2xl font-extrabold text-amber-400">
+                        {workflowApplied ? 1 : 0}
+                      </div>
+                      <div className="text-[11px] text-muted-foreground">
+                        Active workflow
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-center gap-3 flex-wrap">
+                  {createdIdeaId && (
+                    <Button
+                      className="gap-2"
+                      size="lg"
+                      onClick={handleFinishToBoard}
+                    >
+                      Go to your board
+                      <ArrowRight className="h-4 w-4" />
+                    </Button>
+                  )}
+                  <Button
+                    variant={createdIdeaId ? "outline" : "default"}
+                    className="gap-2"
+                    size="lg"
+                    onClick={handleFinishToDashboard}
+                  >
+                    Go to dashboard
+                  </Button>
+                </div>
+              </div>
             </div>
           )}
         </div>

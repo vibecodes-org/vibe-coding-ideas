@@ -2,8 +2,9 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { redirect } from "next/navigation";
-import { generateText } from "ai";
+import { generateText, generateObject } from "ai";
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { z } from "zod";
 import { logger } from "@/lib/logger";
 import {
   AI_MODEL,
@@ -19,6 +20,7 @@ import {
   MAX_TAG_LENGTH,
   ValidationError,
 } from "@/lib/validation";
+import { applyKit, type ApplyKitResult } from "@/actions/kits";
 
 export async function completeOnboarding() {
   const supabase = await createClient();
@@ -43,8 +45,10 @@ export async function completeOnboarding() {
 export async function createIdeaFromOnboarding(data: {
   title: string;
   description?: string;
-  tags: string[];
-}) {
+  tags?: string[];
+  kitId?: string;
+  visibility?: "public" | "private";
+}): Promise<{ ideaId: string; kitResult?: ApplyKitResult }> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -59,11 +63,11 @@ export async function createIdeaFromOnboarding(data: {
     ? validateOptionalDescription(data.description)
     : null;
 
-  // Validate tags
-  if (data.tags.length > MAX_TAGS) {
+  const tags = data.tags ?? [];
+  if (tags.length > MAX_TAGS) {
     throw new ValidationError(`Maximum ${MAX_TAGS} tags allowed`);
   }
-  for (const tag of data.tags) {
+  for (const tag of tags) {
     if (tag.length > MAX_TAG_LENGTH) {
       throw new ValidationError(
         `Tag "${tag}" exceeds ${MAX_TAG_LENGTH} characters`
@@ -77,8 +81,8 @@ export async function createIdeaFromOnboarding(data: {
       title,
       description: description || title,
       author_id: user.id,
-      tags: data.tags,
-      visibility: "public" as const,
+      tags,
+      visibility: data.visibility ?? "public",
     })
     .select("id")
     .single();
@@ -87,7 +91,22 @@ export async function createIdeaFromOnboarding(data: {
     throw new Error(error.message);
   }
 
-  return { ideaId: idea.id };
+  // Apply kit if selected
+  let kitResult: ApplyKitResult | undefined;
+  if (data.kitId) {
+    try {
+      kitResult = await applyKit(idea.id, data.kitId);
+    } catch (err) {
+      logger.warn("Kit application failed during onboarding", {
+        ideaId: idea.id,
+        kitId: data.kitId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Don't throw — idea is already created, kit failure is non-fatal
+    }
+  }
+
+  return { ideaId: idea.id, kitResult };
 }
 
 export async function updateProfileFromOnboarding(data: {
@@ -211,4 +230,199 @@ export async function enhanceOnboardingDescription(data: {
   });
 
   return { enhanced: text };
+}
+
+// ── Generate Board Tasks (free, platform key) ─────────────────────────────
+
+const ONBOARDING_GENERATE_TIMEOUT_MS = 90_000;
+
+const GeneratedTaskSchema = z.object({
+  title: z.string(),
+  description: z.string().optional(),
+  columnName: z.string().optional(),
+  labels: z.array(z.string()).optional(),
+  dueDate: z.string().optional(),
+});
+
+const GeneratedBoardSchema = z.object({
+  tasks: z.array(GeneratedTaskSchema),
+});
+
+export type OnboardingGeneratedTask = z.infer<typeof GeneratedTaskSchema>;
+
+export async function generateBoardFromOnboarding(
+  ideaId: string
+): Promise<{ tasks: OnboardingGeneratedTask[]; count: number }> {
+  const platformKey = process.env.ANTHROPIC_API_KEY;
+  if (!platformKey) {
+    throw new Error("AI board generation is not available right now");
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    redirect("/login");
+  }
+
+  // Only allow during onboarding
+  const { data: profile } = await supabase
+    .from("users")
+    .select("onboarding_completed_at")
+    .eq("id", user.id)
+    .single();
+
+  if (profile?.onboarding_completed_at) {
+    throw new Error("Free board generation during onboarding is no longer available");
+  }
+
+  // Enforce platform AI daily limit
+  if (PLATFORM_AI_DAILY_LIMIT > 0) {
+    const todayCount = await getPlatformAiCallsToday(supabase, user.id);
+    if (todayCount >= PLATFORM_AI_DAILY_LIMIT) {
+      throw new Error(
+        "AI generation is temporarily unavailable — daily limit reached. Please try again tomorrow."
+      );
+    }
+  }
+
+  // Fetch idea context
+  const { data: idea } = await supabase
+    .from("ideas")
+    .select("id, title, description")
+    .eq("id", ideaId)
+    .eq("author_id", user.id)
+    .single();
+
+  if (!idea) throw new Error("Idea not found");
+
+  // Fetch existing columns for context
+  const { data: columns } = await supabase
+    .from("board_columns")
+    .select("title")
+    .eq("idea_id", ideaId)
+    .order("position");
+
+  const existingColumns = (columns ?? []).map((c) => c.title);
+
+  const anthropic = createAnthropic({ apiKey: platformKey });
+
+  const contextParts = [
+    "Generate a structured task board for this project. Create 6-10 tasks distributed across the board columns. Each task should have a clear title, brief description with implementation steps as markdown task list, appropriate column placement, and relevant labels.",
+    "---",
+    `**Project Title:** ${idea.title}`,
+    `**Project Description:**\n${idea.description}`,
+  ];
+
+  if (existingColumns.length > 0) {
+    contextParts.push(
+      `**Existing Board Columns:** ${existingColumns.join(", ")}`,
+      "Use existing column names where appropriate."
+    );
+  }
+
+  let object: z.infer<typeof GeneratedBoardSchema>;
+  let usage: { inputTokens?: number; outputTokens?: number } = {};
+  try {
+    ({ object, usage } = await generateObject({
+      model: anthropic(AI_MODEL),
+      system:
+        "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").",
+      prompt: contextParts.join("\n\n"),
+      schema: GeneratedBoardSchema,
+      maxOutputTokens: 8000,
+      abortSignal: AbortSignal.timeout(ONBOARDING_GENERATE_TIMEOUT_MS),
+    }));
+  } catch (err) {
+    logger.error("Onboarding board generation error", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+    if (
+      err instanceof Error &&
+      (err.name === "TimeoutError" || err.name === "AbortError")
+    ) {
+      throw new Error("AI request timed out — please try again");
+    }
+    throw new Error("Failed to generate board tasks");
+  }
+
+  // Log usage (free — no credit deduction)
+  await logAiUsage(supabase, {
+    userId: user.id,
+    actionType: "generate_board_tasks",
+    inputTokens: usage.inputTokens ?? 0,
+    outputTokens: usage.outputTokens ?? 0,
+    model: AI_MODEL,
+    ideaId,
+    keyType: "platform",
+  });
+
+  const tasks = object.tasks.slice(0, 50);
+
+  // ── Persist tasks to the database ──────────────────────────────────
+  // Fetch columns (may have been created by initializeBoardColumns via kit application)
+  const { data: boardColumns } = await supabase
+    .from("board_columns")
+    .select("id, title, position")
+    .eq("idea_id", ideaId)
+    .order("position");
+
+  if (boardColumns && boardColumns.length > 0) {
+    const columnByName = new Map(boardColumns.map((c) => [c.title, c.id]));
+    // Default to first non-done column (usually "To Do" or "Backlog")
+    const defaultColumnId = boardColumns[0].id;
+
+    // Collect unique new column names from generated tasks
+    const existingNames = new Set(boardColumns.map((c) => c.title));
+    const newColNames = [
+      ...new Set(
+        tasks
+          .map((t) => t.columnName)
+          .filter((n): n is string => !!n && !existingNames.has(n))
+      ),
+    ];
+
+    // Create any new columns
+    if (newColNames.length > 0) {
+      let maxPos = Math.max(...boardColumns.map((c) => c.position));
+      const newCols = newColNames.map((name) => {
+        maxPos += 1000;
+        return { idea_id: ideaId, title: name, position: maxPos };
+      });
+      const { data: createdCols } = await supabase
+        .from("board_columns")
+        .insert(newCols)
+        .select("id, title");
+      if (createdCols) {
+        for (const col of createdCols) {
+          columnByName.set(col.title, col.id);
+        }
+      }
+    }
+
+    // Insert tasks with position gaps
+    const TASK_POSITION_GAP = 1000;
+    // Track max position per column to avoid collisions
+    const colPositions = new Map<string, number>();
+
+    for (const task of tasks) {
+      const colId = (task.columnName && columnByName.get(task.columnName)) || defaultColumnId;
+      const currentPos = colPositions.get(colId) ?? 0;
+      const nextPos = currentPos + TASK_POSITION_GAP;
+      colPositions.set(colId, nextPos);
+
+      await supabase.from("board_tasks").insert({
+        idea_id: ideaId,
+        column_id: colId,
+        title: task.title.slice(0, 200),
+        description: task.description ?? null,
+        position: nextPos,
+        created_by: user.id,
+      });
+    }
+  }
+
+  return { tasks, count: tasks.length };
 }

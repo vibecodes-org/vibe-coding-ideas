@@ -31,6 +31,7 @@ import type { ActiveDiscussion } from "@/components/dashboard/active-discussions
 import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
 import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
 import { IdeaCard } from "@/components/ideas/idea-card";
+import { getActiveKitsWithSteps } from "@/actions/kits";
 import { Button } from "@/components/ui/button";
 import type {
   IdeaWithAuthor,
@@ -41,7 +42,6 @@ import type {
   DashboardBotActivity,
   BoardLabel,
   BotProfile,
-  FeaturedTeamWithAgents,
 } from "@/types";
 
 export const metadata: Metadata = {
@@ -65,7 +65,7 @@ export default async function DashboardPage() {
     botProfilesResult,
     userProfileResult,
     publicIdeasCountResult,
-    featuredTeamsResult,
+    onboardingKitsResult,
   ] = await Promise.all([
     // My ideas (limit 5)
     supabase
@@ -133,12 +133,8 @@ export default async function DashboardPage() {
       .from("ideas")
       .select("*", { head: true, count: "exact" })
       .eq("visibility", "public"),
-    // Featured teams for onboarding
-    supabase
-      .from("featured_teams")
-      .select("*, agents:featured_team_agents(*, bot:bot_profiles(*))")
-      .eq("is_active", true)
-      .order("display_order", { ascending: true }),
+    // Project kits for onboarding
+    getActiveKitsWithSteps(),
   ]);
 
   const myIdeas = (myIdeasResult.data ?? []) as unknown as IdeaWithAuthor[];
@@ -174,7 +170,7 @@ export default async function DashboardPage() {
   // Users who have content (ideas/collabs) but no onboarding_completed_at predate the wizard — treat as activated
   const hasExistingContent = ideasCount > 0 || collaborationsCount > 0;
   const isNewUser = !onboardingCompleted && !hasExistingContent;
-  const featuredTeams = (featuredTeamsResult.data ?? []) as unknown as FeaturedTeamWithAgents[];
+  const onboardingKits = onboardingKitsResult;
 
   // All idea IDs the user owns or collaborates on (for board queries)
   const myIdeaIds = (myIdeaIdsResult.data ?? []).map((i) => i.id);
@@ -657,7 +653,7 @@ export default async function DashboardPage() {
           userFullName={userProfile?.full_name ?? null}
           userAvatarUrl={userProfile?.avatar_url ?? null}
           userGithubUsername={userProfile?.github_username ?? null}
-          featuredTeams={featuredTeams}
+          kits={onboardingKits}
         />
       )}
 

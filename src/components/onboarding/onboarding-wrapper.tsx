@@ -3,20 +3,20 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { OnboardingDialog } from "./onboarding-dialog";
-import type { FeaturedTeamWithAgents } from "@/types";
+import type { KitWithSteps } from "@/actions/kits";
 
 interface OnboardingWrapperProps {
   userFullName: string | null;
   userAvatarUrl: string | null;
   userGithubUsername: string | null;
-  featuredTeams: FeaturedTeamWithAgents[];
+  kits: KitWithSteps[];
 }
 
 export function OnboardingWrapper({
   userFullName,
   userAvatarUrl,
   userGithubUsername,
-  featuredTeams,
+  kits,
 }: OnboardingWrapperProps) {
   const [open, setOpen] = useState(true);
   const router = useRouter();
@@ -35,7 +35,7 @@ export function OnboardingWrapper({
       userFullName={userFullName}
       userAvatarUrl={userAvatarUrl}
       userGithubUsername={userGithubUsername}
-      featuredTeams={featuredTeams}
+      kits={kits}
     />
   );
 }
