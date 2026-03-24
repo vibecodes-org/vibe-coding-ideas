@@ -161,8 +161,8 @@ export function IdeaCard({ idea, hasVoted, taskCount, latestDiscussion }: IdeaCa
               href={`/ideas/${idea.id}/discussions/${latestDiscussion.id}`}
               className="group/disc relative z-10 mt-2.5 pt-2.5 border-t border-border flex items-center gap-1.5 text-xs truncate"
             >
-              <MessagesSquare className="h-3 w-3 shrink-0 text-primary" />
-              <span className="text-primary font-medium shrink-0">Latest discussion:</span>
+              <MessagesSquare className="h-3 w-3 shrink-0 text-violet-400" />
+              <span className="text-violet-400 font-medium shrink-0">Latest discussion:</span>
               <span className="truncate text-muted-foreground group-hover/disc:text-foreground transition-colors">{latestDiscussion.title}</span>
             </Link>
           )}
