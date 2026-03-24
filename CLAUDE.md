@@ -83,7 +83,7 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - **Agent match feedback**: `TaskWorkflowSection` shows a warning banner when pending steps have roles with no matching agent in the idea's pool
 - Server actions in `src/actions/workflow.ts` (step lifecycle) and `src/actions/workflow-templates.ts` (template CRUD + auto-rules)
 - **Editable pending steps**: Pending workflow steps can be edited (title, description, role, deliverables, approval gate) from the step detail dialog UI and via MCP `update_step` tool. Non-pending steps are read-only
-- MCP tools: 21 tools in `mcp-server/src/tools/workflows.ts` — template CRUD, apply, claim_next_step, complete_step, fail_step, skip_step, update_step, approve_step, get_step_context, add_step_comment, rematch_workflow_agents, reset_workflow, remove_workflow, list_workflow_auto_rules, create_workflow_auto_rule, update_workflow_auto_rule, delete_workflow_auto_rule, apply_auto_rule_retroactively
+- MCP tools: 20 tools in `mcp-server/src/tools/workflows.ts` — template CRUD, apply, claim_next_step, complete_step, fail_step, skip_step, update_step, approve_step, add_step_comment, rematch_workflow_agents, reset_workflow, remove_workflow, list_workflow_auto_rules, create_workflow_auto_rule, update_workflow_auto_rule, delete_workflow_auto_rule, apply_auto_rule_retroactively
 
 ### Idea Agent Pool
 - `idea_agents` junction table: `(idea_id, bot_id, added_by)` with `UNIQUE(idea_id, bot_id)`
@@ -144,6 +144,31 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - RLS: team members insert, uploader or author delete, public idea viewers can read
 - Cleanup on idea deletion in `src/actions/ideas.ts` (removes from both `idea-attachments` and `task-attachments` buckets)
 
+### Dashboard
+- Two modes controlled by `DashboardModeSwitch` client component (`src/components/dashboard/dashboard-mode-switch.tsx`)
+- **First-run dashboard** (`src/components/dashboard/first-run-dashboard.tsx`): welcome header, 5-step setup progress bar (Account/Idea/Board/MCP/First task), project card with board preview, MCP connection CTA, agent team list, quick links
+- **Standard dashboard**: stats cards, collapsible sections (Active Boards, My Tasks, My Ideas, Collaborations, Active Discussions, My Agents, Recent Activity) via `DashboardGrid`
+- **Who sees what**: Brand-new users (`isNewUser`) → OnboardingWrapper. Everyone else (`!isNewUser`) → `DashboardModeSwitch`
+- **Activation logic**: `isActivated = hasTasks (>=3) && (hasAgents || hasWorkflows || hasMcpConnection)` — users need tasks AND at least one advanced feature to graduate to standard dashboard
+- **isNewUser**: `!onboardingCompleted && !hasExistingContent` — users who pre-date the onboarding wizard but have ideas/collabs are NOT new users
+- Override: "Switch to full dashboard" button persists to localStorage; `DashboardModeSwitch` checks localStorage after mount
+- SSR: first-run content renders by default (no `return null` during mount) to prevent blank page flash
+- MCP banner (`McpConnectionBanner`): shows unconditionally when MCP not connected; `dismissable` prop (default true, false on first-run dashboard)
+
+### Project Kits
+- `project_kits` table: bundles of agent_roles, label_presets, workflow_library_template_id, auto_rule_label per project type
+- 6 seeded kits: Web Application, Mobile App, API / Backend, Design System, AI / ML Project, Custom
+- 5 project-type workflow library templates linked to kits (migration 00097)
+- `applyKit()` in `src/actions/kits.ts`: clones agents (skipping existing roles), creates labels, imports workflow template, creates auto-rule, allocates agents to idea, sets `ideas.project_kit_id`
+- RLS: all authenticated users SELECT; admin-only write
+- Admin CRUD via `src/actions/admin-kits.ts`
+
+### MCP Connection Detection
+- `users.mcp_connected_at` column (migration 00095) — set on first successful MCP tool call
+- `instrumentServer()` in `mcp-server/src/instrument.ts` fires `mcpConnectFn` callback after successful tool calls
+- Both stdio (`mcp-server/src/index.ts`) and remote (`src/app/api/mcp/[[...transport]]/route.ts`) set the timestamp
+- Dashboard and board pages check `mcp_connected_at` to show/hide MCP connection banners
+
 ### Email Notifications
 - `/api/notifications/email` webhook endpoint, verified via `NOTIFICATION_WEBHOOK_SECRET`
 - Triggered by Supabase pg_net webhook on notification inserts
@@ -162,6 +187,15 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - Daily safety cap: `PLATFORM_AI_DAILY_LIMIT` env var (default 50) prevents abuse
 - Credit badge shown on AI Generate button when `!hasByokKey && starterCredits > 0`
 - Admin credits dashboard (`/admin?tab=credits`): view/grant credits via `UserCreditsTable` component
+
+### UX Nudges & Guidance
+- **Design doc**: `docs/ux-redesign-proposals.html` — 5 proposals (P1-P5) with HTML mockups. Authoritative reference for all UX implementations.
+- `NudgeBanner` (`src/components/shared/nudge-banner.tsx`): reusable component with 6 color variants (violet, emerald, amber, cyan, rose, default), localStorage/sessionStorage dismiss, compact mode
+- `McpConnectionBanner` (`src/components/shared/mcp-connection-banner.tsx`): amber banner with terminal block, copy-to-clipboard, `dismissable` prop (false on first-run dashboard)
+- `HelpLink` (`src/components/shared/help-link.tsx`): small HelpCircle icon linking to guide pages, placed in 8 locations
+- Board nudge banners in `kanban-board.tsx`: 4 state-aware banners (post-generation, no-workflows, no-agents, no-MCP)
+- Idea page: `IdeaGettingStarted` card, board button variants, agent section nudges
+- Guide sidebar: `GuideNav` component with sidebar, mobile nav, breadcrumbs, prev/next links for 9 guide sections
 
 ### Structured Logging
 - `src/lib/logger.ts` — thin wrapper with `logger.error()`, `logger.warn()`, `logger.info()`, `logger.debug()`
@@ -184,20 +218,21 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 
 ## Database
 
-39 tables with RLS (`supabase/migrations/`):
+40 tables with RLS (`supabase/migrations/`):
 - **Core**: users, ideas, comments, collaborators, votes, notifications, feedback, idea_attachments
 - **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_task_activity, board_task_comments, board_task_attachments
 - **Workflows**: workflow_templates, workflow_auto_rules, workflow_runs, task_workflow_steps, workflow_step_comments, workflow_library_templates
 - **Discussions**: idea_discussions, idea_discussion_replies, discussion_votes, discussion_attachments
 - **Agents**: bot_profiles, idea_agents, agent_votes, featured_teams, featured_team_agents
+- **Project Kits**: project_kits (bundles of agents + workflows + labels per project type)
 - **AI**: ai_usage_log, ai_prompt_templates
 - **MCP/OAuth**: mcp_oauth_clients, mcp_oauth_codes
 - **MCP Analytics**: mcp_tool_log (raw invocations, 30-day retention), mcp_tool_stats (daily rollups via pg_cron)
 - **Collaboration**: collaboration_requests
 
 Key columns:
-- `users.is_bot`, `users.is_admin`, `users.is_super_admin`, `users.ai_daily_limit` (default 10), `users.ai_enabled`, `users.ai_starter_credits` (default 10, lifetime), `users.default_board_columns`, `users.email_notifications`, `users.active_bot_id`, `users.encrypted_anthropic_key`
-- `ideas.visibility` (public/private) enforced by RLS
+- `users.is_bot`, `users.is_admin`, `users.is_super_admin`, `users.ai_daily_limit` (default 10), `users.ai_enabled`, `users.ai_starter_credits` (default 10, lifetime), `users.default_board_columns`, `users.email_notifications`, `users.active_bot_id`, `users.encrypted_anthropic_key`, `users.mcp_connected_at` (set on first MCP tool call)
+- `ideas.visibility` (public/private) enforced by RLS; `ideas.project_kit_id` (FK → project_kits)
 - Denormalized counts on ideas (upvotes, comment_count, collaborator_count, discussion_count, attachment_count) via triggers
 - `admin_delete_user` RPC cascades from auth.users (requires `is_super_admin`); `grant_starter_credits` RPC (requires `is_super_admin`); `admin_delete_bot_user` + `admin_update_bot_user` RPCs for admin agent management
 - `is_super_admin` separates destructive user-management (delete users, grant credits, modify privilege fields) from general admin access. Regular admins keep dashboard access, agent/team/template CRUD, feedback management
@@ -205,7 +240,7 @@ Key columns:
 
 ## Server Actions (src/actions/)
 
-21 files, 117 exported functions:
+23 files, 121 exported functions:
 - `ideas.ts` — create, update, updateStatus, updateIdeaFields (partial inline edit), delete
 - `board.ts` — columns (init, CRUD, reorder), tasks (CRUD, move, archive), labels (CRUD, assign), task comments (create, update, delete)
 - `workflow.ts` — createWorkflowStep, updateWorkflowStep, deleteWorkflowStep, startWorkflowStep, completeWorkflowStep, skipWorkflowStep, failWorkflowStep, approveWorkflowStep, retryWorkflowStep, resetWorkflow, removeWorkflow, addStepComment, deleteStepComment
@@ -226,6 +261,8 @@ Key columns:
 - `feedback.ts` — submitFeedback, updateFeedbackStatus, deleteFeedback
 - `idea-agents.ts` — allocateAgent, removeIdeaAgent, setOrchestrationAgent
 - `onboarding.ts` — completeOnboarding, enhanceOnboardingDescription, generateOnboardingClarifyingQuestions, enhanceOnboardingWithContext
+- `kits.ts` — getActiveKits, applyKit (clones agents, creates labels, imports workflow template, creates auto-rule, allocates agents, sets project_kit_id)
+- `admin-kits.ts` — listAllKits, createKit, updateKit, deleteKit
 
 ## Environment Variables
 
@@ -279,7 +316,7 @@ See `docs/release-process.md` for full details.
 
 ## MCP Server
 
-Two modes sharing 74 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI. Tool names auto-discovered at runtime via `getRegisteredToolNames()` in `register-tools.ts` (used by admin MCP Tools dashboard):
+Two modes sharing 73 tools via `mcp-server/src/register-tools.ts` + `McpContext` DI. Tool names auto-discovered at runtime via `getRegisteredToolNames()` in `register-tools.ts` (used by admin MCP Tools dashboard):
 - **Local (stdio)**: `mcp-server/src/index.ts` — service-role client, bypasses RLS
 - **Remote (HTTP)**: `src/app/api/mcp/[[...transport]]/route.ts` — OAuth 2.1 + PKCE, per-user RLS
 

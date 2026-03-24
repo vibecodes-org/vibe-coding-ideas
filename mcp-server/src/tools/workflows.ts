@@ -971,61 +971,6 @@ export async function approveStep(
   return { step: updated, run_complete: runComplete };
 }
 
-// --- Get Step Context ---
-
-export const getStepContextSchema = z.object({
-  step_id: z.string().uuid().describe("The workflow step ID"),
-});
-
-export async function getStepContext(
-  ctx: McpContext,
-  params: z.infer<typeof getStepContextSchema>
-) {
-  // Fetch the step with its task details
-  const { data: step, error: stepError } = await ctx.supabase
-    .from("task_workflow_steps")
-    .select(
-      "id, task_id, idea_id, run_id, bot_id, title, description, agent_role, status, position, step_order, output, human_check_required, comment_count, started_at, completed_at, created_at, updated_at"
-    )
-    .eq("id", params.step_id)
-    .single();
-
-  if (stepError || !step) throw new Error(`Step not found: ${params.step_id}`);
-
-  // Fetch task details
-  const { data: task } = await ctx.supabase
-    .from("board_tasks")
-    .select("id, title, description, idea_id, column_id, assignee_id")
-    .eq("id", step.task_id)
-    .single();
-
-  // Fetch comments for this step
-  const { data: comments } = await ctx.supabase
-    .from("workflow_step_comments")
-    .select("id, type, content, author_id, created_at")
-    .eq("step_id", params.step_id)
-    .order("created_at", { ascending: true });
-
-  // Fetch previous steps' outputs in the same run (for context chaining)
-  let previousStepsOutput: Array<Record<string, unknown>> = [];
-  if (step.run_id) {
-    const { data: prevSteps } = await ctx.supabase
-      .from("task_workflow_steps")
-      .select("id, title, agent_role, step_order, status, output, completed_at")
-      .eq("run_id", step.run_id)
-      .lt("step_order", step.step_order ?? 999999)
-      .order("step_order", { ascending: true });
-
-    previousStepsOutput = (prevSteps ?? []) as Array<Record<string, unknown>>;
-  }
-
-  return {
-    step,
-    task: task ?? null,
-    comments: comments ?? [],
-    previous_steps: previousStepsOutput,
-  };
-}
 
 // --- Add Step Comment ---
 

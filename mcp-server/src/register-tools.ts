@@ -170,8 +170,6 @@ import {
   updateStepSchema,
   approveStep,
   approveStepSchema,
-  getStepContext,
-  getStepContextSchema,
   addStepComment,
   addStepCommentSchema,
   rematchWorkflowAgents,
@@ -1179,20 +1177,6 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await approveStep(ctx, approveStepSchema.parse(args)));
-      } catch (e) {
-        return errorResult(e);
-      }
-    }
-  );
-
-  server.tool(
-    "get_step_context",
-    "Get full context for a workflow step: the step details, parent task, all comments, and previous steps' outputs in the same run (for context chaining between agent personas).",
-    getStepContextSchema.shape,
-    async (args: Record<string, unknown>, extra: ServerExtra) => {
-      try {
-        const ctx = await getContext(extra);
-        return jsonResult(await getStepContext(ctx, getStepContextSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

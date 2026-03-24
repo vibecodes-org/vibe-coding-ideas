@@ -326,7 +326,6 @@ export default function McpIntegrationPage() {
                   { name: "fail_step", description: "Fail a step with optional cascade rejection to an earlier step" },
                   { name: "skip_step", description: "Skip a pending step that isn't applicable" },
                   { name: "approve_step", description: "Approve a step awaiting human review (humans only)" },
-                  { name: "get_step_context", description: "Get step details, task info, comments, and prior step outputs" },
                   { name: "get_step_comments", description: "List all comments on a workflow step" },
                   { name: "add_step_comment", description: "Add a comment to a workflow step" },
                   { name: "rematch_workflow_agents", description: "Re-match unmatched pending steps against the agent pool" },
