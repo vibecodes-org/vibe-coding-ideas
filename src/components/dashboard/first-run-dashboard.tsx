@@ -1,11 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
-import { Check, Plus, Bot } from "lucide-react";
+import { Check, Plus, Bot, Copy } from "lucide-react";
+import { toast } from "sonner";
 import { useSwitchToStandard } from "./dashboard-mode-switch";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { getRoleColor } from "@/lib/agent-colors";
 import { cn } from "@/lib/utils";
 import type { BotProfile } from "@/types";
@@ -249,13 +250,7 @@ export function FirstRunDashboard({
           )}
 
           {/* MCP CTA — show until MCP step is sequentially complete */}
-          {!mcpStepComplete && (
-            <McpConnectionBanner
-              agentCount={agentCount}
-              taskCount={taskCount}
-              dismissable={false}
-            />
-          )}
+          {!mcpStepComplete && <FirstRunMcpCard />}
         </div>
 
         {/* Right column */}
@@ -356,6 +351,50 @@ export function FirstRunDashboard({
           </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+const MCP_COMMAND = "claude mcp add vibecodes https://vibecodes.co.uk/api/mcp";
+
+function FirstRunMcpCard() {
+  const [copied, setCopied] = useState(false);
+
+  const handleCopy = async () => {
+    try {
+      await navigator.clipboard.writeText(MCP_COMMAND);
+      setCopied(true);
+      toast.success("MCP command copied to clipboard");
+      setTimeout(() => setCopied(false), 2000);
+    } catch {
+      toast.error("Failed to copy — please copy manually");
+    }
+  };
+
+  return (
+    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4 sm:p-5">
+      <h3 className="text-sm font-semibold text-foreground">
+        🔌 Next: Connect Claude Code
+      </h3>
+      <p className="mt-1.5 text-sm text-muted-foreground">
+        Your agents can&apos;t work until you connect Claude Code via MCP. Run
+        this command:
+      </p>
+      <div className="mt-3 overflow-x-auto rounded-lg bg-black/80 px-3 py-2 font-mono text-xs leading-relaxed">
+        <span className="text-emerald-400">$</span>{" "}
+        <span className="text-foreground">{MCP_COMMAND}</span>
+      </div>
+      <button
+        onClick={handleCopy}
+        className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition-colors hover:bg-amber-400"
+      >
+        {copied ? (
+          <Check className="h-3 w-3" />
+        ) : (
+          <Copy className="h-3 w-3" />
+        )}
+        {copied ? "Copied!" : "Copy command"}
+      </button>
     </div>
   );
 }
