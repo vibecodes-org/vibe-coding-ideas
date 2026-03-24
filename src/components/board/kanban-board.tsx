@@ -28,6 +28,8 @@ import { BoardColumn } from "./board-column";
 import { AddColumnButton } from "./add-column-button";
 import { BoardToolbar } from "./board-toolbar";
 import { BoardEmptyState } from "./board-empty-state";
+import { NudgeBanner } from "@/components/shared/nudge-banner";
+import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { BoardOpsContext, type BoardOptimisticOps } from "./board-context";
 import { toast } from "sonner";
 import { moveBoardTask, reorderBoardColumns } from "@/actions/board";
@@ -127,6 +129,8 @@ interface KanbanBoardProps {
   userBotProfiles?: BotProfile[];
   coverImageUrls?: Record<string, string>;
   isReadOnly?: boolean;
+  hasWorkflowTemplates?: boolean;
+  hasMcpConnection?: boolean;
 }
 
 // Edge-scroll constants
@@ -237,6 +241,8 @@ export function KanbanBoard({
   userBotProfiles = [],
   coverImageUrls = {},
   isReadOnly = false,
+  hasWorkflowTemplates = false,
+  hasMcpConnection = false,
 }: KanbanBoardProps) {
   // Build botRoles map from botProfiles for @mention autocomplete
   const botRoles = useMemo(() => {
@@ -896,6 +902,66 @@ export function KanbanBoard({
         aiGenerateOpen={aiGenerateOpen}
         onAiGenerateOpenChange={setAiGenerateOpen}
       />
+      {/* State-aware nudge banners (only when board has tasks, first match wins) */}
+      {!isReadOnly && !isBoardEmpty && (() => {
+        const hasAllocatedAgents = ideaAgents.length > 0;
+        const isPostGeneration = typeof window !== "undefined" && sessionStorage.getItem(`board-just-generated-${ideaId}`) === "true";
+
+        if (!hasWorkflowTemplates && isPostGeneration) {
+          // Mockup #4: Post-generation, no workflows (amber)
+          return (
+            <NudgeBanner
+              icon={<span className="text-amber-400">✨</span>}
+              title="Tasks generated! Set up workflows to automate them"
+              description="Your tasks are ready. Apply a workflow template so your agents know what to do with each task."
+              action={{ label: "Set up workflows →", href: "?tab=workflows" }}
+              variant="amber"
+              sessionDismissKey={`nudge-post-gen-workflows-${ideaId}`}
+              className="mb-3 shrink-0"
+            />
+          );
+        }
+        if (!hasWorkflowTemplates) {
+          // Mockup #1: Generic, no workflows (violet)
+          return (
+            <NudgeBanner
+              icon={<span className="text-violet-400">⚡</span>}
+              title="Automate your tasks with workflows"
+              description="Workflows let your agents work on tasks automatically — UX review, implementation, testing, and more. Import a template to get started."
+              action={{ label: "Set up workflows →", href: "?tab=workflows" }}
+              variant="violet"
+              sessionDismissKey={`nudge-workflows-${ideaId}`}
+              className="mb-3 shrink-0"
+            />
+          );
+        }
+        if (hasWorkflowTemplates && !hasAllocatedAgents) {
+          // Mockup #2: Templates exist, no agents (emerald)
+          return (
+            <NudgeBanner
+              icon={<span className="text-emerald-400">🤖</span>}
+              title="Your workflows need agents"
+              description="You have workflow steps waiting for agents. Add agents to your pool so they can pick up work."
+              action={{ label: "Add agents →", href: "?tab=agents" }}
+              variant="emerald"
+              sessionDismissKey={`nudge-agents-${ideaId}`}
+              className="mb-3 shrink-0"
+            />
+          );
+        }
+        if (hasAllocatedAgents && !hasMcpConnection) {
+          // MCP not connected (compact amber banner from P3.2)
+          return (
+            <McpConnectionBanner
+              agentCount={ideaAgents.length}
+              taskCount={columns.reduce((sum, col) => sum + col.tasks.length, 0)}
+              compact
+              className="mb-3 shrink-0"
+            />
+          );
+        }
+        return null;
+      })()}
       {showEmptyState ? (
         <BoardEmptyState
           canUseAi={canUseAi}

@@ -158,6 +158,8 @@ export function AiGenerateDialog({
 
   function startLoadingBoard(createdCount: number) {
     createdCountRef.current = createdCount;
+    // Flag for post-generation nudge banners
+    try { sessionStorage.setItem(`board-just-generated-${ideaId}`, "true"); } catch { /* noop */ }
     setPhase("loading-board");
     startTransition(() => {
       router.refresh();

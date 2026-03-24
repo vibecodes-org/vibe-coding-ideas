@@ -128,6 +128,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     { data: userProfile },
     ideaTeam,
     { data: userBotProfiles },
+    { count: workflowTemplateCount },
   ] = await Promise.all([
     supabase.from("board_columns").select("*").eq("idea_id", id).order("position", { ascending: true }),
     supabase
@@ -155,8 +156,14 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           .eq("owner_id", user.id)
           .eq("is_active", true)
       : Promise.resolve({ data: null }),
+    // Workflow template count for nudge banners
+    supabase
+      .from("workflow_templates")
+      .select("*", { head: true, count: "exact" })
+      .eq("idea_id", id),
   ]);
 
+  const hasWorkflowTemplates = (workflowTemplateCount ?? 0) > 0;
   const { teamMembers, ideaAgents, botProfiles: ideaAgentBotProfiles, ideaAgentDetails } = ideaTeam;
 
   // Phase 3: Queries that depend on Phase 2 results
@@ -286,6 +293,8 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           userBotProfiles={(userBotProfiles ?? []) as import("@/types").BotProfile[]}
           coverImageUrls={coverImageUrls}
           isReadOnly={isReadOnly}
+          hasWorkflowTemplates={hasWorkflowTemplates}
+          hasMcpConnection={!!userProfile?.mcp_connected_at}
         />
       </BoardPageTabs>
     </div>
