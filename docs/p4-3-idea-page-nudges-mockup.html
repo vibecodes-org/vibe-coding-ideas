@@ -1,0 +1,374 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P4.3 Idea Detail Page Nudges — Mockup</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --surface: #111113;
+    --surface-2: #19191d;
+    --border: #27272a;
+    --text: #fafafa;
+    --text-muted: #a1a1aa;
+    --text-dim: #71717a;
+    --violet: #8b5cf6;
+    --violet-dim: rgba(139, 92, 246, 0.12);
+    --violet-border: rgba(139, 92, 246, 0.25);
+    --emerald: #10b981;
+    --emerald-dim: rgba(16, 185, 129, 0.12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem; }
+  .container { max-width: 800px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.1rem; font-weight: 700; margin-top: 2.5rem; margin-bottom: 0.75rem; color: var(--text-muted); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+  .note { font-size: 0.85rem; color: var(--text-dim); margin-bottom: 2rem; }
+  .mockup-frame { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin: 1rem 0; }
+  .mockup-bar { display: flex; align-items: center; gap: 6px; padding: 8px 12px; background: var(--surface-2); border-bottom: 1px solid var(--border); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-r { background: #ef4444; } .dot-y { background: #eab308; } .dot-g { background: #22c55e; }
+  .mockup-label { font-size: 0.7rem; color: var(--text-dim); margin-left: 8px; }
+  .mockup-body { padding: 1.5rem; }
+
+  /* Getting Started Card */
+  .getting-started {
+    background: var(--violet-dim);
+    border: 1px solid var(--violet-border);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+  }
+  .gs-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+  .gs-title { font-weight: 700; font-size: 0.95rem; color: var(--text); }
+  .gs-dismiss {
+    background: none; border: none; color: var(--text-dim); cursor: pointer;
+    font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;
+  }
+  .gs-dismiss:hover { background: rgba(255,255,255,0.05); color: var(--text-muted); }
+  .gs-steps {
+    display: flex; gap: 0; align-items: flex-start;
+  }
+  .gs-step {
+    flex: 1; text-align: center; position: relative;
+  }
+  .gs-step-num {
+    width: 28px; height: 28px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 0.75rem; font-weight: 800; margin-bottom: 0.4rem;
+  }
+  .gs-step-done {
+    background: var(--emerald-dim); border: 2px solid var(--emerald); color: var(--emerald);
+  }
+  .gs-step-current {
+    background: var(--violet-dim); border: 2px solid var(--violet); color: var(--violet);
+  }
+  .gs-step-pending {
+    background: var(--surface-2); border: 2px solid var(--border); color: var(--text-dim);
+  }
+  .gs-step-label {
+    font-size: 0.78rem; font-weight: 600; color: var(--text);
+    display: block;
+  }
+  .gs-step-desc {
+    font-size: 0.7rem; color: var(--text-dim); margin-top: 0.15rem;
+  }
+  .gs-connector {
+    width: 40px; height: 2px; background: var(--border); align-self: center;
+    margin-top: -14px; flex-shrink: 0;
+  }
+  .gs-connector-done { background: var(--emerald); }
+
+  /* Board button variants */
+  .btn-row { display: flex; gap: 0.75rem; align-items: center; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    padding: 0.5rem 1rem; border-radius: 8px; font-size: 0.85rem;
+    font-weight: 600; cursor: pointer; border: none; font-family: inherit;
+    text-decoration: none;
+  }
+  .btn-outline {
+    background: transparent; border: 1px solid var(--border); color: var(--text-muted);
+  }
+  .btn-violet {
+    background: var(--violet); color: white;
+  }
+  .btn-violet-lg {
+    background: var(--violet); color: white; padding: 0.6rem 1.25rem; font-size: 0.9rem;
+  }
+  .badge {
+    background: var(--surface-2); border: 1px solid var(--border);
+    padding: 0.1rem 0.45rem; border-radius: 999px; font-size: 0.7rem;
+    font-weight: 700; color: var(--text-muted);
+  }
+
+  /* Agent nudge (from design doc mockup #3) */
+  .nudge-banner {
+    display: flex; align-items: center; gap: 1rem;
+    border-radius: 10px; padding: 1rem 1.25rem;
+  }
+  .nudge-icon { font-size: 1.25rem; flex-shrink: 0; }
+  .nudge-title { font-weight: 700; font-size: 0.85rem; color: var(--text); }
+  .nudge-desc { font-size: 0.78rem; color: var(--text-muted); }
+  .nudge-desc a { color: var(--violet); text-decoration: none; font-weight: 500; }
+  .nudge-desc a:hover { text-decoration: underline; }
+
+  /* Annotations */
+  .annotation {
+    font-size: 0.75rem; color: var(--violet); font-style: italic;
+    margin: 0.5rem 0; padding: 0.4rem 0.75rem;
+    border-left: 2px solid var(--violet); background: var(--violet-dim);
+    border-radius: 0 6px 6px 0;
+  }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>P4.3: Idea Detail Page Nudges</h1>
+<p class="note">Mockups for the Getting Started card, Board button variants, and agent nudge. Addresses audit findings F9 (critical) and F10 (high).</p>
+
+<!-- ============================================ -->
+<h2>1. Getting Started Card — New Idea (no board tasks)</h2>
+<p class="annotation">Shows between navigation buttons and discussions when boardTaskCount === 0. Session-dismissable. Three steps show current progress.</p>
+
+<div class="mockup-frame">
+  <div class="mockup-bar">
+    <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+    <span class="mockup-label">Idea page — new idea, description written, no agents, no board</span>
+  </div>
+  <div class="mockup-body">
+    <div class="getting-started">
+      <div class="gs-header">
+        <div class="gs-title">Get started with your idea</div>
+        <button class="gs-dismiss">Dismiss</button>
+      </div>
+      <div class="gs-steps">
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-done">&#x2713;</div>
+          <span class="gs-step-label">Describe your idea</span>
+          <span class="gs-step-desc">Done</span>
+        </div>
+        <div class="gs-connector gs-connector-done"></div>
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-current">2</div>
+          <span class="gs-step-label">Add AI agents</span>
+          <span class="gs-step-desc">0 agents</span>
+        </div>
+        <div class="gs-connector"></div>
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-pending">3</div>
+          <span class="gs-step-label">Generate your board</span>
+          <span class="gs-step-desc">0 tasks</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup-frame">
+  <div class="mockup-bar">
+    <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+    <span class="mockup-label">Idea page — brand new idea, no description, no agents, no board</span>
+  </div>
+  <div class="mockup-body">
+    <div class="getting-started">
+      <div class="gs-header">
+        <div class="gs-title">Get started with your idea</div>
+        <button class="gs-dismiss">Dismiss</button>
+      </div>
+      <div class="gs-steps">
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-current">1</div>
+          <span class="gs-step-label">Describe your idea</span>
+          <span class="gs-step-desc">Add a description</span>
+        </div>
+        <div class="gs-connector"></div>
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-pending">2</div>
+          <span class="gs-step-label">Add AI agents</span>
+          <span class="gs-step-desc">0 agents</span>
+        </div>
+        <div class="gs-connector"></div>
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-pending">3</div>
+          <span class="gs-step-label">Generate your board</span>
+          <span class="gs-step-desc">0 tasks</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup-frame">
+  <div class="mockup-bar">
+    <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+    <span class="mockup-label">Idea page — description + agents added, no board yet</span>
+  </div>
+  <div class="mockup-body">
+    <div class="getting-started">
+      <div class="gs-header">
+        <div class="gs-title">Get started with your idea</div>
+        <button class="gs-dismiss">Dismiss</button>
+      </div>
+      <div class="gs-steps">
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-done">&#x2713;</div>
+          <span class="gs-step-label">Describe your idea</span>
+          <span class="gs-step-desc">Done</span>
+        </div>
+        <div class="gs-connector gs-connector-done"></div>
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-done">&#x2713;</div>
+          <span class="gs-step-label">Add AI agents</span>
+          <span class="gs-step-desc">3 agents</span>
+        </div>
+        <div class="gs-connector gs-connector-done"></div>
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-current">3</div>
+          <span class="gs-step-label">Generate your board</span>
+          <span class="gs-step-desc">Ready to go!</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<h2>2. Board Button Variants</h2>
+<p class="annotation">Conditional rendering based on boardTaskCount. Replaces the current small outline "Board" button.</p>
+
+<div class="mockup-frame">
+  <div class="mockup-bar">
+    <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+    <span class="mockup-label">No board tasks — prominent violet CTA</span>
+  </div>
+  <div class="mockup-body">
+    <div class="btn-row">
+      <a class="btn btn-violet-lg" href="#">&#x2728; Generate Board with AI &rarr;</a>
+    </div>
+    <p class="annotation" style="margin-top: 0.75rem;">Larger, violet filled, sparkle icon. Clearly communicates the next action.</p>
+  </div>
+</div>
+
+<div class="mockup-frame">
+  <div class="mockup-bar">
+    <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+    <span class="mockup-label">Has board tasks — outline with count badge</span>
+  </div>
+  <div class="mockup-body">
+    <div class="btn-row">
+      <a class="btn btn-outline" href="#">&#x1f4cb; Board <span class="badge">12</span></a>
+    </div>
+    <p class="annotation" style="margin-top: 0.75rem;">Standard outline button with task count badge. User already knows the board exists.</p>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<h2>3. Agent Section Nudge — No Agents in Pool</h2>
+<p class="annotation">From design proposal mockup #3. Shows in the metadata strip when ideaAgents.length === 0 && isTeamMember.</p>
+
+<div class="mockup-frame">
+  <div class="mockup-bar">
+    <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+    <span class="mockup-label">Team member with NO bots — create/browse nudge (matches design doc mockup #3)</span>
+  </div>
+  <div class="mockup-body">
+    <div class="nudge-banner" style="background: var(--surface-2); border: 1px solid var(--border);">
+      <div class="nudge-icon">&#x1f4a1;</div>
+      <div>
+        <div class="nudge-title">Add AI agents to this idea</div>
+        <div class="nudge-desc">Agents can automatically work on your board tasks — reviewing designs, writing code, running tests. <a href="/agents">Create agents</a> or <a href="/agents?tab=community">browse the community</a>.</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mockup-frame">
+  <div class="mockup-bar">
+    <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+    <span class="mockup-label">Team member with bots but none allocated — simpler hint</span>
+  </div>
+  <div class="mockup-body">
+    <div style="display: flex; align-items: center; gap: 0.5rem;">
+      <span style="font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim);">Agents</span>
+      <span style="font-size: 0.78rem; color: var(--text-dim);">Add agents so they can work on your board tasks</span>
+      <button style="background: none; border: 1px solid var(--border); color: var(--text-muted); padding: 2px 8px; border-radius: 999px; font-size: 0.7rem; cursor: pointer; font-family: inherit;">+ Add</button>
+    </div>
+    <p class="annotation" style="margin-top: 0.5rem;">Compact inline hint — user already has bots, just needs to allocate them. The + button opens the existing add agent popover.</p>
+  </div>
+</div>
+
+<!-- ============================================ -->
+<h2>4. Complete Page Layout — New Idea State</h2>
+<p class="annotation">Shows how all three elements appear together on a new idea page.</p>
+
+<div class="mockup-frame">
+  <div class="mockup-bar">
+    <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+    <span class="mockup-label">Full idea page — new idea with description, no agents, no board</span>
+  </div>
+  <div class="mockup-body">
+    <!-- Hero area (simplified) -->
+    <div style="border: 1px solid var(--border); border-radius: 10px; padding: 1rem; margin-bottom: 1rem;">
+      <div style="font-size: 1.1rem; font-weight: 700;">My Recipe Sharing App</div>
+      <div style="font-size: 0.8rem; color: var(--text-dim); margin-top: 0.25rem;">In Progress &middot; Nick Ball &middot; 2 min ago</div>
+      <div style="display: flex; gap: 1rem; margin-top: 0.75rem; font-size: 0.75rem; color: var(--text-dim);">
+        <div>
+          <span style="font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Tags</span>
+          <span style="margin-left: 0.35rem; background: var(--surface-2); padding: 1px 6px; border-radius: 4px;">ai</span>
+          <span style="background: var(--surface-2); padding: 1px 6px; border-radius: 4px;">web</span>
+        </div>
+        <div>
+          <span style="font-size: 0.65rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Agents</span>
+          <span style="margin-left: 0.35rem; color: var(--text-dim); font-size: 0.75rem;">Add agents so they can work on your board tasks</span>
+          <button style="background: none; border: 1px solid var(--border); color: var(--text-muted); padding: 1px 6px; border-radius: 999px; font-size: 0.65rem; cursor: pointer; font-family: inherit; margin-left: 0.25rem;">+ Add</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Board button (prominent, no tasks) -->
+    <div style="margin-bottom: 1rem;">
+      <a class="btn btn-violet-lg" href="#">&#x2728; Generate Board with AI &rarr;</a>
+    </div>
+
+    <!-- Getting Started card -->
+    <div class="getting-started" style="margin-bottom: 1rem;">
+      <div class="gs-header">
+        <div class="gs-title">Get started with your idea</div>
+        <button class="gs-dismiss">Dismiss</button>
+      </div>
+      <div class="gs-steps">
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-done">&#x2713;</div>
+          <span class="gs-step-label">Describe your idea</span>
+          <span class="gs-step-desc">Done</span>
+        </div>
+        <div class="gs-connector gs-connector-done"></div>
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-current">2</div>
+          <span class="gs-step-label">Add AI agents</span>
+          <span class="gs-step-desc">0 agents</span>
+        </div>
+        <div class="gs-connector"></div>
+        <div class="gs-step">
+          <div class="gs-step-num gs-step-pending">3</div>
+          <span class="gs-step-label">Generate your board</span>
+          <span class="gs-step-desc">0 tasks</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Discussions (placeholder) -->
+    <div style="border: 1px dashed var(--border); border-radius: 8px; padding: 0.75rem; text-align: center; color: var(--text-dim); font-size: 0.8rem;">
+      Discussions section follows below...
+    </div>
+  </div>
+</div>
+
+</div>
+</body>
+</html>

@@ -1,7 +1,9 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
+import Link from "next/link";
 import { Bot, Plus, Loader2 } from "lucide-react";
+import { NudgeBanner } from "@/components/shared/nudge-banner";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -91,9 +93,78 @@ export function IdeaAgentsSection({
   // Don't show anything to non-team members if pool is empty
   if (!isTeamMember && ideaAgents.length === 0) return null;
 
+  // No bots at all — show full NudgeBanner (matches design doc mockup #3)
+  if (ideaAgents.length === 0 && isTeamMember && unallocatedBots.length === 0) {
+    return (
+      <NudgeBanner
+        icon={<span>💡</span>}
+        title="Add AI agents to this idea"
+        description={
+          <>
+            Agents can automatically work on your board tasks — reviewing designs, writing code, running tests.{" "}
+            <Link href="/agents" className="font-medium text-violet-400 hover:text-violet-300">Create agents</Link>
+            {" or "}
+            <Link href="/agents?tab=community" className="font-medium text-violet-400 hover:text-violet-300">browse the community</Link>.
+          </>
+        }
+        variant="default"
+      />
+    );
+  }
+
   return (
     <div className="flex items-center gap-2">
       <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/60">Agents</span>
+      {/* Has bots but none allocated — compact inline hint with + Add button */}
+      {ideaAgents.length === 0 && isTeamMember && unallocatedBots.length > 0 && (
+        <>
+          <span className="text-xs text-muted-foreground">
+            Add agents so they can work on your board tasks
+          </span>
+          <Popover open={addOpen} onOpenChange={setAddOpen}>
+            <PopoverTrigger asChild>
+              <button className="rounded-full border border-border px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
+                + Add
+              </button>
+            </PopoverTrigger>
+            <PopoverContent className="w-60 p-2" align="start">
+              <div className="mb-2 flex items-center justify-between px-1">
+                <p className="text-xs font-medium text-muted-foreground">Your agents</p>
+                {unallocatedBots.length > 1 && (
+                  <button className="text-xs text-primary hover:underline" onClick={toggleSelectAll} type="button">
+                    {allSelected ? "Deselect all" : "Select all"}
+                  </button>
+                )}
+              </div>
+              <div className="space-y-0.5">
+                {unallocatedBots.map((bot) => {
+                  const colors = getRoleColor(bot.role);
+                  const isChecked = selectedBotIds.has(bot.id);
+                  return (
+                    <button key={bot.id} className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent disabled:opacity-50" onClick={() => toggleBotSelection(bot.id)} disabled={pending} type="button">
+                      <Checkbox checked={isChecked} tabIndex={-1} className="pointer-events-none" aria-hidden />
+                      <Avatar className="h-5 w-5">
+                        <AvatarImage src={bot.avatar_url ?? undefined} />
+                        <AvatarFallback className={`text-[10px] ${colors.avatarBg} ${colors.avatarText}`}>{bot.name?.[0]?.toUpperCase() ?? "?"}</AvatarFallback>
+                      </Avatar>
+                      <div className="flex flex-col leading-tight text-left">
+                        <span>{bot.name}</span>
+                        {bot.role && <span className="text-[11px] text-muted-foreground">{bot.role}</span>}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-2 border-t pt-2">
+                <Button size="sm" className="w-full gap-2" onClick={handleAllocateSelected} disabled={pending || selectedBotIds.size === 0}>
+                  {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
+                  {selectedBotIds.size === 0 ? "Select agents" : `Add ${selectedBotIds.size} Agent${selectedBotIds.size !== 1 ? "s" : ""}`}
+                </Button>
+              </div>
+            </PopoverContent>
+          </Popover>
+        </>
+      )}
       {/* Avatar stack */}
       {ideaAgents.length > 0 && (
         <div className="flex items-center">

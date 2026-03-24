@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { Pencil, LayoutDashboard } from "lucide-react";
+import { Pencil, LayoutDashboard, Sparkles } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getIdeaTeam } from "@/lib/idea-team";
@@ -32,6 +32,8 @@ import { formatRelativeTime, getInitials, stripMarkdownForMeta } from "@/lib/uti
 import { BotRolesProvider } from "@/components/bot-roles-context";
 import { PendingRequests } from "@/components/ideas/pending-requests";
 import { RecentDiscussionsPreview } from "@/components/discussions/recent-discussions-preview";
+import { IdeaGettingStarted } from "@/components/ideas/idea-getting-started";
+import { Badge } from "@/components/ui/badge";
 import type { CommentWithAuthor, CollaboratorWithUser, CollaborationRequestWithRequester, BotProfile, IdeaDiscussionWithAuthor } from "@/types";
 import type { Metadata } from "next";
 
@@ -113,6 +115,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
     { data: bots },
     ideaTeam,
     { data: recentDiscussions },
+    { count: boardTaskCount },
   ] = await Promise.all([
     supabase
       .from("comments")
@@ -154,11 +157,18 @@ export default async function IdeaDetailPage({ params }: PageProps) {
       .order("pinned", { ascending: false })
       .order("last_activity_at", { ascending: false })
       .limit(3),
+    // Board task count for Getting Started card and Board button
+    supabase
+      .from("board_tasks")
+      .select("id, board_columns!inner(idea_id)", { head: true, count: "exact" })
+      .eq("board_columns.idea_id", id)
+      .eq("archived", false),
   ]);
 
   const hasVoted = !!vote;
   const isCollaborator = !!collab;
   const isAdmin = profile?.is_admin ?? false;
+  const taskCount = boardTaskCount ?? 0;
   const userHasByokKey = !!profile?.encrypted_anthropic_key;
   const userStarterCredits = profile?.ai_starter_credits ?? 0;
   const userCanUseAi = userHasByokKey || userStarterCredits > 0;
@@ -442,11 +452,31 @@ export default async function IdeaDetailPage({ params }: PageProps) {
       {(isAuthor || isCollaborator || idea.visibility === "public") && (
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Link href={`/ideas/${idea.id}/board`}>
-            <Button variant="outline" size="sm" className="gap-2">
-              <LayoutDashboard className="h-4 w-4" />
-              Board
-            </Button>
+            {taskCount === 0 ? (
+              <Button size="sm" className="gap-2 bg-violet-600 text-white hover:bg-violet-500">
+                <Sparkles className="h-4 w-4" />
+                Generate Board with AI &rarr;
+              </Button>
+            ) : (
+              <Button variant="outline" size="sm" className="gap-2">
+                <LayoutDashboard className="h-4 w-4" />
+                Board
+                <Badge variant="secondary" className="ml-0.5 px-1.5 py-0 text-[10px]">{taskCount}</Badge>
+              </Button>
+            )}
           </Link>
+        </div>
+      )}
+
+      {/* ══ Getting Started Card (when no board tasks) ══════ */}
+      {(isAuthor || isCollaborator) && taskCount === 0 && (
+        <div className="mt-4">
+          <IdeaGettingStarted
+            ideaId={idea.id}
+            hasDescription={!!idea.description && idea.description.length > 20}
+            agentCount={ideaTeam.ideaAgents.length}
+            boardTaskCount={taskCount}
+          />
         </div>
       )}
 
