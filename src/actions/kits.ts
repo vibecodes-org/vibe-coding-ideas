@@ -86,9 +86,9 @@ export async function applyKit(
 
       try {
         const { data: botUser } = await supabase.rpc("create_bot_user", {
-          owner_id: user.id,
-          bot_name: agentRole.name_suggestion || agentRole.role,
-          bot_role: agentRole.role,
+          p_owner_id: user.id,
+          p_name: agentRole.name_suggestion || agentRole.role,
+          p_role: agentRole.role,
         });
 
         if (botUser) {
