@@ -155,16 +155,17 @@ export function IdeaCard({ idea, hasVoted, taskCount, latestDiscussion }: IdeaCa
               </Tooltip>
             )}
           </div>
+        </div>
           {latestDiscussion && (
             <Link
               href={`/ideas/${idea.id}/discussions/${latestDiscussion.id}`}
-              className="mt-1.5 flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+              className="relative z-10 mt-2.5 pt-2.5 border-t border-border flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors truncate"
             >
-              <MessagesSquare className="h-3 w-3 shrink-0" />
+              <MessagesSquare className="h-3 w-3 shrink-0 text-primary" />
+              <span className="text-primary font-medium shrink-0">Latest discussion:</span>
               <span className="truncate">{latestDiscussion.title}</span>
             </Link>
           )}
-        </div>
       </CardContent>
     </Card>
   );
