@@ -39,9 +39,6 @@ export function McpConnectionBanner({
 
   if (!mounted || dismissed) return null;
 
-  // Don't show if user has no agents and no tasks
-  if (agentCount === 0 && taskCount === 0) return null;
-
   const handleDismiss = () => {
     setDismissed(true);
     try {
