@@ -2,7 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ExternalLink } from "lucide-react";
+import { ExternalLink, Bot, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { formatRelativeTime } from "@/lib/utils";
@@ -16,6 +17,26 @@ interface MyBotsProps {
 
 export function MyBots({ bots }: MyBotsProps) {
   const [selectedBot, setSelectedBot] = useState<DashboardBot | null>(null);
+
+  if (bots.length === 0) {
+    return (
+      <div className="rounded-lg border border-dashed border-border p-8 text-center">
+        <Bot className="mx-auto h-8 w-8 text-muted-foreground/50" />
+        <p className="mt-3 text-sm font-medium">Your AI agents</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Create AI agents to automate workflow steps on your boards.
+        </p>
+        <div className="mt-4">
+          <Link href="/agents">
+            <Button size="sm" className="gap-2">
+              <Plus className="h-4 w-4" />
+              Create your first agent
+            </Button>
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <>

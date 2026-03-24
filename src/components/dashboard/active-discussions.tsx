@@ -1,6 +1,7 @@
 import Link from "next/link";
-import { MessageSquare } from "lucide-react";
+import { MessageSquare, MessagesSquare } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatRelativeTime } from "@/lib/utils";
 
 export interface ActiveDiscussion {
@@ -30,9 +31,20 @@ const STATUS_LABELS: Record<string, string> = {
 export function ActiveDiscussions({ discussions }: ActiveDiscussionsProps) {
   if (discussions.length === 0) {
     return (
-      <p className="py-4 text-center text-sm text-muted-foreground">
-        No active discussions across your ideas.
-      </p>
+      <div className="rounded-lg border border-dashed border-border p-8 text-center">
+        <MessagesSquare className="mx-auto h-8 w-8 text-muted-foreground/50" />
+        <p className="mt-3 text-sm font-medium">Active Discussions</p>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Plan features with your team before building. Discussions are available on each idea page.
+        </p>
+        <div className="mt-4">
+          <Link href="/ideas">
+            <Button variant="outline" size="sm">
+              Browse ideas &rarr;
+            </Button>
+          </Link>
+        </div>
+      </div>
     );
   }
 

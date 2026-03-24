@@ -21,10 +21,10 @@ export function MyTasksList({ tasks }: MyTasksListProps) {
     return (
       <div className="py-4 text-center">
         <p className="text-sm text-muted-foreground">
-          No tasks assigned to you.
+          No tasks assigned to you
         </p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Tasks appear here when you&apos;re assigned to them on a{" "}
+          Tasks get assigned when you or your agents claim workflow steps on a{" "}
           <Link href="/ideas" className="text-primary hover:underline">
             project board
           </Link>

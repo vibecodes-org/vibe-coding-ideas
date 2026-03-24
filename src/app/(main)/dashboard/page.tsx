@@ -559,41 +559,37 @@ export default async function DashboardPage() {
     ),
   };
 
-  // Conditionally add active-discussions section
-  if (activeDiscussions.length > 0) {
-    sections["active-discussions"] = (
-      <CollapsibleSection
-        sectionId="active-discussions"
-        title="Active Discussions"
-        icon={<MessagesSquare className="h-5 w-5" />}
-        count={activeDiscussions.length}
-      >
-        <ActiveDiscussions discussions={activeDiscussions} />
-      </CollapsibleSection>
-    );
-  }
+  // Always show active-discussions section (even when empty — F7)
+  sections["active-discussions"] = (
+    <CollapsibleSection
+      sectionId="active-discussions"
+      title="Active Discussions"
+      icon={<MessagesSquare className="h-5 w-5" />}
+      count={activeDiscussions.length || undefined}
+    >
+      <ActiveDiscussions discussions={activeDiscussions} />
+    </CollapsibleSection>
+  );
 
-  // Conditionally add my-bots section
-  if (dashboardBots.length > 0) {
-    sections["my-bots"] = (
-      <CollapsibleSection
-        sectionId="my-bots"
-        title="My Agents"
-        icon={<Bot className="h-5 w-5" />}
-        count={dashboardBots.length}
-        headerRight={
-          <Link
-            href="/agents"
-            className="text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            Manage
-          </Link>
-        }
-      >
-        <MyBots bots={dashboardBots} />
-      </CollapsibleSection>
-    );
-  }
+  // Always show my-bots section (even when empty — F7)
+  sections["my-bots"] = (
+    <CollapsibleSection
+      sectionId="my-bots"
+      title="My Agents"
+      icon={<Bot className="h-5 w-5" />}
+      count={dashboardBots.length || undefined}
+      headerRight={
+        <Link
+          href="/agents"
+          className="text-sm text-muted-foreground hover:text-foreground transition-colors"
+        >
+          Manage
+        </Link>
+      }
+    >
+      <MyBots bots={dashboardBots} />
+    </CollapsibleSection>
+  );
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-6 sm:py-8 sm:px-6 lg:px-8">

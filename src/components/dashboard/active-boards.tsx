@@ -23,7 +23,7 @@ export function ActiveBoards({ boards }: ActiveBoardsProps) {
         <LayoutDashboard className="mx-auto h-8 w-8 text-muted-foreground/50" />
         <p className="mt-3 text-sm font-medium">No active boards</p>
         <p className="mt-1 text-xs text-muted-foreground">
-          Create an idea and add tasks to see your boards here.
+          Create an idea and AI will generate a task board. Your agents can then work on tasks automatically.
         </p>
         <div className="mt-4 flex flex-col sm:flex-row items-center justify-center gap-2">
           <Link href="/ideas/new">
