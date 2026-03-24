@@ -1,6 +1,5 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Check, Plus, Bot } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -11,7 +10,7 @@ import { cn } from "@/lib/utils";
 import type { BotProfile } from "@/types";
 import type { ActiveBoard } from "./active-boards";
 
-const OVERRIDE_KEY = "first-run-dashboard-dismissed";
+export const FIRST_RUN_OVERRIDE_KEY = "first-run-dashboard-dismissed";
 
 interface BoardPreviewColumn {
   columnTitle: string;
@@ -19,7 +18,7 @@ interface BoardPreviewColumn {
   count: number;
 }
 
-interface FirstRunDashboardProps {
+export interface FirstRunDashboardProps {
   userName: string | null;
   hasMcpConnection: boolean;
   ideasCount: number;
@@ -32,6 +31,7 @@ interface FirstRunDashboardProps {
   hasTaskInProgress: boolean;
   agentCount: number;
   taskCount: number;
+  onSwitchToStandard?: () => void;
 }
 
 interface SetupStep {
@@ -52,30 +52,15 @@ export function FirstRunDashboard({
   hasTaskInProgress,
   agentCount,
   taskCount,
+  onSwitchToStandard,
 }: FirstRunDashboardProps) {
-  const [overridden, setOverridden] = useState(false);
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    try {
-      if (localStorage.getItem(OVERRIDE_KEY) === "true") {
-        setOverridden(true);
-      }
-    } catch {
-      // localStorage unavailable
-    }
-    setMounted(true);
-  }, []);
-
-  if (!mounted || overridden) return null;
-
   const handleSwitch = () => {
-    setOverridden(true);
     try {
-      localStorage.setItem(OVERRIDE_KEY, "true");
+      localStorage.setItem(FIRST_RUN_OVERRIDE_KEY, "true");
     } catch {
       // localStorage unavailable
     }
+    onSwitchToStandard?.();
   };
 
   const steps: SetupStep[] = [

@@ -20,6 +20,7 @@ import { StatsCards } from "@/components/dashboard/stats-cards";
 import { OnboardingWrapper } from "@/components/onboarding/onboarding-wrapper";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { FirstRunDashboard } from "@/components/dashboard/first-run-dashboard";
+import { DashboardModeSwitch } from "@/components/dashboard/dashboard-mode-switch";
 import { ActiveBoards } from "@/components/dashboard/active-boards";
 import type { ActiveBoard } from "@/components/dashboard/active-boards";
 import { MyBots } from "@/components/dashboard/my-bots";
@@ -638,42 +639,46 @@ export default async function DashboardPage() {
         />
       )}
 
-      {/* First-run dashboard for users who haven't activated yet (< 3 board tasks).
-          Returns null when overridden (user clicked "Switch to full dashboard"),
-          which causes the standard dashboard below to be the only visible content. */}
-      {onboardingCompleted && !isActivated && (
-        <FirstRunDashboard
-          userName={userProfile?.full_name ?? null}
-          hasMcpConnection={!!userProfile?.mcp_connected_at}
-          ideasCount={ideasCount}
-          firstIdea={myIdeas[0] ? { id: myIdeas[0].id, title: myIdeas[0].title } : null}
-          activeBoards={topActiveBoards}
-          maxBoardTaskCount={maxBoardTaskCount}
-          workflowCount={firstIdeaWorkflowCount}
-          boardPreview={firstRunBoardPreview}
-          botProfiles={botProfiles}
-          hasTaskInProgress={tasks.length > 0}
-          agentCount={botProfiles.length}
-          taskCount={tasks.length}
+      {/* Dashboard mode: first-run OR standard, never both */}
+      {onboardingCompleted && (
+        <DashboardModeSwitch
+          isActivated={isActivated}
+          firstRunContent={(onSwitch) => (
+            <FirstRunDashboard
+              userName={userProfile?.full_name ?? null}
+              hasMcpConnection={!!userProfile?.mcp_connected_at}
+              ideasCount={ideasCount}
+              firstIdea={myIdeas[0] ? { id: myIdeas[0].id, title: myIdeas[0].title } : null}
+              activeBoards={topActiveBoards}
+              maxBoardTaskCount={maxBoardTaskCount}
+              workflowCount={firstIdeaWorkflowCount}
+              boardPreview={firstRunBoardPreview}
+              botProfiles={botProfiles}
+              hasTaskInProgress={tasks.length > 0}
+              agentCount={botProfiles.length}
+              taskCount={tasks.length}
+              onSwitchToStandard={onSwitch}
+            />
+          )}
+          standardContent={
+            <>
+              {!userProfile?.mcp_connected_at && (
+                <McpConnectionBanner
+                  agentCount={botProfiles.length}
+                  taskCount={tasks.length}
+                />
+              )}
+              <StatsCards
+                ideasCount={ideasCount}
+                collaborationsCount={collaborationsCount}
+                upvotesReceived={totalUpvotes}
+                tasksAssigned={tasks.length}
+              />
+              <DashboardGrid sections={sections} defaultOrder={DEFAULT_PANEL_ORDER} />
+            </>
+          }
         />
       )}
-
-      {/* Standard dashboard — always rendered (visible when activated or first-run dismissed) */}
-      {onboardingCompleted && !userProfile?.mcp_connected_at && (
-        <McpConnectionBanner
-          agentCount={botProfiles.length}
-          taskCount={tasks.length}
-        />
-      )}
-
-      <StatsCards
-        ideasCount={ideasCount}
-        collaborationsCount={collaborationsCount}
-        upvotesReceived={totalUpvotes}
-        tasksAssigned={tasks.length}
-      />
-
-      <DashboardGrid sections={sections} defaultOrder={DEFAULT_PANEL_ORDER} />
     </div>
   );
 }
