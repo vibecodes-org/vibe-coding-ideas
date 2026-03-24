@@ -1,0 +1,966 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Project Type Selector — UX Design Document — Compass (UX Designer)</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --surface: #111113;
+    --surface-2: #19191d;
+    --surface-3: #222228;
+    --border: #27272a;
+    --border-focus: #3f3f46;
+    --text: #fafafa;
+    --text-muted: #a1a1aa;
+    --text-dim: #71717a;
+    --violet: #8b5cf6;
+    --violet-dim: rgba(139, 92, 246, 0.12);
+    --violet-border: rgba(139, 92, 246, 0.25);
+    --emerald: #10b981;
+    --emerald-dim: rgba(16, 185, 129, 0.12);
+    --emerald-border: rgba(16, 185, 129, 0.25);
+    --amber: #f59e0b;
+    --amber-dim: rgba(245, 158, 11, 0.12);
+    --amber-border: rgba(245, 158, 11, 0.25);
+    --rose: #f43f5e;
+    --rose-dim: rgba(244, 63, 94, 0.12);
+    --rose-border: rgba(244, 63, 94, 0.25);
+    --cyan: #06b6d4;
+    --cyan-dim: rgba(6, 182, 212, 0.12);
+    --cyan-border: rgba(6, 182, 212, 0.25);
+    --blue: #3b82f6;
+    --blue-dim: rgba(59, 130, 246, 0.12);
+    --blue-border: rgba(59, 130, 246, 0.25);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.65; }
+
+  /* Hero */
+  .hero {
+    background: linear-gradient(160deg, #1a0f2e 0%, #0f1a2e 40%, #091a1f 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 3.5rem 2rem 2.5rem;
+  }
+  .hero-inner { max-width: 1200px; margin: 0 auto; }
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: var(--violet-dim); border: 1px solid var(--violet-border);
+    border-radius: 999px; padding: 0.3rem 0.9rem;
+    font-size: 0.78rem; color: var(--violet); font-weight: 600;
+    margin-bottom: 1.25rem;
+  }
+  .hero h1 {
+    font-size: 2.2rem; font-weight: 800; letter-spacing: -0.03em; line-height: 1.15;
+    margin-bottom: 0.6rem;
+    background: linear-gradient(135deg, #fafafa 30%, var(--violet) 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+  }
+  .hero p { color: var(--text-muted); font-size: 1rem; max-width: 750px; }
+
+  .container { max-width: 1200px; margin: 0 auto; padding: 2rem; }
+
+  /* Section */
+  section { margin-bottom: 4rem; scroll-margin-top: 2rem; }
+  section > h2 {
+    font-size: 1.6rem; font-weight: 800; letter-spacing: -0.02em;
+    margin-bottom: 0.4rem; display: flex; align-items: center; gap: 0.75rem;
+    padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);
+  }
+  .section-tag {
+    font-size: 0.7rem; font-weight: 700; padding: 0.2rem 0.6rem;
+    border-radius: 5px; letter-spacing: 0.03em; text-transform: uppercase;
+  }
+  .tag-violet { background: var(--violet-dim); color: var(--violet); }
+  .tag-emerald { background: var(--emerald-dim); color: var(--emerald); }
+  .tag-amber { background: var(--amber-dim); color: var(--amber); }
+  .tag-cyan { background: var(--cyan-dim); color: var(--cyan); }
+  .section-sub { color: var(--text-muted); font-size: 0.92rem; margin-bottom: 1.5rem; max-width: 800px; }
+  h3 { font-size: 1.1rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.6rem; }
+  h4 { font-size: 0.92rem; font-weight: 600; margin-top: 1.25rem; margin-bottom: 0.4rem; color: var(--text-muted); }
+  p { margin-bottom: 0.7rem; color: var(--text-muted); font-size: 0.9rem; }
+  ul, ol { padding-left: 1.5rem; margin-bottom: 0.7rem; }
+  li { margin-bottom: 0.3rem; color: var(--text-muted); font-size: 0.88rem; }
+  li strong { color: var(--text); }
+  code { font-size: 0.82rem; background: var(--surface-3); padding: 0.1rem 0.4rem; border-radius: 4px; color: var(--violet); }
+
+  /* Mockup containers */
+  .mockup-frame {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden; margin: 1.5rem 0;
+  }
+  .mockup-titlebar {
+    display: flex; align-items: center; gap: 0.5rem;
+    padding: 0.6rem 1rem; border-bottom: 1px solid var(--border);
+    background: var(--surface-2);
+  }
+  .mockup-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .mockup-dot-r { background: #ef4444; }
+  .mockup-dot-y { background: #eab308; }
+  .mockup-dot-g { background: #22c55e; }
+  .mockup-title { font-size: 0.72rem; color: var(--text-dim); margin-left: 0.5rem; }
+  .mockup-body { padding: 1.5rem; }
+
+  /* Rationale boxes */
+  .rationale {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 1rem 1.25rem; margin: 1.5rem 0;
+  }
+  .rationale-label {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+    font-weight: 700; color: var(--violet); margin-bottom: 0.5rem;
+  }
+  .rationale p { margin: 0; }
+
+  /* Form styles */
+  .form-label {
+    display: block; font-size: 0.82rem; font-weight: 600; color: var(--text);
+    margin-bottom: 0.35rem;
+  }
+  .form-input, .form-textarea {
+    width: 100%; background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.6rem 0.75rem; color: var(--text);
+    font-size: 0.88rem; font-family: inherit; outline: none;
+    transition: border-color 0.15s;
+  }
+  .form-input:focus, .form-textarea:focus { border-color: var(--border-focus); }
+  .form-textarea { resize: vertical; min-height: 80px; }
+  .form-group { margin-bottom: 1rem; }
+  .form-hint { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.25rem; }
+
+  /* Project type grid */
+  .project-type-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 0.75rem; margin: 1rem 0;
+  }
+  .project-type-card {
+    background: var(--surface-2); border: 2px solid var(--border); border-radius: 12px;
+    padding: 1.25rem; cursor: pointer; transition: all 0.2s; text-align: center;
+  }
+  .project-type-card:hover { border-color: var(--border-focus); transform: translateY(-2px); }
+  .project-type-card.selected { border-color: var(--violet); background: var(--violet-dim); }
+  .ptc-icon { font-size: 2rem; margin-bottom: 0.5rem; }
+  .ptc-name { font-weight: 700; font-size: 0.9rem; color: var(--text); }
+  .ptc-desc { font-size: 0.75rem; color: var(--text-dim); margin-top: 0.2rem; }
+  .ptc-meta { display: flex; gap: 0.5rem; justify-content: center; margin-top: 0.6rem; flex-wrap: wrap; }
+  .ptc-pill {
+    font-size: 0.65rem; padding: 0.15rem 0.45rem; border-radius: 999px;
+    font-weight: 600;
+  }
+
+  /* Kit preview */
+  .kit-preview {
+    background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1.5rem; margin: 1rem 0;
+    animation: slideDown 0.3s ease;
+  }
+  @keyframes slideDown {
+    from { opacity: 0; transform: translateY(-8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .kit-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 1rem; }
+  .kit-title { font-weight: 700; font-size: 1rem; }
+  .kit-section { margin-bottom: 1rem; }
+  .kit-section-label {
+    font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em;
+    color: var(--text-dim); margin-bottom: 0.5rem; font-weight: 700;
+  }
+  .kit-items { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .kit-item {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: var(--surface-3); border: 1px solid var(--border);
+    padding: 0.3rem 0.7rem; border-radius: 6px; font-size: 0.78rem; color: var(--text-muted);
+  }
+  .kit-item-icon { font-size: 0.85rem; }
+
+  /* Buttons */
+  .btn {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.55rem 1.1rem; border-radius: 8px; font-size: 0.85rem;
+    font-weight: 600; cursor: pointer; transition: all 0.15s;
+    border: 1px solid transparent; font-family: inherit;
+  }
+  .btn-primary { background: var(--violet); color: #fff; border-color: var(--violet); }
+  .btn-primary:hover { filter: brightness(1.15); }
+  .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+  .btn-outline { background: transparent; color: var(--text-muted); border-color: var(--border); }
+  .btn-outline:hover { background: var(--surface-2); border-color: var(--border-focus); color: var(--text); }
+  .btn-ghost { background: transparent; color: var(--text-muted); border: none; }
+  .btn-ghost:hover { color: var(--text); background: var(--surface-2); }
+  .btn-amber { background: var(--amber); color: var(--bg); }
+  .btn-amber:hover { filter: brightness(1.1); }
+
+  /* Flow diagram */
+  .flow-diagram {
+    display: flex; align-items: center; gap: 0; flex-wrap: wrap;
+    margin: 1.5rem 0;
+  }
+  .flow-step {
+    background: var(--surface-2); border: 1px solid var(--border);
+    border-radius: 8px; padding: 0.6rem 1rem; font-size: 0.78rem;
+    color: var(--text-muted); text-align: center; min-width: 120px;
+  }
+  .flow-step.active { border-color: var(--violet); color: var(--violet); font-weight: 600; }
+  .flow-step.success { border-color: var(--emerald); color: var(--emerald); font-weight: 600; }
+  .flow-arrow { color: var(--text-dim); padding: 0 0.35rem; font-size: 0.85rem; }
+
+  /* State annotations */
+  .state-note {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    font-size: 0.7rem; font-weight: 600; padding: 0.15rem 0.5rem;
+    border-radius: 4px; margin-left: 0.4rem;
+  }
+  .state-note.hover { background: var(--cyan-dim); color: var(--cyan); }
+  .state-note.focus { background: var(--violet-dim); color: var(--violet); }
+  .state-note.disabled { background: var(--surface-3); color: var(--text-dim); }
+
+  /* Toast mockup */
+  .toast-mockup {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: var(--surface-2); border: 1px solid var(--emerald-border);
+    border-radius: 10px; padding: 0.7rem 1rem;
+    font-size: 0.82rem; color: var(--text);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+  .toast-icon { color: var(--emerald); font-size: 1rem; }
+
+  /* Loading overlay */
+  .loading-overlay {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1rem; padding: 3rem; text-align: center;
+  }
+  .spinner {
+    width: 32px; height: 32px; border: 3px solid var(--border);
+    border-top-color: var(--violet); border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Dialog overlay */
+  .dialog-backdrop {
+    background: rgba(0,0,0,0.6); border-radius: 14px;
+    padding: 2rem; display: flex; align-items: center; justify-content: center;
+  }
+  .dialog-content {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 14px;
+    padding: 1.5rem; width: 100%; max-width: 700px;
+  }
+  .dialog-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 1rem; padding-bottom: 0.75rem; border-bottom: 1px solid var(--border);
+  }
+  .dialog-title { font-weight: 700; font-size: 1.05rem; }
+  .dialog-close { background: none; border: none; color: var(--text-dim); cursor: pointer; font-size: 1.2rem; }
+
+  /* Workflows tab mockup */
+  .wf-empty {
+    display: flex; flex-direction: column; align-items: center;
+    padding: 2rem; text-align: center; gap: 0.75rem;
+  }
+  .wf-empty-icon {
+    width: 56px; height: 56px; border-radius: 50%;
+    border: 2px dashed var(--amber-border); display: flex;
+    align-items: center; justify-content: center; font-size: 1.5rem;
+    color: var(--amber); margin-bottom: 0.5rem;
+  }
+  .wf-btn-group { display: flex; gap: 0.5rem; flex-wrap: wrap; justify-content: center; }
+
+  /* Responsive notes */
+  .responsive-note {
+    background: var(--cyan-dim); border: 1px solid var(--cyan-border);
+    border-radius: 8px; padding: 0.75rem 1rem; margin: 1rem 0;
+    font-size: 0.82rem; color: var(--cyan);
+  }
+  .responsive-note strong { color: var(--cyan); }
+
+  /* Spec table */
+  .spec-table {
+    width: 100%; border-collapse: collapse; margin: 1rem 0;
+    font-size: 0.82rem;
+  }
+  .spec-table th, .spec-table td {
+    text-align: left; padding: 0.5rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+  }
+  .spec-table th { color: var(--text-dim); font-weight: 600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+  .spec-table td { color: var(--text-muted); }
+  .spec-table td:first-child { color: var(--text); font-weight: 500; }
+
+  /* Nav */
+  .doc-nav {
+    display: flex; gap: 0.5rem; flex-wrap: wrap; margin-bottom: 2.5rem;
+  }
+  .doc-nav a {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: 0.6rem 1rem; text-decoration: none; font-size: 0.82rem;
+    color: var(--text-muted); font-weight: 600; transition: all 0.15s;
+  }
+  .doc-nav a:hover { border-color: var(--border-focus); background: var(--surface-2); color: var(--text); }
+
+  /* Error state */
+  .error-toast {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: var(--surface-2); border: 1px solid var(--rose-border);
+    border-radius: 10px; padding: 0.7rem 1rem;
+    font-size: 0.82rem; color: var(--text);
+    box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+  }
+
+  /* Kit badge */
+  .kit-badge {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    background: var(--violet-dim); border: 1px solid var(--violet-border);
+    border-radius: 999px; padding: 0.15rem 0.6rem;
+    font-size: 0.7rem; color: var(--violet); font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge">&#x1f9ed; Compass &middot; UX Design</div>
+    <h1>Project Type Selector UI</h1>
+    <p>UX design document for P1.2 — adding a project type selector to the idea creation flow and board Workflows tab. Building on the Requirements step delivered by Product Owner.</p>
+    <div class="hero-meta">
+      <span>Task: P1.2</span>
+      <span>Parent doc: <code>docs/ux-redesign-proposals.html</code> &sect;P1</span>
+      <span>Components: 2 new, 2 modified</span>
+    </div>
+  </div>
+</div>
+
+<div class="container">
+
+  <nav class="doc-nav">
+    <a href="#mockup1">Create Idea Form</a>
+    <a href="#mockup2">Kit Preview</a>
+    <a href="#mockup3">Workflows Tab</a>
+    <a href="#states">States &amp; Transitions</a>
+    <a href="#flow">Interaction Flow</a>
+    <a href="#responsive">Responsive</a>
+    <a href="#specs">Component Specs</a>
+  </nav>
+
+  <!-- ============================================== -->
+  <!-- MOCKUP 1: CREATE IDEA WITH KIT SELECTOR        -->
+  <!-- ============================================== -->
+  <section id="mockup1">
+    <h2><span class="section-tag tag-violet">Mockup 1</span> Create Idea Form with Kit Selector</h2>
+    <p class="section-sub">The updated idea creation page adds a "What kind of project is this?" selector between the description field and submit button. Selecting a kit reveals a preview panel. Click cards below to interact.</p>
+
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot mockup-dot-r"></div>
+        <div class="mockup-dot mockup-dot-y"></div>
+        <div class="mockup-dot mockup-dot-g"></div>
+        <div class="mockup-title">Create New Idea &mdash; vibecodes.co.uk/ideas/new</div>
+      </div>
+      <div class="mockup-body" style="max-width: 720px;">
+        <h2 style="font-size: 1.3rem; font-weight: 800; margin-bottom: 1.25rem;">New Idea</h2>
+
+        <div class="form-group">
+          <label class="form-label">Title</label>
+          <input class="form-input" type="text" placeholder="What do you want to build?" value="Recipe Sharing App" />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Description</label>
+          <textarea class="form-textarea" rows="3" placeholder="Describe your idea...">A social platform for sharing and discovering recipes, with meal planning and grocery list features.</textarea>
+        </div>
+
+        <!-- Kit Selector Section -->
+        <div style="margin: 1.5rem 0;">
+          <p style="color: var(--text); font-weight: 700; font-size: 1rem; margin-bottom: 0.2rem;">What kind of project is this?</p>
+          <p style="font-size: 0.82rem; margin-bottom: 1rem;">This sets up the right workflow, agents, and board labels for you. You can customise everything later.</p>
+
+          <div class="project-type-grid" id="create-grid">
+            <div class="project-type-card selected" onclick="selectCard(this, 'create-grid', 'create-preview', 'web-app')">
+              <div class="ptc-icon">&#x1f310;</div>
+              <div class="ptc-name">Web Application</div>
+              <div class="ptc-desc">Full-stack web app with frontend, backend, and deployment</div>
+              <div class="ptc-meta">
+                <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">7 steps</span>
+                <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">5 roles</span>
+              </div>
+            </div>
+            <div class="project-type-card" onclick="selectCard(this, 'create-grid', 'create-preview', 'mobile')">
+              <div class="ptc-icon">&#x1f4f1;</div>
+              <div class="ptc-name">Mobile App</div>
+              <div class="ptc-desc">iOS, Android, or cross-platform mobile application</div>
+              <div class="ptc-meta">
+                <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">8 steps</span>
+                <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">5 roles</span>
+              </div>
+            </div>
+            <div class="project-type-card" onclick="selectCard(this, 'create-grid', 'create-preview', 'api')">
+              <div class="ptc-icon">&#x2699;&#xfe0f;</div>
+              <div class="ptc-name">API / Backend</div>
+              <div class="ptc-desc">REST/GraphQL API, microservice, or data pipeline</div>
+              <div class="ptc-meta">
+                <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">6 steps</span>
+                <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">4 roles</span>
+              </div>
+            </div>
+            <div class="project-type-card" onclick="selectCard(this, 'create-grid', 'create-preview', 'design')">
+              <div class="ptc-icon">&#x1f3a8;</div>
+              <div class="ptc-name">Design System</div>
+              <div class="ptc-desc">Component library, design tokens, documentation site</div>
+              <div class="ptc-meta">
+                <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">5 steps</span>
+                <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">3 roles</span>
+              </div>
+            </div>
+            <div class="project-type-card" onclick="selectCard(this, 'create-grid', 'create-preview', 'ai')">
+              <div class="ptc-icon">&#x1f916;</div>
+              <div class="ptc-name">AI / ML Project</div>
+              <div class="ptc-desc">Machine learning, data science, or AI agent system</div>
+              <div class="ptc-meta">
+                <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">7 steps</span>
+                <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">4 roles</span>
+              </div>
+            </div>
+            <div class="project-type-card" onclick="selectCard(this, 'create-grid', 'create-preview', 'custom')">
+              <div class="ptc-icon">&#x2728;</div>
+              <div class="ptc-name">Custom</div>
+              <div class="ptc-desc">Start from scratch and configure everything yourself</div>
+              <div class="ptc-meta">
+                <span class="ptc-pill" style="background:var(--surface-3);color:var(--text-dim);">Your choice</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Kit Preview (shown for non-Custom) -->
+        <div id="create-preview">
+          <div id="preview-web-app" class="kit-preview">
+            <div class="kit-header">
+              <div>
+                <div class="kit-title">&#x1f310; Web Application Kit</div>
+                <p style="font-size: 0.78rem; margin: 0;">Everything you need to build a full-stack web app with AI agents</p>
+              </div>
+            </div>
+            <div class="kit-section">
+              <div class="kit-section-label">&#x1f9d1;&#x200d;&#x1f4bb; Agent Team (5 roles)</div>
+              <div class="kit-items">
+                <div class="kit-item"><span class="kit-item-icon">&#x1f528;</span> Full Stack Engineer</div>
+                <div class="kit-item"><span class="kit-item-icon">&#x1f3a8;</span> UX Designer</div>
+                <div class="kit-item"><span class="kit-item-icon">&#x1f50d;</span> QA Engineer</div>
+                <div class="kit-item"><span class="kit-item-icon">&#x1f6e1;</span> Security Engineer</div>
+                <div class="kit-item"><span class="kit-item-icon">&#x1f680;</span> DevOps Engineer</div>
+              </div>
+              <p style="font-size: 0.75rem; margin-top: 0.4rem; margin-bottom: 0; color: var(--text-dim);">Agents will be cloned to your account. You can customise names, prompts, and skills afterwards.</p>
+            </div>
+            <div class="kit-section">
+              <div class="kit-section-label">&#x26a1; Workflow Template (7 steps)</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center;">
+                <div class="kit-item">1. UX Review</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item">2. Implementation</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item">3. Code Review</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item">4. Security Scan</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item">5. Testing</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item" style="border-color: var(--amber-border);">6. Human Review &#x1f512;</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item">7. Deploy</div>
+              </div>
+            </div>
+            <div class="kit-section">
+              <div class="kit-section-label">&#x1f3f7; Board Labels</div>
+              <div class="kit-items">
+                <span class="ptc-pill" style="background:var(--rose-dim);color:var(--rose);">Bug</span>
+                <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">Feature</span>
+                <span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">Enhancement</span>
+                <span class="ptc-pill" style="background:var(--amber-dim);color:var(--amber);">Refactor</span>
+                <span class="ptc-pill" style="background:var(--cyan-dim);color:var(--cyan);">Documentation</span>
+                <span class="ptc-pill" style="background:var(--blue-dim);color:var(--blue);">Infrastructure</span>
+              </div>
+            </div>
+            <div class="kit-section" style="margin-bottom: 0;">
+              <div class="kit-section-label">&#x1f504; Auto-Rule</div>
+              <p style="font-size: 0.78rem; margin: 0;">When a task is labelled <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">Feature</span>, the Web Application workflow will be automatically applied.</p>
+            </div>
+          </div>
+
+          <div id="preview-mobile" class="kit-preview" style="display:none;">
+            <div class="kit-header">
+              <div>
+                <div class="kit-title">&#x1f4f1; Mobile App Kit</div>
+                <p style="font-size: 0.78rem; margin: 0;">Build iOS, Android, or cross-platform mobile applications</p>
+              </div>
+            </div>
+            <div class="kit-section">
+              <div class="kit-section-label">&#x1f9d1;&#x200d;&#x1f4bb; Agent Team (5 roles)</div>
+              <div class="kit-items">
+                <div class="kit-item"><span class="kit-item-icon">&#x1f528;</span> Full Stack Engineer</div>
+                <div class="kit-item"><span class="kit-item-icon">&#x1f3a8;</span> UX Designer</div>
+                <div class="kit-item"><span class="kit-item-icon">&#x1f50d;</span> QA Engineer</div>
+                <div class="kit-item"><span class="kit-item-icon">&#x1f6e1;</span> Security Engineer</div>
+                <div class="kit-item"><span class="kit-item-icon">&#x1f680;</span> DevOps Engineer</div>
+              </div>
+              <p style="font-size: 0.75rem; margin-top: 0.4rem; margin-bottom: 0; color: var(--text-dim);">Agents will be cloned to your account. You can customise names, prompts, and skills afterwards.</p>
+            </div>
+            <div class="kit-section">
+              <div class="kit-section-label">&#x26a1; Workflow Template (8 steps)</div>
+              <div style="display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center;">
+                <div class="kit-item">1. UX Review</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item">2. Implementation</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item">3. Platform Testing</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item">4. Code Review</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item">5. Security Scan</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item">6. QA Testing</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item" style="border-color: var(--amber-border);">7. Human Review &#x1f512;</div>
+                <span style="color: var(--text-dim);">&#x2192;</span>
+                <div class="kit-item">8. Release</div>
+              </div>
+            </div>
+            <div class="kit-section">
+              <div class="kit-section-label">&#x1f3f7; Board Labels</div>
+              <div class="kit-items">
+                <span class="ptc-pill" style="background:var(--rose-dim);color:var(--rose);">Bug</span>
+                <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">Feature</span>
+                <span class="ptc-pill" style="background:var(--cyan-dim);color:var(--cyan);">UI/UX</span>
+                <span class="ptc-pill" style="background:var(--amber-dim);color:var(--amber);">Performance</span>
+                <span class="ptc-pill" style="background:var(--blue-dim);color:var(--blue);">Platform-specific</span>
+              </div>
+            </div>
+            <div class="kit-section" style="margin-bottom: 0;">
+              <div class="kit-section-label">&#x1f504; Auto-Rule</div>
+              <p style="font-size: 0.78rem; margin: 0;">When a task is labelled <span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">Feature</span>, the Mobile App workflow will be automatically applied.</p>
+            </div>
+          </div>
+
+          <div id="preview-custom" style="display:none; margin: 1rem 0;">
+            <!-- No preview for Custom - intentionally empty -->
+          </div>
+          <div id="preview-api" class="kit-preview" style="display:none;">
+            <div class="kit-header"><div><div class="kit-title">&#x2699;&#xfe0f; API / Backend Kit</div><p style="font-size: 0.78rem; margin: 0;">REST/GraphQL APIs, microservices, and data pipelines</p></div></div>
+            <div class="kit-section"><div class="kit-section-label">&#x1f9d1;&#x200d;&#x1f4bb; Agent Team (4 roles)</div><div class="kit-items"><div class="kit-item"><span class="kit-item-icon">&#x1f528;</span> Full Stack Engineer</div><div class="kit-item"><span class="kit-item-icon">&#x1f50d;</span> QA Engineer</div><div class="kit-item"><span class="kit-item-icon">&#x1f6e1;</span> Security Engineer</div><div class="kit-item"><span class="kit-item-icon">&#x1f680;</span> DevOps Engineer</div></div></div>
+            <div class="kit-section"><div class="kit-section-label">&#x1f3f7; Board Labels</div><div class="kit-items"><span class="ptc-pill" style="background:var(--rose-dim);color:var(--rose);">Bug</span><span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">Feature</span><span class="ptc-pill" style="background:var(--cyan-dim);color:var(--cyan);">Endpoint</span><span class="ptc-pill" style="background:var(--amber-dim);color:var(--amber);">Schema</span><span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">Performance</span></div></div>
+          </div>
+          <div id="preview-design" class="kit-preview" style="display:none;">
+            <div class="kit-header"><div><div class="kit-title">&#x1f3a8; Design System Kit</div><p style="font-size: 0.78rem; margin: 0;">Component libraries, design tokens, and documentation</p></div></div>
+            <div class="kit-section"><div class="kit-section-label">&#x1f9d1;&#x200d;&#x1f4bb; Agent Team (3 roles)</div><div class="kit-items"><div class="kit-item"><span class="kit-item-icon">&#x1f3a8;</span> UX Designer</div><div class="kit-item"><span class="kit-item-icon">&#x1f528;</span> Front End Engineer</div><div class="kit-item"><span class="kit-item-icon">&#x1f50d;</span> QA Engineer</div></div></div>
+            <div class="kit-section"><div class="kit-section-label">&#x1f3f7; Board Labels</div><div class="kit-items"><span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">Component</span><span class="ptc-pill" style="background:var(--amber-dim);color:var(--amber);">Token</span><span class="ptc-pill" style="background:var(--cyan-dim);color:var(--cyan);">Documentation</span><span class="ptc-pill" style="background:var(--rose-dim);color:var(--rose);">Breaking Change</span></div></div>
+          </div>
+          <div id="preview-ai" class="kit-preview" style="display:none;">
+            <div class="kit-header"><div><div class="kit-title">&#x1f916; AI / ML Kit</div><p style="font-size: 0.78rem; margin: 0;">Machine learning, data science, and AI agent systems</p></div></div>
+            <div class="kit-section"><div class="kit-section-label">&#x1f9d1;&#x200d;&#x1f4bb; Agent Team (4 roles)</div><div class="kit-items"><div class="kit-item"><span class="kit-item-icon">&#x1f528;</span> Full Stack Engineer</div><div class="kit-item"><span class="kit-item-icon">&#x1f50d;</span> QA Engineer</div><div class="kit-item"><span class="kit-item-icon">&#x1f6e1;</span> Security Engineer</div><div class="kit-item"><span class="kit-item-icon">&#x1f4ca;</span> Business Analyst</div></div></div>
+            <div class="kit-section"><div class="kit-section-label">&#x1f3f7; Board Labels</div><div class="kit-items"><span class="ptc-pill" style="background:var(--rose-dim);color:var(--rose);">Bug</span><span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">Feature</span><span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">Model</span><span class="ptc-pill" style="background:var(--cyan-dim);color:var(--cyan);">Data</span><span class="ptc-pill" style="background:var(--amber-dim);color:var(--amber);">Pipeline</span><span class="ptc-pill" style="background:var(--blue-dim);color:var(--blue);">Experiment</span></div></div>
+          </div>
+        </div>
+
+        <!-- Submit area -->
+        <div style="display: flex; gap: 0.75rem; margin-top: 1.5rem; align-items: center;">
+          <button class="btn btn-outline">Cancel</button>
+          <button class="btn btn-primary" id="submit-btn">Create idea &amp; apply kit</button>
+        </div>
+        <p class="form-hint" style="margin-top: 0.5rem;">Selecting "Custom" or no kit will create the idea without pre-configured agents or workflows.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================== -->
+  <!-- MOCKUP 2: KIT PREVIEW DETAIL                   -->
+  <!-- ============================================== -->
+  <section id="mockup2">
+    <h2><span class="section-tag tag-emerald">Mockup 2</span> Kit Preview — Component Detail</h2>
+    <p class="section-sub">The KitPreview component appears inline below the selector grid whenever a non-Custom kit is selected. It animates in with a slide-down transition (0.3s ease). Key interaction: clicking a different card swaps the preview content with a cross-fade.</p>
+
+    <h3>Preview Sections</h3>
+    <table class="spec-table">
+      <thead>
+        <tr><th>Section</th><th>Data Source</th><th>Visual</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Agent Team</td><td><code>kit.agent_roles[]</code></td><td>Role chips with emoji icons, count in header</td></tr>
+        <tr><td>Workflow Template</td><td>Linked <code>workflow_library_template</code> steps</td><td>Sequential step chips with arrow separators; approval gates get amber border + &#x1f512;</td></tr>
+        <tr><td>Board Labels</td><td><code>kit.label_presets[]</code></td><td>Colored pills using label color mapping</td></tr>
+        <tr><td>Auto-Rule</td><td><code>kit.auto_rule_label</code></td><td>Explanatory text with inline label pill</td></tr>
+      </tbody>
+    </table>
+
+    <div class="rationale">
+      <div class="rationale-label">Design Decision</div>
+      <p>The preview is <strong>not collapsible</strong> on the Create Idea form — users should see what they're getting before committing. On the Workflows tab dialog (Mockup 3), sections are collapsible since users are more experienced at that point.</p>
+    </div>
+
+    <h3>Label Color Mapping</h3>
+    <p>Kit label_presets include a <code>color</code> field. Map to the existing design system palette:</p>
+    <table class="spec-table">
+      <thead><tr><th>Color Key</th><th>Background</th><th>Text</th><th>Example</th></tr></thead>
+      <tbody>
+        <tr><td>red / rose</td><td><code>var(--rose-dim)</code></td><td><code>var(--rose)</code></td><td><span class="ptc-pill" style="background:var(--rose-dim);color:var(--rose);">Bug</span></td></tr>
+        <tr><td>violet / purple</td><td><code>var(--violet-dim)</code></td><td><code>var(--violet)</code></td><td><span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">Feature</span></td></tr>
+        <tr><td>green / emerald</td><td><code>var(--emerald-dim)</code></td><td><code>var(--emerald)</code></td><td><span class="ptc-pill" style="background:var(--emerald-dim);color:var(--emerald);">Enhancement</span></td></tr>
+        <tr><td>amber / orange</td><td><code>var(--amber-dim)</code></td><td><code>var(--amber)</code></td><td><span class="ptc-pill" style="background:var(--amber-dim);color:var(--amber);">Refactor</span></td></tr>
+        <tr><td>cyan</td><td><code>var(--cyan-dim)</code></td><td><code>var(--cyan)</code></td><td><span class="ptc-pill" style="background:var(--cyan-dim);color:var(--cyan);">Documentation</span></td></tr>
+        <tr><td>blue</td><td><code>var(--blue-dim)</code></td><td><code>var(--blue)</code></td><td><span class="ptc-pill" style="background:var(--blue-dim);color:var(--blue);">Infrastructure</span></td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- ============================================== -->
+  <!-- MOCKUP 3: WORKFLOWS TAB INTEGRATION            -->
+  <!-- ============================================== -->
+  <section id="mockup3">
+    <h2><span class="section-tag tag-amber">Mockup 3</span> Workflows Tab — Apply Kit Dialog</h2>
+    <p class="section-sub">For existing ideas without a kit, the Workflows tab empty state gains a third option: "Apply a Project Kit". This opens a dialog with the full selector + preview + apply button.</p>
+
+    <h3>Updated Empty State</h3>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot mockup-dot-r"></div>
+        <div class="mockup-dot mockup-dot-y"></div>
+        <div class="mockup-dot mockup-dot-g"></div>
+        <div class="mockup-title">Board &mdash; Workflows Tab (empty)</div>
+      </div>
+      <div class="mockup-body">
+        <div class="wf-empty">
+          <div class="wf-empty-icon">&#x26a1;</div>
+          <p style="font-weight: 700; color: var(--text); margin: 0;">No templates yet</p>
+          <p style="font-size: 0.85rem; margin: 0;">Automate your process with step-by-step workflows.</p>
+          <div class="wf-btn-group" style="margin-top: 0.5rem;">
+            <button class="btn btn-primary" onclick="toggleDialog('kit-dialog')">&#x1f4e6; Apply a Project Kit</button>
+            <button class="btn btn-outline">Import from library</button>
+            <button class="btn btn-ghost">Create from scratch</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Apply Kit Dialog</h3>
+    <p>Opened from the empty state or from a menu action. Contains the same ProjectTypeSelector and KitPreview components, wrapped in a dialog with Apply/Cancel buttons.</p>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot mockup-dot-r"></div>
+        <div class="mockup-dot mockup-dot-y"></div>
+        <div class="mockup-dot mockup-dot-g"></div>
+        <div class="mockup-title">Apply Kit Dialog (overlay)</div>
+      </div>
+      <div class="mockup-body dialog-backdrop">
+        <div class="dialog-content">
+          <div class="dialog-header">
+            <div class="dialog-title">Apply a Project Kit</div>
+            <button class="dialog-close" onclick="toggleDialog('kit-dialog')">&times;</button>
+          </div>
+          <p style="font-size: 0.82rem; margin-bottom: 1rem;">Choose a project type to set up agents, workflows, labels, and auto-rules for this idea.</p>
+
+          <div class="project-type-grid" id="dialog-grid" style="grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));">
+            <div class="project-type-card selected" onclick="selectCard(this, 'dialog-grid', 'dialog-preview', 'web-app-d')" style="padding: 1rem;">
+              <div class="ptc-icon" style="font-size: 1.5rem;">&#x1f310;</div>
+              <div class="ptc-name" style="font-size: 0.82rem;">Web Application</div>
+              <div class="ptc-meta"><span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">7 steps</span></div>
+            </div>
+            <div class="project-type-card" onclick="selectCard(this, 'dialog-grid', 'dialog-preview', 'mobile-d')" style="padding: 1rem;">
+              <div class="ptc-icon" style="font-size: 1.5rem;">&#x1f4f1;</div>
+              <div class="ptc-name" style="font-size: 0.82rem;">Mobile App</div>
+              <div class="ptc-meta"><span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">8 steps</span></div>
+            </div>
+            <div class="project-type-card" onclick="selectCard(this, 'dialog-grid', 'dialog-preview', 'none')" style="padding: 1rem;">
+              <div class="ptc-icon" style="font-size: 1.5rem;">&#x2699;&#xfe0f;</div>
+              <div class="ptc-name" style="font-size: 0.82rem;">API / Backend</div>
+              <div class="ptc-meta"><span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">6 steps</span></div>
+            </div>
+            <div class="project-type-card" onclick="selectCard(this, 'dialog-grid', 'dialog-preview', 'none')" style="padding: 1rem;">
+              <div class="ptc-icon" style="font-size: 1.5rem;">&#x1f3a8;</div>
+              <div class="ptc-name" style="font-size: 0.82rem;">Design System</div>
+              <div class="ptc-meta"><span class="ptc-pill" style="background:var(--violet-dim);color:var(--violet);">5 steps</span></div>
+            </div>
+          </div>
+
+          <div id="dialog-preview">
+            <div id="preview-web-app-d" class="kit-preview" style="padding: 1rem; margin-top: 0.75rem;">
+              <div class="kit-section" style="margin-bottom: 0.5rem;">
+                <div class="kit-section-label">What you'll get</div>
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.82rem; color: var(--text-muted);">
+                  <span>&#x1f9d1;&#x200d;&#x1f4bb; 5 agents</span>
+                  <span>&#x26a1; 7-step workflow</span>
+                  <span>&#x1f3f7; 6 labels</span>
+                  <span>&#x1f504; 1 auto-rule</span>
+                </div>
+              </div>
+            </div>
+            <div id="preview-mobile-d" class="kit-preview" style="display:none; padding: 1rem; margin-top: 0.75rem;">
+              <div class="kit-section" style="margin-bottom: 0.5rem;">
+                <div class="kit-section-label">What you'll get</div>
+                <div style="display: flex; gap: 1rem; flex-wrap: wrap; font-size: 0.82rem; color: var(--text-muted);">
+                  <span>&#x1f9d1;&#x200d;&#x1f4bb; 5 agents</span>
+                  <span>&#x26a1; 8-step workflow</span>
+                  <span>&#x1f3f7; 5 labels</span>
+                  <span>&#x1f504; 1 auto-rule</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 1rem; padding-top: 0.75rem; border-top: 1px solid var(--border);">
+            <button class="btn btn-outline" onclick="toggleDialog('kit-dialog')">Cancel</button>
+            <button class="btn btn-primary">Apply Web Application Kit</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Kit Badge on Workflows Tab</h3>
+    <p>After a kit is applied, the Workflows tab header shows a badge indicating the active kit:</p>
+    <div style="margin: 1rem 0; display: flex; align-items: center; gap: 0.75rem;">
+      <span style="font-weight: 700; font-size: 0.95rem;">Workflows</span>
+      <span class="kit-badge">&#x1f310; Web Application Kit</span>
+    </div>
+  </section>
+
+  <!-- ============================================== -->
+  <!-- STATES & TRANSITIONS                           -->
+  <!-- ============================================== -->
+  <section id="states">
+    <h2><span class="section-tag tag-cyan">States</span> All UI States</h2>
+    <p class="section-sub">Every component state documented — loading, empty, error, success, and disabled.</p>
+
+    <h3>Card States</h3>
+    <table class="spec-table">
+      <thead><tr><th>State</th><th>Border</th><th>Background</th><th>Transform</th></tr></thead>
+      <tbody>
+        <tr><td>Default</td><td><code>var(--border)</code> 2px</td><td><code>var(--surface-2)</code></td><td>none</td></tr>
+        <tr><td>Hover</td><td><code>var(--border-focus)</code> 2px</td><td><code>var(--surface-2)</code></td><td><code>translateY(-2px)</code></td></tr>
+        <tr><td>Selected</td><td><code>var(--violet)</code> 2px</td><td><code>var(--violet-dim)</code></td><td>none</td></tr>
+        <tr><td>Selected + Hover</td><td><code>var(--violet)</code> 2px</td><td><code>var(--violet-dim)</code></td><td><code>translateY(-2px)</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3>Submit Button States</h3>
+    <table class="spec-table">
+      <thead><tr><th>Kit Selection</th><th>Button Text</th><th>Post-Submit Redirect</th></tr></thead>
+      <tbody>
+        <tr><td>Kit selected (non-Custom)</td><td>"Create idea &amp; apply kit"</td><td><code>/ideas/{id}/board</code></td></tr>
+        <tr><td>Custom selected</td><td>"Create idea"</td><td><code>/ideas/{id}</code></td></tr>
+        <tr><td>No selection</td><td>"Create idea"</td><td><code>/ideas/{id}</code></td></tr>
+      </tbody>
+    </table>
+
+    <h3>Loading State</h3>
+    <p>When a kit is being applied after idea creation, show inline loading with disabled form:</p>
+    <div class="mockup-frame">
+      <div class="mockup-titlebar">
+        <div class="mockup-dot mockup-dot-r"></div>
+        <div class="mockup-dot mockup-dot-y"></div>
+        <div class="mockup-dot mockup-dot-g"></div>
+        <div class="mockup-title">Loading State</div>
+      </div>
+      <div class="mockup-body">
+        <div class="loading-overlay">
+          <div class="spinner"></div>
+          <p style="font-weight: 600; color: var(--text); margin: 0;">Applying Web Application kit&hellip;</p>
+          <p style="font-size: 0.82rem; margin: 0;">Creating agents, importing workflow, setting up labels</p>
+        </div>
+      </div>
+    </div>
+
+    <h3>Success Toast</h3>
+    <p>Shown after redirect to the board page:</p>
+    <div style="margin: 1rem 0;">
+      <div class="toast-mockup">
+        <span class="toast-icon">&#x2714;</span>
+        <span>Web Application kit applied &mdash; 5 agents, 6 labels, workflow imported</span>
+      </div>
+    </div>
+
+    <h3>Error Toast</h3>
+    <p>Shown if <code>applyKit()</code> fails — idea is still created, user lands on idea page:</p>
+    <div style="margin: 1rem 0;">
+      <div class="error-toast">
+        <span style="color: var(--rose);">&#x2718;</span>
+        <span>Failed to apply kit. Your idea was created &mdash; you can apply a kit from the Workflows tab.</span>
+      </div>
+    </div>
+
+    <div class="rationale">
+      <div class="rationale-label">Error Recovery</div>
+      <p>If kit application fails, the idea is <strong>still created</strong> (it's a two-step process: create idea → apply kit). The user is redirected to the idea detail page (not board) with an error toast. They can retry from the Workflows tab. This is graceful degradation — never lose the user's title and description.</p>
+    </div>
+  </section>
+
+  <!-- ============================================== -->
+  <!-- INTERACTION FLOW                               -->
+  <!-- ============================================== -->
+  <section id="flow">
+    <h2><span class="section-tag tag-violet">Flow</span> Interaction Flow</h2>
+    <p class="section-sub">End-to-end user journey for both entry points.</p>
+
+    <h3>Flow A: Create Idea with Kit</h3>
+    <div class="flow-diagram">
+      <div class="flow-step active">User opens<br/>/ideas/new</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">Fills title &amp;<br/>description</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">Selects<br/>project type</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">Reviews<br/>kit preview</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">"Create idea<br/>&amp; apply kit"</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">Loading<br/>spinner</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step success">Redirect to<br/>board + toast</div>
+    </div>
+
+    <h3>Flow B: Apply Kit to Existing Idea</h3>
+    <div class="flow-diagram">
+      <div class="flow-step active">User on<br/>Workflows tab</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">"Apply a<br/>Project Kit"</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">Dialog opens<br/>with selector</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">Selects kit &amp;<br/>reviews preview</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">"Apply<br/>kit" button</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">Loading in<br/>dialog</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step success">Dialog closes<br/>+ toast + refresh</div>
+    </div>
+
+    <h3>Flow C: Custom / No Kit</h3>
+    <div class="flow-diagram">
+      <div class="flow-step active">User opens<br/>/ideas/new</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">Fills title &amp;<br/>description</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">Selects Custom<br/>(or skips)</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step">"Create<br/>idea"</div>
+      <span class="flow-arrow">&#x2192;</span>
+      <div class="flow-step success">Redirect to<br/>/ideas/{id}</div>
+    </div>
+  </section>
+
+  <!-- ============================================== -->
+  <!-- RESPONSIVE                                     -->
+  <!-- ============================================== -->
+  <section id="responsive">
+    <h2><span class="section-tag tag-cyan">Responsive</span> Mobile Breakpoints</h2>
+    <p class="section-sub">The selector grid and preview adapt to screen width.</p>
+
+    <div class="responsive-note">
+      <strong>Breakpoints:</strong> Grid uses <code>auto-fill, minmax(200px, 1fr)</code> &mdash; naturally stacks to 1-2 columns on mobile. Dialog uses <code>minmax(160px, 1fr)</code> for tighter space.
+    </div>
+
+    <table class="spec-table">
+      <thead><tr><th>Breakpoint</th><th>Grid Columns</th><th>Kit Preview</th><th>Dialog</th></tr></thead>
+      <tbody>
+        <tr><td>&ge; 1024px</td><td>3 cards per row</td><td>Full preview, all sections visible</td><td>Centered modal, max-width 700px</td></tr>
+        <tr><td>768px &ndash; 1023px</td><td>2 cards per row</td><td>Full preview, workflow steps wrap</td><td>Full-width with 1rem margin</td></tr>
+        <tr><td>&lt; 768px</td><td>1-2 cards per row</td><td>Full preview, stacked sections</td><td>Full-screen sheet from bottom</td></tr>
+        <tr><td>&lt; 480px</td><td>1 card per row</td><td>Compact: summary counts only</td><td>Full-screen sheet, scrollable</td></tr>
+      </tbody>
+    </table>
+
+    <h4>Mobile Dialog Behaviour</h4>
+    <ul>
+      <li>Below 768px, the Apply Kit dialog becomes a <strong>bottom sheet</strong> (slides up from bottom, full width)</li>
+      <li>Kit cards use smaller padding and icon size</li>
+      <li>Preview shows a <strong>compact summary</strong> (agent count, step count, label count) instead of full role/step listing</li>
+      <li>Workflow step chips wrap naturally via <code>flex-wrap</code></li>
+    </ul>
+  </section>
+
+  <!-- ============================================== -->
+  <!-- COMPONENT SPECS                                -->
+  <!-- ============================================== -->
+  <section id="specs">
+    <h2><span class="section-tag tag-emerald">Specs</span> Component Specifications</h2>
+    <p class="section-sub">Props, data flow, and implementation notes for the developer.</p>
+
+    <h3>ProjectTypeSelector</h3>
+    <table class="spec-table">
+      <thead><tr><th>Prop</th><th>Type</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>kits</code></td><td><code>ProjectKit[]</code></td><td>Active kits from <code>getActiveKits()</code></td></tr>
+        <tr><td><code>selectedKitId</code></td><td><code>string | null</code></td><td>Currently selected kit ID</td></tr>
+        <tr><td><code>onSelect</code></td><td><code>(kitId: string | null) =&gt; void</code></td><td>Called when a card is clicked. Pass null to deselect.</td></tr>
+        <tr><td><code>compact</code></td><td><code>boolean</code></td><td>Optional. If true, uses smaller cards (for dialog). Default false.</td></tr>
+      </tbody>
+    </table>
+
+    <h3>KitPreview</h3>
+    <table class="spec-table">
+      <thead><tr><th>Prop</th><th>Type</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td><code>kit</code></td><td><code>ProjectKit</code></td><td>The selected kit to preview</td></tr>
+        <tr><td><code>workflowSteps</code></td><td><code>{ title: string; human_check_required: boolean }[]</code></td><td>Steps from linked workflow template. Fetched by parent.</td></tr>
+        <tr><td><code>compact</code></td><td><code>boolean</code></td><td>If true, shows summary counts instead of full lists (for dialog/mobile)</td></tr>
+      </tbody>
+    </table>
+
+    <h3>Data Flow</h3>
+    <ul>
+      <li><strong>Create Idea page</strong>: Server component fetches kits via <code>getActiveKits()</code>, passes as prop to <code>IdeaForm</code></li>
+      <li><strong>Workflow steps for preview</strong>: Fetched client-side when a kit is selected (only if kit has <code>workflow_library_template_id</code>). Use a lightweight query or include step data in the kits query.</li>
+      <li><strong>Submit with kit</strong>: <code>createIdea()</code> returns new idea ID → <code>applyKit(ideaId, kitId)</code> → redirect</li>
+      <li><strong>Workflows tab dialog</strong>: <code>getActiveKits()</code> fetched on dialog open, <code>applyKit()</code> on confirm</li>
+    </ul>
+
+    <h3>Keyboard &amp; Accessibility</h3>
+    <ul>
+      <li>Kit cards are focusable (<code>tabIndex={0}</code>) with <code>role="radio"</code> in a <code>role="radiogroup"</code></li>
+      <li>Arrow keys navigate between cards, Enter/Space selects</li>
+      <li>Kit preview announced via <code>aria-live="polite"</code> region</li>
+      <li>Dialog uses <code>role="dialog"</code> with focus trap and Escape to close</li>
+      <li>All interactive elements meet WCAG 2.1 AA contrast (4.5:1 for text, 3:1 for UI controls)</li>
+    </ul>
+  </section>
+
+</div>
+
+<script>
+  function selectCard(card, gridId, previewContainerId, previewId) {
+    // Deselect all in grid
+    const grid = document.getElementById(gridId);
+    grid.querySelectorAll('.project-type-card').forEach(c => c.classList.remove('selected'));
+    card.classList.add('selected');
+
+    // Show/hide previews
+    const container = document.getElementById(previewContainerId);
+    if (container) {
+      container.querySelectorAll('.kit-preview, [id^="preview-"]').forEach(p => p.style.display = 'none');
+      const preview = document.getElementById('preview-' + previewId);
+      if (preview && preview.classList.contains('kit-preview')) {
+        preview.style.display = 'block';
+        preview.style.animation = 'none';
+        preview.offsetHeight; // trigger reflow
+        preview.style.animation = 'slideDown 0.3s ease';
+      }
+    }
+
+    // Update submit button text
+    const submitBtn = document.getElementById('submit-btn');
+    if (submitBtn) {
+      if (previewId === 'custom') {
+        submitBtn.textContent = 'Create idea';
+      } else {
+        submitBtn.textContent = 'Create idea & apply kit';
+      }
+    }
+  }
+
+  function toggleDialog(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = el.style.display === 'none' ? 'block' : 'none';
+  }
+</script>
+
+</body>
+</html>

@@ -16,6 +16,7 @@ interface BoardPageTabsProps {
   currentUserId: string;
   isAuthor: boolean;
   isTeamMember: boolean;
+  kitName?: string | null;
   /** The kanban board content rendered as children */
   children: React.ReactNode;
 }
@@ -29,6 +30,7 @@ export function BoardPageTabs({
   currentUserId,
   isAuthor,
   isTeamMember,
+  kitName,
   children,
 }: BoardPageTabsProps) {
   const searchParams = useSearchParams();
@@ -80,6 +82,7 @@ export function BoardPageTabs({
             boardLabels={boardLabels}
             isReadOnly={isReadOnly}
             hasAgents={ideaAgentDetails.length > 0}
+            kitName={kitName}
           />
         )}
       </TabsContent>

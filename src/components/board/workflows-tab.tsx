@@ -19,6 +19,7 @@ import {
   Check,
   ChevronsUpDown,
   AlertTriangle,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +55,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CreateTemplateDialog } from "./create-template-dialog";
 import { ImportTemplateLibraryDialog } from "./import-template-library-dialog";
+import { ApplyKitDialog } from "@/components/kits/apply-kit-dialog";
 import {
   listWorkflowTemplates,
   updateWorkflowTemplate,
@@ -670,6 +672,7 @@ interface WorkflowsTabProps {
   boardLabels: BoardLabel[];
   isReadOnly?: boolean;
   hasAgents?: boolean;
+  kitName?: string | null;
 }
 
 export function WorkflowsTab({
@@ -677,6 +680,7 @@ export function WorkflowsTab({
   boardLabels,
   isReadOnly = false,
   hasAgents = false,
+  kitName,
 }: WorkflowsTabProps) {
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [rules, setRules] = useState<WorkflowAutoRule[]>([]);
@@ -684,6 +688,7 @@ export function WorkflowsTab({
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [kitDialogOpen, setKitDialogOpen] = useState(false);
 
   // Editing state
   const [editing, setEditing] = useState(false);
@@ -803,6 +808,11 @@ export function WorkflowsTab({
           <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Templates
             <HelpLink href="/guide/workflows" tooltip="How workflows work" />
+            {kitName && (
+              <span className="ml-1 rounded-full bg-violet-500/[0.12] border border-violet-500/25 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-violet-400">
+                {kitName} Kit
+              </span>
+            )}
           </span>
           {!isReadOnly && (
             <div className="flex items-center gap-1">
@@ -861,6 +871,15 @@ export function WorkflowsTab({
                   <Button
                     size="sm"
                     className="h-8 w-full gap-1.5 text-xs"
+                    onClick={() => setKitDialogOpen(true)}
+                  >
+                    <Package className="h-3 w-3" />
+                    Apply a Project Kit
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-7 w-full gap-1 text-xs"
                     onClick={() => setLibraryOpen(true)}
                   >
                     <BookOpen className="h-3 w-3" />
@@ -954,8 +973,17 @@ export function WorkflowsTab({
                     </ol>
                   </div>
                   {!isReadOnly && (
-                    <div className="flex items-center justify-center gap-2 pt-1">
+                    <div className="flex flex-wrap items-center justify-center gap-2 pt-1">
                       <Button
+                        size="sm"
+                        className="gap-1.5"
+                        onClick={() => setKitDialogOpen(true)}
+                      >
+                        <Package className="h-3.5 w-3.5" />
+                        Apply a Project Kit
+                      </Button>
+                      <Button
+                        variant="outline"
                         size="sm"
                         className="gap-1.5"
                         onClick={() => setLibraryOpen(true)}
@@ -1128,6 +1156,18 @@ export function WorkflowsTab({
           ideaId={ideaId}
           existingTemplateNames={templates.map((t) => t.name)}
           onImported={handleCreated}
+        />
+      )}
+
+      {/* Apply kit dialog */}
+      {!isReadOnly && (
+        <ApplyKitDialog
+          open={kitDialogOpen}
+          onOpenChange={setKitDialogOpen}
+          ideaId={ideaId}
+          onApplied={() => {
+            fetchData();
+          }}
         />
       )}
     </div>

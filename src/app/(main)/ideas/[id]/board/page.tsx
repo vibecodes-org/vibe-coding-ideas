@@ -75,7 +75,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
   // Fetch idea (include visibility for access control)
   const { data: idea } = await supabase
     .from("ideas")
-    .select("id, title, description, author_id, visibility, discussion_count")
+    .select("id, title, description, author_id, visibility, discussion_count, project_kit:project_kits!ideas_project_kit_id_fkey(name, icon)")
     .eq("id", id)
     .single();
 
@@ -276,6 +276,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
         currentUserId={user.id}
         isAuthor={isAuthor}
         isTeamMember={isTeamMember}
+        kitName={(idea as unknown as { project_kit: { name: string; icon: string } | null }).project_kit ? `${(idea as unknown as { project_kit: { icon: string; name: string } }).project_kit.icon} ${(idea as unknown as { project_kit: { name: string } }).project_kit.name}` : null}
       >
         <KanbanBoard
           columns={columns}

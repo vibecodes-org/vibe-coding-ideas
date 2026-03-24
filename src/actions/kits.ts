@@ -26,6 +26,31 @@ export async function getActiveKits(): Promise<ProjectKit[]> {
   return (data ?? []) as ProjectKit[];
 }
 
+export type KitWithSteps = ProjectKit & {
+  workflow_steps: { title: string; requires_approval?: boolean }[];
+};
+
+export async function getActiveKitsWithSteps(): Promise<KitWithSteps[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("project_kits")
+    .select("*, workflow_library_template:workflow_library_templates!project_kits_workflow_library_template_id_fkey(steps)")
+    .eq("is_active", true)
+    .order("display_order", { ascending: true });
+
+  if (error) throw new Error(error.message);
+
+  return ((data ?? []) as unknown[]).map((row) => {
+    const kit = row as ProjectKit & {
+      workflow_library_template: { steps: { title: string; requires_approval?: boolean }[] } | null;
+    };
+    return {
+      ...kit,
+      workflow_steps: kit.workflow_library_template?.steps ?? [],
+    };
+  }) as KitWithSteps[];
+}
+
 export interface ApplyKitResult {
   agentsCreated: number;
   agentsSkipped: number;

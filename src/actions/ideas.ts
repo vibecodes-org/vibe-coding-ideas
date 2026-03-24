@@ -21,6 +21,7 @@ export async function createIdea(formData: FormData) {
   const tags = validateTags(formData.get("tags") as string);
   const githubUrl = validateGithubUrl((formData.get("github_url") as string) || null);
   const visibility = formData.get("visibility") === "private" ? "private" as const : "public" as const;
+  const kitId = (formData.get("kit_id") as string) || null;
 
   const { data, error } = await supabase
     .from("ideas")
@@ -37,6 +38,22 @@ export async function createIdea(formData: FormData) {
 
   if (error) {
     throw new Error(error.message);
+  }
+
+  // Apply kit if selected (non-Custom)
+  if (kitId) {
+    try {
+      const { applyKit } = await import("./kits");
+      await applyKit(data.id, kitId);
+      redirect(`/ideas/${data.id}/board`);
+    } catch (e: unknown) {
+      // Re-throw redirect errors (they use throw internally)
+      if (e instanceof Error && "digest" in e && typeof (e as { digest?: string }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT")) {
+        throw e;
+      }
+      // Kit application failed — idea was still created, redirect to idea page
+      redirect(`/ideas/${data.id}?kit_error=1`);
+    }
   }
 
   redirect(`/ideas/${data.id}`);

@@ -18,25 +18,40 @@ import { Github, Lock } from "lucide-react";
 import Link from "next/link";
 import { TagInput } from "./tag-input";
 import { createIdea } from "@/actions/ideas";
+import { ProjectTypeSelector } from "@/components/kits/project-type-selector";
+import { KitPreview } from "@/components/kits/kit-preview";
+import type { KitWithSteps } from "@/actions/kits";
 
 interface IdeaFormProps {
   githubUsername?: string | null;
   userId?: string;
+  kits?: KitWithSteps[];
 }
 
-function SubmitButton() {
+function SubmitButton({ hasKit, kitName }: { hasKit: boolean; kitName?: string }) {
   const { pending } = useFormStatus();
   return (
     <Button type="submit" size="lg" className="flex-1" disabled={pending}>
-      {pending ? "Submitting..." : "Submit Idea"}
+      {pending
+        ? hasKit
+          ? `Applying ${kitName ?? ""} kit...`
+          : "Creating..."
+        : hasKit
+          ? "Create idea & apply kit"
+          : "Create idea"}
     </Button>
   );
 }
 
-export function IdeaForm({ githubUsername, userId }: IdeaFormProps) {
+export function IdeaForm({ githubUsername, userId, kits }: IdeaFormProps) {
   const router = useRouter();
   const [tags, setTags] = useState<string[]>([]);
   const [isPrivate, setIsPrivate] = useState(false);
+  const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
+
+  const selectedKit = kits?.find((k) => k.id === selectedKitId) ?? null;
+  const isCustomKit = selectedKit?.name === "Custom";
+  const hasKit = !!selectedKitId && !isCustomKit;
 
   return (
     <Card className="mx-auto max-w-2xl">
@@ -74,6 +89,34 @@ export function IdeaForm({ githubUsername, userId }: IdeaFormProps) {
               rows={6}
             />
           </div>
+
+          {/* Project Type Selector */}
+          {kits && kits.length > 0 && (
+            <div className="space-y-2">
+              <div>
+                <p className="text-sm font-medium">
+                  What kind of project is this?
+                </p>
+                <p className="mt-0.5 text-xs text-muted-foreground">
+                  This sets up the right workflow, agents, and board labels for
+                  you. You can customise everything later.
+                </p>
+              </div>
+              <ProjectTypeSelector
+                kits={kits}
+                selectedKitId={selectedKitId}
+                onSelect={setSelectedKitId}
+              />
+              {selectedKit && !isCustomKit && (
+                <KitPreview kit={selectedKit} />
+              )}
+              <input
+                type="hidden"
+                name="kit_id"
+                value={hasKit ? selectedKitId! : ""}
+              />
+            </div>
+          )}
 
           <div className="space-y-2">
             <label className="text-sm font-medium">Tags</label>
@@ -131,7 +174,7 @@ export function IdeaForm({ githubUsername, userId }: IdeaFormProps) {
             >
               Cancel
             </Button>
-            <SubmitButton />
+            <SubmitButton hasKit={hasKit} kitName={selectedKit?.name} />
           </div>
         </form>
       </CardContent>
