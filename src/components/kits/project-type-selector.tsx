@@ -81,7 +81,7 @@ export function ProjectTypeSelector({
               compact ? "p-3" : "p-5",
               isSelected
                 ? "border-violet-500 bg-violet-500/[0.12] hover:-translate-y-0.5"
-                : "border-border bg-card hover:border-muted-foreground/25 hover:-translate-y-0.5"
+                : "border-border bg-zinc-900 hover:border-muted-foreground/25 hover:-translate-y-0.5"
             )}
           >
             <div className={compact ? "text-2xl mb-1" : "text-[2rem] mb-2"}>
