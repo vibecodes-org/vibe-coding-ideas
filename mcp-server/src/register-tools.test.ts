@@ -77,6 +77,8 @@ const EXPECTED_TOOL_NAMES = [
   "create_workflow_auto_rule",
   "update_workflow_auto_rule",
   "delete_workflow_auto_rule",
+  "list_kits",
+  "apply_kit",
   "apply_auto_rule_retroactively",
 ];
 
@@ -91,7 +93,7 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(75);
+    expect(server.tool).toHaveBeenCalledTimes(77);
   });
 
   it("registers all expected tool names", () => {

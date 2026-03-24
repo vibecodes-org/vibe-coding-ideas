@@ -189,6 +189,12 @@ import {
   applyAutoRuleRetroactively,
   applyAutoRuleRetroactivelySchema,
 } from "./tools/workflows";
+import {
+  listKitsSchema,
+  listKits,
+  applyKitSchema,
+  applyKitMcp,
+} from "./tools/kits";
 
 function jsonResult(data: unknown) {
   return {
@@ -1291,6 +1297,36 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await deleteWorkflowAutoRule(ctx, deleteWorkflowAutoRuleSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  // --- Kit Tools ---
+
+  server.tool(
+    "list_kits",
+    "List all active project kits with metadata. Returns kit name, icon, description, agent role count, label count, and whether a workflow template is linked.",
+    listKitsSchema.shape,
+    async (_args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await listKits(ctx));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "apply_kit",
+    "Apply a project kit to an idea — creates agents, imports workflow template, creates labels, and sets up auto-rules. User must be a team member.",
+    applyKitSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await applyKitMcp(ctx, applyKitSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }
