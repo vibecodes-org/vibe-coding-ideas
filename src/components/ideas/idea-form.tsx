@@ -20,6 +20,7 @@ import { TagInput } from "./tag-input";
 import { createIdea } from "@/actions/ideas";
 import { ProjectTypeSelector } from "@/components/kits/project-type-selector";
 import { KitPreview } from "@/components/kits/kit-preview";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import type { KitWithSteps } from "@/actions/kits";
 
 interface IdeaFormProps {
@@ -49,6 +50,7 @@ export function IdeaForm({ githubUsername, userId, kits }: IdeaFormProps) {
   const [isPrivate, setIsPrivate] = useState(false);
   const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
 
+  const isCompactPreview = useMediaQuery("(max-width: 479px)");
   const selectedKit = kits?.find((k) => k.id === selectedKitId) ?? null;
   const isCustomKit = selectedKit?.name === "Custom";
   const hasKit = !!selectedKitId && !isCustomKit;
@@ -108,7 +110,7 @@ export function IdeaForm({ githubUsername, userId, kits }: IdeaFormProps) {
                 onSelect={setSelectedKitId}
               />
               {selectedKit && !isCustomKit && (
-                <KitPreview kit={selectedKit} />
+                <KitPreview kit={selectedKit} compact={isCompactPreview} />
               )}
               <input
                 type="hidden"
