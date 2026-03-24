@@ -134,6 +134,7 @@ export type Database = {
           collaborator_count: number;
           discussion_count: number;
           attachment_count: number;
+          project_kit_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -151,6 +152,7 @@ export type Database = {
           collaborator_count?: number;
           discussion_count?: number;
           attachment_count?: number;
+          project_kit_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -168,6 +170,7 @@ export type Database = {
           collaborator_count?: number;
           discussion_count?: number;
           attachment_count?: number;
+          project_kit_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -2050,6 +2053,64 @@ export type Database = {
           },
         ];
       };
+    project_kits: {
+      Row: {
+        id: string;
+        name: string;
+        icon: string;
+        description: string | null;
+        category: string | null;
+        agent_roles: unknown[];
+        label_presets: unknown[];
+        board_column_presets: unknown[] | null;
+        auto_rule_label: string | null;
+        workflow_library_template_id: string | null;
+        is_active: boolean;
+        display_order: number;
+        created_at: string;
+        updated_at: string;
+      };
+      Insert: {
+        id?: string;
+        name: string;
+        icon?: string;
+        description?: string | null;
+        category?: string | null;
+        agent_roles?: unknown[];
+        label_presets?: unknown[];
+        board_column_presets?: unknown[] | null;
+        auto_rule_label?: string | null;
+        workflow_library_template_id?: string | null;
+        is_active?: boolean;
+        display_order?: number;
+        created_at?: string;
+        updated_at?: string;
+      };
+      Update: {
+        id?: string;
+        name?: string;
+        icon?: string;
+        description?: string | null;
+        category?: string | null;
+        agent_roles?: unknown[];
+        label_presets?: unknown[];
+        board_column_presets?: unknown[] | null;
+        auto_rule_label?: string | null;
+        workflow_library_template_id?: string | null;
+        is_active?: boolean;
+        display_order?: number;
+        created_at?: string;
+        updated_at?: string;
+      };
+      Relationships: [
+        {
+          foreignKeyName: "project_kits_workflow_library_template_id_fkey";
+          columns: ["workflow_library_template_id"];
+          isOneToOne: false;
+          referencedRelation: "workflow_library_templates";
+          referencedColumns: ["id"];
+        },
+      ];
     };
     Views: {
       [_ in never]: never;
