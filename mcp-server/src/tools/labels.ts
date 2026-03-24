@@ -2,7 +2,7 @@ import { z } from "zod";
 import { VALID_LABEL_COLORS } from "../constants";
 import { logActivity } from "../activity";
 import type { McpContext } from "../context";
-import { checkAndApplyAutoRules, removeAutoRuleWorkflow } from "../../../src/lib/workflow-helpers";
+import { checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow } from "../../../src/lib/workflow-helpers";
 import { applyWorkflowTemplate } from "./workflows";
 
 // --- manage_labels ---
@@ -105,16 +105,32 @@ export async function manageLabels(
       label_name: label?.name ?? params.label_id,
     });
 
-    // Remove associated auto-rule workflow if requested
+    // Check for active auto-rule workflow associated with this label
+    const workflowCheck = await checkAutoRuleWorkflow(
+      ctx.supabase, params.task_id, params.label_id, params.idea_id
+    );
+
     let workflowRemoved = false;
-    if (params.remove_workflow) {
-      const result = await removeAutoRuleWorkflow(
-        ctx.supabase, params.task_id, params.label_id, params.idea_id
-      );
-      workflowRemoved = result.removed;
+    if (workflowCheck.hasActiveWorkflow) {
+      if (params.remove_workflow) {
+        const result = await removeAutoRuleWorkflow(
+          ctx.supabase, params.task_id, params.label_id, params.idea_id
+        );
+        workflowRemoved = result.removed;
+      }
     }
 
-    return { success: true, workflow_removed: workflowRemoved };
+    return {
+      success: true,
+      workflow_removed: workflowRemoved,
+      ...(workflowCheck.hasActiveWorkflow && !workflowRemoved
+        ? {
+            has_active_workflow: true,
+            workflow_template_name: workflowCheck.templateName,
+            hint: `This label had an active workflow "${workflowCheck.templateName}" which was NOT removed. To also remove it, call again with remove_workflow: true.`,
+          }
+        : {}),
+    };
   }
 
   throw new Error(`Unknown action: ${params.action}`);
