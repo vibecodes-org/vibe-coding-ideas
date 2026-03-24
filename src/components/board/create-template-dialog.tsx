@@ -45,12 +45,14 @@ export function CreateTemplateDialog({
     { ...DEFAULT_STEP },
   ]);
   const [saving, setSaving] = useState(false);
+  const [deliverableStrings, setDeliverableStrings] = useState<string[]>([""]);
   const { poolRoles, userRoles } = useRoleSuggestions(ideaId);
 
   function reset() {
     setName("");
     setDescription("");
     setSteps([{ ...DEFAULT_STEP }]);
+    setDeliverableStrings([""]);
   }
 
   function updateStep(idx: number, patch: Partial<WorkflowTemplateStep>) {
@@ -61,6 +63,7 @@ export function CreateTemplateDialog({
 
   function removeStep(idx: number) {
     setSteps((prev) => prev.filter((_, i) => i !== idx));
+    setDeliverableStrings((prev) => prev.filter((_, i) => i !== idx));
   }
 
   function moveStep(idx: number, dir: -1 | 1) {
@@ -71,10 +74,16 @@ export function CreateTemplateDialog({
       [next[idx], next[target]] = [next[target], next[idx]];
       return next;
     });
+    setDeliverableStrings((prev) => {
+      const next = [...prev];
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
   }
 
   function addStep() {
     setSteps((prev) => [...prev, { ...DEFAULT_STEP }]);
+    setDeliverableStrings((prev) => [...prev, ""]);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -95,11 +104,18 @@ export function CreateTemplateDialog({
 
     setSaving(true);
     try {
+      const finalSteps = steps.map((s, i) => ({
+        ...s,
+        deliverables: (deliverableStrings[i] ?? "")
+          .split(",")
+          .map((d) => d.trim())
+          .filter(Boolean),
+      }));
       const result = await createWorkflowTemplate(
         ideaId,
         name.trim(),
         description.trim() || null,
-        steps,
+        finalSteps,
       );
       toast.success("Workflow template created");
       reset();
@@ -183,6 +199,7 @@ export function CreateTemplateDialog({
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground">
                       {idx + 1}
                     </span>
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Title</span>
                     <Input
                       value={step.title}
                       onChange={(e) =>
@@ -191,6 +208,7 @@ export function CreateTemplateDialog({
                       placeholder="Step title"
                       className="h-7 flex-1 text-xs"
                     />
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Role</span>
                     <RoleCombobox
                       value={step.role}
                       onChange={(val) => updateStep(idx, { role: val })}
@@ -204,6 +222,7 @@ export function CreateTemplateDialog({
                     />
                   </div>
                   <div className="flex items-center gap-3 pl-7">
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Description</span>
                     <Input
                       value={step.description ?? ""}
                       onChange={(e) =>
@@ -223,21 +242,19 @@ export function CreateTemplateDialog({
                         }
                       />
                       <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                        Approval gate
+                        Gate
                       </span>
                     </div>
                   </div>
-                  <div className="pl-7">
+                  <div className="flex items-center gap-3 pl-7">
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Deliverables</span>
                     <Input
-                      value={(step.deliverables ?? []).join(", ")}
+                      value={deliverableStrings[idx] ?? ""}
                       onChange={(e) =>
-                        updateStep(idx, {
-                          deliverables: e.target.value
-                            ? e.target.value
-                                .split(",")
-                                .map((d, i, arr) => (i < arr.length - 1 ? d.trim() : d))
-                                .filter((d, i, arr) => i === arr.length - 1 || d.length > 0)
-                            : [],
+                        setDeliverableStrings((prev) => {
+                          const next = [...prev];
+                          next[idx] = e.target.value;
+                          return next;
                         })
                       }
                       placeholder="Deliverables (optional) — e.g. HTML mockups, API spec"

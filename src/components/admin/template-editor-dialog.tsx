@@ -44,6 +44,7 @@ export function TemplateEditorDialog({
   const [description, setDescription] = useState("");
   const [steps, setSteps] = useState<WorkflowTemplateStep[]>([{ ...DEFAULT_STEP }]);
   const [saving, setSaving] = useState(false);
+  const [deliverableStrings, setDeliverableStrings] = useState<string[]>([""]);
 
   const isEditing = !!editTemplate;
 
@@ -51,15 +52,16 @@ export function TemplateEditorDialog({
     if (editTemplate) {
       setName(editTemplate.name);
       setDescription(editTemplate.description ?? "");
-      setSteps(
-        editTemplate.steps.length > 0
-          ? editTemplate.steps.map((s) => ({ ...s }))
-          : [{ ...DEFAULT_STEP }]
-      );
+      const loadedSteps = editTemplate.steps.length > 0
+        ? editTemplate.steps.map((s) => ({ ...s }))
+        : [{ ...DEFAULT_STEP }];
+      setSteps(loadedSteps);
+      setDeliverableStrings(loadedSteps.map((s) => (s.deliverables ?? []).join(", ")));
     } else {
       setName("");
       setDescription("");
       setSteps([{ ...DEFAULT_STEP }]);
+      setDeliverableStrings([""]);
     }
   }, [editTemplate]);
 
@@ -67,6 +69,7 @@ export function TemplateEditorDialog({
     setName("");
     setDescription("");
     setSteps([{ ...DEFAULT_STEP }]);
+    setDeliverableStrings([""]);
   }
 
   function updateStep(idx: number, patch: Partial<WorkflowTemplateStep>) {
@@ -75,6 +78,7 @@ export function TemplateEditorDialog({
 
   function removeStep(idx: number) {
     setSteps((prev) => prev.filter((_, i) => i !== idx));
+    setDeliverableStrings((prev) => prev.filter((_, i) => i !== idx));
   }
 
   function moveStep(idx: number, dir: -1 | 1) {
@@ -85,10 +89,16 @@ export function TemplateEditorDialog({
       [next[idx], next[target]] = [next[target], next[idx]];
       return next;
     });
+    setDeliverableStrings((prev) => {
+      const next = [...prev];
+      [next[idx], next[target]] = [next[target], next[idx]];
+      return next;
+    });
   }
 
   function addStep() {
     setSteps((prev) => [...prev, { ...DEFAULT_STEP }]);
+    setDeliverableStrings((prev) => [...prev, ""]);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -113,15 +123,22 @@ export function TemplateEditorDialog({
 
     setSaving(true);
     try {
+      const finalSteps = steps.map((s, i) => ({
+        ...s,
+        deliverables: (deliverableStrings[i] ?? "")
+          .split(",")
+          .map((d) => d.trim())
+          .filter(Boolean),
+      }));
       if (isEditing) {
         await updateLibraryTemplate(editTemplate.id, {
           name: name.trim(),
           description: description.trim() || null,
-          steps,
+          steps: finalSteps,
         });
         toast.success("Template updated");
       } else {
-        await createLibraryTemplate(name.trim(), description.trim() || null, steps);
+        await createLibraryTemplate(name.trim(), description.trim() || null, finalSteps);
         toast.success("Template created");
       }
       reset();
@@ -205,12 +222,14 @@ export function TemplateEditorDialog({
                     <span className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-muted text-[10px] font-semibold text-muted-foreground">
                       {idx + 1}
                     </span>
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Title</span>
                     <Input
                       value={step.title}
                       onChange={(e) => updateStep(idx, { title: e.target.value })}
                       placeholder="Step title"
                       className="h-7 flex-1 text-xs"
                     />
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Role</span>
                     <RoleCombobox
                       value={step.role}
                       onChange={(val) => updateStep(idx, { role: val })}
@@ -221,6 +240,7 @@ export function TemplateEditorDialog({
                     />
                   </div>
                   <div className="flex items-center gap-3 pl-7">
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Description</span>
                     <Input
                       value={step.description ?? ""}
                       onChange={(e) =>
@@ -236,21 +256,19 @@ export function TemplateEditorDialog({
                         onCheckedChange={(v) => updateStep(idx, { requires_approval: v })}
                       />
                       <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                        Approval gate
+                        Gate
                       </span>
                     </div>
                   </div>
-                  <div className="pl-7">
+                  <div className="flex items-center gap-3 pl-7">
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Deliverables</span>
                     <Input
-                      value={(step.deliverables ?? []).join(", ")}
+                      value={deliverableStrings[idx] ?? ""}
                       onChange={(e) =>
-                        updateStep(idx, {
-                          deliverables: e.target.value
-                            ? e.target.value
-                                .split(",")
-                                .map((d, i, arr) => (i < arr.length - 1 ? d.trim() : d))
-                                .filter((d, i, arr) => i === arr.length - 1 || d.length > 0)
-                            : [],
+                        setDeliverableStrings((prev) => {
+                          const next = [...prev];
+                          next[idx] = e.target.value;
+                          return next;
                         })
                       }
                       placeholder="Deliverables (optional) — e.g. HTML mockups, API spec"
