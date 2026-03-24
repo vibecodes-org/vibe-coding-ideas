@@ -64,17 +64,33 @@ export function FirstRunDashboard({
     switchToStandard?.();
   };
 
-  const steps: SetupStep[] = [
-    { label: "Account", done: true },
-    { label: "Idea", done: ideasCount > 0 },
-    { label: "Board", done: maxBoardTaskCount > 0 },
-    { label: "MCP", done: hasMcpConnection },
-    { label: "First task", done: hasTaskInProgress },
+  // Raw completion state for each step
+  const rawDone = [
+    true, // Account — always done (user is logged in)
+    ideasCount > 0,
+    maxBoardTaskCount > 0,
+    hasMcpConnection,
+    hasTaskInProgress,
   ];
+
+  // Steps are sequential: a step is only "done" if it AND all prior steps are done
+  const steps: SetupStep[] = [
+    "Account",
+    "Idea",
+    "Board",
+    "MCP",
+    "First task",
+  ].map((label, i) => ({
+    label,
+    done: rawDone.slice(0, i + 1).every(Boolean),
+  }));
 
   const doneCount = steps.filter((s) => s.done).length;
   const currentIndex = steps.findIndex((s) => !s.done);
   const percent = Math.round((doneCount / steps.length) * 100);
+
+  // MCP banner shows when MCP step isn't sequentially complete
+  const mcpStepComplete = steps[3].done;
 
   const displayBots = botProfiles.slice(0, 3);
   const remainingBots = botProfiles.length - 3;
@@ -232,8 +248,8 @@ export function FirstRunDashboard({
             </div>
           )}
 
-          {/* MCP CTA */}
-          {!hasMcpConnection && (
+          {/* MCP CTA — show until MCP step is sequentially complete */}
+          {!mcpStepComplete && (
             <McpConnectionBanner
               agentCount={agentCount}
               taskCount={taskCount}
