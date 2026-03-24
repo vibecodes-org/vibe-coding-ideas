@@ -12,6 +12,15 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerFooter,
+  DrawerHeader,
+  DrawerTitle,
+} from "@/components/ui/drawer";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { ProjectTypeSelector } from "./project-type-selector";
 import { KitPreview } from "./kit-preview";
 import { getActiveKitsWithSteps, applyKit } from "@/actions/kits";
@@ -34,6 +43,7 @@ export function ApplyKitDialog({
   const [loading, setLoading] = useState(false);
   const [applying, setApplying] = useState(false);
   const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
+  const isMobile = useMediaQuery("(max-width: 767px)");
 
   useEffect(() => {
     if (!open) return;
@@ -74,8 +84,74 @@ export function ApplyKitDialog({
     }
   };
 
-  // Filter out Custom for the dialog
   const selectableKits = kits.filter((k) => k.name !== "Custom");
+
+  const body = loading ? (
+    <div className="flex items-center justify-center py-8">
+      <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+    </div>
+  ) : (
+    <div className="space-y-3">
+      <ProjectTypeSelector
+        kits={selectableKits}
+        selectedKitId={selectedKitId}
+        onSelect={setSelectedKitId}
+        compact
+      />
+      {selectedKit && !isCustom && (
+        <KitPreview kit={selectedKit} compact />
+      )}
+    </div>
+  );
+
+  const footer = (
+    <>
+      <Button
+        variant="outline"
+        onClick={() => onOpenChange(false)}
+        disabled={applying}
+      >
+        Cancel
+      </Button>
+      <Button onClick={handleApply} disabled={!canApply || applying}>
+        {applying ? (
+          <>
+            <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            Applying {selectedKit?.name} kit...
+          </>
+        ) : selectedKit ? (
+          `Apply ${selectedKit.name} Kit`
+        ) : (
+          "Select a kit"
+        )}
+      </Button>
+    </>
+  );
+
+  if (isMobile) {
+    return (
+      <Drawer open={open} onOpenChange={onOpenChange}>
+        <DrawerContent>
+          <DrawerHeader>
+            <DrawerTitle className="flex items-center gap-2">
+              <Package className="h-4 w-4" />
+              Apply a Project Kit
+            </DrawerTitle>
+            <DrawerDescription>
+              Choose a project type to set up agents, workflows, labels, and
+              auto-rules for this idea.
+            </DrawerDescription>
+          </DrawerHeader>
+          <div className="px-4 pb-2 max-h-[60vh] overflow-y-auto">
+            {body}
+          </div>
+          <DrawerFooter>
+            {footer}
+          </DrawerFooter>
+        </DrawerContent>
+      </Drawer>
+    );
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -90,45 +166,9 @@ export function ApplyKitDialog({
             auto-rules for this idea.
           </DialogDescription>
         </DialogHeader>
-
-        {loading ? (
-          <div className="flex items-center justify-center py-8">
-            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <ProjectTypeSelector
-              kits={selectableKits}
-              selectedKitId={selectedKitId}
-              onSelect={setSelectedKitId}
-              compact
-            />
-            {selectedKit && !isCustom && (
-              <KitPreview kit={selectedKit} compact />
-            )}
-          </div>
-        )}
-
+        {body}
         <DialogFooter>
-          <Button
-            variant="outline"
-            onClick={() => onOpenChange(false)}
-            disabled={applying}
-          >
-            Cancel
-          </Button>
-          <Button onClick={handleApply} disabled={!canApply || applying}>
-            {applying ? (
-              <>
-                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                Applying {selectedKit?.name} kit...
-              </>
-            ) : selectedKit ? (
-              `Apply ${selectedKit.name} Kit`
-            ) : (
-              "Select a kit"
-            )}
-          </Button>
+          {footer}
         </DialogFooter>
       </DialogContent>
     </Dialog>
