@@ -372,9 +372,9 @@ function FirstRunMcpCard() {
   };
 
   return (
-    <div className="rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4 sm:p-5">
+    <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.12] p-4 sm:p-5">
       <h3 className="text-sm font-semibold text-foreground">
-        🔌 Next: Connect Claude Code
+        📡 Next: Connect Claude Code
       </h3>
       <p className="mt-1.5 text-sm text-muted-foreground">
         Your agents can&apos;t work until you connect Claude Code via MCP. Run

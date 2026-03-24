@@ -67,7 +67,7 @@ export function McpConnectionBanner({
     return (
       <div
         className={cn(
-          "flex items-center gap-3 rounded-lg border border-amber-500/15 bg-amber-500/[0.04] px-4 py-2.5",
+          "flex items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/[0.12] px-4 py-2.5",
           className
         )}
         role="status"
@@ -115,7 +115,7 @@ export function McpConnectionBanner({
   return (
     <div
       className={cn(
-        "rounded-xl border border-amber-500/20 bg-amber-500/[0.04] p-4",
+        "rounded-xl border border-amber-500/25 bg-amber-500/[0.12] p-4",
         className
       )}
       role="status"
