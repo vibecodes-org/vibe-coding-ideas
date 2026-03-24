@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { HelpLink } from "@/components/shared/help-link";
 import {
   MessageSquare,
   Check,
@@ -42,6 +43,7 @@ export function RecentDiscussionsPreview({
         <div className="flex items-center gap-2">
           <MessagesSquare className="h-4 w-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold">Discussions</h3>
+          <HelpLink href="/guide/discussions" tooltip="About discussions" />
           {discussionCount > 0 && (
             <span className="rounded-full bg-violet-500/10 border border-violet-500/20 px-1.5 py-0.5 text-[10px] font-semibold leading-none text-violet-400">
               {discussionCount}

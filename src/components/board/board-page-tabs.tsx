@@ -4,6 +4,7 @@ import { useSearchParams, useRouter, usePathname } from "next/navigation";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { WorkflowsTab } from "./workflows-tab";
 import { AgentsTab } from "./agents-tab";
+import { HelpLink } from "@/components/shared/help-link";
 import type { BoardLabel, IdeaAgentWithDetails, BotProfile } from "@/types";
 
 interface BoardPageTabsProps {
@@ -59,11 +60,14 @@ export function BoardPageTabs({
       onValueChange={setActiveTab}
       className="flex min-h-0 flex-1 flex-col"
     >
-      <TabsList variant="line" className="mb-3 shrink-0">
-        <TabsTrigger value="board">Board</TabsTrigger>
-        <TabsTrigger value="workflows">Workflows</TabsTrigger>
-        <TabsTrigger value="agents">Agents</TabsTrigger>
-      </TabsList>
+      <div className="mb-3 flex shrink-0 items-center gap-2">
+        <TabsList variant="line">
+          <TabsTrigger value="board">Board</TabsTrigger>
+          <TabsTrigger value="workflows">Workflows</TabsTrigger>
+          <TabsTrigger value="agents">Agents</TabsTrigger>
+        </TabsList>
+        <HelpLink href="/guide/kanban-boards" tooltip="How boards work" />
+      </div>
 
       <TabsContent value="board" className="min-h-0 flex-1">
         {children}

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
+import { HelpLink } from "@/components/shared/help-link";
 import {
   Lock,
   Check,
@@ -319,7 +320,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
     return (
       <>
         <div className="space-y-3">
-          <h3 className="text-sm font-semibold">Workflow</h3>
+          <h3 className="flex items-center gap-1.5 text-sm font-semibold">Workflow <HelpLink href="/guide/workflows" tooltip="How workflows work" /></h3>
           {showApply ? (
             <div className="space-y-2">
               <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
@@ -331,7 +332,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                     <SelectItem value="__loading" disabled>Loading...</SelectItem>
                   ) : templates.length === 0 ? (
                     <SelectItem value="__empty" disabled>
-                      No templates — create one in the Workflows tab
+                      No templates — <a href="?tab=workflows" className="underline">create one in the Workflows tab</a>
                     </SelectItem>
                   ) : (
                     templates.map((t) => (
@@ -394,6 +395,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
             <h3 className="text-sm font-semibold">Workflow</h3>
+            <HelpLink href="/guide/workflows" tooltip="How workflows work" />
             {run && (
               <Badge
                 variant="outline"

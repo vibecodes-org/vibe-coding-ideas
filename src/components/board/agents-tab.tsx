@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useTransition } from "react";
+import { HelpLink } from "@/components/shared/help-link";
 import Link from "next/link";
 import {
   Bot,
@@ -341,7 +342,7 @@ export function AgentsTab({
     <div className="space-y-6 overflow-y-auto pb-4">
       {/* Header with Add Agent button */}
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-semibold">Agent Pool</h2>
+        <h2 className="flex items-center gap-1.5 text-lg font-semibold">Agent Pool <HelpLink href="/guide/ai-agent-teams" tooltip="How agents work" /></h2>
         {isTeamMember && !isReadOnly && unallocatedBots.length > 0 && (
           <div className="flex gap-2">
             {unallocatedBots.length >= 2 && (

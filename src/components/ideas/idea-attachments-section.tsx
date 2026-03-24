@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useCallback, useRef } from "react";
+import { HelpLink } from "@/components/shared/help-link";
 import {
   Paperclip,
   Trash2,
@@ -349,6 +350,7 @@ export function IdeaAttachmentsSection({
               {attachments.length}
             </span>
           )}
+          <HelpLink href="/guide/ideas-and-voting" tooltip="About ideas" />
         </h3>
 
         {loading ? (

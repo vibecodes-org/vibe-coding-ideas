@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { HelpLink } from "@/components/shared/help-link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -799,8 +800,9 @@ export function WorkflowsTab({
       <div className="flex w-60 shrink-0 flex-col rounded-lg border border-border bg-muted/20">
         {/* Sidebar header */}
         <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-          <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+          <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
             Templates
+            <HelpLink href="/guide/workflows" tooltip="How workflows work" />
           </span>
           {!isReadOnly && (
             <div className="flex items-center gap-1">

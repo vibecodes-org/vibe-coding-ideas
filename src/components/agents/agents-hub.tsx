@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { HelpLink } from "@/components/shared/help-link";
 import Link from "next/link";
 import { Bot, Plus, X, Cable } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -61,7 +62,7 @@ export function AgentsHub({
             <Bot className="h-5 w-5" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold">Agents Hub</h1>
+            <h1 className="flex items-center gap-2 text-2xl font-bold">Agents Hub <HelpLink href="/guide/ai-agent-teams" tooltip="How agents work" /></h1>
             <p className="mt-1 text-sm text-muted-foreground max-w-xl leading-relaxed">
               Agents are AI-powered team members you can create, customise, and assign to tasks
               across your ideas. Give them distinct roles, personalities, and tool access &mdash;
