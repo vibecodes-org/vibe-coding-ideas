@@ -237,6 +237,7 @@ export function FirstRunDashboard({
             <McpConnectionBanner
               agentCount={agentCount}
               taskCount={taskCount}
+              dismissable={false}
             />
           )}
         </div>

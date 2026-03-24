@@ -14,6 +14,8 @@ interface McpConnectionBannerProps {
   taskCount: number;
   compact?: boolean;
   className?: string;
+  /** Whether the banner can be dismissed. Default true. Set false on first-run dashboard. */
+  dismissable?: boolean;
 }
 
 export function McpConnectionBanner({
@@ -21,6 +23,7 @@ export function McpConnectionBanner({
   taskCount,
   compact = false,
   className,
+  dismissable = true,
 }: McpConnectionBannerProps) {
   const [dismissed, setDismissed] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -88,13 +91,15 @@ export function McpConnectionBanner({
             Learn more &rarr;
           </Link>
         </p>
-        <button
-          onClick={handleDismiss}
-          className="shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-muted-foreground"
-          aria-label="Dismiss MCP connection banner"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
+        {dismissable && (
+          <button
+            onClick={handleDismiss}
+            className="shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-muted-foreground"
+            aria-label="Dismiss MCP connection banner"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
+        )}
       </div>
     );
   }
@@ -125,13 +130,15 @@ export function McpConnectionBanner({
             <h3 className="text-sm font-semibold text-foreground">
               Your agents are waiting — connect Claude Code
             </h3>
-            <button
-              onClick={handleDismiss}
-              className="shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-muted-foreground sm:hidden"
-              aria-label="Dismiss MCP connection banner"
-            >
-              <X className="h-3.5 w-3.5" />
-            </button>
+            {dismissable && (
+              <button
+                onClick={handleDismiss}
+                className="shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-muted-foreground sm:hidden"
+                aria-label="Dismiss MCP connection banner"
+              >
+                <X className="h-3.5 w-3.5" />
+              </button>
+            )}
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
 
@@ -161,13 +168,15 @@ export function McpConnectionBanner({
           >
             Learn more
           </Link>
-          <button
-            onClick={handleDismiss}
-            className="hidden shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-muted-foreground sm:block"
-            aria-label="Dismiss MCP connection banner"
-          >
-            <X className="h-3.5 w-3.5" />
-          </button>
+          {dismissable && (
+            <button
+              onClick={handleDismiss}
+              className="hidden shrink-0 rounded-md p-1 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-muted-foreground sm:block"
+              aria-label="Dismiss MCP connection banner"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          )}
         </div>
       </div>
     </div>
