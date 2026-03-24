@@ -33,6 +33,7 @@ import { BotRolesProvider } from "@/components/bot-roles-context";
 import { PendingRequests } from "@/components/ideas/pending-requests";
 import { RecentDiscussionsPreview } from "@/components/discussions/recent-discussions-preview";
 import { IdeaGettingStarted } from "@/components/ideas/idea-getting-started";
+import { KitErrorToast } from "@/components/ideas/kit-error-toast";
 import { Badge } from "@/components/ui/badge";
 import type { CommentWithAuthor, CollaboratorWithUser, CollaborationRequestWithRequester, BotProfile, IdeaDiscussionWithAuthor } from "@/types";
 import type { Metadata } from "next";
@@ -255,6 +256,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
 
   return (
     <div className="mx-auto max-w-3xl px-4 pt-6 pb-4">
+      <KitErrorToast />
       {jsonLd && (
         <script
           type="application/ld+json"
