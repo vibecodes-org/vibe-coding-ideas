@@ -44,8 +44,13 @@ export async function createIdea(formData: FormData) {
   if (kitId) {
     try {
       const { applyKit } = await import("./kits");
-      await applyKit(data.id, kitId);
-      redirect(`/ideas/${data.id}/board`);
+      const result = await applyKit(data.id, kitId);
+      const parts: string[] = [];
+      if (result.agentsCreated > 0) parts.push(`${result.agentsCreated} agent${result.agentsCreated !== 1 ? "s" : ""}`);
+      if (result.labelsCreated > 0) parts.push(`${result.labelsCreated} label${result.labelsCreated !== 1 ? "s" : ""}`);
+      if (result.templateImported) parts.push("workflow imported");
+      const summary = encodeURIComponent(parts.join(", ") || "applied");
+      redirect(`/ideas/${data.id}/board?kit_applied=${summary}`);
     } catch (e: unknown) {
       // Re-throw redirect errors (they use throw internally)
       if (e instanceof Error && "digest" in e && typeof (e as { digest?: string }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT")) {

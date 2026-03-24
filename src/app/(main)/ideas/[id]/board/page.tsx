@@ -9,6 +9,7 @@ import { KanbanBoard } from "@/components/board/kanban-board";
 import { BoardRealtime } from "@/components/board/board-realtime";
 import { GuestBoardBanner } from "@/components/board/guest-board-banner";
 import { BoardPageTabs } from "@/components/board/board-page-tabs";
+import { KitAppliedToast } from "@/components/board/kit-applied-toast";
 import { Button } from "@/components/ui/button";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import type {
@@ -298,6 +299,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           hasMcpConnection={!!userProfile?.mcp_connected_at}
         />
       </BoardPageTabs>
+      <KitAppliedToast />
     </div>
   );
 }
