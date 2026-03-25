@@ -9,6 +9,21 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { TurnstileWidget } from "./turnstile-widget";
 
+/** Map raw Supabase auth errors to user-friendly messages */
+export function friendlyAuthError(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("email rate limit exceeded") || lower.includes("rate limit")) {
+    return "Too many attempts — please wait a few minutes and try again.";
+  }
+  if (lower.includes("invalid login credentials")) {
+    return "Incorrect email or password.";
+  }
+  if (lower.includes("email not confirmed")) {
+    return "Please check your inbox and confirm your email before signing in.";
+  }
+  return message;
+}
+
 interface EmailAuthFormProps {
   mode: "login" | "signup";
 }
@@ -45,7 +60,7 @@ export function EmailAuthForm({ mode }: EmailAuthFormProps) {
         options: captchaOpts,
       });
       if (error) {
-        setError(error.message);
+        setError(friendlyAuthError(error.message));
         setLoading(false);
       } else {
         router.push("/dashboard");
@@ -60,7 +75,7 @@ export function EmailAuthForm({ mode }: EmailAuthFormProps) {
         },
       });
       if (error) {
-        setError(error.message);
+        setError(friendlyAuthError(error.message));
         setLoading(false);
       } else if (data.user?.identities?.length === 0) {
         setExistingAccount(true);

@@ -15,6 +15,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { TurnstileWidget } from "@/components/auth/turnstile-widget";
+import { friendlyAuthError } from "@/components/auth/email-auth-form";
 
 export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
@@ -40,7 +41,7 @@ export default function ForgotPasswordPage() {
     });
 
     if (error) {
-      setError(error.message);
+      setError(friendlyAuthError(error.message));
     } else {
       setSuccess(true);
     }

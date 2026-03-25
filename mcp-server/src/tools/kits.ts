@@ -92,21 +92,26 @@ export async function applyKitMcp(
 
   const ownerId = ctx.ownerUserId ?? ctx.userId;
 
-  // 1. Clone agents (skip existing roles)
+  // 1. Clone agents (skip existing roles, reuse matching agents)
   if (agentRoles.length > 0) {
     const { data: existingBots } = await ctx.supabase
       .from("bot_profiles")
-      .select("role")
+      .select("id, role")
       .eq("owner_id", ownerId);
 
-    const existingRoles = new Set(
-      (existingBots ?? []).map((b) => b.role?.toLowerCase())
+    const existingBotsByRole = new Map(
+      (existingBots ?? [])
+        .filter((b) => b.role)
+        .map((b) => [b.role!.toLowerCase(), b.id])
     );
 
-    const createdBotIds: string[] = [];
+    const botIdsToAllocate: string[] = [];
 
     for (const agentRole of agentRoles) {
-      if (agentRole.role && existingRoles.has(agentRole.role.toLowerCase())) {
+      const roleLower = agentRole.role?.toLowerCase();
+      if (roleLower && existingBotsByRole.has(roleLower)) {
+        // User already has an agent with this role — reuse it
+        botIdsToAllocate.push(existingBotsByRole.get(roleLower)!);
         result.agentsSkipped++;
         continue;
       }
@@ -125,7 +130,7 @@ export async function applyKitMcp(
               .update({ skills: agentRole.skills })
               .eq("id", botUser);
           }
-          createdBotIds.push(botUser);
+          botIdsToAllocate.push(botUser);
           result.agentsCreated++;
         }
       } catch {
@@ -133,14 +138,14 @@ export async function applyKitMcp(
       }
     }
 
-    // Allocate created agents to the idea
-    for (const botId of createdBotIds) {
+    // Allocate all agents (newly created + existing matches) to the idea
+    for (const botId of botIdsToAllocate) {
       try {
-        await ctx.supabase.from("idea_agents").insert({
+        await ctx.supabase.from("idea_agents").upsert({
           idea_id: params.idea_id,
           bot_id: botId,
           added_by: ownerId,
-        });
+        }, { onConflict: "idea_id,bot_id", ignoreDuplicates: true });
       } catch {
         // Skip duplicates
       }
