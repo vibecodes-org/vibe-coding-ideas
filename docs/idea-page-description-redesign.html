@@ -1,0 +1,353 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Idea Page Description Redesign — Compass (UX Designer)</title>
+<style>
+  :root { --bg: #09090b; --surface: #111113; --surface-2: #19191d; --surface-3: #222228; --border: #27272a; --border-focus: #3f3f46; --text: #fafafa; --text-muted: #a1a1aa; --text-dim: #71717a; --violet: #8b5cf6; --violet-dim: rgba(139,92,246,0.12); --violet-border: rgba(139,92,246,0.25); --emerald: #10b981; --amber: #f59e0b; --rose: #f43f5e; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.65; }
+
+  .container { max-width: 850px; margin: 0 auto; padding: 2rem; }
+  .hero { background: linear-gradient(160deg, #1a0f2e 0%, #0f1a2e 40%, #091a1f 100%); border-bottom: 1px solid var(--border); padding: 2.5rem 2rem 2rem; }
+  .hero-inner { max-width: 850px; margin: 0 auto; }
+  .hero h1 { font-size: 1.6rem; font-weight: 800; margin-bottom: 0.3rem; }
+  .hero p { color: var(--text-muted); font-size: 0.9rem; }
+
+  h2 { font-size: 1.2rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.5rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
+  p { margin-bottom: 0.6rem; color: var(--text-muted); font-size: 0.88rem; }
+  code { font-size: 0.78rem; background: var(--surface-3); padding: 0.1rem 0.4rem; border-radius: 4px; color: var(--violet); }
+
+  /* Mockup page */
+  .page-mock { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin: 1.5rem 0; }
+  .page-titlebar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+  .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .dot-r { background: #ef4444; } .dot-y { background: #eab308; } .dot-g { background: #22c55e; }
+  .page-title { font-size: 0.72rem; color: var(--text-dim); margin-left: 0.5rem; }
+  .page-body { padding: 1.5rem; }
+
+  /* Section styles */
+  .section { margin-bottom: 1.25rem; }
+  .section-heading { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.5rem; }
+  .section-heading h3 { font-size: 0.9rem; font-weight: 600; }
+  .section-heading .icon { color: var(--text-muted); font-size: 1rem; }
+  .section-heading .help { color: var(--text-dim); font-size: 0.75rem; cursor: pointer; }
+  .section-heading .action { margin-left: auto; font-size: 0.75rem; color: var(--text-dim); border: 1px solid var(--border); padding: 0.2rem 0.5rem; border-radius: 5px; cursor: pointer; }
+  .section-heading .edit-btn { color: var(--text-dim); font-size: 0.75rem; cursor: pointer; opacity: 0.5; }
+  .section-heading .edit-btn:hover { opacity: 1; }
+
+  .card { background: var(--surface-2); border: 1px solid var(--border); border-radius: 10px; padding: 1rem 1.25rem; }
+  .separator { border-top: 1px solid var(--border); margin: 1.25rem 0; }
+
+  /* Description specific */
+  .desc-content { color: var(--text-muted); font-size: 0.9rem; line-height: 1.7; }
+  .desc-content.editable { cursor: text; border-radius: 6px; padding: 0.35rem 0.5rem; margin: -0.35rem -0.5rem; border: 1px solid transparent; transition: all 0.15s; }
+  .desc-content.editable:hover { border-color: var(--border); background: rgba(255,255,255,0.02); }
+
+  /* Collapsible */
+  .desc-collapsed { max-height: 120px; overflow: hidden; position: relative; }
+  .desc-collapsed::after { content: ''; position: absolute; bottom: 0; left: 0; right: 0; height: 50px; background: linear-gradient(transparent, var(--surface-2)); }
+  .expand-btn { font-size: 0.78rem; color: var(--violet); cursor: pointer; font-weight: 600; margin-top: 0.5rem; display: inline-block; background: none; border: none; font-family: inherit; }
+
+  /* GitHub */
+  .github-link { display: inline-flex; align-items: center; gap: 0.5rem; border: 1px solid var(--border); padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.82rem; color: var(--text-muted); text-decoration: none; }
+
+  /* Badge */
+  .badge-before { display: inline-block; background: rgba(244,63,94,0.12); color: var(--rose); font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 4px; }
+  .badge-after { display: inline-block; background: rgba(16,185,129,0.12); color: var(--emerald); font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 4px; }
+
+  .note { background: var(--surface-2); border-left: 3px solid var(--violet); padding: 0.6rem 0.8rem; margin: 0.75rem 0; border-radius: 0 6px 6px 0; font-size: 0.82rem; color: var(--text-muted); }
+
+  .tab-bar { display: flex; border-bottom: 1px solid var(--border); margin-bottom: 0; }
+  .tab-btn { background: none; border: none; color: var(--text-dim); padding: 0.55rem 1rem; font-size: 0.8rem; font-weight: 600; cursor: pointer; border-bottom: 2px solid transparent; font-family: inherit; white-space: nowrap; }
+  .tab-btn:hover { color: var(--text-muted); }
+  .tab-btn.active { color: var(--violet); border-bottom-color: var(--violet); }
+  .tab-panel { display: none; padding: 1rem 0; }
+  .tab-panel.active { display: block; }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-inner">
+    <h1>Idea Page Description Redesign</h1>
+    <p>The description has the weakest visual presence on the page despite being the primary content. Three problems to solve: heading hierarchy, page ordering, and long-content handling.</p>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ═══ PROBLEM ANALYSIS ═══ -->
+<h2>Problem Analysis</h2>
+
+<p><strong>Current heading hierarchy (broken):</strong></p>
+<table style="width:100%;border-collapse:collapse;font-size:0.82rem;margin:0.5rem 0;">
+  <tr style="border-bottom:2px solid var(--border);"><th style="text-align:left;padding:0.4rem;">Section</th><th style="text-align:left;padding:0.4rem;">Style</th><th style="text-align:left;padding:0.4rem;">Visual Weight</th></tr>
+  <tr style="border-bottom:1px solid var(--border);"><td style="padding:0.4rem;color:var(--text)">Comments</td><td style="padding:0.4rem;color:var(--text-muted)"><code>text-lg font-semibold</code></td><td style="padding:0.4rem;color:var(--emerald);">Strong</td></tr>
+  <tr style="border-bottom:1px solid var(--border);"><td style="padding:0.4rem;color:var(--text)">Discussions</td><td style="padding:0.4rem;color:var(--text-muted)"><code>text-sm font-semibold</code> + icon + card</td><td style="padding:0.4rem;color:var(--emerald);">Strong</td></tr>
+  <tr style="border-bottom:1px solid var(--border);"><td style="padding:0.4rem;color:var(--text)">Attachments</td><td style="padding:0.4rem;color:var(--text-muted)"><code>text-sm font-semibold</code> + icon</td><td style="padding:0.4rem;color:var(--emerald);">Strong</td></tr>
+  <tr style="border-bottom:1px solid var(--border);"><td style="padding:0.4rem;color:var(--text)">Description</td><td style="padding:0.4rem;color:var(--text-muted)"><code>text-[11px] uppercase text-muted-foreground/60</code></td><td style="padding:0.4rem;color:var(--rose);">Weakest</td></tr>
+</table>
+
+<p><strong>Current page order:</strong> Getting Started → Discussions → <strong>Description</strong> → Attachments → Comments</p>
+<p>The description is sandwiched between Discussions and Attachments, with weaker visual treatment than both.</p>
+
+<p><strong>The dilemma:</strong> Moving description above Discussions fixes ordering but long descriptions push everything else off-screen. We need a solution that works for both 1-line and 20-paragraph descriptions.</p>
+
+<!-- ═══ PROPOSED SOLUTION ═══ -->
+<h2>Proposed Solution</h2>
+
+<p>Three changes that work together:</p>
+<ol style="padding-left:1.5rem;color:var(--text-muted);font-size:0.85rem;margin-bottom:1rem;">
+  <li><strong>Match the heading style</strong> — Description gets the same <code>text-sm font-semibold</code> + icon treatment as Discussions and Attachments</li>
+  <li><strong>Move above Discussions</strong> — Description is primary content, should be first after Getting Started</li>
+  <li><strong>Collapse long descriptions</strong> — Max-height of ~120px with gradient fade + "Read more" link. Short descriptions show fully. This prevents long content from pushing Discussions off-screen.</li>
+</ol>
+
+<!-- ═══ MOCKUPS ═══ -->
+<h2>Mockups</h2>
+
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab(this, 'mock-short')">Short Description</button>
+  <button class="tab-btn" onclick="switchTab(this, 'mock-long')">Long Description</button>
+  <button class="tab-btn" onclick="switchTab(this, 'mock-empty')">No Description</button>
+</div>
+
+<!-- SHORT DESCRIPTION -->
+<div class="tab-panel active" id="mock-short">
+  <div class="page-mock">
+    <div class="page-titlebar">
+      <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+      <div class="page-title">Idea Page — Short Description</div>
+    </div>
+    <div class="page-body">
+      <!-- Getting Started (collapsed) -->
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.78rem;color:var(--text-dim);text-align:center;">
+        ⓘ Get started with your idea — [ ① Describe ] [ ② Agents ] [ ③ Board ]
+      </div>
+
+      <!-- DESCRIPTION — now first, with proper heading -->
+      <div class="section">
+        <div class="section-heading">
+          <span class="icon">📝</span>
+          <h3>Description</h3>
+          <span class="edit-btn">✏️ Edit</span>
+        </div>
+        <div class="desc-content editable">
+          A recipe sharing app where users can upload, search, and share recipes with AI-powered suggestions based on available ingredients.
+        </div>
+      </div>
+
+      <!-- GitHub URL — separate from description -->
+      <div class="section" style="margin-top:0.75rem;">
+        <a class="github-link" href="#">🔗 View Repository ↗</a>
+      </div>
+
+      <div class="separator"></div>
+
+      <!-- DISCUSSIONS -->
+      <div class="section">
+        <div class="card">
+          <div class="section-heading" style="margin-bottom:0.4rem;">
+            <span class="icon">💬</span>
+            <h3>Discussions</h3>
+            <span class="help">(?)</span>
+            <span class="action">+ New</span>
+          </div>
+          <p style="font-size:0.82rem;margin:0;">Start a discussion to plan features, debate approaches, or gather feedback.</p>
+        </div>
+      </div>
+
+      <div class="separator"></div>
+
+      <!-- ATTACHMENTS -->
+      <div class="section">
+        <div class="section-heading">
+          <span class="icon">📎</span>
+          <h3>Attachments</h3>
+          <span class="help">(?)</span>
+        </div>
+        <div style="border:1px dashed var(--border);border-radius:8px;padding:1rem;text-align:center;">
+          <p style="font-size:0.82rem;margin:0;color:var(--text-dim);">Choose file · Images, PDF, Markdown, HTML · Max 10MB</p>
+        </div>
+      </div>
+
+      <div class="separator"></div>
+
+      <!-- COMMENTS -->
+      <div class="section">
+        <h3 style="font-size:1rem;font-weight:600;">Comments (0)</h3>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Short descriptions show fully</strong> — no collapse needed. The description section has visual parity with Discussions and Attachments (icon + bold heading). GitHub URL is separated into its own small element below the description.
+  </div>
+</div>
+
+<!-- LONG DESCRIPTION -->
+<div class="tab-panel" id="mock-long">
+  <div class="page-mock">
+    <div class="page-titlebar">
+      <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+      <div class="page-title">Idea Page — Long Description (collapsed)</div>
+    </div>
+    <div class="page-body">
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.78rem;color:var(--text-dim);text-align:center;">
+        ⓘ Get started with your idea — [ ① Describe ✓ ] [ ② Agents ] [ ③ Board ]
+      </div>
+
+      <!-- DESCRIPTION — collapsed -->
+      <div class="section">
+        <div class="section-heading">
+          <span class="icon">📝</span>
+          <h3>Description</h3>
+          <span class="edit-btn">✏️ Edit</span>
+        </div>
+        <div class="desc-collapsed" style="background:var(--surface-2);border-radius:8px;padding:0.75rem 1rem;">
+          <div class="desc-content">
+            <p style="color:var(--text-muted);">A comprehensive recipe sharing platform with the following features:</p>
+            <p style="color:var(--text-muted);"><strong style="color:var(--text);">Core Features:</strong></p>
+            <p style="color:var(--text-muted);">• AI-powered ingredient recognition from photos</p>
+            <p style="color:var(--text-muted);">• Smart recipe suggestions based on what's in your fridge</p>
+            <p style="color:var(--text-muted);">• Social features — follow chefs, save favourites, leave reviews</p>
+            <p style="color:var(--text-muted);">• Meal planning with automated shopping lists</p>
+            <p style="color:var(--text-muted);">• Nutritional breakdown for every recipe</p>
+            <p style="color:var(--text-muted);"><strong style="color:var(--text);">Technical Stack:</strong></p>
+            <p style="color:var(--text-muted);">Next.js frontend, Supabase backend, Claude for AI features...</p>
+          </div>
+        </div>
+        <button class="expand-btn">Read more ↓</button>
+      </div>
+
+      <div style="margin-top:0.75rem;">
+        <a class="github-link" href="#">🔗 View Repository ↗</a>
+      </div>
+
+      <div class="separator"></div>
+
+      <!-- DISCUSSIONS — still visible! -->
+      <div class="section">
+        <div class="card">
+          <div class="section-heading" style="margin-bottom:0.4rem;">
+            <span class="icon">💬</span>
+            <h3>Discussions</h3>
+            <span class="help">(?)</span>
+            <span class="action">+ New</span>
+          </div>
+          <p style="font-size:0.82rem;margin:0;">Start a discussion to plan features, debate approaches, or gather feedback.</p>
+        </div>
+      </div>
+
+      <div class="separator"></div>
+
+      <div class="section">
+        <div class="section-heading">
+          <span class="icon">📎</span>
+          <h3>Attachments</h3>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Long descriptions collapse to ~120px</strong> with a gradient fade and "Read more" link. Discussions remain visible without scrolling. Clicking "Read more" expands to full height (no max-height) with a "Show less" link.
+  </div>
+</div>
+
+<!-- EMPTY/MINIMAL DESCRIPTION -->
+<div class="tab-panel" id="mock-empty">
+  <div class="page-mock">
+    <div class="page-titlebar">
+      <div class="dot dot-r"></div><div class="dot dot-y"></div><div class="dot dot-g"></div>
+      <div class="page-title">Idea Page — Minimal Description (author view)</div>
+    </div>
+    <div class="page-body">
+      <div style="background:var(--surface-2);border:1px solid var(--border);border-radius:8px;padding:0.75rem 1rem;margin-bottom:1rem;font-size:0.78rem;color:var(--text-dim);text-align:center;">
+        ⓘ Get started with your idea — [ ① Describe ] [ ② Agents ] [ ③ Board ]
+      </div>
+
+      <!-- DESCRIPTION — empty state -->
+      <div class="section">
+        <div class="section-heading">
+          <span class="icon">📝</span>
+          <h3>Description</h3>
+        </div>
+        <div style="border:1px dashed var(--border);border-radius:8px;padding:1rem;cursor:pointer;text-align:center;">
+          <p style="font-size:0.82rem;color:var(--text-dim);margin:0;">Click to add a description · Supports Markdown</p>
+        </div>
+      </div>
+
+      <div class="separator"></div>
+
+      <div class="section">
+        <div class="card">
+          <div class="section-heading" style="margin-bottom:0.4rem;">
+            <span class="icon">💬</span>
+            <h3>Discussions</h3>
+            <span class="help">(?)</span>
+            <span class="action">+ New</span>
+          </div>
+          <p style="font-size:0.82rem;margin:0;">Start a discussion to plan features, debate approaches, or gather feedback.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="note">
+    <strong>Empty/minimal descriptions</strong> show a dashed-border CTA: "Click to add a description · Supports Markdown". This is more inviting than the current behaviour where the idea title doubles as the description text.
+  </div>
+</div>
+
+<!-- ═══ IMPLEMENTATION ═══ -->
+<h2>Implementation Details</h2>
+
+<h3 style="font-size:0.95rem;margin-top:1rem;">Change 1: Description heading (inline-idea-body.tsx)</h3>
+<p>Replace the current tiny label:</p>
+<pre style="background:var(--surface-2);padding:0.5rem;border-radius:6px;font-size:0.75rem;font-family:monospace;color:var(--rose);text-decoration:line-through;">text-[11px] uppercase tracking-wide text-muted-foreground/60</pre>
+<p>With the standard section heading pattern (matching Attachments):</p>
+<pre style="background:var(--surface-2);padding:0.5rem;border-radius:6px;font-size:0.75rem;font-family:monospace;color:var(--emerald);">&lt;h3 className="flex items-center gap-2 text-sm font-semibold"&gt;
+  &lt;FileText className="h-4 w-4" /&gt;
+  Description
+&lt;/h3&gt;</pre>
+
+<h3 style="font-size:0.95rem;margin-top:1rem;">Change 2: Page order (ideas/[id]/page.tsx)</h3>
+<p>Move the description card (lines 495-503) above the Discussions Preview (lines 485-493). Also separate GitHub URL from Description — extract it above the description or as its own small section.</p>
+
+<h3 style="font-size:0.95rem;margin-top:1rem;">Change 3: Collapsible long descriptions (inline-idea-body.tsx)</h3>
+<p>Add collapse/expand behaviour:</p>
+<ul style="padding-left:1.5rem;color:var(--text-muted);font-size:0.85rem;">
+  <li>Default max-height: <code>120px</code> (~5 lines) with gradient fade overlay</li>
+  <li>"Read more ↓" link below the collapsed content</li>
+  <li>Clicking expands to full height, link changes to "Show less ↑"</li>
+  <li>Only collapse if content height exceeds threshold (use <code>useRef</code> + <code>useEffect</code> to measure)</li>
+  <li>Editing always shows full content (no collapse while editing)</li>
+  <li>State: <code>isExpanded</code> (default false), <code>isOverflowing</code> (measured on mount/resize)</li>
+</ul>
+
+<h3 style="font-size:0.95rem;margin-top:1rem;">Change 4: GitHub URL separation</h3>
+<p>Move the GitHub URL rendering outside the description card. It becomes its own small inline element below the description — a simple link pill, not mixed into the description component.</p>
+
+<h3 style="font-size:0.95rem;margin-top:1rem;">Files to modify</h3>
+<ul style="padding-left:1.5rem;color:var(--text-muted);font-size:0.85rem;">
+  <li><code>src/components/ideas/inline-idea-body.tsx</code> — heading style, collapse/expand, remove GitHub URL</li>
+  <li><code>src/app/(main)/ideas/[id]/page.tsx</code> — reorder sections, add GitHub URL as separate element</li>
+</ul>
+
+</div>
+
+<script>
+function switchTab(btn, panelId) {
+  const group = btn.closest('.container') || document;
+  const bar = btn.parentElement;
+  bar.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(panelId).classList.add('active');
+}
+</script>
+
+</body>
+</html>

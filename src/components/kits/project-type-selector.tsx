@@ -112,7 +112,7 @@ export function ProjectTypeSelector({
                       {stepCount} step{stepCount !== 1 ? "s" : ""}
                     </span>
                   )}
-                  {!compact && agentCount > 0 && (
+                  {agentCount > 0 && (
                     <span className="rounded-full bg-emerald-500/[0.12] px-[0.45rem] py-[0.15rem] text-[0.65rem] font-semibold text-emerald-400">
                       {agentCount} role{agentCount !== 1 ? "s" : ""}
                     </span>

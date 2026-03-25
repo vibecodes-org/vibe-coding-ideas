@@ -1,0 +1,903 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workflow Step Lifecycle — MCP / UI Parity Audit</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --surface: #1a1d27;
+    --surface-2: #242736;
+    --border: #2e3245;
+    --text: #e2e4eb;
+    --text-muted: #8b8fa3;
+    --accent: #7c6aef;
+    --accent-dim: rgba(124,106,239,0.15);
+    --green: #34d399;
+    --green-dim: rgba(52,211,153,0.15);
+    --red: #f87171;
+    --red-dim: rgba(248,113,113,0.15);
+    --amber: #fbbf24;
+    --amber-dim: rgba(251,191,36,0.15);
+    --blue: #60a5fa;
+    --blue-dim: rgba(96,165,250,0.15);
+    --cyan: #22d3ee;
+    --cyan-dim: rgba(34,211,238,0.15);
+    --pink: #f472b6;
+    --pink-dim: rgba(244,114,182,0.15);
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 1600px;
+    margin: 0 auto;
+  }
+
+  h1 {
+    font-size: 2rem;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    background: linear-gradient(135deg, var(--accent), var(--cyan));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+  }
+
+  .subtitle {
+    color: var(--text-muted);
+    font-size: 0.9rem;
+    margin-bottom: 2rem;
+  }
+
+  h2 {
+    font-size: 1.4rem;
+    font-weight: 600;
+    margin: 2.5rem 0 1rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: 0.5rem;
+  }
+
+  .section {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .badge {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.15rem 0.5rem;
+    border-radius: 999px;
+    vertical-align: middle;
+    margin-left: 0.5rem;
+  }
+
+  .badge.match { background: var(--green-dim); color: var(--green); }
+  .badge.gap { background: var(--amber-dim); color: var(--amber); }
+  .badge.critical { background: var(--red-dim); color: var(--red); }
+
+  /* ─── Comparison Grid ─── */
+  .compare-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+    margin-top: 1rem;
+  }
+
+  .compare-col {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 1rem;
+  }
+
+  .compare-col h4 {
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    margin-bottom: 0.75rem;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .compare-col.mcp h4 { color: var(--cyan); }
+  .compare-col.ui h4 { color: var(--pink); }
+
+  .field-list {
+    list-style: none;
+    font-size: 0.82rem;
+    line-height: 1.7;
+  }
+
+  .field-list li {
+    padding: 0.2rem 0;
+  }
+
+  .field-list code {
+    background: rgba(255,255,255,0.06);
+    padding: 0.1rem 0.35rem;
+    border-radius: 4px;
+    font-size: 0.78rem;
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+  }
+
+  /* ─── Transition Diagram ─── */
+  .transition {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-bottom: 0.75rem;
+    font-size: 0.85rem;
+  }
+
+  .state {
+    display: inline-block;
+    padding: 0.2rem 0.6rem;
+    border-radius: 6px;
+    font-weight: 600;
+    font-size: 0.75rem;
+    white-space: nowrap;
+  }
+
+  .state.pending { background: var(--surface-2); color: var(--text-muted); border: 1px solid var(--border); }
+  .state.in-progress { background: var(--blue-dim); color: var(--blue); border: 1px solid var(--blue); }
+  .state.completed { background: var(--green-dim); color: var(--green); border: 1px solid var(--green); }
+  .state.failed { background: var(--red-dim); color: var(--red); border: 1px solid var(--red); }
+  .state.awaiting { background: var(--amber-dim); color: var(--amber); border: 1px solid var(--amber); }
+  .state.skipped { background: var(--accent-dim); color: var(--accent); border: 1px solid var(--accent); }
+
+  .arrow {
+    color: var(--text-muted);
+    font-size: 1.2rem;
+  }
+
+  .fn-name {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.78rem;
+    color: var(--cyan);
+    margin-left: 0.5rem;
+  }
+
+  .fn-name.ui { color: var(--pink); }
+
+  /* ─── Gap Table ─── */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.82rem;
+    margin-top: 0.75rem;
+  }
+
+  th {
+    background: var(--surface-2);
+    font-weight: 600;
+    text-align: left;
+    padding: 0.6rem 0.75rem;
+    border-bottom: 2px solid var(--border);
+    color: var(--text-muted);
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  td {
+    padding: 0.6rem 0.75rem;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+  }
+
+  tr:last-child td { border-bottom: none; }
+
+  .tag {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 600;
+    padding: 0.1rem 0.4rem;
+    border-radius: 4px;
+    white-space: nowrap;
+  }
+
+  .tag.green { background: var(--green-dim); color: var(--green); }
+  .tag.amber { background: var(--amber-dim); color: var(--amber); }
+  .tag.red { background: var(--red-dim); color: var(--red); }
+  .tag.blue { background: var(--blue-dim); color: var(--blue); }
+
+  .callout {
+    border-radius: 8px;
+    padding: 1rem;
+    font-size: 0.85rem;
+    margin-top: 1rem;
+  }
+
+  .callout.info { background: var(--blue-dim); border: 1px solid rgba(96,165,250,0.3); }
+  .callout.warn { background: var(--amber-dim); border: 1px solid rgba(251,191,36,0.3); }
+  .callout.success { background: var(--green-dim); border: 1px solid rgba(52,211,153,0.3); }
+
+  /* ─── Status Banner ─── */
+  .status-banner {
+    background: linear-gradient(135deg, var(--accent-dim), var(--cyan-dim));
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    padding: 1.25rem 1.5rem;
+    margin-bottom: 2rem;
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+  }
+
+  .status-banner .icon {
+    font-size: 1.5rem;
+    flex-shrink: 0;
+  }
+
+  .status-banner .text {
+    font-size: 0.88rem;
+    line-height: 1.5;
+  }
+
+  /* Legend */
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+    font-size: 0.78rem;
+  }
+
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .legend-swatch {
+    width: 12px;
+    height: 12px;
+    border-radius: 3px;
+  }
+</style>
+</head>
+<body>
+
+<h1>Workflow Step Lifecycle — MCP / UI Parity Audit</h1>
+<p class="subtitle">Side-by-side comparison of every step lifecycle operation across MCP tools and UI server actions. Updated 2026-03-20.</p>
+
+<div class="status-banner">
+  <div class="icon">&#x1F50D;</div>
+  <div class="text">
+    <strong>Purpose:</strong> This document compares exactly what data each code path writes so you can verify MCP and UI
+    produce identical outcomes. <strong>Intentional gaps</strong> (like MCP returning richer metadata) are noted separately
+    from <strong>actionable gaps</strong> (where one path writes data the other doesn't).
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>State Transition Map</h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="transition">
+    <span class="state pending">pending</span>
+    <span class="arrow">&rarr;</span>
+    <span class="state in-progress">in_progress</span>
+    <span class="fn-name">MCP: claimNextStep</span>
+    <span class="fn-name ui">UI: startWorkflowStep</span>
+  </div>
+  <div class="transition">
+    <span class="state in-progress">in_progress</span>
+    <span class="arrow">&rarr;</span>
+    <span class="state completed">completed</span>
+    <span class="fn-name">MCP: completeStep</span>
+    <span class="fn-name ui">UI: completeWorkflowStep</span>
+  </div>
+  <div class="transition">
+    <span class="state in-progress">in_progress</span>
+    <span class="arrow">&rarr;</span>
+    <span class="state awaiting">awaiting_approval</span>
+    <span class="fn-name">MCP: completeStep</span>
+    <span class="fn-name ui">UI: completeWorkflowStep</span>
+    <span style="font-size:0.75rem; color:var(--text-muted); margin-left:0.5rem;">(when human_check_required)</span>
+  </div>
+  <div class="transition">
+    <span class="state awaiting">awaiting_approval</span>
+    <span class="arrow">&rarr;</span>
+    <span class="state completed">completed</span>
+    <span class="fn-name">MCP: approveStep</span>
+    <span class="fn-name ui">UI: approveWorkflowStep</span>
+  </div>
+  <div class="transition">
+    <span class="state in-progress">in_progress</span>
+    <span class="arrow">&rarr;</span>
+    <span class="state failed">failed</span>
+    <span class="fn-name">MCP: failStep</span>
+    <span class="fn-name ui">UI: failWorkflowStep</span>
+  </div>
+  <div class="transition">
+    <span class="state awaiting">awaiting_approval</span>
+    <span class="arrow">&rarr;</span>
+    <span class="state failed">failed</span>
+    <span class="fn-name">MCP: failStep</span>
+    <span class="fn-name ui">UI: failWorkflowStep</span>
+    <span style="font-size:0.75rem; color:var(--text-muted); margin-left:0.5rem;">(reject)</span>
+  </div>
+  <div class="transition">
+    <span class="state failed">failed</span>
+    <span class="arrow">&rarr;</span>
+    <span class="state pending">pending</span>
+    <span class="fn-name ui">UI: retryWorkflowStep</span>
+    <span style="font-size:0.75rem; color:var(--text-muted); margin-left:0.5rem;">(no MCP equivalent)</span>
+  </div>
+  <div class="transition">
+    <span class="state pending">pending</span>
+    <span class="arrow">&rarr;</span>
+    <span class="state skipped">skipped</span>
+    <span class="fn-name">MCP: skipStep</span>
+    <span class="fn-name ui">UI: skipWorkflowStep</span>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>1. Start / Claim Step <span class="badge match">AT PARITY</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="compare-grid">
+    <div class="compare-col mcp">
+      <h4>MCP: claimNextStep(task_id)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields:</strong></li>
+        <li><code>status</code> = <code>"in_progress"</code></li>
+        <li><code>started_at</code> = <code>now()</code></li>
+        <li><code>claimed_by</code> = <code>ctx.userId</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>status</code> = <code>"running"</code>, <code>current_step</code> = step_order</li>
+        <li>Guard: <code>.in("status", ["pending", "running", "failed"])</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Comments:</strong> None</li>
+        <li>&nbsp;</li>
+        <li><strong>Concurrency:</strong> <code>.eq("status", "pending").maybeSingle()</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Extras:</strong></li>
+        <li>Auto-selects next pending step by step_order</li>
+        <li>Returns rework_instructions, context, agents, instruction string</li>
+      </ul>
+    </div>
+    <div class="compare-col ui">
+      <h4>UI: startWorkflowStep(stepId)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields:</strong></li>
+        <li><code>status</code> = <code>"in_progress"</code></li>
+        <li><code>started_at</code> = <code>now()</code></li>
+        <li><code>claimed_by</code> = <code>user.id</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>status</code> = <code>"running"</code>, <code>current_step</code> = step_order</li>
+        <li>Guard: <code>.in("status", ["pending", "running", "failed"])</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Comments:</strong> None</li>
+        <li>&nbsp;</li>
+        <li><strong>Concurrency:</strong> <code>.eq("status", "pending").maybeSingle()</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Extras:</strong></li>
+        <li>Caller provides explicit stepId</li>
+        <li>Returns updated step row only</li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <strong>Data written: identical.</strong> The only difference is UX — MCP auto-selects the step and returns rich metadata
+    (context chaining, rework instructions, agent list). The DB writes are the same.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>2. Complete Step <span class="badge match">AT PARITY</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="compare-grid">
+    <div class="compare-col mcp">
+      <h4>MCP: completeStep(step_id, output?)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields:</strong></li>
+        <li><code>status</code> = <code>"completed"</code> | <code>"awaiting_approval"</code></li>
+        <li><code>completed_at</code> = <code>now()</code> (only if completed)</li>
+        <li><code>output</code> = value (only if provided)</li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>checkAndCompleteRun()</code> if completed + run_id</li>
+        <li>&nbsp;</li>
+        <li><strong>Comments:</strong></li>
+        <li><code>type = "output"</code> if output provided + idea_id exists</li>
+        <li>&nbsp;</li>
+        <li><strong>Concurrency:</strong> <code>.eq("status", "in_progress").maybeSingle()</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Pre-fetch:</strong> <code>human_check_required, idea_id, status</code></li>
+      </ul>
+    </div>
+    <div class="compare-col ui">
+      <h4>UI: completeWorkflowStep(stepId, output?)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields:</strong></li>
+        <li><code>status</code> = <code>"completed"</code> | <code>"awaiting_approval"</code></li>
+        <li><code>completed_at</code> = <code>now()</code> (only if completed)</li>
+        <li><code>output</code> = value (only if provided)</li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>checkAndCompleteRun()</code> if completed + run_id</li>
+        <li>&nbsp;</li>
+        <li><strong>Comments:</strong></li>
+        <li><code>type = "output"</code> if output provided + idea_id exists</li>
+        <li>&nbsp;</li>
+        <li><strong>Concurrency:</strong> <code>.eq("status", "in_progress").maybeSingle()</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Pre-fetch:</strong> <code>human_check_required, idea_id</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <strong>Data written: identical.</strong> Both conditionally set output, create output comment, and check for run completion.
+    MCP additionally returns <code>run_complete</code> boolean and an <code>awaiting_approval</code> stop message.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>3. Fail Step <span class="badge match">AT PARITY</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="compare-grid">
+    <div class="compare-col mcp">
+      <h4>MCP: failStep(step_id, output?, reset_to_step_id?)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields:</strong></li>
+        <li><code>status</code> = <code>"failed"</code></li>
+        <li><code>completed_at</code> = <code>now()</code></li>
+        <li><code>output</code> = value (if provided)</li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>"running"</code> if cascade, <code>"failed"</code> if no cascade</li>
+        <li>&nbsp;</li>
+        <li><strong>Comments:</strong></li>
+        <li><code>type = "failure"</code> on failed step (if output provided)</li>
+        <li><code>type = "changes_requested"</code> on cascade target (if stepsReset > 0)</li>
+        <li>&nbsp;</li>
+        <li><strong>Cascade reset (if reset_to_step_id):</strong></li>
+        <li>All steps from target onward: <code>status = "pending"</code>, <code>output = null</code>, <code>started_at = null</code>, <code>completed_at = null</code>, <code>claimed_by = null</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Concurrency:</strong> <code>.in("status", ["in_progress", "awaiting_approval"]).maybeSingle()</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Pre-fetch:</strong> <code>id, run_id, step_order, idea_id</code></li>
+      </ul>
+    </div>
+    <div class="compare-col ui">
+      <h4>UI: failWorkflowStep(stepId, output?, resetToStepId?)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields:</strong></li>
+        <li><code>status</code> = <code>"failed"</code></li>
+        <li><code>completed_at</code> = <code>now()</code></li>
+        <li><code>output</code> = value (if provided, else null)</li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>"running"</code> if cascade, <code>"failed"</code> if no cascade</li>
+        <li>&nbsp;</li>
+        <li><strong>Comments:</strong></li>
+        <li><code>type = "failure"</code> on failed step (if output + idea_id)</li>
+        <li><code>type = "changes_requested"</code> on cascade target (if targetStep found)</li>
+        <li>&nbsp;</li>
+        <li><strong>Cascade reset (if resetToStepId):</strong></li>
+        <li>All steps from target onward: <code>status = "pending"</code>, <code>output = null</code>, <code>started_at = null</code>, <code>completed_at = null</code>, <code>claimed_by = null</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Concurrency:</strong> <code>.in("status", ["in_progress", "awaiting_approval"]).maybeSingle()</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Pre-fetch:</strong> via update result <code>.select("*")</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <strong>Data written: functionally identical.</strong> Minor nuances:
+    <ul style="margin:0.5rem 0 0 1.25rem; font-size:0.82rem;">
+      <li>MCP: <code>changes_requested</code> comment gated on <code>stepsReset > 0</code>; UI gated on <code>targetStep</code> found — equivalent in practice</li>
+      <li>MCP: <code>failure</code> comment uses <code>step.idea_id</code> (from pre-fetch); UI uses <code>data.idea_id</code> (from update result) — same value</li>
+      <li>MCP: output key absent from update if undefined; UI sets <code>output: output ?? null</code> explicitly — both produce same DB state</li>
+    </ul>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>4. Skip Step <span class="badge match">AT PARITY</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="compare-grid">
+    <div class="compare-col mcp">
+      <h4>MCP: skipStep(step_id, reason?)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields:</strong></li>
+        <li><code>status</code> = <code>"skipped"</code></li>
+        <li><code>completed_at</code> = <code>now()</code></li>
+        <li><code>output</code> = reason ?? "Skipped -- not applicable to this task"</li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>checkAndCompleteRun()</code> if run_id</li>
+        <li>&nbsp;</li>
+        <li><strong>Comments:</strong> None</li>
+        <li>&nbsp;</li>
+        <li><strong>Concurrency:</strong> App-level status check + <code>.eq("status", "pending").maybeSingle()</code></li>
+      </ul>
+    </div>
+    <div class="compare-col ui">
+      <h4>UI: skipWorkflowStep(stepId, reason?)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields:</strong></li>
+        <li><code>status</code> = <code>"skipped"</code></li>
+        <li><code>completed_at</code> = <code>now()</code></li>
+        <li><code>output</code> = reason ?? "Skipped -- not applicable to this task"</li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>checkAndCompleteRun()</code> if run_id</li>
+        <li>&nbsp;</li>
+        <li><strong>Comments:</strong> None</li>
+        <li>&nbsp;</li>
+        <li><strong>Concurrency:</strong> <code>.eq("status", "pending").maybeSingle()</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <strong>Data written: identical.</strong> MCP has an extra app-level pre-check that the step is pending before the DB guard.
+    Redundant but harmless.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>5. Approve Step <span class="badge gap">GAPS EXIST</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="compare-grid">
+    <div class="compare-col mcp">
+      <h4>MCP: approveStep(step_id, comment?)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields:</strong></li>
+        <li><code>status</code> = <code>"completed"</code></li>
+        <li><code>completed_at</code> = <code>now()</code></li>
+        <li><em>Does NOT update <code>output</code></em></li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>checkAndCompleteRun()</code> if run_id</li>
+        <li>&nbsp;</li>
+        <li><strong>Comments:</strong></li>
+        <li><code>type = "approval"</code> if <code>comment</code> provided + idea_id</li>
+        <li>&nbsp;</li>
+        <li><strong>Concurrency:</strong> App-level + <code>.eq("status", "awaiting_approval").maybeSingle()</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Extras:</strong></li>
+        <li>Blocks bot callers (<code>is_bot</code> check)</li>
+      </ul>
+    </div>
+    <div class="compare-col ui">
+      <h4>UI: approveWorkflowStep(stepId, output?)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields:</strong></li>
+        <li><code>status</code> = <code>"completed"</code></li>
+        <li><code>completed_at</code> = <code>now()</code></li>
+        <li><code>output</code> = value (if explicitly provided)</li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>checkAndCompleteRun()</code> if run_id</li>
+        <li>&nbsp;</li>
+        <li><strong>Comments:</strong></li>
+        <li><em>None</em></li>
+        <li>&nbsp;</li>
+        <li><strong>Concurrency:</strong> <code>.eq("status", "awaiting_approval").maybeSingle()</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Extras:</strong></li>
+        <li><em>No bot caller guard</em></li>
+      </ul>
+    </div>
+  </div>
+
+  <table>
+    <tr>
+      <th>Gap</th>
+      <th>MCP</th>
+      <th>UI</th>
+      <th>Severity</th>
+    </tr>
+    <tr>
+      <td>Approval comment</td>
+      <td>Creates <code>type = "approval"</code> comment</td>
+      <td>Does not create any comment</td>
+      <td><span class="tag amber">Minor</span></td>
+    </tr>
+    <tr>
+      <td>Output handling</td>
+      <td>Does NOT update step <code>output</code></td>
+      <td>Can overwrite step <code>output</code> if provided</td>
+      <td><span class="tag amber">Minor</span></td>
+    </tr>
+    <tr>
+      <td>Bot guard</td>
+      <td>Checks <code>is_bot</code>, rejects bots</td>
+      <td>No <code>is_bot</code> check</td>
+      <td><span class="tag blue">By design</span> — UI is always a human</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>6. Retry Step <span class="badge gap">GAPS EXIST</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="compare-grid">
+    <div class="compare-col mcp">
+      <h4>MCP: (no dedicated tool)</h4>
+      <ul class="field-list">
+        <li><em>No standalone retry tool exists.</em></li>
+        <li>&nbsp;</li>
+        <li>Retry-like behavior comes from the cascade in <code>failStep</code> which resets steps to pending, then <code>claimNextStep</code> picks them up.</li>
+      </ul>
+    </div>
+    <div class="compare-col ui">
+      <h4>UI: retryWorkflowStep(stepId)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields:</strong></li>
+        <li><code>status</code> = <code>"pending"</code></li>
+        <li><code>output</code> = <code>null</code></li>
+        <li><code>started_at</code> = <code>null</code></li>
+        <li><code>completed_at</code> = <code>null</code></li>
+        <li><code>claimed_by</code> = <code>null</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>status</code> = <code>"running"</code></li>
+        <li>Guard: <code>.eq("status", "failed")</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Comments:</strong> None</li>
+        <li>&nbsp;</li>
+        <li><strong>Concurrency:</strong> <code>.eq("status", "failed").single()</code></li>
+        <li><span style="color:var(--amber); font-size:0.75rem;">Note: uses .single() not .maybeSingle()</span></li>
+      </ul>
+    </div>
+  </div>
+
+  <table>
+    <tr>
+      <th>Gap</th>
+      <th>MCP</th>
+      <th>UI</th>
+      <th>Severity</th>
+    </tr>
+    <tr>
+      <td>Dedicated retry tool</td>
+      <td>Not available</td>
+      <td>Available via <code>retryWorkflowStep</code></td>
+      <td><span class="tag blue">By design</span> — agents use cascade</td>
+    </tr>
+    <tr>
+      <td><code>.single()</code> vs <code>.maybeSingle()</code></td>
+      <td>N/A</td>
+      <td>Uses <code>.single()</code> — throws different error type if row not found</td>
+      <td><span class="tag amber">Minor</span> — should be <code>.maybeSingle()</code> for consistency</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>7. Reset Workflow <span class="badge gap">GAPS EXIST</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="compare-grid">
+    <div class="compare-col mcp">
+      <h4>MCP: resetWorkflow(task_id)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields (all steps in run):</strong></li>
+        <li><code>status</code> = <code>"pending"</code></li>
+        <li><code>output</code> = <code>null</code></li>
+        <li><code>started_at</code> = <code>null</code></li>
+        <li><code>completed_at</code> = <code>null</code></li>
+        <li><code>claimed_by</code> = <code>null</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>status</code> = <code>"pending"</code>, <code>current_step</code> = <code>null</code>, <code>completed_at</code> = <code>null</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Run lookup:</strong> Finds active run via <code>.not("status", "in", '("completed","failed")')</code></li>
+      </ul>
+    </div>
+    <div class="compare-col ui">
+      <h4>UI: resetWorkflow(runId)</h4>
+      <ul class="field-list">
+        <li><strong>Step fields (all steps in run):</strong></li>
+        <li><code>status</code> = <code>"pending"</code></li>
+        <li><code>output</code> = <code>null</code></li>
+        <li><code>started_at</code> = <code>null</code></li>
+        <li><code>completed_at</code> = <code>null</code></li>
+        <li><code>claimed_by</code> = <code>null</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Run update:</strong></li>
+        <li><code>status</code> = <code>"pending"</code>, <code>current_step</code> = <code>0</code>, <code>completed_at</code> = <code>null</code></li>
+        <li>&nbsp;</li>
+        <li><strong>Run lookup:</strong> Caller provides explicit <code>runId</code> — no status guard</li>
+      </ul>
+    </div>
+  </div>
+
+  <table>
+    <tr>
+      <th>Gap</th>
+      <th>MCP</th>
+      <th>UI</th>
+      <th>Severity</th>
+    </tr>
+    <tr>
+      <td><code>current_step</code> reset value</td>
+      <td><code>null</code></td>
+      <td><code>0</code></td>
+      <td><span class="tag amber">Minor</span> — should align</td>
+    </tr>
+    <tr>
+      <td>Run status guard</td>
+      <td>Only resets active (non-completed/failed) runs</td>
+      <td>Resets any run by ID</td>
+      <td><span class="tag amber">Minor</span> — UI could reset a completed run</td>
+    </tr>
+  </table>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>8. Remove Workflow <span class="badge match">AT PARITY</span></h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <div class="compare-grid">
+    <div class="compare-col mcp">
+      <h4>MCP: removeWorkflow(task_id)</h4>
+      <ul class="field-list">
+        <li>Finds active run via status filter</li>
+        <li>Deletes <code>workflow_runs</code> row</li>
+        <li>Steps cascade via FK <code>ON DELETE CASCADE</code></li>
+      </ul>
+    </div>
+    <div class="compare-col ui">
+      <h4>UI: removeWorkflow(runId)</h4>
+      <ul class="field-list">
+        <li>Caller provides explicit <code>runId</code></li>
+        <li>Deletes <code>workflow_runs</code> row</li>
+        <li>Steps cascade via FK <code>ON DELETE CASCADE</code></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="callout info">
+    <strong>Data written: identical.</strong> Same delete operation. MCP auto-finds the run; UI receives explicit ID.
+    MCP only targets active runs; UI deletes any run (which is fine since user explicitly selected it).
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>Summary: Remaining Gaps</h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <table>
+    <tr>
+      <th>Operation</th>
+      <th>Gap</th>
+      <th>Impact</th>
+      <th>Suggested Fix</th>
+    </tr>
+    <tr>
+      <td>Approve Step</td>
+      <td>MCP creates <code>type = "approval"</code> comment; UI does not</td>
+      <td><span class="tag amber">Minor</span></td>
+      <td>Add approval comment creation to <code>approveWorkflowStep</code> server action</td>
+    </tr>
+    <tr>
+      <td>Approve Step</td>
+      <td>MCP does not touch <code>output</code>; UI can overwrite it</td>
+      <td><span class="tag amber">Minor</span></td>
+      <td>Intentional — MCP preserves agent output, UI allows approver override. Document as by-design.</td>
+    </tr>
+    <tr>
+      <td>Retry Step</td>
+      <td>Uses <code>.single()</code> instead of <code>.maybeSingle()</code></td>
+      <td><span class="tag amber">Minor</span></td>
+      <td>Change to <code>.maybeSingle()</code> for consistent error handling</td>
+    </tr>
+    <tr>
+      <td>Reset Workflow</td>
+      <td><code>current_step</code>: MCP sets <code>null</code>, UI sets <code>0</code></td>
+      <td><span class="tag amber">Minor</span></td>
+      <td>Align to <code>null</code> (more semantically correct for "no step")</td>
+    </tr>
+    <tr>
+      <td>Reset Workflow</td>
+      <td>MCP guards against resetting completed/failed runs; UI does not</td>
+      <td><span class="tag blue">By design</span></td>
+      <td>UI user explicitly chose to reset — acceptable</td>
+    </tr>
+  </table>
+
+  <div class="callout success" style="margin-top:1.5rem;">
+    <strong>Overall assessment:</strong> After the rework loop fix, MCP and UI are at parity for all
+    data-writing operations (start, complete, fail, skip, remove). The remaining gaps are:
+    <strong>1 missing approval comment</strong> in the UI, <strong>1 inconsistent .single() call</strong>,
+    and <strong>1 current_step value mismatch</strong> on reset. None affect the core workflow loop or rework detection.
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════════════ -->
+<h2>Appendix: Cascade Rejection Flow (Post-Fix)</h2>
+<!-- ════════════════════════════════════════════════════════════ -->
+
+<div class="section">
+  <p style="font-size:0.85rem; color:var(--text-muted); margin-bottom:1rem;">
+    Sequence diagram showing the fixed rework loop, applicable to both MCP and UI paths:
+  </p>
+
+  <div style="font-family:monospace; font-size:0.78rem; line-height:1.8; background:var(--surface-2); padding:1.5rem; border-radius:8px; overflow-x:auto; white-space:pre;">
+<span style="color:var(--text-muted);">Reviewer rejects Step 6, cascade to Step 4</span>
+<span style="color:var(--text-muted);">═══════════════════════════════════════════</span>
+
+<span style="color:var(--cyan);">1.</span> failStep/failWorkflowStep(step6, "Fix validation", step4)
+
+<span style="color:var(--cyan);">2.</span> UPDATE task_workflow_steps SET
+      <span style="color:var(--red);">status = "failed"</span>, completed_at = now(), output = "Fix validation"
+    WHERE id = step6 AND status IN ("in_progress", "awaiting_approval")
+
+<span style="color:var(--cyan);">3.</span> INSERT workflow_step_comments
+      <span style="color:var(--red);">type = "failure"</span>, step_id = step6, content = "Fix validation"
+
+<span style="color:var(--cyan);">4.</span> <span style="color:var(--text-muted);">-- Fetch target step4's step_order</span>
+
+<span style="color:var(--cyan);">5.</span> UPDATE task_workflow_steps SET
+      <span style="color:var(--amber);">status = "pending"</span>, output = null, started_at = null,
+      completed_at = null, claimed_by = null
+    WHERE run_id = run AND step_order >= step4.step_order
+    <span style="color:var(--text-muted);">-- Resets steps 4, 5, 6 back to pending</span>
+
+<span style="color:var(--cyan);">6.</span> INSERT workflow_step_comments
+      <span style="color:var(--green);">type = "changes_requested"</span>, step_id = <strong>step4</strong>, content = "Fix validation"
+    <span style="color:var(--text-muted);">-- THIS IS THE FIX: rework context placed on the target step</span>
+
+<span style="color:var(--cyan);">7.</span> UPDATE workflow_runs SET status = "running" WHERE id = run
+
+<span style="color:var(--text-muted);">═══════════════════════════════════════════</span>
+<span style="color:var(--text-muted);">Later: agent calls claimNextStep</span>
+<span style="color:var(--text-muted);">═══════════════════════════════════════════</span>
+
+<span style="color:var(--cyan);">8.</span> claimNextStep finds step4 (pending, lowest step_order)
+    step4 has <span style="color:var(--green);">changes_requested comment</span> → rework_instructions populated
+
+<span style="color:var(--cyan);">9.</span> instruction string includes:
+    <span style="color:var(--red);">⚠ REWORK REQUIRED</span>
+    Previous failure: Fix validation
+    Feedback: Fix validation
+    <span style="color:var(--text-muted);">→ Agent knows exactly what to fix instead of reimplementing from scratch</span>
+  </div>
+</div>
+
+</body>
+</html>

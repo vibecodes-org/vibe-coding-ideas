@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Role-Agent Mapping — Extended UX Options</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #1a1a1a;
+      --surface-3: #1e1e1e;
+      --border: #2a2a2a;
+      --border-hover: #3a3a3a;
+      --text: #e4e4e7;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --accent: #a78bfa;
+      --accent-dim: rgba(167, 139, 250, 0.12);
+      --green: #4ade80;
+      --green-dim: rgba(74, 222, 128, 0.1);
+      --amber: #fbbf24;
+      --amber-dim: rgba(251, 191, 36, 0.08);
+      --red: #f87171;
+      --blue: #60a5fa;
+      --pink: #f472b6;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem;
+      max-width: 960px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    .meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 3rem; }
+    .option-section {
+      margin-bottom: 3.5rem;
+      border-top: 1px solid var(--border);
+      padding-top: 2rem;
+    }
+    .option-section h2 {
+      font-size: 1.15rem;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+    }
+    .option-section .subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+    .mockup-frame {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      position: relative;
+    }
+    .mockup-label {
+      position: absolute;
+      top: -10px;
+      left: 16px;
+      background: var(--surface);
+      padding: 0 8px;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+    }
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      margin-bottom: 0.75rem;
+    }
+    .pros-cons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+      font-size: 0.82rem;
+    }
+    .pros h4 { color: var(--green); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+    .cons h4 { color: var(--amber); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+    .pros li, .cons li { color: var(--text-muted); margin-bottom: 0.3rem; margin-left: 1rem; }
+
+    /* ─── Option D: Agent-centric grouped view ─── */
+    .agent-group {
+      margin-bottom: 1rem;
+    }
+    .agent-group-header {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      margin-bottom: 0.5rem;
+    }
+    .agent-avatar-sm {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.65rem;
+      font-weight: 600;
+      flex-shrink: 0;
+      border: 2px solid;
+    }
+    .agent-avatar-sm.dev { background: rgba(96, 165, 250, 0.12); border-color: rgba(96, 165, 250, 0.3); color: var(--blue); }
+    .agent-avatar-sm.po { background: rgba(167, 139, 250, 0.12); border-color: rgba(167, 139, 250, 0.3); color: var(--accent); }
+    .agent-avatar-sm.qa { background: rgba(74, 222, 128, 0.12); border-color: rgba(74, 222, 128, 0.3); color: var(--green); }
+    .agent-avatar-sm.ux { background: rgba(244, 114, 182, 0.12); border-color: rgba(244, 114, 182, 0.3); color: var(--pink); }
+    .agent-avatar-sm.sec { background: rgba(251, 191, 36, 0.12); border-color: rgba(251, 191, 36, 0.3); color: var(--amber); }
+    .agent-avatar-sm.ba { background: rgba(96, 165, 250, 0.12); border-color: rgba(96, 165, 250, 0.3); color: var(--blue); }
+    .agent-group-name {
+      font-size: 0.85rem;
+      font-weight: 600;
+    }
+    .agent-group-role {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+    }
+    .role-tag {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      background: var(--green-dim);
+      color: var(--green);
+      border: 1px solid rgba(74, 222, 128, 0.15);
+      margin: 0.15rem 0.2rem;
+    }
+    .role-tags-row {
+      margin-left: 2.4rem;
+      margin-bottom: 0.25rem;
+    }
+    .unmatched-section {
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      border-top: 1px dashed var(--border);
+    }
+    .unmatched-tag {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 4px;
+      font-size: 0.72rem;
+      background: var(--amber-dim);
+      color: var(--amber);
+      border: 1px solid rgba(251, 191, 36, 0.15);
+      margin: 0.15rem 0.2rem;
+    }
+
+    /* ─── Option E: Connection lines ─── */
+    .connection-grid {
+      display: grid;
+      grid-template-columns: 1fr auto 1fr;
+      gap: 0;
+      align-items: start;
+    }
+    .roles-col, .agents-col {
+      display: flex;
+      flex-direction: column;
+      gap: 0.4rem;
+    }
+    .roles-col { align-items: flex-end; }
+    .agents-col { align-items: flex-start; }
+    .role-pill, .agent-pill {
+      padding: 0.35rem 0.7rem;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--surface-3);
+      white-space: nowrap;
+    }
+    .role-pill.matched { border-color: rgba(74, 222, 128, 0.3); }
+    .role-pill.unmatched { border-color: rgba(251, 191, 36, 0.3); color: var(--amber); }
+    .agent-pill {
+      border-color: rgba(167, 139, 250, 0.3);
+      color: var(--accent);
+    }
+    .connections-col {
+      width: 80px;
+      position: relative;
+      min-height: 200px;
+    }
+    .conn-line {
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 2px;
+      background: rgba(74, 222, 128, 0.3);
+    }
+    .conn-svg {
+      width: 80px;
+    }
+
+    /* ─── Option F: Compact cards with role tags ─── */
+    .compact-agent-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+    .compact-agent-card {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.6rem 0.85rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-2);
+      min-width: 200px;
+    }
+    .compact-agent-card:hover { border-color: var(--border-hover); }
+    .compact-info {
+      flex: 1;
+      min-width: 0;
+    }
+    .compact-name {
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+    .compact-handles {
+      font-size: 0.7rem;
+      color: var(--text-dim);
+      margin-top: 0.15rem;
+    }
+    .compact-handles .role-count {
+      color: var(--green);
+      font-weight: 500;
+    }
+    .gap-summary {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.5rem 0.85rem;
+      border: 1px dashed rgba(251, 191, 36, 0.3);
+      border-radius: 8px;
+      background: var(--amber-dim);
+      font-size: 0.78rem;
+      color: var(--amber);
+      min-width: 200px;
+    }
+
+    .recommendation {
+      margin-top: 2rem;
+      padding: 1rem;
+      background: var(--accent-dim);
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+    .recommendation strong { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+  <h1>Role-Agent Mapping — Extended Options</h1>
+  <p class="meta">3 alternative approaches that rethink the Role Coverage panel beyond chips and tables.</p>
+
+  <!-- ════════════ Option D ════════════ -->
+  <div class="option-section">
+    <h2>Option D: Agent-Centric Grouped View</h2>
+    <p class="subtitle">Flip the perspective: instead of listing roles, list agents and show which roles each one handles. Immediately shows which agent is overloaded (handling many roles) vs idle.</p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Role Coverage — grouped by agent</div>
+      <div class="section-title">Role Coverage</div>
+
+      <div class="agent-group">
+        <div class="agent-group-header">
+          <div class="agent-avatar-sm dev">AT</div>
+          <div>
+            <span class="agent-group-name">Atlas</span>
+            <span class="agent-group-role"> &middot; Full Stack Developer</span>
+          </div>
+        </div>
+        <div class="role-tags-row">
+          <span class="role-tag">developer</span>
+          <span class="role-tag">frontend engineer</span>
+          <span class="role-tag">devops engineer</span>
+          <span class="role-tag">full stack developer</span>
+        </div>
+      </div>
+
+      <div class="agent-group">
+        <div class="agent-group-header">
+          <div class="agent-avatar-sm po">PO</div>
+          <div>
+            <span class="agent-group-name">Nick's Product Owner</span>
+            <span class="agent-group-role"> &middot; Product Owner</span>
+          </div>
+        </div>
+        <div class="role-tags-row">
+          <span class="role-tag">product owner</span>
+        </div>
+      </div>
+
+      <div class="agent-group">
+        <div class="agent-group-header">
+          <div class="agent-avatar-sm ux">CO</div>
+          <div>
+            <span class="agent-group-name">Compass</span>
+            <span class="agent-group-role"> &middot; UX Designer</span>
+          </div>
+        </div>
+        <div class="role-tags-row">
+          <span class="role-tag">ux</span>
+          <span class="role-tag">ux designer</span>
+        </div>
+      </div>
+
+      <div class="agent-group">
+        <div class="agent-group-header">
+          <div class="agent-avatar-sm qa">SE</div>
+          <div>
+            <span class="agent-group-name">Sentinel</span>
+            <span class="agent-group-role"> &middot; QA Engineer</span>
+          </div>
+        </div>
+        <div class="role-tags-row">
+          <span class="role-tag">qa</span>
+          <span class="role-tag">qa engineer</span>
+        </div>
+      </div>
+
+      <div class="agent-group">
+        <div class="agent-group-header">
+          <div class="agent-avatar-sm sec">SH</div>
+          <div>
+            <span class="agent-group-name">Shield</span>
+            <span class="agent-group-role"> &middot; Security Analyst</span>
+          </div>
+        </div>
+        <div class="role-tags-row">
+          <span class="role-tag">security analyst</span>
+        </div>
+      </div>
+
+      <div class="agent-group">
+        <div class="agent-group-header">
+          <div class="agent-avatar-sm ba">BA</div>
+          <div>
+            <span class="agent-group-name">BA Bob</span>
+            <span class="agent-group-role"> &middot; Business Analyst</span>
+          </div>
+        </div>
+        <div class="role-tags-row">
+          <span style="font-size: 0.72rem; color: var(--text-dim); font-style: italic;">No matching roles in templates</span>
+        </div>
+      </div>
+
+      <div class="unmatched-section">
+        <div class="section-title" style="margin-bottom: 0.4rem; color: var(--amber);">&#9888; Unmatched Roles</div>
+        <span class="unmatched-tag">data engineer</span>
+      </div>
+    </div>
+
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Pros</h4>
+        <ul>
+          <li>Shows workload distribution — Atlas handles 4 roles, others handle 1</li>
+          <li>Reveals idle agents (BA Bob has no matching roles)</li>
+          <li>Natural grouping — users think "what is each agent doing?"</li>
+          <li>Unmatched roles clearly separated at bottom</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Cons</h4>
+        <ul>
+          <li>Takes more vertical space than chips</li>
+          <li>Partially duplicates the agent cards below</li>
+          <li>Harder to answer "who handles developer?" at a glance</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ Option E ════════════ -->
+  <div class="option-section">
+    <h2>Option E: Two-Column Connection View</h2>
+    <p class="subtitle">Roles on the left, agents on the right, with visual lines connecting them. Like a matching exercise.</p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Role Coverage — connection view</div>
+      <div class="section-title">Role Coverage</div>
+
+      <div class="connection-grid">
+        <div class="roles-col">
+          <span class="role-pill matched">developer</span>
+          <span class="role-pill matched">frontend engineer</span>
+          <span class="role-pill matched">devops engineer</span>
+          <span class="role-pill matched">product owner</span>
+          <span class="role-pill matched">qa</span>
+          <span class="role-pill matched">ux</span>
+          <span class="role-pill matched">security analyst</span>
+          <span class="role-pill unmatched">data engineer &#9888;</span>
+        </div>
+
+        <div class="connections-col">
+          <svg viewBox="0 0 80 280" class="conn-svg" style="height: 280px;">
+            <!-- developer → Atlas -->
+            <line x1="0" y1="14" x2="80" y2="14" stroke="rgba(74,222,128,0.3)" stroke-width="1.5"/>
+            <!-- frontend → Atlas -->
+            <line x1="0" y1="46" x2="80" y2="14" stroke="rgba(74,222,128,0.3)" stroke-width="1.5"/>
+            <!-- devops → Atlas -->
+            <line x1="0" y1="78" x2="80" y2="14" stroke="rgba(74,222,128,0.3)" stroke-width="1.5"/>
+            <!-- product owner → Nick's PO -->
+            <line x1="0" y1="110" x2="80" y2="62" stroke="rgba(74,222,128,0.3)" stroke-width="1.5"/>
+            <!-- qa → Sentinel -->
+            <line x1="0" y1="142" x2="80" y2="110" stroke="rgba(74,222,128,0.3)" stroke-width="1.5"/>
+            <!-- ux → Compass -->
+            <line x1="0" y1="174" x2="80" y2="158" stroke="rgba(74,222,128,0.3)" stroke-width="1.5"/>
+            <!-- security → Shield -->
+            <line x1="0" y1="206" x2="80" y2="206" stroke="rgba(74,222,128,0.3)" stroke-width="1.5"/>
+            <!-- data engineer → none -->
+            <line x1="0" y1="238" x2="40" y2="238" stroke="rgba(251,191,36,0.3)" stroke-width="1.5" stroke-dasharray="4,3"/>
+          </svg>
+        </div>
+
+        <div class="agents-col">
+          <span class="agent-pill">Atlas</span>
+          <span class="agent-pill" style="margin-top: 16px;">Nick's PO</span>
+          <span class="agent-pill" style="margin-top: 16px;">Sentinel</span>
+          <span class="agent-pill" style="margin-top: 16px;">Compass</span>
+          <span class="agent-pill">Shield</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Pros</h4>
+        <ul>
+          <li>Visually intuitive — like a wiring diagram</li>
+          <li>Shows many-to-one relationships clearly (3 roles → Atlas)</li>
+          <li>Unmapped roles visually obvious (dashed line to nowhere)</li>
+          <li>Memorable and distinctive UX</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Cons</h4>
+        <ul>
+          <li>Complex to implement (SVG line rendering, positioning)</li>
+          <li>Doesn't scale well with many roles (20+ roles = spaghetti)</li>
+          <li>Hard to make responsive on mobile</li>
+          <li>Over-engineered for the actual problem</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ Option F ════════════ -->
+  <div class="option-section">
+    <h2>Option F: Agent Cards with Role Count Badge</h2>
+    <p class="subtitle">Keep the current chips but enhance the existing agent cards below with a "handles X roles" indicator. Click the agent card to see which roles it matches.</p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Agent cards — role count badges</div>
+      <div class="section-title">Agent Pool</div>
+
+      <div class="compact-agent-row">
+        <div class="compact-agent-card">
+          <div class="agent-avatar-sm dev">AT</div>
+          <div class="compact-info">
+            <div class="compact-name">Atlas</div>
+            <div class="compact-handles">Full Stack Developer &middot; <span class="role-count">handles 4 roles</span></div>
+          </div>
+        </div>
+
+        <div class="compact-agent-card">
+          <div class="agent-avatar-sm po">PO</div>
+          <div class="compact-info">
+            <div class="compact-name">Nick's PO</div>
+            <div class="compact-handles">Product Owner &middot; <span class="role-count">handles 1 role</span></div>
+          </div>
+        </div>
+
+        <div class="compact-agent-card">
+          <div class="agent-avatar-sm qa">SE</div>
+          <div class="compact-info">
+            <div class="compact-name">Sentinel</div>
+            <div class="compact-handles">QA Engineer &middot; <span class="role-count">handles 2 roles</span></div>
+          </div>
+        </div>
+
+        <div class="compact-agent-card">
+          <div class="agent-avatar-sm ux">CO</div>
+          <div class="compact-info">
+            <div class="compact-name">Compass</div>
+            <div class="compact-handles">UX Designer &middot; <span class="role-count">handles 2 roles</span></div>
+          </div>
+        </div>
+
+        <div class="compact-agent-card">
+          <div class="agent-avatar-sm sec">SH</div>
+          <div class="compact-info">
+            <div class="compact-name">Shield</div>
+            <div class="compact-handles">Security Analyst &middot; <span class="role-count">handles 1 role</span></div>
+          </div>
+        </div>
+
+        <div class="compact-agent-card" style="border-color: var(--border); opacity: 0.6;">
+          <div class="agent-avatar-sm ba">BA</div>
+          <div class="compact-info">
+            <div class="compact-name">BA Bob</div>
+            <div class="compact-handles">Business Analyst &middot; <span style="color: var(--text-dim);">0 roles</span></div>
+          </div>
+        </div>
+
+        <div class="gap-summary">
+          <span>&#9888;</span> 1 unmatched role: <strong>data engineer</strong>
+        </div>
+      </div>
+    </div>
+
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Pros</h4>
+        <ul>
+          <li>Enhances existing agent cards — no new section needed</li>
+          <li>Shows workload balance naturally (4 roles vs 0 roles)</li>
+          <li>Compact — no extra vertical space</li>
+          <li>Click/expand to see the specific matched roles</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Cons</h4>
+        <ul>
+          <li>Doesn't directly show which specific roles map to which agent</li>
+          <li>Need click/expand for details — not immediate</li>
+          <li>Unmatched roles need a separate summary element</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="recommendation">
+    <strong>Summary of all 6 options:</strong><br><br>
+    <strong>A.</strong> Tooltip on hover — compact, least discoverable<br>
+    <strong>B.</strong> Inline "role → agent" in chips — best balance of visibility and compactness<br>
+    <strong>C.</strong> Expandable table — most detailed, heaviest<br>
+    <strong>D.</strong> Agent-centric groups — shows workload distribution, new perspective<br>
+    <strong>E.</strong> Connection lines — visually distinctive but over-engineered<br>
+    <strong>F.</strong> Role count on agent cards — enhances existing cards, needs click for detail<br><br>
+    My recommendation: <strong>B + tooltip for tier</strong> or <strong>D</strong> if workload visibility matters most.
+  </div>
+
+</body>
+</html>

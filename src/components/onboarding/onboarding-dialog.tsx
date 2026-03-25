@@ -14,6 +14,7 @@ import {
   Copy,
   Globe,
   Lock,
+  X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
@@ -183,8 +184,11 @@ export function OnboardingDialog({
       try {
         const { tasks } = await generateBoardFromOnboarding(result.ideaId);
         setGeneratedTasks(tasks);
-      } catch {
+      } catch (err) {
         setGenerationFailed(true);
+        toast.error(
+          err instanceof Error ? err.message : "Board task generation failed — you can generate tasks from your board later"
+        );
       }
       setCreateProgress(4);
 
@@ -711,8 +715,10 @@ export function OnboardingDialog({
                   </span>
                 </div>
                 <div className="flex items-center gap-2.5 text-[13px]">
-                  {createProgress > 3 ? (
+                  {createProgress > 3 && !generationFailed ? (
                     <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />
+                  ) : createProgress > 3 && generationFailed ? (
+                    <X className="h-3.5 w-3.5 text-red-400 shrink-0" />
                   ) : createProgress === 3 ? (
                     <span className="h-3.5 w-3.5 shrink-0 flex items-center justify-center">
                       <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
@@ -722,12 +728,16 @@ export function OnboardingDialog({
                   )}
                   <span
                     className={
-                      createProgress === 3
-                        ? "text-foreground"
-                        : "text-muted-foreground/50"
+                      createProgress > 3 && generationFailed
+                        ? "text-red-400"
+                        : createProgress === 3
+                          ? "text-foreground"
+                          : "text-muted-foreground/50"
                     }
                   >
-                    Generating board tasks...
+                    {createProgress > 3 && generationFailed
+                      ? "Board tasks skipped — generate from your board later"
+                      : "Generating board tasks..."}
                   </span>
                 </div>
               </div>

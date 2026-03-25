@@ -196,7 +196,7 @@ export function IdeaAgentsSection({
         </div>
       )}
       {/* Add agent popover */}
-      {isTeamMember && unallocatedBots.length > 0 && (
+      {isTeamMember && ideaAgents.length > 0 && unallocatedBots.length > 0 && (
         <Popover open={addOpen} onOpenChange={setAddOpen}>
           <PopoverTrigger asChild>
             <Button variant="outline" size="icon" className="h-5 w-5 rounded-full">

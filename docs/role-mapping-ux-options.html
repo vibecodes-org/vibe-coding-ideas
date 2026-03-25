@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Role-Agent Mapping — UX Options</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #1a1a1a;
+      --surface-3: #1e1e1e;
+      --border: #2a2a2a;
+      --text: #e4e4e7;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --accent: #a78bfa;
+      --accent-dim: rgba(167, 139, 250, 0.12);
+      --green: #4ade80;
+      --green-dim: rgba(74, 222, 128, 0.1);
+      --amber: #fbbf24;
+      --amber-dim: rgba(251, 191, 36, 0.08);
+      --blue: #60a5fa;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    .meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 3rem; }
+    .option-section {
+      margin-bottom: 3.5rem;
+      border-top: 1px solid var(--border);
+      padding-top: 2rem;
+    }
+    .option-section h2 {
+      font-size: 1.15rem;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+    }
+    .option-section .subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+    .mockup-frame {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 1.25rem;
+      position: relative;
+    }
+    .mockup-label {
+      position: absolute;
+      top: -10px;
+      left: 16px;
+      background: var(--surface);
+      padding: 0 8px;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+    }
+    .section-title {
+      font-size: 0.75rem;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-dim);
+      margin-bottom: 0.75rem;
+    }
+    .pros-cons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 1rem;
+      margin-top: 1rem;
+      font-size: 0.82rem;
+    }
+    .pros h4 { color: var(--green); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+    .cons h4 { color: var(--amber); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.4rem; }
+    .pros li, .cons li { color: var(--text-muted); margin-bottom: 0.3rem; margin-left: 1rem; }
+
+    /* ─── Shared chip styles ─── */
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.65rem;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      border: 1px solid;
+    }
+    .chip.covered {
+      background: var(--green-dim);
+      border-color: rgba(74, 222, 128, 0.2);
+      color: var(--green);
+    }
+    .chip.gap {
+      background: var(--amber-dim);
+      border-color: rgba(251, 191, 36, 0.25);
+      color: var(--amber);
+    }
+    .chip .icon { font-size: 0.85rem; }
+
+    /* ─── Option A: Tooltip ─── */
+    .tooltip-demo {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .tooltip-wrapper {
+      position: relative;
+      cursor: help;
+    }
+    .tooltip-bubble {
+      position: absolute;
+      bottom: calc(100% + 8px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: var(--surface-3);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 0.4rem 0.65rem;
+      font-size: 0.72rem;
+      white-space: nowrap;
+      color: var(--text);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+      z-index: 10;
+    }
+    .tooltip-bubble::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border: 5px solid transparent;
+      border-top-color: var(--surface-3);
+    }
+    .tooltip-bubble .tier {
+      color: var(--text-dim);
+      font-size: 0.65rem;
+    }
+
+    /* ─── Option B: Inline ─── */
+    .inline-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      padding: 0.3rem 0.65rem;
+      border-radius: 20px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      border: 1px solid;
+    }
+    .inline-chip.covered {
+      background: var(--green-dim);
+      border-color: rgba(74, 222, 128, 0.2);
+      color: var(--green);
+    }
+    .inline-chip.gap {
+      background: var(--amber-dim);
+      border-color: rgba(251, 191, 36, 0.25);
+      color: var(--amber);
+    }
+    .inline-chip .arrow { color: var(--text-dim); font-size: 0.7rem; margin: 0 0.15rem; }
+    .inline-chip .agent-name { color: var(--text); font-weight: 400; font-size: 0.72rem; }
+
+    /* ─── Option C: Table ─── */
+    .mapping-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.82rem;
+    }
+    .mapping-table th {
+      text-align: left;
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text);
+      font-weight: 600;
+      font-size: 0.75rem;
+    }
+    .mapping-table td {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+      color: var(--text-muted);
+    }
+    .mapping-table tr:last-child td { border-bottom: none; }
+    .mapping-table .status-dot {
+      display: inline-block;
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      margin-right: 0.4rem;
+    }
+    .mapping-table .status-dot.green { background: var(--green); }
+    .mapping-table .status-dot.amber { background: var(--amber); }
+    .mapping-table .agent-col { color: var(--text); font-weight: 500; }
+    .mapping-table .tier-col { color: var(--text-dim); font-size: 0.72rem; font-style: italic; }
+    .mapping-table .none-col { color: var(--amber); font-style: italic; }
+
+    .recommendation {
+      margin-top: 2rem;
+      padding: 1rem;
+      background: var(--accent-dim);
+      border: 1px solid rgba(167, 139, 250, 0.2);
+      border-radius: 8px;
+      font-size: 0.85rem;
+    }
+    .recommendation strong { color: var(--accent); }
+  </style>
+</head>
+<body>
+
+  <h1>Role-Agent Mapping — UX Options</h1>
+  <p class="meta">3 options for showing which agent matches each workflow role in the Role Coverage panel.</p>
+
+  <!-- ════════════ Option A ════════════ -->
+  <div class="option-section">
+    <h2>Option A: Tooltip on Hover</h2>
+    <p class="subtitle">Chips stay compact. Hover to see the matched agent name and match tier.</p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Role Coverage — tooltip on hover</div>
+      <div class="section-title">Role Coverage</div>
+      <div class="tooltip-demo">
+        <div class="tooltip-wrapper">
+          <div class="tooltip-bubble">
+            Matched: <strong>Atlas</strong> <span class="tier">(substring)</span>
+          </div>
+          <span class="chip covered"><span class="icon">&#10003;</span> developer</span>
+        </div>
+        <span class="chip covered"><span class="icon">&#10003;</span> product owner</span>
+        <span class="chip covered"><span class="icon">&#10003;</span> qa engineer</span>
+        <span class="chip covered"><span class="icon">&#10003;</span> ux designer</span>
+        <div class="tooltip-wrapper">
+          <span class="chip gap"><span class="icon">&#9888;</span> devops engineer</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Pros</h4>
+        <ul>
+          <li>No layout change — chips stay compact</li>
+          <li>Info available on demand</li>
+          <li>Shows match tier for debugging</li>
+          <li>Smallest implementation effort</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Cons</h4>
+        <ul>
+          <li>Not discoverable — user must hover each chip</li>
+          <li>Can't see all mappings at a glance</li>
+          <li>Doesn't work well on mobile (no hover)</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ Option B ════════════ -->
+  <div class="option-section">
+    <h2>Option B: Inline Agent Name</h2>
+    <p class="subtitle">Agent name shown directly in each chip: "developer &rarr; Atlas". Visible at a glance.</p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Role Coverage — inline names</div>
+      <div class="section-title">Role Coverage</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.5rem;">
+        <span class="inline-chip covered"><span class="icon">&#10003;</span> developer <span class="arrow">&rarr;</span> <span class="agent-name">Atlas</span></span>
+        <span class="inline-chip covered"><span class="icon">&#10003;</span> product owner <span class="arrow">&rarr;</span> <span class="agent-name">Nick's PO</span></span>
+        <span class="inline-chip covered"><span class="icon">&#10003;</span> qa <span class="arrow">&rarr;</span> <span class="agent-name">Sentinel</span></span>
+        <span class="inline-chip covered"><span class="icon">&#10003;</span> ux <span class="arrow">&rarr;</span> <span class="agent-name">Compass</span></span>
+        <span class="inline-chip covered"><span class="icon">&#10003;</span> frontend engineer <span class="arrow">&rarr;</span> <span class="agent-name">Atlas</span></span>
+        <span class="inline-chip covered"><span class="icon">&#10003;</span> devops engineer <span class="arrow">&rarr;</span> <span class="agent-name">Atlas</span></span>
+        <span class="inline-chip covered"><span class="icon">&#10003;</span> security analyst <span class="arrow">&rarr;</span> <span class="agent-name">Shield</span></span>
+        <span class="inline-chip gap"><span class="icon">&#9888;</span> data engineer <span class="arrow">&rarr;</span> <span class="agent-name" style="color: var(--amber);">no agent</span></span>
+      </div>
+    </div>
+
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Pros</h4>
+        <ul>
+          <li>All mappings visible at a glance</li>
+          <li>Immediately shows incorrect matches</li>
+          <li>Works on mobile (no hover needed)</li>
+          <li>Most informative</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Cons</h4>
+        <ul>
+          <li>Chips are wider — may wrap more on small screens</li>
+          <li>Doesn't show match tier (could add tooltip for that)</li>
+          <li>Slightly more visual noise</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ Option C ════════════ -->
+  <div class="option-section">
+    <h2>Option C: Expandable Table</h2>
+    <p class="subtitle">Replace chip row with a collapsible table showing role, matched agent, and match tier.</p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Role Coverage — table view</div>
+      <div class="section-title" style="margin-bottom: 0.5rem;">Role Coverage <span style="font-size: 0.7rem; font-weight: 400; color: var(--text-dim);">(8 roles, 1 gap)</span></div>
+      <table class="mapping-table">
+        <thead>
+          <tr>
+            <th>Role</th>
+            <th>Matched Agent</th>
+            <th>Match Type</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><span class="status-dot green"></span>developer</td>
+            <td class="agent-col">Atlas</td>
+            <td class="tier-col">substring</td>
+          </tr>
+          <tr>
+            <td><span class="status-dot green"></span>product owner</td>
+            <td class="agent-col">Nick's Product Owner</td>
+            <td class="tier-col">exact</td>
+          </tr>
+          <tr>
+            <td><span class="status-dot green"></span>qa</td>
+            <td class="agent-col">Sentinel</td>
+            <td class="tier-col">substring</td>
+          </tr>
+          <tr>
+            <td><span class="status-dot green"></span>ux</td>
+            <td class="agent-col">Compass</td>
+            <td class="tier-col">substring</td>
+          </tr>
+          <tr>
+            <td><span class="status-dot green"></span>frontend engineer</td>
+            <td class="agent-col">Atlas</td>
+            <td class="tier-col">word-overlap</td>
+          </tr>
+          <tr>
+            <td><span class="status-dot green"></span>devops engineer</td>
+            <td class="agent-col">Atlas</td>
+            <td class="tier-col">word-overlap</td>
+          </tr>
+          <tr>
+            <td><span class="status-dot green"></span>security analyst</td>
+            <td class="agent-col">Shield</td>
+            <td class="tier-col">exact</td>
+          </tr>
+          <tr>
+            <td><span class="status-dot amber"></span>data engineer</td>
+            <td class="none-col">No matching agent</td>
+            <td class="tier-col">—</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="pros-cons">
+      <div class="pros">
+        <h4>Pros</h4>
+        <ul>
+          <li>Most detailed — shows all info (role, agent, tier)</li>
+          <li>Easy to scan for incorrect matches</li>
+          <li>Match tier visible without hover</li>
+          <li>Familiar table pattern</li>
+        </ul>
+      </div>
+      <div class="cons">
+        <h4>Cons</h4>
+        <ul>
+          <li>Takes more vertical space</li>
+          <li>Heavier than chips — could feel admin-like</li>
+          <li>Needs collapse/expand to avoid clutter</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ Recommendation ════════════ -->
+  <div class="recommendation">
+    <strong>Recommendation:</strong> Option B (inline names) gives the best balance — all mappings visible at a glance without hover, immediately shows incorrect matches, works on mobile. Could combine with Option A's tooltip to also show the match tier on hover for power users who want to debug the fuzzy matching.
+  </div>
+
+</body>
+</html>

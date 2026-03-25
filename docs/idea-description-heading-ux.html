@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Idea Description Heading — UX Fix — Compass</title>
+<style>
+  :root { --bg: #09090b; --surface: #111113; --surface-2: #19191d; --border: #27272a; --text: #fafafa; --text-muted: #a1a1aa; --text-dim: #71717a; --violet: #8b5cf6; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.65; }
+  .container { max-width: 800px; margin: 0 auto; padding: 2rem; }
+  h1 { font-size: 1.5rem; font-weight: 800; margin-bottom: 1rem; }
+  h2 { font-size: 1.1rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.5rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
+  p { margin-bottom: 0.6rem; color: var(--text-muted); font-size: 0.88rem; }
+  .mock { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin: 1rem 0; max-width: 700px; }
+  .label-bad { font-size: 0.68rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: rgba(161,161,170,0.4); margin-bottom: 0.5rem; }
+  .heading-good { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; font-weight: 600; margin-bottom: 0.75rem; }
+  .heading-icon { color: var(--text-muted); }
+  .desc-text { color: var(--text-muted); font-size: 0.9rem; }
+  .separator { border-top: 1px solid var(--border); margin: 1.5rem 0; }
+  .section-heading { display: flex; align-items: center; gap: 0.5rem; font-size: 0.9rem; font-weight: 600; margin-bottom: 0.75rem; }
+  .badge-bad { display: inline-block; background: #f43f5e22; color: #f43f5e; font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 4px; }
+  .badge-good { display: inline-block; background: #10b98122; color: #10b981; font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 4px; }
+  .note { background: var(--surface-2); border-left: 3px solid var(--violet); padding: 0.6rem 0.8rem; margin: 0.75rem 0; border-radius: 0 6px 6px 0; font-size: 0.82rem; color: var(--text-muted); }
+  .edit-hint { color: var(--text-dim); font-size: 0.75rem; cursor: pointer; border: 1px dashed var(--border); border-radius: 8px; padding: 0.5rem 0.75rem; margin-top: 0.5rem; display: inline-block; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>Fix: Idea Description Visual Hierarchy</h1>
+<p>The description is the most important content on the idea page, but it currently has the weakest visual presence. Here's the problem and the fix.</p>
+
+<h2>Problem: Current Hierarchy <span class="badge-bad">BROKEN</span></h2>
+<p>Look at how sections compare right now:</p>
+
+<div class="mock">
+  <div class="section-heading">💬 <strong>Discussions</strong> <span style="font-size:0.75rem;color:var(--text-dim)">(?)</span> <span style="margin-left:auto;font-size:0.78rem;border:1px solid var(--border);padding:0.25rem 0.6rem;border-radius:6px;">+ New</span></div>
+  <p style="font-size:0.82rem">Start a discussion to plan features, debate approaches, or gather feedback.</p>
+</div>
+
+<div class="mock">
+  <div style="display:flex;align-items:center;gap:0.5rem;margin-bottom:0.5rem;">
+    <span style="font-size:0.9rem;">🔗</span>
+    <span style="border:1px dashed var(--border);padding:0.3rem 0.6rem;border-radius:6px;font-size:0.82rem;color:var(--text-dim);">+ Add GitHub URL</span>
+  </div>
+  <div class="label-bad">DESCRIPTION ✏️</div>
+  <div class="desc-text">SSSS</div>
+</div>
+
+<div style="margin-top:1rem;">
+  <div class="section-heading">📎 <strong>Attachments</strong> <span style="font-size:0.75rem;color:var(--text-dim)">(?)</span></div>
+</div>
+<div style="margin-top:1rem;">
+  <div style="font-size:1rem;font-weight:700;">Comments (0)</div>
+</div>
+
+<p style="margin-top:1rem;"><strong>The description label is tiny, faded, uppercase, and has no icon.</strong> Every other section (Discussions, Attachments, Comments) uses bold text with icons. The description — the primary content — looks like metadata.</p>
+
+<h2>Fix: Matching Hierarchy <span class="badge-good">PROPOSED</span></h2>
+<p>Two changes: (1) give the description section the same heading style as other sections, and (2) move it ABOVE Discussions since it's the primary content.</p>
+
+<div class="mock">
+  <div class="heading-good">
+    <span class="heading-icon">📝</span>
+    <strong>Description</strong>
+    <span style="color:var(--text-dim);font-size:0.75rem;cursor:pointer;">✏️</span>
+  </div>
+  <div class="desc-text" style="border:1px dashed transparent;border-radius:6px;padding:0.25rem 0.5rem;margin:-0.25rem -0.5rem;">SSSS</div>
+  <div class="edit-hint">Click to edit · Supports Markdown</div>
+</div>
+
+<div class="separator"></div>
+
+<div>
+  <div class="section-heading">🔗 <strong>GitHub</strong></div>
+  <span style="border:1px dashed var(--border);padding:0.3rem 0.6rem;border-radius:6px;font-size:0.82rem;color:var(--text-dim);display:inline-flex;align-items:center;gap:0.4rem;">+ Add GitHub URL</span>
+</div>
+
+<div class="separator"></div>
+
+<div>
+  <div class="section-heading">💬 <strong>Discussions</strong></div>
+</div>
+
+<div class="separator"></div>
+
+<div>
+  <div class="section-heading">📎 <strong>Attachments</strong></div>
+</div>
+
+<h2>Implementation</h2>
+
+<p><strong>Change 1 — Description heading style</strong> (in <code>inline-idea-body.tsx</code>):</p>
+<p>Replace the tiny <code>text-[11px] uppercase text-muted-foreground/60</code> label with:</p>
+<pre style="background:var(--surface-2);padding:0.75rem;border-radius:6px;font-size:0.78rem;color:var(--text-muted);overflow-x:auto;font-family:monospace;">
+&lt;h3 className="flex items-center gap-2 text-sm font-semibold"&gt;
+  &lt;FileText className="h-4 w-4" /&gt;
+  Description
+&lt;/h3&gt;
+</pre>
+<p>This matches the exact pattern used by Attachments (line 345 of <code>idea-attachments-section.tsx</code>).</p>
+
+<p><strong>Change 2 — Move description above Discussions</strong> (in <code>ideas/[id]/page.tsx</code>):</p>
+<p>The description card (lines 495-503) should move above the Discussions Preview (lines 485-493). The page order should be:</p>
+<ol style="padding-left:1.5rem;color:var(--text-muted);font-size:0.85rem;">
+  <li>Getting Started card (when no tasks)</li>
+  <li><strong>Description</strong> (primary content — MOVED UP)</li>
+  <li>Discussions Preview</li>
+  <li>Attachments</li>
+  <li>Comments</li>
+</ol>
+
+<p><strong>Change 3 — Separate GitHub URL from Description</strong> (in <code>inline-idea-body.tsx</code>):</p>
+<p>The GitHub URL and Description are currently inside the same component/card. They should be visually separated — GitHub URL gets its own small section or moves to the metadata area at the top. This prevents the GitHub URL from making the description card look cluttered.</p>
+
+<div class="note">
+<strong>Why this matters:</strong> The description is the first thing a new visitor reads to understand the idea. It should have the strongest visual presence after the title, not the weakest. The current tiny uppercase label makes it look like a form field label, not a content section.
+</div>
+
+</div>
+</body>
+</html>

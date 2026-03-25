@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nudge UX Mockups — Agents & Workflows</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #1a1a1a;
+      --surface-3: #1e1e1e;
+      --border: #2a2a2a;
+      --text: #e4e4e7;
+      --text-muted: #a1a1aa;
+      --text-dim: #71717a;
+      --accent: #a78bfa;
+      --accent-dim: rgba(167, 139, 250, 0.12);
+      --green: #4ade80;
+      --green-dim: rgba(74, 222, 128, 0.1);
+      --amber: #fbbf24;
+      --amber-dim: rgba(251, 191, 36, 0.08);
+      --blue: #60a5fa;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.5;
+      padding: 2rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.5rem; }
+    .meta { color: var(--text-muted); font-size: 0.85rem; margin-bottom: 3rem; }
+    .mockup-section {
+      margin-bottom: 4rem;
+      border-top: 1px solid var(--border);
+      padding-top: 2rem;
+    }
+    .mockup-section h2 {
+      font-size: 1.15rem;
+      color: var(--accent);
+      margin-bottom: 0.25rem;
+    }
+    .mockup-section .subtitle {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      margin-bottom: 1.5rem;
+    }
+    .mockup-frame {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      position: relative;
+    }
+    .mockup-label {
+      position: absolute;
+      top: -10px;
+      left: 16px;
+      background: var(--surface);
+      padding: 0 8px;
+      font-size: 0.65rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--text-dim);
+    }
+    .note {
+      background: rgba(96, 165, 250, 0.06);
+      border-left: 3px solid var(--blue);
+      padding: 0.75rem 1rem;
+      border-radius: 0 6px 6px 0;
+      font-size: 0.82rem;
+      color: var(--text-muted);
+      margin-top: 1rem;
+    }
+
+    /* ─── Nudge 1: Board Empty State ─── */
+    .board-empty {
+      padding: 3rem 2rem;
+      text-align: center;
+    }
+    .board-empty .sparkle { font-size: 2.5rem; margin-bottom: 1rem; }
+    .board-empty h3 { font-size: 1.2rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .board-empty p { font-size: 0.9rem; color: var(--text-muted); max-width: 400px; margin: 0 auto 1.5rem; }
+    .board-empty .primary-btn {
+      display: inline-block;
+      padding: 0.6rem 1.5rem;
+      background: var(--accent);
+      color: #fff;
+      border-radius: 8px;
+      font-size: 0.85rem;
+      font-weight: 500;
+      border: none;
+      margin-bottom: 1.25rem;
+    }
+    .board-empty .secondary-row {
+      display: flex;
+      justify-content: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+    .board-empty .ghost-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.4rem;
+      padding: 0.45rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      background: none;
+      cursor: pointer;
+    }
+    .board-empty .ghost-btn:hover { border-color: var(--accent); color: var(--text); }
+    .board-empty .ghost-btn .icon { font-size: 1rem; }
+    .board-empty .hint {
+      font-size: 0.75rem;
+      color: var(--text-dim);
+      margin-top: 0.5rem;
+    }
+    .board-empty .dismiss {
+      font-size: 0.78rem;
+      color: var(--text-dim);
+      cursor: pointer;
+      margin-top: 0.75rem;
+    }
+    .board-empty .dismiss:hover { color: var(--text-muted); }
+    .new-badge {
+      display: inline-block;
+      background: var(--green-dim);
+      color: var(--green);
+      font-size: 0.65rem;
+      font-weight: 600;
+      padding: 0.1rem 0.4rem;
+      border-radius: 3px;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      vertical-align: middle;
+      margin-left: 0.3rem;
+    }
+
+    /* ─── Nudge 2: Workflows Tab Cross-Link ─── */
+    .workflows-empty {
+      padding: 2rem;
+    }
+    .amber-banner {
+      display: flex;
+      align-items: flex-start;
+      gap: 0.6rem;
+      padding: 0.75rem 1rem;
+      background: var(--amber-dim);
+      border: 1px solid rgba(251, 191, 36, 0.2);
+      border-radius: 8px;
+      margin-bottom: 1.5rem;
+    }
+    .amber-banner .icon { color: var(--amber); font-size: 1.1rem; flex-shrink: 0; margin-top: 0.1rem; }
+    .amber-banner .text { font-size: 0.82rem; color: var(--text-muted); }
+    .amber-banner .text strong { color: var(--text); font-weight: 500; }
+    .amber-banner .link { color: var(--accent); font-weight: 500; cursor: pointer; }
+    .wf-empty-content {
+      text-align: center;
+      padding: 2rem 1rem;
+    }
+    .wf-empty-content .icon-wrap {
+      width: 48px; height: 48px; border-radius: 50%;
+      background: var(--accent-dim);
+      display: flex; align-items: center; justify-content: center;
+      margin: 0 auto 1rem;
+      font-size: 1.5rem; color: var(--accent);
+    }
+    .wf-empty-content h3 { font-size: 1rem; margin-bottom: 0.4rem; }
+    .wf-empty-content p { font-size: 0.85rem; color: var(--text-muted); max-width: 350px; margin: 0 auto 1.25rem; }
+    .wf-empty-content .btn-row { display: flex; gap: 0.75rem; justify-content: center; }
+    .wf-empty-content .btn {
+      padding: 0.45rem 1rem;
+      border-radius: 6px;
+      font-size: 0.82rem;
+      font-weight: 500;
+      border: 1px solid var(--border);
+      background: var(--surface-3);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    /* ─── Nudge 3: Dashboard Checklist ─── */
+    .checklist-frame {
+      width: 320px;
+      margin: 0 auto;
+    }
+    .checklist-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.75rem 1rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .checklist-header h4 { font-size: 0.85rem; font-weight: 600; }
+    .checklist-header .progress { font-size: 0.75rem; color: var(--text-dim); }
+    .checklist-item {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      padding: 0.6rem 1rem;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.82rem;
+    }
+    .checklist-item:last-child { border-bottom: none; }
+    .check-done {
+      width: 18px; height: 18px; border-radius: 50%;
+      background: var(--green);
+      display: flex; align-items: center; justify-content: center;
+      font-size: 0.7rem; color: var(--bg); flex-shrink: 0;
+    }
+    .check-todo {
+      width: 18px; height: 18px; border-radius: 50%;
+      border: 2px solid var(--border);
+      flex-shrink: 0;
+    }
+    .checklist-item.done { color: var(--text-dim); text-decoration: line-through; }
+    .checklist-item.todo { color: var(--text); }
+    .checklist-item .link { color: var(--accent); text-decoration: none; font-weight: 500; }
+
+    /* ─── Nudge 4: Onboarding Success ─── */
+    .onboarding-success {
+      text-align: center;
+      padding: 2.5rem 2rem;
+    }
+    .onboarding-success .confetti { font-size: 3rem; margin-bottom: 1rem; }
+    .onboarding-success h3 { font-size: 1.3rem; margin-bottom: 0.5rem; }
+    .onboarding-success p { font-size: 0.9rem; color: var(--text-muted); margin-bottom: 1.5rem; max-width: 400px; margin-left: auto; margin-right: auto; }
+    .onboarding-success .cta-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 0.75rem;
+      max-width: 400px;
+      margin: 0 auto 1.5rem;
+    }
+    .onboarding-success .cta-card {
+      padding: 1rem;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: var(--surface-3);
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .onboarding-success .cta-card:hover { border-color: var(--accent); }
+    .onboarding-success .cta-card .icon { font-size: 1.5rem; margin-bottom: 0.4rem; }
+    .onboarding-success .cta-card .label { font-size: 0.82rem; font-weight: 500; }
+    .onboarding-success .cta-card .desc { font-size: 0.72rem; color: var(--text-dim); margin-top: 0.2rem; }
+    .onboarding-success .skip { font-size: 0.8rem; color: var(--text-dim); cursor: pointer; }
+    .onboarding-success .skip:hover { color: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+  <h1>Nudge UX Mockups</h1>
+  <p class="meta">4 contextual nudges to guide users toward agents & workflows. Dark theme, VibeCodes palette.</p>
+
+  <!-- ════════════ Nudge 1 ════════════ -->
+  <div class="mockup-section">
+    <h2>Nudge 1: Enhanced Board Empty State</h2>
+    <p class="subtitle">Shows when board has no tasks. Adds agent/workflow CTAs below existing AI Generate button.</p>
+
+    <div class="mockup-frame" style="margin-top: 1rem;">
+      <div class="mockup-label">board-empty-state.tsx</div>
+      <div class="board-empty">
+        <div class="sparkle">&#10024;</div>
+        <h3>Get started with AI</h3>
+        <p>Describe what you want to build and AI will generate tasks for your board.</p>
+        <button class="primary-btn">&#9733; AI Generate Tasks</button>
+
+        <div class="secondary-row">
+          <button class="ghost-btn"><span class="icon">&#129302;</span> Add AI Agents <span class="new-badge">New</span></button>
+          <button class="ghost-btn"><span class="icon">&#9881;</span> Set Up Workflows <span class="new-badge">New</span></button>
+        </div>
+
+        <div class="hint">Agents and workflows let your AI team collaborate automatically</div>
+        <div class="dismiss">Show columns & add tasks manually</div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Behaviour:</strong> Auto-disappears when tasks are created. No dismiss tracking needed. The two ghost buttons link to <code>?tab=agents</code> and <code>?tab=workflows</code> on the same board page.
+    </div>
+  </div>
+
+  <!-- ════════════ Nudge 2 ════════════ -->
+  <div class="mockup-section">
+    <h2>Nudge 2: Workflows Tab — Agent Cross-Link</h2>
+    <p class="subtitle">Shows in Workflows tab empty state ONLY when no agents are pooled. Guides users to add agents first.</p>
+
+    <div class="mockup-frame" style="margin-top: 1rem;">
+      <div class="mockup-label">workflows-tab.tsx</div>
+      <div class="workflows-empty">
+        <div class="amber-banner">
+          <span class="icon">&#9888;</span>
+          <div class="text">
+            <strong>Agents needed:</strong> Workflow steps are executed by AI agents.
+            <span class="link">Add agents to your pool</span> before creating workflow templates.
+          </div>
+        </div>
+
+        <div class="wf-empty-content">
+          <div class="icon-wrap">&#9881;</div>
+          <h3>No workflow templates yet</h3>
+          <p>Workflow templates define a repeatable process — each step is assigned to an agent role.</p>
+          <div class="btn-row">
+            <button class="btn">Import from library</button>
+            <button class="btn">Create template</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Behaviour:</strong> The amber banner only appears when <code>ideaAgents.length === 0</code>. Once agents are pooled, it disappears. No dismiss needed — it's contextual. The existing empty state CTAs remain unchanged below.
+    </div>
+  </div>
+
+  <!-- ════════════ Nudge 3 ════════════ -->
+  <div class="mockup-section">
+    <h2>Nudge 3: Dashboard Checklist — 2 New Items</h2>
+    <p class="subtitle">The <code>OnboardingChecklist</code> is an existing floating FAB on the dashboard (dismissible via localStorage). This adds 2 new items to it. Users who have already dismissed the checklist won't see it unless they clear localStorage — so this nudge only reaches newer users.</p>
+
+    <div class="mockup-frame" style="margin-top: 1rem;">
+      <div class="mockup-label">onboarding-checklist.tsx — existing component, 2 items added</div>
+      <div class="checklist-frame">
+        <div class="checklist-header">
+          <h4>Getting Started</h4>
+          <span class="progress">5 / 7</span>
+        </div>
+        <div class="checklist-item done">
+          <span class="check-done">&#10003;</span> Create your account
+        </div>
+        <div class="checklist-item done">
+          <span class="check-done">&#10003;</span> Complete your profile
+        </div>
+        <div class="checklist-item done">
+          <span class="check-done">&#10003;</span> Create your first idea
+        </div>
+        <div class="checklist-item done">
+          <span class="check-done">&#10003;</span> Set up an AI agent
+        </div>
+        <div class="checklist-item done">
+          <span class="check-done">&#10003;</span> Connect Claude Code
+        </div>
+        <div style="border-left: 2px solid var(--accent); margin-left: 0.5rem; padding-left: 0;">
+          <div class="checklist-item todo" style="background: var(--accent-dim);">
+            <span class="check-todo" style="border-color: var(--accent);"></span> <a href="#" class="link">Assign agents to an idea</a> <span class="new-badge" style="margin-left: 0.3rem;">New</span>
+          </div>
+          <div class="checklist-item todo" style="background: var(--accent-dim); border-bottom: none;">
+            <span class="check-todo" style="border-color: var(--accent);"></span> <a href="#" class="link">Create a workflow template</a> <span class="new-badge" style="margin-left: 0.3rem;">New</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Behaviour:</strong> Items 6 and 7 auto-check when the user has at least one idea with agents pooled / one workflow template created. The checklist is already dismissible via localStorage — users who previously dismissed it won't see the new items. This primarily benefits newer users who haven't dismissed yet. Links navigate to the relevant board tab.
+    </div>
+  </div>
+
+  <!-- ════════════ Nudge 4 ════════════ -->
+  <div class="mockup-section">
+    <h2>Nudge 4: Onboarding Success — Workflow CTA</h2>
+    <p class="subtitle">Adds a "Create a workflow" card alongside the existing "Set up an agent" CTA on the final onboarding step.</p>
+
+    <div class="mockup-frame" style="margin-top: 1rem;">
+      <div class="mockup-label">onboarding-dialog.tsx (Step 4)</div>
+      <div class="onboarding-success">
+        <div class="confetti">&#127881;</div>
+        <h3>You're all set!</h3>
+        <p>Your idea is live. Here's what to do next to get the most out of VibeCodes.</p>
+
+        <div class="cta-grid">
+          <div class="cta-card">
+            <div class="icon">&#129302;</div>
+            <div class="label">Set up an AI agent</div>
+            <div class="desc">Create agents to work on your tasks</div>
+          </div>
+          <div class="cta-card">
+            <div class="icon">&#9881;</div>
+            <div class="label">Create a workflow</div>
+            <div class="desc">Define steps for your team's process</div>
+          </div>
+          <div class="cta-card">
+            <div class="icon">&#128196;</div>
+            <div class="label">Go to your board</div>
+            <div class="desc">Start adding and managing tasks</div>
+          </div>
+          <div class="cta-card">
+            <div class="icon">&#128279;</div>
+            <div class="label">Connect Claude Code</div>
+            <div class="desc">Use MCP to automate from your IDE</div>
+          </div>
+        </div>
+
+        <div class="skip">Skip for now &rarr;</div>
+      </div>
+    </div>
+
+    <div class="note">
+      <strong>Behaviour:</strong> Replaces the current single-link CTA with a 2x2 grid of next-step cards. One-time flow — user clicks through during onboarding. No dismiss tracking needed. "Create a workflow" links to the board's Workflows tab.
+    </div>
+  </div>
+
+</body>
+</html>

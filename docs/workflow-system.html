@@ -1,0 +1,1279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VibeCodes — Workflow System Reference</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600;700&display=swap');
+
+  :root {
+    --bg-deep: #0a0b0f;
+    --bg-surface: #12131a;
+    --bg-raised: #1a1b25;
+    --bg-hover: #22232f;
+    --border-subtle: #2a2b3a;
+    --border-accent: #3d3e52;
+    --text-primary: #e8e9f0;
+    --text-secondary: #9294a8;
+    --text-muted: #5c5e72;
+    --accent-cyan: #4fd1c5;
+    --accent-cyan-dim: #2a7a72;
+    --accent-amber: #f6ad55;
+    --accent-rose: #fc8181;
+    --accent-green: #68d391;
+    --accent-purple: #b794f4;
+    --accent-blue: #63b3ed;
+    --accent-pink: #f687b3;
+    --code-bg: #0d0e14;
+    --toc-width: 260px;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html { scroll-behavior: smooth; scroll-padding-top: 2rem; }
+
+  body {
+    font-family: 'DM Sans', system-ui, sans-serif;
+    background: var(--bg-deep);
+    color: var(--text-primary);
+    line-height: 1.7;
+    font-size: 15px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Grain overlay */
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    z-index: 9999;
+    pointer-events: none;
+    opacity: 0.025;
+    background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)'/%3E%3C/svg%3E");
+  }
+
+  /* ─── TOC Sidebar ─── */
+  .toc-sidebar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: var(--toc-width);
+    height: 100vh;
+    background: var(--bg-surface);
+    border-right: 1px solid var(--border-subtle);
+    overflow-y: auto;
+    padding: 2rem 1.25rem;
+    z-index: 100;
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-accent) transparent;
+  }
+
+  .toc-brand {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.35rem;
+    color: var(--accent-cyan);
+    margin-bottom: 0.25rem;
+    letter-spacing: -0.01em;
+  }
+
+  .toc-subtitle {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--text-muted);
+    margin-bottom: 2rem;
+    font-weight: 600;
+  }
+
+  .toc-section-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    margin-top: 1.5rem;
+    margin-bottom: 0.5rem;
+    font-weight: 700;
+  }
+
+  .toc-sidebar a {
+    display: block;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.8rem;
+    padding: 0.3rem 0.6rem;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+    margin-bottom: 1px;
+  }
+
+  .toc-sidebar a:hover {
+    color: var(--text-primary);
+    background: var(--bg-hover);
+  }
+
+  .toc-sidebar a.toc-sub {
+    padding-left: 1.2rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  .toc-sidebar a.toc-sub:hover { color: var(--text-secondary); }
+
+  /* ─── Main Content ─── */
+  .main-content {
+    margin-left: var(--toc-width);
+    max-width: 860px;
+    padding: 3rem 3.5rem 6rem;
+  }
+
+  /* ─── Hero ─── */
+  .hero {
+    margin-bottom: 4rem;
+    padding-bottom: 3rem;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .hero-eyebrow {
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    color: var(--accent-cyan);
+    font-weight: 600;
+    margin-bottom: 0.75rem;
+  }
+
+  .hero h1 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 3rem;
+    font-weight: 400;
+    line-height: 1.15;
+    color: var(--text-primary);
+    margin-bottom: 1rem;
+    letter-spacing: -0.02em;
+  }
+
+  .hero h1 em {
+    font-style: italic;
+    color: var(--accent-cyan);
+  }
+
+  .hero-desc {
+    font-size: 1.05rem;
+    color: var(--text-secondary);
+    max-width: 600px;
+    line-height: 1.75;
+  }
+
+  /* ─── Section Headers ─── */
+  h2 {
+    font-family: 'Instrument Serif', serif;
+    font-size: 1.85rem;
+    font-weight: 400;
+    color: var(--text-primary);
+    margin-top: 4rem;
+    margin-bottom: 1.25rem;
+    letter-spacing: -0.01em;
+    position: relative;
+    padding-bottom: 0.75rem;
+  }
+
+  h2::after {
+    content: '';
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    width: 40px;
+    height: 2px;
+    background: var(--accent-cyan);
+    border-radius: 1px;
+  }
+
+  h3 {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 1.1rem;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-top: 2.5rem;
+    margin-bottom: 0.75rem;
+    letter-spacing: -0.005em;
+  }
+
+  h4 {
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--accent-amber);
+    margin-top: 1.75rem;
+    margin-bottom: 0.5rem;
+  }
+
+  p { margin-bottom: 1rem; color: var(--text-secondary); }
+  strong { color: var(--text-primary); font-weight: 600; }
+
+  /* ─── Tables ─── */
+  .table-wrap {
+    overflow-x: auto;
+    margin: 1.5rem 0;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.85rem;
+  }
+
+  thead th {
+    background: var(--bg-raised);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    font-weight: 700;
+    padding: 0.75rem 1rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  tbody td {
+    padding: 0.7rem 1rem;
+    border-bottom: 1px solid var(--border-subtle);
+    color: var(--text-secondary);
+    vertical-align: top;
+  }
+
+  tbody tr:last-child td { border-bottom: none; }
+  tbody tr:hover { background: var(--bg-hover); }
+
+  td code, th code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    color: var(--accent-cyan);
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+  }
+
+  /* ─── Code Blocks ─── */
+  pre {
+    background: var(--code-bg);
+    border: 1px solid var(--border-subtle);
+    border-radius: 8px;
+    padding: 1.25rem 1.5rem;
+    overflow-x: auto;
+    margin: 1.25rem 0;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 1.65;
+    color: var(--text-secondary);
+  }
+
+  code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.82em;
+  }
+
+  p code, li code {
+    color: var(--accent-cyan);
+    background: var(--code-bg);
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+    border: 1px solid var(--border-subtle);
+  }
+
+  .code-label {
+    font-size: 0.65rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--text-muted);
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+    font-family: 'DM Sans', sans-serif;
+  }
+
+  /* Syntax highlighting */
+  .kw { color: var(--accent-purple); }
+  .fn { color: var(--accent-blue); }
+  .str { color: var(--accent-green); }
+  .cm { color: var(--text-muted); font-style: italic; }
+  .op { color: var(--accent-amber); }
+  .num { color: var(--accent-rose); }
+  .type { color: var(--accent-cyan); }
+
+  /* ─── Lists ─── */
+  ul, ol {
+    padding-left: 1.25rem;
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+  }
+
+  li { margin-bottom: 0.4rem; }
+  li::marker { color: var(--text-muted); }
+
+  /* ─── Flow Diagrams ─── */
+  .flow-diagram {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 10px;
+    padding: 2rem;
+    margin: 2rem 0;
+    overflow-x: auto;
+  }
+
+  .flow-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.75rem;
+  }
+
+  .flow-row:last-child { margin-bottom: 0; }
+
+  .flow-node {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.5rem 0.9rem;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 500;
+    white-space: nowrap;
+    border: 1px solid;
+  }
+
+  .flow-node.action {
+    background: rgba(79, 209, 197, 0.08);
+    border-color: var(--accent-cyan-dim);
+    color: var(--accent-cyan);
+  }
+
+  .flow-node.state {
+    background: rgba(183, 148, 244, 0.08);
+    border-color: rgba(183, 148, 244, 0.25);
+    color: var(--accent-purple);
+  }
+
+  .flow-node.decision {
+    background: rgba(246, 173, 85, 0.08);
+    border-color: rgba(246, 173, 85, 0.25);
+    color: var(--accent-amber);
+    clip-path: polygon(8% 0%, 92% 0%, 100% 50%, 92% 100%, 8% 100%, 0% 50%);
+    padding: 0.5rem 1.4rem;
+  }
+
+  .flow-node.terminal {
+    background: rgba(104, 211, 145, 0.08);
+    border-color: rgba(104, 211, 145, 0.25);
+    color: var(--accent-green);
+  }
+
+  .flow-node.danger {
+    background: rgba(252, 129, 129, 0.08);
+    border-color: rgba(252, 129, 129, 0.25);
+    color: var(--accent-rose);
+  }
+
+  .flow-arrow {
+    color: var(--text-muted);
+    font-size: 1rem;
+    flex-shrink: 0;
+  }
+
+  .flow-arrow.down {
+    display: flex;
+    justify-content: center;
+    width: 100%;
+    font-size: 1rem;
+    margin: 0.25rem 0;
+  }
+
+  .flow-branch {
+    display: flex;
+    gap: 2rem;
+    justify-content: center;
+    margin: 0.5rem 0;
+  }
+
+  .flow-branch-path {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .flow-branch-label {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+  }
+
+  /* ─── Status Badges ─── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    padding: 0.2rem 0.55rem;
+    border-radius: 4px;
+    white-space: nowrap;
+    font-family: 'JetBrains Mono', monospace;
+    letter-spacing: 0.02em;
+  }
+
+  .badge.pending { background: rgba(148, 163, 184, 0.12); color: #94a3b8; }
+  .badge.running { background: rgba(99, 179, 237, 0.12); color: var(--accent-blue); }
+  .badge.completed { background: rgba(104, 211, 145, 0.12); color: var(--accent-green); }
+  .badge.failed { background: rgba(252, 129, 129, 0.12); color: var(--accent-rose); }
+  .badge.approval { background: rgba(246, 173, 85, 0.12); color: var(--accent-amber); }
+  .badge.skipped { background: rgba(183, 148, 244, 0.12); color: var(--accent-purple); }
+  .badge.paused { background: rgba(246, 173, 85, 0.12); color: var(--accent-amber); }
+
+  .badge-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    flex-shrink: 0;
+  }
+
+  /* ─── Callout Boxes ─── */
+  .callout {
+    border-left: 3px solid;
+    padding: 1rem 1.25rem;
+    margin: 1.5rem 0;
+    border-radius: 0 6px 6px 0;
+    font-size: 0.88rem;
+  }
+
+  .callout p:last-child { margin-bottom: 0; }
+
+  .callout.info {
+    border-color: var(--accent-cyan);
+    background: rgba(79, 209, 197, 0.04);
+  }
+
+  .callout.warning {
+    border-color: var(--accent-amber);
+    background: rgba(246, 173, 85, 0.04);
+  }
+
+  .callout.danger {
+    border-color: var(--accent-rose);
+    background: rgba(252, 129, 129, 0.04);
+  }
+
+  .callout-label {
+    font-size: 0.68rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-weight: 700;
+    margin-bottom: 0.5rem;
+  }
+
+  .callout.info .callout-label { color: var(--accent-cyan); }
+  .callout.warning .callout-label { color: var(--accent-amber); }
+  .callout.danger .callout-label { color: var(--accent-rose); }
+
+  /* ─── File Reference Cards ─── */
+  .file-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 0.75rem;
+    margin: 1.5rem 0;
+  }
+
+  .file-card {
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+    padding: 0.85rem 1rem;
+    transition: border-color 0.15s ease;
+  }
+
+  .file-card:hover { border-color: var(--border-accent); }
+
+  .file-card-path {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.75rem;
+    color: var(--accent-cyan);
+    margin-bottom: 0.3rem;
+    word-break: break-all;
+  }
+
+  .file-card-desc {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+
+  /* ─── Matching Tier Visual ─── */
+  .tier-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    margin: 1.25rem 0;
+  }
+
+  .tier {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    background: var(--bg-surface);
+    border: 1px solid var(--border-subtle);
+    border-radius: 6px;
+  }
+
+  .tier-rank {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.7rem;
+    font-weight: 700;
+    width: 1.5rem;
+    height: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+
+  .tier:nth-child(1) .tier-rank { background: rgba(104, 211, 145, 0.15); color: var(--accent-green); }
+  .tier:nth-child(2) .tier-rank { background: rgba(99, 179, 237, 0.15); color: var(--accent-blue); }
+  .tier:nth-child(3) .tier-rank { background: rgba(183, 148, 244, 0.15); color: var(--accent-purple); }
+
+  .tier-body { flex: 1; }
+
+  .tier-name {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-primary);
+  }
+
+  .tier-desc {
+    font-size: 0.78rem;
+    color: var(--text-muted);
+  }
+
+  .tier-example {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    background: var(--code-bg);
+    padding: 0.2rem 0.5rem;
+    border-radius: 3px;
+    border: 1px solid var(--border-subtle);
+    white-space: nowrap;
+  }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 900px) {
+    .toc-sidebar { display: none; }
+    .main-content { margin-left: 0; padding: 2rem 1.5rem 4rem; }
+    .hero h1 { font-size: 2.2rem; }
+    .flow-branch { flex-direction: column; gap: 1rem; }
+  }
+
+  /* ─── Print ─── */
+  @media print {
+    body { background: #fff; color: #1a1a1a; }
+    body::before { display: none; }
+    .toc-sidebar { display: none; }
+    .main-content { margin-left: 0; max-width: none; padding: 1rem; }
+    pre { border-color: #ddd; background: #f8f8f8; }
+    .flow-diagram { background: #f8f8f8; border-color: #ddd; }
+    .table-wrap { border-color: #ddd; }
+    thead th { background: #f0f0f0; color: #555; }
+    tbody td { border-color: #eee; color: #333; }
+    h2::after { background: #333; }
+    .callout { border-color: #999; background: #f8f8f8; }
+    a { color: inherit; }
+    .hero h1 em { color: #333; }
+    p, li, td { color: #333; }
+    h2, h3, h4, strong { color: #1a1a1a; }
+    .badge { border: 1px solid #ccc; }
+    .file-card { border-color: #ddd; background: #fafafa; }
+  }
+
+  /* Animation on load */
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  .hero { animation: fadeUp 0.5s ease both; }
+  h2 { animation: fadeUp 0.4s ease both; }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════ TOC SIDEBAR ═══════════════ -->
+<nav class="toc-sidebar">
+  <div class="toc-brand">VibeCodes</div>
+  <div class="toc-subtitle">Workflow System Reference</div>
+
+  <div class="toc-section-label">Overview</div>
+  <a href="#overview">System Overview</a>
+  <a href="#database" class="toc-sub">Database Layer</a>
+  <a href="#statuses" class="toc-sub">Status Lifecycles</a>
+
+  <div class="toc-section-label">Lifecycle</div>
+  <a href="#lifecycle">Workflow Lifecycle</a>
+  <a href="#lifecycle-diagram" class="toc-sub">Flow Diagram</a>
+
+  <div class="toc-section-label">Design</div>
+  <a href="#agent-matching">Fuzzy Agent Matching</a>
+  <a href="#concurrency">Concurrency Guards</a>
+  <a href="#identity">bot_id vs claimed_by</a>
+  <a href="#cascade">Cascade Rejection</a>
+  <a href="#auto-rules">Auto-Rules</a>
+  <a href="#propagation">Template Propagation</a>
+
+  <div class="toc-section-label">MCP</div>
+  <a href="#mcp">MCP Orchestration</a>
+  <a href="#claim-next" class="toc-sub">claim_next_step</a>
+  <a href="#mcp-tools" class="toc-sub">All 22 Tools</a>
+
+  <div class="toc-section-label">Implementation</div>
+  <a href="#server-actions">Server Actions</a>
+  <a href="#helpers" class="toc-sub">workflow-helpers.ts</a>
+  <a href="#ui">UI Components</a>
+  <a href="#files">Key Files Reference</a>
+</nav>
+
+<!-- ═══════════════ MAIN CONTENT ═══════════════ -->
+<main class="main-content">
+
+<!-- ─── Hero ─── -->
+<header class="hero">
+  <div class="hero-eyebrow">VibeCodes Internal Documentation</div>
+  <h1>Workflow <em>System</em></h1>
+  <p class="hero-desc">
+    A full step-based pipeline replacing simple checklists — supporting multi-agent orchestration,
+    approval gates, cascade rejection, fuzzy role matching, and automated template application.
+  </p>
+</header>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="overview">System Overview</h2>
+
+<p>
+  The workflow system is the backbone of task execution in VibeCodes. When a workflow template is
+  applied to a board task, it creates a <strong>workflow run</strong> containing ordered
+  <strong>steps</strong> that agents claim, execute, and complete — with optional human approval
+  gates at any point in the pipeline.
+</p>
+
+<!-- ─── Database ─── -->
+<h3 id="database">Database Layer</h3>
+<p>Six tables form the workflow system:</p>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Table</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>workflow_templates</code></td>
+      <td>Idea-scoped reusable step sequences. Steps stored as <strong>JSONB array</strong> with <code>title</code>, <code>role</code>, <code>description</code>, <code>requires_approval</code>, <code>deliverables</code>.</td>
+    </tr>
+    <tr>
+      <td><code>workflow_auto_rules</code></td>
+      <td>Maps a board label to a template. When a label is added to a task, the app auto-applies the matching template. <code>UNIQUE(idea_id, label_id)</code>.</td>
+    </tr>
+    <tr>
+      <td><code>workflow_runs</code></td>
+      <td>Tracks each application of a template to a specific task. One active run per task enforced by partial unique index. <code>template_id</code> nullable (<code>ON DELETE SET NULL</code>) so runs survive template deletion.</td>
+    </tr>
+    <tr>
+      <td><code>task_workflow_steps</code></td>
+      <td>The actual executable steps. Trigger maintains denormalized <code>workflow_step_total</code> and <code>workflow_step_completed</code> on <code>board_tasks</code>. Realtime-enabled with <code>REPLICA IDENTITY FULL</code>.</td>
+    </tr>
+    <tr>
+      <td><code>workflow_step_comments</code></td>
+      <td>Inter-agent communication. Five types: <code>comment</code>, <code>output</code>, <code>failure</code>, <code>approval</code>, <code>changes_requested</code>. Trigger maintains denormalized <code>comment_count</code>.</td>
+    </tr>
+    <tr>
+      <td><code>workflow_library_templates</code></td>
+      <td>Admin-managed global template library. Seeded with 7 built-in templates. Case-insensitive unique name. RLS: all authenticated read, admin-only write.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="callout info">
+  <div class="callout-label">Migration history</div>
+  <p>
+    The core schema was introduced in <code>00071_board_level_workflows.sql</code>, with iterative
+    improvements through <code>00087</code> — including claim tracking (00076), skipped status (00077),
+    concurrency guards (00081), trigger-to-app-code migration (00083), and Realtime enablement (00087).
+  </p>
+</div>
+
+<!-- ─── Statuses ─── -->
+<h3 id="statuses">Status Lifecycles</h3>
+
+<h4>Workflow Run Statuses</h4>
+<p>
+  <span class="badge pending"><span class="badge-dot"></span>pending</span>
+  <span class="flow-arrow">→</span>
+  <span class="badge running"><span class="badge-dot"></span>running</span>
+  <span class="flow-arrow">→</span>
+  <span class="badge paused"><span class="badge-dot"></span>paused</span>
+  <span class="flow-arrow">→</span>
+  <span class="badge completed"><span class="badge-dot"></span>completed</span>
+  &nbsp;/&nbsp;
+  <span class="badge failed"><span class="badge-dot"></span>failed</span>
+</p>
+
+<h4>Step Statuses</h4>
+<p>
+  <span class="badge pending"><span class="badge-dot"></span>pending</span>
+  <span class="flow-arrow">→</span>
+  <span class="badge running"><span class="badge-dot"></span>in_progress</span>
+  <span class="flow-arrow">→</span>
+  <span class="badge completed"><span class="badge-dot"></span>completed</span>
+  &nbsp;/&nbsp;
+  <span class="badge failed"><span class="badge-dot"></span>failed</span>
+  &nbsp;/&nbsp;
+  <span class="badge approval"><span class="badge-dot"></span>awaiting_approval</span>
+  &nbsp;/&nbsp;
+  <span class="badge skipped"><span class="badge-dot"></span>skipped</span>
+</p>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="lifecycle">Workflow Lifecycle</h2>
+
+<h3 id="lifecycle-diagram">End-to-End Flow</h3>
+
+<div class="flow-diagram">
+  <div class="flow-row">
+    <span class="flow-node action">Template Created</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-node action">Applied to Task</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-node state">workflow_run + steps created</span>
+  </div>
+
+  <div class="flow-arrow down">↓</div>
+
+  <div class="flow-row">
+    <span class="flow-node action">claim_next_step</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-node state">Agent assumes persona</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-node action">Executes work</span>
+  </div>
+
+  <div class="flow-arrow down">↓</div>
+
+  <div class="flow-row">
+    <span class="flow-node action">complete_step</span>
+  </div>
+
+  <div class="flow-arrow down">↓</div>
+
+  <div class="flow-row">
+    <span class="flow-node decision">human_check_required?</span>
+  </div>
+
+  <div class="flow-branch">
+    <div class="flow-branch-path">
+      <span class="flow-branch-label">Yes</span>
+      <span class="flow-node state">awaiting_approval</span>
+      <span class="flow-arrow">↓</span>
+      <div class="flow-row" style="margin:0">
+        <span class="flow-node terminal">approve</span>
+        <span style="color:var(--text-muted); font-size:0.8rem; margin: 0 0.3rem;">or</span>
+        <span class="flow-node danger">reject → cascade</span>
+      </div>
+    </div>
+    <div class="flow-branch-path">
+      <span class="flow-branch-label">No</span>
+      <span class="flow-node terminal">completed</span>
+    </div>
+  </div>
+
+  <div class="flow-arrow down">↓</div>
+
+  <div class="flow-row">
+    <span class="flow-node decision">All steps terminal?</span>
+    <span class="flow-arrow">→</span>
+    <span class="flow-node terminal">Run completed</span>
+  </div>
+</div>
+
+<p>
+  <strong>Claude Code acts as the orchestrator</strong>: it calls <code>claim_next_step</code>, reads the
+  returned instructions (including identity switch directive, prior step context, rework instructions),
+  switches identity via <code>set_agent_identity</code>, executes the work, calls <code>complete_step</code>,
+  and loops until all steps are done.
+</p>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="agent-matching">Fuzzy Agent Matching</h2>
+
+<p>
+  When a template is applied to a task, agents from the idea's pool are auto-matched to step roles
+  using a three-tier system defined in <code>src/lib/role-matching.ts</code>:
+</p>
+
+<div class="tier-list">
+  <div class="tier">
+    <div class="tier-rank">1</div>
+    <div class="tier-body">
+      <div class="tier-name">Exact Match</div>
+      <div class="tier-desc">Case-insensitive, trimmed string equality</div>
+    </div>
+    <div class="tier-example">"Developer" = "developer"</div>
+  </div>
+  <div class="tier">
+    <div class="tier-rank">2</div>
+    <div class="tier-body">
+      <div class="tier-name">Substring Match</div>
+      <div class="tier-desc">Bidirectional containment, minimum 2 characters</div>
+    </div>
+    <div class="tier-example">"Dev" ⊂ "Full Stack Developer"</div>
+  </div>
+  <div class="tier">
+    <div class="tier-rank">3</div>
+    <div class="tier-body">
+      <div class="tier-name">Word Overlap</div>
+      <div class="tier-desc">Prefix match on tokenized words, minimum 3 characters</div>
+    </div>
+    <div class="tier-example">"frontend" ≈ "Front End Engineer"</div>
+  </div>
+</div>
+
+<div class="callout warning">
+  <div class="callout-label">Why app code, not a trigger</div>
+  <p>
+    Auto-rule application was originally a Postgres trigger (<code>auto_apply_workflow_on_label</code>),
+    but was moved to application code in migration <strong>00083</strong> because the DB couldn't
+    perform fuzzy agent matching. The <code>auto_run</code> toggle was subsequently removed in
+    migration <strong>00085</strong> — rules always fire.
+  </p>
+</div>
+
+<p>
+  The <code>buildRoleMatcher</code> function is called once per template application and returns a
+  closure, so agent candidate preprocessing happens only once.
+</p>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="concurrency">Concurrency Guards</h2>
+
+<p>
+  The workflow system is designed for concurrent multi-agent access. Every status mutation is
+  guarded at <strong>two levels</strong>:
+</p>
+
+<h4>Application Level</h4>
+<p>
+  Every step mutation uses the pattern:
+</p>
+<pre><span class="kw">const</span> { data } = <span class="kw">await</span> supabase
+  .<span class="fn">from</span>(<span class="str">"task_workflow_steps"</span>)
+  .<span class="fn">update</span>({ <span class="type">status</span>: <span class="str">"in_progress"</span> })
+  .<span class="fn">eq</span>(<span class="str">"id"</span>, stepId)
+  .<span class="fn">eq</span>(<span class="str">"status"</span>, <span class="str">"pending"</span>)     <span class="cm">// ← status guard</span>
+  .<span class="fn">maybeSingle</span>()              <span class="cm">// ← returns null if guard fails</span></pre>
+
+<p>
+  If another process already changed the status, the update returns <code>null</code> instead of
+  corrupting state. This prevents concurrent claims, double-completions, and race conditions.
+</p>
+
+<h4>Database Level</h4>
+<p>
+  A <strong>partial unique index</strong> on <code>workflow_runs</code> prevents duplicate active
+  runs per task:
+</p>
+<pre><span class="kw">CREATE UNIQUE INDEX</span> idx_unique_active_workflow_run
+  <span class="kw">ON</span> workflow_runs(task_id)
+  <span class="kw">WHERE</span> status <span class="kw">NOT IN</span> (<span class="str">'completed'</span>, <span class="str">'failed'</span>);</pre>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="identity">bot_id vs claimed_by</h2>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Column</th><th>Set When</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>bot_id</code></td>
+      <td>Template is applied to a task</td>
+      <td>The agent <strong>pre-matched</strong> from the idea's pool based on fuzzy role matching. Preserved for reference — not overwritten at claim time.</td>
+    </tr>
+    <tr>
+      <td><code>claimed_by</code></td>
+      <td><code>claim_next_step</code> is called</td>
+      <td>The agent (or user) who <strong>actually claimed and executed</strong> the step at runtime. May differ from <code>bot_id</code>.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  The MCP <code>claim_next_step</code> tool sets <code>claimed_by</code> (not <code>bot_id</code>),
+  and returns both <code>bot_id</code> and <code>available_agents</code> so the client can switch
+  identity via <code>set_agent_identity</code>.
+</p>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="cascade">Cascade Rejection</h2>
+
+<p>
+  When a reviewer rejects work at an approval gate, they can <strong>send work back to any earlier
+  step</strong> in the pipeline — not just the immediately preceding one.
+</p>
+
+<h4>How it works</h4>
+<ol>
+  <li>Reviewer calls <code>fail_step</code> with optional <code>reset_to_step_id</code></li>
+  <li>System <strong>snapshots outputs</strong> of all affected steps as <code>output</code>-type comments (preserving work)</li>
+  <li>All steps from the target onward are <strong>reset to <code>pending</code></strong> — output, timestamps, and claimed_by are cleared</li>
+  <li>A <code>changes_requested</code> comment is posted on the cascade target step with the reviewer's feedback</li>
+  <li>When the target step is re-claimed, <code>claim_next_step</code> returns <strong>rework_instructions</strong> containing the prior failure output and changes_requested comments</li>
+</ol>
+
+<div class="callout info">
+  <div class="callout-label">Two tiers of rework context</div>
+  <p>
+    <code>claim_next_step</code> first checks the step itself for failure/changes_requested comments.
+    If none are found, it falls back to checking sibling steps in the same run — catching
+    cascade-reset intermediate steps that weren't directly failed.
+  </p>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="auto-rules">Auto-Rules</h2>
+
+<p>
+  Auto-rules create a <strong>label → template mapping</strong> within an idea. When a matching
+  label is added to a task, <code>checkAndApplyAutoRules()</code> in
+  <code>src/lib/workflow-helpers.ts</code> fires and applies the template automatically.
+</p>
+
+<ul>
+  <li>Rules <strong>always fire</strong> — the <code>auto_run</code> toggle was removed in migration 00085</li>
+  <li>Guard against existing active runs via the partial unique index</li>
+  <li>Can be <strong>applied retroactively</strong> to all existing tasks with the matching label via <code>applyAutoRuleRetroactively</code></li>
+  <li><code>UNIQUE(idea_id, label_id)</code> constraint prevents duplicate rules</li>
+  <li>Deleting a rule optionally removes related workflows (<code>removeRelatedWorkflows</code> flag)</li>
+</ul>
+
+<p>
+  When a label is <em>removed</em>, <code>checkAutoRuleWorkflow()</code> / <code>removeAutoRuleWorkflow()</code>
+  can detect and optionally clean up the orphaned workflow.
+</p>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="propagation">Template Propagation</h2>
+
+<p>
+  When a template's steps are edited, <code>propagateTemplateEdits()</code> pushes changes to
+  <strong>pending</strong> steps in active workflow runs:
+</p>
+
+<ul>
+  <li>Updates: title, description, role, approval gate, deliverables</li>
+  <li><strong>Skips</strong> runs where step count doesn't match (structural changes)</li>
+  <li>Does <strong>NOT</strong> re-match <code>bot_id</code> — use <code>rematchWorkflowAgents</code> for that</li>
+  <li>Called from both the <code>updateWorkflowTemplate</code> server action and the MCP tool</li>
+</ul>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="mcp">MCP Orchestration</h2>
+
+<h3 id="claim-next">The claim_next_step Tool</h3>
+
+<p>
+  This is the <strong>central orchestration interface</strong>. It does far more than claiming — it
+  provides the agent with everything needed to execute:
+</p>
+
+<ol>
+  <li>Finds the first pending step by <code>step_order</code>, then <code>position</code></li>
+  <li>Atomically claims it (status guard prevents concurrent claims)</li>
+  <li>Updates the workflow run to <code>running</code></li>
+  <li>Fetches <strong>rework instructions</strong> — prior failure output + <code>changes_requested</code> comments</li>
+  <li>Fetches <strong>available agents</strong> for identity switching</li>
+  <li>Fetches <strong>context from prior completed steps</strong> (output column)</li>
+  <li>Builds a detailed <strong>instruction string</strong> including:
+    <ul>
+      <li>Identity switch directive (which agent to assume)</li>
+      <li>Context chaining rules (how to reference prior step outputs)</li>
+      <li>Expected deliverables with format detection (HTML, JSON, etc.)</li>
+      <li>Human approval warnings</li>
+      <li>Cascade rejection guidance</li>
+      <li>File-based deliverable handling (write to <code>docs/</code> directory)</li>
+    </ul>
+  </li>
+</ol>
+
+<div class="callout danger">
+  <div class="callout-label">Approval gate enforcement</div>
+  <p>
+    The <code>approve_step</code> MCP tool <strong>blocks bot callers</strong> — only humans can
+    approve human-gated steps. It checks <code>users.is_bot</code> and instructs the agent to
+    switch to human identity first. The <code>complete_step</code> tool routes to
+    <code>awaiting_approval</code> instead of <code>completed</code> when the gate is active,
+    with a stop message preventing self-approval.
+  </p>
+</div>
+
+<h3 id="mcp-tools">All 22 MCP Tools</h3>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Category</th><th>Tools</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Template CRUD</strong></td>
+      <td>
+        <code>list_workflow_templates</code>, <code>create_workflow_template</code>,
+        <code>update_workflow_template</code>, <code>delete_workflow_template</code>,
+        <code>apply_workflow_template</code>
+      </td>
+    </tr>
+    <tr>
+      <td><strong>Step Execution</strong></td>
+      <td>
+        <code>claim_next_step</code>, <code>complete_step</code>, <code>fail_step</code>,
+        <code>skip_step</code>, <code>update_step</code>, <code>approve_step</code>,
+        <code>get_step_context</code>, <code>add_step_comment</code>, <code>get_step_comments</code>,
+        <code>rematch_workflow_agents</code>
+      </td>
+    </tr>
+    <tr>
+      <td><strong>Workflow Mgmt</strong></td>
+      <td><code>reset_workflow</code>, <code>remove_workflow</code></td>
+    </tr>
+    <tr>
+      <td><strong>Auto-Rules</strong></td>
+      <td>
+        <code>list_workflow_auto_rules</code>, <code>create_workflow_auto_rule</code>,
+        <code>update_workflow_auto_rule</code>, <code>delete_workflow_auto_rule</code>,
+        <code>apply_auto_rule_retroactively</code>
+      </td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="server-actions">Server Actions</h2>
+
+<h3>src/actions/workflow.ts</h3>
+<p>Step lifecycle and workflow management:</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Action</th><th>Description</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>createWorkflowStep</code></td><td>Create ad-hoc steps (not from template). Uses <code>MAX(position) + 1000</code> positioning.</td></tr>
+    <tr><td><code>updateWorkflowStep</code></td><td>Edit pending steps only (title, description, role, approval gate, deliverables, bot_id).</td></tr>
+    <tr><td><code>deleteWorkflowStep</code></td><td>Remove a step.</td></tr>
+    <tr><td><code>startWorkflowStep</code></td><td><code>pending → in_progress</code>. Sets <code>claimed_by</code>, updates run to <code>running</code>.</td></tr>
+    <tr><td><code>completeWorkflowStep</code></td><td>Routes to <code>awaiting_approval</code> if gated, otherwise <code>completed</code>. Calls <code>checkAndCompleteRun</code>.</td></tr>
+    <tr><td><code>skipWorkflowStep</code></td><td><code>pending → skipped</code> with reason in <code>output</code>. Calls <code>checkAndCompleteRun</code>.</td></tr>
+    <tr><td><code>failWorkflowStep</code></td><td>The most complex action. Supports cascade rejection with output snapshotting.</td></tr>
+    <tr><td><code>approveWorkflowStep</code></td><td><code>awaiting_approval → completed</code>. Preserves agent's original output.</td></tr>
+    <tr><td><code>retryWorkflowStep</code></td><td><code>failed → pending</code>. Clears output/timestamps/claimed_by, restores run to <code>running</code>.</td></tr>
+    <tr><td><code>resetWorkflow</code></td><td>Resets all steps to pending and the run to pending.</td></tr>
+    <tr><td><code>removeWorkflow</code></td><td>Deletes the run; steps cascade-delete via FK.</td></tr>
+    <tr><td><code>addStepComment</code></td><td>CRUD for typed step comments.</td></tr>
+    <tr><td><code>deleteStepComment</code></td><td>Remove a step comment.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>src/actions/workflow-templates.ts</h3>
+<p>Template CRUD, application, and auto-rules:</p>
+<ul>
+  <li><code>listWorkflowTemplates</code> / <code>createWorkflowTemplate</code> / <code>updateWorkflowTemplate</code> / <code>deleteWorkflowTemplate</code> — standard CRUD with validation</li>
+  <li><code>applyWorkflowTemplate</code> — creates run + steps, auto-matches agents, increments usage count, guards against duplicate active runs</li>
+  <li><code>rematchWorkflowAgents</code> — re-runs role matching on pending steps with no <code>bot_id</code></li>
+  <li><code>listWorkflowAutoRules</code> / <code>createWorkflowAutoRule</code> / <code>updateWorkflowAutoRule</code> / <code>deleteWorkflowAutoRule</code></li>
+  <li><code>applyAutoRuleRetroactively</code> — applies template to all existing tasks with matching label</li>
+</ul>
+
+<h3 id="helpers">src/lib/workflow-helpers.ts</h3>
+<p>Four shared functions used by both server actions and MCP tools:</p>
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Function</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>checkAndApplyAutoRules</code></td>
+      <td>Called when a label is added. Looks up matching auto-rules, checks for existing runs, applies template. Non-throwing by design.</td>
+    </tr>
+    <tr>
+      <td><code>checkAutoRuleWorkflow</code> / <code>removeAutoRuleWorkflow</code></td>
+      <td>Called when a label is removed. Detects/removes orphaned workflows from auto-rules.</td>
+    </tr>
+    <tr>
+      <td><code>checkAndCompleteRun</code></td>
+      <td>Checks if all steps are terminal (<code>completed</code> or <code>skipped</code>). If so, marks run as <code>completed</code>.</td>
+    </tr>
+    <tr>
+      <td><code>propagateTemplateEdits</code></td>
+      <td>Pushes template step changes to pending steps in active runs. Skips mismatched step counts.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="ui">UI Components</h2>
+
+<div class="table-wrap">
+<table>
+  <thead>
+    <tr><th>Component</th><th>Location</th><th>Purpose</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>TaskWorkflowSection</code></td>
+      <td>Task detail dialog</td>
+      <td>Shows steps, progress bar, status badges, apply/reset/remove actions, agent match warning banner. Subscribes to Realtime.</td>
+    </tr>
+    <tr>
+      <td><code>StepDetailDialog</code></td>
+      <td>Opened from step row</td>
+      <td>Full step view — edit pending steps, execute actions (start/complete/fail/approve/skip/retry), view/add typed comments with Realtime.</td>
+    </tr>
+    <tr>
+      <td><code>WorkflowsTab</code></td>
+      <td>Board page tabs</td>
+      <td>Template CRUD with expandable step lists, auto-rule management (create/delete/retroactive apply), library import.</td>
+    </tr>
+    <tr>
+      <td><code>CreateTemplateDialog</code></td>
+      <td>From WorkflowsTab</td>
+      <td>Build templates with ordered steps, roles (via <code>RoleCombobox</code> with idea pool suggestions), approval gates, deliverables.</td>
+    </tr>
+    <tr>
+      <td><code>ImportTemplateLibraryDialog</code></td>
+      <td>From WorkflowsTab</td>
+      <td>Import templates from the admin-managed <code>workflow_library_templates</code> table.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  All UI components subscribe to <strong>Supabase Realtime</strong> for live updates across users.
+  <code>getRoleBadgeClasses</code> is exported from <code>TaskWorkflowSection</code> and shared
+  across components for consistent role-based color coding.
+</p>
+
+<!-- ════════════════════════════════════════════ -->
+<h2 id="files">Key Files Reference</h2>
+
+<h3>Database Migrations</h3>
+<div class="file-grid">
+  <div class="file-card">
+    <div class="file-card-path">supabase/migrations/00071_board_level_workflows.sql</div>
+    <div class="file-card-desc">Core schema — all 6 tables, RLS policies, triggers</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">supabase/migrations/00072_workflow_library_templates.sql</div>
+    <div class="file-card-desc">Admin template library + 7 built-in seeds</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">supabase/migrations/00076_workflow_claim_tracking.sql</div>
+    <div class="file-card-desc">claimed_by column for runtime identity</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">supabase/migrations/00077_workflow_step_skipped_status.sql</div>
+    <div class="file-card-desc">Skipped status for inapplicable steps</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">supabase/migrations/00081_workflow_concurrency_guards.sql</div>
+    <div class="file-card-desc">Partial unique index on active runs</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">supabase/migrations/00083_drop_auto_apply_trigger.sql</div>
+    <div class="file-card-desc">Moved auto-rule logic to app code</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">supabase/migrations/00087_workflow_runs_realtime.sql</div>
+    <div class="file-card-desc">Realtime enablement for workflow_runs</div>
+  </div>
+</div>
+
+<h3>Server Actions & Logic</h3>
+<div class="file-grid">
+  <div class="file-card">
+    <div class="file-card-path">src/actions/workflow.ts</div>
+    <div class="file-card-desc">Step lifecycle — start, complete, skip, fail, approve, retry, reset, remove</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">src/actions/workflow-templates.ts</div>
+    <div class="file-card-desc">Template CRUD, applyWorkflowTemplate, auto-rule CRUD</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">src/lib/workflow-helpers.ts</div>
+    <div class="file-card-desc">Shared logic — auto-rules, run completion, template propagation</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">src/lib/role-matching.ts</div>
+    <div class="file-card-desc">Three-tier fuzzy agent role matching</div>
+  </div>
+</div>
+
+<h3>MCP Tools</h3>
+<div class="file-grid">
+  <div class="file-card">
+    <div class="file-card-path">mcp-server/src/tools/workflows.ts</div>
+    <div class="file-card-desc">All 22 workflow MCP tools — templates, steps, auto-rules</div>
+  </div>
+</div>
+
+<h3>UI Components</h3>
+<div class="file-grid">
+  <div class="file-card">
+    <div class="file-card-path">src/components/board/task-workflow-section.tsx</div>
+    <div class="file-card-desc">Main workflow display in task detail dialog</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">src/components/board/step-detail-dialog.tsx</div>
+    <div class="file-card-desc">Deep-dive step view with actions and comments</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">src/components/board/workflows-tab.tsx</div>
+    <div class="file-card-desc">Board-level template and auto-rule management</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">src/components/board/create-template-dialog.tsx</div>
+    <div class="file-card-desc">Template creation with ordered step builder</div>
+  </div>
+  <div class="file-card">
+    <div class="file-card-path">src/components/board/import-template-library-dialog.tsx</div>
+    <div class="file-card-desc">Import from admin-managed global library</div>
+  </div>
+</div>
+
+<!-- ─── Footer ─── -->
+<div style="margin-top: 5rem; padding-top: 2rem; border-top: 1px solid var(--border-subtle); text-align: center;">
+  <p style="font-size: 0.75rem; color: var(--text-muted);">
+    VibeCodes Workflow System Reference &middot; Generated March 2026
+  </p>
+</div>
+
+</main>
+</body>
+</html>

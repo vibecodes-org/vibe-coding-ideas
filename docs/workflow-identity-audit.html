@@ -1,0 +1,1487 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workflow Identity Audit &mdash; Auto-complaints Board</title>
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --surface: #141417;
+    --surface2: #1c1c21;
+    --border: #2a2a30;
+    --text: #e4e4e7;
+    --text-dim: #71717a;
+    --accent: #8b5cf6;
+    --green: #22c55e;
+    --red: #ef4444;
+    --yellow: #f59e0b;
+    --grey: #6b7280;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+    padding: 2rem;
+    max-width: 1400px;
+    margin: 0 auto;
+  }
+  h1 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin-bottom: .25rem;
+  }
+  .subtitle {
+    color: var(--text-dim);
+    font-size: .875rem;
+    margin-bottom: 2rem;
+  }
+  .summary {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 1rem;
+    margin-bottom: 2.5rem;
+  }
+  .summary-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: .75rem;
+    padding: 1.25rem;
+    text-align: center;
+  }
+  .summary-card .number {
+    font-size: 2rem;
+    font-weight: 700;
+    display: block;
+  }
+  .summary-card .label {
+    font-size: .8rem;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .summary-card .pct {
+    font-size: .75rem;
+    color: var(--text-dim);
+    display: block;
+    margin-top: .15rem;
+  }
+  .summary-card.total .number { color: var(--accent); }
+  .summary-card.match .number { color: var(--green); }
+  .summary-card.mismatch .number { color: var(--red); }
+  .summary-card.nocomment .number { color: var(--yellow); }
+  .summary-card.nobotid .number { color: var(--grey); }
+
+  .task-group {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: .75rem;
+    margin-bottom: 1.5rem;
+    overflow: hidden;
+  }
+  .task-group h2 {
+    font-size: 1.05rem;
+    font-weight: 600;
+    padding: 1rem 1.25rem;
+    border-bottom: 1px solid var(--border);
+    background: var(--surface2);
+  }
+  .step-count {
+    color: var(--text-dim);
+    font-weight: 400;
+    font-size: .85rem;
+  }
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    text-align: left;
+    font-size: .75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+    color: var(--text-dim);
+    padding: .6rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: .55rem 1rem;
+    border-bottom: 1px solid var(--border);
+    font-size: .875rem;
+  }
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: rgba(139, 92, 246, .04); }
+  .center { text-align: center; }
+  .dim { color: var(--text-dim); }
+
+  .badge {
+    display: inline-block;
+    padding: .15rem .6rem;
+    border-radius: 9999px;
+    font-size: .75rem;
+    font-weight: 600;
+    letter-spacing: .02em;
+  }
+  .badge-match { background: rgba(34, 197, 94, .15); color: var(--green); }
+  .badge-mismatch { background: rgba(239, 68, 68, .15); color: var(--red); }
+  .badge-nocomment { background: rgba(245, 158, 11, .12); color: var(--yellow); }
+  .badge-nobotid { background: rgba(107, 114, 128, .15); color: var(--grey); }
+
+  .status-badge {
+    display: inline-block;
+    padding: .15rem .5rem;
+    border-radius: .375rem;
+    font-size: .75rem;
+    font-weight: 500;
+    text-transform: capitalize;
+  }
+  .status-completed { background: rgba(34, 197, 94, .12); color: var(--green); }
+  .status-awaiting { background: rgba(245, 158, 11, .12); color: var(--yellow); }
+  .status-failed { background: rgba(239, 68, 68, .12); color: var(--red); }
+  .status-pending { background: rgba(107, 114, 128, .12); color: var(--grey); }
+  .status-inprogress { background: rgba(59, 130, 246, .12); color: #60a5fa; }
+  .status-skipped { background: rgba(107, 114, 128, .1); color: var(--grey); }
+
+  .legend {
+    margin-bottom: 2rem;
+    padding: 1rem 1.25rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: .75rem;
+    display: flex;
+    gap: 1.5rem;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .legend-title {
+    font-size: .8rem;
+    font-weight: 600;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .legend-item {
+    display: flex;
+    align-items: center;
+    gap: .4rem;
+    font-size: .8rem;
+    color: var(--text-dim);
+  }
+</style>
+</head>
+<body>
+<h1>Workflow Identity Audit &mdash; Auto-complaints Board</h1>
+<p class="subtitle">Generated 2026-03-21 08:13:23 UTC &middot; 22 tasks &middot; 121 workflow steps audited</p>
+
+<div class="summary">
+  <div class="summary-card total">
+    <span class="number">121</span>
+    <span class="label">Total Steps</span>
+  </div>
+  <div class="summary-card match">
+    <span class="number">6</span>
+    <span class="label">Matches</span>
+    <span class="pct">5.0%</span>
+  </div>
+  <div class="summary-card mismatch">
+    <span class="number">2</span>
+    <span class="label">Mismatches</span>
+    <span class="pct">1.7%</span>
+  </div>
+  <div class="summary-card nocomment">
+    <span class="number">113</span>
+    <span class="label">No Comment</span>
+  </div>
+  <div class="summary-card nobotid">
+    <span class="number">0</span>
+    <span class="label">No Bot ID</span>
+  </div>
+</div>
+
+<div class="legend">
+  <span class="legend-title">Legend:</span>
+  <span class="legend-item"><span class="badge badge-match">MATCH</span> Claimed identity matches intended agent</span>
+  <span class="legend-item"><span class="badge badge-mismatch">MISMATCH</span> Claimed identity differs from intended agent</span>
+  <span class="legend-item"><span class="badge badge-nocomment">NO COMMENT</span> Step has no output comment to verify identity</span>
+  <span class="legend-item"><span class="badge badge-nobotid">NO BOT_ID</span> Step has no intended agent assigned</span>
+</div>
+
+<div class="task-group">
+    <h2>Add company autocomplete search to recipient selection <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Add scheduled/automated scraper runs <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Bug: New Complaint page shows previous completed complaint <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Bug: Three redundant "New Complaint" buttons on dashboard <span class="step-count">(4 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Reproduce &amp; Investigate</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>Implement Fix</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Verify Fix</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Regression Check</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Build company database schema and seed data <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Build recipient database management interface <span class="step-count">(5 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Build user authentication and profile management <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Create complaint submission workflow <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Dark mode <span style="color:var(--red)">&#9888;</span> <span class="step-count">(7 steps, 6 matched, 1 mismatched)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Reproduce &amp; Investigate</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Nick Ball</td>
+      <td>Sentinel</td>
+      <td class="center"><span class="badge badge-match">MATCH</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>Implement Fix</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td class="center"><span class="badge badge-mismatch">MISMATCH</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>Implement Fix</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick's Product Owner</td>
+      <td>Atlas</td>
+      <td class="center"><span class="badge badge-match">MATCH</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Verify Fix</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td class="center"><span class="badge badge-match">MATCH</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Verify Fix</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td class="center"><span class="badge badge-match">MATCH</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Regression Check</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td>Nick's Product Owner</td>
+      <td class="center"><span class="badge badge-match">MATCH</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Regression Check</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td>Nick's Product Owner</td>
+      <td class="center"><span class="badge badge-match">MATCH</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Define complaint generation prompt templates <span class="step-count">(4 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Define Research Questions</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>Research &amp; Prototype</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Write Recommendation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Review &amp; Decide</td>
+      <td><span class="status-badge status-awaiting">awaiting approval</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Design and implement complaint history dashboard <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Design multi-step complaint input form <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Implement LLM integration for complaint generation <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Implement mailto/clipboard complaint delivery for MVP <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Implement response tracking system <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Implement web scraper for company contact validation <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Integrate TheyWorkForYou API for MP lookup <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Redesign dashboard + add dedicated Complaints page <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Refactor email service from SendGrid to Resend <span class="step-count">(6 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Design Review</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td><span class="dim">&mdash;</span></td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Set up Vercel deployment and configure environment variables <span class="step-count">(5 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements &amp; Impact Assessment</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>Implementation Plan</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">3</td>
+      <td>Implement &amp; Test</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Deploy to Target Environment</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>Post-Deploy Verification</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Nick Ball</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>Set up email delivery infrastructure <span class="step-count">(5 steps)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Requirements</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">2</td>
+      <td>UX Design</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Compass</td>
+      <td>Nick's Product Owner</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">4</td>
+      <td>Implementation</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Atlas</td>
+      <td>Compass</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">5</td>
+      <td>QA Testing</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Atlas</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr><tr>
+      <td class="center">6</td>
+      <td>Final Sign-off</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Nick's Product Owner</td>
+      <td>Sentinel</td>
+      <td><span class="dim">&mdash;</span></td>
+      <td class="center"><span class="badge badge-nocomment">NO COMMENT</span></td>
+    </tr></tbody>
+    </table>
+  </div><div class="task-group">
+    <h2>test <span style="color:var(--red)">&#9888;</span> <span class="step-count">(1 steps, 1 mismatched)</span></h2>
+    <table>
+      <thead><tr>
+        <th class="center">Step #</th>
+        <th>Step Title</th>
+        <th>Status</th>
+        <th>Intended Agent</th>
+        <th>Claimed By</th>
+        <th>Completed By</th>
+        <th class="center">Identity Match</th>
+      </tr></thead>
+      <tbody><tr>
+      <td class="center">1</td>
+      <td>Reproduce &amp; Investigate</td>
+      <td><span class="status-badge status-completed">completed</span></td>
+      <td>Sentinel</td>
+      <td>Nick Ball</td>
+      <td>Nick Ball</td>
+      <td class="center"><span class="badge badge-mismatch">MISMATCH</span></td>
+    </tr></tbody>
+    </table>
+  </div>
+</body>
+</html>
