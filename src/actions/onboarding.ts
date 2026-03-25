@@ -255,6 +255,7 @@ export async function generateBoardFromOnboarding(
 ): Promise<{ tasks: OnboardingGeneratedTask[]; count: number }> {
   const platformKey = process.env.ANTHROPIC_API_KEY;
   if (!platformKey) {
+    logger.error("Onboarding board gen: ANTHROPIC_API_KEY not set");
     throw new Error("AI board generation is not available right now");
   }
 
@@ -266,6 +267,8 @@ export async function generateBoardFromOnboarding(
   if (!user) {
     redirect("/login");
   }
+
+  logger.info("Onboarding board gen: starting", { ideaId, userId: user.id });
 
   // Only allow during onboarding
   const { data: profile } = await supabase
@@ -307,6 +310,8 @@ export async function generateBoardFromOnboarding(
 
   const existingColumns = (columns ?? []).map((c) => c.title);
 
+  logger.info("Onboarding board gen: calling AI", { ideaId, columns: existingColumns.length });
+
   const anthropic = createAnthropic({ apiKey: platformKey });
 
   const contextParts = [
@@ -336,8 +341,10 @@ export async function generateBoardFromOnboarding(
       abortSignal: AbortSignal.timeout(ONBOARDING_GENERATE_TIMEOUT_MS),
     }));
   } catch (err) {
-    logger.error("Onboarding board generation error", {
+    logger.error("Onboarding board generation AI error", {
+      ideaId,
       error: err instanceof Error ? err.message : String(err),
+      name: err instanceof Error ? err.name : undefined,
     });
     if (
       err instanceof Error &&
@@ -347,6 +354,13 @@ export async function generateBoardFromOnboarding(
     }
     throw new Error("Failed to generate board tasks");
   }
+
+  logger.info("Onboarding board gen: AI returned tasks", {
+    ideaId,
+    taskCount: object.tasks.length,
+    inputTokens: usage.inputTokens ?? 0,
+    outputTokens: usage.outputTokens ?? 0,
+  });
 
   // Log usage (free — no credit deduction)
   await logAiUsage(supabase, {
@@ -361,68 +375,90 @@ export async function generateBoardFromOnboarding(
 
   const tasks = object.tasks.slice(0, 50);
 
+  if (tasks.length === 0) {
+    logger.warn("Onboarding board gen: AI returned zero tasks", { ideaId });
+    throw new Error("AI did not generate any tasks — please try again from your board");
+  }
+
   // ── Persist tasks to the database ──────────────────────────────────
-  // Fetch columns (may have been created by initializeBoardColumns via kit application)
   const { data: boardColumns } = await supabase
     .from("board_columns")
     .select("id, title, position")
     .eq("idea_id", ideaId)
     .order("position");
 
-  if (boardColumns && boardColumns.length > 0) {
-    const columnByName = new Map(boardColumns.map((c) => [c.title, c.id]));
-    // Default to first non-done column (usually "To Do" or "Backlog")
-    const defaultColumnId = boardColumns[0].id;
+  if (!boardColumns || boardColumns.length === 0) {
+    logger.error("Onboarding board gen: no board columns found", { ideaId });
+    throw new Error("Board columns not found — kit may not have been applied correctly");
+  }
 
-    // Collect unique new column names from generated tasks
-    const existingNames = new Set(boardColumns.map((c) => c.title));
-    const newColNames = [
-      ...new Set(
-        tasks
-          .map((t) => t.columnName)
-          .filter((n): n is string => !!n && !existingNames.has(n))
-      ),
-    ];
+  const columnByName = new Map(boardColumns.map((c) => [c.title, c.id]));
+  const defaultColumnId = boardColumns[0].id;
 
-    // Create any new columns
-    if (newColNames.length > 0) {
-      let maxPos = Math.max(...boardColumns.map((c) => c.position));
-      const newCols = newColNames.map((name) => {
-        maxPos += 1000;
-        return { idea_id: ideaId, title: name, position: maxPos };
-      });
-      const { data: createdCols } = await supabase
-        .from("board_columns")
-        .insert(newCols)
-        .select("id, title");
-      if (createdCols) {
-        for (const col of createdCols) {
-          columnByName.set(col.title, col.id);
-        }
+  // Collect unique new column names from generated tasks
+  const existingNames = new Set(boardColumns.map((c) => c.title));
+  const newColNames = [
+    ...new Set(
+      tasks
+        .map((t) => t.columnName)
+        .filter((n): n is string => !!n && !existingNames.has(n))
+    ),
+  ];
+
+  // Create any new columns
+  if (newColNames.length > 0) {
+    let maxPos = Math.max(...boardColumns.map((c) => c.position));
+    const newCols = newColNames.map((name) => {
+      maxPos += 1000;
+      return { idea_id: ideaId, title: name, position: maxPos };
+    });
+    const { data: createdCols, error: colError } = await supabase
+      .from("board_columns")
+      .insert(newCols)
+      .select("id, title");
+    if (colError) {
+      logger.error("Onboarding board gen: failed to create columns", { ideaId, error: colError.message });
+    }
+    if (createdCols) {
+      for (const col of createdCols) {
+        columnByName.set(col.title, col.id);
       }
     }
-
-    // Insert tasks with position gaps
-    const TASK_POSITION_GAP = 1000;
-    // Track max position per column to avoid collisions
-    const colPositions = new Map<string, number>();
-
-    for (const task of tasks) {
-      const colId = (task.columnName && columnByName.get(task.columnName)) || defaultColumnId;
-      const currentPos = colPositions.get(colId) ?? 0;
-      const nextPos = currentPos + TASK_POSITION_GAP;
-      colPositions.set(colId, nextPos);
-
-      await supabase.from("board_tasks").insert({
-        idea_id: ideaId,
-        column_id: colId,
-        title: task.title.slice(0, 200),
-        description: task.description ?? null,
-        position: nextPos,
-        created_by: user.id,
-      });
-    }
   }
+
+  // Batch insert all tasks at once (instead of one-by-one)
+  const TASK_POSITION_GAP = 1000;
+  const colPositions = new Map<string, number>();
+  const taskRows = tasks.map((task) => {
+    const colId = (task.columnName && columnByName.get(task.columnName)) || defaultColumnId;
+    const currentPos = colPositions.get(colId) ?? 0;
+    const nextPos = currentPos + TASK_POSITION_GAP;
+    colPositions.set(colId, nextPos);
+    return {
+      idea_id: ideaId,
+      column_id: colId,
+      title: task.title.slice(0, 200),
+      description: task.description ?? null,
+      position: nextPos,
+      created_by: user.id,
+    };
+  });
+
+  const { error: insertError } = await supabase
+    .from("board_tasks")
+    .insert(taskRows);
+
+  if (insertError) {
+    logger.error("Onboarding board gen: failed to insert tasks", {
+      ideaId,
+      error: insertError.message,
+      code: insertError.code,
+      taskCount: taskRows.length,
+    });
+    throw new Error(`Failed to save board tasks: ${insertError.message}`);
+  }
+
+  logger.info("Onboarding board gen: complete", { ideaId, tasksInserted: taskRows.length });
 
   return { tasks, count: tasks.length };
 }
