@@ -14,6 +14,18 @@ import type { AiAccess } from "@/lib/ai-helpers";
 
 const AI_TIMEOUT_MS = 90_000; // 90s — fail gracefully before Vercel's 120s function timeout
 
+const ClarifyingQuestionsSchema = z.object({
+  questions: z.array(
+    z.object({
+      id: z.string(),
+      question: z.string(),
+      placeholder: z.string().optional(),
+    })
+  ),
+});
+
+export type ClarifyingQuestion = z.infer<typeof ClarifyingQuestionsSchema>["questions"][number];
+
 /** Re-throw AI SDK errors as plain Error so Next.js RSC can serialize them. */
 function toPlainError(err: unknown): never {
   logger.error("AI action error", { error: err instanceof Error ? err.message : String(err) });
@@ -123,6 +135,66 @@ export async function enhanceCreateDescription(data: {
   return { enhanced: text };
 }
 
+// ── Generate Clarifying Questions for Create Form (no ideaId) ──────────
+
+export async function generateCreateClarifyingQuestions(data: {
+  title: string;
+  description: string;
+  kitType?: string;
+  prompt: string;
+  personaPrompt?: string | null;
+}): Promise<{ questions: ClarifyingQuestion[] }> {
+  const { supabase, user, anthropic, keyType } = await requireAiAccess();
+
+  const title = data.title.trim();
+  if (!title) throw new Error("Title is required");
+
+  const kitContext = data.kitType
+    ? `\nThis is a **${data.kitType}** project — ask questions relevant to ${data.kitType.toLowerCase()} projects (e.g. architecture, deployment, tooling).`
+    : "";
+
+  const systemPrompt = data.personaPrompt
+    ? `${data.personaPrompt}\n\nYou are helping to enhance a new project idea description. Before enhancing, you need to ask 2-4 focused clarifying questions to produce a better result.${kitContext}`
+    : `You are an expert product manager helping to enhance a new project idea description. Before enhancing, you need to ask 2-4 focused clarifying questions to produce a better result.${kitContext}`;
+
+  let object: z.infer<typeof ClarifyingQuestionsSchema>;
+  let usage: { inputTokens?: number; outputTokens?: number };
+  try {
+    ({ object, usage } = await generateObject({
+      model: anthropic(AI_MODEL),
+      system: systemPrompt,
+      prompt: `The user is creating a new project idea and wants to enhance the description. Read the idea and the user's enhancement prompt, then generate 2-4 targeted clarifying questions that would help you produce a much better enhancement. Focus on questions about target users, technical scope, project goals, success criteria, or any gaps in the current description.
+
+**Enhancement Prompt:** ${data.prompt}
+
+---
+
+**Idea Title:** ${title}
+
+**Current Description:**
+${data.description || title}`,
+      schema: ClarifyingQuestionsSchema,
+      maxOutputTokens: 1000,
+      abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
+    }));
+  } catch (err) {
+    toPlainError(err);
+  }
+
+  await logAiUsage(supabase, {
+    userId: user.id,
+    actionType: "generate_questions",
+    inputTokens: usage.inputTokens ?? 0,
+    outputTokens: usage.outputTokens ?? 0,
+    model: AI_MODEL,
+    ideaId: null,
+    keyType,
+  });
+  if (keyType === "platform") await decrementStarterCredit(supabase, user.id);
+
+  return { questions: object.questions };
+}
+
 // ── Enhance Idea Description ───────────────────────────────────────────
 
 export async function enhanceIdeaDescription(
@@ -177,18 +249,6 @@ export async function enhanceIdeaDescription(
 }
 
 // ── Generate Clarifying Questions ───────────────────────────────────────
-
-const ClarifyingQuestionsSchema = z.object({
-  questions: z.array(
-    z.object({
-      id: z.string(),
-      question: z.string(),
-      placeholder: z.string().optional(),
-    })
-  ),
-});
-
-export type ClarifyingQuestion = z.infer<typeof ClarifyingQuestionsSchema>["questions"][number];
 
 export async function generateClarifyingQuestions(
   ideaId: string,

@@ -14,16 +14,25 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Switch } from "@/components/ui/switch";
-import { Github, Lock, Sparkles, Loader2, Undo2, Check } from "lucide-react";
+import { Github, Lock, Sparkles, Undo2, Check } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { TagInput } from "./tag-input";
+import { CreateEnhanceDialog } from "./create-enhance-dialog";
 import { createIdea } from "@/actions/ideas";
-import { enhanceCreateDescription } from "@/actions/ai";
+// enhanceCreateDescription no longer used — dialog handles enhancement via streaming API
 import { ProjectTypeSelector } from "@/components/kits/project-type-selector";
 import { KitPreview } from "@/components/kits/kit-preview";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import type { KitWithSteps } from "@/actions/kits";
+
+interface SimpleBotProfile {
+  id: string;
+  full_name: string | null;
+  role: string | null;
+  system_prompt: string | null;
+  is_active: boolean;
+}
 
 interface IdeaFormProps {
   githubUsername?: string | null;
@@ -32,6 +41,7 @@ interface IdeaFormProps {
   canUseAi?: boolean;
   hasByokKey?: boolean;
   starterCredits?: number;
+  bots?: SimpleBotProfile[];
 }
 
 function SubmitButton({ hasKit, kitName }: { hasKit: boolean; kitName?: string }) {
@@ -54,27 +64,21 @@ function DescriptionField({
   setDescription,
   enhanced,
   setEnhanced,
-  enhancing,
   canUseAi,
   hasByokKey,
   creditsRemaining,
   onEnhance,
   onUndo,
-  selectedKit,
-  isCustomKit,
 }: {
   description: string;
   setDescription: (v: string) => void;
   enhanced: boolean;
   setEnhanced: (v: boolean) => void;
-  enhancing: boolean;
   canUseAi: boolean;
   hasByokKey: boolean;
   creditsRemaining: number;
   onEnhance: () => void;
   onUndo: () => void;
-  selectedKit: KitWithSteps | null;
-  isCustomKit: boolean;
 }) {
   const [showPulse, setShowPulse] = useState(false);
   const hasPulsedRef = useRef(false);
@@ -110,68 +114,41 @@ function DescriptionField({
             : "border-border"
         } focus-within:border-violet-500`}
       >
-        <div className="relative">
-          <Textarea
-            id="description"
-            name="description"
-            placeholder="Describe your idea in detail. What problem does it solve? What tech stack would you use?"
-            required
-            rows={enhanced ? 10 : 6}
-            value={description}
-            onChange={(e) => { setDescription(e.target.value); if (enhanced) setEnhanced(false); }}
-            disabled={enhancing}
-            onFocus={handleFocus}
-            className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
-          />
-          {enhancing && (
-            <div className="pointer-events-none absolute inset-0 overflow-hidden rounded-md">
-              <div className="absolute inset-0 animate-pulse bg-gradient-to-r from-transparent via-violet-500/[0.06] to-transparent" />
-            </div>
-          )}
-        </div>
+        <Textarea
+          id="description"
+          name="description"
+          placeholder="Describe your idea in detail. What problem does it solve? What tech stack would you use?"
+          required
+          rows={enhanced ? 10 : 6}
+          value={description}
+          onChange={(e) => { setDescription(e.target.value); if (enhanced) setEnhanced(false); }}
+          onFocus={handleFocus}
+          className="border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+        />
         {/* Toolbar */}
         <div className="flex items-center justify-between border-t border-border bg-muted/20 px-3 py-1.5">
           <span className="text-[11px] text-muted-foreground/60">Supports markdown</span>
           {canUseAi && (
-            <div className="relative">
-              <button
-                type="button"
-                onClick={onEnhance}
-                disabled={enhancing}
-                title="Expand your rough notes into a polished description — free!"
-                className={`group inline-flex items-center gap-1.5 rounded-md border border-violet-500/30 bg-gradient-to-r from-violet-500/[0.12] to-purple-500/[0.06] px-2.5 py-1 text-[13px] font-semibold text-violet-400 transition-all hover:border-violet-500/50 hover:from-violet-500/[0.2] hover:to-purple-500/[0.12] disabled:pointer-events-none disabled:opacity-50 ${
-                  showPulse ? "animate-[enhance-pulse_0.8s_ease-in-out_4]" : ""
-                }`}
-              >
-                {enhancing ? (
-                  <>
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Enhancing...
-                  </>
-                ) : (
-                  <>
-                    <Sparkles className="h-3.5 w-3.5" />
-                    {enhanced ? "Re-enhance" : "Enhance with AI"}
-                    {!hasByokKey && creditsRemaining > 0 && (
-                      <span className="flex h-[1.1rem] w-[1.1rem] items-center justify-center rounded-full bg-violet-600 text-[0.6rem] font-bold leading-none text-white">
-                        {creditsRemaining}
-                      </span>
-                    )}
-                  </>
-                )}
-              </button>
-            </div>
+            <button
+              type="button"
+              onClick={onEnhance}
+              title="Expand your rough notes into a polished description — free!"
+              className={`group inline-flex items-center gap-1.5 rounded-md border border-violet-500/30 bg-gradient-to-r from-violet-500/[0.12] to-purple-500/[0.06] px-2.5 py-1 text-[13px] font-semibold text-violet-400 transition-all hover:border-violet-500/50 hover:from-violet-500/[0.2] hover:to-purple-500/[0.12] ${
+                showPulse ? "animate-[enhance-pulse_0.8s_ease-in-out_4]" : ""
+              }`}
+            >
+              <Sparkles className="h-3.5 w-3.5" />
+              {enhanced ? "Re-enhance" : "Enhance with AI"}
+              {!hasByokKey && creditsRemaining > 0 && (
+                <span className="flex h-[1.1rem] w-[1.1rem] items-center justify-center rounded-full bg-violet-600 text-[0.6rem] font-bold leading-none text-white">
+                  {creditsRemaining}
+                </span>
+              )}
+            </button>
           )}
         </div>
       </div>
-      {enhancing && (
-        <p className="text-xs text-violet-400">
-          {selectedKit && !isCustomKit
-            ? `Tailoring for ${selectedKit.name} project...`
-            : "Enhancing your description..."}
-        </p>
-      )}
-      {enhanced && !enhancing && (
+      {enhanced && (
         <button
           type="button"
           onClick={onUndo}
@@ -185,7 +162,7 @@ function DescriptionField({
   );
 }
 
-export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasByokKey = false, starterCredits = 0 }: IdeaFormProps) {
+export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasByokKey = false, starterCredits = 0, bots = [] }: IdeaFormProps) {
   const router = useRouter();
   const [tags, setTags] = useState<string[]>([]);
   const [isPrivate, setIsPrivate] = useState(false);
@@ -194,40 +171,30 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
   // AI Enhance state
   const [description, setDescription] = useState("");
   const [title, setTitle] = useState("");
-  const [enhancing, setEnhancing] = useState(false);
   const [enhanced, setEnhanced] = useState(false);
   const [creditsRemaining, setCreditsRemaining] = useState(starterCredits);
-  const originalDescRef = useRef<string>("");
+  const originalDescRef = useRef("");
+  const [enhanceDialogOpen, setEnhanceDialogOpen] = useState(false);
 
   const isCompactPreview = useMediaQuery("(max-width: 479px)");
   const selectedKit = kits?.find((k) => k.id === selectedKitId) ?? null;
   const isCustomKit = selectedKit?.name === "Custom";
   const hasKit = !!selectedKitId && !isCustomKit;
 
-  const handleEnhance = useCallback(async () => {
-    if (enhancing) return;
+  const handleEnhance = useCallback(() => {
     if (!title.trim()) {
       toast.error("Add a title first so AI knows what to enhance");
       return;
     }
-    setEnhancing(true);
     originalDescRef.current = description;
-    try {
-      const { enhanced: text } = await enhanceCreateDescription({
-        title: title.trim(),
-        description: description.trim(),
-        kitType: selectedKit && !isCustomKit ? selectedKit.name : undefined,
-      });
-      setDescription(text);
-      setEnhanced(true);
-      if (!hasByokKey) setCreditsRemaining((prev) => Math.max(0, prev - 1));
-      toast.success("Description enhanced with AI");
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to enhance description");
-    } finally {
-      setEnhancing(false);
-    }
-  }, [enhancing, title, description, selectedKit, isCustomKit, hasByokKey]);
+    setEnhanceDialogOpen(true);
+  }, [title, description]);
+
+  const handleApplyEnhanced = useCallback((text: string) => {
+    setDescription(text);
+    setEnhanced(true);
+    if (!hasByokKey) setCreditsRemaining((prev) => Math.max(0, prev - 1));
+  }, [hasByokKey]);
 
   const handleUndo = useCallback(() => {
     setDescription(originalDescRef.current);
@@ -293,14 +260,11 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
             setDescription={setDescription}
             enhanced={enhanced}
             setEnhanced={setEnhanced}
-            enhancing={enhancing}
             canUseAi={canUseAi}
             hasByokKey={hasByokKey}
             creditsRemaining={creditsRemaining}
             onEnhance={handleEnhance}
             onUndo={handleUndo}
-            selectedKit={selectedKit}
-            isCustomKit={isCustomKit}
           />
 
           <div className="space-y-2">
@@ -363,6 +327,20 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
           </div>
         </form>
       </CardContent>
+      {canUseAi && (
+        <CreateEnhanceDialog
+          open={enhanceDialogOpen}
+          onOpenChange={setEnhanceDialogOpen}
+          title={title}
+          description={description}
+          kitType={selectedKit && !isCustomKit ? selectedKit.name : undefined}
+          bots={bots}
+          onApply={handleApplyEnhanced}
+          onCreditUsed={() => {
+            if (!hasByokKey) setCreditsRemaining((prev) => Math.max(0, prev - 1));
+          }}
+        />
+      )}
     </Card>
   );
 }
