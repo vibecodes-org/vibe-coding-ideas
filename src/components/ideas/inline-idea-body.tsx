@@ -159,6 +159,19 @@ export function InlineIdeaBody({
       )}
 
       {/* Description */}
+      <div className="flex items-center gap-2">
+        <h3 className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/60">
+          Description
+        </h3>
+        {isAuthor && !editingDescription && (
+          <button
+            onClick={startEditingDescription}
+            className="text-muted-foreground/40 hover:text-muted-foreground transition-colors"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
+        )}
+      </div>
       {isAuthor ? (
         editingDescription ? (
           <div className="text-foreground/90 leading-relaxed">
