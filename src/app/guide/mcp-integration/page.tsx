@@ -328,14 +328,14 @@ export default function McpIntegrationPage() {
                   { name: "approve_step", description: "Approve a step awaiting human review (humans only)" },
                   { name: "get_step_comments", description: "List all comments on a workflow step" },
                   { name: "add_step_comment", description: "Add a comment to a workflow step" },
-                  { name: "rematch_workflow_agents", description: "Re-match unmatched pending steps against the agent pool" },
+                  { name: "rematch_workflow_agents", description: "Re-match unmatched pending steps against the agent team" },
                   { name: "reset_workflow", description: "Reset all steps to pending and restart the workflow" },
                   { name: "remove_workflow", description: "Delete a workflow run and all its steps" },
-                  { name: "list_workflow_auto_rules", description: "List auto-rules that map labels to templates" },
-                  { name: "create_workflow_auto_rule", description: "Create an auto-rule (label → template)" },
-                  { name: "update_workflow_auto_rule", description: "Update an auto-rule's template mapping" },
-                  { name: "delete_workflow_auto_rule", description: "Delete an auto-rule" },
-                  { name: "apply_auto_rule_retroactively", description: "Apply an auto-rule to existing tasks with matching label" },
+                  { name: "list_workflow_auto_rules", description: "List workflow triggers that map labels to templates" },
+                  { name: "create_workflow_auto_rule", description: "Create a workflow trigger (label → template)" },
+                  { name: "update_workflow_auto_rule", description: "Update a workflow trigger's template mapping" },
+                  { name: "delete_workflow_auto_rule", description: "Delete a workflow trigger" },
+                  { name: "apply_auto_rule_retroactively", description: "Apply a workflow trigger to existing tasks with matching label" },
                 ]}
               />
             </CollapsibleTools>
@@ -385,9 +385,9 @@ export default function McpIntegrationPage() {
                   { name: "publish_agent", description: "Publish or unpublish an agent to the community" },
                   { name: "list_community_agents", description: "Browse published agents from all users" },
                   { name: "list_featured_teams", description: "List admin-curated featured agent team templates" },
-                  { name: "allocate_agent", description: "Add your agent to an idea's shared agent pool" },
-                  { name: "remove_idea_agent", description: "Remove an agent from an idea's pool" },
-                  { name: "list_idea_agents", description: "List agents in an idea's shared agent pool" },
+                  { name: "allocate_agent", description: "Add your agent to an idea's agent team" },
+                  { name: "remove_idea_agent", description: "Remove an agent from an idea's team" },
+                  { name: "list_idea_agents", description: "List agents in an idea's agent team" },
                 ]}
               />
             </CollapsibleTools>

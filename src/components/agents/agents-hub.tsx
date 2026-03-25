@@ -113,7 +113,7 @@ export function AgentsHub({
           <p className="flex-1 text-sm text-muted-foreground">
             Agents work through{" "}
             <span className="font-medium text-foreground">Claude Code</span> via
-            MCP. Set up the connection to start using your agents.{" "}
+            MCP (Model Context Protocol). Set up the connection to start using your agents.{" "}
             <Link
               href="/guide/mcp-integration"
               className="font-medium text-violet-400 hover:text-violet-300"

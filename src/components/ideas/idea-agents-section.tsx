@@ -83,7 +83,7 @@ export function IdeaAgentsSection({
     startTransition(async () => {
       try {
         await removeIdeaAgent(ideaId, botId);
-        toast.success("Agent removed from pool");
+        toast.success("Agent removed from team");
       } catch {
         toast.error("Failed to remove agent");
       }

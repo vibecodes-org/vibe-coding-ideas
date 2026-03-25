@@ -941,7 +941,7 @@ export function KanbanBoard({
             <NudgeBanner
               icon={<span className="text-emerald-400">🤖</span>}
               title="Your workflows need agents"
-              description="You have workflow steps waiting for agents. Add agents to your pool so they can pick up work."
+              description="You have workflow steps waiting for agents. Add agents so they can pick up work."
               action={{ label: "Add agents →", href: "?tab=agents" }}
               variant="emerald"
               sessionDismissKey={`nudge-agents-${ideaId}`}

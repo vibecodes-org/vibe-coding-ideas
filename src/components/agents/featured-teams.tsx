@@ -181,12 +181,13 @@ export function FeaturedTeams({ teams, userExistingRoles }: FeaturedTeamsProps) 
                     className={`h-7 text-xs ${existingCount > 0 ? "border-violet-500/30 bg-violet-500/15 text-violet-400 hover:bg-violet-500/25" : ""}`}
                     onClick={() => handleAddTeam(team.id)}
                     disabled={loadingTeamId !== null}
+                    title="Creates copies of these agents in your account. You can customise them afterwards."
                   >
                     {loadingTeamId === team.id
                       ? "Creating..."
                       : existingCount > 0
                         ? `Add ${remainingCount} Remaining`
-                        : "Add Team"}
+                        : "Clone Team to My Agents"}
                   </Button>
                 ) : (
                   <span className="text-[11px] font-medium text-emerald-500">

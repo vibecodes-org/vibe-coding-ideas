@@ -58,7 +58,7 @@ function ProfileSkeleton() {
   );
 }
 
-export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, removeLabel = "Remove from pool" }: AgentProfileDialogProps) {
+export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, removeLabel = "Remove from team" }: AgentProfileDialogProps) {
   const [data, setData] = useState<AgentProfileData | null>(null);
   const [loading, setLoading] = useState(false);
 

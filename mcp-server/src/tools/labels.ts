@@ -28,7 +28,7 @@ export const manageLabelsSchema = z.object({
   remove_workflow: z
     .boolean()
     .optional()
-    .describe("When removing a label, also remove the workflow applied by an auto-rule for this label (default false)"),
+    .describe("When removing a label, also remove the workflow applied by a workflow trigger for this label (default false)"),
 });
 
 export async function manageLabels(

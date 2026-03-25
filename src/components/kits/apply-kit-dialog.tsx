@@ -70,7 +70,7 @@ export function ApplyKitDialog({
       if (result.labelsCreated > 0)
         parts.push(`${result.labelsCreated} label${result.labelsCreated !== 1 ? "s" : ""}`);
       if (result.templateImported) parts.push("workflow imported");
-      if (result.autoRuleCreated) parts.push("auto-rule created");
+      if (result.autoRuleCreated) parts.push("workflow trigger created");
 
       toast.success(
         `${selectedKit!.name} kit applied${parts.length > 0 ? ` — ${parts.join(", ")}` : ""}`
@@ -139,7 +139,7 @@ export function ApplyKitDialog({
             </DrawerTitle>
             <DrawerDescription>
               Choose a project type to set up agents, workflows, labels, and
-              auto-rules for this idea.
+              workflow triggers for this idea.
             </DrawerDescription>
           </DrawerHeader>
           <div className="px-4 pb-2 max-h-[60vh] overflow-y-auto">
@@ -163,7 +163,7 @@ export function ApplyKitDialog({
           </DialogTitle>
           <DialogDescription>
             Choose a project type to set up agents, workflows, labels, and
-            auto-rules for this idea.
+            workflow triggers for this idea.
           </DialogDescription>
         </DialogHeader>
         {body}

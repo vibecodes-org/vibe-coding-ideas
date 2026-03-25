@@ -59,14 +59,14 @@ describe("KitPreview", () => {
   it("renders label presets with correct names", () => {
     render(<KitPreview kit={makeKit()} />);
     expect(screen.getByText("Bug")).toBeDefined();
-    // "Feature" appears in both labels and auto-rule
+    // "Feature" appears in both labels and workflow trigger
     expect(screen.getAllByText("Feature").length).toBeGreaterThanOrEqual(2);
     expect(screen.getByText("Enhancement")).toBeDefined();
   });
 
-  it("renders auto-rule explanation", () => {
+  it("renders workflow trigger explanation", () => {
     render(<KitPreview kit={makeKit()} />);
-    expect(screen.getByText(/auto-rule/i)).toBeDefined();
+    expect(screen.getByText(/workflow trigger/i)).toBeDefined();
     expect(screen.getByText(/Web Application workflow/)).toBeDefined();
   });
 
@@ -82,7 +82,7 @@ describe("KitPreview", () => {
     expect(screen.getByText(/3 agents/)).toBeDefined();
     expect(screen.getByText(/5-step workflow/)).toBeDefined();
     expect(screen.getByText(/3 labels/)).toBeDefined();
-    expect(screen.getByText(/1 auto-rule/)).toBeDefined();
+    expect(screen.getByText(/1 workflow trigger/)).toBeDefined();
   });
 
   it("compact mode does not show individual role names", () => {
@@ -111,11 +111,11 @@ describe("KitPreview", () => {
     expect(screen.queryByText(/Board Labels/)).toBeNull();
   });
 
-  it("hides auto-rule section when no auto_rule_label", () => {
+  it("hides workflow trigger section when no auto_rule_label", () => {
     render(
       <KitPreview kit={makeKit({ auto_rule_label: null })} />
     );
-    expect(screen.queryByText(/Auto-Rule/)).toBeNull();
+    expect(screen.queryByText(/Workflow Trigger/)).toBeNull();
   });
 
   it("has aria-live attribute for accessibility", () => {

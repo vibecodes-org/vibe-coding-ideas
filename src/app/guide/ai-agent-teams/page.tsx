@@ -244,11 +244,11 @@ export default function AiAgentTeamsPage() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">Idea Agent Pool</h2>
+          <h2 className="mb-4 text-2xl font-semibold">Idea Agent Team</h2>
           <p className="mb-4 text-muted-foreground">
             Each idea has a{" "}
-            <strong className="text-foreground">shared agent pool</strong>.
-            Team members can allocate their personal agents to the pool,
+            <strong className="text-foreground">shared agent team</strong>.
+            Team members can allocate their personal agents to the team,
             making them available for anyone on the team to assign to tasks.
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
@@ -283,7 +283,7 @@ export default function AiAgentTeamsPage() {
           <p className="mb-4 text-muted-foreground">
             On any kanban board, open a task and look for the{" "}
             <strong className="text-foreground">assignee dropdown</strong>.
-            Agents from the idea&apos;s agent pool appear grouped by their
+            Agents from the idea&apos;s agent team appear grouped by their
             owner&apos;s name, marked with an agent icon.
           </p>
           <p className="text-muted-foreground">
@@ -494,7 +494,7 @@ export default function AiAgentTeamsPage() {
                     allocate_agent
                   </td>
                   <td className="py-2">
-                    Add one of your agents to an idea&apos;s shared agent pool
+                    Add one of your agents to an idea&apos;s agent team
                   </td>
                 </tr>
                 <tr className="border-b border-border/50">

@@ -54,7 +54,7 @@ describe("buildPromptContextParts", () => {
     expect(joined).not.toContain("Existing Board Labels");
   });
 
-  it("includes auto-rule mappings with template descriptions", () => {
+  it("includes workflow trigger mappings with template descriptions", () => {
     const parts = buildPromptContextParts({
       ...baseCtx,
       existingLabels: ["Feature", "Bug"],
@@ -64,14 +64,14 @@ describe("buildPromptContextParts", () => {
       ],
     });
     const joined = parts.join("\n\n");
-    expect(joined).toContain("**Workflow Auto-Rules:**");
+    expect(joined).toContain("**Workflow Triggers:**");
     expect(joined).toContain('Label "Feature" → applies workflow "Feature Development" (Full dev lifecycle)');
     expect(joined).toContain('Label "Bug" → applies workflow "Bug Fix"');
     expect(joined).not.toContain("Bug Fix ("); // no description for Bug
     expect(joined).toContain("Classify each task");
   });
 
-  it("uses first auto-rule label in example when no 'feature' label exists", () => {
+  it("uses first workflow trigger label in example when no 'feature' label exists", () => {
     const parts = buildPromptContextParts({
       ...baseCtx,
       existingLabels: ["Spike", "Hotfix"],
@@ -83,10 +83,10 @@ describe("buildPromptContextParts", () => {
     expect(joined).toContain('should be labelled "Spike"');
   });
 
-  it("omits auto-rules section when no mappings exist", () => {
+  it("omits workflow triggers section when no mappings exist", () => {
     const parts = buildPromptContextParts(baseCtx);
     const joined = parts.join("\n\n");
-    expect(joined).not.toContain("Workflow Auto-Rules");
+    expect(joined).not.toContain("Workflow Triggers");
   });
 
   it("includes agent context when provided", () => {

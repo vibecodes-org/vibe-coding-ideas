@@ -54,6 +54,9 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
   const [promptKey, setPromptKey] = useState(0);
 
   // Avatar upload
+  const [showHints, setShowHints] = useState(false);
+
+  // Avatar upload
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -85,6 +88,7 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
     setPromptKey((k) => k + 1);
     setCreated(false);
     setCreatedName("");
+    setShowHints(false);
     setSelectedFile(null);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setPreviewUrl(null);
@@ -124,6 +128,7 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
     e.preventDefault();
     if (!name.trim()) return;
 
+    setShowHints(true);
     setSubmitting(true);
     try {
       const skills = parseSkills();
@@ -191,7 +196,7 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     Connect your agent to{" "}
                     <span className="font-medium text-foreground">Claude Code</span>{" "}
-                    via MCP so it can start working on tasks.
+                    via MCP (Model Context Protocol) so it can start working on tasks.
                   </p>
                   <Link
                     href="/guide/mcp-integration"
@@ -304,12 +309,19 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
             <Label htmlFor="bot-role" className="text-xs">Role</Label>
             <RoleCombobox
               value={role}
-              onChange={setRole}
+              onChange={(val) => { setRole(val); if (val.trim()) setShowHints(false); }}
               placeholder="e.g. Full Stack Engineer, QA Engineer"
               maxLength={50}
               showHelperText
               helperText="Used to auto-assign workflow steps. Use roles that match your workflow template steps."
+              className={showHints && !role.trim() ? "border-amber-500/40" : undefined}
             />
+            {showHints && !role.trim() && (
+              <p role="alert" className="mt-1.5 flex items-center gap-1.5 rounded-md border border-amber-500/20 bg-amber-500/[0.08] px-2.5 py-1.5 text-xs text-amber-400">
+                <span>&#x26A0;&#xFE0F;</span>
+                Add a role so this agent can be auto-assigned to workflow steps
+              </p>
+            )}
           </div>
 
           {/* Skills (comma-separated) */}
@@ -334,9 +346,15 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
             key={promptKey}
             role={role}
             value={systemPrompt}
-            onChange={setSystemPrompt}
+            onChange={(val) => { setSystemPrompt(val); if (val.trim()) setShowHints(false); }}
             templateStructured={templateStructured}
           />
+          {showHints && !systemPrompt.trim() && (
+            <p role="alert" className="mt-1.5 flex items-center gap-1.5 rounded-md border border-amber-500/20 bg-amber-500/[0.08] px-2.5 py-1.5 text-xs text-amber-400">
+              <span>&#x26A0;&#xFE0F;</span>
+              Add a system prompt so this agent knows how to approach tasks
+            </p>
+          )}
 
           {/* Actions */}
           <div className="flex justify-end gap-2 pt-2 border-t border-border">

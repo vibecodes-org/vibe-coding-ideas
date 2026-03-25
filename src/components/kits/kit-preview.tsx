@@ -70,7 +70,7 @@ export function KitPreview({ kit, compact = false }: KitPreviewProps) {
           {labelPresets.length > 0 && (
             <span>🏷️ {labelPresets.length} label{labelPresets.length !== 1 ? "s" : ""}</span>
           )}
-          {kit.auto_rule_label && <span>🔄 1 auto-rule</span>}
+          {kit.auto_rule_label && <span>🔄 1 workflow trigger</span>}
         </div>
       </div>
     );
@@ -174,11 +174,11 @@ export function KitPreview({ kit, compact = false }: KitPreviewProps) {
         </div>
       )}
 
-      {/* Auto-Rule */}
+      {/* Workflow Trigger */}
       {kit.auto_rule_label && (
         <div>
           <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-            🔄 Auto-Rule
+            🔄 Workflow Trigger
           </p>
           <p className="text-xs text-muted-foreground">
             When a task is labelled{" "}

@@ -475,7 +475,7 @@ export async function createWorkflowAutoRule(
   if (error) {
     if (error.code === "23505") {
       throw new Error(
-        "This label already has an auto-rule. Remove the existing rule first."
+        "This label already has a workflow trigger. Remove the existing trigger first."
       );
     }
     throw new Error(error.message);

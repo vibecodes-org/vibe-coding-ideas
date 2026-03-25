@@ -377,7 +377,7 @@ function FirstRunMcpCard() {
         📡 Next: Connect Claude Code
       </h3>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        Your agents can&apos;t work until you connect Claude Code via MCP. Run
+        Your agents can&apos;t work until you connect Claude Code via MCP (Model Context Protocol). Run
         this command:
       </p>
       <div className="mt-3 overflow-x-auto rounded-lg bg-black/80 px-3 py-2 font-mono text-xs leading-relaxed">

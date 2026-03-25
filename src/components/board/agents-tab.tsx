@@ -179,7 +179,7 @@ export function AgentsTab({
     startTransition(async () => {
       try {
         await removeIdeaAgent(ideaId, botId);
-        toast.success("Agent removed from pool");
+        toast.success("Agent removed from team");
       } catch {
         toast.error("Failed to remove agent");
       }
@@ -304,8 +304,8 @@ export function AgentsTab({
         <div>
           <h3 className="text-lg font-semibold">Build your AI team</h3>
           <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
-            Add AI agents to this idea&apos;s pool to automate workflow steps
-            and collaborate on tasks.
+            Add agents to this idea to automate workflow steps. Agents are like
+            AI team members — they pick up tasks, follow workflows, and ship work.
           </p>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-2">
@@ -342,7 +342,7 @@ export function AgentsTab({
     <div className="space-y-6 overflow-y-auto pb-4">
       {/* Header with Add Agent button */}
       <div className="flex items-center justify-between">
-        <h2 className="flex items-center gap-1.5 text-lg font-semibold">Agent Pool <HelpLink href="/guide/ai-agent-teams" tooltip="How agents work" /></h2>
+        <h2 className="flex items-center gap-1.5 text-lg font-semibold">Your AI Team <HelpLink href="/guide/ai-agent-teams" tooltip="How agents work" /></h2>
         {isTeamMember && !isReadOnly && unallocatedBots.length > 0 && (
           <div className="flex gap-2">
             {unallocatedBots.length >= 2 && (

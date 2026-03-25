@@ -34,7 +34,7 @@ const techStack = [
   { icon: FileCode2, label: "TypeScript" },
   { icon: Database, label: "Supabase" },
   { icon: Paintbrush, label: "Tailwind CSS" },
-  { icon: Bot, label: "Claude + MCP" },
+  { icon: Bot, label: "Claude + MCP (Model Context Protocol)" },
   { icon: Zap, label: "Realtime" },
   { icon: ShieldCheck, label: "RLS" },
 ];

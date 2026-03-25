@@ -954,11 +954,11 @@ export function registerTools(
     }
   );
 
-  // --- Idea Agent Pool Tools ---
+  // --- Idea Agent Team Tools ---
 
   server.tool(
     "allocate_agent",
-    "Allocate a bot to an idea's shared agent pool. The bot becomes available for task assignment by all team members.",
+    "Allocate a bot to an idea's agent team. The bot becomes available for task assignment by all team members.",
     allocateAgentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -972,7 +972,7 @@ export function registerTools(
 
   server.tool(
     "remove_idea_agent",
-    "Remove a bot from an idea's shared agent pool. The bot will be unassigned from any tasks in that idea.",
+    "Remove a bot from an idea's agent team. The bot will be unassigned from any tasks in that idea.",
     removeIdeaAgentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -986,7 +986,7 @@ export function registerTools(
 
   server.tool(
     "allocate_all_agents",
-    "Bulk-allocate multiple bots to an idea's agent pool in one operation. If bot_ids is omitted, allocates all of the owner's unallocated active bots. Triggers a single workflow rematch at the end.",
+    "Bulk-allocate multiple bots to an idea's agent team in one operation. If bot_ids is omitted, allocates all of the owner's unallocated active bots. Triggers a single workflow rematch at the end.",
     allocateAllAgentsSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1000,7 +1000,7 @@ export function registerTools(
 
   server.tool(
     "list_idea_agents",
-    "List all agents allocated to an idea's shared pool with bot profile details and who added them.",
+    "List all agents allocated to an idea's agent team with bot profile details and who added them.",
     listIdeaAgentsSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1086,7 +1086,7 @@ export function registerTools(
 
   server.tool(
     "apply_workflow_template",
-    "Apply a workflow template to a task. Creates a workflow run with steps, auto-matching agents from the idea's agent pool by role. Returns the run, steps, and which roles were auto-matched.",
+    "Apply a workflow template to a task. Creates a workflow run with steps, auto-matching agents from the idea's agent team by role. Returns the run, steps, and which roles were auto-matched.",
     applyWorkflowTemplateSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1205,7 +1205,7 @@ export function registerTools(
 
   server.tool(
     "rematch_workflow_agents",
-    "Re-run agent matching on unmatched pending workflow steps. Useful after adding new agents to the idea's agent pool. Updates bot_id on steps where a match is found.",
+    "Re-run agent matching on unmatched pending workflow steps. Useful after adding new agents to the idea's agent team. Updates bot_id on steps where a match is found.",
     rematchWorkflowAgentsSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1245,11 +1245,11 @@ export function registerTools(
     }
   );
 
-  // --- Workflow Auto-Rule Tools ---
+  // --- Workflow Trigger Tools ---
 
   server.tool(
     "list_workflow_auto_rules",
-    "List auto-rules for an idea. Auto-rules link board labels to workflow templates — when a label is added to a task, a Postgres trigger auto-applies the template.",
+    "List workflow triggers for an idea. Workflow triggers link board labels to workflow templates — when a label is added to a task, the template is auto-applied.",
     listWorkflowAutoRulesSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1263,7 +1263,7 @@ export function registerTools(
 
   server.tool(
     "create_workflow_auto_rule",
-    "Create an auto-rule linking a label to a workflow template. When the label is added to a task, a Postgres trigger auto-applies the template. Use with manage_labels to create classification labels (feature, bug, etc.) and link them to templates.",
+    "Create a workflow trigger linking a label to a workflow template. When the label is added to a task, the template is auto-applied. Use with manage_labels to create classification labels (feature, bug, etc.) and link them to templates.",
     createWorkflowAutoRuleSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1277,7 +1277,7 @@ export function registerTools(
 
   server.tool(
     "update_workflow_auto_rule",
-    "Update an auto-rule's template. Only changed fields need to be provided.",
+    "Update a workflow trigger's template. Only changed fields need to be provided.",
     updateWorkflowAutoRuleSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1291,7 +1291,7 @@ export function registerTools(
 
   server.tool(
     "delete_workflow_auto_rule",
-    "Delete an auto-rule. Existing workflows applied by this rule are not affected.",
+    "Delete a workflow trigger. Existing workflows applied by this trigger are not affected.",
     deleteWorkflowAutoRuleSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1321,7 +1321,7 @@ export function registerTools(
 
   server.tool(
     "apply_kit",
-    "Apply a project kit to an idea — creates agents, imports workflow template, creates labels, and sets up auto-rules. User must be a team member.",
+    "Apply a project kit to an idea — creates agents, imports workflow template, creates labels, and sets up workflow triggers. User must be a team member.",
     applyKitSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1335,7 +1335,7 @@ export function registerTools(
 
   server.tool(
     "apply_auto_rule_retroactively",
-    "Apply an auto-rule to tasks that already have the matching label but no active workflow. Useful after creating a new rule to catch existing tasks. Skips tasks with active workflows.",
+    "Apply a workflow trigger to tasks that already have the matching label but no active workflow. Useful after creating a new trigger to catch existing tasks. Skips tasks with active workflows.",
     applyAutoRuleRetroactivelySchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

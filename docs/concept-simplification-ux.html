@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2.2 Concept Simplification — UX Design Document — Compass (UX Designer)</title>
+<style>
+  :root { --bg: #09090b; --surface: #111113; --surface-2: #19191d; --surface-3: #222228; --border: #27272a; --text: #fafafa; --text-muted: #a1a1aa; --text-dim: #71717a; --violet: #8b5cf6; --emerald: #10b981; --amber: #f59e0b; --cyan: #06b6d4; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.65; }
+  .hero { background: linear-gradient(160deg, #1a0f2e 0%, #0f1a2e 40%, #091a1f 100%); border-bottom: 1px solid var(--border); padding: 2.5rem 2rem 2rem; }
+  .hero-inner { max-width: 1000px; margin: 0 auto; }
+  .hero-badge { display: inline-flex; align-items: center; gap: 0.5rem; background: rgba(6, 182, 212, 0.12); border: 1px solid rgba(6, 182, 212, 0.25); border-radius: 999px; padding: 0.3rem 0.9rem; font-size: 0.78rem; color: var(--cyan); font-weight: 600; margin-bottom: 1rem; }
+  .hero h1 { font-size: 1.8rem; font-weight: 800; letter-spacing: -0.03em; margin-bottom: 0.4rem; }
+  .hero p { color: var(--text-muted); font-size: 0.9rem; }
+  .container { max-width: 1000px; margin: 0 auto; padding: 2rem; }
+  section { margin-bottom: 2.5rem; }
+  h2 { font-size: 1.3rem; font-weight: 800; margin-bottom: 0.5rem; padding-bottom: 0.5rem; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 1rem; font-weight: 700; margin-top: 1.25rem; margin-bottom: 0.4rem; }
+  p { margin-bottom: 0.6rem; color: var(--text-muted); font-size: 0.88rem; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.82rem; margin: 0.75rem 0; }
+  th { text-align: left; padding: 0.5rem; font-weight: 700; color: var(--text); border-bottom: 2px solid var(--border); }
+  td { padding: 0.5rem; color: var(--text-muted); border-bottom: 1px solid var(--border); vertical-align: top; }
+  .old { color: #f87171; text-decoration: line-through; }
+  .new { color: var(--emerald); font-weight: 600; }
+  code { font-size: 0.78rem; background: var(--surface-3); padding: 0.1rem 0.4rem; border-radius: 4px; color: var(--violet); }
+  .mockup-frame { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin: 1rem 0; }
+  .mockup-titlebar { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); background: var(--surface-2); }
+  .mockup-dot { width: 10px; height: 10px; border-radius: 50%; }
+  .mockup-dot-r { background: #ef4444; } .mockup-dot-y { background: #eab308; } .mockup-dot-g { background: #22c55e; }
+  .mockup-title { font-size: 0.72rem; color: var(--text-dim); margin-left: 0.5rem; }
+  .mockup-body { padding: 1.5rem; }
+  .hint { background: rgba(245, 158, 11, 0.08); border: 1px solid rgba(245, 158, 11, 0.2); border-radius: 6px; padding: 0.4rem 0.6rem; font-size: 0.78rem; color: var(--amber); margin-top: 0.35rem; display: flex; align-items: center; gap: 0.4rem; }
+  .hint-icon { font-size: 0.85rem; }
+  .form-field { margin-bottom: 1rem; }
+  .form-label { font-size: 0.8rem; font-weight: 600; color: var(--text-muted); margin-bottom: 0.3rem; }
+  .form-input { width: 100%; background: var(--surface-3); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem 0.75rem; font-size: 0.85rem; color: var(--text-dim); }
+  .form-input.warning { border-color: rgba(245, 158, 11, 0.4); }
+  .note { background: var(--surface-2); border-left: 3px solid var(--violet); padding: 0.6rem 0.8rem; margin: 0.75rem 0; border-radius: 0 6px 6px 0; font-size: 0.82rem; }
+  .scope-tag { display: inline-block; font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.45rem; border-radius: 4px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .scope-ui { background: rgba(139, 92, 246, 0.12); color: var(--violet); }
+  .scope-mcp { background: rgba(6, 182, 212, 0.12); color: var(--cyan); }
+  .scope-guide { background: rgba(245, 158, 11, 0.12); color: var(--amber); }
+</style>
+</head>
+<body>
+
+<div class="hero">
+  <div class="hero-inner">
+    <div class="hero-badge">📝 UX Design — Copy Changes</div>
+    <h1>P2.2: Concept Simplification & Terminology</h1>
+    <p>Building on the Requirements step — this document provides the complete before/after text mapping for all 5 terminology changes, plus the soft validation mockup for the create-agent dialog.</p>
+  </div>
+</div>
+
+<div class="container">
+
+<!-- ═══ CHANGE 1: AUTO-RULES → WORKFLOW TRIGGERS ═══ -->
+<section>
+  <h2>1. "Auto-Rules" → "Workflow Triggers"</h2>
+  <p>Rename across all user-facing text. MCP tool <em>names</em> stay unchanged for API compatibility; only descriptions updated.</p>
+
+  <h3><span class="scope-tag scope-ui">UI</span> Components</h3>
+  <table>
+    <tr><th>File</th><th>Before</th><th>After</th></tr>
+    <tr><td><code>workflows-tab.tsx</code></td><td class="old">Auto-Rules</td><td class="new">Workflow Triggers</td></tr>
+    <tr><td><code>workflows-tab.tsx</code></td><td class="old">No auto-rules yet. When a label is applied to a task, an auto-rule can automatically attach a workflow template.</td><td class="new">No workflow triggers yet. When a label is applied to a task, a trigger can automatically attach a workflow template.</td></tr>
+    <tr><td><code>workflows-tab.tsx</code></td><td class="old">Delete Auto-Rule</td><td class="new">Delete Workflow Trigger</td></tr>
+    <tr><td><code>workflows-tab.tsx</code></td><td class="old">This will remove the auto-rule that links...</td><td class="new">This will remove the trigger that links...</td></tr>
+    <tr><td><code>workflows-tab.tsx</code> toasts</td><td class="old">Auto-rule created / deleted / failed</td><td class="new">Workflow trigger created / deleted / failed</td></tr>
+    <tr><td><code>workflows-tab.tsx</code></td><td class="old">Apply it to tasks manually or set up auto-rules</td><td class="new">Apply it to tasks manually or set up workflow triggers</td></tr>
+    <tr><td><code>workflows-tab.tsx</code></td><td class="old">remove any auto-rules using it</td><td class="new">remove any workflow triggers using it</td></tr>
+    <tr><td><code>label-picker.tsx</code></td><td class="old">This label has an auto-rule that applied the...</td><td class="new">This label has a workflow trigger that applied the...</td></tr>
+    <tr><td><code>onboarding-dialog.tsx</code></td><td class="old">Auto-rules active</td><td class="new">Workflow triggers active</td></tr>
+    <tr><td><code>kit-preview.tsx</code></td><td class="old">🔄 1 auto-rule / Auto-Rule</td><td class="new">🔄 1 trigger / Workflow Trigger</td></tr>
+    <tr><td><code>apply-kit-dialog.tsx</code></td><td class="old">auto-rule created / auto-rules for this idea</td><td class="new">workflow trigger created / triggers for this idea</td></tr>
+  </table>
+
+  <h3><span class="scope-tag scope-guide">Guide</span> Pages</h3>
+  <table>
+    <tr><th>File</th><th>Before</th><th>After</th></tr>
+    <tr><td><code>guide/workflows/page.tsx</code></td><td class="old">Auto-Rules (heading) / Auto-rules (all instances)</td><td class="new">Workflow Triggers (heading) / Workflow triggers (all instances)</td></tr>
+    <tr><td><code>guide/mcp-integration/page.tsx</code></td><td class="old">"List auto-rules" / "Create an auto-rule" / etc.</td><td class="new">"List workflow triggers" / "Create a workflow trigger" / etc.</td></tr>
+  </table>
+
+  <h3><span class="scope-tag scope-mcp">MCP</span> Tool Descriptions (names unchanged)</h3>
+  <table>
+    <tr><th>Tool</th><th>Before (description)</th><th>After (description)</th></tr>
+    <tr><td><code>list_workflow_auto_rules</code></td><td class="old">List auto-rules for an idea. Auto-rules link board labels...</td><td class="new">List workflow triggers for an idea. Triggers link board labels...</td></tr>
+    <tr><td><code>create_workflow_auto_rule</code></td><td class="old">Create an auto-rule linking a label...</td><td class="new">Create a workflow trigger linking a label...</td></tr>
+    <tr><td><code>update_workflow_auto_rule</code></td><td class="old">Update an auto-rule's template...</td><td class="new">Update a workflow trigger's template...</td></tr>
+    <tr><td><code>delete_workflow_auto_rule</code></td><td class="old">Delete an auto-rule...</td><td class="new">Delete a workflow trigger...</td></tr>
+    <tr><td><code>apply_auto_rule_retroactively</code></td><td class="old">Apply an auto-rule to tasks...</td><td class="new">Apply a workflow trigger to tasks...</td></tr>
+  </table>
+
+  <div class="note">
+    <strong>Scope boundary:</strong> MCP tool <em>names</em> (e.g. <code>create_workflow_auto_rule</code>) are NOT renamed — they are API identifiers. Only the human-readable <code>description</code> field changes. Database columns (<code>workflow_auto_rules</code>, <code>auto_rule_label</code>) are also unchanged.
+  </div>
+</section>
+
+<!-- ═══ CHANGE 2: AGENT EXPLANATORY FRAMING ═══ -->
+<section>
+  <h2>2. Agent Explanatory Framing — CORRECTED SCOPE</h2>
+  <p>"Agent" is industry-standard AI terminology — keep it as the primary term everywhere. The problem isn't the word "agent," it's the word <strong>"pool"</strong> and the lack of explanatory copy for newcomers. Fix those two things only.</p>
+
+  <h3>Scope Decision: What Changes vs. What Stays</h3>
+  <table>
+    <tr><th>Context</th><th>Change?</th><th>Reasoning</th></tr>
+    <tr><td>"Agent Pool" header on board Agents tab</td><td class="new">Yes → "Your AI Team"</td><td>"Pool" is jargon — "team" is intuitive</td></tr>
+    <tr><td>"...pool..." in empty states and nudge text</td><td class="new">Yes → "...team..."</td><td>Same reason — remove "pool" references</td></tr>
+    <tr><td>Empty state descriptions (first encounter)</td><td class="new">Yes — add explanatory copy</td><td>Help newcomers understand what agents do</td></tr>
+    <tr><td>Page titles (Agents Hub)</td><td>No — keep as-is</td><td>"Agent" is industry-standard, users expect it</td></tr>
+    <tr><td>Tab labels (My Agents)</td><td>No — keep as-is</td><td>Concise, understood in context</td></tr>
+    <tr><td>Nav labels, buttons, dashboard sections</td><td>No — keep as-is</td><td>Don't rename the established term</td></tr>
+    <tr><td>Admin tabs, dropdowns, MCP tools</td><td>No — keep as-is</td><td>Technical contexts, "agent" is correct</td></tr>
+  </table>
+
+  <h3><span class="scope-tag scope-ui">UI</span> Changes (minimal — only "pool" removal + explanatory copy)</h3>
+  <table>
+    <tr><th>Location</th><th>Before</th><th>After</th></tr>
+    <tr><td>Board Agents tab header (<code>agents-tab.tsx</code>)</td><td class="old">Agent Pool</td><td class="new">Your AI Team</td></tr>
+    <tr><td>Board Agents tab empty state</td><td class="old">Add AI agents to this idea's pool to automate workflow steps</td><td class="new">Add agents to this idea to automate workflow steps. Agents are like AI team members — they pick up tasks, follow workflows, and ship work.</td></tr>
+    <tr><td>Board nudge (<code>kanban-board.tsx</code>)</td><td class="old">Add agents to your pool so they can pick up work.</td><td class="new">Add agents so they can pick up work.</td></tr>
+    <tr><td>Workflows tab nudge</td><td class="old">Add agents to your pool</td><td class="new">Add agents to your team</td></tr>
+    <tr><td>Agent profile remove button default</td><td class="old">Remove from pool</td><td class="new">Remove from team</td></tr>
+    <tr><td>MCP tool descriptions referencing "pool"</td><td class="old">idea's shared agent pool</td><td class="new">idea's agent team</td></tr>
+  </table>
+
+  <div class="note">
+    <strong>NOT changing:</strong> Agents Hub, My Agents, Build your first agent, Create Agent, dashboard "My Agents" section, profile "My Agents", sidebar nav, admin tabs, dropdown group labels, MCP tool names. "Agent" is the right word — we're only removing "pool" and adding explanatory copy where agents are first encountered.
+  </div>
+</section>
+
+<!-- ═══ CHANGE 3: SOFT VALIDATION ═══ -->
+<section>
+  <h2>3. Agent Creation Soft Validation Hints</h2>
+  <p>Building on the Requirements step: show amber inline hints below empty role and system prompt fields when the user submits the create-agent dialog. Non-blocking — the agent is still created.</p>
+
+  <div class="mockup-frame">
+    <div class="mockup-titlebar">
+      <div class="mockup-dot mockup-dot-r"></div>
+      <div class="mockup-dot mockup-dot-y"></div>
+      <div class="mockup-dot mockup-dot-g"></div>
+      <div class="mockup-title">Create Agent Dialog — Soft Validation</div>
+    </div>
+    <div class="mockup-body">
+      <div class="form-field">
+        <div class="form-label">Name *</div>
+        <div class="form-input" style="color: var(--text);">My New Agent</div>
+      </div>
+      <div class="form-field">
+        <div class="form-label">Role</div>
+        <div class="form-input warning" style="color: var(--text-dim);">e.g., Full Stack Engineer</div>
+        <div class="hint">
+          <span class="hint-icon">⚠️</span>
+          Add a role so this agent can be auto-assigned to workflow steps
+        </div>
+      </div>
+      <div class="form-field">
+        <div class="form-label">System Prompt</div>
+        <div class="form-input warning" style="min-height: 60px; color: var(--text-dim);">Describe how this agent should behave...</div>
+        <div class="hint">
+          <span class="hint-icon">⚠️</span>
+          Add a system prompt so this agent knows how to approach tasks
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Interaction Rules</h3>
+  <ul style="padding-left: 1.5rem; font-size: 0.85rem; color: var(--text-muted);">
+    <li><strong>When shown:</strong> On form submit, if role OR system prompt is empty. Hints appear after submission attempt.</li>
+    <li><strong>When hidden:</strong> As soon as user types in the field (onChange), the hint for that field disappears.</li>
+    <li><strong>Blocking:</strong> No — form still submits. Agent is created. Hints are advisory only.</li>
+    <li><strong>Styling:</strong> Amber border on the empty field + hint box below. Uses <code>border-amber-500/40</code> + <code>bg-amber-500/[0.08]</code> pattern.</li>
+    <li><strong>Accessibility:</strong> Hints use <code>role="alert"</code> so screen readers announce them.</li>
+  </ul>
+</section>
+
+<!-- ═══ CHANGE 4: MCP EXPANSION ═══ -->
+<section>
+  <h2>4. MCP First-Reference Expansion</h2>
+  <p>Add "(Model Context Protocol)" after the first mention of "MCP" on each page/dialog. Only the first instance — subsequent mentions stay as "MCP".</p>
+
+  <h3>Key Locations to Update</h3>
+  <table>
+    <tr><th>Location</th><th>Before</th><th>After</th></tr>
+    <tr><td>Onboarding Step 0, card 3 desc</td><td class="old">Via Claude Code + MCP</td><td class="new">Via Claude Code + MCP (Model Context Protocol)</td></tr>
+    <tr><td><code>mcp-connection-banner.tsx</code> main text</td><td>Already uses "Claude Code (MCP)" — acceptable</td><td>No change needed</td></tr>
+    <tr><td><code>agents-hub.tsx</code> description</td><td class="old">...members via MCP.</td><td class="new">...members via MCP (Model Context Protocol).</td></tr>
+    <tr><td><code>first-run-dashboard.tsx</code> step label</td><td class="old">MCP</td><td class="new">MCP (Connect)</td></tr>
+    <tr><td><code>first-run-dashboard.tsx</code> banner</td><td class="old">connect Claude Code via MCP</td><td class="new">connect Claude Code via MCP (Model Context Protocol)</td></tr>
+    <tr><td><code>create-agent-dialog.tsx</code></td><td class="old">via MCP so it can start working</td><td class="new">via MCP (Model Context Protocol) so it can start working</td></tr>
+    <tr><td>Landing page feature badge</td><td class="old">Claude + MCP</td><td class="new">Claude + MCP (Model Context Protocol)</td></tr>
+  </table>
+
+  <div class="note">
+    <strong>Not changing:</strong> The guide pages (they have their own full introductions), admin tabs ("MCP Tools" is fine for admin context), OAuth consent page, privacy policy (legal text, uses "API Access (MCP)" which is clear enough), toast messages ("MCP command copied" — too brief for expansion).
+  </div>
+</section>
+
+<!-- ═══ CHANGE 5: FEATURED TEAMS ═══ -->
+<section>
+  <h2>5. Featured Teams Copy</h2>
+  <table>
+    <tr><th>Location</th><th>Before</th><th>After</th></tr>
+    <tr><td><code>featured-teams.tsx</code> button</td><td class="old">Add Team</td><td class="new">Clone Team to My Agents</td></tr>
+  </table>
+  <p>Add a tooltip on the button: <em>"Creates copies of these agents in your account. You can customise them afterwards."</em></p>
+
+  <div class="note">
+    <strong>Note:</strong> The onboarding wizard no longer uses featured teams (replaced by kit selector in P2.1). This change only affects the community tab and the agents hub featured teams section.
+  </div>
+</section>
+
+<!-- ═══ SUMMARY ═══ -->
+<section>
+  <h2>Implementation Scope Summary</h2>
+  <table>
+    <tr><th>Change</th><th>Files to Touch</th><th>Complexity</th></tr>
+    <tr><td>Auto-Rules → Workflow Triggers</td><td>~8 UI files + 2 guide pages + 3 MCP files</td><td>Low (find & replace)</td></tr>
+    <tr><td>AI Team Member framing</td><td>~12 UI files + 2 guide pages</td><td>Low (text changes)</td></tr>
+    <tr><td>Soft validation hints</td><td>1 file (create-agent-dialog.tsx)</td><td>Medium (new state + UI)</td></tr>
+    <tr><td>MCP expansion</td><td>~6 files</td><td>Low (text changes)</td></tr>
+    <tr><td>Featured Teams copy</td><td>1 file</td><td>Low (text + tooltip)</td></tr>
+  </table>
+</section>
+
+</div>
+</body>
+</html>

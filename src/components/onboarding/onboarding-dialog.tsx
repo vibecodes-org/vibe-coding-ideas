@@ -305,7 +305,7 @@ export function OnboardingDialog({
                     color: "text-amber-400",
                     bg: "bg-amber-400/10",
                     title: "Agents do the work",
-                    desc: "Via Claude Code + MCP",
+                    desc: "Via Claude Code + MCP (Model Context Protocol)",
                   },
                 ].map((item) => (
                   <div
@@ -822,7 +822,7 @@ export function OnboardingDialog({
                 {autoRuleCreated && (
                   <span className="inline-flex items-center gap-1.5 rounded-md bg-amber-500/[0.12] border border-amber-500/25 px-2.5 py-1 text-xs font-semibold text-amber-400">
                     <Check className="h-3 w-3" />
-                    Auto-rules active
+                    Workflow triggers active
                   </span>
                 )}
               </div>

@@ -65,8 +65,8 @@ export function buildPromptContextParts(ctx: PromptContext): string[] {
       `- Label "${r.labelName}" → applies workflow "${r.templateName}"${r.templateDescription ? ` (${r.templateDescription})` : ""}`
     );
     parts.push(
-      `**Workflow Auto-Rules:** The following labels have workflow templates that are automatically applied when the label is assigned to a task:\n${ruleLines.join("\n")}`,
-      `Classify each task and assign the most appropriate label(s) from the auto-rules above. For example, a feature task should be labelled "${ctx.autoRuleMappings.find((r) => r.labelName.toLowerCase().includes("feature"))?.labelName ?? ctx.autoRuleMappings[0].labelName}", a bug fix should use the bug label, etc. You may also assign additional labels beyond these.`
+      `**Workflow Triggers:** The following labels have workflow templates that are automatically applied when the label is assigned to a task:\n${ruleLines.join("\n")}`,
+      `Classify each task and assign the most appropriate label(s) from the workflow triggers above. For example, a feature task should be labelled "${ctx.autoRuleMappings.find((r) => r.labelName.toLowerCase().includes("feature"))?.labelName ?? ctx.autoRuleMappings[0].labelName}", a bug fix should use the bug label, etc. You may also assign additional labels beyond these.`
     );
   }
 

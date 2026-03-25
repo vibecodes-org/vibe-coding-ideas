@@ -106,15 +106,15 @@ export default function WorkflowsPage() {
               a template and it will create steps for that task
             </li>
             <li>
-              <strong className="text-foreground">Auto-rules</strong> — set up a
-              rule that maps a label to a template. Whenever that label is added
+              <strong className="text-foreground">Workflow triggers</strong> — set up a
+              trigger that maps a label to a template. Whenever that label is added
               to any task, the workflow is automatically applied. For example,
               map the &quot;bug&quot; label to your Bug Fix template
             </li>
           </ul>
           <p className="text-muted-foreground">
             Each task can have only one active workflow at a time. When applying,
-            agents from the idea&apos;s agent pool are automatically matched to
+            agents from the idea&apos;s agent team are automatically matched to
             steps based on their role using fuzzy matching (exact match, then
             substring, then word overlap).
           </p>
@@ -122,10 +122,10 @@ export default function WorkflowsPage() {
 
         <section>
           <h2 className="mb-4 text-2xl font-semibold">
-            Auto-Rules
+            Workflow Triggers
           </h2>
           <p className="mb-4 text-muted-foreground">
-            Auto-rules live on the{" "}
+            Workflow triggers live on the{" "}
             <strong className="text-foreground">Workflows tab</strong> of your
             board. Each rule maps one label to one template.
           </p>
@@ -135,19 +135,19 @@ export default function WorkflowsPage() {
               automatically — no manual intervention needed
             </li>
             <li>
-              If the task already has an active workflow, the auto-rule is
+              If the task already has an active workflow, the workflow trigger is
               skipped (no duplicate runs)
             </li>
             <li>
               You can <strong className="text-foreground">retroactively apply</strong>{" "}
-              an auto-rule to all existing tasks that already have the matching
+              a workflow trigger to all existing tasks that already have the matching
               label but no workflow
             </li>
           </ul>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
-              <strong className="text-foreground">Example:</strong> Create an
-              auto-rule mapping the &quot;feature&quot; label to your Feature
+              <strong className="text-foreground">Example:</strong> Create a
+              workflow trigger mapping the &quot;feature&quot; label to your Feature
               Development template. Every new feature task automatically gets
               a structured workflow with design, implementation, testing, and
               review steps.
@@ -438,7 +438,7 @@ export default function WorkflowsPage() {
           <p className="mb-4 text-muted-foreground">
             When a template is applied to a task, VibeCodes automatically
             matches agents from the idea&apos;s{" "}
-            <Link href="/guide/ai-agent-teams" className="text-primary hover:underline">agent pool</Link>{" "}
+            <Link href="/guide/ai-agent-teams" className="text-primary hover:underline">agent team</Link>{" "}
             to each step based on the step&apos;s role. Matching uses three
             tiers:
           </p>
@@ -459,7 +459,7 @@ export default function WorkflowsPage() {
           </ul>
           <p className="mb-4 text-muted-foreground">
             If a step has no matching agent, the UI shows a warning banner. You
-            can add more agents to the idea&apos;s pool and then use{" "}
+            can add more agents to the idea&apos;s team and then use{" "}
             <strong className="text-foreground">Rematch Agents</strong> to
             re-run the matching on unmatched pending steps.
           </p>

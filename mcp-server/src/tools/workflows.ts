@@ -1183,7 +1183,7 @@ export async function removeWorkflow(
 }
 
 // ============================================================
-// Auto-Rule Tools
+// Workflow Trigger Tools
 // ============================================================
 
 // --- List Workflow Auto Rules ---
@@ -1202,7 +1202,7 @@ export async function listWorkflowAutoRules(
     .eq("idea_id", params.idea_id)
     .order("created_at", { ascending: false });
 
-  if (error) throw new Error(`Failed to list auto rules: ${error.message}`);
+  if (error) throw new Error(`Failed to list workflow triggers: ${error.message}`);
   return data ?? [];
 }
 
@@ -1230,9 +1230,9 @@ export async function createWorkflowAutoRule(
 
   if (error) {
     if (error.code === "23505") {
-      throw new Error("An auto-rule already exists for this label. Update or delete the existing rule first.");
+      throw new Error("A workflow trigger already exists for this label. Update or delete the existing trigger first.");
     }
-    throw new Error(`Failed to create auto rule: ${error.message}`);
+    throw new Error(`Failed to create workflow trigger: ${error.message}`);
   }
   return data;
 }
@@ -1240,7 +1240,7 @@ export async function createWorkflowAutoRule(
 // --- Update Workflow Auto Rule ---
 
 export const updateWorkflowAutoRuleSchema = z.object({
-  rule_id: z.string().uuid().describe("The auto rule ID"),
+  rule_id: z.string().uuid().describe("The workflow trigger ID"),
   template_id: z.string().uuid().optional().describe("New workflow template ID"),
 });
 
@@ -1262,14 +1262,14 @@ export async function updateWorkflowAutoRule(
     .select("*, workflow_templates(id, name), board_labels(id, name, color)")
     .single();
 
-  if (error) throw new Error(`Failed to update auto rule: ${error.message}`);
+  if (error) throw new Error(`Failed to update workflow trigger: ${error.message}`);
   return data;
 }
 
 // --- Delete Workflow Auto Rule ---
 
 export const deleteWorkflowAutoRuleSchema = z.object({
-  rule_id: z.string().uuid().describe("The auto rule ID to delete"),
+  rule_id: z.string().uuid().describe("The workflow trigger ID to delete"),
 });
 
 export async function deleteWorkflowAutoRule(
@@ -1281,14 +1281,14 @@ export async function deleteWorkflowAutoRule(
     .delete()
     .eq("id", params.rule_id);
 
-  if (error) throw new Error(`Failed to delete auto rule: ${error.message}`);
+  if (error) throw new Error(`Failed to delete workflow trigger: ${error.message}`);
   return { success: true, rule_id: params.rule_id };
 }
 
 // --- Apply Auto Rule Retroactively ---
 
 export const applyAutoRuleRetroactivelySchema = z.object({
-  rule_id: z.string().uuid().describe("The auto rule ID to apply retroactively to already-labelled tasks"),
+  rule_id: z.string().uuid().describe("The workflow trigger ID to apply retroactively to already-labelled tasks"),
 });
 
 export async function applyAutoRuleRetroactively(
@@ -1302,7 +1302,7 @@ export async function applyAutoRuleRetroactively(
     .eq("id", params.rule_id)
     .single();
 
-  if (ruleError || !rule) throw new Error(`Auto rule not found: ${params.rule_id}`);
+  if (ruleError || !rule) throw new Error(`Workflow trigger not found: ${params.rule_id}`);
 
   // Find all non-archived tasks with the matching label
   const { data: labelledTasks, error: tasksError } = await ctx.supabase

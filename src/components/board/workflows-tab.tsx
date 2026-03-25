@@ -312,18 +312,18 @@ function AutoRulesSection({
         const result = await applyAutoRuleRetroactively(rule.id);
         if (result.applied > 0) {
           toast.success(
-            `Auto-rule created — applied to ${result.applied} existing task${result.applied !== 1 ? "s" : ""}`
+            `Workflow trigger created — applied to ${result.applied} existing task${result.applied !== 1 ? "s" : ""}`
           );
         } else {
-          toast.success("Auto-rule created");
+          toast.success("Workflow trigger created");
         }
         if (result.applied > 0) onRulesChange();
       } catch {
         // Rule was created successfully, just the retroactive apply failed
-        toast.success("Auto-rule created (could not apply to existing tasks)");
+        toast.success("Workflow trigger created (could not apply to existing tasks)");
       }
     } catch (err) {
-      toast.error(err instanceof Error ? err.message : "Failed to create auto-rule");
+      toast.error(err instanceof Error ? err.message : "Failed to create workflow trigger");
     } finally {
       setSaving(false);
     }
@@ -342,12 +342,12 @@ function AutoRulesSection({
       });
       toast.success(
         removeWorkflows
-          ? "Auto-rule and related workflows deleted"
-          : "Auto-rule deleted"
+          ? "Workflow trigger and related workflows deleted"
+          : "Workflow trigger deleted"
       );
       onRulesChange();
     } catch {
-      toast.error("Failed to delete auto-rule");
+      toast.error("Failed to delete workflow trigger");
     } finally {
       setDeleting(false);
       setDeleteRuleId(null);
@@ -384,7 +384,7 @@ function AutoRulesSection({
       <div className="flex items-center justify-between">
         <h3 className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
           <Zap className="h-3.5 w-3.5" />
-          Auto-Rules
+          Workflow Triggers
         </h3>
         {!isReadOnly && (
           <Button
@@ -405,7 +405,7 @@ function AutoRulesSection({
 
       {rules.length === 0 && !addingRule && (
         <p className="text-xs text-muted-foreground">
-          No auto-rules yet. When a label is applied to a task, an auto-rule can
+          No workflow triggers yet. When a label is applied to a task, a workflow trigger can
           automatically attach a workflow template.
         </p>
       )}
@@ -610,9 +610,9 @@ function AutoRulesSection({
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Delete Auto-Rule</AlertDialogTitle>
+            <AlertDialogTitle>Delete Workflow Trigger</AlertDialogTitle>
             <AlertDialogDescription>
-              This will remove the auto-rule that links{" "}
+              This will remove the workflow trigger that links{" "}
               <span className="font-medium text-foreground">
                 {deleteRuleId
                   ? (labelMap.get(
@@ -643,7 +643,7 @@ function AutoRulesSection({
               htmlFor="remove-workflows"
               className="text-sm text-muted-foreground cursor-pointer"
             >
-              Also remove workflows from tasks created by this rule
+              Also remove workflows from tasks created by this trigger
             </label>
           </div>
           <AlertDialogFooter>
@@ -845,7 +845,7 @@ export function WorkflowsTab({
             <p className="text-xs text-amber-400">
               <strong>Agents needed:</strong> Workflow steps are executed by AI agents.{" "}
               <a href="?tab=agents" className="underline hover:text-amber-300">
-                Add agents to your pool
+                Add agents to your team
               </a>{" "}
               before creating workflow templates.
             </p>
@@ -960,7 +960,7 @@ export function WorkflowsTab({
                       </li>
                       <li className="flex items-baseline gap-2">
                         <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-amber-500/12 text-[10px] font-bold text-amber-400">2</span>
-                        <span><strong className="text-foreground font-medium">Apply</strong> it to tasks manually or set up auto-rules</span>
+                        <span><strong className="text-foreground font-medium">Apply</strong> it to tasks manually or set up workflow triggers</span>
                       </li>
                       <li className="flex items-baseline gap-2">
                         <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-amber-500/12 text-[10px] font-bold text-amber-400">3</span>
@@ -1093,7 +1093,7 @@ export function WorkflowsTab({
                         <AlertDialogTitle>Delete template?</AlertDialogTitle>
                         <AlertDialogDescription>
                           This will permanently delete &quot;{selected.name}&quot; and
-                          remove any auto-rules using it. This action cannot be
+                          remove any workflow triggers using it. This action cannot be
                           undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>

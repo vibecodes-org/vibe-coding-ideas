@@ -387,7 +387,7 @@ export function LabelPicker({
           <AlertDialogHeader>
             <AlertDialogTitle>Remove label with active workflow?</AlertDialogTitle>
             <AlertDialogDescription>
-              This label has an auto-rule that applied the{" "}
+              This label has a workflow trigger that applied the{" "}
               <span className="font-medium text-foreground">
                 {confirmRemove?.templateName ?? "workflow"}
               </span>{" "}
