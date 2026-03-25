@@ -12,6 +12,7 @@ import {
   getPlatformAiCallsToday,
   PLATFORM_AI_DAILY_LIMIT,
 } from "@/lib/ai-helpers";
+import { initializeBoardColumns } from "@/actions/board";
 import {
   validateTitle,
   validateOptionalDescription,
@@ -381,6 +382,9 @@ export async function generateBoardFromOnboarding(
   }
 
   // ── Persist tasks to the database ──────────────────────────────────
+  // Ensure board columns exist (they are normally lazy-initialized on first board visit)
+  await initializeBoardColumns(ideaId);
+
   const { data: boardColumns } = await supabase
     .from("board_columns")
     .select("id, title, position")
