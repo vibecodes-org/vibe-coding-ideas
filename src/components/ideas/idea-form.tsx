@@ -81,12 +81,10 @@ function DescriptionField({
   onUndo: () => void;
 }) {
   const [showPulse, setShowPulse] = useState(false);
-  const hasPulsedRef = useRef(false);
 
   const handleFocus = useCallback(() => {
-    if (canUseAi && !hasPulsedRef.current && !enhanced) {
+    if (canUseAi && !enhanced) {
       setShowPulse(true);
-      hasPulsedRef.current = true;
     }
   }, [canUseAi, enhanced]);
 
