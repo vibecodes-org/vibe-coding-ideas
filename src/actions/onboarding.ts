@@ -444,7 +444,6 @@ export async function generateBoardFromOnboarding(
       title: task.title.slice(0, 200),
       description: task.description ?? null,
       position: nextPos,
-      created_by: user.id,
     };
   });
 
