@@ -276,7 +276,7 @@ export function CreateEnhanceDialog({
                 Cancel
               </Button>
               {askQuestions ? (
-                <Button onClick={handleGenerateQuestions} disabled={loadingQuestions}>
+                <Button onClick={handleGenerateQuestions} disabled={loadingQuestions} className="bg-violet-600 text-white hover:bg-violet-700">
                   {loadingQuestions ? (
                     <>
                       <Loader2 className="mr-2 h-4 w-4 animate-spin" />
@@ -290,7 +290,7 @@ export function CreateEnhanceDialog({
                   )}
                 </Button>
               ) : (
-                <Button onClick={handleEnhanceDirect}>
+                <Button onClick={handleEnhanceDirect} className="bg-violet-600 text-white hover:bg-violet-700">
                   <Sparkles className="mr-2 h-4 w-4" />
                   Enhance
                 </Button>
@@ -325,7 +325,7 @@ export function CreateEnhanceDialog({
                 <Button variant="outline" onClick={() => runStreamingEnhance(false)}>
                   Skip
                 </Button>
-                <Button onClick={handleEnhanceWithAnswers}>
+                <Button onClick={handleEnhanceWithAnswers} className="bg-violet-600 text-white hover:bg-violet-700">
                   <Sparkles className="mr-2 h-4 w-4" />
                   Enhance with Answers
                 </Button>
@@ -361,7 +361,7 @@ export function CreateEnhanceDialog({
                 <Button variant="outline" onClick={() => handleClose(false)} disabled={streaming}>
                   Cancel
                 </Button>
-                <Button onClick={handleApply} disabled={streaming || !enhancedText}>
+                <Button onClick={handleApply} disabled={streaming || !enhancedText} className="bg-violet-600 text-white hover:bg-violet-700">
                   Apply Enhancement
                 </Button>
               </div>
