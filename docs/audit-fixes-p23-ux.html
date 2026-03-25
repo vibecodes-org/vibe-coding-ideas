@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>P2.3 Remaining Audit Fixes — UX Design — Compass</title>
+<style>
+  :root { --bg: #09090b; --surface: #111113; --surface-2: #19191d; --surface-3: #222228; --border: #27272a; --text: #fafafa; --text-muted: #a1a1aa; --text-dim: #71717a; --violet: #8b5cf6; --emerald: #10b981; --amber: #f59e0b; --rose: #f43f5e; }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); line-height: 1.65; }
+  .container { max-width: 900px; margin: 0 auto; padding: 2rem; }
+  h1 { font-size: 1.6rem; font-weight: 800; margin-bottom: 0.3rem; }
+  h2 { font-size: 1.2rem; font-weight: 700; margin-top: 2rem; margin-bottom: 0.5rem; padding-bottom: 0.4rem; border-bottom: 1px solid var(--border); }
+  p { margin-bottom: 0.6rem; color: var(--text-muted); font-size: 0.88rem; }
+  code { font-size: 0.8rem; background: var(--surface-3); padding: 0.1rem 0.4rem; border-radius: 4px; color: var(--violet); }
+  .before-after { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1rem 0; }
+  .ba-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 1rem; }
+  .ba-label { font-size: 0.7rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.5rem; }
+  .ba-before { color: var(--rose); }
+  .ba-after { color: var(--emerald); }
+  .mock { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem; margin: 0.5rem 0; }
+  .btn-mock { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.35rem 0.75rem; border-radius: 6px; font-size: 0.78rem; font-weight: 600; cursor: pointer; border: none; font-family: inherit; }
+  .btn-ghost { background: transparent; color: var(--text-dim); border: 1px dashed var(--border); }
+  .btn-primary-outline { background: transparent; color: var(--violet); border: 1px solid rgba(139,92,246,0.5); }
+  .btn-retry { background: transparent; color: var(--text-muted); border: 1px solid var(--border); }
+  .notice { background: rgba(245,158,11,0.08); border: 1px solid rgba(245,158,11,0.2); border-radius: 6px; padding: 0.5rem 0.75rem; font-size: 0.78rem; color: var(--amber); display: flex; align-items: center; gap: 0.4rem; margin: 0.5rem 0; }
+  .step-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--surface-2); margin: 0.3rem 0; font-size: 0.82rem; }
+  .step-badge { font-size: 0.65rem; font-weight: 700; padding: 0.15rem 0.4rem; border-radius: 4px; }
+  .badge-failed { background: rgba(244,63,94,0.12); color: var(--rose); }
+  .link-mock { font-size: 0.78rem; color: var(--text-dim); cursor: pointer; text-decoration: none; }
+  .link-mock:hover { color: var(--text); text-decoration: underline; }
+  @media (max-width: 640px) { .before-after { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<h1>P2.3: Remaining Audit Fixes — UX Design</h1>
+<p>Building on the Requirements step — 4 targeted fixes with before/after specs. All changes are CSS/text modifications to existing components.</p>
+
+<!-- FIX 1 -->
+<h2>Fix 1: Retry Button Always Visible on Failed Steps (F21)</h2>
+<p>WCAG violation: action buttons must not require hover to be discoverable.</p>
+
+<div class="before-after">
+  <div class="ba-card">
+    <div class="ba-label ba-before">Before — hover required</div>
+    <div class="mock">
+      <div class="step-row">
+        <span class="step-badge badge-failed">Failed</span>
+        <span style="flex:1">Implementation</span>
+        <span style="color: var(--text-dim); font-size: 0.75rem; font-style: italic;">← hover to see Retry</span>
+      </div>
+    </div>
+    <p style="font-size:0.75rem"><code>opacity-0 group-hover:opacity-100</code> — invisible on touch</p>
+  </div>
+  <div class="ba-card">
+    <div class="ba-label ba-after">After — always visible</div>
+    <div class="mock">
+      <div class="step-row">
+        <span class="step-badge badge-failed">Failed</span>
+        <span style="flex:1">Implementation</span>
+        <button class="btn-retry">↻ Retry</button>
+      </div>
+    </div>
+    <p style="font-size:0.75rem"><code>text-muted-foreground hover:text-foreground</code> — subtle but always present</p>
+  </div>
+</div>
+
+<p><strong>CSS change:</strong> Remove <code>opacity-0 group-hover:opacity-100 transition-opacity</code>. Replace with <code>text-muted-foreground/70 hover:text-foreground</code> for subtle always-visible styling. Keep existing <code>size="sm"</code> and <code>variant="ghost"</code>.</p>
+
+<!-- FIX 2 -->
+<h2>Fix 2: 50-Task Cap Notice (F16)</h2>
+<p>When AI generates more than 50 tasks, show an amber notice above the preview table.</p>
+
+<div class="ba-card" style="margin: 1rem 0;">
+  <div class="ba-label ba-after">After — notice shown when truncated</div>
+  <div class="mock">
+    <div class="notice">
+      <span>⚠️</span>
+      Showing maximum of 50 tasks. Run again to generate more.
+    </div>
+    <div style="font-size: 0.75rem; color: var(--text-dim); margin-top: 0.5rem; border: 1px dashed var(--border); border-radius: 6px; padding: 0.75rem; text-align: center;">
+      [ ImportPreviewTable with 50 tasks ]
+    </div>
+  </div>
+</div>
+
+<p><strong>Implementation:</strong> Add <code>rawTaskCount</code> state. Store <code>lastParsed.tasks.length</code> before slicing. Show notice when <code>rawTaskCount > 50</code>. Notice uses existing amber pattern: <code>border-amber-500/20 bg-amber-500/[0.08] text-amber-400</code>.</p>
+<p><strong>Only shown when truncated.</strong> If ≤50 tasks generated, no notice appears.</p>
+
+<!-- FIX 3 -->
+<h2>Fix 3: "Apply Workflow" Button Prominence (F14)</h2>
+
+<div class="before-after">
+  <div class="ba-card">
+    <div class="ba-label ba-before">Before — dashed ghost</div>
+    <div class="mock">
+      <button class="btn-ghost">⚡ Apply Workflow</button>
+    </div>
+    <p style="font-size:0.75rem"><code>variant="outline" border-dashed size="sm"</code> — easily missed</p>
+  </div>
+  <div class="ba-card">
+    <div class="ba-label ba-after">After — coloured outline</div>
+    <div class="mock">
+      <button class="btn-primary-outline">⚡ Apply Workflow</button>
+    </div>
+    <p style="font-size:0.75rem"><code>variant="outline" border-primary/50 text-primary</code> — visually distinct</p>
+  </div>
+</div>
+
+<p><strong>CSS change:</strong> Remove <code>border-dashed</code>. Add <code>border-primary/50 text-primary hover:bg-primary/10</code>. The violet colour draws the eye without being as heavy as a solid primary button.</p>
+
+<!-- FIX 4 -->
+<h2>Fix 4: Import Link in Board Empty State (F15)</h2>
+
+<div class="ba-card" style="margin: 1rem 0;">
+  <div class="ba-label ba-after">After — import link added</div>
+  <div class="mock" style="text-align: center; padding: 1.5rem;">
+    <div style="font-size: 1.5rem; margin-bottom: 0.5rem;">✨</div>
+    <div style="font-weight: 700; margin-bottom: 0.25rem;">Get started with AI</div>
+    <div style="font-size: 0.82rem; color: var(--text-dim); margin-bottom: 1rem;">Describe your idea and let AI generate a full task board</div>
+    <button class="btn-primary-outline" style="margin-bottom: 1rem; padding: 0.5rem 1.25rem;">✨ AI Generate Tasks</button>
+    <div style="margin-top: 0.5rem;">
+      <a class="link-mock">Show columns & add tasks manually</a>
+    </div>
+    <div style="margin-top: 0.35rem;">
+      <a class="link-mock">Or import tasks from another tool (CSV, JSON)</a>
+    </div>
+  </div>
+</div>
+
+<p><strong>Implementation:</strong> Add <code>onImport?: () => void</code> prop to <code>BoardEmptyState</code>. Render import link below the "Show columns" link when <code>onImport</code> is provided. Parent <code>kanban-board.tsx</code> passes the existing import dialog toggle.</p>
+<p><strong>Styling:</strong> Same <code>text-xs text-muted-foreground hover:text-foreground hover:underline</code> as the "Show columns" link — consistent secondary action treatment.</p>
+
+</div>
+</body>
+</html>

@@ -10,6 +10,7 @@ interface BoardEmptyStateProps {
   starterCredits: number;
   onAiGenerate: () => void;
   onDismiss: () => void;
+  onImport?: () => void;
   isReadOnly: boolean;
 }
 
@@ -19,6 +20,7 @@ export function BoardEmptyState({
   starterCredits,
   onAiGenerate,
   onDismiss,
+  onImport,
   isReadOnly,
 }: BoardEmptyStateProps) {
   if (isReadOnly) {
@@ -109,6 +111,15 @@ export function BoardEmptyState({
         >
           Show columns &amp; add tasks manually
         </button>
+        {onImport && (
+          <button
+            type="button"
+            className="mt-1.5 block text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors"
+            onClick={onImport}
+          >
+            Or import tasks from another tool (CSV, JSON)
+          </button>
+        )}
       </div>
     </div>
   );

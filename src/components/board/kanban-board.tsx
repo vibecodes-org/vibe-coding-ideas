@@ -969,6 +969,7 @@ export function KanbanBoard({
           starterCredits={starterCredits}
           onAiGenerate={() => setAiGenerateOpen(true)}
           onDismiss={() => setEmptyStateDismissed(true)}
+          onImport={() => setEmptyStateDismissed(true)}
           isReadOnly={isReadOnly}
         />
       ) : (

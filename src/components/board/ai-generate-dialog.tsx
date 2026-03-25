@@ -108,6 +108,7 @@ export function AiGenerateDialog({
   );
   const [columnMapping, setColumnMapping] = useState<ColumnMapping>({});
   const [generating, setGenerating] = useState(false);
+  const [tasksTruncated, setTasksTruncated] = useState(false);
   const [selectedIndices, setSelectedIndices] = useState<Set<number>>(new Set());
 
   // Inserting phase state
@@ -124,6 +125,8 @@ export function AiGenerateDialog({
   const [isRefreshing, startTransition] = useTransition();
   const loadingTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const createdCountRef = useRef(0);
+  // Track whether AI generation happened (credit consumed) so we refresh on close
+  const didGenerateRef = useRef(false);
 
   const busy = generating || phase === "inserting" || phase === "loading-board";
 
@@ -246,10 +249,12 @@ export function AiGenerateDialog({
 
       // Final update with all tasks (capped at 50)
       const tasks = lastParsed.tasks.slice(0, 50) as ImportTask[];
+      setTasksTruncated(lastParsed.tasks.length > 50);
       setGeneratedTasks(tasks);
 
       const uniqueColumns = getUniqueColumnNames(tasks);
       setColumnMapping(autoMapColumns(uniqueColumns, columns));
+      didGenerateRef.current = true;
     } catch (err) {
       toast.error(
         err instanceof Error ? err.message : "Failed to generate tasks"
@@ -420,6 +425,7 @@ export function AiGenerateDialog({
   function resetState() {
     setPhase("configure");
     setGeneratedTasks(null);
+    setTasksTruncated(false);
     setColumnMapping({});
     setPrompt(DEFAULT_PROMPT);
     setSelectedBotId("default");
@@ -436,7 +442,15 @@ export function AiGenerateDialog({
 
   function handleOpenChange(value: boolean) {
     if (busy) return;
-    if (!value) resetState();
+    if (!value) {
+      // If AI generation occurred (credit consumed), refresh server data so
+      // the starter-credit badge updates without a full page reload.
+      if (didGenerateRef.current) {
+        didGenerateRef.current = false;
+        router.refresh();
+      }
+      resetState();
+    }
     onOpenChange(value);
   }
 
@@ -583,6 +597,13 @@ export function AiGenerateDialog({
 
           {/* ── Preview Phase ──────────────────────────────────── */}
           {phase === "preview" && generatedTasks && (
+            <>
+            {tasksTruncated && !generating && (
+              <div className="mb-3 flex items-center gap-2 rounded-md border border-amber-500/20 bg-amber-500/[0.08] px-3 py-2 text-xs text-amber-400">
+                <span>⚠️</span>
+                Showing maximum of 50 tasks. Run again to generate more.
+              </div>
+            )}
             <ImportPreviewTable
               tasks={generatedTasks}
               columns={columns}
@@ -593,6 +614,7 @@ export function AiGenerateDialog({
               selectedIndices={generating ? undefined : selectedIndices}
               onSelectionChange={generating ? undefined : setSelectedIndices}
             />
+            </>
           )}
 
           {/* ── Inserting Phase ────────────────────────────────── */}

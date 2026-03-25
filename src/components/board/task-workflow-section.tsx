@@ -372,7 +372,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
             <Button
               variant="outline"
               size="sm"
-              className="gap-1.5 text-xs border-dashed"
+              className="gap-1.5 text-xs border-primary/50 text-primary hover:bg-primary/10"
               onClick={() => setShowApply(true)}
             >
               <Workflow className="h-3.5 w-3.5" />
