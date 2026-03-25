@@ -623,7 +623,8 @@ export async function completeStep(
     const agentRole = agent?.role ?? step.agent_role ?? "unknown";
     throw new Error(
       `Identity mismatch: this step is assigned to ${agentName} (${agentRole}). ` +
-      `Call set_agent_identity with agent_id "${step.bot_id}" before completing this step.`
+      `The work was performed under the wrong identity and must be redone. ` +
+      `Call set_agent_identity with agent_id "${step.bot_id}", then re-claim and re-execute this step as the correct agent.`
     );
   }
 
@@ -703,7 +704,8 @@ export async function failStep(
     const agentRole = agent?.role ?? step.agent_role ?? "unknown";
     throw new Error(
       `Identity mismatch: this step is assigned to ${agentName} (${agentRole}). ` +
-      `Call set_agent_identity with agent_id "${step.bot_id}" before failing this step.`
+      `Call set_agent_identity with agent_id "${step.bot_id}" before failing this step. ` +
+      `Any work done under the wrong identity should be discarded.`
     );
   }
 

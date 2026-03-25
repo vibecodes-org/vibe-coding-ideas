@@ -185,7 +185,8 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
   if (existing?.bot_id && user.id !== existing.bot_id) {
     throw new Error(
       `Identity mismatch: this step is assigned to a different agent (${existing.agent_role ?? "unknown"}). ` +
-      `Switch identity before completing this step.`
+      `The work was performed under the wrong identity and must be redone. ` +
+      `Switch identity, then re-claim and re-execute this step as the correct agent.`
     );
   }
 
@@ -273,7 +274,8 @@ export async function failWorkflowStep(
   if (existing?.bot_id && existing.status !== "awaiting_approval" && user.id !== existing.bot_id) {
     throw new Error(
       `Identity mismatch: this step is assigned to a different agent (${existing.agent_role ?? "unknown"}). ` +
-      `Switch identity before failing this step.`
+      `Switch identity before failing this step. ` +
+      `Any work done under the wrong identity should be discarded.`
     );
   }
 
