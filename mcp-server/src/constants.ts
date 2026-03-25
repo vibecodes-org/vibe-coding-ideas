@@ -1,5 +1,7 @@
 export const POSITION_GAP = 1000;
 
+export const VIBECODES_USER_ID = "a0000000-0000-4000-a000-000000000001";
+
 export const DEFAULT_BOARD_COLUMNS = [
   { title: "Backlog", position: 0, is_done_column: false },
   { title: "To Do", position: 1000, is_done_column: false },

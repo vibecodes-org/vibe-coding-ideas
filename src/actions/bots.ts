@@ -202,7 +202,7 @@ export async function toggleAgentVote(botId: string) {
  * Returns the new bot's ID.
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function cloneBotProfile(
+export async function cloneBotProfile(
   supabase: any,
   source: BotProfile,
   ownerId: string

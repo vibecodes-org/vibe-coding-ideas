@@ -3,7 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { allocateAllAgents } from "./idea-agents";
+import { cloneBotProfile } from "./bots";
+import { BOT_ROLE_TEMPLATES, VIBECODES_USER_ID } from "@/lib/constants";
+import { generatePromptFromFields } from "@/lib/prompt-builder";
 import type { Database } from "@/types/database";
+import type { BotProfile } from "@/types";
 
 type ProjectKit = Database["public"]["Tables"]["project_kits"]["Row"];
 type AgentRole = {
@@ -103,6 +107,20 @@ export async function applyKit(
         .map((b) => [b.role!.toLowerCase(), b.id])
     );
 
+    // Fetch library agents (admin-owned, published) to clone from
+    const { data: libraryAgents } = await supabase
+      .from("bot_profiles")
+      .select("*")
+      .eq("owner_id", VIBECODES_USER_ID)
+      .eq("is_active", true)
+      .eq("is_published", true);
+
+    const libraryByRole = new Map(
+      (libraryAgents ?? [])
+        .filter((b) => b.role)
+        .map((b) => [b.role!.toLowerCase(), b as unknown as BotProfile])
+    );
+
     const botIdsToAllocate: string[] = [];
 
     for (const agentRole of agentRoles) {
@@ -115,21 +133,42 @@ export async function applyKit(
       }
 
       try {
-        const { data: botUser } = await supabase.rpc("create_bot_user", {
-          p_owner_id: user.id,
-          p_name: agentRole.name_suggestion || agentRole.role,
-          p_role: agentRole.role,
-        });
+        // Try cloning from library agent (carries system prompt, bio, skills, avatar)
+        const libraryAgent = roleLower ? libraryByRole.get(roleLower) : null;
+        let newBotId: string | null = null;
 
-        if (botUser) {
-          // Update with skills if provided
-          if (agentRole.skills && agentRole.skills.length > 0) {
-            await supabase
-              .from("bot_profiles")
-              .update({ skills: agentRole.skills })
-              .eq("id", botUser);
+        if (libraryAgent) {
+          newBotId = await cloneBotProfile(supabase, libraryAgent, user.id);
+        } else {
+          // Fallback: create from scratch with BOT_ROLE_TEMPLATES prompt
+          const template = BOT_ROLE_TEMPLATES.find(
+            (t) => t.role.toLowerCase() === roleLower
+          );
+          const systemPrompt = template?.structured
+            ? generatePromptFromFields(template.role, template.structured)
+            : template?.prompt ?? null;
+
+          const { data: botUser } = await supabase.rpc("create_bot_user", {
+            p_owner_id: user.id,
+            p_name: agentRole.name_suggestion || agentRole.role,
+            p_role: agentRole.role,
+            p_system_prompt: systemPrompt,
+          });
+
+          if (botUser) {
+            newBotId = botUser;
+            // Update with skills if provided
+            if (agentRole.skills && agentRole.skills.length > 0) {
+              await supabase
+                .from("bot_profiles")
+                .update({ skills: agentRole.skills })
+                .eq("id", botUser);
+            }
           }
-          botIdsToAllocate.push(botUser);
+        }
+
+        if (newBotId) {
+          botIdsToAllocate.push(newBotId);
           result.agentsCreated++;
         }
       } catch {

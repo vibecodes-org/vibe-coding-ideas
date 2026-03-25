@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
+import { VIBECODES_USER_ID } from "../constants";
 
 // --- List Kits ---
 
@@ -105,6 +106,21 @@ export async function applyKitMcp(
         .map((b) => [b.role!.toLowerCase(), b.id])
     );
 
+    // Fetch library agents (admin-owned, published) to clone from
+    const { data: libraryAgents } = await ctx.supabase
+      .from("bot_profiles")
+      .select("*")
+      .eq("owner_id", VIBECODES_USER_ID)
+      .eq("is_active", true)
+      .eq("is_published", true);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const libraryByRole = new Map<string, any>(
+      (libraryAgents ?? [])
+        .filter((b) => b.role)
+        .map((b) => [b.role!.toLowerCase(), b])
+    );
+
     const botIdsToAllocate: string[] = [];
 
     for (const agentRole of agentRoles) {
@@ -117,20 +133,49 @@ export async function applyKitMcp(
       }
 
       try {
-        const { data: botUser } = await ctx.supabase.rpc("create_bot_user", {
-          p_owner_id: ownerId,
-          p_name: agentRole.name_suggestion || agentRole.role,
-          p_role: agentRole.role,
-        });
+        let newBotId: string | null = null;
 
-        if (botUser) {
-          if (agentRole.skills && agentRole.skills.length > 0) {
+        // Try cloning from library agent (carries system prompt, bio, skills, avatar)
+        const libraryAgent = roleLower ? libraryByRole.get(roleLower) : null;
+        if (libraryAgent) {
+          const { data: clonedId } = await ctx.supabase.rpc("create_bot_user", {
+            p_owner_id: ownerId,
+            p_name: libraryAgent.name,
+            p_role: libraryAgent.role,
+            p_system_prompt: libraryAgent.system_prompt,
+            p_avatar_url: libraryAgent.avatar_url,
+          });
+          if (clonedId) {
             await ctx.supabase
               .from("bot_profiles")
-              .update({ skills: agentRole.skills })
-              .eq("id", botUser);
+              .update({
+                bio: libraryAgent.bio,
+                skills: libraryAgent.skills,
+                cloned_from: libraryAgent.id,
+              })
+              .eq("id", clonedId);
+            newBotId = clonedId;
           }
-          botIdsToAllocate.push(botUser);
+        } else {
+          // Fallback: create from scratch without system prompt
+          const { data: botUser } = await ctx.supabase.rpc("create_bot_user", {
+            p_owner_id: ownerId,
+            p_name: agentRole.name_suggestion || agentRole.role,
+            p_role: agentRole.role,
+          });
+          if (botUser) {
+            newBotId = botUser;
+            if (agentRole.skills && agentRole.skills.length > 0) {
+              await ctx.supabase
+                .from("bot_profiles")
+                .update({ skills: agentRole.skills })
+                .eq("id", botUser);
+            }
+          }
+        }
+
+        if (newBotId) {
+          botIdsToAllocate.push(newBotId);
           result.agentsCreated++;
         }
       } catch {
