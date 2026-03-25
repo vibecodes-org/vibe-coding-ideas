@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useRef, useCallback, useEffect } from "react";
-import { useFormStatus } from "react-dom";
+import { useState, useRef, useCallback, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,7 +19,6 @@ import { toast } from "sonner";
 import { TagInput } from "./tag-input";
 import { CreateEnhanceDialog } from "./create-enhance-dialog";
 import { createIdea } from "@/actions/ideas";
-// enhanceCreateDescription no longer used — dialog handles enhancement via streaming API
 import { ProjectTypeSelector } from "@/components/kits/project-type-selector";
 import { KitPreview } from "@/components/kits/kit-preview";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -44,8 +42,7 @@ interface IdeaFormProps {
   bots?: SimpleBotProfile[];
 }
 
-function SubmitButton({ hasKit, kitName }: { hasKit: boolean; kitName?: string }) {
-  const { pending } = useFormStatus();
+function SubmitButton({ hasKit, kitName, pending }: { hasKit: boolean; kitName?: string; pending: boolean }) {
   return (
     <Button type="submit" size="lg" className="flex-1" disabled={pending}>
       {pending
@@ -162,6 +159,7 @@ function DescriptionField({
 
 export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasByokKey = false, starterCredits = 0, bots = [] }: IdeaFormProps) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [tags, setTags] = useState<string[]>([]);
   const [isPrivate, setIsPrivate] = useState(false);
   const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
@@ -199,6 +197,40 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
     setEnhanced(false);
   }, []);
 
+  const handleSubmit = useCallback((e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    const githubUrl = (e.currentTarget.elements.namedItem("github_url") as HTMLInputElement)?.value || null;
+    startTransition(async () => {
+      try {
+        const result = await createIdea({
+          title,
+          description,
+          tags: tags.join(","),
+          githubUrl,
+          visibility: isPrivate ? "private" : "public",
+          kitId: hasKit ? selectedKitId : null,
+        });
+
+        if (result.kitError) {
+          toast.error("Idea created but kit application failed — you can apply it later from the board.");
+        }
+
+        if (result.kitResult) {
+          const parts: string[] = [];
+          if (result.kitResult.agentsCreated > 0) parts.push(`${result.kitResult.agentsCreated} agent${result.kitResult.agentsCreated !== 1 ? "s" : ""}`);
+          if (result.kitResult.labelsCreated > 0) parts.push(`${result.kitResult.labelsCreated} label${result.kitResult.labelsCreated !== 1 ? "s" : ""}`);
+          if (result.kitResult.templateImported) parts.push("workflow imported");
+          const summary = encodeURIComponent(parts.join(", ") || "applied");
+          router.push(`/ideas/${result.ideaId}/board?kit_applied=${summary}`);
+        } else {
+          router.push(`/ideas/${result.ideaId}`);
+        }
+      } catch (err) {
+        toast.error(err instanceof Error ? err.message : "Failed to create idea");
+      }
+    });
+  }, [title, description, tags, isPrivate, hasKit, selectedKitId, router, startTransition]);
+
   return (
     <Card className="mx-auto max-w-2xl">
       <CardHeader>
@@ -208,7 +240,7 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
         </CardDescription>
       </CardHeader>
       <CardContent>
-        <form action={createIdea} className="space-y-6">
+        <form onSubmit={handleSubmit} className="space-y-6">
           <div className="space-y-2">
             <label htmlFor="title" className="text-sm font-medium">
               Title
@@ -245,11 +277,6 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
               {selectedKit && !isCustomKit && (
                 <KitPreview kit={selectedKit} compact={isCompactPreview} />
               )}
-              <input
-                type="hidden"
-                name="kit_id"
-                value={hasKit ? selectedKitId! : ""}
-              />
             </div>
           )}
 
@@ -308,7 +335,6 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
               checked={isPrivate}
               onCheckedChange={setIsPrivate}
             />
-            <input type="hidden" name="visibility" value={isPrivate ? "private" : "public"} />
           </div>
 
           <div className="flex gap-3">
@@ -321,7 +347,7 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
             >
               Cancel
             </Button>
-            <SubmitButton hasKit={hasKit} kitName={selectedKit?.name} />
+            <SubmitButton hasKit={hasKit} kitName={selectedKit?.name} pending={isPending} />
           </div>
         </form>
       </CardContent>

@@ -4,9 +4,24 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { validateTitle, validateDescription, validateGithubUrl, validateTags } from "@/lib/validation";
+import { logger } from "@/lib/logger";
 import type { IdeaStatus } from "@/types";
+import type { ApplyKitResult } from "./kits";
 
-export async function createIdea(formData: FormData) {
+export type CreateIdeaResult = {
+  ideaId: string;
+  kitResult?: ApplyKitResult;
+  kitError?: boolean;
+};
+
+export async function createIdea(data: {
+  title: string;
+  description: string;
+  tags: string;
+  githubUrl: string | null;
+  visibility: "public" | "private";
+  kitId: string | null;
+}): Promise<CreateIdeaResult> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -16,14 +31,13 @@ export async function createIdea(formData: FormData) {
     redirect("/login");
   }
 
-  const title = validateTitle(formData.get("title") as string);
-  const description = validateDescription(formData.get("description") as string);
-  const tags = validateTags(formData.get("tags") as string);
-  const githubUrl = validateGithubUrl((formData.get("github_url") as string) || null);
-  const visibility = formData.get("visibility") === "private" ? "private" as const : "public" as const;
-  const kitId = (formData.get("kit_id") as string) || null;
+  const title = validateTitle(data.title);
+  const description = validateDescription(data.description);
+  const tags = validateTags(data.tags);
+  const githubUrl = validateGithubUrl(data.githubUrl);
+  const visibility = data.visibility;
 
-  const { data, error } = await supabase
+  const { data: idea, error } = await supabase
     .from("ideas")
     .insert({
       title,
@@ -41,27 +55,23 @@ export async function createIdea(formData: FormData) {
   }
 
   // Apply kit if selected (non-Custom)
-  if (kitId) {
+  if (data.kitId) {
     try {
       const { applyKit } = await import("./kits");
-      const result = await applyKit(data.id, kitId);
-      const parts: string[] = [];
-      if (result.agentsCreated > 0) parts.push(`${result.agentsCreated} agent${result.agentsCreated !== 1 ? "s" : ""}`);
-      if (result.labelsCreated > 0) parts.push(`${result.labelsCreated} label${result.labelsCreated !== 1 ? "s" : ""}`);
-      if (result.templateImported) parts.push("workflow imported");
-      const summary = encodeURIComponent(parts.join(", ") || "applied");
-      redirect(`/ideas/${data.id}/board?kit_applied=${summary}`);
+      const kitResult = await applyKit(idea.id, data.kitId);
+      return { ideaId: idea.id, kitResult };
     } catch (e: unknown) {
-      // Re-throw redirect errors (they use throw internally)
-      if (e instanceof Error && "digest" in e && typeof (e as { digest?: string }).digest === "string" && (e as { digest: string }).digest.startsWith("NEXT_REDIRECT")) {
-        throw e;
-      }
-      // Kit application failed — idea was still created, redirect to idea page
-      redirect(`/ideas/${data.id}?kit_error=1`);
+      logger.warn("Kit application failed during idea creation", {
+        ideaId: idea.id,
+        kitId: data.kitId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+      // Don't throw — idea was still created, kit failure is non-fatal
+      return { ideaId: idea.id, kitError: true };
     }
   }
 
-  redirect(`/ideas/${data.id}`);
+  return { ideaId: idea.id };
 }
 
 export async function updateIdea(ideaId: string, formData: FormData) {
