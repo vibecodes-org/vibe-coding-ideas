@@ -53,10 +53,10 @@ export function ProjectTypeSelector({
     <div
       ref={groupRef}
       className={cn(
-        "grid gap-3",
+        "grid gap-2",
         compact
-          ? "grid-cols-[repeat(auto-fill,minmax(160px,1fr))]"
-          : "grid-cols-[repeat(auto-fill,minmax(200px,1fr))]"
+          ? "grid-cols-[repeat(auto-fill,minmax(140px,1fr))]"
+          : "grid-cols-2 sm:grid-cols-3"
       )}
       role="radiogroup"
       aria-label="Project type"
@@ -78,28 +78,23 @@ export function ProjectTypeSelector({
             onClick={() => onSelect(isSelected ? null : kit.id)}
             className={cn(
               "rounded-xl border-2 text-center transition-all duration-200",
-              compact ? "p-3" : "p-5",
+              compact ? "p-2.5" : "p-3",
               isSelected
                 ? "border-violet-500 bg-violet-500/[0.12] hover:-translate-y-0.5"
                 : "border-border bg-zinc-900 hover:border-muted-foreground/25 hover:-translate-y-0.5"
             )}
           >
-            <div className={compact ? "text-2xl mb-1" : "text-[2rem] mb-2"}>
+            <div className={compact ? "text-xl mb-0.5" : "text-2xl mb-1"}>
               {kit.icon}
             </div>
             <div
               className={cn(
                 "font-bold",
-                compact ? "text-xs" : "text-[0.9rem]"
+                compact ? "text-xs" : "text-sm"
               )}
             >
               {kit.name}
             </div>
-            {!compact && kit.description && (
-              <p className="mt-1 text-xs text-muted-foreground/70">
-                {kit.description}
-              </p>
-            )}
             <div className="mt-2 flex flex-wrap justify-center gap-2">
               {isCustom ? (
                 <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold text-muted-foreground">

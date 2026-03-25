@@ -162,6 +162,11 @@
   50% { box-shadow: 0 0 12px rgba(139, 92, 246, 0.6); }
 }
 
+@keyframes enhance-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+  50% { box-shadow: 0 0 12px 4px rgba(139, 92, 246, 0.35); }
+}
+
 .enhance-streaming-cursor {
   display: inline-block;
   width: 2px;

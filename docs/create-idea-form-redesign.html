@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Create Idea Form — Design Proposals (v2)</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --card: #18181b;
+    --card-border: #27272a;
+    --muted: #71717a;
+    --muted-fg: #a1a1aa;
+    --foreground: #fafafa;
+    --violet-400: #a78bfa;
+    --violet-500: #8b5cf6;
+    --violet-600: #7c3aed;
+    --violet-bg: rgba(139, 92, 246, 0.12);
+    --emerald-400: #34d399;
+    --emerald-bg: rgba(52, 211, 153, 0.12);
+    --green-500: #22c55e;
+    --green-bg: rgba(34, 197, 94, 0.1);
+    --amber-400: #fbbf24;
+    --amber-bg: rgba(251, 191, 36, 0.12);
+    --radius: 0.75rem;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--foreground);
+    padding: 2rem 1rem;
+    line-height: 1.5;
+  }
+
+  .page-title { text-align: center; font-size: 1.5rem; font-weight: 700; margin-bottom: 0.5rem; }
+  .page-subtitle { text-align: center; color: var(--muted-fg); font-size: 0.875rem; margin-bottom: 1.5rem; max-width: 700px; margin-left: auto; margin-right: auto; }
+
+  .option-header { text-align: center; font-size: 1.2rem; font-weight: 700; margin: 3.5rem 0 0.25rem; color: var(--violet-400); }
+  .option-desc {
+    text-align: center; color: var(--muted-fg); font-size: 0.82rem;
+    margin-bottom: 1.5rem; max-width: 640px; margin-left: auto; margin-right: auto;
+  }
+  .pattern-ref {
+    text-align: center; color: var(--muted); font-size: 0.75rem;
+    margin-bottom: 1.5rem; font-style: italic;
+  }
+
+  /* Card */
+  .card { max-width: 672px; margin: 0 auto 4rem; background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius); overflow: hidden; }
+  .card-header { padding: 1.5rem 1.5rem 0; }
+  .card-header h2 { font-size: 1.25rem; font-weight: 700; }
+  .card-header p { font-size: 0.875rem; color: var(--muted-fg); margin-top: 0.25rem; }
+  .card-content { padding: 1.5rem; }
+
+  .form-group { margin-bottom: 1.5rem; }
+  .form-group:last-child { margin-bottom: 0; }
+
+  label.field-label { display: block; font-size: 0.875rem; font-weight: 500; margin-bottom: 0.5rem; }
+  .field-hint { font-size: 0.75rem; color: var(--muted-fg); margin-top: 0.25rem; }
+
+  input[type="text"], textarea {
+    width: 100%; background: var(--bg); border: 1px solid var(--card-border);
+    border-radius: 0.5rem; padding: 0.625rem 0.75rem; font-size: 0.875rem;
+    color: var(--foreground); outline: none; transition: border-color 0.15s;
+  }
+  input[type="text"]:focus, textarea:focus { border-color: var(--violet-500); }
+  textarea { resize: vertical; min-height: 120px; }
+
+  /* ─── Kit Grid (shared across all options) ─── */
+  .kit-grid { display: grid; gap: 0.5rem; grid-template-columns: repeat(3, 1fr); }
+  @media (max-width: 520px) { .kit-grid { grid-template-columns: repeat(2, 1fr); } }
+
+  .kit-card {
+    border: 2px solid var(--card-border); border-radius: 0.75rem;
+    padding: 0.75rem 0.5rem; text-align: center; cursor: pointer;
+    transition: all 0.15s; background: var(--bg);
+  }
+  .kit-card:hover { border-color: rgba(161, 161, 170, 0.25); transform: translateY(-1px); }
+  .kit-card.selected { border-color: var(--violet-500); background: var(--violet-bg); }
+  .kit-card .icon { font-size: 1.25rem; margin-bottom: 0.25rem; }
+  .kit-card .name { font-size: 0.8rem; font-weight: 700; }
+  .kit-card .badges { margin-top: 0.35rem; display: flex; justify-content: center; gap: 0.35rem; flex-wrap: wrap; }
+  .kit-card .badge { font-size: 0.6rem; font-weight: 600; padding: 0.1rem 0.4rem; border-radius: 999px; }
+  .badge-violet { background: var(--violet-bg); color: var(--violet-400); }
+  .badge-emerald { background: var(--emerald-bg); color: var(--emerald-400); }
+  .badge-muted { background: rgba(113, 113, 122, 0.2); color: var(--muted); }
+
+  /* ─── Kit Preview (collapsed, shared) ─── */
+  .kit-preview-toggle {
+    display: flex; align-items: center; gap: 0.5rem; width: 100%;
+    background: none; border: 1px solid var(--card-border); border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem; color: var(--muted-fg); font-size: 0.75rem;
+    cursor: pointer; margin-top: 0.75rem; transition: background 0.15s;
+  }
+  .kit-preview-toggle:hover { background: rgba(255,255,255,0.03); }
+  .kit-preview-toggle .chevron { transition: transform 0.2s; }
+  .kit-preview-toggle.open .chevron { transform: rotate(180deg); }
+  .kit-preview-summary { display: flex; gap: 0.75rem; flex-wrap: wrap; flex: 1; }
+  .kit-preview-summary span { display: flex; align-items: center; gap: 0.25rem; }
+
+  .kit-preview-expanded {
+    margin-top: 0.5rem; border: 1px solid var(--card-border); border-radius: 0.75rem;
+    padding: 1rem; background: var(--card); font-size: 0.78rem; color: var(--muted-fg);
+  }
+  .kit-preview-expanded .section-title { font-size: 0.625rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-bottom: 0.5rem; }
+  .kit-preview-expanded .section { margin-bottom: 0.75rem; }
+  .kit-preview-expanded .section:last-child { margin-bottom: 0; }
+
+  .role-pill {
+    display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.2rem 0.55rem;
+    border: 1px solid var(--card-border); border-radius: 0.35rem; font-size: 0.72rem;
+    color: var(--muted-fg); background: rgba(255,255,255,0.03); margin: 0 0.25rem 0.25rem 0;
+  }
+  .step-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+  .step-pill {
+    display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.2rem 0.55rem;
+    border: 1px solid var(--card-border); border-radius: 0.35rem; font-size: 0.72rem;
+    color: var(--muted-fg); background: rgba(255,255,255,0.03);
+  }
+  .step-pill.approval { border-color: rgba(251, 191, 36, 0.25); background: var(--amber-bg); }
+  .step-arrow { color: rgba(113,113,122,0.5); font-size: 0.7rem; }
+  .label-pill {
+    display: inline-block; padding: 0.15rem 0.5rem; border-radius: 999px;
+    font-size: 0.6rem; font-weight: 600; margin: 0 0.25rem 0.25rem 0;
+  }
+
+  /* ─── Buttons ─── */
+  .btn-row { display: flex; gap: 0.75rem; }
+  .btn { flex: 1; padding: 0.625rem 1rem; border-radius: 0.5rem; font-size: 0.875rem; font-weight: 500; cursor: pointer; border: none; transition: background 0.15s; }
+  .btn-outline { background: transparent; border: 1px solid var(--card-border); color: var(--foreground); }
+  .btn-outline:hover { background: rgba(255,255,255,0.05); }
+  .btn-primary { background: var(--foreground); color: var(--bg); }
+  .btn-primary:hover { opacity: 0.9; }
+
+  /* ─── Private toggle ─── */
+  .private-row {
+    display: flex; align-items: center; justify-content: space-between;
+    border: 1px solid var(--card-border); border-radius: 0.5rem; padding: 1rem;
+  }
+  .private-row .left { display: flex; align-items: center; gap: 0.75rem; }
+  .private-row .icon { color: var(--muted); }
+  .private-row .label { font-size: 0.875rem; font-weight: 500; }
+  .private-row .hint { font-size: 0.75rem; color: var(--muted-fg); }
+  .toggle { width: 2.5rem; height: 1.35rem; border-radius: 999px; background: var(--card-border); position: relative; cursor: pointer; }
+  .toggle::after { content: ''; position: absolute; top: 2px; left: 2px; width: 1rem; height: 1rem; border-radius: 50%; background: var(--foreground); transition: transform 0.15s; }
+
+  /* Tags */
+  .tag-input-area {
+    display: flex; flex-wrap: wrap; gap: 0.35rem; padding: 0.5rem 0.75rem;
+    background: var(--bg); border: 1px solid var(--card-border); border-radius: 0.5rem;
+    min-height: 2.5rem; align-items: center;
+  }
+  .tag-pill {
+    display: inline-flex; align-items: center; gap: 0.25rem; padding: 0.15rem 0.5rem;
+    background: var(--violet-bg); color: var(--violet-400); border-radius: 999px;
+    font-size: 0.75rem; font-weight: 500;
+  }
+  .tag-pill .remove { cursor: pointer; opacity: 0.6; font-size: 0.65rem; }
+  .tag-placeholder { color: var(--muted); font-size: 0.8rem; }
+
+  .label-row { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; margin-bottom: 0.5rem; }
+
+  /* ─── Section separator ─── */
+  .section-sep {
+    border: none;
+    border-top: 1px solid rgba(139, 92, 246, 0.15);
+    margin: 3rem auto;
+    max-width: 672px;
+  }
+
+  /* ════════════════════════════════════════════════ */
+  /* Option A: CTA card below textarea               */
+  /* ════════════════════════════════════════════════ */
+  .enhance-cta {
+    border: 1px solid rgba(139, 92, 246, 0.2); border-radius: 0.75rem;
+    padding: 0.875rem 1rem; background: rgba(139, 92, 246, 0.06);
+    display: flex; align-items: center; gap: 0.75rem;
+    cursor: pointer; transition: all 0.15s; margin-top: 0.75rem;
+  }
+  .enhance-cta:hover { background: rgba(139, 92, 246, 0.10); box-shadow: 0 0 32px -6px rgba(139, 92, 246, 0.2); }
+  .enhance-cta .icon-box {
+    width: 2.25rem; height: 2.25rem; border-radius: 0.625rem;
+    background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(168,85,247,0.12));
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 1rem;
+  }
+  .enhance-cta .text { flex: 1; }
+  .enhance-cta .text .title {
+    font-size: 0.875rem; font-weight: 600; color: #e4e4e7;
+    display: flex; align-items: center; gap: 0.5rem;
+  }
+  .enhance-cta .text .title .free-badge {
+    font-size: 0.6rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    padding: 0.15rem 0.4rem; border-radius: 0.25rem;
+    background: rgba(139,92,246,0.2); border: 1px solid rgba(139,92,246,0.3); color: var(--violet-400);
+  }
+  .enhance-cta .text .subtitle { font-size: 0.75rem; color: var(--muted-fg); margin-top: 0.15rem; }
+  .enhance-cta .arrow { color: var(--violet-400); font-size: 1.1rem; flex-shrink: 0; }
+
+  /* ════════════════════════════════════════════════ */
+  /* Option B: Textarea footer toolbar               */
+  /* ════════════════════════════════════════════════ */
+  .textarea-wrapper-b {
+    position: relative;
+    background: var(--bg);
+    border: 1px solid var(--card-border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    transition: border-color 0.15s;
+  }
+  .textarea-wrapper-b:focus-within { border-color: var(--violet-500); }
+  .textarea-wrapper-b textarea {
+    border: none; border-radius: 0; background: transparent;
+    padding: 0.625rem 0.75rem 0.5rem;
+    min-height: 110px;
+  }
+  .textarea-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.5rem 0.75rem;
+    border-top: 1px solid var(--card-border);
+    background: rgba(255,255,255,0.015);
+  }
+  .textarea-toolbar .left-hint {
+    font-size: 0.72rem; color: var(--muted);
+    display: flex; align-items: center; gap: 0.35rem;
+  }
+  .toolbar-enhance-btn {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.375rem 0.75rem; border-radius: 0.375rem;
+    background: linear-gradient(135deg, rgba(139,92,246,0.15), rgba(168,85,247,0.08));
+    border: 1px solid rgba(139, 92, 246, 0.3);
+    color: var(--violet-400); font-size: 0.8rem; font-weight: 600;
+    cursor: pointer; transition: all 0.15s;
+  }
+  .toolbar-enhance-btn:hover {
+    background: linear-gradient(135deg, rgba(139,92,246,0.25), rgba(168,85,247,0.15));
+    border-color: rgba(139, 92, 246, 0.5);
+  }
+  .toolbar-enhance-btn .credit-dot {
+    width: 1.1rem; height: 1.1rem; border-radius: 50%;
+    background: var(--violet-600); color: white;
+    font-size: 0.6rem; font-weight: 700;
+    display: inline-flex; align-items: center; justify-content: center;
+  }
+
+  /* ════════════════════════════════════════════════ */
+  /* Option C: Ghost text placeholder + hover button */
+  /* ════════════════════════════════════════════════ */
+  .textarea-wrapper-c {
+    position: relative;
+    background: var(--bg);
+    border: 1px solid var(--card-border);
+    border-radius: 0.5rem;
+    overflow: hidden;
+    transition: border-color 0.15s;
+  }
+  .textarea-wrapper-c:focus-within { border-color: var(--violet-500); }
+  .textarea-wrapper-c textarea {
+    border: none; border-radius: 0; background: transparent;
+    padding: 0.625rem 0.75rem;
+    min-height: 120px;
+    position: relative;
+    z-index: 1;
+  }
+  .ghost-overlay {
+    position: absolute;
+    top: 0.625rem;
+    left: 0.75rem;
+    right: 0.75rem;
+    font-size: 0.875rem;
+    line-height: 1.5;
+    color: transparent;
+    pointer-events: none;
+    z-index: 0;
+    white-space: pre-wrap;
+  }
+  /* The typed text is invisible, the ghost part is shown */
+  .ghost-overlay .typed { color: transparent; }
+  .ghost-overlay .ghost {
+    color: rgba(139, 92, 246, 0.35);
+    font-style: italic;
+  }
+
+  .floating-enhance {
+    position: absolute;
+    bottom: 0.625rem;
+    right: 0.625rem;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.35rem 0.7rem;
+    border-radius: 0.375rem;
+    background: rgba(24, 24, 27, 0.95);
+    border: 1px solid rgba(139, 92, 246, 0.35);
+    color: var(--violet-400);
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s;
+    backdrop-filter: blur(8px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    z-index: 2;
+  }
+  .floating-enhance:hover {
+    background: rgba(139, 92, 246, 0.15);
+    border-color: rgba(139, 92, 246, 0.5);
+  }
+  .floating-enhance .kbd {
+    font-size: 0.6rem;
+    padding: 0.1rem 0.3rem;
+    border-radius: 0.2rem;
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.1);
+    color: var(--muted-fg);
+    font-family: monospace;
+  }
+
+  /* Summary boxes */
+  .change-callout {
+    background: rgba(139, 92, 246, 0.06); border: 1px solid rgba(139, 92, 246, 0.15);
+    border-radius: 0.5rem; padding: 0.75rem 1rem; margin-bottom: 0.75rem;
+    font-size: 0.8rem; color: var(--violet-400);
+  }
+  .change-callout strong { color: var(--foreground); }
+
+  .pros-cons {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;
+    margin-top: 0.75rem; font-size: 0.78rem;
+  }
+  .pros-cons .pro { color: var(--emerald-400); }
+  .pros-cons .con { color: #f87171; }
+  .pros-cons ul { padding-left: 1.2rem; margin: 0; }
+  .pros-cons li { margin-bottom: 0.25rem; }
+  .pros-cons h4 { margin-bottom: 0.35rem; font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.04em; }
+
+  .hidden { display: none; }
+</style>
+</head>
+<body>
+
+<h1 class="page-title">Create Idea Form — Design Proposals (v2)</h1>
+<p class="page-subtitle">
+  All options share the same kit card improvements (compact 3-col grid, collapsible preview).
+  Form order is preserved: Title → Kit → Description → Tags.
+  The three options focus on different AI enhance button treatments.
+</p>
+
+<!-- ═══════════════════════════════════════════════════════════ -->
+<!-- SHARED: Compact kit cards + collapsible preview (all opts) -->
+<!-- ═══════════════════════════════════════════════════════════ -->
+
+<div style="max-width: 672px; margin: 0 auto 2rem;">
+  <div class="change-callout">
+    <strong>Shared across all options:</strong> Compact 3-column kit grid (no descriptions), collapsible preview bar. Reduces kit section from ~560px to ~200px. Form order unchanged.
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- OPTION A: CTA Banner Card Below Textarea            -->
+<!-- ════════════════════════════════════════════════════ -->
+<h2 class="option-header">Option A — Banner Card Below Textarea</h2>
+<p class="option-desc">
+  A prominent full-width CTA card beneath the textarea, matching the onboarding dialog's enhance style.
+  Impossible to miss. Clearly communicates what the feature does and that it's free.
+</p>
+<p class="pattern-ref">Inspired by: Onboarding dialog's enhance-cta-border card, Vercel's AI assistant panels</p>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Share Your Idea</h2>
+    <p>Describe your vibe coding project idea and find collaborators</p>
+  </div>
+  <div class="card-content">
+    <div class="form-group">
+      <label class="field-label">Title</label>
+      <input type="text" value="Recipe sharing platform" />
+    </div>
+
+    <div class="form-group">
+      <label class="field-label">What kind of project is this?</label>
+      <p class="field-hint" style="margin-bottom: 0.5rem;">Sets up the right workflow, agents, and labels. Customise later.</p>
+      <div class="kit-grid">
+        <div class="kit-card selected"><div class="icon">🌐</div><div class="name">Web Application</div><div class="badges"><span class="badge badge-violet">6 steps</span><span class="badge badge-emerald">6 roles</span></div></div>
+        <div class="kit-card"><div class="icon">📱</div><div class="name">Mobile App</div><div class="badges"><span class="badge badge-violet">6 steps</span><span class="badge badge-emerald">5 roles</span></div></div>
+        <div class="kit-card"><div class="icon">⚙️</div><div class="name">API / Backend</div><div class="badges"><span class="badge badge-violet">5 steps</span><span class="badge badge-emerald">4 roles</span></div></div>
+        <div class="kit-card"><div class="icon">🎨</div><div class="name">Design System</div><div class="badges"><span class="badge badge-violet">5 steps</span><span class="badge badge-emerald">3 roles</span></div></div>
+        <div class="kit-card"><div class="icon">🤖</div><div class="name">AI / ML Project</div><div class="badges"><span class="badge badge-violet">6 steps</span><span class="badge badge-emerald">5 roles</span></div></div>
+        <div class="kit-card"><div class="icon">🔧</div><div class="name">Custom</div><div class="badges"><span class="badge badge-muted">Your choice</span></div></div>
+      </div>
+      <button class="kit-preview-toggle" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('hidden')">
+        <span class="chevron">▼</span>
+        <div class="kit-preview-summary"><span>🧑‍💻 6 agents</span><span>⚡ 6-step workflow</span><span>🏷️ 5 labels</span><span>🔄 1 trigger</span></div>
+        <span style="font-size: 0.7rem; white-space: nowrap;">Show details</span>
+      </button>
+      <div class="kit-preview-expanded hidden">
+        <div class="section"><div class="section-title">🧑‍💻 Agent Team (6 roles)</div><div><span class="role-pill">🔨 Full Stack Engineer</span><span class="role-pill">🎨 Front End Engineer</span><span class="role-pill">🎨 UX Designer</span><span class="role-pill">🔍 QA Engineer</span><span class="role-pill">📋 Product Owner</span><span class="role-pill">🛡️ Security Engineer</span></div></div>
+        <div class="section"><div class="section-title">⚡ Workflow (6 steps)</div><div class="step-chain"><span class="step-pill">1. Requirements</span><span class="step-arrow">→</span><span class="step-pill">2. UX Design</span><span class="step-arrow">→</span><span class="step-pill approval">3. Design Approval 🔒</span><span class="step-arrow">→</span><span class="step-pill">4. Implementation</span><span class="step-arrow">→</span><span class="step-pill">5. QA & Security</span><span class="step-arrow">→</span><span class="step-pill approval">6. Release Sign-off 🔒</span></div></div>
+        <div class="section"><div class="section-title">🏷️ Labels</div><div><span class="label-pill" style="background: rgba(239,68,68,0.12); color: #f87171;">Bug</span><span class="label-pill" style="background: var(--violet-bg); color: var(--violet-400);">Feature</span><span class="label-pill" style="background: var(--emerald-bg); color: var(--emerald-400);">Quick Win</span><span class="label-pill" style="background: rgba(236,72,153,0.12); color: #f472b6;">UX</span><span class="label-pill" style="background: var(--amber-bg); color: var(--amber-400);">Infrastructure</span></div></div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="field-label">Description</label>
+      <textarea>A social recipe sharing platform where home cooks can share their favourite recipes with step-by-step instructions and photos.</textarea>
+      <div class="enhance-cta">
+        <div class="icon-box">✨</div>
+        <div class="text">
+          <div class="title">Enhance with AI <span class="free-badge">Free</span></div>
+          <div class="subtitle">Expand your rough notes into a polished, detailed project description</div>
+        </div>
+        <div class="arrow">→</div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="field-label">Tags</label>
+      <div class="tag-input-area"><span class="tag-pill">recipes <span class="remove">✕</span></span><span class="tag-pill">cooking <span class="remove">✕</span></span><span class="tag-placeholder">Add tags...</span></div>
+    </div>
+    <div class="form-group">
+      <label class="field-label">GitHub URL (optional)</label>
+      <input type="text" placeholder="https://github.com/username/repo" />
+    </div>
+    <div class="form-group">
+      <div class="private-row"><div class="left"><span class="icon">🔒</span><div><div class="label">Private idea</div><div class="hint">Only you and collaborators can see this idea</div></div></div><div class="toggle"></div></div>
+    </div>
+    <div class="btn-row"><button class="btn btn-outline">Cancel</button><button class="btn btn-primary">Create idea & apply kit</button></div>
+  </div>
+</div>
+
+<div style="max-width: 672px; margin: -2rem auto 2rem;">
+  <div class="pros-cons">
+    <div class="pro"><h4>✓ Strengths</h4><ul><li>Maximum visibility — can't be missed</li><li>Room for subtitle explaining what it does</li><li>"Free" badge removes hesitation</li><li>Matches onboarding style (consistency)</li><li>Works well on mobile (full-width)</li></ul></div>
+    <div class="con"><h4>✗ Tradeoffs</h4><ul><li>Takes ~60px of vertical space permanently</li><li>Feels like a separate feature, not part of the textarea</li><li>May feel "pushy" for returning users who don't want AI</li><li>Card should probably shrink/hide after first use (re-enhance gets inline button)</li></ul></div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- OPTION B: Toolbar Inside Textarea                   -->
+<!-- ════════════════════════════════════════════════════ -->
+<h2 class="option-header">Option B — Toolbar Inside Textarea</h2>
+<p class="option-desc">
+  The enhance button lives in a footer toolbar attached to the bottom of the textarea — like Slack's
+  message composer or Linear's issue editor. The button is always visible but feels part of the input,
+  not a separate CTA. A character count or hint sits on the left.
+</p>
+<p class="pattern-ref">Inspired by: Slack message composer, Linear issue editor toolbar, GitHub comment box actions</p>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Share Your Idea</h2>
+    <p>Describe your vibe coding project idea and find collaborators</p>
+  </div>
+  <div class="card-content">
+    <div class="form-group">
+      <label class="field-label">Title</label>
+      <input type="text" value="Recipe sharing platform" />
+    </div>
+
+    <div class="form-group">
+      <label class="field-label">What kind of project is this?</label>
+      <p class="field-hint" style="margin-bottom: 0.5rem;">Sets up the right workflow, agents, and labels. Customise later.</p>
+      <div class="kit-grid">
+        <div class="kit-card selected"><div class="icon">🌐</div><div class="name">Web Application</div><div class="badges"><span class="badge badge-violet">6 steps</span><span class="badge badge-emerald">6 roles</span></div></div>
+        <div class="kit-card"><div class="icon">📱</div><div class="name">Mobile App</div><div class="badges"><span class="badge badge-violet">6 steps</span><span class="badge badge-emerald">5 roles</span></div></div>
+        <div class="kit-card"><div class="icon">⚙️</div><div class="name">API / Backend</div><div class="badges"><span class="badge badge-violet">5 steps</span><span class="badge badge-emerald">4 roles</span></div></div>
+        <div class="kit-card"><div class="icon">🎨</div><div class="name">Design System</div><div class="badges"><span class="badge badge-violet">5 steps</span><span class="badge badge-emerald">3 roles</span></div></div>
+        <div class="kit-card"><div class="icon">🤖</div><div class="name">AI / ML Project</div><div class="badges"><span class="badge badge-violet">6 steps</span><span class="badge badge-emerald">5 roles</span></div></div>
+        <div class="kit-card"><div class="icon">🔧</div><div class="name">Custom</div><div class="badges"><span class="badge badge-muted">Your choice</span></div></div>
+      </div>
+      <button class="kit-preview-toggle" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('hidden')">
+        <span class="chevron">▼</span>
+        <div class="kit-preview-summary"><span>🧑‍💻 6 agents</span><span>⚡ 6-step workflow</span><span>🏷️ 5 labels</span><span>🔄 1 trigger</span></div>
+        <span style="font-size: 0.7rem; white-space: nowrap;">Show details</span>
+      </button>
+      <div class="kit-preview-expanded hidden">
+        <div class="section"><div class="section-title">🧑‍💻 Agent Team (6 roles)</div><div><span class="role-pill">🔨 Full Stack Engineer</span><span class="role-pill">🎨 Front End Engineer</span><span class="role-pill">🎨 UX Designer</span><span class="role-pill">🔍 QA Engineer</span><span class="role-pill">📋 Product Owner</span><span class="role-pill">🛡️ Security Engineer</span></div></div>
+        <div class="section"><div class="section-title">⚡ Workflow (6 steps)</div><div class="step-chain"><span class="step-pill">1. Requirements</span><span class="step-arrow">→</span><span class="step-pill">2. UX Design</span><span class="step-arrow">→</span><span class="step-pill approval">3. Design Approval 🔒</span><span class="step-arrow">→</span><span class="step-pill">4. Implementation</span><span class="step-arrow">→</span><span class="step-pill">5. QA & Security</span><span class="step-arrow">→</span><span class="step-pill approval">6. Release Sign-off 🔒</span></div></div>
+        <div class="section"><div class="section-title">🏷️ Labels</div><div><span class="label-pill" style="background: rgba(239,68,68,0.12); color: #f87171;">Bug</span><span class="label-pill" style="background: var(--violet-bg); color: var(--violet-400);">Feature</span><span class="label-pill" style="background: var(--emerald-bg); color: var(--emerald-400);">Quick Win</span><span class="label-pill" style="background: rgba(236,72,153,0.12); color: #f472b6;">UX</span><span class="label-pill" style="background: var(--amber-bg); color: var(--amber-400);">Infrastructure</span></div></div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="field-label">Description</label>
+      <div class="textarea-wrapper-b">
+        <textarea>A social recipe sharing platform where home cooks can share their favourite recipes with step-by-step instructions and photos.</textarea>
+        <div class="textarea-toolbar">
+          <div class="left-hint">
+            <span style="color: var(--muted);">Supports markdown</span>
+          </div>
+          <button class="toolbar-enhance-btn">
+            ✨ Enhance with AI
+            <span class="credit-dot">10</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="field-label">Tags</label>
+      <div class="tag-input-area"><span class="tag-pill">recipes <span class="remove">✕</span></span><span class="tag-pill">cooking <span class="remove">✕</span></span><span class="tag-placeholder">Add tags...</span></div>
+    </div>
+    <div class="form-group">
+      <label class="field-label">GitHub URL (optional)</label>
+      <input type="text" placeholder="https://github.com/username/repo" />
+    </div>
+    <div class="form-group">
+      <div class="private-row"><div class="left"><span class="icon">🔒</span><div><div class="label">Private idea</div><div class="hint">Only you and collaborators can see this idea</div></div></div><div class="toggle"></div></div>
+    </div>
+    <div class="btn-row"><button class="btn btn-outline">Cancel</button><button class="btn btn-primary">Create idea & apply kit</button></div>
+  </div>
+</div>
+
+<div style="max-width: 672px; margin: -2rem auto 2rem;">
+  <div class="pros-cons">
+    <div class="pro"><h4>✓ Strengths</h4><ul><li>Feels native — the button is part of the input, not external</li><li>Always visible while typing (eye stays on textarea)</li><li>Familiar pattern (Slack, Linear, GitHub)</li><li>Credit count is clear but not pushy</li><li>No extra vertical space — toolbar is inside the field</li><li>Room for other toolbar actions later (markdown help, attach)</li></ul></div>
+    <div class="con"><h4>✗ Tradeoffs</h4><ul><li>Less prominent than a full card — could still be missed on first visit</li><li>No room for subtitle explaining what it does</li><li>Requires wrapping textarea in a custom container</li><li>Toolbar takes ~36px from the textarea's internal height</li></ul></div>
+  </div>
+</div>
+
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- OPTION C: Floating Button + Ghost Hint              -->
+<!-- ════════════════════════════════════════════════════ -->
+<h2 class="option-header">Option C — Floating Button + Ghost Text Hint</h2>
+<p class="option-desc">
+  A small floating button anchored to the bottom-right corner of the textarea (like a FAB).
+  When the textarea is empty or has minimal text, ghost placeholder text hints at AI enhancement.
+  Keyboard shortcut (Ctrl+E) for power users. The lightest touch — discoverable but unobtrusive.
+</p>
+<p class="pattern-ref">Inspired by: GitHub Copilot ghost text, Notion AI spacebar trigger, VS Code inline suggestions</p>
+
+<div class="card">
+  <div class="card-header">
+    <h2>Share Your Idea</h2>
+    <p>Describe your vibe coding project idea and find collaborators</p>
+  </div>
+  <div class="card-content">
+    <div class="form-group">
+      <label class="field-label">Title</label>
+      <input type="text" value="Recipe sharing platform" />
+    </div>
+
+    <div class="form-group">
+      <label class="field-label">What kind of project is this?</label>
+      <p class="field-hint" style="margin-bottom: 0.5rem;">Sets up the right workflow, agents, and labels. Customise later.</p>
+      <div class="kit-grid">
+        <div class="kit-card selected"><div class="icon">🌐</div><div class="name">Web Application</div><div class="badges"><span class="badge badge-violet">6 steps</span><span class="badge badge-emerald">6 roles</span></div></div>
+        <div class="kit-card"><div class="icon">📱</div><div class="name">Mobile App</div><div class="badges"><span class="badge badge-violet">6 steps</span><span class="badge badge-emerald">5 roles</span></div></div>
+        <div class="kit-card"><div class="icon">⚙️</div><div class="name">API / Backend</div><div class="badges"><span class="badge badge-violet">5 steps</span><span class="badge badge-emerald">4 roles</span></div></div>
+        <div class="kit-card"><div class="icon">🎨</div><div class="name">Design System</div><div class="badges"><span class="badge badge-violet">5 steps</span><span class="badge badge-emerald">3 roles</span></div></div>
+        <div class="kit-card"><div class="icon">🤖</div><div class="name">AI / ML Project</div><div class="badges"><span class="badge badge-violet">6 steps</span><span class="badge badge-emerald">5 roles</span></div></div>
+        <div class="kit-card"><div class="icon">🔧</div><div class="name">Custom</div><div class="badges"><span class="badge badge-muted">Your choice</span></div></div>
+      </div>
+      <button class="kit-preview-toggle" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('hidden')">
+        <span class="chevron">▼</span>
+        <div class="kit-preview-summary"><span>🧑‍💻 6 agents</span><span>⚡ 6-step workflow</span><span>🏷️ 5 labels</span><span>🔄 1 trigger</span></div>
+        <span style="font-size: 0.7rem; white-space: nowrap;">Show details</span>
+      </button>
+      <div class="kit-preview-expanded hidden">
+        <div class="section"><div class="section-title">🧑‍💻 Agent Team (6 roles)</div><div><span class="role-pill">🔨 Full Stack Engineer</span><span class="role-pill">🎨 Front End Engineer</span><span class="role-pill">🎨 UX Designer</span><span class="role-pill">🔍 QA Engineer</span><span class="role-pill">📋 Product Owner</span><span class="role-pill">🛡️ Security Engineer</span></div></div>
+        <div class="section"><div class="section-title">⚡ Workflow (6 steps)</div><div class="step-chain"><span class="step-pill">1. Requirements</span><span class="step-arrow">→</span><span class="step-pill">2. UX Design</span><span class="step-arrow">→</span><span class="step-pill approval">3. Design Approval 🔒</span><span class="step-arrow">→</span><span class="step-pill">4. Implementation</span><span class="step-arrow">→</span><span class="step-pill">5. QA & Security</span><span class="step-arrow">→</span><span class="step-pill approval">6. Release Sign-off 🔒</span></div></div>
+        <div class="section"><div class="section-title">🏷️ Labels</div><div><span class="label-pill" style="background: rgba(239,68,68,0.12); color: #f87171;">Bug</span><span class="label-pill" style="background: var(--violet-bg); color: var(--violet-400);">Feature</span><span class="label-pill" style="background: var(--emerald-bg); color: var(--emerald-400);">Quick Win</span><span class="label-pill" style="background: rgba(236,72,153,0.12); color: #f472b6;">UX</span><span class="label-pill" style="background: var(--amber-bg); color: var(--amber-400);">Infrastructure</span></div></div>
+      </div>
+    </div>
+
+    <div class="form-group">
+      <label class="field-label">Description</label>
+      <div class="textarea-wrapper-c">
+        <div class="ghost-overlay">
+          <span class="typed">A social recipe sharing platform...</span><span class="ghost"> — press ✨ or Ctrl+E to enhance with AI</span>
+        </div>
+        <textarea>A social recipe sharing platform...</textarea>
+        <div class="floating-enhance">
+          ✨ Enhance
+          <span class="kbd">⌘E</span>
+        </div>
+      </div>
+      <p class="field-hint">Write a rough outline — AI will expand it into a detailed description</p>
+    </div>
+
+    <div class="form-group">
+      <label class="field-label">Tags</label>
+      <div class="tag-input-area"><span class="tag-pill">recipes <span class="remove">✕</span></span><span class="tag-pill">cooking <span class="remove">✕</span></span><span class="tag-placeholder">Add tags...</span></div>
+    </div>
+    <div class="form-group">
+      <label class="field-label">GitHub URL (optional)</label>
+      <input type="text" placeholder="https://github.com/username/repo" />
+    </div>
+    <div class="form-group">
+      <div class="private-row"><div class="left"><span class="icon">🔒</span><div><div class="label">Private idea</div><div class="hint">Only you and collaborators can see this idea</div></div></div><div class="toggle"></div></div>
+    </div>
+    <div class="btn-row"><button class="btn btn-outline">Cancel</button><button class="btn btn-primary">Create idea & apply kit</button></div>
+  </div>
+</div>
+
+<div style="max-width: 672px; margin: -2rem auto 2rem;">
+  <div class="pros-cons">
+    <div class="pro"><h4>✓ Strengths</h4><ul><li>Zero additional vertical space</li><li>Ghost text teaches the feature contextually</li><li>Keyboard shortcut for power users</li><li>Floating button is subtle but always visible</li><li>Cleanest design — doesn't add visual noise</li><li>Ghost text disappears as user types more, keeping it uncluttered</li></ul></div>
+    <div class="con"><h4>✗ Tradeoffs</h4><ul><li>Floating button is small — less visible than A or B</li><li>Ghost text overlay is technically complex to implement</li><li>"Enhance" is vague without the subtitle — new users may not understand</li><li>No "Free" badge or credit count visible</li><li>Could be confused with autocomplete/spellcheck</li></ul></div>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════════════ -->
+<!-- Recommendation                                      -->
+<!-- ════════════════════════════════════════════════════ -->
+<div style="max-width: 672px; margin: 3rem auto;">
+  <h2 class="option-header" style="color: var(--foreground);">Compass's Recommendation</h2>
+  <div class="change-callout">
+    <strong>Option B (Toolbar)</strong> is the strongest all-rounder. It's discoverable without being pushy, feels native to the textarea, and follows established patterns from tools developers already use (Slack, Linear, GitHub). It also leaves room for future toolbar actions (markdown help, attach files).
+    <br><br>
+    However, a <strong>hybrid approach</strong> could work well: show <strong>Option A's banner card on first visit only</strong> (when user has never enhanced before), then switch to <strong>Option B's toolbar</strong> for returning users. This gives maximum discovery for new users without annoying repeat visitors.
+  </div>
+</div>
+
+</body>
+</html>
