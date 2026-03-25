@@ -402,6 +402,9 @@ function AutoRulesSection({
           </Button>
         )}
       </div>
+      <p className="text-[11px] text-muted-foreground/60 -mt-0.5">
+        Automatically apply a workflow when a task gets a specific label.
+      </p>
 
       {rules.length === 0 && !addingRule && (
         <p className="text-xs text-muted-foreground">
