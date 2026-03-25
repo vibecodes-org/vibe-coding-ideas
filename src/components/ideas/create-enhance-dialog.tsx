@@ -75,9 +75,11 @@ export function CreateEnhanceDialog({
 
   // Auto-scroll result container as streaming text arrives
   useEffect(() => {
-    if (streaming && resultScrollRef.current) {
-      resultScrollRef.current.scrollTop = resultScrollRef.current.scrollHeight;
-    }
+    if (!streaming || !resultScrollRef.current) return;
+    const el = resultScrollRef.current;
+    requestAnimationFrame(() => {
+      el.scrollTop = el.scrollHeight;
+    });
   }, [enhancedText, streaming]);
 
   const getPersonaPrompt = useCallback(() => {
