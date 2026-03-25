@@ -19,6 +19,7 @@ export type AiActionType =
   | "generate_board_tasks"
   | "enhance_task_description"
   | "enhance_discussion_body"
+  | "enhance_create_description"
   | "role_matching";
 
 /** Create an Anthropic provider using the user's BYOK key. */

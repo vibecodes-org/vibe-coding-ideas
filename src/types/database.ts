@@ -1714,7 +1714,7 @@ export type Database = {
         Row: {
           id: string;
           user_id: string;
-          action_type: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "role_matching";
+          action_type: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "enhance_create_description" | "role_matching";
           input_tokens: number;
           output_tokens: number;
           model: string;
@@ -1725,7 +1725,7 @@ export type Database = {
         Insert: {
           id?: string;
           user_id: string;
-          action_type: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "role_matching";
+          action_type: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "enhance_create_description" | "role_matching";
           input_tokens?: number;
           output_tokens?: number;
           model: string;
@@ -1736,7 +1736,7 @@ export type Database = {
         Update: {
           id?: string;
           user_id?: string;
-          action_type?: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "role_matching";
+          action_type?: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "enhance_create_description" | "role_matching";
           input_tokens?: number;
           output_tokens?: number;
           model?: string;

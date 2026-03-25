@@ -73,6 +73,56 @@ export async function hasApiKey(): Promise<boolean> {
   return access.canUseAi;
 }
 
+// ── Enhance Create Description (no idea ID, kit-aware) ─────────────────
+
+const CREATE_ENHANCE_TIMEOUT_MS = 30_000;
+
+export async function enhanceCreateDescription(data: {
+  title: string;
+  description: string;
+  kitType?: string;
+}): Promise<{ enhanced: string }> {
+  const { supabase, user, anthropic, keyType } = await requireAiAccess();
+
+  const title = data.title.trim();
+  if (!title) throw new Error("Title is required");
+
+  const description = data.description.trim();
+
+  const kitContext = data.kitType
+    ? `\n\nThis is a **${data.kitType}** project — tailor the description to concerns specific to this project type (e.g. architecture, deployment, tooling, and workflows relevant to ${data.kitType.toLowerCase()} projects).`
+    : "";
+
+  let text: string;
+  let usage: { inputTokens?: number; outputTokens?: number } = {};
+  try {
+    const result = await generateText({
+      model: anthropic(AI_MODEL),
+      system: `You are a concise product writer. The user is creating a new project idea on a project management platform. Expand their rough description into a clear, compelling 2-3 paragraph summary. Keep the original voice and intent — just make it clearer and more complete. Return ONLY the improved description, no preamble.${kitContext}`,
+      prompt: `**Title:** ${title}\n\n**Description:**\n${description || title}`,
+      maxOutputTokens: 1500,
+      abortSignal: AbortSignal.timeout(CREATE_ENHANCE_TIMEOUT_MS),
+    });
+    text = result.text;
+    usage = result.usage ?? {};
+  } catch (err) {
+    toPlainError(err);
+  }
+
+  await logAiUsage(supabase, {
+    userId: user.id,
+    actionType: "enhance_create_description",
+    inputTokens: usage.inputTokens ?? 0,
+    outputTokens: usage.outputTokens ?? 0,
+    model: AI_MODEL,
+    ideaId: null,
+    keyType,
+  });
+  if (keyType === "platform") await decrementStarterCredit(supabase, user.id);
+
+  return { enhanced: text };
+}
+
 // ── Enhance Idea Description ───────────────────────────────────────────
 
 export async function enhanceIdeaDescription(
