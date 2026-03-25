@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -69,8 +69,16 @@ export function CreateEnhanceDialog({
   // Result phase
   const [enhancedText, setEnhancedText] = useState("");
   const [streaming, setStreaming] = useState(false);
+  const resultScrollRef = useRef<HTMLDivElement>(null);
 
   const activeBots = bots.filter((b) => b.is_active);
+
+  // Auto-scroll result container as streaming text arrives
+  useEffect(() => {
+    if (streaming && resultScrollRef.current) {
+      resultScrollRef.current.scrollTop = resultScrollRef.current.scrollHeight;
+    }
+  }, [enhancedText, streaming]);
 
   const getPersonaPrompt = useCallback(() => {
     if (selectedBotId === "default") return null;
@@ -337,7 +345,7 @@ export function CreateEnhanceDialog({
         {/* ── Result Phase ── */}
         {phase === "result" && (
           <div className="space-y-4">
-            <div className="max-h-[50vh] overflow-y-auto rounded-md border border-border bg-muted/20 p-4">
+            <div ref={resultScrollRef} className="max-h-[50vh] overflow-y-auto rounded-md border border-border bg-muted/20 p-4">
               {enhancedText ? (
                 <div className="prose prose-sm prose-invert max-w-none whitespace-pre-wrap">
                   {enhancedText}
