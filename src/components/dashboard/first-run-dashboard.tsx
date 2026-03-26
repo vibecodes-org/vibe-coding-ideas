@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check, Plus, Bot, Copy } from "lucide-react";
+import { Check, Plus, Bot, Copy, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useSwitchToStandard } from "./dashboard-mode-switch";
 import { Button } from "@/components/ui/button";
@@ -196,7 +196,7 @@ export function FirstRunDashboard({
                 )}
               </div>
               {/* Mini board preview with task titles */}
-              {boardPreview.length > 0 && (
+              {boardPreview.length > 0 ? (
                 <div className="flex gap-2 overflow-x-auto">
                   {boardPreview.map((col) => (
                     <div
@@ -229,6 +229,23 @@ export function FirstRunDashboard({
                       )}
                     </div>
                   ))}
+                </div>
+              ) : (
+                <div className="rounded-lg border border-dashed border-violet-500/25 bg-violet-500/5 p-4 text-center">
+                  <Sparkles className="mx-auto h-5 w-5 text-violet-400" />
+                  <p className="mt-2 text-xs font-medium">
+                    No board tasks yet
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-muted-foreground">
+                    Generate tasks with AI from your board page.
+                  </p>
+                  <Link
+                    href={`/ideas/${firstIdea.id}/board`}
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-500"
+                  >
+                    <Sparkles className="h-3 w-3" />
+                    Generate Board with AI
+                  </Link>
                 </div>
               )}
             </div>
