@@ -12,7 +12,7 @@ import {
   getPlatformAiCallsToday,
   PLATFORM_AI_DAILY_LIMIT,
 } from "@/lib/ai-helpers";
-import { initializeBoardColumns } from "@/actions/board";
+import { initializeBoardColumns, triggerAutoRulesForTasks } from "@/actions/board";
 import {
   validateTitle,
   validateOptionalDescription,
@@ -302,30 +302,48 @@ export async function generateBoardFromOnboarding(
 
   if (!idea) throw new Error("Idea not found");
 
-  // Fetch existing columns for context
+  // Fetch existing columns for context — only allow Backlog and To Do for new projects
   const { data: columns } = await supabase
     .from("board_columns")
     .select("title")
     .eq("idea_id", ideaId)
     .order("position");
 
-  const existingColumns = (columns ?? []).map((c) => c.title);
+  const allColumns = (columns ?? []).map((c) => c.title);
+  const allowedColumns = allColumns.filter((c) =>
+    ["backlog", "to do"].includes(c.toLowerCase())
+  );
 
-  logger.info("Onboarding board gen: calling AI", { ideaId, columns: existingColumns.length });
+  // Fetch board labels so the AI can assign them
+  const { data: boardLabels } = await supabase
+    .from("board_labels")
+    .select("id, name")
+    .eq("idea_id", ideaId);
+
+  const labelNames = (boardLabels ?? []).map((l) => l.name);
+
+  logger.info("Onboarding board gen: calling AI", { ideaId, columns: allowedColumns.length, labels: labelNames.length });
 
   const anthropic = createAnthropic({ apiKey: platformKey });
 
   const contextParts = [
-    "Generate a structured task board for this project. Create 6-10 tasks distributed across the board columns. Each task should have a clear title, brief description with implementation steps as markdown task list, appropriate column placement, and relevant labels.",
+    "Generate a structured task board for this project. Create 6-10 tasks. Each task should have a clear title, brief description with implementation steps as markdown task list, appropriate column placement, and relevant labels from the available list.",
     "---",
     `**Project Title:** ${idea.title}`,
     `**Project Description:**\n${idea.description}`,
   ];
 
-  if (existingColumns.length > 0) {
+  if (allowedColumns.length > 0) {
     contextParts.push(
-      `**Existing Board Columns:** ${existingColumns.join(", ")}`,
-      "Use existing column names where appropriate."
+      `**Allowed Columns:** ${allowedColumns.join(", ")}`,
+      "IMPORTANT: Only place tasks in these columns. This is a brand-new project — no tasks should be In Progress, Verify, or Done."
+    );
+  }
+
+  if (labelNames.length > 0) {
+    contextParts.push(
+      `**Available Labels:** ${labelNames.join(", ")}`,
+      "Assign 1-2 relevant labels to each task from this list. Use exact label names."
     );
   }
 
@@ -431,10 +449,17 @@ export async function generateBoardFromOnboarding(
   }
 
   // Batch insert all tasks at once (instead of one-by-one)
+  // Hard constraint: only allow Backlog/To Do columns for onboarding — ignore AI column choices outside this set
+  const allowedColumnIds = new Set(
+    boardColumns
+      .filter((c) => ["backlog", "to do"].includes(c.title.toLowerCase()))
+      .map((c) => c.id)
+  );
   const TASK_POSITION_GAP = 1000;
   const colPositions = new Map<string, number>();
   const taskRows = tasks.map((task) => {
-    const colId = (task.columnName && columnByName.get(task.columnName)) || defaultColumnId;
+    const requestedColId = (task.columnName && columnByName.get(task.columnName)) || defaultColumnId;
+    const colId = allowedColumnIds.has(requestedColId) ? requestedColId : defaultColumnId;
     const currentPos = colPositions.get(colId) ?? 0;
     const nextPos = currentPos + TASK_POSITION_GAP;
     colPositions.set(colId, nextPos);
@@ -447,9 +472,10 @@ export async function generateBoardFromOnboarding(
     };
   });
 
-  const { error: insertError } = await supabase
+  const { data: insertedTasks, error: insertError } = await supabase
     .from("board_tasks")
-    .insert(taskRows);
+    .insert(taskRows)
+    .select("id");
 
   if (insertError) {
     logger.error("Onboarding board gen: failed to insert tasks", {
@@ -459,6 +485,62 @@ export async function generateBoardFromOnboarding(
       taskCount: taskRows.length,
     });
     throw new Error(`Failed to save board tasks: ${insertError.message}`);
+  }
+
+  // ── Assign labels to tasks ──────────────────────────────────────────
+  const labelByName = new Map(
+    (boardLabels ?? []).map((l) => [l.name.toLowerCase(), l.id])
+  );
+  const taskLabelPairs: { taskId: string; labelIds: string[] }[] = [];
+
+  if (insertedTasks && labelByName.size > 0) {
+    const labelInserts: { task_id: string; label_id: string }[] = [];
+
+    for (let i = 0; i < tasks.length; i++) {
+      const task = tasks[i];
+      const dbTask = insertedTasks[i];
+      if (!dbTask || !task.labels || task.labels.length === 0) continue;
+
+      const matchedLabelIds: string[] = [];
+      for (const labelName of task.labels) {
+        const labelId = labelByName.get(labelName.toLowerCase());
+        if (labelId) {
+          labelInserts.push({ task_id: dbTask.id, label_id: labelId });
+          matchedLabelIds.push(labelId);
+        }
+      }
+      if (matchedLabelIds.length > 0) {
+        taskLabelPairs.push({ taskId: dbTask.id, labelIds: matchedLabelIds });
+      }
+    }
+
+    if (labelInserts.length > 0) {
+      const { error: labelError } = await supabase
+        .from("board_task_labels")
+        .insert(labelInserts);
+
+      if (labelError) {
+        logger.warn("Onboarding board gen: failed to assign labels", {
+          ideaId,
+          error: labelError.message,
+        });
+      } else {
+        logger.info("Onboarding board gen: labels assigned", {
+          ideaId,
+          labelCount: labelInserts.length,
+        });
+
+        // Trigger auto-rules for labelled tasks (fires workflow attachment)
+        try {
+          await triggerAutoRulesForTasks(taskLabelPairs, ideaId);
+        } catch (err) {
+          logger.warn("Onboarding board gen: auto-rules trigger failed", {
+            ideaId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+    }
   }
 
   logger.info("Onboarding board gen: complete", { ideaId, tasksInserted: taskRows.length });
