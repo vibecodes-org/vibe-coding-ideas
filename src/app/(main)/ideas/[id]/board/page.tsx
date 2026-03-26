@@ -296,7 +296,6 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           coverImageUrls={coverImageUrls}
           isReadOnly={isReadOnly}
           hasWorkflowTemplates={hasWorkflowTemplates}
-          hasMcpConnection={!!userProfile?.mcp_connected_at}
         />
       </BoardPageTabs>
       <KitAppliedToast />

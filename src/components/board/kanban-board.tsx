@@ -29,7 +29,6 @@ import { AddColumnButton } from "./add-column-button";
 import { BoardToolbar } from "./board-toolbar";
 import { BoardEmptyState } from "./board-empty-state";
 import { NudgeBanner } from "@/components/shared/nudge-banner";
-import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { BoardOpsContext, type BoardOptimisticOps } from "./board-context";
 import { toast } from "sonner";
 import { moveBoardTask, reorderBoardColumns } from "@/actions/board";
@@ -130,7 +129,6 @@ interface KanbanBoardProps {
   coverImageUrls?: Record<string, string>;
   isReadOnly?: boolean;
   hasWorkflowTemplates?: boolean;
-  hasMcpConnection?: boolean;
 }
 
 // Edge-scroll constants
@@ -242,7 +240,6 @@ export function KanbanBoard({
   coverImageUrls = {},
   isReadOnly = false,
   hasWorkflowTemplates = false,
-  hasMcpConnection = false,
 }: KanbanBoardProps) {
   // Build botRoles map from botProfiles for @mention autocomplete
   const botRoles = useMemo(() => {
@@ -949,17 +946,7 @@ export function KanbanBoard({
             />
           );
         }
-        if (hasAllocatedAgents && !hasMcpConnection) {
-          // MCP not connected (compact amber banner from P3.2)
-          return (
-            <McpConnectionBanner
-              agentCount={ideaAgents.length}
-              taskCount={columns.reduce((sum, col) => sum + col.tasks.length, 0)}
-              compact
-              className="mb-3 shrink-0"
-            />
-          );
-        }
+        // MCP banner handled by board page layout — no duplicate here
         return null;
       })()}
       {showEmptyState ? (
