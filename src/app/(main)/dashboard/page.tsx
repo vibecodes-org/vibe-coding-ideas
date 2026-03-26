@@ -32,6 +32,7 @@ import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
 import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
 import { IdeaCard } from "@/components/ideas/idea-card";
 import { getActiveKitsWithSteps } from "@/actions/kits";
+import { computeIsActivated } from "@/lib/dashboard-activation";
 import { Button } from "@/components/ui/button";
 import type {
   IdeaWithAuthor,
@@ -402,8 +403,20 @@ export default async function DashboardPage() {
   }
   const hasWorkflows = totalWorkflowCount > 0;
 
-  // Activated = has meaningful tasks AND has discovered at least one advanced feature
-  const isActivated = hasTasks && (hasAgents || hasWorkflows || hasMcpConnection);
+  // Check for manual board interaction (beyond auto-generated "created" entries)
+  // This prevents premature graduation after onboarding auto-creates tasks/agents/workflows
+  let hasUserActivity = false;
+  if (allUserIdeaIds.length > 0) {
+    const { count } = await supabase
+      .from("board_task_activity")
+      .select("*", { head: true, count: "exact" })
+      .in("idea_id", allUserIdeaIds)
+      .eq("actor_id", user.id)
+      .neq("action", "created");
+    hasUserActivity = (count ?? 0) > 0;
+  }
+
+  const isActivated = computeIsActivated({ hasTasks, hasAgents, hasWorkflows, hasMcpConnection, hasUserActivity });
 
   // First-run: workflow template count for the first idea (for board preview)
   let firstIdeaWorkflowCount = 0;
@@ -680,10 +693,12 @@ export default async function DashboardPage() {
           standardContent={
             <>
               {!hasMcpConnection && (
-                <McpConnectionBanner
-                  agentCount={botProfiles.length}
-                  taskCount={tasks.length}
-                />
+                <div className="mb-6">
+                  <McpConnectionBanner
+                    agentCount={botProfiles.length}
+                    taskCount={tasks.length}
+                  />
+                </div>
               )}
               <StatsCards
                 ideasCount={ideasCount}

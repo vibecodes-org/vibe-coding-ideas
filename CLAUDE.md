@@ -149,7 +149,7 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - **First-run dashboard** (`src/components/dashboard/first-run-dashboard.tsx`): welcome header, 5-step setup progress bar (Account/Idea/Board/MCP/First task), project card with board preview, MCP connection CTA, agent team list, quick links
 - **Standard dashboard**: stats cards, collapsible sections (Active Boards, My Tasks, My Ideas, Collaborations, Active Discussions, My Agents, Recent Activity) via `DashboardGrid`
 - **Who sees what**: Brand-new users (`isNewUser`) → OnboardingWrapper. Everyone else (`!isNewUser`) → `DashboardModeSwitch`
-- **Activation logic**: `isActivated = hasTasks (>=3) && (hasAgents || hasWorkflows || hasMcpConnection)` — users need tasks AND at least one advanced feature to graduate to standard dashboard
+- **Activation logic**: `isActivated = hasTasks (>=3) && (hasAgents || hasWorkflows || hasMcpConnection) && (hasUserActivity || hasMcpConnection)` — users need tasks AND at least one advanced feature AND manual board interaction (or MCP connection) to graduate. Prevents premature graduation after onboarding auto-creates content via kits. `hasUserActivity` queries `board_task_activity` for non-`created` actions by the user
 - **isNewUser**: `!onboardingCompleted && !hasExistingContent` — users who pre-date the onboarding wizard but have ideas/collabs are NOT new users
 - Override: "Switch to full dashboard" button persists to localStorage; `DashboardModeSwitch` checks localStorage after mount
 - SSR: first-run content renders by default (no `return null` during mount) to prevent blank page flash
