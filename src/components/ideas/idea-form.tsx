@@ -219,7 +219,10 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
           const parts: string[] = [];
           if (result.kitResult.agentsCreated > 0) parts.push(`${result.kitResult.agentsCreated} agent${result.kitResult.agentsCreated !== 1 ? "s" : ""}`);
           if (result.kitResult.labelsCreated > 0) parts.push(`${result.kitResult.labelsCreated} label${result.kitResult.labelsCreated !== 1 ? "s" : ""}`);
-          if (result.kitResult.templateImported) parts.push("workflow imported");
+          const tplCount = result.kitResult.templatesImported ?? (result.kitResult.templateImported ? 1 : 0);
+          const trgCount = result.kitResult.triggersCreated ?? (result.kitResult.autoRuleCreated ? 1 : 0);
+          if (tplCount > 0) parts.push(`${tplCount} workflow${tplCount !== 1 ? "s" : ""}`);
+          if (trgCount > 0) parts.push(`${trgCount} trigger${trgCount !== 1 ? "s" : ""}`);
           const summary = encodeURIComponent(parts.join(", ") || "applied");
           router.push(`/ideas/${result.ideaId}/board?kit_applied=${summary}`);
         } else {

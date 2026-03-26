@@ -19,6 +19,7 @@ const mockKits: KitWithSteps[] = [
     display_order: 1,
     created_at: "",
     updated_at: "",
+    workflow_mappings: [],
     workflow_steps: [
       { title: "UX Review" },
       { title: "Implementation" },
@@ -41,6 +42,7 @@ const mockKits: KitWithSteps[] = [
     display_order: 99,
     created_at: "",
     updated_at: "",
+    workflow_mappings: [],
     workflow_steps: [],
   } as KitWithSteps,
   {
@@ -58,6 +60,7 @@ const mockKits: KitWithSteps[] = [
     display_order: 2,
     created_at: "",
     updated_at: "",
+    workflow_mappings: [],
     workflow_steps: [
       { title: "Design" },
       { title: "Build" },

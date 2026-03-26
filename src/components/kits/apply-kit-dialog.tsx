@@ -69,8 +69,11 @@ export function ApplyKitDialog({
         parts.push(`${result.agentsCreated} agent${result.agentsCreated !== 1 ? "s" : ""}`);
       if (result.labelsCreated > 0)
         parts.push(`${result.labelsCreated} label${result.labelsCreated !== 1 ? "s" : ""}`);
-      if (result.templateImported) parts.push("workflow imported");
-      if (result.autoRuleCreated) parts.push("workflow trigger created");
+      const tplCount = result.templatesImported ?? (result.templateImported ? 1 : 0);
+      const trgCount = result.triggersCreated ?? (result.autoRuleCreated ? 1 : 0);
+      if (tplCount > 0) parts.push(`${tplCount} workflow${tplCount !== 1 ? "s" : ""}`);
+      if (trgCount > 0) parts.push(`${trgCount} trigger${trgCount !== 1 ? "s" : ""}`);
+
 
       toast.success(
         `${selectedKit!.name} kit applied${parts.length > 0 ? ` — ${parts.join(", ")}` : ""}`

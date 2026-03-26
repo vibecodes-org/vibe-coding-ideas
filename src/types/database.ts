@@ -2119,6 +2119,48 @@ export type Database = {
         },
       ];
     };
+    kit_workflow_mappings: {
+      Row: {
+        id: string;
+        kit_id: string;
+        workflow_library_template_id: string;
+        label_name: string;
+        is_primary: boolean;
+        created_at: string;
+      };
+      Insert: {
+        id?: string;
+        kit_id: string;
+        workflow_library_template_id: string;
+        label_name: string;
+        is_primary?: boolean;
+        created_at?: string;
+      };
+      Update: {
+        id?: string;
+        kit_id?: string;
+        workflow_library_template_id?: string;
+        label_name?: string;
+        is_primary?: boolean;
+        created_at?: string;
+      };
+      Relationships: [
+        {
+          foreignKeyName: "kit_workflow_mappings_kit_id_fkey";
+          columns: ["kit_id"];
+          isOneToOne: false;
+          referencedRelation: "project_kits";
+          referencedColumns: ["id"];
+        },
+        {
+          foreignKeyName: "kit_workflow_mappings_workflow_library_template_id_fkey";
+          columns: ["workflow_library_template_id"];
+          isOneToOne: false;
+          referencedRelation: "workflow_library_templates";
+          referencedColumns: ["id"];
+        },
+      ];
+    };
     };
     Views: {
       [_ in never]: never;

@@ -30,12 +30,23 @@ export async function getActiveKits(): Promise<ProjectKit[]> {
   return (data ?? []) as ProjectKit[];
 }
 
+export type WorkflowMapping = {
+  label_name: string;
+  template_name: string;
+  template_step_count: number;
+  template_steps: { title: string; requires_approval?: boolean }[];
+  is_primary: boolean;
+};
+
 export type KitWithSteps = ProjectKit & {
   workflow_steps: { title: string; requires_approval?: boolean }[];
+  workflow_mappings: WorkflowMapping[];
 };
 
 export async function getActiveKitsWithSteps(): Promise<KitWithSteps[]> {
   const supabase = await createClient();
+
+  // Fetch kits with their old singular template (backwards compat)
   const { data, error } = await supabase
     .from("project_kits")
     .select("*, workflow_library_template:workflow_library_templates!project_kits_workflow_library_template_id_fkey(steps)")
@@ -44,21 +55,71 @@ export async function getActiveKitsWithSteps(): Promise<KitWithSteps[]> {
 
   if (error) throw new Error(error.message);
 
-  return ((data ?? []) as unknown[]).map((row) => {
+  const kits = ((data ?? []) as unknown[]).map((row) => {
     const kit = row as ProjectKit & {
       workflow_library_template: { steps: { title: string; requires_approval?: boolean }[] } | null;
     };
     return {
       ...kit,
       workflow_steps: kit.workflow_library_template?.steps ?? [],
+      workflow_mappings: [] as WorkflowMapping[],
     };
   }) as KitWithSteps[];
+
+  // Fetch all kit_workflow_mappings with template details
+  const kitIds = kits.map((k) => k.id);
+  if (kitIds.length > 0) {
+    const { data: mappings } = await supabase
+      .from("kit_workflow_mappings")
+      .select("kit_id, label_name, is_primary, workflow_library_template_id, template:workflow_library_templates!kit_workflow_mappings_workflow_library_template_id_fkey(name, steps)")
+      .in("kit_id", kitIds);
+
+    if (mappings && mappings.length > 0) {
+      const mappingsByKit = new Map<string, WorkflowMapping[]>();
+      for (const m of mappings as unknown[]) {
+        const mapping = m as {
+          kit_id: string;
+          label_name: string;
+          is_primary: boolean;
+          template: { name: string; steps: { title: string; requires_approval?: boolean }[] } | null;
+        };
+        if (!mapping.template) continue;
+
+        const kitMappings = mappingsByKit.get(mapping.kit_id) ?? [];
+        kitMappings.push({
+          label_name: mapping.label_name,
+          template_name: mapping.template.name,
+          template_step_count: mapping.template.steps?.length ?? 0,
+          template_steps: mapping.template.steps ?? [],
+          is_primary: mapping.is_primary,
+        });
+        mappingsByKit.set(mapping.kit_id, kitMappings);
+      }
+
+      for (const kit of kits) {
+        const kitMappings = mappingsByKit.get(kit.id);
+        if (kitMappings && kitMappings.length > 0) {
+          kit.workflow_mappings = kitMappings;
+          // Use the primary template's steps as the main workflow_steps (backwards compat)
+          const primary = kitMappings.find((m) => m.is_primary);
+          if (primary) {
+            kit.workflow_steps = primary.template_steps;
+          }
+        }
+      }
+    }
+  }
+
+  return kits;
 }
 
 export interface ApplyKitResult {
   agentsCreated: number;
   agentsSkipped: number;
   labelsCreated: number;
+  templatesImported: number;
+  triggersCreated: number;
+  // Backwards compat
   templateImported: boolean;
   autoRuleCreated: boolean;
 }
@@ -90,6 +151,8 @@ export async function applyKit(
     agentsCreated: 0,
     agentsSkipped: 0,
     labelsCreated: 0,
+    templatesImported: 0,
+    triggersCreated: 0,
     templateImported: false,
     autoRuleCreated: false,
   };
@@ -126,21 +189,18 @@ export async function applyKit(
     for (const agentRole of agentRoles) {
       const roleLower = agentRole.role?.toLowerCase();
       if (roleLower && existingBotsByRole.has(roleLower)) {
-        // User already has an agent with this role — reuse it
         botIdsToAllocate.push(existingBotsByRole.get(roleLower)!);
         result.agentsSkipped++;
         continue;
       }
 
       try {
-        // Try cloning from library agent (carries system prompt, bio, skills, avatar)
         const libraryAgent = roleLower ? libraryByRole.get(roleLower) : null;
         let newBotId: string | null = null;
 
         if (libraryAgent) {
           newBotId = await cloneBotProfile(supabase, libraryAgent, user.id);
         } else {
-          // Fallback: create from scratch with BOT_ROLE_TEMPLATES prompt
           const template = BOT_ROLE_TEMPLATES.find(
             (t) => t.role.toLowerCase() === roleLower
           );
@@ -157,7 +217,6 @@ export async function applyKit(
 
           if (botUser) {
             newBotId = botUser;
-            // Update with skills if provided
             if (agentRole.skills && agentRole.skills.length > 0) {
               await supabase
                 .from("bot_profiles")
@@ -176,12 +235,11 @@ export async function applyKit(
       }
     }
 
-    // 5. Allocate all agents (newly created + existing matches) to the idea
     if (botIdsToAllocate.length > 0) {
       try {
         await allocateAllAgents(ideaId, botIdsToAllocate);
       } catch {
-        // Non-fatal — agents exist but allocation failed
+        // Non-fatal
       }
     }
   }
@@ -213,8 +271,85 @@ export async function applyKit(
     }
   }
 
-  // 3. Import workflow template from library
-  if (kit.workflow_library_template_id) {
+  // 3. Import workflow templates from kit_workflow_mappings
+  const { data: mappings } = await supabase
+    .from("kit_workflow_mappings")
+    .select("label_name, is_primary, workflow_library_template_id")
+    .eq("kit_id", kitId);
+
+  if (mappings && mappings.length > 0) {
+    // Fetch all board labels for this idea (needed for auto-rule creation)
+    const { data: boardLabels } = await supabase
+      .from("board_labels")
+      .select("id, name")
+      .eq("idea_id", ideaId);
+
+    const labelsByName = new Map(
+      (boardLabels ?? []).map((l) => [l.name.toLowerCase(), l.id])
+    );
+
+    // Deduplicate: group mappings by library template ID
+    const templateToLabels = new Map<string, { labelName: string; isPrimary: boolean }[]>();
+    for (const m of mappings) {
+      const existing = templateToLabels.get(m.workflow_library_template_id) ?? [];
+      existing.push({ labelName: m.label_name, isPrimary: m.is_primary });
+      templateToLabels.set(m.workflow_library_template_id, existing);
+    }
+
+    // Import each unique library template once, create auto-rules for all its labels
+    for (const [libTemplateId, labels] of templateToLabels) {
+      try {
+        const { data: libTemplate } = await supabase
+          .from("workflow_library_templates")
+          .select("*")
+          .eq("id", libTemplateId)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (!libTemplate) continue;
+
+        const { data: newTemplate } = await supabase
+          .from("workflow_templates")
+          .insert({
+            idea_id: ideaId,
+            name: libTemplate.name,
+            description: libTemplate.description,
+            steps: libTemplate.steps,
+            created_by: user.id,
+          })
+          .select("id")
+          .single();
+
+        if (!newTemplate) continue;
+        result.templatesImported++;
+
+        // Create auto-rules for each label that maps to this template
+        for (const { labelName, isPrimary } of labels) {
+          const labelId = labelsByName.get(labelName.toLowerCase());
+          if (!labelId) continue;
+
+          try {
+            await supabase.from("workflow_auto_rules").insert({
+              idea_id: ideaId,
+              label_id: labelId,
+              template_id: newTemplate.id,
+            });
+            result.triggersCreated++;
+            // Backwards compat: mark first trigger
+            if (isPrimary) {
+              result.templateImported = true;
+              result.autoRuleCreated = true;
+            }
+          } catch {
+            // Skip duplicate auto-rules
+          }
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
+  } else if (kit.workflow_library_template_id) {
+    // Fallback: old singular template flow for kits without mappings
     try {
       const { data: libTemplate } = await supabase
         .from("workflow_library_templates")
@@ -224,7 +359,6 @@ export async function applyKit(
         .maybeSingle();
 
       if (libTemplate) {
-        // Create a local workflow template from the library template
         const { data: newTemplate } = await supabase
           .from("workflow_templates")
           .insert({
@@ -239,10 +373,9 @@ export async function applyKit(
 
         if (newTemplate) {
           result.templateImported = true;
+          result.templatesImported = 1;
 
-          // 4. Create auto-rule linking label to template
           if (kit.auto_rule_label) {
-            // Find or create the label
             const { data: matchingLabel } = await supabase
               .from("board_labels")
               .select("id")
@@ -255,19 +388,19 @@ export async function applyKit(
                 idea_id: ideaId,
                 label_id: matchingLabel.id,
                 template_id: newTemplate.id,
-                created_by: user.id,
               });
               result.autoRuleCreated = true;
+              result.triggersCreated = 1;
             }
           }
         }
       }
     } catch {
-      // Non-fatal — template import failed
+      // Non-fatal
     }
   }
 
-  // 6. Set project_kit_id on the idea
+  // 4. Set project_kit_id on the idea
   await supabase
     .from("ideas")
     .update({ project_kit_id: kitId })

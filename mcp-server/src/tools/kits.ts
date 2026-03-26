@@ -18,15 +18,50 @@ export async function listKits(ctx: McpContext) {
 
   if (error) throw new Error(`Failed to list kits: ${error.message}`);
 
-  return (data ?? []).map((kit) => ({
-    id: kit.id,
-    name: kit.name,
-    icon: kit.icon,
-    description: kit.description,
-    agent_role_count: (kit.agent_roles as AgentRole[])?.length ?? 0,
-    label_count: (kit.label_presets as LabelPreset[])?.length ?? 0,
-    has_workflow_template: !!kit.workflow_library_template_id,
-  }));
+  const kitIds = (data ?? []).map((k) => k.id);
+
+  // Fetch workflow mappings for all kits
+  let mappingsByKit = new Map<string, { label_name: string; template_name: string; step_count: number; is_primary: boolean }[]>();
+  if (kitIds.length > 0) {
+    const { data: mappings } = await ctx.supabase
+      .from("kit_workflow_mappings")
+      .select("kit_id, label_name, is_primary, template:workflow_library_templates!kit_workflow_mappings_workflow_library_template_id_fkey(name, steps)")
+      .in("kit_id", kitIds);
+
+    if (mappings) {
+      for (const m of mappings as unknown[]) {
+        const mapping = m as {
+          kit_id: string;
+          label_name: string;
+          is_primary: boolean;
+          template: { name: string; steps: unknown[] } | null;
+        };
+        if (!mapping.template) continue;
+        const kitMappings = mappingsByKit.get(mapping.kit_id) ?? [];
+        kitMappings.push({
+          label_name: mapping.label_name,
+          template_name: mapping.template.name,
+          step_count: mapping.template.steps?.length ?? 0,
+          is_primary: mapping.is_primary,
+        });
+        mappingsByKit.set(mapping.kit_id, kitMappings);
+      }
+    }
+  }
+
+  return (data ?? []).map((kit) => {
+    const kitMappings = mappingsByKit.get(kit.id) ?? [];
+    return {
+      id: kit.id,
+      name: kit.name,
+      icon: kit.icon,
+      description: kit.description,
+      agent_role_count: (kit.agent_roles as AgentRole[])?.length ?? 0,
+      label_count: (kit.label_presets as LabelPreset[])?.length ?? 0,
+      has_workflow_template: !!kit.workflow_library_template_id || kitMappings.length > 0,
+      workflow_mappings: kitMappings.length > 0 ? kitMappings : undefined,
+    };
+  });
 }
 
 // --- Apply Kit ---
@@ -87,8 +122,8 @@ export async function applyKitMcp(
     agentsCreated: 0,
     agentsSkipped: 0,
     labelsCreated: 0,
-    templateImported: false,
-    autoRuleCreated: false,
+    templatesImported: 0,
+    triggersCreated: 0,
   };
 
   const ownerId = ctx.ownerUserId ?? ctx.userId;
@@ -126,7 +161,6 @@ export async function applyKitMcp(
     for (const agentRole of agentRoles) {
       const roleLower = agentRole.role?.toLowerCase();
       if (roleLower && existingBotsByRole.has(roleLower)) {
-        // User already has an agent with this role — reuse it
         botIdsToAllocate.push(existingBotsByRole.get(roleLower)!);
         result.agentsSkipped++;
         continue;
@@ -135,7 +169,6 @@ export async function applyKitMcp(
       try {
         let newBotId: string | null = null;
 
-        // Try cloning from library agent (carries system prompt, bio, skills, avatar)
         const libraryAgent = roleLower ? libraryByRole.get(roleLower) : null;
         if (libraryAgent) {
           const { data: clonedId } = await ctx.supabase.rpc("create_bot_user", {
@@ -157,7 +190,6 @@ export async function applyKitMcp(
             newBotId = clonedId;
           }
         } else {
-          // Fallback: create from scratch without system prompt
           const { data: botUser } = await ctx.supabase.rpc("create_bot_user", {
             p_owner_id: ownerId,
             p_name: agentRole.name_suggestion || agentRole.role,
@@ -183,7 +215,6 @@ export async function applyKitMcp(
       }
     }
 
-    // Allocate all agents (newly created + existing matches) to the idea
     for (const botId of botIdsToAllocate) {
       try {
         await ctx.supabase.from("idea_agents").upsert({
@@ -223,8 +254,78 @@ export async function applyKitMcp(
     }
   }
 
-  // 3. Import workflow template
-  if (kit.workflow_library_template_id) {
+  // 3. Import workflow templates from kit_workflow_mappings
+  const { data: mappings } = await ctx.supabase
+    .from("kit_workflow_mappings")
+    .select("label_name, is_primary, workflow_library_template_id")
+    .eq("kit_id", params.kit_id);
+
+  if (mappings && mappings.length > 0) {
+    // Fetch all board labels for this idea
+    const { data: boardLabels } = await ctx.supabase
+      .from("board_labels")
+      .select("id, name")
+      .eq("idea_id", params.idea_id);
+
+    const labelsByName = new Map(
+      (boardLabels ?? []).map((l) => [l.name.toLowerCase(), l.id])
+    );
+
+    // Deduplicate: group mappings by library template ID
+    const templateToLabels = new Map<string, { labelName: string }[]>();
+    for (const m of mappings) {
+      const existing = templateToLabels.get(m.workflow_library_template_id) ?? [];
+      existing.push({ labelName: m.label_name });
+      templateToLabels.set(m.workflow_library_template_id, existing);
+    }
+
+    for (const [libTemplateId, labels] of templateToLabels) {
+      try {
+        const { data: libTemplate } = await ctx.supabase
+          .from("workflow_library_templates")
+          .select("*")
+          .eq("id", libTemplateId)
+          .eq("is_active", true)
+          .maybeSingle();
+
+        if (!libTemplate) continue;
+
+        const { data: newTemplate } = await ctx.supabase
+          .from("workflow_templates")
+          .insert({
+            idea_id: params.idea_id,
+            name: libTemplate.name,
+            description: libTemplate.description,
+            steps: libTemplate.steps,
+            created_by: ownerId,
+          })
+          .select("id")
+          .single();
+
+        if (!newTemplate) continue;
+        result.templatesImported++;
+
+        for (const { labelName } of labels) {
+          const labelId = labelsByName.get(labelName.toLowerCase());
+          if (!labelId) continue;
+
+          try {
+            await ctx.supabase.from("workflow_auto_rules").insert({
+              idea_id: params.idea_id,
+              label_id: labelId,
+              template_id: newTemplate.id,
+            });
+            result.triggersCreated++;
+          } catch {
+            // Skip duplicate auto-rules
+          }
+        }
+      } catch {
+        // Non-fatal
+      }
+    }
+  } else if (kit.workflow_library_template_id) {
+    // Fallback: old singular template flow
     try {
       const { data: libTemplate } = await ctx.supabase
         .from("workflow_library_templates")
@@ -247,9 +348,8 @@ export async function applyKitMcp(
           .single();
 
         if (newTemplate) {
-          result.templateImported = true;
+          result.templatesImported = 1;
 
-          // 4. Create auto-rule
           if (kit.auto_rule_label) {
             const { data: matchingLabel } = await ctx.supabase
               .from("board_labels")
@@ -263,9 +363,8 @@ export async function applyKitMcp(
                 idea_id: params.idea_id,
                 label_id: matchingLabel.id,
                 template_id: newTemplate.id,
-                created_by: ownerId,
               });
-              result.autoRuleCreated = true;
+              result.triggersCreated = 1;
             }
           }
         }
@@ -275,7 +374,7 @@ export async function applyKitMcp(
     }
   }
 
-  // 5. Set project_kit_id on the idea
+  // 4. Set project_kit_id on the idea
   await ctx.supabase
     .from("ideas")
     .update({ project_kit_id: params.kit_id })

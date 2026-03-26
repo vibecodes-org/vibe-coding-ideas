@@ -1,0 +1,679 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Multi-Template Kit Design v2 - UX Specification</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --card: #18181b;
+      --card-hover: #1f1f23;
+      --border: #27272a;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --muted-dim: #71717a;
+      --violet: #8b5cf6;
+      --violet-dim: rgba(139, 92, 246, 0.12);
+      --red: #ef4444;
+      --red-dim: rgba(239, 68, 68, 0.12);
+      --emerald: #10b981;
+      --emerald-dim: rgba(16, 185, 129, 0.12);
+      --amber: #f59e0b;
+      --amber-dim: rgba(245, 158, 11, 0.12);
+      --cyan: #06b6d4;
+      --cyan-dim: rgba(6, 182, 212, 0.12);
+      --blue: #3b82f6;
+      --blue-dim: rgba(59, 130, 246, 0.12);
+      --pink: #ec4899;
+      --pink-dim: rgba(236, 72, 153, 0.12);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); line-height: 1.6; padding: 2rem; max-width: 1200px; margin: 0 auto; }
+    h1 { font-size: 1.75rem; margin-bottom: 0.25rem; }
+    h2 { font-size: 1.35rem; margin: 2.5rem 0 1rem; border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+    h3 { font-size: 1.1rem; margin: 1.5rem 0 0.75rem; color: var(--violet); }
+    h4 { font-size: 0.95rem; margin: 1rem 0 0.5rem; color: var(--muted); }
+    p, li { color: var(--muted); font-size: 0.9rem; }
+    p { margin-bottom: 0.75rem; }
+    ul, ol { padding-left: 1.25rem; margin-bottom: 1rem; }
+    li { margin-bottom: 0.35rem; }
+    code { background: var(--card); padding: 0.15em 0.4em; border-radius: 4px; font-size: 0.85em; color: var(--violet); }
+    .meta { color: var(--muted); font-size: 0.85rem; margin-bottom: 2rem; }
+    .note { border-radius: 8px; padding: 0.75rem 1rem; margin: 1rem 0; font-size: 0.85rem; color: var(--text); }
+    .note-violet { background: rgba(139, 92, 246, 0.1); border: 1px solid rgba(139, 92, 246, 0.25); }
+    .note-amber { background: rgba(245, 158, 11, 0.1); border: 1px solid rgba(245, 158, 11, 0.25); }
+    .note-emerald { background: rgba(16, 185, 129, 0.1); border: 1px solid rgba(16, 185, 129, 0.25); }
+    .note-red { background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.25); }
+    table { width: 100%; border-collapse: collapse; margin: 1rem 0; font-size: 0.85rem; }
+    th { text-align: left; padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); color: var(--muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; font-weight: 600; }
+    td { padding: 0.5rem 0.75rem; border-bottom: 1px solid var(--border); color: var(--muted); }
+
+    /* Mockup frame */
+    .mockup { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 1.5rem; margin: 1.5rem 0; }
+    .mockup-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-dim); margin-bottom: 1rem; font-weight: 600; }
+    .mockup-recommended { display: inline-block; background: var(--emerald-dim); color: var(--emerald); font-size: 0.65rem; padding: 0.1rem 0.5rem; border-radius: 9999px; margin-left: 0.5rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+
+    /* Shared kit preview elements */
+    .section-header { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin-bottom: 0.5rem; }
+    .role-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.6rem; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); font-size: 0.78rem; color: var(--muted); }
+    .label-pill { display: inline-block; padding: 0.15rem 0.5rem; border-radius: 9999px; font-size: 0.65rem; font-weight: 600; }
+    .label-red { background: var(--red-dim); color: var(--red); }
+    .label-violet { background: var(--violet-dim); color: var(--violet); }
+    .label-emerald { background: var(--emerald-dim); color: var(--emerald); }
+    .label-amber { background: var(--amber-dim); color: var(--amber); }
+    .label-cyan { background: var(--cyan-dim); color: var(--cyan); }
+    .label-blue { background: var(--blue-dim); color: var(--blue); }
+    .label-pink { background: var(--pink-dim); color: var(--pink); }
+
+    /* Step chain */
+    .step-chain { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; }
+    .step-badge { display: inline-flex; align-items: center; gap: 0.35rem; padding: 0.25rem 0.6rem; border-radius: 6px; border: 1px solid var(--border); background: rgba(255,255,255,0.03); font-size: 0.78rem; color: var(--muted); }
+    .step-badge.approval { border-color: rgba(245, 158, 11, 0.25); background: var(--amber-dim); }
+    .step-arrow { color: var(--muted-dim); font-size: 0.75rem; }
+    .lock-icon { color: var(--amber); font-size: 0.7rem; }
+
+    /* Trigger row */
+    .trigger-row { display: flex; align-items: center; gap: 0.5rem; padding: 0.35rem 0; font-size: 0.8rem; color: var(--muted); }
+    .trigger-arrow { color: var(--muted-dim); font-size: 0.7rem; }
+    .trigger-template { color: var(--text); font-size: 0.8rem; }
+    .trigger-steps { color: var(--muted-dim); font-size: 0.7rem; }
+    .trigger-none { color: var(--muted-dim); font-style: italic; font-size: 0.8rem; }
+
+    /* Compact summary */
+    .compact-bar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; font-size: 0.75rem; color: var(--muted); }
+    .compact-dot { color: var(--border); }
+
+    /* Tabs mockup */
+    .tab-row { display: flex; gap: 0; border-bottom: 1px solid var(--border); margin-bottom: 1rem; }
+    .tab { padding: 0.5rem 1rem; font-size: 0.8rem; color: var(--muted-dim); cursor: pointer; border-bottom: 2px solid transparent; }
+    .tab.active { color: var(--text); border-bottom-color: var(--violet); }
+
+    /* Helper: side by side */
+    .side-by-side { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+    @media (max-width: 900px) { .side-by-side { grid-template-columns: 1fr; } }
+
+    /* Pros/cons */
+    .pros-cons { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-top: 0.75rem; }
+    .pros-cons > div { font-size: 0.8rem; }
+    .pros-cons .pro { color: var(--emerald); }
+    .pros-cons .con { color: var(--red); }
+  </style>
+</head>
+<body>
+
+  <h1>Multi-Template Kit Design v2</h1>
+  <p class="meta">Compass (UX Designer) &mdash; Rework addressing Design Review feedback &mdash; Building on Requirements step</p>
+
+  <div class="note note-amber">
+    <strong>Rework context:</strong> The previous design was rejected because it (1) removed the workflow step chain from Kit Preview, (2) used inconsistent terminology, and (3) only offered one design option. This revision fixes all three issues.
+  </div>
+
+  <!-- ============================================ -->
+  <h2>1. Terminology Audit &amp; Recommendation</h2>
+
+  <p>An audit of all UI surfaces, MCP tools, guide pages, and code found the following usage:</p>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Concept</th>
+        <th>DB / Code</th>
+        <th>UI (what users see)</th>
+        <th>MCP Tool Name / Desc</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="color:var(--text)">Reusable step blueprint</td>
+        <td><code>workflow_templates</code></td>
+        <td>"Workflow Template" (header), "Template" (sidebar), "Workflow" (shorthand)</td>
+        <td><code>*_workflow_template</code></td>
+      </tr>
+      <tr>
+        <td style="color:var(--text)">Label &rarr; template auto-link</td>
+        <td><code>workflow_auto_rules</code></td>
+        <td><strong>"Workflow Trigger"</strong> (everywhere in UI)</td>
+        <td><code>*_auto_rule</code> (name) / "workflow trigger" (desc)</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text)">Active run on a task</td>
+        <td><code>workflow_runs</code></td>
+        <td>"Workflow" (Apply Workflow, Reset Workflow)</td>
+        <td><code>claim_next_step</code> etc.</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text)">Admin library blueprint</td>
+        <td><code>workflow_library_templates</code></td>
+        <td>"Template Library"</td>
+        <td>(imported via UI)</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Recommended Standard Terminology</h3>
+
+  <div class="note note-emerald">
+    <strong>Use these terms consistently in all new UI:</strong><br>
+    &bull; <strong>"Workflow"</strong> &mdash; the generic concept / the active run on a task<br>
+    &bull; <strong>"Workflow template"</strong> &mdash; a reusable step blueprint (shortened to "template" when context is clear, e.g. Workflows tab sidebar)<br>
+    &bull; <strong>"Workflow trigger"</strong> &mdash; a label-to-template mapping that auto-applies a workflow (this is already the standard across all UI surfaces)<br>
+    &bull; <strong>Never use "auto-rule"</strong> in user-facing text &mdash; that's the internal DB/code term only
+  </div>
+
+  <p>The current kit preview uses these terms correctly. The new design must continue using "workflow trigger" (not "auto-rule") and "workflow template" (not just "template" in isolation).</p>
+
+  <!-- ============================================ -->
+  <h2>2. Current Kit Preview (Expanded) &mdash; For Reference</h2>
+
+  <p>This is what users see today. The design must <strong>keep</strong> all four sections and <strong>extend</strong> them for multiple triggers.</p>
+
+  <div class="mockup">
+    <div class="mockup-label">Current Design &mdash; Single Template + Single Trigger</div>
+
+    <!-- Agent Team -->
+    <div style="margin-bottom: 1rem;">
+      <div class="section-header">&#129489; Agent Team (6 roles)</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">
+        <span class="role-badge">&#128296; Full Stack Engineer</span>
+        <span class="role-badge">&#127912; UX Designer</span>
+        <span class="role-badge">&#128269; QA Engineer</span>
+        <span class="role-badge">&#128737; Security Engineer</span>
+        <span class="role-badge">&#128640; DevOps Engineer</span>
+        <span class="role-badge">&#128203; Product Owner</span>
+      </div>
+      <p style="margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted-dim);">Agents will be cloned to your account. You can customise names, prompts, and skills afterwards.</p>
+    </div>
+
+    <!-- Workflow Template -->
+    <div style="margin-bottom: 1rem;">
+      <div class="section-header">&#9889; Workflow Template (6 steps)</div>
+      <div class="step-chain">
+        <span class="step-badge">1. Requirements &amp; Acceptance Criteria</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge">2. UX Design &amp; Prototyping</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge approval">3. Design Approval &#128274;</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge">4. Implementation &amp; Unit Tests</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge">5. QA &amp; Security Review</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge approval">6. Release Sign-off &#128274;</span>
+      </div>
+    </div>
+
+    <!-- Board Labels -->
+    <div style="margin-bottom: 1rem;">
+      <div class="section-header">&#127991; Board Labels</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">
+        <span class="label-pill label-red">Bug</span>
+        <span class="label-pill label-violet">Feature</span>
+        <span class="label-pill label-emerald">Enhancement</span>
+        <span class="label-pill label-amber">Refactor</span>
+        <span class="label-pill label-cyan">Documentation</span>
+        <span class="label-pill label-blue">Infrastructure</span>
+      </div>
+    </div>
+
+    <!-- Workflow Trigger -->
+    <div>
+      <div class="section-header">&#128260; Workflow Trigger</div>
+      <p style="font-size: 0.8rem; color: var(--muted);">
+        When a task is labelled <span class="label-pill label-violet">Feature</span>, the Web Application workflow will be automatically applied.
+      </p>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <h2>3. Design Option A: Expanded Triggers List</h2>
+
+  <p>Keep all four sections. Replace the single trigger sentence with a <strong>list of trigger rows</strong>, each showing label &rarr; workflow template name &amp; step count. The primary workflow template step chain stays exactly as-is. Other templates are referenced by name only.</p>
+
+  <div class="mockup">
+    <div class="mockup-label">Option A &mdash; Expanded Triggers List <span class="mockup-recommended">Recommended</span></div>
+
+    <!-- Agent Team (unchanged) -->
+    <div style="margin-bottom: 1rem;">
+      <div class="section-header">&#129489; Agent Team (6 roles)</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">
+        <span class="role-badge">&#128296; Full Stack Engineer</span>
+        <span class="role-badge">&#127912; UX Designer</span>
+        <span class="role-badge">&#128269; QA Engineer</span>
+        <span class="role-badge">&#128737; Security Engineer</span>
+        <span class="role-badge">&#128640; DevOps Engineer</span>
+        <span class="role-badge">&#128203; Product Owner</span>
+      </div>
+      <p style="margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted-dim);">Agents will be cloned to your account. You can customise names, prompts, and skills afterwards.</p>
+    </div>
+
+    <!-- Workflow Template (UNCHANGED — shows the PRIMARY template steps) -->
+    <div style="margin-bottom: 1rem;">
+      <div class="section-header">&#9889; Workflow Template (6 steps)</div>
+      <div class="step-chain">
+        <span class="step-badge">1. Requirements &amp; Acceptance Criteria</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge">2. UX Design &amp; Prototyping</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge approval">3. Design Approval &#128274;</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge">4. Implementation &amp; Unit Tests</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge">5. QA &amp; Security Review</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge approval">6. Release Sign-off &#128274;</span>
+      </div>
+      <p style="margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted-dim);">
+        This is the primary workflow template. Other workflow templates are also included &mdash; see triggers below.
+      </p>
+    </div>
+
+    <!-- Board Labels (unchanged) -->
+    <div style="margin-bottom: 1rem;">
+      <div class="section-header">&#127991; Board Labels</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">
+        <span class="label-pill label-red">Bug</span>
+        <span class="label-pill label-violet">Feature</span>
+        <span class="label-pill label-emerald">Enhancement</span>
+        <span class="label-pill label-amber">Refactor</span>
+        <span class="label-pill label-cyan">Documentation</span>
+        <span class="label-pill label-blue">Infrastructure</span>
+      </div>
+    </div>
+
+    <!-- Workflow Triggers (CHANGED — now a list) -->
+    <div>
+      <div class="section-header">&#128260; Workflow Triggers (5)</div>
+      <div style="display: flex; flex-direction: column; gap: 0.15rem;">
+        <div class="trigger-row">
+          <span class="label-pill label-violet">Feature</span>
+          <span class="trigger-arrow">&rarr;</span>
+          <span class="trigger-template">Web Application Feature</span>
+          <span class="trigger-steps">(6 steps)</span>
+        </div>
+        <div class="trigger-row">
+          <span class="label-pill label-red">Bug</span>
+          <span class="trigger-arrow">&rarr;</span>
+          <span class="trigger-template">Bug Fix</span>
+          <span class="trigger-steps">(4 steps)</span>
+        </div>
+        <div class="trigger-row">
+          <span class="label-pill label-emerald">Enhancement</span>
+          <span class="trigger-arrow">&rarr;</span>
+          <span class="trigger-template">Web Application Feature</span>
+          <span class="trigger-steps">(6 steps)</span>
+        </div>
+        <div class="trigger-row">
+          <span class="label-pill label-amber">Refactor</span>
+          <span class="trigger-arrow">&rarr;</span>
+          <span class="trigger-template">Bug Fix</span>
+          <span class="trigger-steps">(4 steps)</span>
+        </div>
+        <div class="trigger-row">
+          <span class="label-pill label-blue">Infrastructure</span>
+          <span class="trigger-arrow">&rarr;</span>
+          <span class="trigger-template">Infrastructure Change</span>
+          <span class="trigger-steps">(5 steps)</span>
+        </div>
+        <div class="trigger-row">
+          <span class="label-pill label-cyan">Documentation</span>
+          <span class="trigger-arrow">&rarr;</span>
+          <span class="trigger-none">no workflow</span>
+        </div>
+      </div>
+      <p style="margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted-dim);">
+        When a task is labelled, the matching workflow is automatically applied to it.
+      </p>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div>
+      <p class="pro">+ Minimal change from current layout</p>
+      <p class="pro">+ Keeps step chain visible for primary template</p>
+      <p class="pro">+ Clear label &rarr; workflow mapping at a glance</p>
+      <p class="pro">+ Familiar section structure preserved</p>
+    </div>
+    <div>
+      <p class="con">- Can't see steps for secondary workflows (Bug Fix, etc.)</p>
+      <p class="con">- Slightly longer section overall</p>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <h2>4. Design Option B: Tabbed Workflow Templates</h2>
+
+  <p>Replace the single "Workflow Template" section with a <strong>tabbed view</strong>. Each tab shows one workflow template's step chain. The trigger mapping is shown below the step chain to explain which labels use this template.</p>
+
+  <div class="mockup">
+    <div class="mockup-label">Option B &mdash; Tabbed Workflow Templates</div>
+
+    <!-- Agent Team (unchanged) -->
+    <div style="margin-bottom: 1rem;">
+      <div class="section-header">&#129489; Agent Team (6 roles)</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">
+        <span class="role-badge">&#128296; Full Stack Engineer</span>
+        <span class="role-badge">&#127912; UX Designer</span>
+        <span class="role-badge">&#128269; QA Engineer</span>
+        <span class="role-badge">&#128737; Security Engineer</span>
+        <span class="role-badge">&#128640; DevOps Engineer</span>
+        <span class="role-badge">&#128203; Product Owner</span>
+      </div>
+      <p style="margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted-dim);">Agents will be cloned to your account. You can customise names, prompts, and skills afterwards.</p>
+    </div>
+
+    <!-- Workflow Templates (TABBED) -->
+    <div style="margin-bottom: 1rem;">
+      <div class="section-header">&#9889; Workflow Templates (3)</div>
+
+      <!-- Tabs -->
+      <div class="tab-row">
+        <div class="tab active">Web Application Feature</div>
+        <div class="tab">Bug Fix</div>
+        <div class="tab">Infrastructure Change</div>
+      </div>
+
+      <!-- Active tab content -->
+      <div style="padding: 0.5rem 0;">
+        <div class="step-chain">
+          <span class="step-badge">1. Requirements &amp; Acceptance Criteria</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-badge">2. UX Design &amp; Prototyping</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-badge approval">3. Design Approval &#128274;</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-badge">4. Implementation &amp; Unit Tests</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-badge">5. QA &amp; Security Review</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-badge approval">6. Release Sign-off &#128274;</span>
+        </div>
+        <p style="margin-top: 0.5rem; font-size: 0.75rem; color: var(--muted-dim);">
+          Triggered by: <span class="label-pill label-violet">Feature</span> <span class="label-pill label-emerald">Enhancement</span>
+        </p>
+      </div>
+    </div>
+
+    <!-- Board Labels (unchanged) -->
+    <div style="margin-bottom: 1rem;">
+      <div class="section-header">&#127991; Board Labels</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">
+        <span class="label-pill label-red">Bug</span>
+        <span class="label-pill label-violet">Feature</span>
+        <span class="label-pill label-emerald">Enhancement</span>
+        <span class="label-pill label-amber">Refactor</span>
+        <span class="label-pill label-cyan">Documentation</span>
+        <span class="label-pill label-blue">Infrastructure</span>
+      </div>
+    </div>
+
+    <!-- Summary note replaces separate trigger section -->
+    <div>
+      <p style="font-size: 0.75rem; color: var(--muted-dim);">
+        &#128260; 5 of 6 labels have workflow triggers. When a task is labelled, the matching workflow is automatically applied.
+      </p>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div>
+      <p class="pro">+ Users can see the step chain for EVERY workflow template</p>
+      <p class="pro">+ Clear which labels trigger each template ("Triggered by:" line)</p>
+      <p class="pro">+ Removes the separate Trigger section (info folded into tabs)</p>
+    </div>
+    <div>
+      <p class="con">- More complex interaction (tabs in a preview panel)</p>
+      <p class="con">- Tab names can be long, wrapping on mobile</p>
+      <p class="con">- Requires fetching step data for all templates, not just primary</p>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <h2>5. Design Option C: Merged Labels + Triggers</h2>
+
+  <p>Keep the workflow template step chain (primary only). <strong>Merge the Board Labels and Workflow Triggers sections</strong> into one combined section. Each label shows its trigger inline &mdash; the mapped workflow name appears as a subtle annotation next to the label pill.</p>
+
+  <div class="mockup">
+    <div class="mockup-label">Option C &mdash; Merged Labels + Triggers</div>
+
+    <!-- Agent Team (unchanged) -->
+    <div style="margin-bottom: 1rem;">
+      <div class="section-header">&#129489; Agent Team (6 roles)</div>
+      <div style="display: flex; flex-wrap: wrap; gap: 0.35rem;">
+        <span class="role-badge">&#128296; Full Stack Engineer</span>
+        <span class="role-badge">&#127912; UX Designer</span>
+        <span class="role-badge">&#128269; QA Engineer</span>
+        <span class="role-badge">&#128737; Security Engineer</span>
+        <span class="role-badge">&#128640; DevOps Engineer</span>
+        <span class="role-badge">&#128203; Product Owner</span>
+      </div>
+      <p style="margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted-dim);">Agents will be cloned to your account. You can customise names, prompts, and skills afterwards.</p>
+    </div>
+
+    <!-- Workflow Template (UNCHANGED) -->
+    <div style="margin-bottom: 1rem;">
+      <div class="section-header">&#9889; Workflow Template (6 steps)</div>
+      <div class="step-chain">
+        <span class="step-badge">1. Requirements &amp; Acceptance Criteria</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge">2. UX Design &amp; Prototyping</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge approval">3. Design Approval &#128274;</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge">4. Implementation &amp; Unit Tests</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge">5. QA &amp; Security Review</span>
+        <span class="step-arrow">&rarr;</span>
+        <span class="step-badge approval">6. Release Sign-off &#128274;</span>
+      </div>
+      <p style="margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted-dim);">
+        + 2 more workflow templates included (Bug Fix, Infrastructure Change)
+      </p>
+    </div>
+
+    <!-- MERGED: Board Labels & Workflow Triggers -->
+    <div>
+      <div class="section-header">&#127991; Board Labels &amp; Workflow Triggers</div>
+      <div style="display: flex; flex-direction: column; gap: 0.4rem;">
+        <!-- Each label with its trigger annotation -->
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="label-pill label-violet" style="min-width: 90px; text-align: center;">Feature</span>
+          <span style="font-size: 0.7rem; color: var(--muted-dim);">&#9889;</span>
+          <span style="font-size: 0.78rem; color: var(--muted);">Web Application Feature <span style="color: var(--muted-dim);">(6 steps)</span></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="label-pill label-red" style="min-width: 90px; text-align: center;">Bug</span>
+          <span style="font-size: 0.7rem; color: var(--muted-dim);">&#9889;</span>
+          <span style="font-size: 0.78rem; color: var(--muted);">Bug Fix <span style="color: var(--muted-dim);">(4 steps)</span></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="label-pill label-emerald" style="min-width: 90px; text-align: center;">Enhancement</span>
+          <span style="font-size: 0.7rem; color: var(--muted-dim);">&#9889;</span>
+          <span style="font-size: 0.78rem; color: var(--muted);">Web Application Feature <span style="color: var(--muted-dim);">(6 steps)</span></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="label-pill label-amber" style="min-width: 90px; text-align: center;">Refactor</span>
+          <span style="font-size: 0.7rem; color: var(--muted-dim);">&#9889;</span>
+          <span style="font-size: 0.78rem; color: var(--muted);">Bug Fix <span style="color: var(--muted-dim);">(4 steps)</span></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="label-pill label-blue" style="min-width: 90px; text-align: center;">Infrastructure</span>
+          <span style="font-size: 0.7rem; color: var(--muted-dim);">&#9889;</span>
+          <span style="font-size: 0.78rem; color: var(--muted);">Infrastructure Change <span style="color: var(--muted-dim);">(5 steps)</span></span>
+        </div>
+        <div style="display: flex; align-items: center; gap: 0.5rem;">
+          <span class="label-pill label-cyan" style="min-width: 90px; text-align: center;">Documentation</span>
+          <span style="font-size: 0.78rem; color: var(--muted-dim); font-style: italic; margin-left: 1.1rem;">no workflow</span>
+        </div>
+      </div>
+      <p style="margin-top: 0.5rem; font-size: 0.7rem; color: var(--muted-dim);">
+        When a task is labelled, the matching workflow is automatically applied to it.
+      </p>
+    </div>
+  </div>
+
+  <div class="pros-cons">
+    <div>
+      <p class="pro">+ Most compact &mdash; 3 sections instead of 4</p>
+      <p class="pro">+ Labels and their triggers are right next to each other (no mental mapping)</p>
+      <p class="pro">+ Keeps primary step chain visible</p>
+      <p class="pro">+ "+2 more workflow templates" teaser is lightweight</p>
+    </div>
+    <div>
+      <p class="con">- "Board Labels &amp; Workflow Triggers" is a long section header</p>
+      <p class="con">- Users can't see secondary template step chains</p>
+      <p class="con">- The merged section has two concepts (label + trigger) which may feel busy</p>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <h2>6. Compact Mode (Summary Bar)</h2>
+
+  <p>The collapsible summary bar needs updating for all three options. Using consistent "workflow trigger" terminology:</p>
+
+  <div class="side-by-side">
+    <div class="mockup">
+      <div class="mockup-label">Current</div>
+      <div class="compact-bar">
+        <span>&#129489; 6 agents</span>
+        <span class="compact-dot">&bull;</span>
+        <span>&#9889; 6-step workflow</span>
+        <span class="compact-dot">&bull;</span>
+        <span>&#127991; 6 labels</span>
+        <span class="compact-dot">&bull;</span>
+        <span>&#128260; 1 trigger</span>
+      </div>
+    </div>
+
+    <div class="mockup">
+      <div class="mockup-label">Proposed</div>
+      <div class="compact-bar">
+        <span>&#129489; 6 agents</span>
+        <span class="compact-dot">&bull;</span>
+        <span>&#9889; 3 workflows</span>
+        <span class="compact-dot">&bull;</span>
+        <span>&#127991; 6 labels</span>
+        <span class="compact-dot">&bull;</span>
+        <span>&#128260; 5 triggers</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="note note-violet">
+    <strong>Terminology note:</strong> "3 workflows" = deduplicated template count (the actual number of distinct workflow templates being imported). "5 triggers" = number of label &rarr; workflow mappings. Uses "workflows" and "triggers" &mdash; consistent with existing UI terms.
+  </div>
+
+  <h3>Compact Mode (Create Idea Form)</h3>
+  <p>Same structure for the inline compact preview:</p>
+
+  <div class="mockup" style="max-width: 500px;">
+    <div class="mockup-label">Compact &mdash; Create Idea Form</div>
+    <p style="margin-bottom: 0.35rem; font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted-dim);">What you'll get</p>
+    <div class="compact-bar">
+      <span>&#129489; 6 agents</span>
+      <span class="compact-dot">&bull;</span>
+      <span>&#9889; 3 workflows</span>
+      <span class="compact-dot">&bull;</span>
+      <span>&#127991; 6 labels</span>
+      <span class="compact-dot">&bull;</span>
+      <span>&#128260; 5 triggers</span>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <h2>7. Success Toast</h2>
+
+  <div class="side-by-side">
+    <div class="mockup">
+      <div class="mockup-label">Current</div>
+      <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">
+        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text); margin-bottom: 0.2rem;">&#10003; Web Application kit applied</div>
+        <div style="font-size: 0.8rem; color: var(--muted);">6 agents, 6 labels, 1 workflow, 1 trigger</div>
+      </div>
+    </div>
+    <div class="mockup">
+      <div class="mockup-label">Proposed</div>
+      <div style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 0.75rem 1rem; box-shadow: 0 4px 12px rgba(0,0,0,0.4);">
+        <div style="font-size: 0.85rem; font-weight: 600; color: var(--text); margin-bottom: 0.2rem;">&#10003; Web Application kit applied</div>
+        <div style="font-size: 0.8rem; color: var(--muted);">6 agents, 6 labels, 3 workflows, 5 triggers</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============================================ -->
+  <h2>8. Mobile Considerations</h2>
+
+  <p>All three options work on mobile with the existing responsive patterns:</p>
+  <ul>
+    <li><strong>Option A:</strong> Trigger rows stack naturally (they're already vertical)</li>
+    <li><strong>Option B:</strong> Tabs may need to scroll horizontally or stack. Template names like "Web Application Feature" are long. Consider truncating or using a dropdown instead of tabs on mobile.</li>
+    <li><strong>Option C:</strong> Merged rows stack naturally. Label pills may need to be left-aligned without the min-width constraint.</li>
+  </ul>
+
+  <p><strong>Option A</strong> is the safest for mobile since it requires no new interaction patterns.</p>
+
+  <!-- ============================================ -->
+  <h2>9. Comparison Matrix</h2>
+
+  <table>
+    <thead>
+      <tr>
+        <th>Criteria</th>
+        <th>Option A</th>
+        <th>Option B</th>
+        <th>Option C</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td style="color:var(--text)">Step chain visible?</td>
+        <td style="color:var(--emerald)">Primary only</td>
+        <td style="color:var(--emerald)">All templates (tabs)</td>
+        <td style="color:var(--emerald)">Primary only</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text)">Label &rarr; workflow mapping clear?</td>
+        <td style="color:var(--emerald)">Very clear (dedicated list)</td>
+        <td style="color:var(--amber)">Indirect (via "Triggered by" under each tab)</td>
+        <td style="color:var(--emerald)">Very clear (inline)</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text)">Change from current UI</td>
+        <td style="color:var(--emerald)">Minimal (extend trigger section)</td>
+        <td style="color:var(--amber)">Moderate (add tabs, restructure)</td>
+        <td style="color:var(--amber)">Moderate (merge two sections)</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text)">Mobile friendly?</td>
+        <td style="color:var(--emerald)">Excellent</td>
+        <td style="color:var(--amber)">Tab names may wrap</td>
+        <td style="color:var(--emerald)">Good</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text)">Implementation effort</td>
+        <td style="color:var(--emerald)">Low</td>
+        <td style="color:var(--red)">High (new data, tabs)</td>
+        <td style="color:var(--emerald)">Low</td>
+      </tr>
+      <tr>
+        <td style="color:var(--text)">All template steps visible?</td>
+        <td style="color:var(--red)">No</td>
+        <td style="color:var(--emerald)">Yes</td>
+        <td style="color:var(--red)">No</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="note note-emerald">
+    <strong>Recommendation:</strong> Option A is the strongest choice. It's the smallest change from the current UI, keeps the step chain, adds clear trigger mappings, works perfectly on mobile, and is the easiest to implement. Users who want to see secondary template steps can find them in the Workflows tab after the kit is applied.
+  </div>
+
+  <!-- ============================================ -->
+  <h2>10. Admin Kit Editor (Deferred)</h2>
+
+  <p>Per the Design Review's recommendation, the admin kit editor for managing label &rarr; template mappings should be a <strong>separate follow-up task</strong>. The seeded migration data covers all 5 kits. Admin CRUD can be added later when needed.</p>
+
+  <p>When built, the admin UI should follow the same terminology: "Workflow Triggers" section header, with each label row showing a dropdown to select a "Workflow Template" (or "No workflow").</p>
+
+</body>
+</html>
