@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { toast } from "sonner";
 import {
   Sparkles,
@@ -72,6 +72,7 @@ export function OnboardingDialog({
   // Creation state (Step 2 loading → Step 3)
   const [creating, setCreating] = useState(false);
   const [createProgress, setCreateProgress] = useState(0); // 0=idle, 1=idea, 2=kit, 3=generating
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
   const [createdIdeaId, setCreatedIdeaId] = useState<string | null>(null);
   const [agentCount, setAgentCount] = useState(0);
   const [workflowApplied, setWorkflowApplied] = useState(false);
@@ -88,6 +89,18 @@ export function OnboardingDialog({
   const goToStep = useCallback((s: number) => {
     setStep(s);
   }, []);
+
+  // Elapsed timer during creation (ticks every second while creating)
+  const timerRef = useRef<ReturnType<typeof setInterval>>(null);
+  useEffect(() => {
+    if (creating) {
+      setElapsedSeconds(0);
+      timerRef.current = setInterval(() => setElapsedSeconds((s) => s + 1), 1000);
+    } else {
+      if (timerRef.current) clearInterval(timerRef.current);
+    }
+    return () => { if (timerRef.current) clearInterval(timerRef.current); };
+  }, [creating]);
 
   const handleSkip = async () => {
     try {
@@ -648,11 +661,17 @@ export function OnboardingDialog({
                 Creating your project...
               </h2>
               <p className="mb-5 text-sm text-muted-foreground max-w-[350px] mx-auto">
-                Setting up your board, agents, and workflows. This takes about
-                10 seconds.
+                Setting up your board, agents, and workflows.
+                {elapsedSeconds > 0 && (
+                  <span className="block mt-1 text-xs tabular-nums">
+                    {elapsedSeconds < 15
+                      ? "This usually takes 15–30 seconds..."
+                      : `${elapsedSeconds}s elapsed — almost there...`}
+                  </span>
+                )}
               </p>
 
-              {/* Progress bar */}
+              {/* Progress bar — during step 3 (AI generation), slowly creep from 55% to 90% over ~60s */}
               <div className="h-1 w-full rounded-full bg-muted overflow-hidden mb-5">
                 <div
                   className="h-full rounded-full bg-primary transition-all duration-1000"
@@ -661,7 +680,7 @@ export function OnboardingDialog({
                       createProgress >= 4
                         ? "100%"
                         : createProgress === 3
-                          ? "85%"
+                          ? `${Math.min(55 + elapsedSeconds * 0.6, 92)}%`
                           : createProgress === 2
                             ? "55%"
                             : createProgress === 1

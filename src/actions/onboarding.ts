@@ -271,56 +271,31 @@ export async function generateBoardFromOnboarding(
 
   logger.info("Onboarding board gen: starting", { ideaId, userId: user.id });
 
-  // Only allow during onboarding
-  const { data: profile } = await supabase
-    .from("users")
-    .select("onboarding_completed_at")
-    .eq("id", user.id)
-    .single();
+  // Parallelize all pre-AI queries for speed
+  const [profileResult, dailyCountResult, ideaResult, columnsResult, labelsResult] = await Promise.all([
+    supabase.from("users").select("onboarding_completed_at").eq("id", user.id).single(),
+    PLATFORM_AI_DAILY_LIMIT > 0 ? getPlatformAiCallsToday(supabase, user.id) : Promise.resolve(0),
+    supabase.from("ideas").select("id, title, description").eq("id", ideaId).eq("author_id", user.id).single(),
+    supabase.from("board_columns").select("id, title, position").eq("idea_id", ideaId).order("position"),
+    supabase.from("board_labels").select("id, name").eq("idea_id", ideaId),
+  ]);
 
-  if (profile?.onboarding_completed_at) {
+  if (profileResult.data?.onboarding_completed_at) {
     throw new Error("Free board generation during onboarding is no longer available");
   }
-
-  // Enforce platform AI daily limit
-  if (PLATFORM_AI_DAILY_LIMIT > 0) {
-    const todayCount = await getPlatformAiCallsToday(supabase, user.id);
-    if (todayCount >= PLATFORM_AI_DAILY_LIMIT) {
-      throw new Error(
-        "AI generation is temporarily unavailable — daily limit reached. Please try again tomorrow."
-      );
-    }
+  if (PLATFORM_AI_DAILY_LIMIT > 0 && (dailyCountResult as number) >= PLATFORM_AI_DAILY_LIMIT) {
+    throw new Error("AI generation is temporarily unavailable — daily limit reached. Please try again tomorrow.");
   }
-
-  // Fetch idea context
-  const { data: idea } = await supabase
-    .from("ideas")
-    .select("id, title, description")
-    .eq("id", ideaId)
-    .eq("author_id", user.id)
-    .single();
-
+  const idea = ideaResult.data;
   if (!idea) throw new Error("Idea not found");
 
-  // Fetch existing columns for context — only allow Backlog and To Do for new projects
-  const { data: columns } = await supabase
-    .from("board_columns")
-    .select("title")
-    .eq("idea_id", ideaId)
-    .order("position");
+  const boardColumns: { id: string; title: string; position: number }[] = [...((columnsResult.data ?? []) as { id: string; title: string; position: number }[])];
+  const allowedColumns = boardColumns
+    .filter((c) => ["backlog", "to do"].includes(c.title.toLowerCase()))
+    .map((c) => c.title);
 
-  const allColumns = (columns ?? []).map((c) => c.title);
-  const allowedColumns = allColumns.filter((c) =>
-    ["backlog", "to do"].includes(c.toLowerCase())
-  );
-
-  // Fetch board labels so the AI can assign them
-  const { data: boardLabels } = await supabase
-    .from("board_labels")
-    .select("id, name")
-    .eq("idea_id", ideaId);
-
-  const labelNames = (boardLabels ?? []).map((l) => l.name);
+  const boardLabels = (labelsResult.data ?? []) as { id: string; name: string }[];
+  const labelNames = boardLabels.map((l) => l.name);
 
   logger.info("Onboarding board gen: calling AI", { ideaId, columns: allowedColumns.length, labels: labelNames.length });
 
@@ -356,7 +331,7 @@ export async function generateBoardFromOnboarding(
         "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").",
       prompt: contextParts.join("\n\n"),
       schema: GeneratedBoardSchema,
-      maxOutputTokens: 8000,
+      maxOutputTokens: 4000,
       abortSignal: AbortSignal.timeout(ONBOARDING_GENERATE_TIMEOUT_MS),
     }));
   } catch (err) {
@@ -381,8 +356,8 @@ export async function generateBoardFromOnboarding(
     outputTokens: usage.outputTokens ?? 0,
   });
 
-  // Log usage (free — no credit deduction)
-  await logAiUsage(supabase, {
+  // Log usage (free — no credit deduction, fire-and-forget)
+  logAiUsage(supabase, {
     userId: user.id,
     actionType: "generate_board_tasks",
     inputTokens: usage.inputTokens ?? 0,
@@ -400,16 +375,19 @@ export async function generateBoardFromOnboarding(
   }
 
   // ── Persist tasks to the database ──────────────────────────────────
-  // Ensure board columns exist (they are normally lazy-initialized on first board visit)
-  await initializeBoardColumns(ideaId);
+  // Board columns were fetched in the parallel query above (kit creates them during onboarding)
+  if (boardColumns.length === 0) {
+    // Fallback: initialize columns if kit didn't create them
+    await initializeBoardColumns(ideaId);
+    const { data: fallbackCols } = await supabase
+      .from("board_columns")
+      .select("id, title, position")
+      .eq("idea_id", ideaId)
+      .order("position");
+    if (fallbackCols) boardColumns.push(...fallbackCols);
+  }
 
-  const { data: boardColumns } = await supabase
-    .from("board_columns")
-    .select("id, title, position")
-    .eq("idea_id", ideaId)
-    .order("position");
-
-  if (!boardColumns || boardColumns.length === 0) {
+  if (boardColumns.length === 0) {
     logger.error("Onboarding board gen: no board columns found", { ideaId });
     throw new Error("Board columns not found — kit may not have been applied correctly");
   }
