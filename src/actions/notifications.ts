@@ -42,6 +42,34 @@ export async function markAllNotificationsRead() {
   revalidatePath("/ideas");
 }
 
+export async function markAllAgentNotificationsRead() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Not authenticated");
+  }
+
+  // Get all bot IDs owned by this user
+  const { data: bots } = await supabase
+    .from("bot_profiles")
+    .select("id")
+    .eq("owner_id", user.id);
+
+  const botIds = (bots ?? []).map((b) => b.id);
+  if (botIds.length === 0) return;
+
+  await supabase
+    .from("notifications")
+    .update({ read: true })
+    .in("user_id", botIds)
+    .eq("read", false);
+
+  revalidatePath("/ideas");
+}
+
 export async function updateNotificationPreferences(
   preferences: NotificationPreferences
 ) {

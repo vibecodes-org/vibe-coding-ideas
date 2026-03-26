@@ -20,7 +20,7 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuTrigger } from "@/compon
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { createClient } from "@/lib/supabase/client";
 import { getRoleColor } from "@/lib/agent-colors";
-import { markAllNotificationsRead, markNotificationsRead } from "@/actions/notifications";
+import { markAllNotificationsRead, markAllAgentNotificationsRead, markNotificationsRead } from "@/actions/notifications";
 import { RequestActionButtons } from "@/components/layout/request-action-buttons";
 import { buildNotificationUrl } from "@/lib/notification-url";
 import { formatRelativeTime, getInitials } from "@/lib/utils";
@@ -191,6 +191,14 @@ export function NotificationBell() {
       await markAllNotificationsRead();
       setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
       setUnreadCount(0);
+    });
+  };
+
+  const handleMarkAllAgentRead = () => {
+    startTransition(async () => {
+      await markAllAgentNotificationsRead();
+      setAgentNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      setAgentUnreadCount(0);
     });
   };
 
@@ -380,6 +388,20 @@ export function NotificationBell() {
               </div>
             </TabsContent>
             <TabsContent value="agents" className="mt-0">
+              {agentUnreadCount > 0 && (
+                <div className="flex justify-end border-b border-border px-3 py-1.5">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 gap-1 text-xs"
+                    onClick={handleMarkAllAgentRead}
+                    disabled={isPending}
+                  >
+                    <Check className="h-3 w-3" />
+                    Mark all read
+                  </Button>
+                </div>
+              )}
               <div className="max-h-72 overflow-y-auto">
                 {renderNotificationList(agentNotifications, true)}
               </div>
