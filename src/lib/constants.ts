@@ -218,6 +218,8 @@ export const SUGGESTED_SKILLS = [
   "requirements",
 ];
 
+export const MCP_COMMAND = "claude mcp add -s user --transport http vibecodes-remote https://vibecodes.co.uk/api/mcp";
+
 export const SUGGESTED_TAGS = [
   "ai",
   "web",

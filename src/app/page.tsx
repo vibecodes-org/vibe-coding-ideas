@@ -273,7 +273,7 @@ export default async function LandingPage() {
               </p>
               <div className="mb-6 rounded-lg border border-border bg-muted/50 p-4">
                 <code className="text-sm text-emerald-400">
-                  claude mcp add --transport http vibecodes https://vibecodes.co.uk/api/mcp
+                  claude mcp add -s user --transport http vibecodes-remote https://vibecodes.co.uk/api/mcp
                 </code>
               </div>
               <ul className="space-y-3">

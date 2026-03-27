@@ -4,6 +4,7 @@ import { Terminal, ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { CodeBlock } from "@/components/guide/code-block";
 import { CollapsibleTools } from "@/components/guide/collapsible-tools";
+import { MCP_COMMAND } from "@/lib/constants";
 
 export const metadata: Metadata = {
   title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
@@ -108,7 +109,7 @@ export default function McpIntegrationPage() {
             Add the VibeCodes remote MCP server to Claude Code with this
             command:
           </p>
-          <CodeBlock code="claude mcp add -s user --transport http vibecodes-remote https://vibecodes.co.uk/api/mcp" />
+          <CodeBlock code={MCP_COMMAND} />
           <div className="mt-4 space-y-3">
             <p className="text-muted-foreground">
               This connects to the{" "}

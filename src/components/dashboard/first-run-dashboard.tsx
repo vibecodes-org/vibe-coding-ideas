@@ -8,6 +8,7 @@ import { useSwitchToStandard } from "./dashboard-mode-switch";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getRoleColor } from "@/lib/agent-colors";
+import { MCP_COMMAND } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import type { BotProfile } from "@/types";
 import type { ActiveBoard } from "./active-boards";
@@ -371,8 +372,6 @@ export function FirstRunDashboard({
     </div>
   );
 }
-
-const MCP_COMMAND = "claude mcp add vibecodes https://vibecodes.co.uk/api/mcp";
 
 function FirstRunMcpCard() {
   const [copied, setCopied] = useState(false);

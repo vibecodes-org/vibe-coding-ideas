@@ -24,6 +24,7 @@ import { StepIndicator } from "./step-indicator";
 import { Confetti } from "./confetti";
 import { ProjectTypeSelector } from "@/components/kits/project-type-selector";
 import { KitPreview } from "@/components/kits/kit-preview";
+import { MCP_COMMAND } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import {
   completeOnboarding,
@@ -248,9 +249,7 @@ export function OnboardingDialog({
 
   const copyMcpCommand = async () => {
     try {
-      await navigator.clipboard.writeText(
-        "claude mcp add vibecodes https://vibecodes.co.uk/api/mcp"
-      );
+      await navigator.clipboard.writeText(MCP_COMMAND);
       setCopied(true);
       toast.success("Copied to clipboard");
       setTimeout(() => setCopied(false), 2000);
@@ -902,7 +901,7 @@ export function OnboardingDialog({
                 <div>
                   <span className="text-emerald-400">$</span>{" "}
                   <span className="text-foreground">
-                    claude mcp add vibecodes{" "}
+                    claude mcp add -s user --transport http vibecodes-remote{" "}
                     <span className="text-amber-400">
                       https://vibecodes.co.uk/api/mcp
                     </span>

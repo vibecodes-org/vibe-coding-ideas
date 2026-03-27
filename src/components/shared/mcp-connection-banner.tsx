@@ -4,9 +4,9 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Cable, X, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
+import { MCP_COMMAND } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
-const MCP_COMMAND = "claude mcp add vibecodes https://vibecodes.co.uk/api/mcp";
 const SESSION_DISMISS_KEY = "mcp-banner-dismissed";
 
 interface McpConnectionBannerProps {
