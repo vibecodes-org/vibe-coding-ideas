@@ -112,51 +112,63 @@ function WorkflowStatusBadge({ task }: { task: BoardTaskWithAssignee }) {
   switch (status.type) {
     case "active":
       return (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-blue-500/25 bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
-              <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin" />
-              <span className="truncate">{status.title ?? "In progress"}{status.agent ? ` · ${status.agent}` : ""}</span>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>{status.title ? `${status.title} — in progress` : "Workflow step in progress"}{status.agent ? ` (${status.agent})` : ""} ({fraction})</TooltipContent>
-        </Tooltip>
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-blue-500/25 bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
+                <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin" />
+                <span className="truncate">{status.title ?? "In progress"} in progress</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{status.title ? `${status.title} — in progress` : "Workflow step in progress"}{status.agent ? ` (${status.agent})` : ""} ({fraction})</TooltipContent>
+          </Tooltip>
+          <span className="text-[10px] font-medium text-muted-foreground font-mono">{fraction}</span>
+        </>
       );
     case "approval":
       return (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-violet-500/25 bg-violet-500/[0.12] px-2 py-0.5 text-[10px] font-semibold text-violet-400">
-              <Bell className="h-2.5 w-2.5 shrink-0" />
-              <span className="truncate">{status.title ?? "Needs approval"}</span>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>{status.title ? `${status.title} — needs approval` : "Workflow step needs approval"} ({fraction})</TooltipContent>
-        </Tooltip>
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-violet-500/25 bg-violet-500/[0.12] px-2 py-0.5 text-[10px] font-semibold text-violet-400">
+                <Bell className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">{status.title ?? "Needs approval"} needs approval</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{status.title ? `${status.title} — needs approval` : "Workflow step needs approval"} ({fraction})</TooltipContent>
+          </Tooltip>
+          <span className="text-[10px] font-medium text-muted-foreground font-mono">{fraction}</span>
+        </>
       );
     case "failed":
       return (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-400">
-              <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
-              <span className="truncate">{status.title ?? "Failed"}</span>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>{status.title ? `${status.title} — failed` : "Workflow step failed"} ({fraction})</TooltipContent>
-        </Tooltip>
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-400">
+                <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">{status.title ?? "Failed"} failed</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{status.title ? `${status.title} — failed` : "Workflow step failed"} ({fraction})</TooltipContent>
+          </Tooltip>
+          <span className="text-[10px] font-medium text-muted-foreground font-mono">{fraction}</span>
+        </>
       );
     case "stale":
       return (
-        <Tooltip>
-          <TooltipTrigger asChild>
-            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
-              <Clock className="h-2.5 w-2.5 shrink-0" />
-              <span className="truncate">{status.title ?? "Stale"}{status.agent ? ` · ${status.agent}` : ""} · {status.timeLabel}</span>
-            </span>
-          </TooltipTrigger>
-          <TooltipContent>{status.title ? `${status.title} — stale for ${status.timeLabel}` : `Stale for ${status.timeLabel}`}{status.agent ? ` (${status.agent})` : ""} ({fraction})</TooltipContent>
-        </Tooltip>
+        <>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
+                <Clock className="h-2.5 w-2.5 shrink-0" />
+                <span className="truncate">{status.title ?? "Stale"} stale &middot; {status.timeLabel}</span>
+              </span>
+            </TooltipTrigger>
+            <TooltipContent>{status.title ? `${status.title} — stale for ${status.timeLabel}` : `Stale for ${status.timeLabel}`}{status.agent ? ` (${status.agent})` : ""} ({fraction})</TooltipContent>
+          </Tooltip>
+          <span className="text-[10px] font-medium text-muted-foreground font-mono">{fraction}</span>
+        </>
       );
     case "complete":
       return (
@@ -164,7 +176,7 @@ function WorkflowStatusBadge({ task }: { task: BoardTaskWithAssignee }) {
           <TooltipTrigger asChild>
             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
               <CircleCheck className="h-2.5 w-2.5 shrink-0" />
-              {fraction}
+              {fraction} &middot; Done
             </span>
           </TooltipTrigger>
           <TooltipContent>All workflow steps complete</TooltipContent>
@@ -495,6 +507,14 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                 </Tooltip>
               )}
             </div>
+
+            {/* Active agent row — shown when an agent is working on a step */}
+            {task.workflow_active_agent_name && task.workflow_step_in_progress > 0 && (
+              <div className="mt-1.5 flex items-center gap-1.5 border-t border-border/50 pt-1.5">
+                <Bot className="h-3 w-3 shrink-0 text-blue-400" />
+                <span className="text-[10px] text-muted-foreground">{task.workflow_active_agent_name}</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
