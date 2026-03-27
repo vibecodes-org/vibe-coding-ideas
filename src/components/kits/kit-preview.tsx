@@ -187,8 +187,8 @@ export function KitPreview({ kit, compact = false }: KitPreviewProps) {
                 {"\u26A1"} Workflow Templates ({templateCount})
               </p>
 
-              {/* Tab buttons */}
-              <div className="mb-2 flex flex-wrap gap-1" role="tablist">
+              {/* Tab buttons — underline style */}
+              <div className="mb-3 flex border-b border-border" role="tablist">
                 {uniqueTemplates.map((t, i) => (
                   <button
                     key={t.mapping.template_name}
@@ -197,14 +197,17 @@ export function KitPreview({ kit, compact = false }: KitPreviewProps) {
                     aria-selected={activeTab === i}
                     onClick={() => setActiveTab(i)}
                     className={cn(
-                      "rounded-md px-2.5 py-1 text-[0.72rem] font-medium transition-colors",
+                      "px-3 py-2 text-[0.75rem] font-medium transition-colors border-b-2 -mb-px",
                       activeTab === i
-                        ? "bg-violet-500/[0.15] text-violet-400 border border-violet-500/25"
-                        : "bg-muted/30 text-muted-foreground border border-transparent hover:bg-muted/50"
+                        ? "text-violet-400 border-violet-400"
+                        : "text-muted-foreground border-transparent hover:text-foreground/80"
                     )}
                   >
                     {t.mapping.template_name}
-                    <span className="ml-1 text-[0.65rem] text-muted-foreground/60">
+                    <span className={cn(
+                      "ml-1 text-[0.65rem]",
+                      activeTab === i ? "text-violet-400/60" : "text-muted-foreground/50"
+                    )}>
                       ({t.mapping.template_step_count})
                     </span>
                   </button>
