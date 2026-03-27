@@ -1,0 +1,714 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VibeCodes in 60 Seconds — Pipeline Flow Design Proposals</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --zinc-50: #fafafa;
+    --zinc-100: #f4f4f5;
+    --zinc-200: #e4e4e7;
+    --zinc-300: #d4d4d8;
+    --zinc-400: #a1a1aa;
+    --zinc-500: #71717a;
+    --zinc-600: #52525b;
+    --zinc-700: #3f3f46;
+    --zinc-800: #27272a;
+    --zinc-900: #18181b;
+    --zinc-950: #09090b;
+    --emerald-400: #34d399;
+    --emerald-500: #10b981;
+    --emerald-600: #059669;
+    --amber-400: #fbbf24;
+    --blue-400: #60a5fa;
+    --purple-400: #c084fc;
+    --cyan-400: #22d3ee;
+    --red-400: #f87171;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--zinc-950);
+    color: var(--zinc-50);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
+
+  /* ─── Page Header ─── */
+  .page-header {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 60px 24px 20px;
+    border-bottom: 1px solid var(--zinc-800);
+    margin-bottom: 48px;
+  }
+  .page-header h1 {
+    font-family: 'Space Mono', monospace;
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    margin-bottom: 8px;
+  }
+  .page-header h1 span { color: var(--emerald-400); }
+  .page-header p {
+    color: var(--zinc-400);
+    font-size: 15px;
+    max-width: 640px;
+  }
+  .page-header .context-tag {
+    display: inline-block;
+    margin-top: 16px;
+    font-size: 11px;
+    font-family: 'Space Mono', monospace;
+    text-transform: uppercase;
+    letter-spacing: 1.5px;
+    color: var(--emerald-400);
+    background: rgba(16, 185, 129, 0.1);
+    border: 1px solid rgba(16, 185, 129, 0.2);
+    padding: 4px 12px;
+    border-radius: 4px;
+  }
+
+  /* ─── Section Wrapper ─── */
+  .proposal-section {
+    max-width: 1100px;
+    margin: 0 auto 80px;
+    padding: 0 24px;
+  }
+  .proposal-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    color: var(--emerald-400);
+    margin-bottom: 8px;
+  }
+  .proposal-title {
+    font-size: 22px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .proposal-desc {
+    color: var(--zinc-400);
+    font-size: 14px;
+    margin-bottom: 32px;
+    max-width: 600px;
+  }
+
+  /* ─── Demo Container ─── */
+  .demo-container {
+    background: var(--zinc-900);
+    border: 1px solid var(--zinc-800);
+    border-radius: 16px;
+    padding: 48px 32px;
+    position: relative;
+    overflow: hidden;
+  }
+  .demo-container::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, var(--emerald-400), transparent);
+    opacity: 0.3;
+  }
+
+  /* ════════════════════════════════════════════
+     OPTION A: Step Flow
+     ════════════════════════════════════════════ */
+
+  .step-flow {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0;
+    position: relative;
+  }
+
+  .step-flow .connector-line {
+    position: absolute;
+    top: 28px;
+    left: 48px;
+    right: 48px;
+    height: 2px;
+    background: var(--zinc-700);
+    z-index: 0;
+  }
+  .step-flow .connector-line .progress {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, var(--amber-400), var(--blue-400), var(--purple-400), var(--emerald-400), var(--cyan-400));
+    border-radius: 2px;
+    transition: width 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  .step-flow.animate .connector-line .progress {
+    width: 100%;
+  }
+
+  .step-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    flex: 1;
+    position: relative;
+    z-index: 1;
+    cursor: default;
+  }
+
+  .step-icon-ring {
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--zinc-700);
+    background: var(--zinc-900);
+    margin-bottom: 14px;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    position: relative;
+  }
+  .step-icon-ring .step-num {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    background: var(--zinc-800);
+    border: 1px solid var(--zinc-600);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Space Mono', monospace;
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--zinc-400);
+    transition: all 0.3s ease;
+  }
+  .step-icon-ring svg {
+    width: 24px;
+    height: 24px;
+    transition: all 0.3s ease;
+  }
+
+  .step-item:nth-child(2) .step-icon-ring svg { color: var(--amber-400); }
+  .step-item:nth-child(3) .step-icon-ring svg { color: var(--blue-400); }
+  .step-item:nth-child(4) .step-icon-ring svg { color: var(--purple-400); }
+  .step-item:nth-child(5) .step-icon-ring svg { color: var(--emerald-400); }
+  .step-item:nth-child(6) .step-icon-ring svg { color: var(--cyan-400); }
+
+  .step-item .step-title {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+    transition: color 0.3s ease;
+  }
+  .step-item .step-subtitle {
+    font-size: 11px;
+    color: var(--zinc-500);
+    max-width: 130px;
+    line-height: 1.4;
+    transition: all 0.3s ease;
+  }
+
+  /* Hover expand */
+  .step-item .step-detail {
+    max-height: 0;
+    overflow: hidden;
+    opacity: 0;
+    transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+    margin-top: 0;
+  }
+  .step-item:hover .step-detail {
+    max-height: 80px;
+    opacity: 1;
+    margin-top: 8px;
+  }
+  .step-detail-inner {
+    font-size: 11px;
+    color: var(--zinc-400);
+    background: var(--zinc-800);
+    border: 1px solid var(--zinc-700);
+    border-radius: 8px;
+    padding: 8px 12px;
+    max-width: 160px;
+    text-align: center;
+  }
+
+  /* Hover highlight ring */
+  .step-item:nth-child(2):hover .step-icon-ring { border-color: var(--amber-400); box-shadow: 0 0 20px rgba(251, 191, 36, 0.15); }
+  .step-item:nth-child(3):hover .step-icon-ring { border-color: var(--blue-400); box-shadow: 0 0 20px rgba(96, 165, 250, 0.15); }
+  .step-item:nth-child(4):hover .step-icon-ring { border-color: var(--purple-400); box-shadow: 0 0 20px rgba(192, 132, 252, 0.15); }
+  .step-item:nth-child(5):hover .step-icon-ring { border-color: var(--emerald-400); box-shadow: 0 0 20px rgba(52, 211, 153, 0.15); }
+  .step-item:nth-child(6):hover .step-icon-ring { border-color: var(--cyan-400); box-shadow: 0 0 20px rgba(34, 211, 238, 0.15); }
+
+  .step-item:hover .step-num {
+    background: var(--zinc-700);
+    color: var(--zinc-200);
+  }
+
+  /* ════════════════════════════════════════════
+     OPTION B: Animated Pipeline
+     ════════════════════════════════════════════ */
+
+  .pipeline-flow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0;
+    padding: 20px 0;
+  }
+
+  .pipeline-stage {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    opacity: 0;
+    transform: translateY(16px) scale(0.95);
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+    flex: 1;
+    max-width: 180px;
+  }
+  .pipeline-stage.visible {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  .pipeline-stage.active .pipeline-card {
+    border-color: var(--stage-color);
+    box-shadow: 0 0 30px color-mix(in srgb, var(--stage-color) 20%, transparent);
+  }
+  .pipeline-stage.active .pipeline-card .stage-icon {
+    background: color-mix(in srgb, var(--stage-color) 12%, transparent);
+  }
+
+  .pipeline-card {
+    background: var(--zinc-800);
+    border: 1px solid var(--zinc-700);
+    border-radius: 12px;
+    padding: 20px 16px;
+    width: 100%;
+    transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .stage-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 12px;
+    background: var(--zinc-700);
+    transition: all 0.4s ease;
+  }
+  .stage-icon svg {
+    width: 22px;
+    height: 22px;
+    color: var(--stage-color);
+  }
+
+  .stage-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    font-family: 'Space Mono', monospace;
+    letter-spacing: -0.3px;
+  }
+  .stage-desc {
+    font-size: 11px;
+    color: var(--zinc-400);
+    line-height: 1.5;
+  }
+
+  .pipeline-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.4s ease;
+  }
+  .pipeline-arrow.visible { opacity: 1; }
+  .pipeline-arrow svg {
+    width: 20px;
+    height: 20px;
+    color: var(--zinc-600);
+  }
+  .pipeline-arrow.active svg {
+    color: var(--emerald-400);
+  }
+
+  /* Pulse on active stage */
+  @keyframes pulse-glow {
+    0%, 100% { box-shadow: 0 0 20px color-mix(in srgb, var(--stage-color) 15%, transparent); }
+    50% { box-shadow: 0 0 35px color-mix(in srgb, var(--stage-color) 25%, transparent); }
+  }
+  .pipeline-stage.active .pipeline-card {
+    animation: pulse-glow 2s ease-in-out infinite;
+  }
+
+  /* ─── Replay Button ─── */
+  .replay-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 24px;
+    padding: 8px 16px;
+    font-size: 12px;
+    font-family: 'Space Mono', monospace;
+    color: var(--zinc-400);
+    background: var(--zinc-800);
+    border: 1px solid var(--zinc-700);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+  .replay-btn:hover {
+    color: var(--emerald-400);
+    border-color: var(--emerald-400);
+    background: rgba(16, 185, 129, 0.05);
+  }
+
+  /* ─── Notes section ─── */
+  .design-notes {
+    max-width: 900px;
+    margin: 0 auto 60px;
+    padding: 0 24px;
+  }
+  .design-notes h3 {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 16px;
+    font-family: 'Space Mono', monospace;
+  }
+  .notes-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .note-card {
+    background: var(--zinc-900);
+    border: 1px solid var(--zinc-800);
+    border-radius: 10px;
+    padding: 20px;
+  }
+  .note-card h4 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--emerald-400);
+  }
+  .note-card p {
+    font-size: 12px;
+    color: var(--zinc-400);
+    line-height: 1.6;
+  }
+
+  /* ─── Responsive ─── */
+  @media (max-width: 768px) {
+    .step-flow {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 8px;
+    }
+    .step-flow .connector-line {
+      top: 0; bottom: 0; left: 28px;
+      width: 2px; height: auto;
+      right: auto;
+    }
+    .step-flow .connector-line .progress {
+      width: 100% !important;
+      height: 0%;
+      transition: height 1.5s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+    .step-flow.animate .connector-line .progress {
+      height: 100%;
+      width: 100%;
+    }
+    .step-item {
+      flex-direction: row;
+      text-align: left;
+      gap: 14px;
+      padding: 4px 0;
+    }
+    .step-item .step-subtitle,
+    .step-item .step-detail { max-width: none; }
+    .step-item:hover .step-detail { max-height: 60px; }
+    .step-detail-inner { text-align: left; max-width: none; }
+
+    .pipeline-flow {
+      flex-direction: column;
+      gap: 4px;
+    }
+    .pipeline-arrow { transform: rotate(90deg); width: auto; height: 28px; }
+    .pipeline-stage { max-width: 280px; }
+    .pipeline-card { padding: 14px 16px; }
+    .stage-icon { width: 36px; height: 36px; margin-bottom: 8px; }
+
+    .notes-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ─── Page Header ─── -->
+<header class="page-header">
+  <h1><span>VibeCodes</span> in 60 Seconds</h1>
+  <p>Design proposals for a reusable pipeline flow component that shows the complete VibeCodes automation pipeline in a single, connected view.</p>
+  <span class="context-tag">UX Audit Finding: No page shows the full 5-stage pipeline</span>
+</header>
+
+<!-- ════════════════════════════════════════════════════════
+     OPTION A: Step Flow
+     ════════════════════════════════════════════════════════ -->
+<section class="proposal-section">
+  <div class="proposal-label">Option A</div>
+  <h2 class="proposal-title">Step Flow</h2>
+  <p class="proposal-desc">Horizontal numbered steps with a connecting progress line. Hover any step to reveal additional detail. Clean, scannable, minimal motion.</p>
+
+  <div class="demo-container">
+    <div class="step-flow" id="stepFlow">
+      <div class="connector-line"><div class="progress"></div></div>
+
+      <div class="step-item">
+        <div class="step-icon-ring">
+          <span class="step-num">1</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="18" x2="15" y2="18"/><line x1="10" y1="22" x2="14" y2="22"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>
+        </div>
+        <div class="step-title">Ideas</div>
+        <div class="step-subtitle">Describe what you want to build</div>
+        <div class="step-detail">
+          <div class="step-detail-inner">AI enhances your description, community votes and discusses</div>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-icon-ring">
+          <span class="step-num">2</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+        </div>
+        <div class="step-title">Board</div>
+        <div class="step-subtitle">AI generates a full task board</div>
+        <div class="step-detail">
+          <div class="step-detail-inner">Kanban with labels, milestones, and auto-labelled tasks</div>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-icon-ring">
+          <span class="step-num">3</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="8" y="8" width="8" height="4" rx="1"/><path d="M16 12v4h-2"/><path d="M6 12v4h2"/><rect x="6" y="16" width="12" height="4" rx="1"/></svg>
+        </div>
+        <div class="step-title">Agents</div>
+        <div class="step-subtitle">AI personas claim and execute tasks</div>
+        <div class="step-detail">
+          <div class="step-detail-inner">Named agents with roles, skills, and tracked activity</div>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-icon-ring">
+          <span class="step-num">4</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        </div>
+        <div class="step-title">Workflows</div>
+        <div class="step-subtitle">Multi-step pipelines with approvals</div>
+        <div class="step-detail">
+          <div class="step-detail-inner">Templates, approval gates, auto-assignment, rework loops</div>
+        </div>
+      </div>
+
+      <div class="step-item">
+        <div class="step-icon-ring">
+          <span class="step-num">5</span>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+        </div>
+        <div class="step-title">MCP</div>
+        <div class="step-subtitle">Claude Code orchestrates everything</div>
+        <div class="step-detail">
+          <div class="step-detail-inner">77 tools via Model Context Protocol — agents read, write, and ship</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════
+     OPTION B: Animated Pipeline
+     ════════════════════════════════════════════════════════ -->
+<section class="proposal-section">
+  <div class="proposal-label">Option B</div>
+  <h2 class="proposal-title">Animated Pipeline</h2>
+  <p class="proposal-desc">Stages appear sequentially with entrance animations. Each stage lights up in sequence, showing the flow of work through the system. Auto-plays on scroll.</p>
+
+  <div class="demo-container" style="text-align: center;">
+    <div class="pipeline-flow" id="pipelineFlow">
+
+      <div class="pipeline-stage" style="--stage-color: var(--amber-400);">
+        <div class="pipeline-card">
+          <div class="stage-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="18" x2="15" y2="18"/><line x1="10" y1="22" x2="14" y2="22"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>
+          </div>
+          <div class="stage-title">Ideas</div>
+          <div class="stage-desc">Describe your vision. AI refines it.</div>
+        </div>
+      </div>
+
+      <div class="pipeline-arrow">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+
+      <div class="pipeline-stage" style="--stage-color: var(--blue-400);">
+        <div class="pipeline-card">
+          <div class="stage-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></svg>
+          </div>
+          <div class="stage-title">Board</div>
+          <div class="stage-desc">AI generates tasks, labels, milestones.</div>
+        </div>
+      </div>
+
+      <div class="pipeline-arrow">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+
+      <div class="pipeline-stage" style="--stage-color: var(--purple-400);">
+        <div class="pipeline-card">
+          <div class="stage-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="8" y="8" width="8" height="4" rx="1"/><path d="M16 12v4h-2"/><path d="M6 12v4h2"/><rect x="6" y="16" width="12" height="4" rx="1"/></svg>
+          </div>
+          <div class="stage-title">Agents</div>
+          <div class="stage-desc">Named AI personas claim tasks.</div>
+        </div>
+      </div>
+
+      <div class="pipeline-arrow">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+
+      <div class="pipeline-stage" style="--stage-color: var(--emerald-400);">
+        <div class="pipeline-card">
+          <div class="stage-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+          </div>
+          <div class="stage-title">Workflows</div>
+          <div class="stage-desc">Multi-step pipelines with approvals.</div>
+        </div>
+      </div>
+
+      <div class="pipeline-arrow">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+      </div>
+
+      <div class="pipeline-stage" style="--stage-color: var(--cyan-400);">
+        <div class="pipeline-card">
+          <div class="stage-icon">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+          </div>
+          <div class="stage-title">MCP</div>
+          <div class="stage-desc">Claude Code orchestrates it all.</div>
+        </div>
+      </div>
+
+    </div>
+
+    <button class="replay-btn" onclick="replayPipeline()">
+      <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+      Replay
+    </button>
+  </div>
+</section>
+
+<!-- ─── Design Notes ─── -->
+<section class="design-notes">
+  <h3>Implementation Notes</h3>
+  <div class="notes-grid">
+    <div class="note-card">
+      <h4>Reusable Component</h4>
+      <p>Both options would be built as a single <code>&lt;PipelineFlow /&gt;</code> React component with a <code>variant</code> prop ("steps" | "animated"). Accepts optional <code>activeStep</code> for contextual highlighting on guide pages.</p>
+    </div>
+    <div class="note-card">
+      <h4>Placement</h4>
+      <p>Landing page: replaces the current 4-step "How it works" section. Guide index: above the guide cards grid. First-run dashboard: replaces or augments the 5-step progress bar.</p>
+    </div>
+    <div class="note-card">
+      <h4>Responsive</h4>
+      <p>Both options stack vertically on mobile. Option A rotates the connector line. Option B rotates the arrows. Cards compress to narrower widths with smaller icons.</p>
+    </div>
+    <div class="note-card">
+      <h4>Recommendation</h4>
+      <p><strong>Option B (Animated Pipeline)</strong> is the stronger choice. The sequential reveal creates a narrative ("this leads to this leads to this") that directly addresses the mental model gap identified in the UX audit. Option A is better for static/documentation contexts.</p>
+    </div>
+  </div>
+</section>
+
+<script>
+  // ─── Option A: Animate connector on scroll ───
+  const stepFlow = document.getElementById('stepFlow');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting) stepFlow.classList.add('animate');
+    });
+  }, { threshold: 0.5 });
+  observer.observe(stepFlow);
+
+  // ─── Option B: Sequential stage reveal ───
+  function replayPipeline() {
+    const stages = document.querySelectorAll('#pipelineFlow .pipeline-stage');
+    const arrows = document.querySelectorAll('#pipelineFlow .pipeline-arrow');
+
+    // Reset
+    stages.forEach(s => { s.classList.remove('visible', 'active'); });
+    arrows.forEach(a => { a.classList.remove('visible', 'active'); });
+
+    // Animate in sequence
+    let delay = 200;
+    stages.forEach((stage, i) => {
+      setTimeout(() => {
+        stage.classList.add('visible');
+        // Light up previous stage
+        if (i > 0) stages[i - 1].classList.remove('active');
+        stage.classList.add('active');
+      }, delay);
+      delay += 400;
+
+      // Show arrow after stage
+      if (i < arrows.length) {
+        setTimeout(() => {
+          arrows[i].classList.add('visible', 'active');
+        }, delay - 200);
+      }
+    });
+
+    // Remove active from last after a beat
+    setTimeout(() => {
+      // Keep all visible, pulse the last one
+    }, delay + 500);
+  }
+
+  // Auto-play on scroll
+  const pipelineFlow = document.getElementById('pipelineFlow');
+  let hasPlayed = false;
+  const pipelineObserver = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting && !hasPlayed) {
+        hasPlayed = true;
+        setTimeout(replayPipeline, 300);
+      }
+    });
+  }, { threshold: 0.3 });
+  pipelineObserver.observe(pipelineFlow);
+</script>
+
+</body>
+</html>

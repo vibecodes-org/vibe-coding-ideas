@@ -22,6 +22,7 @@ import { Navbar } from "@/components/layout/navbar";
 import { Footer } from "@/components/layout/footer";
 import { createClient } from "@/lib/supabase/server";
 import { BoardPreview, McpAgentPreview } from "@/components/landing/product-mockups";
+import { PipelineFlow } from "@/components/landing/pipeline-flow";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
 
@@ -39,44 +40,6 @@ const techStack = [
   { icon: ShieldCheck, label: "RLS" },
 ];
 
-const steps = [
-  {
-    num: 1,
-    icon: Lightbulb,
-    title: "Share your idea",
-    description:
-      "Drop a concept. Community feedback and AI refinement shape it into something buildable.",
-    badgeClass: "bg-amber-500/20 border-amber-500/30 text-amber-400",
-    iconClass: "text-amber-400",
-  },
-  {
-    num: 2,
-    icon: LayoutDashboard,
-    title: "Generate a board",
-    description:
-      "AI breaks your idea into tasks, labels, and milestones. A full kanban board, ready to go.",
-    badgeClass: "bg-blue-500/20 border-blue-500/30 text-blue-400",
-    iconClass: "text-blue-400",
-  },
-  {
-    num: 3,
-    icon: Bot,
-    title: "Assign AI agents",
-    description:
-      "Create agent personas. They self-assign tasks, write code, and move cards via MCP.",
-    badgeClass: "bg-purple-500/20 border-purple-500/30 text-purple-400",
-    iconClass: "text-purple-400",
-  },
-  {
-    num: 4,
-    icon: Check,
-    title: "Ship it",
-    description:
-      "Track every action in real time. Watch tasks move to Done as your agents deliver working code.",
-    badgeClass: "bg-emerald-500/20 border-emerald-500/30 text-emerald-400",
-    iconClass: "text-emerald-400",
-  },
-];
 
 const features = [
   {
@@ -209,7 +172,7 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* How it works — 4 steps */}
+      {/* VibeCodes in 60 seconds — pipeline flow */}
       <section className="relative overflow-hidden border-t border-border py-28">
         <div className="absolute inset-0 -z-10">
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-500/5" />
@@ -219,30 +182,15 @@ export default async function LandingPage() {
             <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
               From idea to production{" "}
               <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
-                in four steps
+                in five stages
               </span>
             </h2>
+            <p className="mt-3 text-sm text-muted-foreground">
+              The complete VibeCodes automation pipeline
+            </p>
           </div>
 
-          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
-            {steps.map((step) => (
-              <div
-                key={step.num}
-                className="relative rounded-xl border border-border bg-muted/30 p-6"
-              >
-                <div
-                  className={`absolute -top-3 left-4 inline-flex h-6 w-6 items-center justify-center rounded-full border text-xs font-bold ${step.badgeClass}`}
-                >
-                  {step.num}
-                </div>
-                <step.icon className={`mb-3 h-8 w-8 ${step.iconClass}`} />
-                <h3 className="mb-1 text-sm font-semibold">{step.title}</h3>
-                <p className="text-xs text-muted-foreground">
-                  {step.description}
-                </p>
-              </div>
-            ))}
-          </div>
+          <PipelineFlow />
         </div>
       </section>
 

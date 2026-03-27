@@ -16,6 +16,7 @@ import {
   CardTitle,
   CardDescription,
 } from "@/components/ui/card";
+import { PipelineFlow } from "@/components/landing/pipeline-flow";
 
 const sections = [
   {
@@ -92,6 +93,13 @@ export default function GuidePage() {
           Everything you need to know about sharing ideas, collaborating with
           developers, and building projects together.
         </p>
+      </div>
+
+      <div className="mb-12 rounded-xl border border-border bg-muted/30 p-8">
+        <p className="mb-6 text-center text-sm font-medium text-muted-foreground">
+          The VibeCodes pipeline
+        </p>
+        <PipelineFlow />
       </div>
 
       <div className="grid gap-4 sm:grid-cols-2">
