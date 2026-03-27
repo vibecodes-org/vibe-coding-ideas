@@ -252,3 +252,62 @@ export async function getRoleCoverage(
 
   return coverage;
 }
+
+/**
+ * Manually assign an agent to all pending workflow steps with a given role.
+ * Sets match_tier = "manual" (rank 5) so auto-rematching won't override it.
+ */
+export async function setManualRoleMatch(
+  ideaId: string,
+  role: string,
+  botId: string
+): Promise<{ updatedCount: number }> {
+  const validIdeaId = validateUuid(ideaId, "Idea ID");
+  const validBotId = validateUuid(botId, "Bot ID");
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("task_workflow_steps")
+    .update({ bot_id: validBotId, match_tier: "manual" })
+    .eq("idea_id", validIdeaId)
+    .eq("agent_role", role)
+    .eq("status", "pending")
+    .select("id");
+
+  if (error) throw new Error(error.message);
+  return { updatedCount: data?.length ?? 0 };
+}
+
+/**
+ * Clear manual override for a role — resets bot_id and match_tier on all
+ * pending steps with that role, then triggers rematching.
+ */
+export async function clearManualRoleMatch(
+  ideaId: string,
+  role: string
+): Promise<{ clearedCount: number }> {
+  const validIdeaId = validateUuid(ideaId, "Idea ID");
+
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("task_workflow_steps")
+    .update({ bot_id: null, match_tier: null })
+    .eq("idea_id", validIdeaId)
+    .eq("agent_role", role)
+    .eq("status", "pending")
+    .eq("match_tier", "manual")
+    .select("id");
+
+  if (error) throw new Error(error.message);
+  return { clearedCount: data?.length ?? 0 };
+}

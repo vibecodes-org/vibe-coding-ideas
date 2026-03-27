@@ -12,7 +12,7 @@ export interface AgentCandidate {
   role: string;
 }
 
-export type MatchTier = "exact" | "ai" | "substring" | "word-overlap" | "none";
+export type MatchTier = "manual" | "exact" | "ai" | "substring" | "word-overlap" | "none";
 
 export interface RoleMatchResult {
   botId: string | null;
@@ -21,6 +21,7 @@ export interface RoleMatchResult {
 
 /** Numeric ranking for tier comparison — higher is better. */
 export const MATCH_TIER_RANK: Record<string, number> = {
+  manual: 5,
   exact: 4,
   ai: 3,
   substring: 2,

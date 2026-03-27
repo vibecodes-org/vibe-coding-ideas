@@ -1,0 +1,323 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Manual Role Coverage Editing — UX Design</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --z50:#fafafa;--z400:#a1a1aa;--z500:#71717a;--z600:#52525b;--z700:#3f3f46;--z800:#27272a;--z900:#18181b;--z950:#09090b;
+    --em400:#34d399;--em500:#10b981;--vi400:#a78bfa;--vi500:#8b5cf6;
+    --am400:#fbbf24;--am500:#f59e0b;--bl400:#60a5fa;--bl500:#3b82f6;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Instrument Sans',system-ui,sans-serif;background:var(--z950);color:var(--z50);line-height:1.5}
+  .page{max-width:900px;margin:0 auto;padding:48px 24px 80px}
+  h1{font-size:24px;font-weight:700;margin-bottom:4px}
+  h1 span{color:var(--bl400)}
+  .sub{color:var(--z400);font-size:14px;margin-bottom:40px}
+  h2{font-size:18px;font-weight:700;margin:40px 0 8px}
+  h2 .tag{font-size:11px;font-weight:500;padding:2px 8px;border-radius:4px;margin-left:8px;vertical-align:middle}
+  .tag-before{color:var(--z400);background:var(--z800);border:1px solid var(--z700)}
+  .tag-after{color:var(--bl400);background:rgba(59,130,246,0.1);border:1px solid rgba(59,130,246,0.2)}
+  .desc{color:var(--z500);font-size:13px;margin-bottom:20px;max-width:560px}
+
+  /* ── Card container ── */
+  .card{background:var(--z800);border:1px solid var(--z700);border-radius:12px;padding:16px;margin-bottom:16px}
+  .card-title{font-size:13px;font-weight:500;color:var(--z400);margin-bottom:12px}
+
+  /* ── Badges ── */
+  .badges{display:flex;flex-wrap:wrap;gap:8px}
+  .badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:9999px;font-size:12px;font-weight:500;border:1px solid;white-space:nowrap;transition:all .15s ease}
+  .badge svg{width:12px;height:12px;flex-shrink:0}
+  .badge .arrow{color:var(--z500);margin:0 1px}
+  .badge .agent-name{font-weight:400;color:var(--z400)}
+  .badge .match-pill{font-size:10px;font-weight:600;padding:1px 5px;border-radius:4px;margin-left:2px}
+
+  /* Badge colours */
+  .badge-emerald{border-color:rgba(16,185,129,0.3);background:rgba(16,185,129,0.1);color:var(--em400)}
+  .badge-violet{border-color:rgba(139,92,246,0.3);background:rgba(139,92,246,0.1);color:var(--vi400)}
+  .badge-amber{border-color:rgba(245,158,11,0.3);background:rgba(245,158,11,0.1);color:var(--am400)}
+  .badge-blue{border-color:rgba(59,130,246,0.3);background:rgba(59,130,246,0.1);color:var(--bl400)}
+
+  .pill-ai{background:rgba(139,92,246,0.1);color:var(--vi400)}
+  .pill-approx{background:rgba(245,158,11,0.1);color:var(--am400)}
+  .pill-manual{background:rgba(59,130,246,0.1);color:var(--bl400)}
+
+  /* Clickable badges */
+  .badge-clickable{cursor:pointer}
+  .badge-clickable:hover{filter:brightness(1.15);box-shadow:0 0 0 2px rgba(255,255,255,0.05)}
+
+  /* ── Popover ── */
+  .popover-wrap{position:relative;display:inline-flex}
+  .popover{position:absolute;top:calc(100% + 8px);left:0;width:260px;background:var(--z900);border:1px solid var(--z700);border-radius:10px;padding:8px;z-index:10;box-shadow:0 8px 30px rgba(0,0,0,0.4)}
+  .popover::before{content:'';position:absolute;top:-5px;left:20px;width:10px;height:10px;background:var(--z900);border-left:1px solid var(--z700);border-top:1px solid var(--z700);transform:rotate(45deg)}
+  .popover-header{font-size:11px;font-weight:600;color:var(--z500);padding:4px 8px 8px;text-transform:uppercase;letter-spacing:0.5px}
+  .popover-item{display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:6px;font-size:13px;cursor:pointer;transition:background .1s}
+  .popover-item:hover{background:var(--z800)}
+  .popover-item .avatar{width:24px;height:24px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex-shrink:0}
+  .popover-item .name{font-weight:500}
+  .popover-item .role{font-size:11px;color:var(--z500)}
+  .popover-item .selected-check{margin-left:auto;color:var(--em400)}
+  .popover-item .selected-check svg{width:14px;height:14px}
+  .popover-divider{height:1px;background:var(--z700);margin:4px 0}
+  .popover-item-auto{color:var(--z400)}
+  .popover-item-auto svg{width:14px;height:14px;color:var(--z500)}
+
+  /* ── Undo button ── */
+  .undo-btn{display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:4px;border:none;background:rgba(59,130,246,0.15);color:var(--bl400);cursor:pointer;margin-left:2px;transition:all .15s}
+  .undo-btn:hover{background:rgba(59,130,246,0.3)}
+  .undo-btn svg{width:10px;height:10px}
+
+  /* ── Flow diagram ── */
+  .flow{display:flex;align-items:center;gap:0;margin:24px 0;justify-content:center;flex-wrap:wrap}
+  .flow-step{display:flex;flex-direction:column;align-items:center;gap:8px;padding:16px 20px;background:var(--z900);border:1px solid var(--z800);border-radius:10px;min-width:160px;text-align:center}
+  .flow-step .step-num{font-size:10px;font-weight:700;color:var(--z500);text-transform:uppercase;letter-spacing:1px}
+  .flow-step .step-label{font-size:13px;font-weight:600}
+  .flow-step .step-desc{font-size:11px;color:var(--z500)}
+  .flow-arrow{display:flex;align-items:center;padding:0 8px;color:var(--z600)}
+  .flow-arrow svg{width:20px;height:20px}
+
+  /* ── Colour legend ── */
+  .legend{display:flex;flex-wrap:wrap;gap:16px;margin:20px 0;padding:14px 16px;background:var(--z900);border:1px solid var(--z800);border-radius:10px}
+  .legend-item{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--z400)}
+  .legend-dot{width:10px;height:10px;border-radius:50%}
+
+  @media(max-width:640px){.flow{flex-direction:column}.flow-arrow{transform:rotate(90deg)}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1><span>Manual Role Coverage</span> — UX Design</h1>
+<p class="sub">Building on the Requirements step. Interactive design showing how clickable role coverage badges enable manual agent-to-role overrides.</p>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-dot" style="background:var(--em400)"></div>Exact match</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--vi400)"></div>AI matched</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--am400)"></div>Approximate / uncovered</div>
+  <div class="legend-item"><div class="legend-dot" style="background:var(--bl400)"></div>Manual override (new)</div>
+</div>
+
+<!-- ═══ 1. BEFORE ═══ -->
+<h2>1. Current State <span class="tag tag-before">Before</span></h2>
+<p class="desc">Badges are static — users can see the matching but cannot change it.</p>
+
+<div class="card">
+  <div class="card-title">Role Coverage</div>
+  <div class="badges">
+    <div class="badge badge-emerald">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      Full Stack Engineer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Atlas (Full Stack Engineer)</span>
+    </div>
+    <div class="badge badge-emerald">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      QA Engineer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Sentinel (QA Engineer)</span>
+    </div>
+    <div class="badge badge-violet">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      UX Designer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Compass (UX Designer)</span>
+      <span class="match-pill pill-ai">AI matched</span>
+    </div>
+    <div class="badge badge-amber">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      DevOps Engineer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Pipeline (DevOps Engineer)</span>
+      <span class="match-pill pill-approx">Approximate</span>
+    </div>
+    <div class="badge badge-amber">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
+      Security Engineer
+      <span class="agent-name">— no agent</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 2. AFTER — CLICKABLE WITH POPOVER ═══ -->
+<h2>2. Clickable Badges + Popover <span class="tag tag-after">After</span></h2>
+<p class="desc">Team members can click any badge to reassign the agent. A popover shows all allocated agents. The "UX Designer" badge is shown in its open state below.</p>
+
+<div class="card">
+  <div class="card-title">Role Coverage</div>
+  <div class="badges">
+    <div class="badge badge-emerald badge-clickable">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      Full Stack Engineer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Atlas</span>
+    </div>
+    <div class="badge badge-emerald badge-clickable">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      QA Engineer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Sentinel</span>
+    </div>
+
+    <!-- Open popover state -->
+    <div class="popover-wrap">
+      <div class="badge badge-violet badge-clickable" style="box-shadow:0 0 0 2px rgba(139,92,246,0.3)">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        UX Designer
+        <span class="arrow">&rarr;</span>
+        <span class="agent-name">Compass</span>
+        <span class="match-pill pill-ai">AI matched</span>
+      </div>
+      <div class="popover">
+        <div class="popover-header">Assign agent to UX Designer</div>
+        <div class="popover-item">
+          <div class="avatar" style="background:rgba(59,130,246,0.15);color:var(--bl400)">A</div>
+          <div><div class="name">Atlas</div><div class="role">Full Stack Engineer</div></div>
+        </div>
+        <div class="popover-item" style="background:var(--z800)">
+          <div class="avatar" style="background:rgba(139,92,246,0.15);color:var(--vi400)">C</div>
+          <div><div class="name">Compass</div><div class="role">UX Designer</div></div>
+          <div class="selected-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg></div>
+        </div>
+        <div class="popover-item">
+          <div class="avatar" style="background:rgba(16,185,129,0.15);color:var(--em400)">S</div>
+          <div><div class="name">Sentinel</div><div class="role">QA Engineer</div></div>
+        </div>
+        <div class="popover-item">
+          <div class="avatar" style="background:rgba(245,158,11,0.15);color:var(--am400)">P</div>
+          <div><div class="name">Pipeline</div><div class="role">DevOps Engineer</div></div>
+        </div>
+        <div class="popover-item">
+          <div class="avatar" style="background:rgba(244,114,182,0.15);color:#f472b6">X</div>
+          <div><div class="name">Pixel</div><div class="role">Front End Engineer</div></div>
+        </div>
+        <div class="popover-divider"></div>
+        <div class="popover-item popover-item-auto">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M8 16H3v5"/></svg>
+          <div><div class="name">Auto-match</div><div class="role">Let the system decide</div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="badge badge-amber badge-clickable">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      DevOps Engineer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Pipeline</span>
+      <span class="match-pill pill-approx">Approximate</span>
+    </div>
+    <div class="badge badge-amber badge-clickable">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><line x1="12" x2="12" y1="9" y2="13"/><line x1="12" x2="12.01" y1="17" y2="17"/></svg>
+      Security Engineer
+      <span class="agent-name">— no agent</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 3. MANUAL OVERRIDE BADGE ═══ -->
+<h2>3. Manual Override Badge Style <span class="tag tag-after">New</span></h2>
+<p class="desc">After the user manually assigns an agent, the badge turns blue with a "Manual" pill and an undo button to revert to auto-matching.</p>
+
+<div class="card">
+  <div class="card-title">Role Coverage — after manual overrides</div>
+  <div class="badges">
+    <div class="badge badge-emerald badge-clickable">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      Full Stack Engineer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Atlas</span>
+    </div>
+    <div class="badge badge-emerald badge-clickable">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      QA Engineer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Sentinel</span>
+    </div>
+    <!-- Manual override -->
+    <div class="badge badge-blue badge-clickable">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      UX Designer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Pixel (Front End Engineer)</span>
+      <span class="match-pill pill-manual">Manual</span>
+      <button class="undo-btn" title="Revert to auto-match">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+      </button>
+    </div>
+    <div class="badge badge-emerald badge-clickable">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      DevOps Engineer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Pipeline</span>
+    </div>
+    <!-- Manual override on previously uncovered -->
+    <div class="badge badge-blue badge-clickable">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      Security Engineer
+      <span class="arrow">&rarr;</span>
+      <span class="agent-name">Sentinel (QA Engineer)</span>
+      <span class="match-pill pill-manual">Manual</span>
+      <button class="undo-btn" title="Revert to auto-match">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ 4. FLOW DIAGRAM ═══ -->
+<h2>4. Interaction Flow</h2>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="step-num">Step 1</div>
+    <div class="step-label">Click badge</div>
+    <div class="step-desc">Any role badge becomes<br>clickable for team members</div>
+    <div class="badge badge-violet" style="margin-top:8px;font-size:11px">
+      UX Designer → Compass
+      <span class="match-pill pill-ai" style="font-size:9px">AI</span>
+    </div>
+  </div>
+  <div class="flow-arrow">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+  </div>
+  <div class="flow-step">
+    <div class="step-num">Step 2</div>
+    <div class="step-label">Select agent</div>
+    <div class="step-desc">Pick from allocated agents<br>or choose "Auto-match"</div>
+    <div style="margin-top:8px;display:flex;align-items:center;gap:6px">
+      <div style="width:20px;height:20px;border-radius:50%;background:rgba(244,114,182,0.15);color:#f472b6;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:700">X</div>
+      <span style="font-size:12px;font-weight:500">Pixel</span>
+    </div>
+  </div>
+  <div class="flow-arrow">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+  </div>
+  <div class="flow-step">
+    <div class="step-num">Step 3</div>
+    <div class="step-label">Badge updates</div>
+    <div class="step-desc">Badge turns blue with<br>"Manual" label + undo</div>
+    <div class="badge badge-blue" style="margin-top:8px;font-size:11px">
+      UX Designer → Pixel
+      <span class="match-pill pill-manual" style="font-size:9px">Manual</span>
+    </div>
+  </div>
+</div>
+
+<!-- ═══ Notes ═══ -->
+<div style="background:var(--z900);border:1px solid var(--z800);border-radius:12px;padding:24px;margin-top:40px">
+  <h2 style="margin:0 0 12px;font-size:15px">Implementation Notes</h2>
+  <ul style="font-size:13px;color:var(--z400);padding-left:20px;line-height:1.8">
+    <li><strong>Popover:</strong> Use shadcn/ui <code>Popover</code> + <code>PopoverContent</code> (same pattern as Add Agent popover)</li>
+    <li><strong>Badge wrapper:</strong> Wrap each <code>Badge</code> in a <code>Popover</code> — only when <code>isTeamMember && !isReadOnly</code></li>
+    <li><strong>Agent list:</strong> Reuse <code>ideaAgentDetails</code> already available in <code>AgentsTab</code> props</li>
+    <li><strong>Undo button:</strong> <code>stopPropagation</code> to prevent badge click, calls <code>clearManualRoleMatch</code></li>
+    <li><strong>Optimistic UI:</strong> Update <code>roleCoverage</code> state immediately, revert on error</li>
+    <li><strong>Read-only:</strong> Badges remain static (no hover effect, no cursor:pointer) for non-team-members</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>
