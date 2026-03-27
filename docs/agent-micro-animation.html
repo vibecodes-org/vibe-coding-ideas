@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Agent Micro-Animation — Design Document</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --z50:#fafafa;--z400:#a1a1aa;--z500:#71717a;--z600:#52525b;--z700:#3f3f46;--z800:#27272a;--z900:#18181b;--z950:#09090b;
+    --em400:#34d399;--em500:#10b981;--em600:#059669;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Instrument Sans',system-ui,sans-serif;background:var(--z950);color:var(--z50);line-height:1.5}
+  .page{max-width:900px;margin:0 auto;padding:48px 24px 80px}
+  h1{font-size:24px;font-weight:700;margin-bottom:4px}
+  h1 span{color:var(--em400)}
+  .sub{color:var(--z400);font-size:14px;margin-bottom:40px}
+  h2{font-size:18px;font-weight:700;margin:40px 0 8px}
+  h2 .tag{font-size:11px;font-weight:500;color:var(--em400);background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.2);padding:2px 8px;border-radius:4px;margin-left:8px;vertical-align:middle}
+  .desc{color:var(--z500);font-size:13px;margin-bottom:20px;max-width:560px}
+
+  .demo-box{background:var(--z900);border:1px solid var(--z800);border-radius:16px;padding:40px;display:flex;align-items:center;justify-content:center;margin-bottom:16px;position:relative;overflow:hidden}
+  .demo-box::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--z700),transparent)}
+
+  /* Bot icon - matches Lucide Bot used throughout VibeCodes */
+  .bot-icon{display:flex;align-items:center;justify-content:center}
+
+  /* ═══════════════════════════════════════════
+     OPTION A — Horizontal Flow
+     ═══════════════════════════════════════════ */
+  .anim-h{position:relative;width:220px;height:72px}
+
+  .anim-h .track{position:absolute;top:50%;left:24px;right:24px;height:2px;background:var(--z700);transform:translateY(-1px)}
+  .anim-h .track-fill{position:absolute;top:0;left:0;height:100%;width:0%;background:var(--em500);border-radius:1px;animation:trackFillH 5s ease-in-out infinite}
+
+  .anim-h .dot{position:absolute;top:50%;width:8px;height:8px;border-radius:50%;transform:translate(-50%,-50%);border:2px solid var(--z700);background:var(--z900);z-index:2}
+  .anim-h .dot-start{left:24px;animation:dotActiveH1 5s ease-in-out infinite}
+  .anim-h .dot-end{right:24px;left:auto;transform:translate(50%,-50%);animation:dotActiveH2 5s ease-in-out infinite}
+
+  .anim-h .label{position:absolute;font-size:9px;font-weight:600;letter-spacing:0.5px;text-transform:uppercase;color:var(--z600)}
+  .anim-h .label-todo{top:2px;left:10px}
+  .anim-h .label-done{top:2px;right:10px}
+
+  .anim-h .task{position:absolute;top:50%;left:24px;transform:translate(-50%,-50%);width:36px;height:28px;border-radius:5px;border:1.5px solid var(--z600);background:var(--z800);display:flex;align-items:center;justify-content:center;z-index:3;animation:taskMoveH 5s ease-in-out infinite}
+  .task-lines{display:flex;flex-direction:column;gap:3px;padding:2px}
+  .task-line-long{width:18px;height:2px;background:var(--z400);border-radius:1px}
+  .task-line-short{width:12px;height:2px;background:var(--z600);border-radius:1px}
+
+  .anim-h .agent{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:32px;height:32px;border-radius:50%;background:rgba(16,185,129,0.1);border:1.5px solid rgba(16,185,129,0.3);display:flex;align-items:center;justify-content:center;z-index:4;animation:agentPulseH 5s ease-in-out infinite}
+  .anim-h .agent svg{width:16px;height:16px;color:var(--em400)}
+
+  .anim-h .check{position:absolute;top:50%;right:24px;transform:translate(50%,-50%) scale(0);width:20px;height:20px;border-radius:50%;background:var(--em500);display:flex;align-items:center;justify-content:center;z-index:5;animation:checkPopH 5s ease-in-out infinite}
+  .anim-h .check svg{width:12px;height:12px;color:#fff}
+
+  @keyframes trackFillH{0%,10%{width:0%}30%{width:50%}60%{width:100%}80%,100%{width:100%}}
+  @keyframes dotActiveH1{0%,5%{border-color:var(--em400);background:rgba(16,185,129,0.2)}20%,100%{border-color:var(--z700);background:var(--z900)}}
+  @keyframes dotActiveH2{0%,50%{border-color:var(--z700);background:var(--z900)}65%,80%{border-color:var(--em400);background:rgba(16,185,129,0.2)}90%,100%{border-color:var(--z700);background:var(--z900)}}
+  @keyframes taskMoveH{0%,8%{left:24px;opacity:1;border-color:var(--z600)}15%,18%{left:24px;opacity:1;border-color:var(--em400)}35%{left:50%;opacity:1;border-color:var(--em400)}38%,52%{left:50%;opacity:0.6;border-color:var(--em400)}65%{left:calc(100% - 24px);opacity:0;border-color:var(--em400)}66%,90%{left:calc(100% - 24px);opacity:0}91%{left:24px;opacity:0}100%{left:24px;opacity:1;border-color:var(--z600)}}
+  @keyframes agentPulseH{0%,20%{border-color:rgba(16,185,129,0.3);box-shadow:none}35%,55%{border-color:rgba(16,185,129,0.6);box-shadow:0 0 12px rgba(16,185,129,0.2)}65%,100%{border-color:rgba(16,185,129,0.3);box-shadow:none}}
+  @keyframes checkPopH{0%,55%{transform:translate(50%,-50%) scale(0)}65%{transform:translate(50%,-50%) scale(1.15)}70%,82%{transform:translate(50%,-50%) scale(1)}90%{transform:translate(50%,-50%) scale(0)}100%{transform:translate(50%,-50%) scale(0)}}
+
+  /* ═══════════════════════════════════════════
+     OPTION B — Vertical Compact
+     ═══════════════════════════════════════════ */
+  .anim-v{position:relative;width:100px;height:100px}
+
+  .anim-v .agent{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:36px;height:36px;border-radius:50%;background:rgba(16,185,129,0.1);border:1.5px solid rgba(16,185,129,0.3);display:flex;align-items:center;justify-content:center;z-index:4;animation:agentPulseV 5s ease-in-out infinite}
+  .anim-v .agent svg{width:18px;height:18px;color:var(--em400)}
+
+  .anim-v .task{position:absolute;bottom:4px;left:50%;transform:translateX(-50%);width:40px;height:28px;border-radius:5px;border:1.5px solid var(--z600);background:var(--z800);display:flex;align-items:center;justify-content:center;z-index:3;animation:taskMoveV 5s ease-in-out infinite}
+
+  .anim-v .check{position:absolute;top:4px;left:50%;transform:translateX(-50%) scale(0);width:20px;height:20px;border-radius:50%;background:var(--em500);display:flex;align-items:center;justify-content:center;z-index:5;animation:checkPopV 5s ease-in-out infinite}
+  .anim-v .check svg{width:12px;height:12px;color:#fff}
+
+  .anim-v .ring{position:absolute;top:50%;left:50%;width:70px;height:70px;border-radius:50%;border:1px dashed var(--z700);transform:translate(-50%,-50%);animation:ringPulseV 5s ease-in-out infinite}
+
+  @keyframes agentPulseV{0%,20%{border-color:rgba(16,185,129,0.3);box-shadow:none}30%,55%{border-color:rgba(16,185,129,0.6);box-shadow:0 0 14px rgba(16,185,129,0.2)}65%,100%{border-color:rgba(16,185,129,0.3);box-shadow:none}}
+  @keyframes taskMoveV{0%,8%{bottom:4px;opacity:1;border-color:var(--z600)}15%{bottom:4px;border-color:var(--em400)}35%{bottom:32px;opacity:0.7;border-color:var(--em400)}50%{bottom:36px;opacity:0;border-color:var(--em400)}51%,90%{bottom:4px;opacity:0}100%{bottom:4px;opacity:1;border-color:var(--z600)}}
+  @keyframes checkPopV{0%,50%{transform:translateX(-50%) scale(0);top:28px}58%{transform:translateX(-50%) scale(1.15);top:4px}63%,78%{transform:translateX(-50%) scale(1);top:4px}88%{transform:translateX(-50%) scale(0);top:4px}100%{transform:translateX(-50%) scale(0);top:28px}}
+  @keyframes ringPulseV{0%,20%{border-color:var(--z700);opacity:0.4}35%,55%{border-color:rgba(16,185,129,0.2);opacity:0.7}65%,100%{border-color:var(--z700);opacity:0.4}}
+
+  /* ═══════════════════════════════════════════
+     EMPTY STATE CONTEXT MOCK
+     ═══════════════════════════════════════════ */
+  .empty-mock{background:var(--z900);border:1px solid var(--z800);border-radius:16px;padding:40px 32px;text-align:center;max-width:420px;margin:0 auto 16px}
+  .empty-mock h3{font-size:16px;font-weight:700;margin-top:16px;margin-bottom:6px}
+  .empty-mock p{font-size:13px;color:var(--z500);margin-bottom:20px;max-width:300px;margin-left:auto;margin-right:auto;line-height:1.6}
+  .empty-mock .btns{display:flex;gap:8px;justify-content:center;flex-wrap:wrap}
+  .empty-mock .btn{padding:7px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:inherit}
+  .empty-mock .btn-primary{background:var(--em500);color:#fff}
+  .empty-mock .btn-outline{background:transparent;border:1px solid var(--z700);color:var(--z400)}
+
+  @media(prefers-reduced-motion:reduce){
+    .anim-h .task,.anim-h .agent,.anim-h .check,.anim-h .track-fill,.anim-h .dot-start,.anim-h .dot-end,
+    .anim-v .task,.anim-v .agent,.anim-v .check,.anim-v .ring{animation:none!important}
+    .anim-h .task{left:50%;border-color:var(--em400)}
+    .anim-h .agent{border-color:rgba(16,185,129,0.5);box-shadow:0 0 10px rgba(16,185,129,0.15)}
+    .anim-h .track-fill{width:50%}
+    .anim-v .agent{border-color:rgba(16,185,129,0.5);box-shadow:0 0 10px rgba(16,185,129,0.15)}
+    .anim-v .task{bottom:4px;opacity:1}
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1><span>Agent Micro-Animation</span> — Design Document (v2)</h1>
+<p class="sub">Fixed: now uses the correct Lucide Bot icon matching the site's agent icon throughout.</p>
+
+<!-- ═══ OPTION A ═══ -->
+<h2>Option A — Horizontal Flow <span class="tag">Recommended</span></h2>
+<p class="desc">Task slides left-to-right: To Do &rarr; Agent &rarr; Done. Progress track fills as task moves. 220&times;72px.</p>
+
+<div class="demo-box">
+  <div class="anim-h">
+    <div class="track"><div class="track-fill"></div></div>
+    <div class="dot dot-start"></div>
+    <div class="dot dot-end"></div>
+    <span class="label label-todo">To Do</span>
+    <span class="label label-done">Done</span>
+    <div class="task"><div class="task-lines"><div class="task-line-long"></div><div class="task-line-short"></div></div></div>
+    <div class="agent">
+      <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+    </div>
+    <div class="check">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+  </div>
+</div>
+
+<h2 style="font-size:15px;margin-top:28px;margin-bottom:16px;color:var(--z400)">Option A — In Context</h2>
+<div class="empty-mock">
+  <div style="display:flex;justify-content:center">
+    <div class="anim-h">
+      <div class="track"><div class="track-fill"></div></div>
+      <div class="dot dot-start"></div>
+      <div class="dot dot-end"></div>
+      <span class="label label-todo">To Do</span>
+      <span class="label label-done">Done</span>
+      <div class="task"><div class="task-lines"><div class="task-line-long"></div><div class="task-line-short"></div></div></div>
+      <div class="agent">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+      </div>
+      <div class="check">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+    </div>
+  </div>
+  <h3>Build your AI team</h3>
+  <p>Add agents to this idea to automate workflow steps. Agents are like AI team members — they pick up tasks, follow workflows, and ship work.</p>
+  <div class="btns">
+    <button class="btn btn-primary">Add All My Agents</button>
+    <button class="btn btn-outline">Browse Agents</button>
+  </div>
+</div>
+
+<!-- ═══ OPTION B ═══ -->
+<h2>Option B — Vertical Compact</h2>
+<p class="desc">Agent in center with orbit ring. Task floats up into agent, checkmark emerges above. 100&times;100px.</p>
+
+<div class="demo-box">
+  <div class="anim-v">
+    <div class="ring"></div>
+    <div class="agent">
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+    </div>
+    <div class="task"><div class="task-lines"><div class="task-line-long"></div><div class="task-line-short"></div></div></div>
+    <div class="check">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+    </div>
+  </div>
+</div>
+
+<h2 style="font-size:15px;margin-top:28px;margin-bottom:16px;color:var(--z400)">Option B — In Context</h2>
+<div class="empty-mock">
+  <div style="display:flex;justify-content:center">
+    <div class="anim-v">
+      <div class="ring"></div>
+      <div class="agent">
+        <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/></svg>
+      </div>
+      <div class="task"><div class="task-lines"><div class="task-line-long"></div><div class="task-line-short"></div></div></div>
+      <div class="check">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+      </div>
+    </div>
+  </div>
+  <h3>Build your AI team</h3>
+  <p>Add agents to this idea to automate workflow steps. Agents are like AI team members — they pick up tasks, follow workflows, and ship work.</p>
+  <div class="btns">
+    <button class="btn btn-primary">Add All My Agents</button>
+    <button class="btn btn-outline">Browse Agents</button>
+  </div>
+</div>
+
+<div style="background:var(--z900);border:1px solid var(--z800);border-radius:12px;padding:24px;margin-top:40px">
+  <h2 style="margin:0 0 12px;font-size:15px">Implementation Notes</h2>
+  <ul style="font-size:13px;color:var(--z400);padding-left:20px;line-height:1.8">
+    <li><strong>CSS-only</strong> — all animations use @keyframes, no JavaScript</li>
+    <li><strong>5-second loop</strong> with smooth reset</li>
+    <li><strong>prefers-reduced-motion</strong> — shows static state</li>
+    <li><strong>Icon:</strong> Uses the correct Lucide <code>Bot</code> SVG (robot with head, body, eyes) matching the navbar and board tabs</li>
+    <li><strong>Placement:</strong> Option A for agents-tab, Option B for agents-hub</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

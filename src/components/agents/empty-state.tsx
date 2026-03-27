@@ -1,6 +1,7 @@
 "use client";
 
-import { Bot, Plus } from "lucide-react";
+import { Plus } from "lucide-react";
+import { AgentAnimation } from "./agent-animation";
 import { Button } from "@/components/ui/button";
 import { FeaturedTeams } from "./featured-teams";
 import type { FeaturedTeamWithAgents } from "@/types";
@@ -20,10 +21,8 @@ export function EmptyState({
 }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center gap-5 py-12 text-center">
-      {/* Icon */}
-      <div className="flex h-24 w-24 items-center justify-center rounded-full border-2 border-dashed border-border bg-primary/5">
-        <Bot className="h-10 w-10 text-muted-foreground" />
-      </div>
+      {/* Animation */}
+      <AgentAnimation />
 
       {/* Title & description */}
       <div className="space-y-2">

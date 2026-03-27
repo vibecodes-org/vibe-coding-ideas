@@ -170,6 +170,29 @@
   animation: pulse-subtle 2s ease-in-out infinite;
 }
 
+/* ── Agent micro-animation ─────────────────────────── */
+@keyframes agent-track { 0%,10%{width:0%} 30%{width:50%} 60%{width:100%} 80%,100%{width:100%} }
+@keyframes agent-dot1 { 0%,5%{border-color:#34d399;background:rgba(16,185,129,0.2)} 20%,100%{border-color:#3f3f46;background:#18181b} }
+@keyframes agent-dot2 { 0%,50%{border-color:#3f3f46;background:#18181b} 65%,80%{border-color:#34d399;background:rgba(16,185,129,0.2)} 90%,100%{border-color:#3f3f46;background:#18181b} }
+@keyframes agent-task { 0%,8%{left:24px;opacity:1;border-color:#52525b} 15%,18%{left:24px;opacity:1;border-color:#34d399} 35%{left:50%;opacity:1;border-color:#34d399} 38%,52%{left:50%;opacity:0.6;border-color:#34d399} 65%{left:calc(100% - 24px);opacity:0;border-color:#34d399} 66%,90%{left:calc(100% - 24px);opacity:0} 91%{left:24px;opacity:0} 100%{left:24px;opacity:1;border-color:#52525b} }
+@keyframes agent-pulse { 0%,20%{border-color:rgba(16,185,129,0.3);box-shadow:none} 35%,55%{border-color:rgba(16,185,129,0.6);box-shadow:0 0 12px rgba(16,185,129,0.2)} 65%,100%{border-color:rgba(16,185,129,0.3);box-shadow:none} }
+@keyframes agent-check { 0%,55%{transform:translate(50%,-50%) scale(0)} 65%{transform:translate(50%,-50%) scale(1.15)} 70%,82%{transform:translate(50%,-50%) scale(1)} 90%{transform:translate(50%,-50%) scale(0)} 100%{transform:translate(50%,-50%) scale(0)} }
+
+.agent-anim-track { animation: agent-track 5s ease-in-out infinite; }
+.agent-anim-dot-start { animation: agent-dot1 5s ease-in-out infinite; }
+.agent-anim-dot-end { animation: agent-dot2 5s ease-in-out infinite; }
+.agent-anim-task { animation: agent-task 5s ease-in-out infinite; }
+.agent-anim-agent { animation: agent-pulse 5s ease-in-out infinite; }
+.agent-anim-check { animation: agent-check 5s ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .agent-anim-track, .agent-anim-dot-start, .agent-anim-dot-end,
+  .agent-anim-task, .agent-anim-agent, .agent-anim-check { animation: none !important; }
+  .agent-anim-track { width: 50% !important; }
+  .agent-anim-task { left: 50% !important; border-color: #34d399 !important; }
+  .agent-anim-agent { border-color: rgba(16,185,129,0.5) !important; box-shadow: 0 0 10px rgba(16,185,129,0.15) !important; }
+}
+
 @keyframes enhance-pulse {
   0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
   50% { box-shadow: 0 0 12px 4px rgba(139, 92, 246, 0.35); }

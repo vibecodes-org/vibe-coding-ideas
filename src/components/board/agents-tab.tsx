@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/tooltip";
 import { getRoleColor } from "@/lib/agent-colors";
 import { allocateAllAgents, removeIdeaAgent, getRoleCoverage, type RoleCoverageResult } from "@/actions/idea-agents";
+import { AgentAnimation } from "@/components/agents/agent-animation";
 import { createClient } from "@/lib/supabase/client";
 import type { IdeaAgentWithDetails, BotProfile } from "@/types";
 
@@ -297,10 +298,7 @@ export function AgentsTab({
   if (ideaAgentDetails.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-5 py-16 text-center">
-        {/* Dashed emerald icon circle */}
-        <div className="flex h-[72px] w-[72px] items-center justify-center rounded-full border-2 border-dashed border-emerald-500/25 bg-emerald-500/[0.06]">
-          <Bot className="h-8 w-8 text-emerald-400" />
-        </div>
+        <AgentAnimation />
         <div>
           <h3 className="text-lg font-semibold">Build your AI team</h3>
           <p className="mt-1.5 max-w-sm text-sm text-muted-foreground">
