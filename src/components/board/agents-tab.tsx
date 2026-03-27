@@ -476,12 +476,12 @@ export function AgentsTab({
                             type="button"
                             className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
                             onClick={async () => {
+                              setOpenRolePopover(null);
                               try {
                                 await setManualRoleMatch(ideaId, rc.role, agent.bot_id);
                                 const pool = ideaAgentDetails.map((a) => ({ botId: a.bot_id, name: a.bot.name ?? "", role: a.bot.role ?? "" }));
                                 const updated = await getRoleCoverage(ideaId, pool);
                                 setRoleCoverage(updated);
-                                setOpenRolePopover(null);
                                 toast.success(`Assigned "${agent.bot.name}" to ${rc.role}`);
                               } catch {
                                 toast.error("Failed to assign agent");
@@ -512,12 +512,12 @@ export function AgentsTab({
                           type="button"
                           className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent"
                           onClick={async () => {
+                            setOpenRolePopover(null);
                             try {
                               await clearManualRoleMatch(ideaId, rc.role);
                               const pool = ideaAgentDetails.map((a) => ({ botId: a.bot_id, name: a.bot.name ?? "", role: a.bot.role ?? "" }));
                               const updated = await getRoleCoverage(ideaId, pool);
                               setRoleCoverage(updated);
-                              setOpenRolePopover(null);
                               toast.success(`Reverted "${rc.role}" to auto-match`);
                             } catch {
                               toast.error("Failed to revert");
