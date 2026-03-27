@@ -503,7 +503,7 @@ export function AgentsTab({
                         );
                       })}
                     </div>
-                    {rc.matchTier === "manual" && (
+                    {rc.covered && (
                       <>
                         <div className="my-1 border-t border-border" />
                         <button
