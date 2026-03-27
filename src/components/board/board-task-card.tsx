@@ -12,6 +12,11 @@ import {
   Archive,
   X,
   Bot,
+  Loader2,
+  AlertTriangle,
+  Clock,
+  CircleCheck,
+  Bell,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -67,6 +72,117 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
       )}
     </>
   );
+}
+
+const STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+function getWorkflowStatus(task: BoardTaskWithAssignee) {
+  const { workflow_step_total, workflow_step_completed, workflow_step_failed, workflow_step_awaiting_approval, workflow_step_in_progress, workflow_step_started_at, workflow_active_step_title } = task;
+  if (workflow_step_total === 0) return null;
+
+  // Priority: Failed > Approval > Stale > Active > Complete > Idle
+  if (workflow_step_failed > 0) {
+    return { type: "failed" as const, title: workflow_active_step_title };
+  }
+  if (workflow_step_awaiting_approval > 0) {
+    return { type: "approval" as const, title: workflow_active_step_title };
+  }
+  if (workflow_step_in_progress > 0 && workflow_step_started_at) {
+    const elapsed = Date.now() - new Date(workflow_step_started_at).getTime();
+    if (elapsed >= STALE_THRESHOLD_MS) {
+      const hours = Math.floor(elapsed / (60 * 60 * 1000));
+      const timeLabel = hours >= 24 ? `${Math.floor(hours / 24)}d` : `${hours}h`;
+      return { type: "stale" as const, title: workflow_active_step_title, timeLabel };
+    }
+    return { type: "active" as const, title: workflow_active_step_title };
+  }
+  if (workflow_step_completed === workflow_step_total) {
+    return { type: "complete" as const, title: null };
+  }
+  return { type: "idle" as const, title: null };
+}
+
+function WorkflowStatusBadge({ task }: { task: BoardTaskWithAssignee }) {
+  const status = getWorkflowStatus(task);
+  if (!status) return null;
+
+  const { workflow_step_completed, workflow_step_total } = task;
+  const fraction = `${workflow_step_completed}/${workflow_step_total}`;
+
+  switch (status.type) {
+    case "active":
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-blue-500/25 bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
+              <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin" />
+              <span className="truncate">{status.title ?? "In progress"}</span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{status.title ? `${status.title} — in progress` : "Workflow step in progress"} ({fraction})</TooltipContent>
+        </Tooltip>
+      );
+    case "approval":
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-violet-500/25 bg-violet-500/[0.12] px-2 py-0.5 text-[10px] font-semibold text-violet-400">
+              <Bell className="h-2.5 w-2.5 shrink-0" />
+              <span className="truncate">{status.title ?? "Needs approval"}</span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{status.title ? `${status.title} — needs approval` : "Workflow step needs approval"} ({fraction})</TooltipContent>
+        </Tooltip>
+      );
+    case "failed":
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-400">
+              <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+              <span className="truncate">{status.title ?? "Failed"}</span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{status.title ? `${status.title} — failed` : "Workflow step failed"} ({fraction})</TooltipContent>
+        </Tooltip>
+      );
+    case "stale":
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
+              <Clock className="h-2.5 w-2.5 shrink-0" />
+              <span className="truncate">{status.title ?? "Stale"} &middot; {status.timeLabel}</span>
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>{status.title ? `${status.title} — stale for ${status.timeLabel}` : `Stale for ${status.timeLabel}`} ({fraction})</TooltipContent>
+        </Tooltip>
+      );
+    case "complete":
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
+              <CircleCheck className="h-2.5 w-2.5 shrink-0" />
+              {fraction}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>All workflow steps complete</TooltipContent>
+        </Tooltip>
+      );
+    case "idle":
+      return (
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
+              <CheckSquare className="h-3 w-3" />
+              {fraction}
+            </span>
+          </TooltipTrigger>
+          <TooltipContent>Workflow steps</TooltipContent>
+        </Tooltip>
+      );
+  }
 }
 
 export const BoardTaskCard = memo(function BoardTaskCard({
@@ -234,7 +350,13 @@ export const BoardTaskCard = memo(function BoardTaskCard({
         className={`group cursor-pointer overflow-hidden rounded-md border bg-background shadow-sm transition-all duration-500 ${
           highlighted
             ? "border-primary ring-2 ring-primary/50"
-            : "border-border"
+            : task.workflow_step_awaiting_approval > 0
+              ? "border-violet-500/25 shadow-[0_0_0_1px_rgba(167,139,250,0.08),0_2px_12px_rgba(167,139,250,0.08)]"
+              : task.workflow_step_failed > 0
+                ? "border-l-2 border-l-red-500 border-border"
+                : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (Date.now() - new Date(task.workflow_step_started_at).getTime()) >= STALE_THRESHOLD_MS
+                  ? "border-l-2 border-l-amber-500 border-border"
+                  : "border-border"
         } ${isDragging ? "opacity-50" : ""} ${isArchived ? "opacity-50" : ""}`}
         onClick={() => {
           setInitialTab(undefined);
@@ -307,19 +429,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                 )}
                 {task.due_date && <DueDateBadge dueDate={task.due_date} />}
                 {task.workflow_step_total > 0 && (
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <span
-                        className={`inline-flex items-center gap-1 text-[10px] font-medium ${
-                          task.workflow_step_completed === task.workflow_step_total ? "text-emerald-400" : "text-muted-foreground"
-                        }`}
-                      >
-                        <CheckSquare className="h-3 w-3" />
-                        {task.workflow_step_completed}/{task.workflow_step_total}
-                      </span>
-                    </TooltipTrigger>
-                    <TooltipContent>Workflow steps</TooltipContent>
-                  </Tooltip>
+                  <WorkflowStatusBadge task={task} />
                 )}
                 {!!attachmentCount && attachmentCount > 0 && (
                   <Tooltip>

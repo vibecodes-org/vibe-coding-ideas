@@ -1,0 +1,888 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workflow Status Indicators — Design Proposal v2</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,400;0,9..40,500;0,9..40,600;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-root: #0c0c0f;
+    --bg-surface: #141419;
+    --bg-card: #1a1a22;
+    --bg-card-hover: #1f1f29;
+    --border: #27272f;
+    --border-subtle: #1f1f27;
+    --text: #e4e4e7;
+    --text-muted: #71717a;
+    --text-dim: #52525b;
+
+    --emerald: #34d399;
+    --emerald-bg: rgba(52, 211, 153, 0.1);
+    --emerald-border: rgba(52, 211, 153, 0.2);
+
+    --blue: #60a5fa;
+    --blue-bg: rgba(96, 165, 250, 0.15);
+    --blue-border: rgba(96, 165, 250, 0.25);
+
+    --violet: #a78bfa;
+    --violet-bg: rgba(167, 139, 250, 0.12);
+    --violet-border: rgba(167, 139, 250, 0.25);
+    --violet-glow: rgba(167, 139, 250, 0.08);
+
+    --red: #f87171;
+    --red-bg: rgba(248, 113, 113, 0.1);
+    --red-border: rgba(248, 113, 113, 0.2);
+
+    --amber: #fbbf24;
+    --amber-bg: rgba(251, 191, 36, 0.1);
+    --amber-border: rgba(251, 191, 36, 0.2);
+
+    --pink: #f472b6;
+    --pink-bg: rgba(244, 114, 182, 0.1);
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg-root);
+    color: var(--text);
+    min-height: 100vh;
+    padding: 0;
+  }
+
+  /* Header */
+  .header {
+    border-bottom: 1px solid var(--border);
+    padding: 48px 48px 40px;
+    background: linear-gradient(180deg, rgba(167,139,250,0.03) 0%, transparent 100%);
+  }
+  .header-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--violet);
+    background: var(--violet-bg);
+    border: 1px solid var(--violet-border);
+    border-radius: 100px;
+    padding: 4px 12px;
+    margin-bottom: 20px;
+  }
+  .header h1 {
+    font-size: 32px;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    line-height: 1.2;
+    margin-bottom: 8px;
+  }
+  .header p {
+    font-size: 15px;
+    color: var(--text-muted);
+    max-width: 640px;
+    line-height: 1.6;
+  }
+  .header .version {
+    display: inline-flex;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.04);
+    padding: 2px 8px;
+    border-radius: 4px;
+    margin-left: 12px;
+    vertical-align: middle;
+  }
+
+  /* Layout */
+  .content { padding: 48px; }
+
+  .section {
+    margin-bottom: 64px;
+  }
+  .section-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: var(--border);
+  }
+
+  /* Comparison */
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 40px 1fr;
+    gap: 0;
+    align-items: start;
+  }
+  .comparison-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 180px;
+    color: var(--text-dim);
+  }
+  .comparison-arrow svg { opacity: 0.4; }
+
+  /* Column */
+  .column {
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    min-width: 0;
+  }
+  .column-header {
+    padding: 14px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+  .column-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+  }
+  .column-count {
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.04);
+    padding: 2px 8px;
+    border-radius: 100px;
+  }
+  .column-body {
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+
+  .col-label {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 10px;
+    border-radius: 8px;
+    margin-bottom: 4px;
+  }
+  .col-label.before {
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.02);
+    border: 1px dashed var(--border);
+  }
+  .col-label.after {
+    color: var(--violet);
+    background: var(--violet-bg);
+    border: 1px solid var(--violet-border);
+  }
+
+  /* Task Card */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    cursor: default;
+    transition: background 0.15s, border-color 0.15s;
+    position: relative;
+  }
+  .card:hover {
+    background: var(--bg-card-hover);
+    border-color: #2f2f3a;
+  }
+  .card.attention {
+    border-color: var(--violet-border);
+    box-shadow: 0 0 0 1px var(--violet-glow), 0 2px 12px var(--violet-glow);
+  }
+  .card.failed-card {
+    border-left: 2px solid var(--red);
+  }
+  .card.stale-card {
+    border-left: 2px solid var(--amber);
+  }
+
+  /* Labels */
+  .labels {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+  }
+  .label {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 100px;
+    line-height: 1.4;
+  }
+  .label.bug { background: var(--red-bg); color: var(--red); }
+  .label.feature { background: var(--violet-bg); color: var(--violet); }
+  .label.ux { background: var(--pink-bg); color: var(--pink); }
+  .label.infra { background: var(--amber-bg); color: var(--amber); }
+
+  .card-title {
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 1.45;
+    margin-bottom: 10px;
+    color: var(--text);
+  }
+
+  /* Metadata row */
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .meta-item svg { width: 12px; height: 12px; flex-shrink: 0; }
+
+  /* Step counter — current (before) */
+  .step-counter {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .step-counter svg { width: 12px; height: 12px; }
+  .step-counter.complete { color: var(--emerald); }
+
+  /* NEW: Workflow status indicator */
+  .workflow-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px 2px 6px;
+    border-radius: 100px;
+    font-family: 'JetBrains Mono', monospace;
+    line-height: 1;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .workflow-status svg { width: 11px; height: 11px; flex-shrink: 0; }
+
+  /* Active / In Progress — blue with spinning loader (matches workflow step UI) */
+  .workflow-status.active {
+    color: var(--blue);
+    background: var(--blue-bg);
+    border: 1px solid var(--blue-border);
+  }
+  .spin-icon {
+    width: 11px;
+    height: 11px;
+    flex-shrink: 0;
+    animation: spin 1.2s linear infinite;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+
+  /* Awaiting Approval */
+  .workflow-status.approval {
+    color: var(--violet);
+    background: var(--violet-bg);
+    border: 1px solid var(--violet-border);
+    animation: glow-pulse 3s ease-in-out infinite;
+  }
+  @keyframes glow-pulse {
+    0%, 100% { box-shadow: none; }
+    50% { box-shadow: 0 0 8px var(--violet-glow); }
+  }
+
+  /* Failed */
+  .workflow-status.failed {
+    color: var(--red);
+    background: var(--red-bg);
+    border: 1px solid var(--red-border);
+  }
+
+  /* Stale */
+  .workflow-status.stale {
+    color: var(--amber);
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+  }
+
+  /* Complete */
+  .workflow-status.complete {
+    color: var(--emerald);
+    background: var(--emerald-bg);
+    border: 1px solid var(--emerald-border);
+  }
+
+  /* Idle — no badge, just the counter */
+  .workflow-status.idle {
+    color: var(--text-dim);
+    background: transparent;
+    border: 1px solid transparent;
+    padding: 2px 0;
+  }
+
+  /* Assignee */
+  .assignee-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid var(--border-subtle);
+  }
+  .avatar {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+    color: white;
+    flex-shrink: 0;
+  }
+  .avatar.bot {
+    background: var(--blue-bg);
+    border: 1px solid var(--blue-border);
+    color: var(--blue);
+  }
+  .agent-name {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-left: 6px;
+  }
+
+  /* Legend */
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .legend-icon {
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .legend-label {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 4px;
+  }
+  .legend-desc {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.5;
+  }
+
+  /* Data approach section */
+  .approach-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .approach-card {
+    padding: 20px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .approach-card.recommended {
+    border-color: var(--violet-border);
+    background: linear-gradient(135deg, var(--bg-surface), rgba(167,139,250,0.03));
+  }
+  .approach-badge {
+    display: inline-flex;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    margin-bottom: 10px;
+  }
+  .approach-badge.rec {
+    background: var(--violet-bg);
+    color: var(--violet);
+    border: 1px solid var(--violet-border);
+  }
+  .approach-badge.alt {
+    background: rgba(255,255,255,0.04);
+    color: var(--text-dim);
+    border: 1px solid var(--border);
+  }
+  .approach-card h4 {
+    font-size: 14px;
+    font-weight: 600;
+    margin-bottom: 8px;
+  }
+  .approach-card p {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+  .approach-card code {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    background: rgba(255,255,255,0.06);
+    padding: 1px 5px;
+    border-radius: 3px;
+    color: var(--text);
+  }
+  .pros-cons {
+    margin-top: 10px;
+    font-size: 11px;
+    line-height: 1.7;
+  }
+  .pros-cons .pro { color: var(--emerald); }
+  .pros-cons .con { color: var(--red); }
+
+  /* Behavior notes */
+  .behavior-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 12px;
+  }
+  .behavior-item {
+    padding: 16px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+  }
+  .behavior-item h4 {
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .behavior-item p {
+    font-size: 12px;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="header-tag">
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 013 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+    UX Design Proposal
+  </div>
+  <h1>Workflow Status Indicators <span class="version">v2</span></h1>
+  <p>Board task cards currently show only a step fraction counter. This proposal adds contextual status indicators so users can scan the board and immediately spot tasks that need attention, are actively being worked, have failed, or have gone stale.</p>
+</div>
+
+<div class="content">
+
+  <!-- Before / After Comparison -->
+  <div class="section">
+    <div class="section-title">Before &amp; After Comparison</div>
+    <div class="comparison">
+
+      <!-- BEFORE Column -->
+      <div>
+        <div class="col-label before">Current</div>
+        <div class="column">
+          <div class="column-header">
+            <span class="column-title">In Progress</span>
+            <span class="column-count">6</span>
+          </div>
+          <div class="column-body">
+
+            <div class="card">
+              <div class="labels"><span class="label bug">Bug</span></div>
+              <div class="card-title">Fix auth token refresh race condition</div>
+              <div class="meta">
+                <span class="step-counter">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  2/4
+                </span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="labels"><span class="label feature">Feature</span></div>
+              <div class="card-title">Add export to CSV for analytics dashboard</div>
+              <div class="meta">
+                <span class="step-counter">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  3/6
+                </span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="labels"><span class="label infra">Infrastructure</span></div>
+              <div class="card-title">Migrate database connection pooling to PgBouncer</div>
+              <div class="meta">
+                <span class="step-counter">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  1/4
+                </span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="labels"><span class="label ux">UX</span></div>
+              <div class="card-title">Redesign settings page layout</div>
+              <div class="meta">
+                <span class="step-counter complete">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  4/4
+                </span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="labels"><span class="label feature">Feature</span></div>
+              <div class="card-title">Implement webhook retry logic with exponential backoff</div>
+              <div class="meta">
+                <span class="step-counter">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  0/6
+                </span>
+              </div>
+            </div>
+
+            <div class="card">
+              <div class="labels"><span class="label bug">Bug</span></div>
+              <div class="card-title">Session timeout not respecting remember-me cookie</div>
+              <div class="meta">
+                <span class="step-counter">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  1/4
+                </span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- Arrow -->
+      <div class="comparison-arrow">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+      </div>
+
+      <!-- AFTER Column -->
+      <div>
+        <div class="col-label after">Proposed</div>
+        <div class="column">
+          <div class="column-header">
+            <span class="column-title">In Progress</span>
+            <span class="column-count">6</span>
+          </div>
+          <div class="column-body">
+
+            <!-- Card: Active — spinning loader + step number + "in progress" -->
+            <div class="card">
+              <div class="labels"><span class="label bug">Bug</span></div>
+              <div class="card-title">Fix auth token refresh race condition</div>
+              <div class="meta">
+                <span class="workflow-status active">
+                  <svg class="spin-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>
+                  Implement Fix in progress
+                </span>
+              </div>
+              <div class="assignee-row">
+                <div style="display:flex;align-items:center">
+                  <div class="avatar bot">A</div>
+                  <span class="agent-name">Atlas</span>
+                </div>
+                <span style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-dim)">2/4</span>
+              </div>
+            </div>
+
+            <!-- Card: Awaiting approval — violet badge + card glow -->
+            <div class="card attention">
+              <div class="labels"><span class="label feature">Feature</span></div>
+              <div class="card-title">Add export to CSV for analytics dashboard</div>
+              <div class="meta">
+                <span class="workflow-status approval">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+                  Design Review needs approval
+                </span>
+                <span style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-dim)">3/6</span>
+              </div>
+            </div>
+
+            <!-- Card: Failed — red badge + left border -->
+            <div class="card failed-card">
+              <div class="labels"><span class="label infra">Infrastructure</span></div>
+              <div class="card-title">Migrate database connection pooling to PgBouncer</div>
+              <div class="meta">
+                <span class="workflow-status failed">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                  Configure Pooling failed
+                </span>
+                <span style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-dim)">1/4</span>
+              </div>
+            </div>
+
+            <!-- Card: All complete — emerald badge -->
+            <div class="card">
+              <div class="labels"><span class="label ux">UX</span></div>
+              <div class="card-title">Redesign settings page layout</div>
+              <div class="meta">
+                <span class="workflow-status complete">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                  4/4 &middot; Done
+                </span>
+              </div>
+            </div>
+
+            <!-- Card: Idle — plain counter, no badge -->
+            <div class="card">
+              <div class="labels"><span class="label feature">Feature</span></div>
+              <div class="card-title">Implement webhook retry logic with exponential backoff</div>
+              <div class="meta">
+                <span class="workflow-status idle">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+                  0/6
+                </span>
+              </div>
+            </div>
+
+            <!-- Card: Stale — amber badge + left border -->
+            <div class="card stale-card">
+              <div class="labels"><span class="label bug">Bug</span></div>
+              <div class="card-title">Session timeout not respecting remember-me cookie</div>
+              <div class="meta">
+                <span class="workflow-status stale">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                  Reproduce Bug stale &middot; 4h
+                </span>
+                <span style="font-size:10px;font-family:'JetBrains Mono',monospace;color:var(--text-dim)">1/4</span>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Status Legend -->
+  <div class="section">
+    <div class="section-title">Status Indicator Legend</div>
+    <div class="legend">
+
+      <div class="legend-item">
+        <div class="legend-icon">
+          <span class="workflow-status active" style="padding:4px 10px">
+            <svg class="spin-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>
+            Implement Fix in progress
+          </span>
+        </div>
+        <div>
+          <div class="legend-label" style="color:var(--blue)">Active / In Progress</div>
+          <div class="legend-desc">An agent has claimed a step and is executing. Shows a spinning loader icon (matching the existing workflow step UI) with the <strong>step title</strong> and "in progress" text. Blue coloring matches the existing <code style="font-size:10px;background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:3px">in_progress</code> step badge. Long step titles truncated with ellipsis (full text in tooltip). Agent name shown below the card title.</div>
+        </div>
+      </div>
+
+      <div class="legend-item" style="border-color:var(--violet-border)">
+        <div class="legend-icon">
+          <span class="workflow-status approval" style="padding:4px 10px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+            Needs approval
+          </span>
+        </div>
+        <div>
+          <div class="legend-label" style="color:var(--violet)">Awaiting Approval</div>
+          <div class="legend-desc">A workflow step requires human review. The card border glows violet to draw attention. This is the highest-priority indicator — it blocks the workflow until a human acts. Shows the <strong>step title</strong> and "needs approval" text.</div>
+        </div>
+      </div>
+
+      <div class="legend-item">
+        <div class="legend-icon">
+          <span class="workflow-status failed" style="padding:4px 10px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            Configure Pooling failed
+          </span>
+        </div>
+        <div>
+          <div class="legend-label" style="color:var(--red)">Failed</div>
+          <div class="legend-desc">A workflow step has failed. The card gets a red left border accent and red badge with warning icon. Shows the <strong>step title</strong> and "failed" text. The workflow is blocked until the step is retried or addressed.</div>
+        </div>
+      </div>
+
+      <div class="legend-item">
+        <div class="legend-icon">
+          <span class="workflow-status stale" style="padding:4px 10px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            Reproduce Bug stale &middot; 4h
+          </span>
+        </div>
+        <div>
+          <div class="legend-label" style="color:var(--amber)">Stale (2+ hours)</div>
+          <div class="legend-desc">A step has been <code style="font-size:10px;background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:3px">in_progress</code> for over 2 hours without completion. Shown with amber clock icon, left border accent, and elapsed time. Indicates the step is likely stuck or forgotten. Computed by comparing <code style="font-size:10px;background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:3px">started_at</code> against current time.</div>
+        </div>
+      </div>
+
+      <div class="legend-item">
+        <div class="legend-icon">
+          <span class="workflow-status complete" style="padding:4px 10px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            4/4
+          </span>
+        </div>
+        <div>
+          <div class="legend-label" style="color:var(--emerald)">All Complete</div>
+          <div class="legend-desc">All workflow steps are done. Emerald green with circle-check icon. Matches the existing "complete" color already used in the app.</div>
+        </div>
+      </div>
+
+      <div class="legend-item">
+        <div class="legend-icon">
+          <span class="workflow-status idle" style="padding:4px 10px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+            0/6
+          </span>
+        </div>
+        <div>
+          <div class="legend-label">Idle</div>
+          <div class="legend-desc">Has a workflow but no steps are active, failed, stale, or awaiting approval. Plain step counter in muted gray — unchanged from current design. No visual noise added.</div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- Interaction Behaviors -->
+  <div class="section">
+    <div class="section-title">Interaction Behaviors</div>
+    <div class="behavior-grid">
+      <div class="behavior-item">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--violet)" stroke-width="2"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+          Approval cards demand attention
+        </h4>
+        <p>The violet border glow persists (not just on hover) so users scanning the board immediately spot what needs their action. Tooltip shows the step name awaiting approval.</p>
+      </div>
+      <div class="behavior-item">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--blue)" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>
+          Spinner matches workflow step UI
+        </h4>
+        <p>The spinning loader icon and blue color scheme are identical to the existing in_progress step badge in the task detail dialog. Users who've seen steps running will immediately recognize this pattern on the card.</p>
+      </div>
+      <div class="behavior-item">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--amber)" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+          Stale after 2 hours
+        </h4>
+        <p>An in_progress step transitions to "stale" when <code style="font-size:10px;background:rgba(255,255,255,0.06);padding:1px 4px;border-radius:3px">started_at</code> is more than 2 hours ago. Shows elapsed time (e.g. "4h", "1d"). The amber left-border accent and clock icon signal something needs investigation.</p>
+      </div>
+      <div class="behavior-item">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--red)" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/></svg>
+          Failed state is persistent
+        </h4>
+        <p>The red left-border accent and "failed" badge stay visible until the step is retried or the workflow is reset. Clicking opens the task with the failed step scrolled into view.</p>
+      </div>
+      <div class="behavior-item">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M4 12h16"/></svg>
+          Priority cascade
+        </h4>
+        <p>When multiple states apply, show the highest-priority: <strong style="color:var(--red)">Failed</strong> &gt; <strong style="color:var(--violet)">Approval</strong> &gt; <strong style="color:var(--amber)">Stale</strong> &gt; <strong style="color:var(--blue)">Active</strong> &gt; <strong>Idle</strong>. One badge per card to avoid clutter.</p>
+      </div>
+      <div class="behavior-item">
+        <h4>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          Step counter stays visible
+        </h4>
+        <p>The overall progress fraction (e.g. "2/4") is always shown alongside the status badge — either inside the badge for complete/idle, or as a separate muted counter for active/approval/failed/stale states.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Data Approach -->
+  <div class="section">
+    <div class="section-title">Implementation Approach</div>
+    <div class="approach-grid">
+      <div class="approach-card recommended">
+        <div class="approach-badge rec">Recommended</div>
+        <h4>Denormalized columns on board_tasks</h4>
+        <p>Add new columns maintained by database triggers:</p>
+        <p style="margin-top:8px">
+          <code>workflow_step_in_progress</code> (int)<br>
+          <code>workflow_step_failed</code> (int)<br>
+          <code>workflow_step_awaiting_approval</code> (int)<br>
+          <code>workflow_step_started_at</code> (timestamptz) — earliest active step start, for stale detection<br>
+          <code>workflow_active_step_title</code> (text) — title of the current active/failed/approval step
+        </p>
+        <div class="pros-cons">
+          <span class="pro">+</span> Zero additional queries at board load<br>
+          <span class="pro">+</span> Consistent with existing <code>workflow_step_completed</code> pattern<br>
+          <span class="pro">+</span> Works with Realtime subscriptions<br>
+          <span class="pro">+</span> Stale computed client-side from <code>workflow_step_started_at</code><br>
+          <span class="con">-</span> Requires a migration + trigger logic
+        </div>
+      </div>
+      <div class="approach-card">
+        <div class="approach-badge alt">Alternative</div>
+        <h4>Subquery join at fetch time</h4>
+        <p>Modify the board page query and MCP <code>getBoard</code> to include a grouped count subquery on <code>task_workflow_steps</code> per task.</p>
+        <div class="pros-cons">
+          <span class="pro">+</span> No schema changes needed<br>
+          <span class="pro">+</span> Always accurate (no trigger lag)<br>
+          <span class="con">-</span> Increases query complexity and payload size<br>
+          <span class="con">-</span> Breaks the existing denormalized count pattern<br>
+          <span class="con">-</span> Doesn't update via Realtime without separate subscription
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

@@ -374,6 +374,11 @@ export type Database = {
           due_date: string | null;
           workflow_step_total: number;
           workflow_step_completed: number;
+          workflow_step_in_progress: number;
+          workflow_step_failed: number;
+          workflow_step_awaiting_approval: number;
+          workflow_step_started_at: string | null;
+          workflow_active_step_title: string | null;
           archived: boolean;
           attachment_count: number;
           comment_count: number;
@@ -393,6 +398,11 @@ export type Database = {
           due_date?: string | null;
           workflow_step_total?: number;
           workflow_step_completed?: number;
+          workflow_step_in_progress?: number;
+          workflow_step_failed?: number;
+          workflow_step_awaiting_approval?: number;
+          workflow_step_started_at?: string | null;
+          workflow_active_step_title?: string | null;
           archived?: boolean;
           attachment_count?: number;
           comment_count?: number;
@@ -412,6 +422,11 @@ export type Database = {
           due_date?: string | null;
           workflow_step_total?: number;
           workflow_step_completed?: number;
+          workflow_step_in_progress?: number;
+          workflow_step_failed?: number;
+          workflow_step_awaiting_approval?: number;
+          workflow_step_started_at?: string | null;
+          workflow_active_step_title?: string | null;
           archived?: boolean;
           attachment_count?: number;
           comment_count?: number;
