@@ -176,7 +176,7 @@ function WorkflowStatusBadge({ task }: { task: BoardTaskWithAssignee }) {
           <TooltipTrigger asChild>
             <span className="inline-flex items-center gap-1 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-2 py-0.5 text-[10px] font-semibold text-emerald-400">
               <CircleCheck className="h-2.5 w-2.5 shrink-0" />
-              {fraction} &middot; Done
+              {fraction}
             </span>
           </TooltipTrigger>
           <TooltipContent>All workflow steps complete</TooltipContent>
@@ -186,8 +186,8 @@ function WorkflowStatusBadge({ task }: { task: BoardTaskWithAssignee }) {
       return (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
-              <CheckSquare className="h-3 w-3" />
+            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+              <CheckSquare className="h-2.5 w-2.5 shrink-0" />
               {fraction}
             </span>
           </TooltipTrigger>
