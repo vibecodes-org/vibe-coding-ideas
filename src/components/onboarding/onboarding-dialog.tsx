@@ -619,7 +619,7 @@ export function OnboardingDialog({
                     </span>
                   </div>
                 </div>
-                <span className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-br from-violet-600 to-violet-700 px-4 py-1.5 text-[13px] font-semibold text-white shadow-[0_2px_8px_rgba(124,58,237,0.3)] sm:w-auto">
+                <span className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-br from-violet-600 to-violet-700 px-4 py-1.5 text-[13px] font-semibold text-white shadow-[0_2px_8px_rgba(124,58,237,0.3)] sm:w-[110px]">
                   <Sparkles className="h-3.5 w-3.5" />
                   {enhancing ? "Working..." : "Enhance"}
                 </span>
