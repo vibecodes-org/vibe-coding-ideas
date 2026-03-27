@@ -39,6 +39,11 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
+const mockRevalidatePath = vi.fn();
+vi.mock("next/cache", () => ({
+  revalidatePath: (...args: unknown[]) => mockRevalidatePath(...args),
+}));
+
 vi.mock("next/navigation", () => ({
   redirect: vi.fn((url: string) => {
     throw Object.assign(new Error(`REDIRECT: ${url}`), {
@@ -122,6 +127,17 @@ describe("onboarding actions", () => {
         })
       );
       expect(mockEq).toHaveBeenCalledWith("id", "user-1");
+    });
+
+    it("revalidates the dashboard path after completing onboarding", async () => {
+      const { completeOnboarding } = await import("./onboarding");
+
+      mockUpdate.mockReturnValue({ eq: mockEq });
+      mockEq.mockResolvedValue({ error: null });
+
+      await completeOnboarding();
+
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/dashboard");
     });
 
     it("redirects unauthenticated users to login", async () => {
@@ -450,6 +466,32 @@ describe("onboarding actions", () => {
       expect(result.count).toBe(2);
       expect(result.tasks).toHaveLength(2);
       expect(result.tasks[0].title).toBe("Set up project");
+    });
+
+    it("revalidates the dashboard path after generating tasks", async () => {
+      const { generateBoardFromOnboarding } = await import("./onboarding");
+
+      mockSingle
+        .mockResolvedValueOnce({ data: { onboarding_completed_at: null }, error: null })
+        .mockResolvedValueOnce({ data: { id: "idea-1", title: "My App", description: "A cool app" }, error: null });
+      mockGte.mockResolvedValue({ count: 0, error: null });
+      mockOrder
+        .mockResolvedValueOnce({ data: [{ title: "To Do" }, { title: "Backlog" }], error: null })
+        .mockResolvedValueOnce({ data: [{ id: "col-1", title: "To Do", position: 0 }, { id: "col-2", title: "Backlog", position: 1000 }], error: null });
+      mockSelect.mockImplementation(() => {
+        return { ...chain, select: mockSelect };
+      });
+      mockInsert.mockImplementation(() => ({
+        ...chain,
+        select: vi.fn().mockResolvedValue({
+          data: [{ id: "task-1" }, { id: "task-2" }],
+          error: null,
+        }),
+      }));
+
+      await generateBoardFromOnboarding("idea-1");
+
+      expect(mockRevalidatePath).toHaveBeenCalledWith("/dashboard");
     });
 
     it("throws when platform key is missing", async () => {

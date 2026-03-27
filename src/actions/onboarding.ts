@@ -22,6 +22,7 @@ import {
   ValidationError,
 } from "@/lib/validation";
 import { applyKit, type ApplyKitResult } from "@/actions/kits";
+import { revalidatePath } from "next/cache";
 
 export async function completeOnboarding() {
   const supabase = await createClient();
@@ -41,6 +42,8 @@ export async function completeOnboarding() {
   if (error) {
     throw new Error(error.message);
   }
+
+  revalidatePath("/dashboard");
 }
 
 export async function createIdeaFromOnboarding(data: {
@@ -522,6 +525,8 @@ export async function generateBoardFromOnboarding(
   }
 
   logger.info("Onboarding board gen: complete", { ideaId, tasksInserted: taskRows.length });
+
+  revalidatePath("/dashboard");
 
   return { tasks, count: tasks.length };
 }
