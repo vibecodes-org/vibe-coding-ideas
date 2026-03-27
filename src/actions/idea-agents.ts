@@ -222,6 +222,22 @@ export async function getRoleCoverage(
     return [];
   }
 
+  // Check for existing manual assignments in the DB first
+  const { data: manualSteps } = await supabase
+    .from("task_workflow_steps")
+    .select("agent_role, bot_id, match_tier")
+    .eq("idea_id", validIdeaId)
+    .eq("status", "pending")
+    .eq("match_tier", "manual")
+    .not("bot_id", "is", null);
+
+  const manualOverrides = new Map<string, string>();
+  for (const step of manualSteps ?? []) {
+    if (step.agent_role && step.bot_id) {
+      manualOverrides.set(step.agent_role, step.bot_id);
+    }
+  }
+
   // Use the same matching algorithm as workflow step assignment
   const candidates: AiRoleMatchAgent[] = agentPool.filter((a) => a.role);
   const stepRoles = Array.from(templateRoles);
@@ -233,6 +249,19 @@ export async function getRoleCoverage(
   );
 
   const coverage: RoleCoverageResult[] = stepRoles.map((role) => {
+    // Manual overrides take precedence
+    const manualBotId = manualOverrides.get(role);
+    if (manualBotId) {
+      const agent = agentLookup.get(manualBotId);
+      return {
+        role,
+        covered: true,
+        matchedAgentName: agent?.name ?? null,
+        matchedAgentRole: agent?.role ?? null,
+        matchTier: "manual",
+      };
+    }
+
     const match = matches[role];
     const agent = match?.botId ? agentLookup.get(match.botId) : null;
     return {

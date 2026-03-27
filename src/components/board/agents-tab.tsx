@@ -68,6 +68,7 @@ export function AgentsTab({
   const [roleCoverage, setRoleCoverage] = useState<RoleCoverage[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedBotIds, setSelectedBotIds] = useState<Set<string>>(new Set());
+  const [openRolePopover, setOpenRolePopover] = useState<string | null>(null);
 
   // Bots the current user owns that are NOT already in the pool
   const allocatedBotIds = new Set(ideaAgentDetails.map((a) => a.bot_id));
@@ -429,7 +430,7 @@ export function AgentsTab({
 
               // Editable: clickable badge with popover
               return (
-                <Popover key={rc.role}>
+                <Popover key={rc.role} open={openRolePopover === rc.role} onOpenChange={(open) => setOpenRolePopover(open ? rc.role : null)}>
                   <PopoverTrigger asChild>
                     <button type="button" className="focus:outline-none">
                       <Badge
@@ -480,6 +481,7 @@ export function AgentsTab({
                                 const pool = ideaAgentDetails.map((a) => ({ botId: a.bot_id, name: a.bot.name ?? "", role: a.bot.role ?? "" }));
                                 const updated = await getRoleCoverage(ideaId, pool);
                                 setRoleCoverage(updated);
+                                setOpenRolePopover(null);
                                 toast.success(`Assigned "${agent.bot.name}" to ${rc.role}`);
                               } catch {
                                 toast.error("Failed to assign agent");
@@ -515,6 +517,7 @@ export function AgentsTab({
                               const pool = ideaAgentDetails.map((a) => ({ botId: a.bot_id, name: a.bot.name ?? "", role: a.bot.role ?? "" }));
                               const updated = await getRoleCoverage(ideaId, pool);
                               setRoleCoverage(updated);
+                              setOpenRolePopover(null);
                               toast.success(`Reverted "${rc.role}" to auto-match`);
                             } catch {
                               toast.error("Failed to revert");
