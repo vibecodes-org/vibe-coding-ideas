@@ -77,7 +77,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
 const STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
 
 function getWorkflowStatus(task: BoardTaskWithAssignee) {
-  const { workflow_step_total, workflow_step_completed, workflow_step_failed, workflow_step_awaiting_approval, workflow_step_in_progress, workflow_step_started_at, workflow_active_step_title } = task;
+  const { workflow_step_total, workflow_step_completed, workflow_step_failed, workflow_step_awaiting_approval, workflow_step_in_progress, workflow_step_started_at, workflow_active_step_title, workflow_active_agent_name } = task;
   if (workflow_step_total === 0) return null;
 
   // Priority: Failed > Approval > Stale > Active > Complete > Idle
@@ -92,9 +92,9 @@ function getWorkflowStatus(task: BoardTaskWithAssignee) {
     if (elapsed >= STALE_THRESHOLD_MS) {
       const hours = Math.floor(elapsed / (60 * 60 * 1000));
       const timeLabel = hours >= 24 ? `${Math.floor(hours / 24)}d` : `${hours}h`;
-      return { type: "stale" as const, title: workflow_active_step_title, timeLabel };
+      return { type: "stale" as const, title: workflow_active_step_title, timeLabel, agent: workflow_active_agent_name };
     }
-    return { type: "active" as const, title: workflow_active_step_title };
+    return { type: "active" as const, title: workflow_active_step_title, agent: workflow_active_agent_name };
   }
   if (workflow_step_completed === workflow_step_total) {
     return { type: "complete" as const, title: null };
@@ -116,10 +116,10 @@ function WorkflowStatusBadge({ task }: { task: BoardTaskWithAssignee }) {
           <TooltipTrigger asChild>
             <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-blue-500/25 bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
               <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin" />
-              <span className="truncate">{status.title ?? "In progress"}</span>
+              <span className="truncate">{status.title ?? "In progress"}{status.agent ? ` · ${status.agent}` : ""}</span>
             </span>
           </TooltipTrigger>
-          <TooltipContent>{status.title ? `${status.title} — in progress` : "Workflow step in progress"} ({fraction})</TooltipContent>
+          <TooltipContent>{status.title ? `${status.title} — in progress` : "Workflow step in progress"}{status.agent ? ` (${status.agent})` : ""} ({fraction})</TooltipContent>
         </Tooltip>
       );
     case "approval":
@@ -152,10 +152,10 @@ function WorkflowStatusBadge({ task }: { task: BoardTaskWithAssignee }) {
           <TooltipTrigger asChild>
             <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
               <Clock className="h-2.5 w-2.5 shrink-0" />
-              <span className="truncate">{status.title ?? "Stale"} &middot; {status.timeLabel}</span>
+              <span className="truncate">{status.title ?? "Stale"}{status.agent ? ` · ${status.agent}` : ""} · {status.timeLabel}</span>
             </span>
           </TooltipTrigger>
-          <TooltipContent>{status.title ? `${status.title} — stale for ${status.timeLabel}` : `Stale for ${status.timeLabel}`} ({fraction})</TooltipContent>
+          <TooltipContent>{status.title ? `${status.title} — stale for ${status.timeLabel}` : `Stale for ${status.timeLabel}`}{status.agent ? ` (${status.agent})` : ""} ({fraction})</TooltipContent>
         </Tooltip>
       );
     case "complete":

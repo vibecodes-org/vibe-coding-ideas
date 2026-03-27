@@ -236,6 +236,7 @@ export function TaskEditDialog({
       workflow_step_awaiting_approval: 0,
       workflow_step_started_at: null,
       workflow_active_step_title: null,
+      workflow_active_agent_name: null,
       attachment_count: 0,
       cover_image_path: null,
       comment_count: 0,

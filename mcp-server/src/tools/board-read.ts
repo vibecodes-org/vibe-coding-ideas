@@ -108,6 +108,7 @@ export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardS
           workflow_step_failed: t.workflow_step_failed,
           workflow_step_awaiting_approval: t.workflow_step_awaiting_approval,
           workflow_active_step_title: t.workflow_active_step_title,
+          workflow_active_agent_name: t.workflow_active_agent_name,
           attachment_count: t.attachment_count,
           labels:
             ((t as Record<string, unknown>).board_task_labels as Array<Record<string, unknown>>)?.map(
