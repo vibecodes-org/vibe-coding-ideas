@@ -130,7 +130,7 @@ function WorkflowStatusBadge({ task }: { task: BoardTaskWithAssignee }) {
         <>
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-violet-500/25 bg-violet-500/[0.12] px-2 py-0.5 text-[10px] font-semibold text-violet-400">
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-500/25 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
                 <Bell className="h-2.5 w-2.5 shrink-0" />
                 <span className="truncate">{status.title ?? "Needs approval"} needs approval</span>
               </span>
@@ -363,7 +363,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
           highlighted
             ? "border-primary ring-2 ring-primary/50"
             : task.workflow_step_awaiting_approval > 0
-              ? "border-violet-500/40 ring-1 ring-violet-500/20 shadow-[0_0_12px_rgba(167,139,250,0.25)]"
+              ? "border-amber-500/40 ring-1 ring-amber-500/20 shadow-[0_0_12px_rgba(251,191,36,0.2)]"
               : task.workflow_step_failed > 0
                 ? "border-l-2 border-l-red-500 border-border"
                 : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (Date.now() - new Date(task.workflow_step_started_at).getTime()) >= STALE_THRESHOLD_MS
