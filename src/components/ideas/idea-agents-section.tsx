@@ -102,9 +102,9 @@ export function IdeaAgentsSection({
         description={
           <>
             Agents can automatically work on your board tasks — reviewing designs, writing code, running tests.{" "}
-            <Link href="/agents" className="font-medium text-violet-400 hover:text-violet-300">Create agents</Link>
+            <Link href="/agents" className="font-medium text-emerald-400 hover:text-emerald-300">Create agents</Link>
             {" or "}
-            <Link href="/agents?tab=community" className="font-medium text-violet-400 hover:text-violet-300">browse the community</Link>.
+            <Link href="/agents?tab=community" className="font-medium text-emerald-400 hover:text-emerald-300">browse the community</Link>.
           </>
         }
         variant="default"

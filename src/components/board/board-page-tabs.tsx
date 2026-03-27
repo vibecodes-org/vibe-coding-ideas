@@ -1,6 +1,7 @@
 "use client";
 
 import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { LayoutDashboard, Workflow, Bot } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { WorkflowsTab } from "./workflows-tab";
 import { AgentsTab } from "./agents-tab";
@@ -64,9 +65,18 @@ export function BoardPageTabs({
     >
       <div className="mb-3 flex shrink-0 items-center gap-2">
         <TabsList variant="line">
-          <TabsTrigger value="board">Board</TabsTrigger>
-          <TabsTrigger value="workflows">Workflows</TabsTrigger>
-          <TabsTrigger value="agents">Agents</TabsTrigger>
+          <TabsTrigger value="board" className="gap-1.5">
+            <LayoutDashboard className="h-3.5 w-3.5 text-blue-400" />
+            Board
+          </TabsTrigger>
+          <TabsTrigger value="workflows" className="gap-1.5">
+            <Workflow className="h-3.5 w-3.5 text-amber-400" />
+            Workflows
+          </TabsTrigger>
+          <TabsTrigger value="agents" className="gap-1.5">
+            <Bot className="h-3.5 w-3.5 text-emerald-400" />
+            Agents
+          </TabsTrigger>
         </TabsList>
         <HelpLink href="/guide/kanban-boards" tooltip="How boards work" />
       </div>

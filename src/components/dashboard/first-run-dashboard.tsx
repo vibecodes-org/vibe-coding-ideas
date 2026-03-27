@@ -181,7 +181,7 @@ export function FirstRunDashboard({
               </div>
               <div className="mb-3 flex flex-wrap gap-2">
                 {maxBoardTaskCount > 0 && (
-                  <span className="rounded-md bg-violet-500/10 px-2 py-0.5 text-xs font-semibold text-violet-400">
+                  <span className="rounded-md bg-blue-500/10 px-2 py-0.5 text-xs font-semibold text-blue-400">
                     {maxBoardTaskCount} tasks
                   </span>
                 )}
@@ -286,7 +286,7 @@ export function FirstRunDashboard({
             </div>
             {botProfiles.length === 0 ? (
               <div className="py-2 text-center">
-                <Bot className="mx-auto h-6 w-6 text-muted-foreground/50" />
+                <Bot className="mx-auto h-6 w-6 text-emerald-400/50" />
                 <p className="mt-2 text-xs text-muted-foreground">
                   No agents yet
                 </p>

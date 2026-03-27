@@ -31,7 +31,7 @@ export function StatsCards({
       label: "Upvotes Received",
       value: upvotesReceived,
       icon: ChevronUp,
-      color: "text-green-400",
+      color: "text-emerald-400",
     },
     {
       label: "Tasks Assigned",

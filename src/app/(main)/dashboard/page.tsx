@@ -488,7 +488,7 @@ export default async function DashboardPage() {
       <CollapsibleSection
         sectionId="active-boards"
         title="Active Boards"
-        icon={<LayoutDashboard className="h-5 w-5" />}
+        icon={<LayoutDashboard className="h-5 w-5 text-blue-400" />}
         count={topActiveBoards.length}
       >
         <ActiveBoards boards={topActiveBoards} />
@@ -508,7 +508,7 @@ export default async function DashboardPage() {
       <CollapsibleSection
         sectionId="my-ideas"
         title="My Ideas"
-        icon={<Lightbulb className="h-5 w-5" />}
+        icon={<Lightbulb className="h-5 w-5 text-amber-400" />}
         count={ideasCount}
         headerRight={
           myIdeas.length > 0 ? (
@@ -641,7 +641,7 @@ export default async function DashboardPage() {
     <CollapsibleSection
       sectionId="my-bots"
       title="My Agents"
-      icon={<Bot className="h-5 w-5" />}
+      icon={<Bot className="h-5 w-5 text-emerald-400" />}
       count={dashboardBots.length || undefined}
       headerRight={
         <Link

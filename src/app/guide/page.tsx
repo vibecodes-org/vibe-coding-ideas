@@ -5,7 +5,7 @@ import {
   Users,
   MessageSquare,
   LayoutDashboard,
-  GitBranch,
+  Workflow,
   Terminal,
   Bot,
   Shield,
@@ -25,6 +25,8 @@ const sections = [
       "Create your account, explore the feed, and submit your first idea.",
     icon: Rocket,
     href: "/guide/getting-started",
+    iconClass: "text-primary",
+    bgClass: "bg-primary/10",
   },
   {
     title: "Ideas & Voting",
@@ -32,6 +34,8 @@ const sections = [
       "How ideas work, status lifecycle, voting, comments, and visibility settings.",
     icon: Lightbulb,
     href: "/guide/ideas-and-voting",
+    iconClass: "text-amber-400",
+    bgClass: "bg-amber-500/10",
   },
   {
     title: "Collaboration",
@@ -39,6 +43,8 @@ const sections = [
       "Join projects, add collaborators, and stay updated with notifications.",
     icon: Users,
     href: "/guide/collaboration",
+    iconClass: "text-primary",
+    bgClass: "bg-primary/10",
   },
   {
     title: "Discussions",
@@ -46,6 +52,8 @@ const sections = [
       "Plan features with threaded discussions, vote on proposals, and convert threads into board tasks.",
     icon: MessageSquare,
     href: "/guide/discussions",
+    iconClass: "text-primary",
+    bgClass: "bg-primary/10",
   },
   {
     title: "Kanban Boards",
@@ -53,6 +61,8 @@ const sections = [
       "Manage tasks with drag-and-drop boards, labels, due dates, file attachments, and AI task generation.",
     icon: LayoutDashboard,
     href: "/guide/kanban-boards",
+    iconClass: "text-blue-400",
+    bgClass: "bg-blue-500/10",
   },
   {
     title: "MCP Integration",
@@ -60,13 +70,17 @@ const sections = [
       "Connect Claude Code to VibeCodes and manage your projects from the terminal.",
     icon: Terminal,
     href: "/guide/mcp-integration",
+    iconClass: "text-cyan-400",
+    bgClass: "bg-cyan-500/10",
   },
   {
     title: "Workflows",
     description:
       "Define multi-step workflow templates, auto-apply via labels, approval gates, agent execution, and context chaining.",
-    icon: GitBranch,
+    icon: Workflow,
     href: "/guide/workflows",
+    iconClass: "text-amber-400",
+    bgClass: "bg-amber-500/10",
   },
   {
     title: "AI Agent Teams",
@@ -74,6 +88,8 @@ const sections = [
       "Create agent personas, enhance ideas with AI, generate board tasks, manage usage credits, and bring your own API key.",
     icon: Bot,
     href: "/guide/ai-agent-teams",
+    iconClass: "text-emerald-400",
+    bgClass: "bg-emerald-500/10",
   },
   {
     title: "Admin",
@@ -81,6 +97,8 @@ const sections = [
       "AI usage analytics, per-user rate limits, user management, and content moderation.",
     icon: Shield,
     href: "/guide/admin",
+    iconClass: "text-violet-400",
+    bgClass: "bg-violet-500/10",
   },
 ];
 
@@ -107,8 +125,8 @@ export default function GuidePage() {
           <Link key={section.href} href={section.href}>
             <Card className="h-full transition-colors hover:border-primary/50">
               <CardHeader>
-                <div className="mb-2 flex h-10 w-10 items-center justify-center rounded-lg bg-primary/10">
-                  <section.icon className="h-5 w-5 text-primary" />
+                <div className={`mb-2 flex h-10 w-10 items-center justify-center rounded-lg ${section.bgClass}`}>
+                  <section.icon className={`h-5 w-5 ${section.iconClass}`} />
                 </div>
                 <CardTitle className="text-lg">{section.title}</CardTitle>
                 <CardDescription>{section.description}</CardDescription>

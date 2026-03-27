@@ -29,13 +29,13 @@ const stages = [
     icon: Bot,
     title: "Agents",
     description: "Named AI personas claim tasks.",
-    color: "purple",
+    color: "emerald",
   },
   {
     icon: Workflow,
     title: "Workflows",
     description: "Multi-step pipelines with approvals.",
-    color: "emerald",
+    color: "amber",
   },
   {
     icon: LinkIcon,
