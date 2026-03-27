@@ -498,7 +498,7 @@ export default async function DashboardPage() {
       <CollapsibleSection
         sectionId="my-tasks"
         title="My Tasks"
-        icon={<CheckSquare className="h-5 w-5" />}
+        icon={<CheckSquare className="h-5 w-5 text-blue-400" />}
         count={tasks.length}
       >
         <MyTasksList tasks={tasks} />
@@ -566,7 +566,7 @@ export default async function DashboardPage() {
       <CollapsibleSection
         sectionId="collaborations"
         title="Collaborations"
-        icon={<Users className="h-5 w-5" />}
+        icon={<Users className="h-5 w-5 text-blue-400" />}
         count={collaborationsCount}
         headerRight={
           collabIdeas.length > 0 ? (
@@ -616,7 +616,7 @@ export default async function DashboardPage() {
       <CollapsibleSection
         sectionId="recent-activity"
         title="Recent Activity"
-        icon={<Bell className="h-5 w-5" />}
+        icon={<Bell className="h-5 w-5 text-amber-400" />}
         count={notifications.length}
       >
         <ActivityFeed notifications={notifications} />
@@ -629,7 +629,7 @@ export default async function DashboardPage() {
     <CollapsibleSection
       sectionId="active-discussions"
       title="Active Discussions"
-      icon={<MessagesSquare className="h-5 w-5" />}
+      icon={<MessagesSquare className="h-5 w-5 text-violet-400" />}
       count={activeDiscussions.length || undefined}
     >
       <ActiveDiscussions discussions={activeDiscussions} />

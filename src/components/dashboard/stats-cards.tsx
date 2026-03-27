@@ -37,7 +37,7 @@ export function StatsCards({
       label: "Tasks Assigned",
       value: tasksAssigned,
       icon: CheckSquare,
-      color: "text-purple-400",
+      color: "text-blue-400",
     },
   ];
 

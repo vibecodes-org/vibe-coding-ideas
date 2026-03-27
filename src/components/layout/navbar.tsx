@@ -81,20 +81,20 @@ export function Navbar() {
               <>
                 <Link href="/ideas">
                   <Button variant={isActive("/ideas") ? "secondary" : "ghost"} className="gap-2">
-                    <Lightbulb className="h-4 w-4" />
+                    <Lightbulb className="h-4 w-4 text-amber-400" />
                     Ideas
                   </Button>
                 </Link>
                 <Link href="/agents">
                   <Button variant={isActive("/agents") ? "secondary" : "ghost"} className="gap-2">
-                    <Bot className="h-4 w-4" />
+                    <Bot className="h-4 w-4 text-emerald-400" />
                     Agents
                   </Button>
                 </Link>
                 {isAdmin && (
                   <Link href="/admin" prefetch={false}>
                     <Button variant={isActive("/admin") ? "secondary" : "ghost"} className="gap-2">
-                      <Shield className="h-4 w-4" />
+                      <Shield className="h-4 w-4 text-violet-400" />
                       Admin
                     </Button>
                   </Link>
@@ -103,7 +103,7 @@ export function Navbar() {
             )}
             <Link href="/guide" prefetch={false}>
               <Button variant={isActive("/guide") ? "secondary" : "ghost"} className="gap-2">
-                <BookOpen className="h-4 w-4" />
+                <BookOpen className="h-4 w-4 text-cyan-400" />
                 Guide
               </Button>
             </Link>
@@ -252,7 +252,7 @@ export function Navbar() {
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <Button variant={isActive("/ideas") ? "secondary" : "ghost"} className="w-full justify-start gap-2">
-                      <Lightbulb className="h-4 w-4" />
+                      <Lightbulb className="h-4 w-4 text-amber-400" />
                       Ideas
                     </Button>
                   </Link>
@@ -261,7 +261,7 @@ export function Navbar() {
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <Button variant={isActive("/agents") ? "secondary" : "ghost"} className="w-full justify-start gap-2">
-                      <Bot className="h-4 w-4" />
+                      <Bot className="h-4 w-4 text-emerald-400" />
                       Agents
                     </Button>
                   </Link>
@@ -280,7 +280,7 @@ export function Navbar() {
                       onClick={() => setMobileMenuOpen(false)}
                     >
                       <Button variant={isActive("/admin") ? "secondary" : "ghost"} className="w-full justify-start gap-2">
-                        <Shield className="h-4 w-4" />
+                        <Shield className="h-4 w-4 text-violet-400" />
                         Admin
                       </Button>
                     </Link>
@@ -291,7 +291,7 @@ export function Navbar() {
                     onClick={() => setMobileMenuOpen(false)}
                   >
                     <Button variant={isActive("/guide") ? "secondary" : "ghost"} className="w-full justify-start gap-2">
-                      <BookOpen className="h-4 w-4" />
+                      <BookOpen className="h-4 w-4 text-cyan-400" />
                       Guide
                     </Button>
                   </Link>
@@ -348,7 +348,7 @@ export function Navbar() {
                 <>
                   <Link href="/guide" onClick={() => setMobileMenuOpen(false)}>
                     <Button variant="ghost" className="w-full justify-start gap-2">
-                      <BookOpen className="h-4 w-4" />
+                      <BookOpen className="h-4 w-4 text-cyan-400" />
                       Guide
                     </Button>
                   </Link>
