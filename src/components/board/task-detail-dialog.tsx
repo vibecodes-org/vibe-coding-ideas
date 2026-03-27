@@ -494,8 +494,8 @@ export function TaskDetailDialog({
         <DialogHeader className={`px-6 pb-0 ${coverUrl ? "pt-4" : "pt-6"}`}>
           <DialogTitle className="sr-only">Task Details</DialogTitle>
           {isReadOnly ? (
-            <div className="flex items-center gap-2">
-              <p className="flex-1 text-lg font-semibold">{task.title}</p>
+            <div className="flex items-start gap-2">
+              <p className="min-w-0 flex-1 text-lg font-semibold">{task.title}</p>
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -511,13 +511,16 @@ export function TaskDetailDialog({
               </Tooltip>
             </div>
           ) : (
-            <div className="flex items-center gap-2">
-              <Input
+            <div className="flex items-start gap-2">
+              <Textarea
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onBlur={handleTitleBlur}
-                className="flex-1 border-none p-0 text-lg font-semibold shadow-none focus-visible:ring-0"
+                onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
+                className="min-h-0 flex-1 resize-none border-none p-0 text-lg font-semibold shadow-none focus-visible:ring-0"
+                rows={1}
                 disabled={savingTitle}
+                style={{ fieldSizing: "content" } as React.CSSProperties}
               />
               <Tooltip>
                 <TooltipTrigger asChild>
