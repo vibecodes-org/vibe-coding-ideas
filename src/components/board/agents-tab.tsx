@@ -233,7 +233,7 @@ export function AgentsTab({
               </button>
             )}
           </div>
-          <div className="space-y-0.5">
+          <div className="max-h-[200px] space-y-0.5 overflow-y-auto">
             {unallocatedBots.map((bot) => {
               const colors = getRoleColor(bot.role);
               const isChecked = selectedBotIds.has(bot.id);
