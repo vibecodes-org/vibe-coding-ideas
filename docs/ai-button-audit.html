@@ -1,0 +1,566 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Button Audit — Standardized Tier System</title>
+<style>
+  :root {
+    --zinc-50:#fafafa;--zinc-100:#f4f4f5;--zinc-200:#e4e4e7;--zinc-300:#d4d4d8;
+    --zinc-400:#a1a1aa;--zinc-500:#71717a;--zinc-600:#52525b;
+    --zinc-700:#3f3f46;--zinc-800:#27272a;--zinc-900:#18181b;--zinc-950:#09090b;
+    --violet-400:#a78bfa;--violet-500:#8b5cf6;--violet-600:#7c3aed;--violet-700:#6d28d9;
+    --violet-900:#4c1d95;
+    --emerald-400:#34d399;--emerald-500:#10b981;
+    --amber-400:#fbbf24;--amber-500:#f59e0b;
+    --blue-400:#60a5fa;
+    --red-400:#f87171;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,sans-serif;background:var(--zinc-950);color:var(--zinc-50);line-height:1.6}
+  .page{max-width:1200px;margin:0 auto;padding:48px 24px}
+
+  h1{font-size:24px;font-weight:700;margin-bottom:4px}
+  h1 span{color:var(--violet-400)}
+  .subtitle{color:var(--zinc-400);font-size:14px;margin-bottom:12px}
+  .count-badge{display:inline-block;background:var(--zinc-800);border:1px solid var(--zinc-700);border-radius:6px;padding:2px 10px;font-size:12px;color:var(--violet-400);margin-bottom:32px}
+
+  h2{font-size:18px;font-weight:700;margin:40px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--zinc-800)}
+  h2 .area-count{font-size:12px;font-weight:400;color:var(--zinc-500);margin-left:8px}
+
+  h3{font-size:15px;font-weight:600;margin:24px 0 12px;color:var(--zinc-300)}
+
+  /* Tier cards */
+  .tier-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:32px}
+  @media(max-width:768px){.tier-grid{grid-template-columns:1fr}}
+
+  .tier-card{background:var(--zinc-900);border:1px solid var(--zinc-800);border-radius:12px;padding:20px;position:relative;overflow:hidden}
+  .tier-card::before{content:"";position:absolute;top:0;left:0;right:0;height:3px}
+  .tier-card.t1::before{background:var(--violet-600)}
+  .tier-card.t2::before{background:var(--violet-500)}
+  .tier-card.t3::before{background:var(--zinc-600)}
+  .tier-card.t4::before{background:var(--zinc-700)}
+
+  .tier-label{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:4px}
+  .tier-card.t1 .tier-label{color:var(--violet-400)}
+  .tier-card.t2 .tier-label{color:var(--violet-400)}
+  .tier-card.t3 .tier-label{color:var(--zinc-400)}
+  .tier-card.t4 .tier-label{color:var(--zinc-500)}
+
+  .tier-name{font-size:14px;font-weight:600;margin-bottom:8px;color:var(--zinc-100)}
+  .tier-desc{font-size:12px;color:var(--zinc-400);margin-bottom:14px;line-height:1.5}
+  .tier-examples{font-size:11px;color:var(--zinc-500);margin-bottom:14px}
+  .tier-examples code{background:var(--zinc-800);padding:1px 5px;border-radius:3px;font-size:10px;color:var(--zinc-300)}
+
+  /* Button mockups */
+  .btn-mock{display:inline-flex;align-items:center;gap:6px;border-radius:6px;font-size:13px;font-weight:500;cursor:default;border:none;line-height:1;white-space:nowrap}
+  .btn-mock svg{flex-shrink:0}
+  .btn-primary{background:var(--violet-600);color:white;padding:8px 16px}
+  .btn-primary:hover{background:var(--violet-700)}
+  .btn-primary-lg{background:var(--violet-600);color:white;padding:10px 20px;font-size:14px}
+  .btn-outline-sm{background:transparent;color:var(--zinc-300);padding:5px 10px;font-size:12px;border:1px solid var(--zinc-700)}
+  .btn-ghost-sm{background:transparent;color:var(--zinc-400);padding:5px 8px;font-size:12px;border:1px solid transparent}
+  .btn-ghost-sm:hover{background:var(--zinc-800)}
+
+  .credit-badge{background:var(--violet-600);color:white;border-radius:999px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:2px}
+
+  /* Sparkles SVG inline */
+  .sparkles{display:inline-block;vertical-align:middle}
+
+  /* Table */
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px}
+  th{text-align:left;padding:10px 12px;color:var(--zinc-400);font-size:11px;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--zinc-700);position:sticky;top:0;background:var(--zinc-950)}
+  td{padding:10px 12px;border-bottom:1px solid var(--zinc-800);vertical-align:top}
+  tr:hover{background:var(--zinc-900)}
+
+  .file{color:var(--zinc-500);font-family:monospace;font-size:11px;word-break:break-all}
+  .btn-label{font-weight:600;color:var(--zinc-200)}
+  .current-style{font-family:monospace;font-size:11px;color:var(--zinc-400)}
+  .proposed-tier{font-weight:600;font-size:12px}
+  .t1-text{color:var(--violet-400)}
+  .t2-text{color:var(--violet-400)}
+  .t3-text{color:var(--zinc-300)}
+  .t4-text{color:var(--zinc-500)}
+  .special-text{color:var(--amber-400)}
+
+  .change-needed{color:var(--amber-400);font-size:11px;font-weight:500}
+  .already-correct{color:var(--emerald-400);font-size:11px;font-weight:500}
+  .keep-as-is{color:var(--blue-400);font-size:11px;font-weight:500}
+
+  .changes-col{font-size:12px;color:var(--zinc-300);line-height:1.5}
+  .changes-col code{background:var(--zinc-800);padding:1px 4px;border-radius:3px;font-size:10px;color:var(--zinc-300)}
+
+  /* Section badges */
+  .section-badge{display:inline-block;border-radius:4px;padding:2px 8px;font-size:11px;font-weight:600;margin-left:8px}
+  .badge-changes{background:rgba(251,191,36,0.12);color:var(--amber-400);border:1px solid rgba(251,191,36,0.2)}
+  .badge-correct{background:rgba(52,211,153,0.12);color:var(--emerald-400);border:1px solid rgba(52,211,153,0.2)}
+
+  /* Summary stats */
+  .stats-row{display:flex;gap:16px;margin-bottom:32px;flex-wrap:wrap}
+  .stat-card{background:var(--zinc-900);border:1px solid var(--zinc-800);border-radius:10px;padding:16px 20px;flex:1;min-width:140px;text-align:center}
+  .stat-num{font-size:28px;font-weight:700}
+  .stat-num.violet{color:var(--violet-400)}
+  .stat-num.amber{color:var(--amber-400)}
+  .stat-num.emerald{color:var(--emerald-400)}
+  .stat-num.blue{color:var(--blue-400)}
+  .stat-label{font-size:11px;color:var(--zinc-500);text-transform:uppercase;letter-spacing:1px;margin-top:4px}
+
+  /* Before/After comparison */
+  .comparison{display:grid;grid-template-columns:1fr auto 1fr;gap:12px;align-items:center;margin:12px 0}
+  .comp-box{background:var(--zinc-800);border:1px solid var(--zinc-700);border-radius:8px;padding:12px 16px;text-align:center}
+  .comp-label{font-size:10px;text-transform:uppercase;letter-spacing:1px;color:var(--zinc-500);margin-bottom:8px}
+  .comp-arrow{color:var(--zinc-600);font-size:18px}
+
+  /* Notes block */
+  .notes{background:var(--zinc-900);border:1px solid var(--zinc-800);border-radius:10px;padding:16px 20px;margin:24px 0;font-size:13px;color:var(--zinc-400);line-height:1.7}
+  .notes strong{color:var(--zinc-200)}
+  .notes ul{margin:8px 0 0 20px}
+  .notes li{margin-bottom:4px}
+
+  .arrow{color:var(--zinc-600);margin:0 6px}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1><span>AI Button Audit</span> — Standardized Tier System</h1>
+<p class="subtitle">21 AI buttons across the VibeCodes codebase, organized into 4 tiers + 2 special cases.</p>
+<span class="count-badge">21 buttons | 4 tiers | ~12 changes needed</span>
+
+<!-- ═══ STATS ═══ -->
+<div class="stats-row">
+  <div class="stat-card">
+    <div class="stat-num violet">21</div>
+    <div class="stat-label">Total AI Buttons</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-num amber">12</div>
+    <div class="stat-label">Need Changes</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-num emerald">7</div>
+    <div class="stat-label">Already Correct</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-num blue">2</div>
+    <div class="stat-label">Keep As-Is (Special)</div>
+  </div>
+</div>
+
+<!-- ═══ TIER DEFINITIONS ═══ -->
+<h2>Tier Definitions <span class="area-count">Visual Reference</span></h2>
+
+<div class="tier-grid">
+  <!-- Tier 1 -->
+  <div class="tier-card t1">
+    <div class="tier-label">Tier 1</div>
+    <div class="tier-name">Primary AI Action</div>
+    <div class="tier-desc">Buttons that generate or apply AI content as the main action. These are the most prominent AI buttons on a page.</div>
+    <div class="tier-examples">
+      Used for: <code>Generate Board</code> <code>Generate Tasks</code> <code>Create &amp; Generate Board</code> <code>Apply N Tasks</code>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <span class="btn-mock btn-primary">
+        <svg class="sparkles" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Generate Board
+      </span>
+      <span class="btn-mock btn-primary-lg">
+        <svg class="sparkles" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Apply 5 Tasks
+      </span>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--zinc-500)">
+      Style: <code>bg-violet-600 text-white hover:bg-violet-700</code> &middot; Icon: <code>Sparkles h-4 w-4</code> &middot; Size: default or lg
+    </div>
+  </div>
+
+  <!-- Tier 2 -->
+  <div class="tier-card t2">
+    <div class="tier-label">Tier 2</div>
+    <div class="tier-name">Dialog Action</div>
+    <div class="tier-desc">AI action buttons inside dialogs/modals that advance through an AI-powered flow (e.g., enhance steps).</div>
+    <div class="tier-examples">
+      Used for: <code>Enhance</code> <code>Enhance with Answers</code> <code>Apply Enhancement</code> <code>Next</code>
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <span class="btn-mock btn-primary">
+        <svg class="sparkles" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Enhance
+      </span>
+      <span class="btn-mock btn-primary">
+        <svg class="sparkles" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Apply Enhancement
+      </span>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--zinc-500)">
+      Style: <code>bg-violet-600 text-white hover:bg-violet-700</code> &middot; Icon: <code>Sparkles h-4 w-4</code> &middot; Size: default
+    </div>
+  </div>
+
+  <!-- Tier 3 -->
+  <div class="tier-card t3">
+    <div class="tier-label">Tier 3</div>
+    <div class="tier-name">Inline Trigger</div>
+    <div class="tier-desc">Buttons in toolbars that open an AI dialog or start an enhancement flow. Visually subordinate to the content they serve.</div>
+    <div class="tier-examples">
+      Used for: <code>Enhance with AI</code> toolbar buttons &middot; <code>AI Generate</code> toolbar button
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <span class="btn-mock btn-outline-sm">
+        <svg class="sparkles" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Enhance with AI
+        <span class="credit-badge">3</span>
+      </span>
+      <span class="btn-mock btn-outline-sm">
+        <svg class="sparkles" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        AI Generate
+        <span class="credit-badge">5</span>
+      </span>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--zinc-500)">
+      Style: <code>variant="outline" size="sm"</code> &middot; Icon: <code>Sparkles h-3.5 w-3.5</code> &middot; Credit badge: <code>bg-violet-600 rounded-full</code>
+    </div>
+  </div>
+
+  <!-- Tier 4 -->
+  <div class="tier-card t4">
+    <div class="tier-label">Tier 4</div>
+    <div class="tier-name">Ghost / Inline</div>
+    <div class="tier-desc">Subtle enhance buttons embedded within editors or content areas. Minimal visual footprint to avoid distracting from content.</div>
+    <div class="tier-examples">
+      Used for: Task description enhance &middot; Discussion enhance
+    </div>
+    <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+      <span class="btn-mock btn-ghost-sm">
+        <svg class="sparkles" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Enhance
+      </span>
+    </div>
+    <div style="margin-top:10px;font-size:11px;color:var(--zinc-500)">
+      Style: <code>variant="ghost" size="sm"</code> &middot; Icon: <code>Sparkles h-3 w-3</code> &middot; Label: always "Enhance" (short)
+    </div>
+  </div>
+</div>
+
+<!-- ═══ SPECIAL CASES ═══ -->
+<div class="notes">
+  <strong>Special Cases (Keep As-Is)</strong>
+  <ul>
+    <li><strong>Onboarding CTA</strong> — The card-style "Generate your first board with AI" CTA on the first-run dashboard has a unique visual treatment (large card with icon and description). This is intentional for the onboarding context and should not be standardized.</li>
+    <li><strong>Idea form toolbar</strong> — The gradient-border "Enhance with AI" button in the create/edit idea form uses a custom animated gradient border style. This unique toolbar context warrants keeping its distinctive appearance.</li>
+  </ul>
+</div>
+
+<!-- ═══ COMPLETE BUTTON INVENTORY ═══ -->
+<h2>Complete Button Inventory <span class="area-count">21 buttons across all contexts</span></h2>
+
+<!-- Tier 1 -->
+<h3>Tier 1: Primary AI Action <span class="section-badge badge-changes">4 buttons, ~2 changes</span></h3>
+<table>
+<thead><tr><th style="width:22%">Location</th><th style="width:14%">Button Label</th><th style="width:22%">Current Style</th><th style="width:8%">Tier</th><th style="width:34%">Changes Needed</th></tr></thead>
+<tbody>
+<tr>
+  <td class="file">src/components/board/ai-generate-dialog.tsx</td>
+  <td class="btn-label">Generate Board</td>
+  <td class="current-style">bg-violet-600 text-white, Sparkles h-4 w-4</td>
+  <td><span class="proposed-tier t1-text">T1</span></td>
+  <td><span class="already-correct">Already correct</span></td>
+</tr>
+<tr>
+  <td class="file">src/components/board/ai-generate-dialog.tsx</td>
+  <td class="btn-label">Apply N Tasks</td>
+  <td class="current-style">bg-violet-600 text-white, Sparkles h-4 w-4</td>
+  <td><span class="proposed-tier t1-text">T1</span></td>
+  <td><span class="already-correct">Already correct</span></td>
+</tr>
+<tr>
+  <td class="file">src/components/ideas/create-idea-dialog.tsx</td>
+  <td class="btn-label">Create &amp; Generate Board</td>
+  <td class="current-style">variant="default", Sparkles h-4 w-4, secondary positioning</td>
+  <td><span class="proposed-tier t1-text">T1</span></td>
+  <td class="changes-col"><span class="change-needed">Change needed</span><br>Add <code>bg-violet-600 hover:bg-violet-700</code> to distinguish from plain "Create Idea" button</td>
+</tr>
+<tr>
+  <td class="file">src/components/board/ai-generate-dialog.tsx</td>
+  <td class="btn-label">Generate Tasks</td>
+  <td class="current-style">bg-violet-600 text-white, Sparkles h-4 w-4</td>
+  <td><span class="proposed-tier t1-text">T1</span></td>
+  <td><span class="already-correct">Already correct</span></td>
+</tr>
+</tbody>
+</table>
+
+<!-- Tier 2 -->
+<h3>Tier 2: Dialog Action <span class="section-badge badge-changes">7 buttons, ~4 changes</span></h3>
+<table>
+<thead><tr><th style="width:22%">Location</th><th style="width:14%">Button Label</th><th style="width:22%">Current Style</th><th style="width:8%">Tier</th><th style="width:34%">Changes Needed</th></tr></thead>
+<tbody>
+<tr>
+  <td class="file">src/components/ideas/enhance-idea-dialog.tsx</td>
+  <td class="btn-label">Enhance</td>
+  <td class="current-style">variant="default", no Sparkles icon</td>
+  <td><span class="proposed-tier t2-text">T2</span></td>
+  <td class="changes-col"><span class="change-needed">Change needed</span><br>Add <code>bg-violet-600 hover:bg-violet-700</code> and prepend <code>Sparkles h-4 w-4</code></td>
+</tr>
+<tr>
+  <td class="file">src/components/ideas/enhance-idea-dialog.tsx</td>
+  <td class="btn-label">Enhance with Answers</td>
+  <td class="current-style">variant="default", no Sparkles icon</td>
+  <td><span class="proposed-tier t2-text">T2</span></td>
+  <td class="changes-col"><span class="change-needed">Change needed</span><br>Add <code>bg-violet-600 hover:bg-violet-700</code> and prepend <code>Sparkles h-4 w-4</code></td>
+</tr>
+<tr>
+  <td class="file">src/components/ideas/enhance-idea-dialog.tsx</td>
+  <td class="btn-label">Apply Enhancement</td>
+  <td class="current-style">variant="default", no Sparkles icon</td>
+  <td><span class="proposed-tier t2-text">T2</span></td>
+  <td class="changes-col"><span class="change-needed">Change needed</span><br>Add <code>bg-violet-600 hover:bg-violet-700</code> and prepend <code>Sparkles h-4 w-4</code></td>
+</tr>
+<tr>
+  <td class="file">src/components/ideas/enhance-idea-dialog.tsx</td>
+  <td class="btn-label">Next</td>
+  <td class="current-style">variant="default", ArrowRight icon</td>
+  <td><span class="proposed-tier t2-text">T2</span></td>
+  <td class="changes-col"><span class="change-needed">Change needed</span><br>Add <code>bg-violet-600 hover:bg-violet-700</code>, keep ArrowRight icon (no Sparkles since this is a navigation step)</td>
+</tr>
+<tr>
+  <td class="file">src/components/board/task-enhance-dialog.tsx</td>
+  <td class="btn-label">Enhance</td>
+  <td class="current-style">bg-violet-600 text-white, Sparkles h-4 w-4</td>
+  <td><span class="proposed-tier t2-text">T2</span></td>
+  <td><span class="already-correct">Already correct</span></td>
+</tr>
+<tr>
+  <td class="file">src/components/board/task-enhance-dialog.tsx</td>
+  <td class="btn-label">Apply Enhancement</td>
+  <td class="current-style">bg-violet-600 text-white, Sparkles h-4 w-4</td>
+  <td><span class="proposed-tier t2-text">T2</span></td>
+  <td><span class="already-correct">Already correct</span></td>
+</tr>
+<tr>
+  <td class="file">src/components/ideas/idea-discussion-enhance-dialog.tsx</td>
+  <td class="btn-label">Enhance</td>
+  <td class="current-style">bg-violet-600 text-white, Sparkles h-4 w-4</td>
+  <td><span class="proposed-tier t2-text">T2</span></td>
+  <td><span class="already-correct">Already correct</span></td>
+</tr>
+</tbody>
+</table>
+
+<!-- Tier 3 -->
+<h3>Tier 3: Inline Trigger <span class="section-badge badge-changes">5 buttons, ~3 changes</span></h3>
+<table>
+<thead><tr><th style="width:22%">Location</th><th style="width:14%">Button Label</th><th style="width:22%">Current Style</th><th style="width:8%">Tier</th><th style="width:34%">Changes Needed</th></tr></thead>
+<tbody>
+<tr>
+  <td class="file">src/components/board/board-page-tabs.tsx</td>
+  <td class="btn-label">AI Generate</td>
+  <td class="current-style">variant="outline" size="sm", Sparkles h-3.5 w-3.5, credit badge</td>
+  <td><span class="proposed-tier t3-text">T3</span></td>
+  <td><span class="already-correct">Already correct</span></td>
+</tr>
+<tr>
+  <td class="file">src/components/board/task-edit-dialog.tsx</td>
+  <td class="btn-label">Enhance with AI</td>
+  <td class="current-style">variant="outline" size="sm", Sparkles h-3.5 w-3.5, credit badge separate style</td>
+  <td><span class="proposed-tier t3-text">T3</span></td>
+  <td class="changes-col"><span class="change-needed">Change needed</span><br>Unify credit badge to <code>bg-violet-600 text-white rounded-full px-1.5 text-[10px]</code></td>
+</tr>
+<tr>
+  <td class="file">src/components/ideas/idea-description-section.tsx</td>
+  <td class="btn-label">Enhance with AI</td>
+  <td class="current-style">variant="outline" size="sm", Sparkles h-3.5 w-3.5, credit badge</td>
+  <td><span class="proposed-tier t3-text">T3</span></td>
+  <td class="changes-col"><span class="change-needed">Change needed</span><br>Unify credit badge to <code>bg-violet-600 text-white rounded-full px-1.5 text-[10px]</code></td>
+</tr>
+<tr>
+  <td class="file">src/components/ideas/idea-discussion-section.tsx</td>
+  <td class="btn-label">Enhance with AI</td>
+  <td class="current-style">variant="outline" size="sm", Sparkles icon, credit badge</td>
+  <td><span class="proposed-tier t3-text">T3</span></td>
+  <td class="changes-col"><span class="change-needed">Change needed</span><br>Unify credit badge to <code>bg-violet-600 text-white rounded-full px-1.5 text-[10px]</code></td>
+</tr>
+<tr>
+  <td class="file">src/components/ideas/idea-agents-section.tsx</td>
+  <td class="btn-label">Enhance with AI</td>
+  <td class="current-style">variant="outline" size="sm", Sparkles h-3.5 w-3.5</td>
+  <td><span class="proposed-tier t3-text">T3</span></td>
+  <td><span class="already-correct">Already correct</span></td>
+</tr>
+</tbody>
+</table>
+
+<!-- Tier 4 -->
+<h3>Tier 4: Ghost / Inline <span class="section-badge badge-changes">3 buttons, ~2 changes</span></h3>
+<table>
+<thead><tr><th style="width:22%">Location</th><th style="width:14%">Button Label</th><th style="width:22%">Current Style</th><th style="width:8%">Tier</th><th style="width:34%">Changes Needed</th></tr></thead>
+<tbody>
+<tr>
+  <td class="file">src/components/board/task-edit-dialog.tsx</td>
+  <td class="btn-label">Enhance (description)</td>
+  <td class="current-style">variant="ghost" size="sm", Sparkles h-3 w-3, muted text</td>
+  <td><span class="proposed-tier t4-text">T4</span></td>
+  <td><span class="already-correct">Already correct</span></td>
+</tr>
+<tr>
+  <td class="file">src/components/ideas/idea-discussion-section.tsx</td>
+  <td class="btn-label">Enhance (inline reply)</td>
+  <td class="current-style">variant="ghost" size="sm", Sparkles h-3.5 w-3.5, text-muted-foreground</td>
+  <td><span class="proposed-tier t4-text">T4</span></td>
+  <td class="changes-col"><span class="change-needed">Change needed</span><br>Reduce icon to <code>h-3 w-3</code> for consistency. Label should be just "Enhance"</td>
+</tr>
+<tr>
+  <td class="file">src/components/ideas/idea-description-section.tsx</td>
+  <td class="btn-label">Enhance (inline edit)</td>
+  <td class="current-style">variant="ghost" size="sm", Sparkles h-3.5 w-3.5, muted text</td>
+  <td><span class="proposed-tier t4-text">T4</span></td>
+  <td class="changes-col"><span class="change-needed">Change needed</span><br>Reduce icon to <code>h-3 w-3</code> for consistency</td>
+</tr>
+</tbody>
+</table>
+
+<!-- Special Cases -->
+<h3>Special Cases <span class="section-badge badge-correct">2 buttons, keep as-is</span></h3>
+<table>
+<thead><tr><th style="width:22%">Location</th><th style="width:14%">Button Label</th><th style="width:22%">Current Style</th><th style="width:8%">Tier</th><th style="width:34%">Changes Needed</th></tr></thead>
+<tbody>
+<tr>
+  <td class="file">src/components/dashboard/first-run-dashboard.tsx</td>
+  <td class="btn-label">Generate your first board with AI</td>
+  <td class="current-style">Custom card CTA with icon, title, description, and arrow. Unique onboarding treatment</td>
+  <td><span class="proposed-tier special-text">Special</span></td>
+  <td><span class="keep-as-is">Keep as-is</span> -- Unique onboarding context, not a standard button</td>
+</tr>
+<tr>
+  <td class="file">src/components/ideas/create-idea-form.tsx</td>
+  <td class="btn-label">Enhance with AI (toolbar)</td>
+  <td class="current-style">Custom gradient-border animated button in form toolbar. Distinctive visual treatment</td>
+  <td><span class="proposed-tier special-text">Special</span></td>
+  <td><span class="keep-as-is">Keep as-is</span> -- Unique toolbar gradient style, intentionally eye-catching</td>
+</tr>
+</tbody>
+</table>
+
+<!-- ═══ BEFORE / AFTER EXAMPLES ═══ -->
+<h2>Before / After Examples <span class="area-count">Key changes visualized</span></h2>
+
+<!-- Example 1: Enhance Idea Dialog -->
+<h3>Enhance Idea Dialog (enhance-idea-dialog.tsx)</h3>
+<div class="comparison">
+  <div class="comp-box">
+    <div class="comp-label">Before</div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <span class="btn-mock" style="background:var(--zinc-100);color:var(--zinc-950);padding:8px 16px;border-radius:6px">Enhance</span>
+      <span class="btn-mock" style="background:var(--zinc-100);color:var(--zinc-950);padding:8px 16px;border-radius:6px">Apply Enhancement</span>
+    </div>
+    <div style="font-size:10px;color:var(--zinc-500);margin-top:8px">Plain default buttons, no AI visual signal</div>
+  </div>
+  <div class="comp-arrow">&rarr;</div>
+  <div class="comp-box">
+    <div class="comp-label">After</div>
+    <div style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap">
+      <span class="btn-mock btn-primary">
+        <svg class="sparkles" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Enhance
+      </span>
+      <span class="btn-mock btn-primary">
+        <svg class="sparkles" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Apply Enhancement
+      </span>
+    </div>
+    <div style="font-size:10px;color:var(--zinc-500);margin-top:8px">Violet AI buttons with Sparkles icon, clear AI intent</div>
+  </div>
+</div>
+
+<!-- Example 2: Credit badge unification -->
+<h3>Credit Badge Unification (across all Tier 3 buttons)</h3>
+<div class="comparison">
+  <div class="comp-box">
+    <div class="comp-label">Before (inconsistent)</div>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;align-items:center">
+      <span class="btn-mock btn-outline-sm">
+        <svg class="sparkles" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Enhance
+        <span style="background:var(--zinc-700);color:var(--zinc-300);border-radius:999px;padding:1px 5px;font-size:10px">3</span>
+      </span>
+      <span class="btn-mock btn-outline-sm">
+        <svg class="sparkles" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        AI Generate
+        <span style="background:var(--emerald-500);color:white;border-radius:4px;padding:1px 4px;font-size:9px">5</span>
+      </span>
+    </div>
+    <div style="font-size:10px;color:var(--zinc-500);margin-top:8px">Mixed badge colors, shapes, and sizes</div>
+  </div>
+  <div class="comp-arrow">&rarr;</div>
+  <div class="comp-box">
+    <div class="comp-label">After (unified)</div>
+    <div style="display:flex;gap:12px;justify-content:center;flex-wrap:wrap;align-items:center">
+      <span class="btn-mock btn-outline-sm">
+        <svg class="sparkles" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Enhance
+        <span class="credit-badge">3</span>
+      </span>
+      <span class="btn-mock btn-outline-sm">
+        <svg class="sparkles" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        AI Generate
+        <span class="credit-badge">5</span>
+      </span>
+    </div>
+    <div style="font-size:10px;color:var(--zinc-500);margin-top:8px">Consistent violet pill badges everywhere</div>
+  </div>
+</div>
+
+<!-- Example 3: Ghost inline -->
+<h3>Ghost Inline Buttons (Tier 4 icon size consistency)</h3>
+<div class="comparison">
+  <div class="comp-box">
+    <div class="comp-label">Before</div>
+    <div style="display:flex;gap:12px;justify-content:center;align-items:center">
+      <span class="btn-mock btn-ghost-sm">
+        <svg class="sparkles" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Enhance with AI
+      </span>
+    </div>
+    <div style="font-size:10px;color:var(--zinc-500);margin-top:8px">h-3.5 w-3.5 icon, longer label</div>
+  </div>
+  <div class="comp-arrow">&rarr;</div>
+  <div class="comp-box">
+    <div class="comp-label">After</div>
+    <div style="display:flex;gap:12px;justify-content:center;align-items:center">
+      <span class="btn-mock btn-ghost-sm">
+        <svg class="sparkles" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4"/><path d="M22 5h-4"/></svg>
+        Enhance
+      </span>
+    </div>
+    <div style="font-size:10px;color:var(--zinc-500);margin-top:8px">h-3 w-3 icon, short "Enhance" label</div>
+  </div>
+</div>
+
+<!-- ═══ IMPLEMENTATION SUMMARY ═══ -->
+<h2>Implementation Summary <span class="area-count">Files to modify</span></h2>
+
+<div class="notes">
+  <strong>Files requiring changes (6 files, ~12 button updates):</strong>
+  <ul>
+    <li><code>src/components/ideas/enhance-idea-dialog.tsx</code> -- 4 buttons: add violet background + Sparkles icons to Enhance, Enhance with Answers, Apply Enhancement, Next</li>
+    <li><code>src/components/ideas/create-idea-dialog.tsx</code> -- 1 button: add violet background to "Create &amp; Generate Board"</li>
+    <li><code>src/components/board/task-edit-dialog.tsx</code> -- 1 button: unify credit badge style on Tier 3 trigger</li>
+    <li><code>src/components/ideas/idea-description-section.tsx</code> -- 2 buttons: unify credit badge (T3), reduce icon size (T4)</li>
+    <li><code>src/components/ideas/idea-discussion-section.tsx</code> -- 2 buttons: unify credit badge (T3), reduce icon size + shorten label (T4)</li>
+    <li><code>src/components/ideas/idea-agents-section.tsx</code> -- 0 changes (already correct, listed for completeness)</li>
+  </ul>
+</div>
+
+<div class="notes">
+  <strong>Design principles behind the tier system:</strong>
+  <ul>
+    <li><strong>Visual hierarchy</strong> -- Tier 1/2 (violet solid) commands attention for primary actions. Tier 3 (outline) is present but subordinate. Tier 4 (ghost) is discoverable without competing for attention.</li>
+    <li><strong>Consistent AI signal</strong> -- Every AI button uses the Sparkles icon (only size varies by tier). Violet is the universal "AI" color throughout the app.</li>
+    <li><strong>Credit badge uniformity</strong> -- All credit indicators use the same <code>bg-violet-600 text-white rounded-full px-1.5 text-[10px]</code> pill format regardless of context.</li>
+    <li><strong>No over-standardization</strong> -- The two special cases (onboarding CTA and gradient toolbar button) are intentionally excluded because their unique visual treatments serve their specific contexts well.</li>
+  </ul>
+</div>
+
+</div>
+</body>
+</html>

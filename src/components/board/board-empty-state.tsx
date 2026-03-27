@@ -54,7 +54,7 @@ export function BoardEmptyState({
           <div className="mt-6">
             <Button
               size="lg"
-              className="gap-2"
+              className="gap-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:brightness-110"
               onClick={onAiGenerate}
             >
               <Sparkles className="h-4 w-4" />

@@ -458,7 +458,7 @@ export function EnhanceIdeaDialog({
                 <Button
                   onClick={handleNext}
                   disabled={!prompt.trim()}
-                  className="w-full gap-2"
+                  className="w-full gap-2 bg-violet-600 text-white hover:bg-violet-700"
                 >
                   {askQuestions ? (
                     <>
@@ -520,7 +520,7 @@ export function EnhanceIdeaDialog({
                   <Button
                     onClick={handleEnhanceWithAnswers}
                     disabled={busy}
-                    className="min-w-[140px] flex-1 gap-2"
+                    className="min-w-[140px] flex-1 gap-2 bg-violet-600 text-white hover:bg-violet-700"
                   >
                     <Sparkles className="h-4 w-4" />
                     Enhance with Answers

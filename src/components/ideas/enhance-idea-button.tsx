@@ -93,15 +93,15 @@ export function EnhanceIdeaButton({
           <TooltipTrigger asChild>
             <span tabIndex={disabled ? 0 : undefined}>
               <Button
-                variant="outline"
+                variant="ghost"
                 size="sm"
-                className={`h-8 gap-1.5 text-xs ${disabled ? "pointer-events-none opacity-50" : ""}`}
+                className={`h-8 gap-1.5 rounded-md border border-violet-500/15 bg-violet-500/10 text-xs text-violet-400 hover:bg-violet-500/20 hover:border-violet-500/30 ${disabled ? "pointer-events-none opacity-50" : ""}`}
                 onClick={() => !disabled && setOpen(true)}
               >
                 <Sparkles className="h-3.5 w-3.5" />
                 Enhance with AI
                 {!hasByokKey && creditsRemaining > 0 && (
-                  <span className="rounded-full bg-primary px-1.5 text-[10px] leading-none text-primary-foreground">
+                  <span className="rounded-full bg-violet-600 px-1.5 text-[10px] leading-none text-white">
                     {creditsRemaining}
                   </span>
                 )}

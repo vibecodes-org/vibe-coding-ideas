@@ -455,7 +455,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <Link href={`/ideas/${idea.id}/board`}>
             {taskCount === 0 ? (
-              <Button size="sm" className="gap-2 bg-violet-600 text-white hover:bg-violet-500">
+              <Button size="sm" className="gap-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:brightness-110">
                 <Sparkles className="h-4 w-4" />
                 Generate Board with AI &rarr;
               </Button>

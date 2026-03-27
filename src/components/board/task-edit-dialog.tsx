@@ -363,7 +363,7 @@ export function TaskEditDialog({
                     type="button"
                     variant="ghost"
                     size="sm"
-                    className="h-6 gap-1 px-2 text-xs text-muted-foreground"
+                    className="h-6 gap-1 rounded-full bg-violet-500/[0.06] px-3 text-xs text-violet-400 hover:bg-violet-500/[0.12]"
                     onClick={handleEnhanceDescription}
                     disabled={enhancing}
                     title={hasByokKey ? "Enhance with AI — using your API key" : `Enhance with AI — ${starterCredits} free credit${starterCredits !== 1 ? "s" : ""} remaining`}

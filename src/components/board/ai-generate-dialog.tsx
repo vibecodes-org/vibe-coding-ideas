@@ -763,7 +763,7 @@ export function AiGenerateDialog({
             <Button
               onClick={handleGenerate}
               disabled={!prompt.trim()}
-              className="w-full gap-2"
+              className="w-full gap-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:brightness-110"
             >
               <Sparkles className="h-4 w-4" />
               Generate
@@ -811,7 +811,7 @@ export function AiGenerateDialog({
                 <Button
                   onClick={handleApplySelected}
                   disabled={selectedIndices.size === 0}
-                  className="gap-2"
+                  className="gap-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:brightness-110"
                 >
                   <Sparkles className="h-4 w-4" />
                   Apply {selectedIndices.size} Task{selectedIndices.size !== 1 ? "s" : ""}

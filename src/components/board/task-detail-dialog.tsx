@@ -682,7 +682,7 @@ export function TaskDetailDialog({
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-6 gap-1 px-2 text-xs text-muted-foreground"
+                        className="h-6 gap-1 rounded-full bg-violet-500/[0.06] px-3 text-xs text-violet-400 hover:bg-violet-500/[0.12]"
                         onMouseDown={() => { skipBlurRef.current = true; }}
                         onClick={handleEnhanceDescription}
                         disabled={enhancing}

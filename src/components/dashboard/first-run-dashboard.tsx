@@ -242,7 +242,7 @@ export function FirstRunDashboard({
                   </p>
                   <Link
                     href={`/ideas/${firstIdea.id}/board`}
-                    className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-violet-600 px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:bg-violet-500"
+                    className="mt-2 inline-flex items-center gap-1.5 rounded-md bg-gradient-to-r from-violet-600 to-purple-600 px-3 py-1.5 text-xs font-semibold text-white transition-all hover:brightness-110"
                   >
                     <Sparkles className="h-3 w-3" />
                     Generate Board with AI

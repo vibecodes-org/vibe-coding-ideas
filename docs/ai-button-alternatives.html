@@ -1,0 +1,321 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Button Design Exploration — VibeCodes</title>
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --z50:#fafafa;--z100:#f4f4f5;--z200:#e4e4e7;--z300:#d4d4d8;--z400:#a1a1aa;
+    --z500:#71717a;--z600:#52525b;--z700:#3f3f46;--z800:#27272a;--z900:#18181b;--z950:#09090b;
+    /* Violet */
+    --v300:#c4b5fd;--v400:#a78bfa;--v500:#8b5cf6;--v600:#7c3aed;--v700:#6d28d9;
+    /* Indigo */
+    --i300:#a5b4fc;--i400:#818cf8;--i500:#6366f1;--i600:#4f46e5;--i700:#4338ca;
+    /* Fuchsia */
+    --f300:#f0abfc;--f400:#e879f9;--f500:#d946ef;--f600:#c026d3;--f700:#a21caf;
+    /* Purple (for gradients) */
+    --p500:#a855f7;--p600:#9333ea;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Instrument Sans',system-ui,sans-serif;background:var(--z950);color:var(--z50);line-height:1.5;-webkit-font-smoothing:antialiased}
+  code{font-family:'JetBrains Mono',monospace;font-size:0.8em}
+
+  .page{max-width:1200px;margin:0 auto;padding:48px 28px 80px}
+
+  /* Header */
+  .hdr{margin-bottom:48px;border-bottom:1px solid var(--z800);padding-bottom:32px}
+  .hdr h1{font-size:28px;font-weight:700;letter-spacing:-0.5px;margin-bottom:6px}
+  .hdr h1 em{font-style:normal;background:linear-gradient(135deg,var(--v400),var(--f400));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+  .hdr p{color:var(--z400);font-size:14px;max-width:640px}
+
+  /* Colour option tabs */
+  .tabs{display:flex;gap:8px;margin-bottom:36px;position:sticky;top:0;z-index:10;background:var(--z950);padding:12px 0;border-bottom:1px solid var(--z800)}
+  .tab{padding:8px 20px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;border:1px solid var(--z700);background:var(--z900);color:var(--z400);transition:all .2s}
+  .tab:hover{color:var(--z200);border-color:var(--z600)}
+  .tab.active{color:#fff;border-color:transparent}
+  .tab[data-c="violet"].active{background:var(--v600)}
+  .tab[data-c="indigo"].active{background:var(--i600)}
+  .tab[data-c="fuchsia"].active{background:var(--f600)}
+  .tab .dot{display:inline-block;width:10px;height:10px;border-radius:50%;margin-right:8px;vertical-align:middle}
+
+  .colour-panel{display:none}
+  .colour-panel.active{display:block}
+
+  /* Tier section */
+  .tier{margin-bottom:48px}
+  .tier-hdr{display:flex;align-items:baseline;gap:12px;margin-bottom:6px}
+  .tier-hdr h2{font-size:18px;font-weight:700}
+  .tier-hdr .badge{font-size:10px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:1.5px;padding:3px 10px;border-radius:4px;background:var(--z800);color:var(--z400)}
+  .tier-desc{color:var(--z500);font-size:13px;margin-bottom:20px}
+  .variants{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:16px}
+  .variant-card{background:var(--z900);border:1px solid var(--z800);border-radius:12px;padding:24px;position:relative;overflow:hidden}
+  .variant-card::before{content:'';position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,var(--z700),transparent)}
+  .variant-label{font-size:11px;font-family:'JetBrains Mono',monospace;text-transform:uppercase;letter-spacing:1.5px;color:var(--z500);margin-bottom:16px}
+  .variant-card .btn-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:12px}
+  .variant-card .spec{font-size:11px;color:var(--z600);font-family:'JetBrains Mono',monospace;line-height:1.7}
+
+  /* Sparkles SVG inline */
+  .spark{display:inline-block;vertical-align:middle;flex-shrink:0}
+
+  /* ══════ Button base ══════ */
+  .ai-btn{display:inline-flex;align-items:center;gap:8px;border-radius:8px;font-weight:600;cursor:pointer;border:none;transition:all .2s ease;font-family:inherit;white-space:nowrap;position:relative}
+  .ai-btn:active{transform:scale(0.97)}
+
+  /* Sizes */
+  .ai-btn.lg{padding:10px 20px;font-size:14px}
+  .ai-btn.md{padding:8px 16px;font-size:13px}
+  .ai-btn.sm{padding:5px 12px;font-size:12px}
+  .ai-btn.xs{padding:3px 8px;font-size:11px}
+
+  /* ── Tier 1 / Tier 2: Solid ── */
+  .ai-btn.solid-v{background:var(--v600);color:#fff}.ai-btn.solid-v:hover{background:var(--v700);box-shadow:0 0 20px rgba(124,58,237,0.2)}
+  .ai-btn.solid-i{background:var(--i600);color:#fff}.ai-btn.solid-i:hover{background:var(--i700);box-shadow:0 0 20px rgba(79,70,229,0.2)}
+  .ai-btn.solid-f{background:var(--f600);color:#fff}.ai-btn.solid-f:hover{background:var(--f700);box-shadow:0 0 20px rgba(192,38,211,0.2)}
+
+  /* ── Gradient ── */
+  .ai-btn.grad-v{background:linear-gradient(135deg,var(--v600),var(--p600));color:#fff}.ai-btn.grad-v:hover{box-shadow:0 0 24px rgba(124,58,237,0.25);filter:brightness(1.08)}
+  .ai-btn.grad-i{background:linear-gradient(135deg,var(--i600),var(--v500));color:#fff}.ai-btn.grad-i:hover{box-shadow:0 0 24px rgba(79,70,229,0.25);filter:brightness(1.08)}
+  .ai-btn.grad-f{background:linear-gradient(135deg,var(--f600),var(--p500));color:#fff}.ai-btn.grad-f:hover{box-shadow:0 0 24px rgba(192,38,211,0.25);filter:brightness(1.08)}
+
+  /* ── Gradient + Glow ── */
+  .ai-btn.glow-v{background:linear-gradient(135deg,var(--v600),var(--p600));color:#fff;box-shadow:0 0 20px rgba(124,58,237,0.3),0 0 40px rgba(124,58,237,0.1)}.ai-btn.glow-v:hover{box-shadow:0 0 28px rgba(124,58,237,0.45),0 0 56px rgba(124,58,237,0.15);filter:brightness(1.1)}
+  .ai-btn.glow-i{background:linear-gradient(135deg,var(--i600),var(--v500));color:#fff;box-shadow:0 0 20px rgba(79,70,229,0.3),0 0 40px rgba(79,70,229,0.1)}.ai-btn.glow-i:hover{box-shadow:0 0 28px rgba(79,70,229,0.45),0 0 56px rgba(79,70,229,0.15);filter:brightness(1.1)}
+  .ai-btn.glow-f{background:linear-gradient(135deg,var(--f600),var(--p500));color:#fff;box-shadow:0 0 20px rgba(192,38,211,0.3),0 0 40px rgba(192,38,211,0.1)}.ai-btn.glow-f:hover{box-shadow:0 0 28px rgba(192,38,211,0.45),0 0 56px rgba(192,38,211,0.15);filter:brightness(1.1)}
+
+  /* ── Tier 2 Alt: Outlined ── */
+  .ai-btn.outline-v{background:transparent;border:1px solid rgba(139,92,246,0.3);color:var(--v400)}.ai-btn.outline-v:hover{background:rgba(139,92,246,0.1);border-color:rgba(139,92,246,0.5)}
+  .ai-btn.outline-i{background:transparent;border:1px solid rgba(99,102,241,0.3);color:var(--i400)}.ai-btn.outline-i:hover{background:rgba(99,102,241,0.1);border-color:rgba(99,102,241,0.5)}
+  .ai-btn.outline-f{background:transparent;border:1px solid rgba(217,70,239,0.3);color:var(--f400)}.ai-btn.outline-f:hover{background:rgba(217,70,239,0.1);border-color:rgba(217,70,239,0.5)}
+
+  /* ── Tier 3: Outline with muted text ── */
+  .ai-btn.trigger-v{background:transparent;border:1px solid var(--z700);color:var(--z400)}.ai-btn.trigger-v:hover{border-color:rgba(139,92,246,0.4);color:var(--z200)}.ai-btn.trigger-v .spark{color:var(--v400)}
+  .ai-btn.trigger-i{background:transparent;border:1px solid var(--z700);color:var(--z400)}.ai-btn.trigger-i:hover{border-color:rgba(99,102,241,0.4);color:var(--z200)}.ai-btn.trigger-i .spark{color:var(--i400)}
+  .ai-btn.trigger-f{background:transparent;border:1px solid var(--z700);color:var(--z400)}.ai-btn.trigger-f:hover{border-color:rgba(217,70,239,0.4);color:var(--z200)}.ai-btn.trigger-f .spark{color:var(--f400)}
+
+  /* ── Tier 3 Alt: Subtle fill ── */
+  .ai-btn.subtle-v{background:rgba(139,92,246,0.08);border:1px solid rgba(139,92,246,0.15);color:var(--v400)}.ai-btn.subtle-v:hover{background:rgba(139,92,246,0.14);border-color:rgba(139,92,246,0.3)}
+  .ai-btn.subtle-i{background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.15);color:var(--i400)}.ai-btn.subtle-i:hover{background:rgba(99,102,241,0.14);border-color:rgba(99,102,241,0.3)}
+  .ai-btn.subtle-f{background:rgba(217,70,239,0.08);border:1px solid rgba(217,70,239,0.15);color:var(--f400)}.ai-btn.subtle-f:hover{background:rgba(217,70,239,0.14);border-color:rgba(217,70,239,0.3)}
+
+  /* ── Tier 4: Ghost ── */
+  .ai-btn.ghost{background:transparent;border:none;color:var(--z500);padding:3px 8px}.ai-btn.ghost:hover{color:var(--z300)}
+  .ai-btn.ghost.ghost-v .spark{color:var(--v400)}
+  .ai-btn.ghost.ghost-i .spark{color:var(--i400)}
+  .ai-btn.ghost.ghost-f .spark{color:var(--f400)}
+
+  /* ── Tier 4 Alt: Subtle pill ── */
+  .ai-btn.pill-v{background:rgba(139,92,246,0.06);border:none;color:var(--v400);border-radius:999px;padding:4px 12px}.ai-btn.pill-v:hover{background:rgba(139,92,246,0.12)}
+  .ai-btn.pill-i{background:rgba(99,102,241,0.06);border:none;color:var(--i400);border-radius:999px;padding:4px 12px}.ai-btn.pill-i:hover{background:rgba(99,102,241,0.12)}
+  .ai-btn.pill-f{background:rgba(217,70,239,0.06);border:none;color:var(--f400);border-radius:999px;padding:4px 12px}.ai-btn.pill-f:hover{background:rgba(217,70,239,0.12)}
+
+  /* Credit badge */
+  .credit{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;border-radius:999px;font-size:10px;font-weight:700;font-family:'JetBrains Mono',monospace;padding:0 5px;margin-left:2px}
+  .credit-v{background:var(--v600);color:#fff}
+  .credit-i{background:var(--i600);color:#fff}
+  .credit-f{background:var(--f600);color:#fff}
+
+  @media(max-width:768px){.variants{grid-template-columns:1fr}.tabs{flex-wrap:wrap}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<div class="hdr">
+  <h1><em>AI Button</em> Design Exploration</h1>
+  <p>3 colour palettes, 4 tiers, multiple design variants per tier. Click the tabs to compare. Every button below is interactive — hover to see the state change.</p>
+</div>
+
+<!-- Tabs -->
+<div class="tabs">
+  <div class="tab active" data-c="violet" onclick="switchColour('violet')"><span class="dot" style="background:var(--v500)"></span>Violet</div>
+  <div class="tab" data-c="indigo" onclick="switchColour('indigo')"><span class="dot" style="background:var(--i500)"></span>Indigo</div>
+  <div class="tab" data-c="fuchsia" onclick="switchColour('fuchsia')"><span class="dot" style="background:var(--f500)"></span>Fuchsia</div>
+</div>
+
+<!-- ═══════════ VIOLET ═══════════ -->
+<div class="colour-panel active" id="panel-violet">
+
+  <!-- Tier 1 -->
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 1 — Primary AI Action</h2><span class="badge">Generate / Apply</span></div>
+    <p class="tier-desc">High-impact buttons for generating boards, tasks, or applying AI results. Largest, most prominent.</p>
+    <div class="variants">
+      <div class="variant-card">
+        <div class="variant-label">Design 1 — Solid Fill</div>
+        <div class="btn-row">
+          <button class="ai-btn lg solid-v"><svg class="spark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Generate Board with AI</button>
+        </div>
+        <div class="spec">bg-violet-600 hover:bg-violet-700<br>+ subtle shadow on hover</div>
+      </div>
+      <div class="variant-card">
+        <div class="variant-label">Design 2 — Gradient Fill</div>
+        <div class="btn-row">
+          <button class="ai-btn lg grad-v"><svg class="spark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Generate Board with AI</button>
+        </div>
+        <div class="spec">from-violet-600 to-purple-600<br>brightness(1.08) on hover</div>
+      </div>
+      <div class="variant-card">
+        <div class="variant-label">Design 3 — Gradient + Glow</div>
+        <div class="btn-row">
+          <button class="ai-btn lg glow-v"><svg class="spark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Generate Board with AI</button>
+        </div>
+        <div class="spec">gradient + box-shadow glow<br>intensifies on hover</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tier 2 -->
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 2 — Dialog Action</h2><span class="badge">Enhance / Apply</span></div>
+    <p class="tier-desc">Action buttons inside AI dialogs. Default size, secondary prominence.</p>
+    <div class="variants">
+      <div class="variant-card">
+        <div class="variant-label">Design 1 — Solid Fill</div>
+        <div class="btn-row">
+          <button class="ai-btn md solid-v"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with Answers</button>
+          <button class="ai-btn md solid-v"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Apply Enhancement</button>
+        </div>
+        <div class="spec">Same as Tier 1 solid, md size</div>
+      </div>
+      <div class="variant-card">
+        <div class="variant-label">Design 2 — Outlined</div>
+        <div class="btn-row">
+          <button class="ai-btn md outline-v"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with Answers</button>
+          <button class="ai-btn md outline-v"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Apply Enhancement</button>
+        </div>
+        <div class="spec">border-violet-500/30 text-violet-400<br>fills on hover</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tier 3 -->
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 3 — Inline Trigger</h2><span class="badge">Toolbar</span></div>
+    <p class="tier-desc">Small buttons in toolbars that open AI dialogs. Subtle, with optional credit badge.</p>
+    <div class="variants">
+      <div class="variant-card">
+        <div class="variant-label">Design 1 — Outline + Coloured Icon</div>
+        <div class="btn-row">
+          <button class="ai-btn sm trigger-v"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>AI Generate<span class="credit credit-v">3</span></button>
+          <button class="ai-btn sm trigger-v"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with AI<span class="credit credit-v">5</span></button>
+        </div>
+        <div class="spec">border-zinc-700, violet icon<br>credit badge: bg-violet-600 circle</div>
+      </div>
+      <div class="variant-card">
+        <div class="variant-label">Design 2 — Subtle Fill</div>
+        <div class="btn-row">
+          <button class="ai-btn sm subtle-v"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>AI Generate<span class="credit credit-v">3</span></button>
+          <button class="ai-btn sm subtle-v"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with AI<span class="credit credit-v">5</span></button>
+        </div>
+        <div class="spec">bg-violet-500/8 border-violet-500/15<br>all text in violet-400</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Tier 4 -->
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 4 — Ghost / Inline</h2><span class="badge">Editor</span></div>
+    <p class="tier-desc">Minimal buttons inside text editors. Nearly invisible until hovered.</p>
+    <div class="variants">
+      <div class="variant-card">
+        <div class="variant-label">Design 1 — Ghost (icon coloured)</div>
+        <div class="btn-row" style="background:var(--z800);padding:12px 16px;border-radius:8px;border:1px solid var(--z700)">
+          <span style="color:var(--z500);font-size:12px;margin-right:auto">Supports markdown</span>
+          <button class="ai-btn xs ghost ghost-v"><svg class="spark" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance</button>
+        </div>
+        <div class="spec">text-muted, only icon in violet<br>nearly invisible at rest</div>
+      </div>
+      <div class="variant-card">
+        <div class="variant-label">Design 2 — Subtle Pill</div>
+        <div class="btn-row" style="background:var(--z800);padding:12px 16px;border-radius:8px;border:1px solid var(--z700)">
+          <span style="color:var(--z500);font-size:12px;margin-right:auto">Supports markdown</span>
+          <button class="ai-btn xs pill-v"><svg class="spark" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance</button>
+        </div>
+        <div class="spec">bg-violet-500/6 rounded-full<br>all text in violet-400</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ INDIGO ═══════════ -->
+<div class="colour-panel" id="panel-indigo">
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 1 — Primary AI Action</h2><span class="badge">Generate / Apply</span></div>
+    <p class="tier-desc">High-impact buttons. Indigo gives a cooler, more professional tone.</p>
+    <div class="variants">
+      <div class="variant-card"><div class="variant-label">Solid Fill</div><div class="btn-row"><button class="ai-btn lg solid-i"><svg class="spark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Generate Board with AI</button></div></div>
+      <div class="variant-card"><div class="variant-label">Gradient Fill</div><div class="btn-row"><button class="ai-btn lg grad-i"><svg class="spark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Generate Board with AI</button></div></div>
+      <div class="variant-card"><div class="variant-label">Gradient + Glow</div><div class="btn-row"><button class="ai-btn lg glow-i"><svg class="spark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Generate Board with AI</button></div></div>
+    </div>
+  </div>
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 2 — Dialog Action</h2><span class="badge">Enhance / Apply</span></div>
+    <div class="variants">
+      <div class="variant-card"><div class="variant-label">Solid Fill</div><div class="btn-row"><button class="ai-btn md solid-i"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with Answers</button><button class="ai-btn md solid-i"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Apply Enhancement</button></div></div>
+      <div class="variant-card"><div class="variant-label">Outlined</div><div class="btn-row"><button class="ai-btn md outline-i"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with Answers</button><button class="ai-btn md outline-i"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Apply Enhancement</button></div></div>
+    </div>
+  </div>
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 3 — Inline Trigger</h2><span class="badge">Toolbar</span></div>
+    <div class="variants">
+      <div class="variant-card"><div class="variant-label">Outline + Coloured Icon</div><div class="btn-row"><button class="ai-btn sm trigger-i"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>AI Generate<span class="credit credit-i">3</span></button><button class="ai-btn sm trigger-i"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with AI<span class="credit credit-i">5</span></button></div></div>
+      <div class="variant-card"><div class="variant-label">Subtle Fill</div><div class="btn-row"><button class="ai-btn sm subtle-i"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>AI Generate<span class="credit credit-i">3</span></button><button class="ai-btn sm subtle-i"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with AI<span class="credit credit-i">5</span></button></div></div>
+    </div>
+  </div>
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 4 — Ghost / Inline</h2><span class="badge">Editor</span></div>
+    <div class="variants">
+      <div class="variant-card"><div class="variant-label">Ghost (icon coloured)</div><div class="btn-row" style="background:var(--z800);padding:12px 16px;border-radius:8px;border:1px solid var(--z700)"><span style="color:var(--z500);font-size:12px;margin-right:auto">Supports markdown</span><button class="ai-btn xs ghost ghost-i"><svg class="spark" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance</button></div></div>
+      <div class="variant-card"><div class="variant-label">Subtle Pill</div><div class="btn-row" style="background:var(--z800);padding:12px 16px;border-radius:8px;border:1px solid var(--z700)"><span style="color:var(--z500);font-size:12px;margin-right:auto">Supports markdown</span><button class="ai-btn xs pill-i"><svg class="spark" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance</button></div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════ FUCHSIA ═══════════ -->
+<div class="colour-panel" id="panel-fuchsia">
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 1 — Primary AI Action</h2><span class="badge">Generate / Apply</span></div>
+    <p class="tier-desc">High-impact buttons. Fuchsia is bolder and more energetic — stands out more on dark backgrounds.</p>
+    <div class="variants">
+      <div class="variant-card"><div class="variant-label">Solid Fill</div><div class="btn-row"><button class="ai-btn lg solid-f"><svg class="spark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Generate Board with AI</button></div></div>
+      <div class="variant-card"><div class="variant-label">Gradient Fill</div><div class="btn-row"><button class="ai-btn lg grad-f"><svg class="spark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Generate Board with AI</button></div></div>
+      <div class="variant-card"><div class="variant-label">Gradient + Glow</div><div class="btn-row"><button class="ai-btn lg glow-f"><svg class="spark" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Generate Board with AI</button></div></div>
+    </div>
+  </div>
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 2 — Dialog Action</h2><span class="badge">Enhance / Apply</span></div>
+    <div class="variants">
+      <div class="variant-card"><div class="variant-label">Solid Fill</div><div class="btn-row"><button class="ai-btn md solid-f"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with Answers</button><button class="ai-btn md solid-f"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Apply Enhancement</button></div></div>
+      <div class="variant-card"><div class="variant-label">Outlined</div><div class="btn-row"><button class="ai-btn md outline-f"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with Answers</button><button class="ai-btn md outline-f"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Apply Enhancement</button></div></div>
+    </div>
+  </div>
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 3 — Inline Trigger</h2><span class="badge">Toolbar</span></div>
+    <div class="variants">
+      <div class="variant-card"><div class="variant-label">Outline + Coloured Icon</div><div class="btn-row"><button class="ai-btn sm trigger-f"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>AI Generate<span class="credit credit-f">3</span></button><button class="ai-btn sm trigger-f"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with AI<span class="credit credit-f">5</span></button></div></div>
+      <div class="variant-card"><div class="variant-label">Subtle Fill</div><div class="btn-row"><button class="ai-btn sm subtle-f"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>AI Generate<span class="credit credit-f">3</span></button><button class="ai-btn sm subtle-f"><svg class="spark" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance with AI<span class="credit credit-f">5</span></button></div></div>
+    </div>
+  </div>
+  <div class="tier">
+    <div class="tier-hdr"><h2>Tier 4 — Ghost / Inline</h2><span class="badge">Editor</span></div>
+    <div class="variants">
+      <div class="variant-card"><div class="variant-label">Ghost (icon coloured)</div><div class="btn-row" style="background:var(--z800);padding:12px 16px;border-radius:8px;border:1px solid var(--z700)"><span style="color:var(--z500);font-size:12px;margin-right:auto">Supports markdown</span><button class="ai-btn xs ghost ghost-f"><svg class="spark" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance</button></div></div>
+      <div class="variant-card"><div class="variant-label">Subtle Pill</div><div class="btn-row" style="background:var(--z800);padding:12px 16px;border-radius:8px;border:1px solid var(--z700)"><span style="color:var(--z500);font-size:12px;margin-right:auto">Supports markdown</span><button class="ai-btn xs pill-f"><svg class="spark" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/></svg>Enhance</button></div></div>
+    </div>
+  </div>
+</div>
+
+</div>
+
+<script>
+function switchColour(c){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.querySelector(`.tab[data-c="${c}"]`).classList.add('active');
+  document.querySelectorAll('.colour-panel').forEach(p=>p.classList.remove('active'));
+  document.getElementById(`panel-${c}`).classList.add('active');
+}
+</script>
+</body>
+</html>

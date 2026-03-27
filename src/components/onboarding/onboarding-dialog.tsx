@@ -625,7 +625,7 @@ export function OnboardingDialog({
               </button>
 
               <Button
-                className="w-full gap-2"
+                className="w-full gap-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:brightness-110"
                 size="lg"
                 onClick={handleCreateAndGenerate}
                 disabled={creating}

@@ -155,14 +155,14 @@ export function NewDiscussionForm({
             size="sm"
             onClick={handleEnhanceBody}
             disabled={enhancing || isSubmitting}
-            className="gap-1.5 text-xs text-muted-foreground"
+            className="gap-1.5 rounded-full bg-violet-500/[0.06] px-3 text-xs text-violet-400 hover:bg-violet-500/[0.12]"
           >
             {enhancing ? (
-              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              <Loader2 className="h-3 w-3 animate-spin" />
             ) : (
-              <Sparkles className="h-3.5 w-3.5" />
+              <Sparkles className="h-3 w-3" />
             )}
-            {enhancing ? "Enhancing..." : "Enhance with AI"}
+            {enhancing ? "Enhancing..." : "Enhance"}
           </Button>
         )}
       </div>
