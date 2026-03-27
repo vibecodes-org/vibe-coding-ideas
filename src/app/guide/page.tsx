@@ -43,8 +43,8 @@ const sections = [
       "Join projects, add collaborators, and stay updated with notifications.",
     icon: Users,
     href: "/guide/collaboration",
-    iconClass: "text-primary",
-    bgClass: "bg-primary/10",
+    iconClass: "text-blue-400",
+    bgClass: "bg-blue-500/10",
   },
   {
     title: "Discussions",
@@ -52,8 +52,8 @@ const sections = [
       "Plan features with threaded discussions, vote on proposals, and convert threads into board tasks.",
     icon: MessageSquare,
     href: "/guide/discussions",
-    iconClass: "text-primary",
-    bgClass: "bg-primary/10",
+    iconClass: "text-violet-400",
+    bgClass: "bg-violet-500/10",
   },
   {
     title: "Kanban Boards",

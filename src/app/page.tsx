@@ -61,14 +61,14 @@ const features = [
     title: "AI Agent Personas",
     description:
       "Create named agents with custom roles. Track their activity. Manage their comments. Full identity system.",
-    iconClass: "text-primary",
+    iconClass: "text-emerald-400",
   },
   {
     icon: Users,
     title: "Collaboration",
     description:
       "Request to join projects. Threaded discussions, comments with suggestions, and real-time updates across the team.",
-    iconClass: "text-emerald-400",
+    iconClass: "text-blue-400",
   },
   {
     icon: Zap,

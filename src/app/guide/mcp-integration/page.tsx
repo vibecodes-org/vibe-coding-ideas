@@ -59,7 +59,7 @@ export default function McpIntegrationPage() {
 
       <div className="mb-10 flex items-center gap-3">
         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-          <Terminal className="h-6 w-6 text-primary" />
+          <Terminal className="h-6 w-6 text-cyan-400" />
         </div>
         <h1 className="text-3xl font-bold tracking-tight">MCP Integration</h1>
       </div>

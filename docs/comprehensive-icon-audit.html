@@ -1,0 +1,260 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Comprehensive Icon Audit — All 18 Changes</title>
+<style>
+  :root {
+    --zinc-50:#fafafa;--zinc-400:#a1a1aa;--zinc-500:#71717a;--zinc-600:#52525b;
+    --zinc-700:#3f3f46;--zinc-800:#27272a;--zinc-900:#18181b;--zinc-950:#09090b;
+    --amber-400:#fbbf24;--blue-400:#60a5fa;--emerald-400:#34d399;
+    --violet-400:#a78bfa;--cyan-400:#22d3ee;--red-400:#f87171;--primary:#a1a1aa;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:system-ui,-apple-system,sans-serif;background:var(--zinc-950);color:var(--zinc-50);line-height:1.6}
+  .page{max-width:1100px;margin:0 auto;padding:48px 24px}
+  h1{font-size:24px;font-weight:700;margin-bottom:4px}
+  h1 span{color:var(--emerald-400)}
+  .subtitle{color:var(--zinc-400);font-size:14px;margin-bottom:12px}
+  .count-badge{display:inline-block;background:var(--zinc-800);border:1px solid var(--zinc-700);border-radius:6px;padding:2px 10px;font-size:12px;color:var(--emerald-400);margin-bottom:32px}
+  h2{font-size:16px;font-weight:700;margin:32px 0 16px;padding-bottom:8px;border-bottom:1px solid var(--zinc-800)}
+  h2 .area-count{font-size:12px;font-weight:400;color:var(--zinc-500);margin-left:8px}
+
+  table{width:100%;border-collapse:collapse;font-size:13px;margin-bottom:24px}
+  th{text-align:left;padding:8px 12px;color:var(--zinc-400);font-size:11px;text-transform:uppercase;letter-spacing:1px;border-bottom:1px solid var(--zinc-700)}
+  td{padding:8px 12px;border-bottom:1px solid var(--zinc-800);vertical-align:top}
+  tr:hover{background:var(--zinc-900)}
+  .file{color:var(--zinc-500);font-family:monospace;font-size:11px}
+  .icon-name{font-family:monospace;font-weight:600}
+  .swatch{display:inline-block;width:12px;height:12px;border-radius:3px;vertical-align:middle;margin-right:6px}
+  .colour-class{font-family:monospace;font-size:11px}
+  .arrow{color:var(--zinc-500);margin:0 4px}
+  .change-row td{background:rgba(251,191,36,0.03)}
+  .correct-row td{opacity:0.5}
+  .correct-row:hover td{opacity:1}
+
+  .legend{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:32px;padding:16px;background:var(--zinc-900);border:1px solid var(--zinc-800);border-radius:10px}
+  .legend-item{display:flex;align-items:center;gap:6px;font-size:12px}
+  .legend-swatch{width:14px;height:14px;border-radius:4px}
+
+  @media(max-width:768px){table{font-size:11px}td,th{padding:6px 8px}}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1><span>Comprehensive Icon Audit</span> — Design Proposal</h1>
+<p class="subtitle">Every icon on every page. 18 changes needed, ~150+ confirmed correct.</p>
+<span class="count-badge">18 changes across 14 files</span>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--amber-400)"></div>Ideas / Workflows / Activity</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--blue-400)"></div>Board / Tasks / Collaboration</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--emerald-400)"></div>Agents</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--violet-400)"></div>AI / Discussions / Admin</div>
+  <div class="legend-item"><div class="legend-swatch" style="background:var(--cyan-400)"></div>MCP / Guide</div>
+</div>
+
+<!-- ═══ LANDING PAGE ═══ -->
+<h2>Landing Page <span class="area-count">2 changes</span></h2>
+<table>
+<thead><tr><th>File</th><th>Icon</th><th>Context</th><th>Before</th><th></th><th>After</th></tr></thead>
+<tbody>
+<tr class="change-row">
+  <td class="file">src/app/page.tsx</td>
+  <td class="icon-name">Bot</td>
+  <td>Feature card "AI Agent Personas"</td>
+  <td><span class="swatch" style="background:var(--primary)"></span><span class="colour-class">text-primary</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--emerald-400)"></span><span class="colour-class">text-emerald-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">src/app/page.tsx</td>
+  <td class="icon-name">Users</td>
+  <td>Feature card "Collaboration"</td>
+  <td><span class="swatch" style="background:var(--emerald-400)"></span><span class="colour-class">text-emerald-400</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--blue-400)"></span><span class="colour-class">text-blue-400</span></td>
+</tr>
+</tbody>
+</table>
+
+<!-- ═══ GUIDE INDEX ═══ -->
+<h2>Guide Index <span class="area-count">2 changes</span></h2>
+<table>
+<thead><tr><th>File</th><th>Icon</th><th>Context</th><th>Before</th><th></th><th>After</th></tr></thead>
+<tbody>
+<tr class="change-row">
+  <td class="file">src/app/guide/page.tsx</td>
+  <td class="icon-name">Users</td>
+  <td>Card "Collaboration"</td>
+  <td><span class="swatch" style="background:var(--primary)"></span><span class="colour-class">text-primary</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--blue-400)"></span><span class="colour-class">text-blue-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">src/app/guide/page.tsx</td>
+  <td class="icon-name">MessageSquare</td>
+  <td>Card "Discussions"</td>
+  <td><span class="swatch" style="background:var(--primary)"></span><span class="colour-class">text-primary</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--violet-400)"></span><span class="colour-class">text-violet-400</span></td>
+</tr>
+</tbody>
+</table>
+
+<!-- ═══ GUIDE SUB-PAGES ═══ -->
+<h2>Guide Sub-Pages — Header Icons <span class="area-count">8 changes</span></h2>
+<table>
+<thead><tr><th>File</th><th>Icon</th><th>Page</th><th>Before</th><th></th><th>After</th></tr></thead>
+<tbody>
+<tr class="change-row">
+  <td class="file">guide/ideas-and-voting/page.tsx</td>
+  <td class="icon-name">Lightbulb</td>
+  <td>Ideas & Voting</td>
+  <td><span class="swatch" style="background:var(--primary)"></span><span class="colour-class">text-primary</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--amber-400)"></span><span class="colour-class">text-amber-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">guide/collaboration/page.tsx</td>
+  <td class="icon-name">Users</td>
+  <td>Collaboration</td>
+  <td><span class="swatch" style="background:var(--primary)"></span><span class="colour-class">text-primary</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--blue-400)"></span><span class="colour-class">text-blue-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">guide/discussions/page.tsx</td>
+  <td class="icon-name">MessageSquare</td>
+  <td>Discussions</td>
+  <td><span class="swatch" style="background:var(--primary)"></span><span class="colour-class">text-primary</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--violet-400)"></span><span class="colour-class">text-violet-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">guide/kanban-boards/page.tsx</td>
+  <td class="icon-name">LayoutDashboard</td>
+  <td>Kanban Boards</td>
+  <td><span class="swatch" style="background:var(--primary)"></span><span class="colour-class">text-primary</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--blue-400)"></span><span class="colour-class">text-blue-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">guide/mcp-integration/page.tsx</td>
+  <td class="icon-name">Terminal</td>
+  <td>MCP Integration</td>
+  <td><span class="swatch" style="background:var(--primary)"></span><span class="colour-class">text-primary</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--cyan-400)"></span><span class="colour-class">text-cyan-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">guide/workflows/page.tsx</td>
+  <td class="icon-name">GitBranch</td>
+  <td>Workflows</td>
+  <td><span class="swatch" style="background:var(--primary)"></span><span class="colour-class">text-primary</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--amber-400)"></span><span class="colour-class">text-amber-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">guide/ai-agent-teams/page.tsx</td>
+  <td class="icon-name">Bot</td>
+  <td>AI Agent Teams</td>
+  <td><span class="swatch" style="background:var(--primary)"></span><span class="colour-class">text-primary</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--emerald-400)"></span><span class="colour-class">text-emerald-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">guide/admin/page.tsx</td>
+  <td class="icon-name">Shield</td>
+  <td>Admin</td>
+  <td><span class="swatch" style="background:var(--primary)"></span><span class="colour-class">text-primary</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--violet-400)"></span><span class="colour-class">text-violet-400</span></td>
+</tr>
+</tbody>
+</table>
+
+<!-- ═══ ONBOARDING ═══ -->
+<h2>Onboarding Dialog <span class="area-count">2 changes (colours swapped)</span></h2>
+<table>
+<thead><tr><th>File</th><th>Icon</th><th>Context</th><th>Before</th><th></th><th>After</th></tr></thead>
+<tbody>
+<tr class="change-row">
+  <td class="file">onboarding/onboarding-dialog.tsx</td>
+  <td class="icon-name">Lightbulb</td>
+  <td>"Describe your idea" welcome step</td>
+  <td><span class="swatch" style="background:var(--violet-400)"></span><span class="colour-class">text-violet-400</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--amber-400)"></span><span class="colour-class">text-amber-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">onboarding/onboarding-dialog.tsx</td>
+  <td class="icon-name">Bot</td>
+  <td>"Agents do the work" welcome step</td>
+  <td><span class="swatch" style="background:var(--amber-400)"></span><span class="colour-class">text-amber-400</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--emerald-400)"></span><span class="colour-class">text-emerald-400</span></td>
+</tr>
+</tbody>
+</table>
+
+<!-- ═══ AGENTS HUB ═══ -->
+<h2>Agents Hub <span class="area-count">2 changes</span></h2>
+<table>
+<thead><tr><th>File</th><th>Icon</th><th>Context</th><th>Before</th><th></th><th>After</th></tr></thead>
+<tbody>
+<tr class="change-row">
+  <td class="file">agents/agents-hub.tsx</td>
+  <td class="icon-name">Bot</td>
+  <td>Page header icon</td>
+  <td><span class="colour-class" style="color:var(--zinc-500)">no colour (inherits)</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--emerald-400)"></span><span class="colour-class">text-emerald-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">agents/agents-hub.tsx</td>
+  <td class="icon-name">Cable</td>
+  <td>MCP banner icon</td>
+  <td><span class="swatch" style="background:var(--violet-400)"></span><span class="colour-class">text-violet-400</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--cyan-400)"></span><span class="colour-class">text-cyan-400</span></td>
+</tr>
+</tbody>
+</table>
+
+<!-- ═══ MCP BANNER ═══ -->
+<h2>MCP Connection Banner <span class="area-count">2 changes</span></h2>
+<table>
+<thead><tr><th>File</th><th>Icon</th><th>Context</th><th>Before</th><th></th><th>After</th></tr></thead>
+<tbody>
+<tr class="change-row">
+  <td class="file">shared/mcp-connection-banner.tsx</td>
+  <td class="icon-name">Cable</td>
+  <td>Compact banner icon</td>
+  <td><span class="swatch" style="background:var(--amber-400)"></span><span class="colour-class">text-amber-400</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--cyan-400)"></span><span class="colour-class">text-cyan-400</span></td>
+</tr>
+<tr class="change-row">
+  <td class="file">shared/mcp-connection-banner.tsx</td>
+  <td class="icon-name">Cable</td>
+  <td>Full banner icon</td>
+  <td><span class="swatch" style="background:var(--amber-400)"></span><span class="colour-class">text-amber-400</span></td>
+  <td class="arrow">&rarr;</td>
+  <td><span class="swatch" style="background:var(--cyan-400)"></span><span class="colour-class">text-cyan-400</span></td>
+</tr>
+</tbody>
+</table>
+
+<!-- ═══ NOT CHANGING ═══ -->
+<h2 style="color:var(--zinc-500)">Not Changing (confirmed correct)</h2>
+<div style="background:var(--zinc-900);border:1px solid var(--zinc-800);border-radius:10px;padding:20px;font-size:13px;color:var(--zinc-400)">
+  <p><strong>~150+ icons verified correct</strong> across: navbar (all desktop + mobile), dashboard (all 7 section headers + stats + empty states), pipeline flow (5 stages), landing page (tech stack, hero, MCP spotlight, features that are already correct), all board components (tabs, empty states, CTAs, toolbar, task cards, dialogs), idea cards, profile/members pages, admin pages, notification bell, footer, guide sidebar nav (uses unified accent — not domain colours), shared components (help link, nudge banner).</p>
+  <p style="margin-top:8px">Generic action icons (Plus, ArrowRight, X, Check, Copy, Search, Settings, etc.) intentionally have no domain colour.</p>
+</div>
+
+</div>
+</body>
+</html>

@@ -304,8 +304,8 @@ export function OnboardingDialog({
                 {[
                   {
                     icon: Lightbulb,
-                    color: "text-violet-400",
-                    bg: "bg-violet-400/10",
+                    color: "text-amber-400",
+                    bg: "bg-amber-400/10",
                     title: "Describe your idea",
                     desc: "AI refines your vision",
                   },
@@ -318,8 +318,8 @@ export function OnboardingDialog({
                   },
                   {
                     icon: Bot,
-                    color: "text-amber-400",
-                    bg: "bg-amber-400/10",
+                    color: "text-emerald-400",
+                    bg: "bg-emerald-400/10",
                     title: "Agents do the work",
                     desc: "Via Claude Code + MCP (Model Context Protocol)",
                   },

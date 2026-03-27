@@ -58,8 +58,8 @@ export function AgentsHub({
       {/* Page header */}
       <div className="flex items-start justify-between gap-4">
         <div className="flex items-start gap-3">
-          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 mt-0.5">
-            <Bot className="h-5 w-5" />
+          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-emerald-500/10 mt-0.5">
+            <Bot className="h-5 w-5 text-emerald-400" />
           </div>
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-bold">Agents Hub <HelpLink href="/guide/ai-agent-teams" tooltip="How agents work" /></h1>
@@ -108,8 +108,8 @@ export function AgentsHub({
 
       {/* MCP setup banner */}
       {!bannerDismissed && myBots.length > 0 && (
-        <div className="flex items-center gap-3 rounded-lg border border-violet-500/15 bg-violet-500/[0.04] px-4 py-3">
-          <Cable className="h-4 w-4 shrink-0 text-violet-400" />
+        <div className="flex items-center gap-3 rounded-lg border border-cyan-500/15 bg-cyan-500/[0.04] px-4 py-3">
+          <Cable className="h-4 w-4 shrink-0 text-cyan-400" />
           <p className="flex-1 text-sm text-muted-foreground">
             Agents work through{" "}
             <span className="font-medium text-foreground">Claude Code</span> via

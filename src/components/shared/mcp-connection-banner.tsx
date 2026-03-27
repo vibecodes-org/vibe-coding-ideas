@@ -67,26 +67,26 @@ export function McpConnectionBanner({
     return (
       <div
         className={cn(
-          "flex items-center gap-3 rounded-lg border border-amber-500/25 bg-amber-500/[0.12] px-4 py-2.5",
+          "flex items-center gap-3 rounded-lg border border-cyan-500/25 bg-cyan-500/[0.06] px-4 py-2.5",
           className
         )}
         role="status"
       >
-        <Cable className="h-4 w-4 shrink-0 text-amber-400" />
+        <Cable className="h-4 w-4 shrink-0 text-cyan-400" />
         <p className="flex-1 text-sm text-muted-foreground">
           Your agents need{" "}
           <span className="font-medium text-foreground">Claude Code</span> to
           work on tasks.{" "}
           <button
             onClick={handleCopy}
-            className="font-medium text-amber-400 hover:text-amber-300"
+            className="font-medium text-cyan-400 hover:text-cyan-300"
           >
             {copied ? "Copied!" : "Copy MCP command"}
           </button>
           {" · "}
           <Link
             href="/guide/mcp-integration"
-            className="font-medium text-amber-400 hover:text-amber-300"
+            className="font-medium text-cyan-400 hover:text-cyan-300"
           >
             Learn more &rarr;
           </Link>
@@ -115,14 +115,14 @@ export function McpConnectionBanner({
   return (
     <div
       className={cn(
-        "rounded-xl border border-amber-500/25 bg-amber-500/[0.12] p-4",
+        "rounded-xl border border-cyan-500/25 bg-cyan-500/[0.06] p-4",
         className
       )}
       role="status"
     >
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start">
         {/* Icon */}
-        <Cable className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+        <Cable className="mt-0.5 h-5 w-5 shrink-0 text-cyan-400" />
 
         {/* Content */}
         <div className="min-w-0 flex-1">

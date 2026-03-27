@@ -21,7 +21,7 @@ export default function CollaborationPage() {
 
       <div className="mb-10 flex items-center gap-3">
         <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10">
-          <Users className="h-6 w-6 text-primary" />
+          <Users className="h-6 w-6 text-blue-400" />
         </div>
         <h1 className="text-3xl font-bold tracking-tight">Collaboration</h1>
       </div>
