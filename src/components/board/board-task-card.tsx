@@ -363,7 +363,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
           highlighted
             ? "border-primary ring-2 ring-primary/50"
             : task.workflow_step_awaiting_approval > 0
-              ? "border-violet-500/25 shadow-[0_0_0_1px_rgba(167,139,250,0.08),0_2px_12px_rgba(167,139,250,0.08)]"
+              ? "border-violet-500/40 ring-1 ring-violet-500/20 shadow-[0_0_12px_rgba(167,139,250,0.25)]"
               : task.workflow_step_failed > 0
                 ? "border-l-2 border-l-red-500 border-border"
                 : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (Date.now() - new Date(task.workflow_step_started_at).getTime()) >= STALE_THRESHOLD_MS
