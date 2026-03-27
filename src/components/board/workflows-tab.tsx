@@ -807,37 +807,39 @@ export function WorkflowsTab({
       {/* Left panel — template list */}
       <div className="flex w-60 shrink-0 flex-col rounded-lg border border-border bg-muted/20">
         {/* Sidebar header */}
-        <div className="flex items-center justify-between border-b border-border px-3 py-2.5">
-          <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-            Templates
-            <HelpLink href="/guide/workflows" tooltip="How workflows work" />
-            {kitName && (
-              <span className="ml-1 rounded-full bg-violet-500/[0.12] border border-violet-500/25 px-2 py-0.5 text-[10px] font-semibold normal-case tracking-normal text-violet-400">
-                {kitName} Kit
-              </span>
+        <div className="border-b border-border px-3 py-2.5">
+          <div className="flex items-center justify-between">
+            <span className="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+              Templates
+              <HelpLink href="/guide/workflows" tooltip="How workflows work" />
+            </span>
+            {!isReadOnly && (
+              <div className="flex shrink-0 items-center gap-1">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 gap-1 text-[10px]"
+                  onClick={() => setLibraryOpen(true)}
+                >
+                  <BookOpen className="h-3 w-3" />
+                  Library
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-6 gap-1 text-[10px]"
+                  onClick={() => setCreateOpen(true)}
+                >
+                  <Plus className="h-3 w-3" />
+                  New
+                </Button>
+              </div>
             )}
-          </span>
-          {!isReadOnly && (
-            <div className="flex items-center gap-1">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 gap-1 text-[10px]"
-                onClick={() => setLibraryOpen(true)}
-              >
-                <BookOpen className="h-3 w-3" />
-                Library
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-6 gap-1 text-[10px]"
-                onClick={() => setCreateOpen(true)}
-              >
-                <Plus className="h-3 w-3" />
-                New
-              </Button>
-            </div>
+          </div>
+          {kitName && (
+            <span className="mt-1.5 inline-flex rounded-full bg-violet-500/[0.12] border border-violet-500/25 px-2 py-0.5 text-[10px] font-semibold tracking-normal text-violet-400">
+              {kitName} Kit
+            </span>
           )}
         </div>
 
