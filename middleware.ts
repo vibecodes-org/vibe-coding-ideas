@@ -17,7 +17,8 @@ export const config = {
      * - api/mcp (MCP endpoint - has its own auth via withMcpAuth)
      * - api/oauth (OAuth endpoints - handle their own auth)
      * - oauth (OAuth consent pages - handle their own auth)
+     * - callback (auth callback - exchanges code for session, no getUser needed)
      */
-    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|\\.well-known|api/mcp|api/oauth|oauth|monitoring|ingest).*)",
+    "/((?!_next/static|_next/image|favicon.ico|sw\\.js|.*\\.(?:svg|png|jpg|jpeg|gif|webp)$|\\.well-known|api/mcp|api/oauth|oauth|callback|monitoring|ingest).*)",
   ],
 };
