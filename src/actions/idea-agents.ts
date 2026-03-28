@@ -2,6 +2,7 @@
 
 import { after } from "next/server";
 import { revalidatePath } from "next/cache";
+import { createClient as createServerClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { validateUuid } from "@/lib/validation";
 import { rematchWorkflowAgentsWithClient } from "@/actions/workflow-templates";
@@ -9,6 +10,17 @@ import { matchRolesWithAiOrFuzzy, type AiRoleMatchAgent } from "@/lib/ai-role-ma
 import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
+
+/**
+ * Create a service-role Supabase client for background tasks.
+ * Unlike the cookie-based server client, this survives after the response is sent.
+ */
+function createServiceRoleClient() {
+  return createServerClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
 
 /**
  * Find all tasks in an idea with active workflow runs and rematch their steps.
@@ -78,8 +90,9 @@ export async function allocateAgent(ideaId: string, botId: string) {
   revalidatePath(`/ideas/${ideaId}/board`);
 
   // Rematch all active workflows in the background via after() — runs after the
-  // response is sent, so the insert is committed and visible to the rematch query
-  after(() => rematchActiveWorkflows(supabase, user.id, validIdeaId));
+  // response is sent. Uses service-role client because the cookie-based client's
+  // auth context is stale after the response is sent.
+  after(() => rematchActiveWorkflows(createServiceRoleClient(), user.id, validIdeaId));
 }
 
 export async function removeIdeaAgent(ideaId: string, botId: string) {
@@ -111,7 +124,7 @@ export async function removeIdeaAgent(ideaId: string, botId: string) {
 
   // Rematch all active workflows in the background via after() — runs after the
   // response is sent, so the delete is committed and visible to the rematch query
-  after(() => rematchActiveWorkflows(supabase, user.id, validIdeaId));
+  after(() => rematchActiveWorkflows(createServiceRoleClient(), user.id, validIdeaId));
 }
 
 export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
@@ -178,7 +191,7 @@ export async function allocateAllAgents(ideaId: string, botIds?: string[]) {
 
   // Rematch all active workflows in the background via after() — runs after the
   // response is sent, so the upsert is committed and visible to the rematch query
-  after(() => rematchActiveWorkflows(supabase, user.id, validIdeaId));
+  after(() => rematchActiveWorkflows(createServiceRoleClient(), user.id, validIdeaId));
 
   return { added: idsToAllocate.length };
 }
