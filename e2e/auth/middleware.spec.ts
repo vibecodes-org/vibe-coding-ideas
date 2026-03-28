@@ -1,66 +1,68 @@
 import { test, expect } from "../fixtures/auth";
+import { EXPECT_TIMEOUT } from "../fixtures/constants";
 
-test.describe("Auth middleware redirects", () => {
-  test.describe("Unauthenticated users — protected routes redirect to /login", () => {
-    test("should redirect /dashboard to /login", async ({ anonPage }) => {
-      await anonPage.goto("/dashboard");
-      await anonPage.waitForURL("**/login**");
-      expect(anonPage.url()).toContain("/login");
+test.describe("Middleware — Route Protection", () => {
+  test.describe("Unauthenticated user", () => {
+    test("should redirect /dashboard to /login", async ({ anonPage: page }) => {
+      await page.goto("/dashboard");
+      await page.waitForURL("**/login", { timeout: EXPECT_TIMEOUT });
+      await expect(page).toHaveURL(/\/login/);
     });
 
-    test("should redirect /ideas to /login", async ({ anonPage }) => {
-      await anonPage.goto("/ideas");
-      await anonPage.waitForURL("**/login**");
-      expect(anonPage.url()).toContain("/login");
+    test("should redirect /ideas to /login", async ({ anonPage: page }) => {
+      await page.goto("/ideas");
+      await page.waitForURL("**/login", { timeout: EXPECT_TIMEOUT });
+      await expect(page).toHaveURL(/\/login/);
     });
 
-    test("should redirect /ideas/new to /login", async ({ anonPage }) => {
-      await anonPage.goto("/ideas/new");
-      await anonPage.waitForURL("**/login**");
-      expect(anonPage.url()).toContain("/login");
+    test("should redirect /agents to /login", async ({ anonPage: page }) => {
+      await page.goto("/agents");
+      await page.waitForURL("**/login", { timeout: EXPECT_TIMEOUT });
+      await expect(page).toHaveURL(/\/login/);
+    });
+
+    test("should redirect /admin to /login", async ({ anonPage: page }) => {
+      await page.goto("/admin");
+      await page.waitForURL("**/login", { timeout: EXPECT_TIMEOUT });
+      await expect(page).toHaveURL(/\/login/);
+    });
+
+    test("should allow access to public landing page", async ({ anonPage: page }) => {
+      await page.goto("/");
+      await expect(page).toHaveURL(/\/$/);
+      await expect(page.getByRole("main")).toBeVisible({ timeout: EXPECT_TIMEOUT });
+    });
+
+    test("should allow access to guide pages", async ({ anonPage: page }) => {
+      await page.goto("/guide");
+      await expect(page).toHaveURL(/\/guide/);
+      await expect(page.getByRole("main")).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
   });
 
-  test.describe("Authenticated users — auth pages redirect to /dashboard", () => {
-    test("should redirect /login to /dashboard", async ({ userAPage }) => {
-      await userAPage.goto("/login");
-      await userAPage.waitForURL("**/dashboard");
-      expect(userAPage.url()).toContain("/dashboard");
+  test.describe("Authenticated user", () => {
+    test("should access /dashboard without redirect", async ({ userAPage: page }) => {
+      await page.goto("/dashboard");
+      await expect(page).toHaveURL(/\/dashboard/);
+      await expect(page.getByRole("main")).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
 
-    test("should redirect /signup to /dashboard", async ({ userAPage }) => {
-      await userAPage.goto("/signup");
-      await userAPage.waitForURL("**/dashboard");
-      expect(userAPage.url()).toContain("/dashboard");
-    });
-  });
-
-  test.describe("Public routes — accessible without authentication", () => {
-    test("should allow unauthenticated access to / (landing page)", async ({
-      anonPage,
-    }) => {
-      await anonPage.goto("/");
-      await anonPage.waitForLoadState("domcontentloaded");
-
-      // Should stay on landing page, NOT redirect to /login
-      const url = anonPage.url();
-      expect(url).not.toContain("/login");
-      expect(url).not.toContain("/dashboard");
-
-      // Landing page should have the VibeCodes branding
-      await expect(anonPage.getByText("VibeCodes").first()).toBeVisible({ timeout: 15_000 });
+    test("should access /ideas without redirect", async ({ userAPage: page }) => {
+      await page.goto("/ideas");
+      await expect(page).toHaveURL(/\/ideas/);
+      await expect(page.getByRole("main")).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
 
-    test("should allow unauthenticated access to /guide", async ({
-      anonPage,
-    }) => {
-      await anonPage.goto("/guide");
-      await anonPage.waitForLoadState("domcontentloaded");
+    test("should redirect /admin to /dashboard for non-admin", async ({ userAPage: page }) => {
+      await page.goto("/admin");
+      await page.waitForURL("**/dashboard", { timeout: EXPECT_TIMEOUT });
+      await expect(page).toHaveURL(/\/dashboard/);
+    });
 
-      // Should stay on guide page, NOT redirect to /login
-      const url = anonPage.url();
-      expect(url).not.toContain("/login");
-      expect(url).toContain("/guide");
+    test("should allow admin access to /admin", async ({ adminPage: page }) => {
+      await page.goto("/admin");
+      await expect(page).toHaveURL(/\/admin/);
+      await expect(page.getByRole("main")).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
   });
 });

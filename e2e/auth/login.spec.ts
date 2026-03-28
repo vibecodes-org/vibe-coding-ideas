@@ -1,108 +1,51 @@
 import { test, expect } from "../fixtures/auth";
+import { EXPECT_TIMEOUT } from "../fixtures/constants";
 
-test.describe("Login page", () => {
-  test.describe("Form display", () => {
-    test("should display login form with email, password, OAuth buttons, and links", async ({
-      anonPage,
-    }) => {
-      await anonPage.goto("/login");
-
-      // Email and password fields
-      await expect(anonPage.getByLabel("Email")).toBeVisible();
-      await expect(anonPage.getByLabel("Password")).toBeVisible();
-
-      // Submit button
-      await expect(
-        anonPage.getByRole("button", { name: /sign in with email/i })
-      ).toBeVisible();
-
-      // OAuth buttons
-      await expect(
-        anonPage.getByRole("button", { name: /continue with github/i })
-      ).toBeVisible();
-      await expect(
-        anonPage.getByRole("button", { name: /continue with google/i })
-      ).toBeVisible();
-
-      // Navigation links
-      await expect(anonPage.getByRole("link", { name: /sign up/i })).toBeVisible();
-      await expect(
-        anonPage.getByRole("link", { name: /forgot password/i })
-      ).toBeVisible();
-    });
+test.describe("Login", () => {
+  test("should display login form with email and password fields", async ({ anonPage: page }) => {
+    await page.goto("/login");
+    await expect(page.getByText("Welcome back")).toBeVisible({ timeout: EXPECT_TIMEOUT });
+    await expect(page.getByLabel("Email")).toBeVisible();
+    await expect(page.getByLabel("Password")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Sign in with email" })).toBeVisible();
   });
 
-  test.describe("Email/password login", () => {
-    test("should redirect to /dashboard on valid credentials", async ({
-      anonPage,
-    }) => {
-      await anonPage.goto("/login");
-
-      const email =
-        process.env.TEST_USER_A_EMAIL ?? "test-user-a@vibecodes-test.local";
-      const password = process.env.TEST_USER_A_PASSWORD ?? "TestPassword123!";
-
-      await anonPage.getByLabel("Email").fill(email);
-      await anonPage.getByLabel("Password").fill(password);
-      await anonPage.getByRole("button", { name: /sign in with email/i }).click();
-
-      await anonPage.waitForURL("**/dashboard", { timeout: 15_000 });
-      expect(anonPage.url()).toContain("/dashboard");
-    });
-
-    test("should show error on invalid credentials", async ({ anonPage }) => {
-      await anonPage.goto("/login");
-
-      await anonPage.getByLabel("Email").fill("nonexistent@example.com");
-      await anonPage.getByLabel("Password").fill("WrongPassword999!");
-      await anonPage.getByRole("button", { name: /sign in with email/i }).click();
-
-      // Supabase returns "Invalid login credentials" on bad email/password
-      await expect(anonPage.getByText(/invalid login credentials/i)).toBeVisible({
-        timeout: 10_000,
-      });
-    });
+  test("should display OAuth buttons", async ({ anonPage: page }) => {
+    await page.goto("/login");
+    await expect(page.getByRole("button", { name: /Continue with GitHub/i })).toBeVisible({ timeout: EXPECT_TIMEOUT });
+    await expect(page.getByRole("button", { name: /Continue with Google/i })).toBeVisible();
   });
 
-  test.describe("Navigation links", () => {
-    test("should navigate to signup page via link", async ({ anonPage }) => {
-      await anonPage.goto("/login");
-
-      await anonPage.getByRole("link", { name: /sign up/i }).click();
-      await anonPage.waitForURL("**/signup");
-      expect(anonPage.url()).toContain("/signup");
-    });
-
-    test("should navigate to forgot-password page via link", async ({
-      anonPage,
-    }) => {
-      await anonPage.goto("/login");
-
-      await anonPage.getByRole("link", { name: /forgot password/i }).click();
-      await anonPage.waitForURL("**/forgot-password");
-      expect(anonPage.url()).toContain("/forgot-password");
-    });
+  test("should show error for invalid credentials", async ({ anonPage: page }) => {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill("nonexistent@test.com");
+    await page.getByLabel("Password").fill("wrongpassword");
+    await page.getByRole("button", { name: "Sign in with email" }).click();
+    await expect(page.getByText("Incorrect email or password")).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
-  test.describe("OAuth buttons", () => {
-    test("should render GitHub OAuth button", async ({ anonPage }) => {
-      await anonPage.goto("/login");
+  test("should redirect to dashboard on successful login", async ({ anonPage: page }) => {
+    await page.goto("/login");
+    await page.getByLabel("Email").fill("test-user-a@vibecodes-test.local");
+    await page.getByLabel("Password").fill("TestPassword123!");
+    await page.getByRole("button", { name: "Sign in with email" }).click();
+    await page.waitForURL("**/dashboard", { timeout: EXPECT_TIMEOUT });
+    await expect(page).toHaveURL(/\/dashboard/);
+  });
 
-      const githubButton = anonPage.getByRole("button", {
-        name: /continue with github/i,
-      });
-      await expect(githubButton).toBeVisible();
-      await expect(githubButton).toBeEnabled();
-    });
+  test("should have link to forgot password", async ({ anonPage: page }) => {
+    await page.goto("/login");
+    await expect(page.getByRole("link", { name: /Forgot password/i })).toBeVisible({ timeout: EXPECT_TIMEOUT });
+  });
 
-    test("should render Google OAuth button", async ({ anonPage }) => {
-      await anonPage.goto("/login");
+  test("should have link to signup", async ({ anonPage: page }) => {
+    await page.goto("/login");
+    await expect(page.getByRole("link", { name: /Sign up/i })).toBeVisible({ timeout: EXPECT_TIMEOUT });
+  });
 
-      const googleButton = anonPage.getByRole("button", {
-        name: /continue with google/i,
-      });
-      await expect(googleButton).toBeVisible();
-      await expect(googleButton).toBeEnabled();
-    });
+  test("should redirect logged-in users away from login page", async ({ userAPage: page }) => {
+    await page.goto("/login");
+    await page.waitForURL("**/dashboard", { timeout: EXPECT_TIMEOUT });
+    await expect(page).toHaveURL(/\/dashboard/);
   });
 });

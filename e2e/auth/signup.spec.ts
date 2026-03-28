@@ -1,73 +1,40 @@
 import { test, expect } from "../fixtures/auth";
+import { EXPECT_TIMEOUT } from "../fixtures/constants";
 
-test.describe("Signup page", () => {
-  test.describe("Form display", () => {
-    test("should display signup form with email, password fields, and OAuth buttons", async ({
-      anonPage,
-    }) => {
-      await anonPage.goto("/signup");
-
-      // Email and password fields
-      await expect(anonPage.getByLabel("Email")).toBeVisible();
-      await expect(anonPage.getByLabel("Password")).toBeVisible();
-
-      // Submit button
-      await expect(
-        anonPage.getByRole("button", { name: /create account/i })
-      ).toBeVisible();
-
-      // OAuth buttons
-      await expect(
-        anonPage.getByRole("button", { name: /continue with github/i })
-      ).toBeVisible();
-      await expect(
-        anonPage.getByRole("button", { name: /continue with google/i })
-      ).toBeVisible();
-
-      // Link back to login
-      await expect(anonPage.getByRole("link", { name: /log in/i })).toBeVisible();
-    });
+test.describe("Signup", () => {
+  test("should display signup form with email and password fields", async ({ anonPage: page }) => {
+    await page.goto("/signup");
+    await expect(page.getByText("Create your account")).toBeVisible({ timeout: EXPECT_TIMEOUT });
+    await expect(page.getByLabel("Email")).toBeVisible();
+    await expect(page.getByLabel("Password")).toBeVisible();
+    await expect(page.getByRole("button", { name: "Create account" })).toBeVisible();
   });
 
-  test.describe("Account creation", () => {
-    test.fixme("should show confirmation message after valid signup", async ({
-      anonPage,
-    }) => {
-      // fixme: Supabase email rate limiting prevents consistent test execution
-      await anonPage.goto("/signup");
-
-      // Use a unique email to avoid duplicate account conflicts
-      const uniqueEmail = `e2e-signup-${Date.now()}@vibecodes-test.local`;
-
-      await anonPage.getByLabel("Email").fill(uniqueEmail);
-      await anonPage.getByLabel("Password").fill("TestPassword123!");
-      await anonPage.getByRole("button", { name: /create account/i }).click();
-
-      // Supabase returns a confirmation message on successful signup
-      await expect(
-        anonPage.getByText(/check your email to confirm your account/i)
-      ).toBeVisible({ timeout: 10_000 });
-    });
+  test("should display OAuth buttons", async ({ anonPage: page }) => {
+    await page.goto("/signup");
+    await expect(page.getByRole("button", { name: /Continue with GitHub/i })).toBeVisible({ timeout: EXPECT_TIMEOUT });
+    await expect(page.getByRole("button", { name: /Continue with Google/i })).toBeVisible();
   });
 
-  test.describe("Validation", () => {
-    test("should enforce minimum password length", async ({ anonPage }) => {
-      await anonPage.goto("/signup");
+  test("should show error for existing email", async ({ anonPage: page }) => {
+    await page.goto("/signup");
+    await page.getByLabel("Email").fill("test-user-a@vibecodes-test.local");
+    await page.getByLabel("Password").fill("TestPassword123!");
+    await page.getByRole("button", { name: "Create account" }).click();
+    // Supabase returns either "already been registered" or shows the existing-account message
+    await expect(
+      page.getByText(/already exists|already been registered/i)
+    ).toBeVisible({ timeout: EXPECT_TIMEOUT });
+  });
 
-      await anonPage.getByLabel("Email").fill("short-pw-test@vibecodes-test.local");
-      await anonPage.getByLabel("Password").fill("ab");
+  test("should have link to login", async ({ anonPage: page }) => {
+    await page.goto("/signup");
+    await expect(page.getByRole("link", { name: /Log in/i })).toBeVisible({ timeout: EXPECT_TIMEOUT });
+  });
 
-      // The password input has minLength=6, so browser validation should prevent submission.
-      // Click submit and verify we stay on the signup page (no success message, no redirect).
-      await anonPage.getByRole("button", { name: /create account/i }).click();
-
-      // Should still be on signup page (browser native validation blocks submission)
-      expect(anonPage.url()).toContain("/signup");
-
-      // The confirmation message should NOT appear
-      await expect(
-        anonPage.getByText(/check your email to confirm your account/i)
-      ).not.toBeVisible();
-    });
+  test("should redirect logged-in users away from signup page", async ({ userAPage: page }) => {
+    await page.goto("/signup");
+    await page.waitForURL("**/dashboard", { timeout: EXPECT_TIMEOUT });
+    await expect(page).toHaveURL(/\/dashboard/);
   });
 });

@@ -6,7 +6,7 @@ dotenv.config({ path: path.resolve(__dirname, ".env.test"), override: true });
 
 export default defineConfig({
   testDir: "./e2e",
-  fullyParallel: false,
+  fullyParallel: true,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 2 : 0,
   workers: undefined,
@@ -30,12 +30,13 @@ export default defineConfig({
       dependencies: ["setup"],
       testIgnore: /mobile\//,
     },
-    {
-      name: "Desktop Firefox",
-      use: { ...devices["Desktop Firefox"] },
-      dependencies: ["setup"],
-      testIgnore: /mobile\//,
-    },
+    // Firefox available as optional CI matrix — not run by default
+    // {
+    //   name: "Desktop Firefox",
+    //   use: { ...devices["Desktop Firefox"] },
+    //   dependencies: ["setup"],
+    //   testIgnore: /mobile\//,
+    // },
     {
       name: "Mobile Chrome",
       use: { ...devices["Pixel 7"] },

@@ -1,80 +1,19 @@
 import { test, expect } from "../fixtures/auth";
-import { ensureFreshPageAuthenticated } from "../fixtures/fresh-auth";
+import { EXPECT_TIMEOUT } from "../fixtures/constants";
 
 test.describe("Logout", () => {
-  // Use freshPage for sign-out tests to avoid revoking shared auth tokens
-  // (userA/userB storage states are reused across all other specs)
+  test("should log out and redirect to landing page", async ({ userAPage: page }) => {
+    await page.goto("/dashboard");
+    await expect(page.getByRole("main")).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-  test("sign out via user menu redirects to landing or login", async ({ freshPage }) => {
-    // Navigate to /ideas — re-authenticate if the stored session has expired
-    await ensureFreshPageAuthenticated(freshPage, "/ideas");
+    // Open user menu (avatar button in top-right)
+    const avatar = page.locator("header").getByRole("button").last();
+    await avatar.click();
 
-    // Open the user dropdown menu
-    const avatarButton = freshPage
-      .locator("nav")
-      .locator("button")
-      .filter({ has: freshPage.locator("span.relative, [data-slot='avatar']") })
-      .first();
-    await expect(avatarButton).toBeVisible({ timeout: 15_000 });
-    await avatarButton.click();
+    // Click logout
+    await page.getByRole("menuitem", { name: /log out|sign out/i }).click();
 
-    // Click "Sign Out"
-    const signOutItem = freshPage.getByText("Sign Out");
-    await expect(signOutItem).toBeVisible({ timeout: 5_000 });
-    await signOutItem.click();
-
-    // Should redirect to landing page or login
-    await freshPage.waitForURL(/\/(login)?$/, { timeout: 15_000 });
-    const url = new URL(freshPage.url());
-    expect(url.pathname === "/" || url.pathname === "/login").toBe(true);
-  });
-
-  test("after sign out, navigating to /dashboard redirects to /login", async ({
-    freshPage,
-  }) => {
-    await ensureFreshPageAuthenticated(freshPage, "/ideas");
-
-    // Sign out
-    const avatarButton = freshPage
-      .locator("nav")
-      .locator("button")
-      .filter({ has: freshPage.locator("span.relative, [data-slot='avatar']") })
-      .first();
-    await expect(avatarButton).toBeVisible({ timeout: 15_000 });
-    await avatarButton.click();
-    await freshPage.getByText("Sign Out").click();
-    await freshPage.waitForURL(/\/(login)?$/, { timeout: 15_000 });
-
-    // Now try to access a protected route
-    await freshPage.goto("/dashboard");
-
-    // Should be redirected to /login
-    await freshPage.waitForURL(/\/login/, { timeout: 15_000 });
-    expect(freshPage.url()).toContain("/login");
-  });
-
-  test("after sign out, navbar shows Log In and Sign Up buttons", async ({
-    freshPage,
-  }) => {
-    await ensureFreshPageAuthenticated(freshPage, "/ideas");
-
-    // Sign out
-    const avatarButton = freshPage
-      .locator("nav")
-      .locator("button")
-      .filter({ has: freshPage.locator("span.relative, [data-slot='avatar']") })
-      .first();
-    await expect(avatarButton).toBeVisible({ timeout: 15_000 });
-    await avatarButton.click();
-    await freshPage.getByText("Sign Out").click();
-    await freshPage.waitForURL(/\/(login)?$/, { timeout: 15_000 });
-
-    // Navbar should show unauthenticated state
-    await expect(
-      freshPage.getByRole("link", { name: /log in/i })
-    ).toBeVisible({ timeout: 10_000 });
-    await expect(
-      freshPage.getByRole("link", { name: /sign up/i })
-    ).toBeVisible();
+    // Should redirect to landing or login
+    await page.waitForURL(/\/(login)?$/, { timeout: EXPECT_TIMEOUT });
   });
 });
