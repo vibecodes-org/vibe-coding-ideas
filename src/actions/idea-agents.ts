@@ -5,8 +5,8 @@ import { revalidatePath } from "next/cache";
 import { createClient as createServerClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { validateUuid } from "@/lib/validation";
-import { rematchWorkflowAgentsWithClient } from "@/actions/workflow-templates";
 import { matchRolesWithAiOrFuzzy, type AiRoleMatchAgent } from "@/lib/ai-role-matching";
+import { tierRank } from "@/lib/role-matching";
 import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
@@ -32,27 +32,73 @@ async function rematchActiveWorkflows(
   ideaId: string
 ) {
   try {
-    // Find tasks with active workflow runs in this idea
-    const { data: activeRuns } = await supabase
-      .from("workflow_runs")
-      .select("task_id, board_tasks!inner(idea_id)")
-      .eq("board_tasks.idea_id", ideaId)
-      .not("status", "in", '("completed","failed")');
+    // 1. Fetch ALL pending steps with agent_role across the entire idea in one query
+    const { data: allSteps, error: stepsError } = await supabase
+      .from("task_workflow_steps")
+      .select("id, task_id, agent_role, bot_id, match_tier, status")
+      .eq("idea_id", ideaId)
+      .eq("status", "pending")
+      .not("agent_role", "is", null);
 
-    if (!activeRuns || activeRuns.length === 0) return;
+    if (stepsError || !allSteps || allSteps.length === 0) return;
 
-    // Dedupe task IDs
-    const taskIds = [...new Set(activeRuns.map((r) => r.task_id))];
+    // 2. Fetch the idea's agent pool once
+    const { data: poolAgents } = await supabase
+      .from("idea_agents")
+      .select("bot_id, bot_profiles!inner(id, name, role)")
+      .eq("idea_id", ideaId);
 
-    for (const taskId of taskIds) {
-      try {
-        await rematchWorkflowAgentsWithClient(supabase, userId, taskId);
-      } catch (err) {
-        logger.warn("Rematch failed for task during agent pool change", {
-          taskId,
-          error: err instanceof Error ? err.message : String(err),
-        });
+    const candidates = (poolAgents ?? [])
+      .map((agent) => {
+        const profile = agent.bot_profiles as unknown as {
+          id: string;
+          name: string | null;
+          role: string | null;
+        };
+        return profile?.role
+          ? { botId: agent.bot_id, name: profile.name ?? "", role: profile.role }
+          : null;
+      })
+      .filter((c): c is { botId: string; name: string; role: string } => c !== null);
+
+    if (candidates.length === 0) return;
+
+    // 3. Collect unique roles across ALL steps — one AI call for all of them
+    const uniqueRoles = [...new Set(allSteps.map((s) => s.agent_role!))];
+    const roleMatches = await matchRolesWithAiOrFuzzy(supabase, userId, uniqueRoles, candidates);
+
+    // 4. Apply matches to all steps in parallel
+    let matched = 0;
+    const updates: Promise<unknown>[] = [];
+
+    for (const step of allSteps) {
+      const role = step.agent_role!;
+      const newMatch = roleMatches[role];
+      const newBotId = newMatch?.botId ?? null;
+      const newTier = newMatch?.tier ?? "none";
+
+      if (!newBotId) continue;
+
+      const oldTierRank = tierRank(step.match_tier);
+      const newTierRank = tierRank(newTier);
+
+      // Only update if: no existing match, or new match is strictly better tier
+      if (!step.bot_id || newTierRank > oldTierRank) {
+        matched++;
+        updates.push(
+          Promise.resolve(
+            supabase
+              .from("task_workflow_steps")
+              .update({ bot_id: newBotId, match_tier: newTier })
+              .eq("id", step.id)
+          )
+        );
       }
+    }
+
+    if (updates.length > 0) {
+      await Promise.all(updates);
+      logger.info("Rematch completed for idea", { ideaId, matched, total: allSteps.length });
     }
   } catch (err) {
     logger.warn("Failed to rematch active workflows after agent pool change", {
