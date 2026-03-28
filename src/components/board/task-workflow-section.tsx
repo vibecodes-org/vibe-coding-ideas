@@ -57,7 +57,7 @@ import {
   resetWorkflow,
   removeWorkflow,
 } from "@/actions/workflow";
-import { applyWorkflowTemplate, listWorkflowTemplates } from "@/actions/workflow-templates";
+import { applyWorkflowTemplate, listWorkflowTemplates, rematchWorkflowAgents } from "@/actions/workflow-templates";
 import { StepDetailDialog } from "./step-detail-dialog";
 import type { TaskWorkflowStep, WorkflowRun, WorkflowTemplate } from "@/types";
 
@@ -161,6 +161,9 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
   const [confirmAction, setConfirmAction] = useState<"reset" | "remove" | null>(null);
   const [workflowActionLoading, setWorkflowActionLoading] = useState(false);
 
+  // Track whether we've already attempted a rematch for this task to avoid loops
+  const rematchAttemptedRef = useRef(false);
+
   const supabaseRef = useRef(createClient());
 
   const fetchData = useCallback(async () => {
@@ -215,6 +218,25 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
 
     return () => { channel.unsubscribe(); };
   }, [taskId, fetchData]);
+
+  // Auto-rematch: if there are unmatched pending steps, trigger a rematch once
+  // This catches cases where the background after() rematch failed or hasn't run yet
+  useEffect(() => {
+    if (loading || rematchAttemptedRef.current) return;
+    const unmatched = steps?.filter(
+      (s) => s.agent_role && !s.bot_id && s.status === "pending"
+    ) ?? [];
+    if (unmatched.length === 0) return;
+    rematchAttemptedRef.current = true;
+    rematchWorkflowAgents(taskId)
+      .then(() => fetchData())
+      .catch(() => { /* silently ignore — warning will still show */ });
+  }, [loading, steps, taskId, fetchData]);
+
+  // Reset rematch flag when task changes
+  useEffect(() => {
+    rematchAttemptedRef.current = false;
+  }, [taskId]);
 
   // Load templates when user opens apply UI
   useEffect(() => {
