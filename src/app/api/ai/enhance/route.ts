@@ -105,7 +105,20 @@ Use the answers above to inform your enhanced description. Make the enhancement 
       system: systemPrompt,
       prompt: userPrompt,
       maxOutputTokens: 16000,
-      onFinish: async ({ usage, finishReason }) => {
+    });
+
+    // Stream text, then log usage & decrement credits before closing
+    // (onFinish runs async and may not complete before Vercel kills the function)
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        for await (const chunk of result.textStream) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        const [usage, finishReason] = await Promise.all([
+          result.usage,
+          result.finishReason,
+        ]);
         await logAiUsage(supabase, {
           userId: user.id,
           actionType: "enhance_with_context",
@@ -120,19 +133,6 @@ Use the answers above to inform your enhanced description. Make the enhancement 
         }
         if (finishReason === "length") {
           logger.warn("AI enhance output truncated", { ideaId });
-        }
-      },
-    });
-
-    // Stream text, then append a truncation sentinel if output was cut short
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      async start(controller) {
-        for await (const chunk of result.textStream) {
-          controller.enqueue(encoder.encode(chunk));
-        }
-        const reason = await result.finishReason;
-        if (reason === "length") {
           controller.enqueue(encoder.encode("\n\n__TRUNCATED__"));
         }
         controller.close();

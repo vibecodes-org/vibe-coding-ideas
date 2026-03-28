@@ -77,7 +77,18 @@ Use the answers above to inform your enhanced description. Make the enhancement 
       system: systemPrompt,
       prompt: userPrompt,
       maxOutputTokens: 4000,
-      onFinish: async ({ usage, finishReason }) => {
+    });
+
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream({
+      async start(controller) {
+        for await (const chunk of result.textStream) {
+          controller.enqueue(encoder.encode(chunk));
+        }
+        const [usage, finishReason] = await Promise.all([
+          result.usage,
+          result.finishReason,
+        ]);
         await logAiUsage(supabase, {
           userId: user.id,
           actionType: "enhance_create_description",
@@ -92,15 +103,6 @@ Use the answers above to inform your enhanced description. Make the enhancement 
         }
         if (finishReason === "length") {
           logger.warn("AI create enhance output truncated");
-        }
-      },
-    });
-
-    const encoder = new TextEncoder();
-    const stream = new ReadableStream({
-      async start(controller) {
-        for await (const chunk of result.textStream) {
-          controller.enqueue(encoder.encode(chunk));
         }
         controller.close();
       },
