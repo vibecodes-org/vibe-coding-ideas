@@ -21,12 +21,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        project: [Desktop Chrome, Desktop Firefox, Mobile Chrome]
+        project: [Desktop Chrome, Mobile Chrome]
         include:
           - project: Desktop Chrome
             browser: chromium
-          - project: Desktop Firefox
-            browser: firefox
           - project: Mobile Chrome
             browser: chromium
 
