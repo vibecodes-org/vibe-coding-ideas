@@ -87,7 +87,7 @@ export async function POST(req: Request) {
     const [{ data: columns }, { data: labels }, { data: autoRules }] = await Promise.all([
       supabase
         .from("board_columns")
-        .select("title")
+        .select("title, is_done_column")
         .eq("idea_id", ideaId)
         .order("position"),
       supabase
@@ -100,7 +100,9 @@ export async function POST(req: Request) {
         .eq("idea_id", ideaId),
     ]);
 
-    const existingColumns = (columns ?? []).map((c) => c.title);
+    const existingColumns = (columns ?? [])
+      .filter((c) => !c.is_done_column)
+      .map((c) => c.title);
     const existingLabels = (labels ?? []).map((l) => l.name);
     const autoRuleMappings = buildAutoRuleMappings(
       (labels ?? []) as { id: string; name: string }[],
@@ -134,20 +136,6 @@ export async function POST(req: Request) {
       prompt: contextParts.join("\n\n"),
       schema: GeneratedBoardSchema,
       maxOutputTokens: 8000,
-      onFinish: async ({ usage }) => {
-        await logAiUsage(supabase, {
-          userId: user.id,
-          actionType: "generate_board_tasks",
-          inputTokens: usage.inputTokens ?? 0,
-          outputTokens: usage.outputTokens ?? 0,
-          model: AI_MODEL,
-          ideaId,
-          keyType,
-        });
-        if (keyType === "platform") {
-          await decrementStarterCredit(supabase, user.id);
-        }
-      },
     });
 
     // Stream partial objects as newline-delimited JSON
@@ -162,6 +150,19 @@ export async function POST(req: Request) {
               encoder.encode(JSON.stringify(partialObject) + "\n")
             );
           }
+        }
+        const usage = await result.usage;
+        await logAiUsage(supabase, {
+          userId: user.id,
+          actionType: "generate_board_tasks",
+          inputTokens: usage.inputTokens ?? 0,
+          outputTokens: usage.outputTokens ?? 0,
+          model: AI_MODEL,
+          ideaId,
+          keyType,
+        });
+        if (keyType === "platform") {
+          await decrementStarterCredit(supabase, user.id);
         }
         controller.close();
       },

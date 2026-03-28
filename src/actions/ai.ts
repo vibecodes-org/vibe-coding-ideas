@@ -475,11 +475,13 @@ export async function generateBoardTasks(
   // Fetch existing board state for context
   const { data: columns } = await supabase
     .from("board_columns")
-    .select("title")
+    .select("title, is_done_column")
     .eq("idea_id", ideaId)
     .order("position");
 
-  const existingColumns = (columns ?? []).map((c) => c.title);
+  const existingColumns = (columns ?? [])
+    .filter((c) => !c.is_done_column)
+    .map((c) => c.title);
 
   const systemPrompt = personaPrompt
     ? `${personaPrompt}\n\nYou are generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
