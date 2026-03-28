@@ -21,7 +21,6 @@ test.describe("Signup", () => {
     await page.getByLabel("Email").fill("test-user-a@vibecodes-test.local");
     await page.getByLabel("Password").fill("TestPassword123!");
     await page.getByRole("button", { name: "Create account" }).click();
-    // Supabase returns either "already been registered" or shows the existing-account message
     await expect(
       page.getByText(/already exists|already been registered/i)
     ).toBeVisible({ timeout: EXPECT_TIMEOUT });
@@ -34,7 +33,7 @@ test.describe("Signup", () => {
 
   test("should redirect logged-in users away from signup page", async ({ userAPage: page }) => {
     await page.goto("/signup");
-    await page.waitForURL("**/dashboard", { timeout: EXPECT_TIMEOUT });
+    await page.waitForURL(/\/dashboard/, { timeout: EXPECT_TIMEOUT });
     await expect(page).toHaveURL(/\/dashboard/);
   });
 });

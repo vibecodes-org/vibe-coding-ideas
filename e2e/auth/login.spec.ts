@@ -29,7 +29,7 @@ test.describe("Login", () => {
     await page.getByLabel("Email").fill("test-user-a@vibecodes-test.local");
     await page.getByLabel("Password").fill("TestPassword123!");
     await page.getByRole("button", { name: "Sign in with email" }).click();
-    await page.waitForURL("**/dashboard", { timeout: EXPECT_TIMEOUT });
+    await page.waitForURL(/\/dashboard/, { timeout: EXPECT_TIMEOUT });
     await expect(page).toHaveURL(/\/dashboard/);
   });
 
@@ -45,7 +45,7 @@ test.describe("Login", () => {
 
   test("should redirect logged-in users away from login page", async ({ userAPage: page }) => {
     await page.goto("/login");
-    await page.waitForURL("**/dashboard", { timeout: EXPECT_TIMEOUT });
+    await page.waitForURL(/\/dashboard/, { timeout: EXPECT_TIMEOUT });
     await expect(page).toHaveURL(/\/dashboard/);
   });
 });
