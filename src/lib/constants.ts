@@ -66,6 +66,16 @@ export const DEFAULT_BOARD_COLUMNS = [
 
 export const POSITION_GAP = 1000;
 
+export const TEMPLATE_LABEL_SUGGESTIONS: { keywords: RegExp; label: string; color: string }[] = [
+  { keywords: /\b(bug|fix|hotfix|patch)\b/i, label: "Bug", color: "red" },
+  { keywords: /\b(feature|feat)\b/i, label: "Feature", color: "violet" },
+  { keywords: /\b(spike|research|investigation|explore)\b/i, label: "Research", color: "cyan" },
+  { keywords: /\b(design|ux|ui)\b/i, label: "Design", color: "pink" },
+  { keywords: /\b(launch|release|deploy)\b/i, label: "Launch", color: "orange" },
+  { keywords: /\b(infra|infrastructure|devops|ci|cd)\b/i, label: "Infrastructure", color: "amber" },
+  { keywords: /\b(client|customer)\b/i, label: "Client", color: "blue" },
+];
+
 export const LABEL_COLORS = [
   { value: "red", label: "Red", badgeClass: "bg-red-500/90 text-white", swatchColor: "bg-red-500" },
   { value: "orange", label: "Orange", badgeClass: "bg-orange-500/90 text-white", swatchColor: "bg-orange-500" },

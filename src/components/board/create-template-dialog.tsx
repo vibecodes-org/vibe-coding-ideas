@@ -17,7 +17,21 @@ import {
 } from "@/components/ui/dialog";
 import { createWorkflowTemplate } from "@/actions/workflow-templates";
 import { RoleCombobox, useRoleSuggestions } from "@/components/ui/role-combobox";
+import { TEMPLATE_LABEL_SUGGESTIONS, LABEL_COLORS } from "@/lib/constants";
+import { Lightbulb } from "lucide-react";
 import type { WorkflowTemplateStep } from "@/types/database";
+
+function getTemplateLabelHint(name: string) {
+  const trimmed = name.trim();
+  if (!trimmed) return null;
+  for (const { keywords, label, color } of TEMPLATE_LABEL_SUGGESTIONS) {
+    if (keywords.test(trimmed)) {
+      const badgeClass = LABEL_COLORS.find((c) => c.value === color)?.badgeClass ?? "bg-zinc-500/90 text-white";
+      return { label, badgeClass };
+    }
+  }
+  return null;
+}
 
 const DEFAULT_STEP: WorkflowTemplateStep = {
   title: "",
@@ -117,7 +131,9 @@ export function CreateTemplateDialog({
         description.trim() || null,
         finalSteps,
       );
-      toast.success("Workflow template created");
+      toast.success("Workflow template created", {
+        description: "Scroll down to add a workflow trigger and auto-apply it to labelled tasks.",
+      });
       reset();
       onOpenChange(false);
       onCreated(result.id);
@@ -152,6 +168,22 @@ export function CreateTemplateDialog({
               className="h-8 text-sm"
               autoFocus
             />
+            {(() => {
+              const hint = getTemplateLabelHint(name);
+              if (!hint) return null;
+              return (
+                <div className="flex items-center gap-1.5 mt-1.5 px-2.5 py-1.5 rounded-md border border-amber-500/20 bg-amber-500/[0.06] text-[11px] text-amber-400">
+                  <Lightbulb className="h-3 w-3 shrink-0" />
+                  <span>
+                    After creating, you can auto-apply this with a{" "}
+                    <span className={`inline-flex items-center px-1.5 py-px rounded-full text-[10px] font-medium ${hint.badgeClass}`}>
+                      {hint.label}
+                    </span>{" "}
+                    label trigger
+                  </span>
+                </div>
+              );
+            })()}
           </div>
 
           {/* Description */}

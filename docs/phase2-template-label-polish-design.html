@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phase 2: Template Label Polish — Design Proposals</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --border: #27272a;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --violet: #8b5cf6;
+      --violet-bg: rgba(139, 92, 246, 0.1);
+      --violet-border: rgba(139, 92, 246, 0.25);
+      --amber: #f59e0b;
+      --amber-bg: rgba(245, 158, 11, 0.08);
+      --amber-border: rgba(245, 158, 11, 0.2);
+      --emerald: #34d399;
+      --blue: #3b82f6;
+      --red: #ef4444;
+      --cyan: #06b6d4;
+      --pink: #ec4899;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 40px 20px;
+      line-height: 1.5;
+    }
+
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+    h2 { font-size: 18px; font-weight: 600; margin: 40px 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h3 { font-size: 14px; font-weight: 600; margin: 24px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    p { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
+    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+
+    .mockup-frame {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 16px 0 32px;
+      max-width: 520px;
+    }
+
+    .annotation {
+      background: rgba(139, 92, 246, 0.08);
+      border: 1px solid rgba(139, 92, 246, 0.2);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 12px 0;
+      font-size: 13px;
+      color: #c4b5fd;
+    }
+    .annotation strong { color: var(--violet); }
+
+    .section-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 48px 0;
+    }
+
+    .before-after {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 16px 0;
+    }
+
+    .before-after-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-bottom: 8px;
+    }
+    .before-label { color: var(--muted); }
+    .after-label { color: var(--emerald); }
+
+    /* Tip card styles */
+    .tip-card {
+      border: 1px dashed var(--amber-border);
+      background: var(--amber-bg);
+      border-radius: 8px;
+      padding: 12px 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+
+    .tip-icon {
+      color: var(--amber);
+      font-size: 16px;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+
+    .tip-content { flex: 1; }
+
+    .tip-title {
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text);
+      margin-bottom: 2px;
+    }
+
+    .tip-text {
+      font-size: 11px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    .tip-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      margin-top: 8px;
+      padding: 4px 10px;
+      font-size: 11px;
+      font-weight: 500;
+      border-radius: 6px;
+      border: 1px solid var(--amber-border);
+      background: transparent;
+      color: var(--amber);
+      cursor: pointer;
+    }
+
+    /* Old empty state */
+    .old-empty {
+      font-size: 12px;
+      color: var(--muted);
+      padding: 8px 0;
+    }
+
+    /* Section header */
+    .section-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .section-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 13px;
+      font-weight: 500;
+    }
+
+    .section-icon { color: var(--amber); font-size: 14px; }
+
+    .add-btn {
+      font-size: 11px;
+      padding: 3px 8px;
+      border-radius: 5px;
+      border: 1px solid var(--border);
+      background: transparent;
+      color: var(--muted);
+      cursor: pointer;
+    }
+
+    .section-subtitle {
+      font-size: 11px;
+      color: var(--muted);
+      padding: 4px 16px 8px;
+    }
+
+    .section-body {
+      padding: 12px 16px;
+    }
+
+    /* Toast mockup */
+    .toast-mockup {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 13px;
+      display: inline-flex;
+      flex-direction: column;
+      gap: 2px;
+      margin: 8px 0;
+    }
+
+    .toast-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+
+    .toast-icon { color: var(--emerald); font-size: 14px; }
+
+    .toast-hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-left: 20px;
+    }
+
+    /* Form mockup */
+    .form-group { margin-bottom: 12px; }
+
+    .form-label {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 6px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .form-input::placeholder { color: rgba(161,161,170,0.5); }
+
+    .inline-hint {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 6px;
+      padding: 6px 10px;
+      background: var(--amber-bg);
+      border: 1px solid var(--amber-border);
+      border-radius: 6px;
+      font-size: 11px;
+      color: var(--amber);
+    }
+
+    .inline-hint-icon { font-size: 12px; flex-shrink: 0; }
+
+    .label-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-weight: 500;
+      padding: 1px 6px;
+      border-radius: 9999px;
+      white-space: nowrap;
+    }
+
+    .label-badge-red { background: rgba(239,68,68,0.9); color: white; }
+    .label-badge-violet { background: rgba(139,92,246,0.9); color: white; }
+    .label-badge-cyan { background: rgba(6,182,212,0.9); color: white; }
+    .label-badge-pink { background: rgba(236,72,153,0.9); color: white; }
+
+    .dialog-header {
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .dialog-body { padding: 16px 20px; }
+
+    .dialog-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    .btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-ghost { background: transparent; color: var(--muted); }
+    .btn-primary { background: var(--text); color: var(--bg); }
+
+    .pain-ref {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 5px;
+      border-radius: 3px;
+      background: rgba(239,68,68,0.15);
+      color: #fca5a5;
+      margin-right: 4px;
+    }
+
+    /* Keyword map table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 12px 0;
+    }
+    th { text-align: left; padding: 8px; color: var(--muted); border-bottom: 1px solid var(--border); }
+    td { padding: 8px; border-bottom: 1px solid var(--border); }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Phase 2: Template Label Polish</h1>
+    <p class="subtitle">Design proposals — building on the UX Audit findings (P1-P4)</p>
+
+    <!-- ========== PROPOSAL 1: Auto-Rules Tip Card ========== -->
+    <h2>Proposal 1: Auto-Rules Empty State Tip Card</h2>
+    <p>Addresses <span class="pain-ref">P2</span> Auto-rules empty state too subtle and <span class="pain-ref">P4</span> No "get started" banner.</p>
+
+    <div class="before-after">
+      <div>
+        <div class="before-after-label before-label">Current (before)</div>
+        <div class="mockup-frame" style="max-width: 100%;">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="section-icon">&#9889;</span>
+              Workflow Triggers
+            </div>
+            <button class="add-btn">+ Add</button>
+          </div>
+          <div class="section-subtitle">Automatically apply a workflow when a task gets a specific label.</div>
+          <div class="section-body">
+            <p class="old-empty">No workflow triggers yet. When a label is applied to a task, a workflow trigger can automatically attach a workflow template.</p>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="before-after-label after-label">Proposed (after)</div>
+        <div class="mockup-frame" style="max-width: 100%;">
+          <div class="section-header">
+            <div class="section-title">
+              <span class="section-icon">&#9889;</span>
+              Workflow Triggers
+            </div>
+            <button class="add-btn">+ Add</button>
+          </div>
+          <div class="section-subtitle">Automatically apply a workflow when a task gets a specific label.</div>
+          <div class="section-body">
+            <div class="tip-card">
+              <span class="tip-icon">&#128161;</span>
+              <div class="tip-content">
+                <div class="tip-title">Connect this template to a label</div>
+                <p class="tip-text">Add a workflow trigger so this template is automatically applied when you label a task. No manual step needed.</p>
+                <button class="tip-btn">&#9889; Add trigger</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="annotation">
+      <strong>Design rationale:</strong><br>
+      - Uses the same dashed-border + amber color scheme as the sidebar empty state for visual consistency<br>
+      - Lightbulb icon signals "tip" without being intrusive<br>
+      - Inline "Add trigger" button removes the need to find the small "+ Add" in the header<br>
+      - Clicking "Add trigger" opens the same inline add-rule form that "+ Add" opens<br>
+      - Once a rule exists, the tip card disappears entirely (replaced by the rule list)
+    </div>
+
+    <hr class="section-divider" />
+
+    <!-- ========== PROPOSAL 2: Post-Creation Toast ========== -->
+    <h2>Proposal 2: Post-Creation Toast with Hint</h2>
+    <p>Addresses <span class="pain-ref">P1</span> No post-creation nudge.</p>
+
+    <h3>Current toast</h3>
+    <div class="toast-mockup">
+      <div class="toast-title">
+        <span class="toast-icon">&#10003;</span>
+        Template created
+      </div>
+    </div>
+
+    <h3>Proposed toast</h3>
+    <div class="toast-mockup">
+      <div class="toast-title">
+        <span class="toast-icon">&#10003;</span>
+        Template created
+      </div>
+      <div class="toast-hint">Scroll down to add a workflow trigger and auto-apply it to labelled tasks.</div>
+    </div>
+
+    <div class="annotation">
+      <strong>Design rationale:</strong><br>
+      - Zero additional UI complexity — just a subtitle line on the existing toast<br>
+      - Points users toward the auto-rules section they're likely to miss below the fold<br>
+      - Disappears after the standard toast timeout — not persistent or blocking<br>
+      - Same hint text shown after import (via ImportTemplateLibraryDialog) when auto-wire was unchecked
+    </div>
+
+    <hr class="section-divider" />
+
+    <!-- ========== PROPOSAL 3: Label Suggestion Hint ========== -->
+    <h2>Proposal 3: Label Suggestion Hint in Template Name</h2>
+    <p>Addresses <span class="pain-ref">P3</span> No label affinity hint during template creation.</p>
+
+    <h3>Interaction: User types a template name containing a keyword</h3>
+
+    <div class="mockup-frame">
+      <div class="dialog-header">Create Workflow Template</div>
+      <div class="dialog-body">
+        <div class="form-group">
+          <label class="form-label">Template Name</label>
+          <input class="form-input" value="Bug Fix Process" readonly />
+          <div class="inline-hint">
+            <span class="inline-hint-icon">&#128161;</span>
+            After creating, you can auto-apply this with a
+            <span class="label-badge label-badge-red">Bug</span>
+            label trigger
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Description (optional)</label>
+          <input class="form-input" placeholder="Describe what this workflow covers..." style="color: var(--muted);" />
+        </div>
+
+        <div style="font-size: 12px; color: var(--muted); padding: 8px; border: 1px solid var(--border); border-radius: 6px;">
+          Steps editor (collapsed for brevity)
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-primary">Create Template</button>
+      </div>
+    </div>
+
+    <h3>More examples</h3>
+
+    <div class="mockup-frame" style="max-width: 400px;">
+      <div class="dialog-body" style="padding: 10px 20px;">
+        <div class="form-group" style="margin-bottom: 8px;">
+          <input class="form-input" value="Feature Development" readonly />
+          <div class="inline-hint">
+            <span class="inline-hint-icon">&#128161;</span>
+            Auto-apply with a
+            <span class="label-badge label-badge-violet">Feature</span>
+            label trigger
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 8px;">
+          <input class="form-input" value="Design Review Flow" readonly />
+          <div class="inline-hint">
+            <span class="inline-hint-icon">&#128161;</span>
+            Auto-apply with a
+            <span class="label-badge label-badge-pink">Design</span>
+            label trigger
+          </div>
+        </div>
+        <div class="form-group" style="margin-bottom: 0;">
+          <input class="form-input" value="Technical Spike Template" readonly />
+          <div class="inline-hint">
+            <span class="inline-hint-icon">&#128161;</span>
+            Auto-apply with a
+            <span class="label-badge label-badge-cyan">Research</span>
+            label trigger
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>No hint shown (no keyword match)</h3>
+    <div class="mockup-frame" style="max-width: 400px;">
+      <div class="dialog-body" style="padding: 10px 20px;">
+        <div class="form-group" style="margin-bottom: 0;">
+          <input class="form-input" value="My Custom Workflow" readonly />
+          <!-- No hint — name doesn't match any keyword -->
+        </div>
+      </div>
+    </div>
+
+    <h3>Keyword mapping</h3>
+    <p>Uses the same label suggestions as the library template backfill from Phase 1. Match is case-insensitive against the template name.</p>
+
+    <table>
+      <tr><th>Keyword(s) in name</th><th>Suggested label</th><th>Color</th></tr>
+      <tr><td>bug, fix, hotfix, patch</td><td>Bug</td><td style="color: var(--red);">red</td></tr>
+      <tr><td>feature, feat</td><td>Feature</td><td style="color: var(--violet);">violet</td></tr>
+      <tr><td>spike, research, investigation, explore</td><td>Research</td><td style="color: var(--cyan);">cyan</td></tr>
+      <tr><td>design, ux, ui</td><td>Design</td><td style="color: var(--pink);">pink</td></tr>
+      <tr><td>launch, release, deploy</td><td>Launch</td><td style="color: #f97316;">orange</td></tr>
+      <tr><td>infra, infrastructure, devops, ci, cd</td><td>Infrastructure</td><td style="color: var(--amber);">amber</td></tr>
+      <tr><td>client, customer</td><td>Client</td><td style="color: var(--blue);">blue</td></tr>
+    </table>
+
+    <div class="annotation">
+      <strong>Design rationale:</strong><br>
+      - Purely informational — no action button, no picker. Users read it and move on.<br>
+      - Appears only when a keyword matches. No hint = no distraction for custom workflows.<br>
+      - Uses actual label badge styling (colored pill) so users can mentally connect to the board's label system.<br>
+      - The hint says "after creating" — it sets the right expectation without adding steps to the dialog.<br>
+      - Keyword map is defined as a simple constant — no AI, no API call, instant match.
+    </div>
+
+    <hr class="section-divider" />
+
+    <!-- ========== SUMMARY ========== -->
+    <h2>Implementation Summary</h2>
+
+    <table>
+      <tr>
+        <th>Proposal</th>
+        <th>Pain Point</th>
+        <th>File(s)</th>
+        <th>Effort</th>
+      </tr>
+      <tr>
+        <td>1. Auto-rules tip card</td>
+        <td>P2, P4</td>
+        <td><code>workflows-tab.tsx</code></td>
+        <td>Small — replace empty state text with styled card</td>
+      </tr>
+      <tr>
+        <td>2. Post-creation toast</td>
+        <td>P1</td>
+        <td><code>create-template-dialog.tsx</code></td>
+        <td>Tiny — add subtitle to toast call</td>
+      </tr>
+      <tr>
+        <td>3. Label suggestion hint</td>
+        <td>P3</td>
+        <td><code>create-template-dialog.tsx</code> + new constant</td>
+        <td>Small — keyword map + conditional hint div</td>
+      </tr>
+    </table>
+
+    <h3>Accessibility</h3>
+    <ul style="font-size: 13px; color: var(--muted); padding-left: 20px; line-height: 2;">
+      <li>Tip card uses <code>role="note"</code> for screen readers</li>
+      <li>"Add trigger" button is keyboard-focusable with visible focus ring</li>
+      <li>Inline hint uses sufficient amber-on-dark contrast (WCAG AA for text at this size)</li>
+      <li>Label badges in hints have white text on saturated backgrounds (same as board labels)</li>
+      <li>Toast hint is announced via sonner's existing ARIA live region</li>
+    </ul>
+
+    <h3>Not included (deferred)</h3>
+    <ul style="font-size: 13px; color: var(--muted); padding-left: 20px; line-height: 2;">
+      <li>Full label picker in CreateTemplateDialog — too complex for this phase</li>
+      <li>Persistent banner on template detail — tip card in auto-rules section is sufficient</li>
+      <li>Dismiss/remember for tip card — it disappears once a rule is added, which is the natural completion</li>
+    </ul>
+  </div>
+</body>
+</html>

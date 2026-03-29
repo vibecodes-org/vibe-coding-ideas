@@ -20,6 +20,7 @@ import {
   ChevronsUpDown,
   AlertTriangle,
   Package,
+  Lightbulb,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -407,10 +408,34 @@ function AutoRulesSection({
       </p>
 
       {rules.length === 0 && !addingRule && (
-        <p className="text-xs text-muted-foreground">
-          No workflow triggers yet. When a label is applied to a task, a workflow trigger can
-          automatically attach a workflow template.
-        </p>
+        <div
+          role="note"
+          className="flex items-start gap-2.5 rounded-lg border border-dashed border-amber-500/20 bg-amber-500/[0.06] p-3"
+        >
+          <Lightbulb className="h-4 w-4 shrink-0 text-amber-400 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-medium text-foreground">
+              Connect this template to a label
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">
+              Add a workflow trigger so this template is automatically applied when you label a task.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="mt-2 h-6 gap-1 text-[11px] border-amber-500/20 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+              onClick={() => {
+                setTemplateId(selectedTemplateId);
+                setLabelId("");
+                setAddingRule(true);
+              }}
+            >
+              <Zap className="h-3 w-3" />
+              Add trigger
+            </Button>
+          </div>
+        </div>
       )}
 
       {rules.map((rule) => {
