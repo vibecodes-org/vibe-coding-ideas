@@ -6,7 +6,7 @@ import { ensureTestUsers } from "./fixtures/supabase-admin";
 const AUTH_DIR = path.join(__dirname, ".auth");
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL!;
-const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!;
+const SUPABASE_SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY!;
 
 // Extract the project ref from the URL (e.g. "irqbqxspxxzvuczhujzg" from "https://irqbqxspxxzvuczhujzg.supabase.co")
 const PROJECT_REF = new URL(SUPABASE_URL).hostname.split(".")[0];
@@ -81,8 +81,8 @@ setup("create test users and authenticate", async ({ browser }) => {
 
     console.log(`[E2E Setup] Authenticating ${config.key} via API...`);
 
-    // Sign in via Supabase JS client (no CAPTCHA required for API calls)
-    const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    // Sign in via service-role client — bypasses CAPTCHA verification
+    const supabase = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
 
     if (error || !data.session) {
