@@ -2,7 +2,8 @@ import { test, expect } from "../fixtures/auth";
 import { EXPECT_TIMEOUT } from "../fixtures/constants";
 
 test.describe("Logout", () => {
-  test("should log out and redirect to landing page", async ({ userAPage: page }, testInfo) => {
+  // Use userBPage to avoid invalidating userA's session (used by other tests)
+  test("should log out and redirect to landing page", async ({ userBPage: page }, testInfo) => {
     await page.goto("/dashboard");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
