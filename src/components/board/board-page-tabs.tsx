@@ -78,7 +78,22 @@ export function BoardPageTabs({
             Agents
           </TabsTrigger>
         </TabsList>
-        <HelpLink href="/guide/kanban-boards" tooltip="How boards work" />
+        <HelpLink
+          href={
+            activeTab === "workflows"
+              ? "/guide/workflows"
+              : activeTab === "agents"
+                ? "/guide/ai-agent-teams"
+                : "/guide/kanban-boards"
+          }
+          tooltip={
+            activeTab === "workflows"
+              ? "How workflows work"
+              : activeTab === "agents"
+                ? "How AI agent teams work"
+                : "How boards work"
+          }
+        />
       </div>
 
       <TabsContent value="board" className="min-h-0 flex-1">
