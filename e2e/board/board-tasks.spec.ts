@@ -52,8 +52,9 @@ test.describe("Board Tasks", () => {
     await page.getByText("[E2E] Task 1").click();
     await expect(page.getByRole("tab", { name: "Details" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // The task description should be visible
-    await expect(page.getByText("Task 1 description")).toBeVisible({ timeout: EXPECT_TIMEOUT });
+    // The task description should be visible inside the dialog
+    const dialog = page.getByLabel("Task Details");
+    await expect(dialog.getByText("Task 1 description")).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
   test("should archive a task", async ({ userAPage: page }) => {
@@ -83,10 +84,11 @@ test.describe("Board Tasks", () => {
     await expect(page.getByRole("tab", { name: "Details" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
     // Click Delete task — first click shows confirmation
-    await page.getByRole("button", { name: /Delete task/i }).click();
+    const dialog = page.getByLabel("Task Details");
+    await dialog.getByRole("button", { name: /Delete task/i }).click();
     await page.waitForTimeout(500);
     // Click the confirmation button
-    await page.getByRole("button", { name: /Are you sure/i }).click();
+    await dialog.getByRole("button", { name: /Are you sure/i }).click();
 
     // Wait for dialog to close and task to disappear from board
     await page.waitForTimeout(2000);
