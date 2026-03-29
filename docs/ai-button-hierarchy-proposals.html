@@ -1,0 +1,568 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Button Hierarchy — Design Proposals</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script>
+tailwind.config = {
+  darkMode: 'class',
+  theme: {
+    extend: {
+      fontFamily: {
+        sans: ['Instrument Sans', 'system-ui', 'sans-serif'],
+        mono: ['JetBrains Mono', 'monospace'],
+      },
+    },
+  },
+}
+</script>
+<style>
+  body { font-family: 'Instrument Sans', system-ui, sans-serif; }
+  .tab-indicator { transition: left 0.3s cubic-bezier(0.4,0,0.2,1), width 0.3s cubic-bezier(0.4,0,0.2,1); }
+  .panel { display: none; opacity: 0; transform: translateY(8px); }
+  .panel.active { display: block; animation: panelIn 0.35s cubic-bezier(0.4,0,0.2,1) forwards; }
+  @keyframes panelIn { to { opacity: 1; transform: translateY(0); } }
+  @keyframes pulseGlow {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(139,92,246,0); }
+    50% { box-shadow: 0 0 20px 4px rgba(139,92,246,0.15); }
+  }
+  .pulse-glow { animation: pulseGlow 2.5s ease-in-out infinite; }
+  @keyframes shimmer { 0% { background-position: -200% center; } 100% { background-position: 200% center; } }
+  .shimmer-btn { background-size: 200% auto; animation: shimmer 3s linear infinite; }
+  .vote-btn:hover .vote-arrow { transform: translateY(-1px); }
+  .vote-arrow { transition: transform 0.15s ease; }
+  .card-lift { transition: transform 0.2s ease, box-shadow 0.2s ease; }
+  .card-lift:hover { transform: translateY(-1px); box-shadow: 0 4px 24px rgba(0,0,0,0.3); }
+
+  /* Range slider */
+  input[type="range"] { -webkit-appearance: none; appearance: none; background: transparent; cursor: pointer; }
+  input[type="range"]::-webkit-slider-runnable-track { height: 4px; background: #3f3f46; border-radius: 2px; }
+  input[type="range"]::-webkit-slider-thumb { -webkit-appearance: none; height: 18px; width: 18px; border-radius: 50%; background: #8b5cf6; margin-top: -7px; border: 2px solid #18181b; box-shadow: 0 0 8px rgba(139,92,246,0.3); }
+  input[type="range"]::-moz-range-track { height: 4px; background: #3f3f46; border-radius: 2px; }
+  input[type="range"]::-moz-range-thumb { height: 18px; width: 18px; border-radius: 50%; background: #8b5cf6; border: 2px solid #18181b; }
+
+  /* Stage label highlight */
+  .stage-label { transition: all 0.2s ease; }
+  .stage-label.active { color: #c4b5fd; font-weight: 600; }
+</style>
+</head>
+<body class="bg-zinc-950 text-zinc-100 min-h-screen">
+
+<!-- Header -->
+<div class="sticky top-0 z-50 border-b border-zinc-800/80 bg-zinc-950/90 backdrop-blur-md">
+  <div class="mx-auto max-w-4xl px-6 py-4">
+    <div class="flex items-center justify-between">
+      <div>
+        <h1 class="text-lg font-bold tracking-tight text-zinc-100">AI Button Hierarchy</h1>
+        <p class="text-xs text-zinc-500 mt-0.5">Design Proposals — Compass (UX Designer)</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="rounded-full bg-violet-500/10 border border-violet-500/20 px-2.5 py-1 text-[11px] font-medium text-violet-400">Step 2 of 4</span>
+        <span class="rounded-full bg-amber-500/10 border border-amber-500/20 px-2.5 py-1 text-[11px] font-medium text-amber-400">Awaiting Approval</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Tabs -->
+<div class="sticky top-[65px] z-40 border-b border-zinc-800/60 bg-zinc-950/95 backdrop-blur-md">
+  <div class="mx-auto max-w-4xl px-6">
+    <div class="relative flex gap-0" id="tabBar">
+      <button onclick="switchTab('a')" data-tab="a" class="tab-btn relative px-5 py-3 text-sm font-semibold text-violet-400 transition-colors"><span class="relative z-10">A: Guided Journey</span></button>
+      <button onclick="switchTab('b')" data-tab="b" class="tab-btn relative px-5 py-3 text-sm font-medium text-zinc-500 hover:text-zinc-300 transition-colors"><span class="relative z-10">B: Smart CTA</span></button>
+      <button onclick="switchTab('c')" data-tab="c" class="tab-btn relative px-5 py-3 text-sm font-medium text-zinc-500 hover:text-zinc-300 transition-colors"><span class="relative z-10">C: Parallel Paths</span></button>
+      <button onclick="switchTab('compare')" data-tab="compare" class="tab-btn relative px-5 py-3 text-sm font-medium text-zinc-500 hover:text-zinc-300 transition-colors ml-auto"><span class="relative z-10">Comparison</span></button>
+      <div id="tabIndicator" class="tab-indicator absolute bottom-0 h-0.5 bg-violet-500 rounded-full" style="left:0;width:0;"></div>
+    </div>
+  </div>
+</div>
+
+<div class="mx-auto max-w-4xl px-6 py-8 space-y-6">
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- OPTION A                                -->
+  <!-- ════════════════════════════════════════ -->
+  <div id="panel-a" class="panel active">
+    <div class="mb-5 rounded-lg border border-violet-500/15 bg-violet-500/[0.04] px-4 py-3">
+      <p class="text-sm text-zinc-400"><span class="font-semibold text-violet-400">Option A — Guided Journey:</span> Merge the stepper and CTAs into one component. Each step is an actionable card. The current step gets the gradient treatment; completed steps show green; future steps are locked. No separate "Generate Board" button.</p>
+    </div>
+
+    <!-- Journey Slider -->
+    <div class="mb-5 rounded-lg border border-zinc-800/60 bg-zinc-900/40 px-5 py-4">
+      <p class="text-xs font-semibold text-zinc-500 mb-3 uppercase tracking-wider">User Journey Stage</p>
+      <input type="range" min="0" max="3" value="0" id="slider-a" oninput="renderA(+this.value)" class="w-full mb-2">
+      <div class="flex justify-between text-[11px]">
+        <span class="stage-label active" data-stage="0">Fresh idea<br><span class="text-zinc-600">No description</span></span>
+        <span class="stage-label" data-stage="1">Enhanced<br><span class="text-zinc-600">Has description</span></span>
+        <span class="stage-label" data-stage="2">Team ready<br><span class="text-zinc-600">Agents added</span></span>
+        <span class="stage-label" data-stage="3">Board exists<br><span class="text-zinc-600">12 tasks</span></span>
+      </div>
+    </div>
+
+    <!-- Hero Card -->
+    <div class="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden card-lift">
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800/60">
+        <div class="flex items-center gap-3">
+          <button class="vote-btn flex flex-col items-center gap-0.5 rounded-lg border border-zinc-700/60 bg-zinc-800/50 px-2.5 py-1.5 hover:border-violet-500/30 hover:bg-violet-500/5 transition-all">
+            <svg class="vote-arrow h-3 w-3 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 15l7-7 7 7"/></svg>
+            <span class="text-xs font-bold text-zinc-300">42</span>
+          </button>
+          <h2 class="text-base font-bold text-zinc-100">My SaaS Startup Idea</h2>
+        </div>
+        <div class="flex items-center gap-2" id="a-header-actions">
+          <button class="flex items-center gap-1.5 rounded-md border border-violet-500/25 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-400 hover:bg-violet-500/15 hover:border-violet-500/35 transition-all">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+            Enhance with AI
+            <span class="rounded-full bg-violet-600 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">5</span>
+          </button>
+          <button class="rounded-md p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-5 py-2.5 text-xs text-zinc-500">
+        <span class="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-amber-400 font-medium">Draft</span>
+        <span>by <span class="text-zinc-400">Nick Ball</span></span>
+        <span class="text-zinc-700">&middot;</span>
+        <span>2 hours ago</span>
+      </div>
+    </div>
+
+    <!-- Dynamic area below hero -->
+    <div id="a-below-hero" class="mt-4"></div>
+  </div>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- OPTION B                                -->
+  <!-- ════════════════════════════════════════ -->
+  <div id="panel-b" class="panel">
+    <div class="mb-5 rounded-lg border border-violet-500/15 bg-violet-500/[0.04] px-4 py-3">
+      <p class="text-sm text-zinc-400"><span class="font-semibold text-violet-400">Option B — Smart CTA:</span> Keep the layout similar, but make the primary gradient button contextual — it morphs to show the next best action. The stepper becomes a pure progress indicator. "Enhance with AI" stays in the header with slightly more prominent styling. <strong class="text-violet-300">Recommended.</strong></p>
+    </div>
+
+    <div class="mb-5 rounded-lg border border-zinc-800/60 bg-zinc-900/40 px-5 py-4">
+      <p class="text-xs font-semibold text-zinc-500 mb-3 uppercase tracking-wider">User Journey Stage</p>
+      <input type="range" min="0" max="3" value="0" id="slider-b" oninput="renderB(+this.value)" class="w-full mb-2">
+      <div class="flex justify-between text-[11px]">
+        <span class="stage-label active" data-stage="0">Fresh idea<br><span class="text-zinc-600">No description</span></span>
+        <span class="stage-label" data-stage="1">Enhanced<br><span class="text-zinc-600">Has description</span></span>
+        <span class="stage-label" data-stage="2">Team ready<br><span class="text-zinc-600">Agents added</span></span>
+        <span class="stage-label" data-stage="3">Board exists<br><span class="text-zinc-600">12 tasks</span></span>
+      </div>
+    </div>
+
+    <!-- Hero Card -->
+    <div class="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden card-lift">
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800/60">
+        <div class="flex items-center gap-3">
+          <button class="vote-btn flex flex-col items-center gap-0.5 rounded-lg border border-zinc-700/60 bg-zinc-800/50 px-2.5 py-1.5 hover:border-violet-500/30 hover:bg-violet-500/5 transition-all">
+            <svg class="vote-arrow h-3 w-3 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 15l7-7 7 7"/></svg>
+            <span class="text-xs font-bold text-zinc-300">42</span>
+          </button>
+          <h2 class="text-base font-bold text-zinc-100">My SaaS Startup Idea</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="flex items-center gap-1.5 rounded-md border border-violet-500/25 bg-violet-500/10 px-3 py-1.5 text-xs font-medium text-violet-400 hover:bg-violet-500/15 transition-all">
+            <svg class="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+            Enhance with AI
+            <span class="rounded-full bg-violet-600 px-1.5 py-0.5 text-[9px] font-bold leading-none text-white">5</span>
+          </button>
+          <button class="rounded-md p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-5 py-2.5 text-xs text-zinc-500">
+        <span class="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-amber-400 font-medium">Draft</span>
+        <span>by <span class="text-zinc-400">Nick Ball</span></span>
+        <span class="text-zinc-700">&middot;</span>
+        <span>2 hours ago</span>
+      </div>
+    </div>
+
+    <div id="b-below-hero" class="mt-4"></div>
+  </div>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- OPTION C                                -->
+  <!-- ════════════════════════════════════════ -->
+  <div id="panel-c" class="panel">
+    <div class="mb-5 rounded-lg border border-violet-500/15 bg-violet-500/[0.04] px-4 py-3">
+      <p class="text-sm text-zinc-400"><span class="font-semibold text-violet-400">Option C — Parallel Paths:</span> Both "Enhance" and "Generate Board" shown as equal-weight cards side by side. No stepper — replaced by a contextual tip. The Enhance card pulses when the description is weak. Both actions always available; no locking.</p>
+    </div>
+
+    <div class="mb-5 rounded-lg border border-zinc-800/60 bg-zinc-900/40 px-5 py-4">
+      <p class="text-xs font-semibold text-zinc-500 mb-3 uppercase tracking-wider">User Journey Stage</p>
+      <input type="range" min="0" max="3" value="0" id="slider-c" oninput="renderC(+this.value)" class="w-full mb-2">
+      <div class="flex justify-between text-[11px]">
+        <span class="stage-label active" data-stage="0">Fresh idea<br><span class="text-zinc-600">No description</span></span>
+        <span class="stage-label" data-stage="1">Enhanced<br><span class="text-zinc-600">Has description</span></span>
+        <span class="stage-label" data-stage="2">Team ready<br><span class="text-zinc-600">Agents added</span></span>
+        <span class="stage-label" data-stage="3">Board exists<br><span class="text-zinc-600">12 tasks</span></span>
+      </div>
+    </div>
+
+    <!-- Hero Card -->
+    <div class="rounded-xl border border-zinc-800 bg-zinc-900 overflow-hidden card-lift">
+      <div class="flex items-center justify-between px-5 py-3.5 border-b border-zinc-800/60">
+        <div class="flex items-center gap-3">
+          <button class="vote-btn flex flex-col items-center gap-0.5 rounded-lg border border-zinc-700/60 bg-zinc-800/50 px-2.5 py-1.5 hover:border-violet-500/30 hover:bg-violet-500/5 transition-all">
+            <svg class="vote-arrow h-3 w-3 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M5 15l7-7 7 7"/></svg>
+            <span class="text-xs font-bold text-zinc-300">42</span>
+          </button>
+          <h2 class="text-base font-bold text-zinc-100">My SaaS Startup Idea</h2>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="rounded-md p-1.5 text-zinc-500 hover:text-zinc-300 hover:bg-zinc-800 transition-colors">
+            <svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="flex items-center gap-3 px-5 py-2.5 text-xs text-zinc-500">
+        <span class="rounded-full bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 text-amber-400 font-medium">Draft</span>
+        <span>by <span class="text-zinc-400">Nick Ball</span></span>
+        <span class="text-zinc-700">&middot;</span>
+        <span>2 hours ago</span>
+      </div>
+    </div>
+
+    <div id="c-below-hero" class="mt-4"></div>
+  </div>
+
+  <!-- ════════════════════════════════════════ -->
+  <!-- COMPARISON                              -->
+  <!-- ════════════════════════════════════════ -->
+  <div id="panel-compare" class="panel">
+    <h2 class="text-lg font-bold text-zinc-100 mb-4">Comparison Summary</h2>
+
+    <div class="overflow-hidden rounded-xl border border-zinc-800 bg-zinc-900">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-zinc-800">
+            <th class="px-4 py-3 text-left text-xs font-semibold text-zinc-500 uppercase tracking-wider w-1/4">Criteria</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-violet-400 uppercase tracking-wider">A: Guided</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-violet-400 uppercase tracking-wider">B: Smart CTA</th>
+            <th class="px-4 py-3 text-left text-xs font-semibold text-violet-400 uppercase tracking-wider">C: Parallel</th>
+          </tr>
+        </thead>
+        <tbody class="divide-y divide-zinc-800/60">
+          <tr><td class="px-4 py-3 font-medium text-zinc-300">Hierarchy fix</td><td class="px-4 py-3 text-zinc-400">Current step is always loudest</td><td class="px-4 py-3 text-zinc-400">Button morphs to next action</td><td class="px-4 py-3 text-zinc-400">Equal weight + glow nudge</td></tr>
+          <tr><td class="px-4 py-3 font-medium text-zinc-300">User freedom</td><td class="px-4 py-3 text-amber-400">Low — locked steps</td><td class="px-4 py-3 text-zinc-400">Medium — header button always there</td><td class="px-4 py-3 text-emerald-400">High — both always available</td></tr>
+          <tr><td class="px-4 py-3 font-medium text-zinc-300">Cognitive load</td><td class="px-4 py-3 text-emerald-400">Low — one action</td><td class="px-4 py-3 text-emerald-400">Low — one button</td><td class="px-4 py-3 text-zinc-400">Medium — two choices</td></tr>
+          <tr><td class="px-4 py-3 font-medium text-zinc-300">Implementation</td><td class="px-4 py-3 text-amber-400">Medium — new component</td><td class="px-4 py-3 text-emerald-400">Low — conditional logic</td><td class="px-4 py-3 text-zinc-400">Medium — new card layout</td></tr>
+          <tr><td class="px-4 py-3 font-medium text-zinc-300">Double-click fix</td><td class="px-4 py-3 text-emerald-400">Yes — dialog opens directly</td><td class="px-4 py-3 text-emerald-400">Yes — navigates or opens dialog</td><td class="px-4 py-3 text-amber-400">Partial — still links to board</td></tr>
+          <tr><td class="px-4 py-3 font-medium text-zinc-300">Expert users</td><td class="px-4 py-3 text-amber-400">Friction — forced steps</td><td class="px-4 py-3 text-emerald-400">Good — shortcuts available</td><td class="px-4 py-3 text-emerald-400">Best — immediate access</td></tr>
+          <tr><td class="px-4 py-3 font-medium text-zinc-300">Post-board state</td><td class="px-4 py-3 text-zinc-400">Collapses to "Board" link</td><td class="px-4 py-3 text-emerald-400">Clean outline button + no stepper</td><td class="px-4 py-3 text-emerald-400">Cards swap to Board + Enhance</td></tr>
+          <tr><td class="px-4 py-3 font-medium text-zinc-300">Audit issues</td><td class="px-4 py-3 text-zinc-400">#1, #3, #4, #6</td><td class="px-4 py-3 text-zinc-400">#1, #3, #5</td><td class="px-4 py-3 text-zinc-400">#1, #4, #5, #6</td></tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="mt-6 rounded-xl border border-violet-500/20 bg-violet-500/[0.04] p-5">
+      <h3 class="text-sm font-bold text-violet-400 mb-2">Compass Recommendation</h3>
+      <p class="text-sm text-zinc-400 leading-relaxed mb-3"><strong class="text-zinc-300">Option B (Smart CTA)</strong> is the strongest choice. Lowest effort, solves hierarchy + double-click, clean post-board state. Power users have the header "Enhance" button; new users get guided naturally by the morphing CTA.</p>
+      <p class="text-sm text-zinc-400 leading-relaxed mb-3"><strong class="text-zinc-300">Option A</strong> is best for onboarding-heavy products but risks annoying returning users. The locked steps could feel patronising.</p>
+      <p class="text-sm text-zinc-400 leading-relaxed"><strong class="text-zinc-300">Option C</strong> is most visually appealing with maximum freedom. Best if Enhance and Generate are truly independent features.</p>
+    </div>
+
+    <div class="mt-4 rounded-xl border border-zinc-800 bg-zinc-900/60 p-5">
+      <h3 class="text-sm font-bold text-zinc-300 mb-2">Hybrid Possibility: B + C Elements</h3>
+      <p class="text-sm text-zinc-400 leading-relaxed">Take Option B's contextual smart CTA, but borrow Option C's tip text instead of the full stepper. Lighter informational footprint, same guided progression.</p>
+    </div>
+  </div>
+
+</div>
+
+<script>
+// ── SVG icons ──
+const icons = {
+  sparkles: '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>',
+  users: '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128H5.228A2 2 0 013 17.128V17a6.002 6.002 0 015.786-5.995M15 11a3 3 0 11-6 0 3 3 0 016 0z"/></svg>',
+  board: '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6z"/><path d="M3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25z"/><path d="M13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6z"/><path d="M13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z"/></svg>',
+  check: '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>',
+  lock: '<svg class="h-3 w-3 ml-1" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z"/></svg>',
+  arrow: '<svg class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>',
+  arrowSm: '<svg class="h-3 w-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path d="M13.5 4.5L21 12m0 0l-7.5 7.5M21 12H3"/></svg>',
+  info: '<svg class="inline h-3 w-3 mr-1 text-amber-400/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z"/></svg>',
+  checkInline: '<svg class="inline h-3 w-3 mr-1 text-emerald-400/70" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2.5"><path stroke-linecap="round" stroke-linejoin="round" d="M4.5 12.75l6 6 9-13.5"/></svg>',
+};
+
+function stepCircle(state, num) {
+  if (state === 'done') return `<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-emerald-500 bg-emerald-500/15 text-emerald-400">${icons.check}</div>`;
+  if (state === 'active') return `<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-violet-500 bg-violet-500/15 text-xs font-bold text-violet-400">${num}</div>`;
+  return `<div class="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border-2 border-zinc-700 bg-zinc-800/50 text-xs font-bold text-zinc-600">${num}</div>`;
+}
+
+// ── Highlight stage labels ──
+function highlightStage(panel, stage) {
+  document.querySelectorAll(`#panel-${panel} .stage-label`).forEach(el => {
+    el.classList.toggle('active', +el.dataset.stage === stage);
+  });
+}
+
+// ═══════════════════════════════════
+// OPTION A RENDERER
+// ═══════════════════════════════════
+function renderA(stage) {
+  highlightStage('a', stage);
+  const el = document.getElementById('a-below-hero');
+
+  if (stage === 3) {
+    // Board exists — stepper collapses, show Board link
+    el.innerHTML = `
+      <div class="flex items-center gap-3">
+        <a href="#" class="flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2 text-sm font-medium text-zinc-300 hover:border-violet-500/30 hover:bg-zinc-800 transition-all">
+          ${icons.board}
+          Board
+          <span class="rounded-full bg-zinc-700 px-1.5 py-0.5 text-[10px] font-bold text-zinc-300">12</span>
+        </a>
+        <span class="text-xs text-zinc-600">All steps complete — stepper hidden</span>
+      </div>
+    `;
+    return;
+  }
+
+  const steps = [
+    { label: 'Describe your idea', sub: stage >= 1 ? 'Done' : 'No description yet', icon: icons.sparkles, btnLabel: 'Enhance with AI', btnDone: 'Enhanced' },
+    { label: 'Add AI agents', sub: stage >= 2 ? '3 agents' : '0 agents', icon: icons.users, btnLabel: 'Add Agents', btnDone: '3 agents' },
+    { label: 'Generate board', sub: '0 tasks', icon: icons.board, btnLabel: 'Generate Board', btnDone: '' },
+  ];
+
+  const getState = (i) => {
+    if (stage > i) return 'done';
+    if (stage === i) return 'active';
+    return 'locked';
+  };
+
+  el.innerHTML = `<div class="grid grid-cols-3 gap-3">${steps.map((s, i) => {
+    const st = getState(i);
+    const borderClass = st === 'done' ? 'border-emerald-500/30 bg-emerald-500/[0.03]' : st === 'active' ? 'border-violet-500/30 bg-violet-500/[0.04]' : 'border-zinc-800 bg-zinc-900/50 opacity-50';
+    const topBar = st === 'active' ? '<div class="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-violet-500 to-purple-500"></div>' : '';
+    const subColor = st === 'done' ? 'text-emerald-500/70' : 'text-zinc-500';
+    const labelColor = st === 'done' ? 'text-emerald-400' : st === 'active' ? 'text-zinc-100' : 'text-zinc-500';
+
+    let btn = '';
+    if (st === 'done') {
+      btn = `<button class="w-full rounded-lg border border-emerald-500/20 bg-emerald-500/5 px-4 py-2 text-sm font-medium text-emerald-400/60 cursor-default flex items-center justify-center gap-2">${icons.check} ${s.btnDone}</button>`;
+    } else if (st === 'active') {
+      btn = `<button class="w-full rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 px-4 py-2 text-sm font-semibold text-white hover:brightness-110 transition-all flex items-center justify-center gap-2 shimmer-btn" style="background-image:linear-gradient(90deg,#7c3aed,#9333ea,#7c3aed);">${s.icon} ${s.btnLabel}</button>`;
+    } else {
+      btn = `<button disabled class="w-full rounded-lg border border-zinc-700/50 bg-zinc-800/30 px-4 py-2 text-sm font-medium text-zinc-600 cursor-not-allowed flex items-center justify-center gap-2">${s.icon} ${s.btnLabel} ${icons.lock}</button>`;
+    }
+
+    return `<div class="rounded-xl border ${borderClass} p-4 relative overflow-hidden">${topBar}
+      <div class="flex items-center gap-2.5 mb-3">
+        ${stepCircle(st === 'done' ? 'done' : st === 'active' ? 'active' : 'locked', i+1)}
+        <div><p class="text-sm font-semibold ${labelColor}">${s.label}</p><p class="text-[11px] ${subColor}">${s.sub}</p></div>
+      </div>
+      ${btn}
+    </div>`;
+  }).join('')}</div>`;
+}
+
+// ═══════════════════════════════════
+// OPTION B RENDERER
+// ═══════════════════════════════════
+function renderB(stage) {
+  highlightStage('b', stage);
+  const el = document.getElementById('b-below-hero');
+
+  if (stage === 3) {
+    // Board exists — outline button, no stepper
+    el.innerHTML = `
+      <a href="#" class="inline-flex items-center gap-2 rounded-lg border border-zinc-700 bg-zinc-800/50 px-4 py-2 text-sm font-medium text-zinc-300 hover:border-violet-500/30 hover:bg-zinc-800 transition-all">
+        ${icons.board}
+        Board
+        <span class="rounded-full bg-zinc-700 px-1.5 py-0.5 text-[10px] font-bold text-zinc-300">12</span>
+      </a>
+      <p class="mt-3 text-[11px] text-zinc-600">Stepper hidden — board already generated. "Enhance with AI" remains in header for re-enhancement.</p>
+    `;
+    return;
+  }
+
+  const btnConfigs = [
+    { icon: icons.sparkles, text: 'Enhance your idea with AI' },
+    { icon: icons.users, text: 'Add AI agents to your team' },
+    { icon: icons.board, text: 'Generate Board with AI' },
+  ];
+  const btn = btnConfigs[stage];
+
+  const stepStates = [0,1,2].map(i => {
+    if (stage > i) return 'done';
+    if (stage === i) return 'active';
+    return 'locked';
+  });
+  const stepLabels = ['Describe', 'Agents', 'Board'];
+  const stepDescs = [
+    stage >= 1 ? 'Done' : 'Add a description',
+    stage >= 2 ? '3 agents' : '0 agents',
+    '0 tasks',
+  ];
+
+  const connFill = (i) => stage > i ? 'width:100%' : 'width:0';
+
+  el.innerHTML = `
+    <button class="rounded-lg bg-gradient-to-r from-violet-600 to-purple-600 px-5 py-2.5 text-sm font-semibold text-white hover:brightness-110 transition-all flex items-center gap-2 shimmer-btn" style="background-image:linear-gradient(90deg,#7c3aed,#9333ea,#7c3aed);">
+      ${btn.icon}
+      ${btn.text}
+      ${icons.arrow}
+    </button>
+
+    <div class="mt-4 rounded-xl border border-zinc-800/60 bg-zinc-900/40 p-4">
+      <div class="flex items-center">
+        ${stepStates.map((st, i) => `
+          <div class="flex flex-1 flex-col items-center text-center">
+            ${stepCircle(st, i+1)}
+            <span class="mt-1.5 text-xs font-semibold ${st === 'done' ? 'text-emerald-400' : st === 'active' ? 'text-zinc-300' : 'text-zinc-500'}">${stepLabels[i]}</span>
+            <span class="text-[11px] ${st === 'done' ? 'text-emerald-500/70' : 'text-zinc-600'}">${stepDescs[i]}</span>
+          </div>
+          ${i < 2 ? `<div class="mt-[-14px] h-0.5 w-10 shrink-0 bg-zinc-800 rounded-full overflow-hidden"><div class="h-full bg-emerald-500 transition-all duration-500" style="${connFill(i)}"></div></div>` : ''}
+        `).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// ═══════════════════════════════════
+// OPTION C RENDERER
+// ═══════════════════════════════════
+function renderC(stage) {
+  highlightStage('c', stage);
+  const el = document.getElementById('c-below-hero');
+
+  if (stage === 3) {
+    // Board exists — cards change purpose
+    el.innerHTML = `
+      <div class="grid grid-cols-2 gap-3">
+        <button class="rounded-xl border border-zinc-800 bg-zinc-900 p-5 text-left hover:border-violet-500/30 hover:bg-violet-500/[0.04] transition-all group">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-zinc-800 border border-zinc-700 group-hover:bg-violet-500/10 group-hover:border-violet-500/20 transition-colors">
+              ${icons.sparkles.replace('h-4 w-4', 'h-5 w-5').replace('text-violet-400', 'text-zinc-400 group-hover:text-violet-400 transition-colors')}
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-zinc-100 group-hover:text-violet-300 transition-colors">Enhance with AI</p>
+              <p class="text-[11px] text-zinc-500">Refine and improve your description</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 text-xs text-zinc-500 group-hover:text-violet-400 font-medium transition-colors">
+            <span>Re-enhance</span> ${icons.arrowSm}
+          </div>
+        </button>
+
+        <a href="#" class="rounded-xl border border-violet-500/25 bg-violet-500/[0.04] p-5 text-left hover:border-violet-500/40 hover:bg-violet-500/[0.06] transition-all group">
+          <div class="flex items-center gap-3 mb-3">
+            <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/10 border border-violet-500/20 transition-colors">
+              ${icons.board.replace('h-4 w-4', 'h-5 w-5').replace('stroke="currentColor"', 'class="text-violet-400" stroke="currentColor"')}
+            </div>
+            <div>
+              <p class="text-sm font-semibold text-zinc-100 group-hover:text-violet-300 transition-colors">Board</p>
+              <p class="text-[11px] text-zinc-500">12 tasks across 5 columns</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-1.5 text-xs text-violet-400 font-medium">
+            <span>Open board</span> ${icons.arrowSm}
+          </div>
+        </a>
+      </div>
+      <div class="mt-3 px-1">
+        <p class="text-[11px] text-zinc-600">${icons.checkInline} Board generated with 12 tasks. Cards now show Board access + re-enhance option.</p>
+      </div>
+    `;
+    return;
+  }
+
+  const hasDesc = stage >= 1;
+  const hasAgents = stage >= 2;
+  const enhanceGlow = !hasDesc ? 'pulse-glow border-violet-500/30' : 'border-zinc-800';
+  const enhanceSub = hasDesc ? 'Re-enhance your description' : 'Refine your description for better AI results';
+  const enhanceFooter = hasDesc
+    ? `<span class="text-emerald-400/70">${icons.check.replace('h-4 w-4','h-3 w-3')} Enhanced</span>`
+    : `<span>5 free credits</span> ${icons.arrowSm}`;
+  const enhanceFooterClass = hasDesc ? 'text-xs text-emerald-400/70 font-medium' : 'text-xs text-violet-400 font-medium';
+
+  const boardIconBg = 'bg-zinc-800 border border-zinc-700 group-hover:bg-violet-500/10 group-hover:border-violet-500/20';
+
+  const tip = !hasDesc
+    ? `${icons.info} Tip: A detailed description and AI agents improve board quality`
+    : hasDesc && !hasAgents
+    ? `${icons.checkInline} Good description — add agents for even better results`
+    : `${icons.checkInline} Description and agents ready — your board will be high quality`;
+
+  el.innerHTML = `
+    <div class="grid grid-cols-2 gap-3">
+      <button class="${enhanceGlow} rounded-xl border bg-zinc-900 p-5 text-left hover:border-violet-500/40 hover:bg-violet-500/[0.04] transition-all group">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-violet-500/10 border border-violet-500/20 group-hover:bg-violet-500/15 transition-colors">
+            <svg class="h-5 w-5 text-violet-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z"/></svg>
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-zinc-100 group-hover:text-violet-300 transition-colors">Enhance with AI</p>
+            <p class="text-[11px] text-zinc-500">${enhanceSub}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 ${enhanceFooterClass}">${enhanceFooter}</div>
+      </button>
+
+      <button class="rounded-xl border border-zinc-800 bg-zinc-900 p-5 text-left hover:border-violet-500/30 hover:bg-violet-500/[0.04] transition-all group">
+        <div class="flex items-center gap-3 mb-3">
+          <div class="flex h-10 w-10 items-center justify-center rounded-lg ${boardIconBg} transition-colors">
+            <svg class="h-5 w-5 text-zinc-400 group-hover:text-violet-400 transition-colors" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6z"/><path d="M3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25z"/><path d="M13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6z"/><path d="M13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25a2.25 2.25 0 01-2.25-2.25v-2.25z"/></svg>
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-zinc-100 group-hover:text-violet-300 transition-colors">Generate Board</p>
+            <p class="text-[11px] text-zinc-500">Create a kanban board from your idea</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-1.5 text-xs text-zinc-500 group-hover:text-violet-400 font-medium transition-colors">
+          <span>Create tasks</span> ${icons.arrowSm}
+        </div>
+      </button>
+    </div>
+
+    <div class="mt-3 flex items-center justify-between px-1">
+      <p class="text-[11px] text-zinc-500">${tip}</p>
+      <button class="text-[11px] text-violet-400/70 hover:text-violet-400 font-medium transition-colors flex items-center gap-1">
+        ${icons.users.replace('h-4 w-4','h-3 w-3')} ${hasAgents ? '3 agents' : 'Add AI agents'}
+      </button>
+    </div>
+  `;
+}
+
+// ── Tab switching ──
+function switchTab(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.getElementById('panel-' + id)?.classList.add('active');
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    if (btn.dataset.tab === id) {
+      btn.classList.remove('text-zinc-500');
+      btn.classList.add('text-violet-400', 'font-semibold');
+    } else {
+      btn.classList.remove('text-violet-400', 'font-semibold');
+      btn.classList.add('text-zinc-500');
+    }
+  });
+  const activeBtn = document.querySelector(`.tab-btn[data-tab="${id}"]`);
+  const indicator = document.getElementById('tabIndicator');
+  const bar = document.getElementById('tabBar');
+  if (activeBtn && indicator && bar) {
+    const barRect = bar.getBoundingClientRect();
+    const btnRect = activeBtn.getBoundingClientRect();
+    indicator.style.left = (btnRect.left - barRect.left) + 'px';
+    indicator.style.width = btnRect.width + 'px';
+  }
+}
+
+// ── Init ──
+document.addEventListener('DOMContentLoaded', () => {
+  switchTab('a');
+  renderA(0);
+  renderB(0);
+  renderC(0);
+});
+</script>
+</body>
+</html>

@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { Pencil, LayoutDashboard, Sparkles } from "lucide-react";
+import { Pencil } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { getIdeaTeam } from "@/lib/idea-team";
@@ -32,9 +32,8 @@ import { formatRelativeTime, getInitials, stripMarkdownForMeta } from "@/lib/uti
 import { BotRolesProvider } from "@/components/bot-roles-context";
 import { PendingRequests } from "@/components/ideas/pending-requests";
 import { RecentDiscussionsPreview } from "@/components/discussions/recent-discussions-preview";
-import { IdeaGettingStarted } from "@/components/ideas/idea-getting-started";
+import { IdeaActionCards } from "@/components/ideas/idea-action-cards";
 import { KitErrorToast } from "@/components/ideas/kit-error-toast";
-import { Badge } from "@/components/ui/badge";
 import type { CommentWithAuthor, CollaboratorWithUser, CollaborationRequestWithRequester, BotProfile, IdeaDiscussionWithAuthor } from "@/types";
 import type { Metadata } from "next";
 
@@ -430,6 +429,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
           {(ideaAgents.length > 0 || (isAuthor || isCollaborator)) && (
             <>
               <div className="hidden h-5 w-px bg-border sm:block" />
+              <span id="agents-section" />
               <IdeaAgentsSection
                 ideaId={idea.id}
                 ideaAgents={ideaAgents}
@@ -450,36 +450,21 @@ export default async function IdeaDetailPage({ params }: PageProps) {
         )}
       </div>
 
-      {/* ══ Navigation Buttons ═════════════════════════════ */}
+      {/* ══ Action Cards (Enhance + Board) ═════════════════ */}
       {(isAuthor || isCollaborator || idea.visibility === "public") && (
-        <div className="mt-4 flex flex-wrap items-center gap-2">
-          <Link href={`/ideas/${idea.id}/board`}>
-            {taskCount === 0 ? (
-              <Button size="sm" className="gap-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:brightness-110">
-                <Sparkles className="h-4 w-4" />
-                Generate Board with AI &rarr;
-              </Button>
-            ) : (
-              <Button variant="outline" size="sm" className="gap-2">
-                <LayoutDashboard className="h-4 w-4" />
-                Board
-                <Badge variant="secondary" className="ml-0.5 px-1.5 py-0 text-[10px]">{taskCount}</Badge>
-              </Button>
-            )}
-          </Link>
-        </div>
-      )}
-
-      {/* ══ Getting Started Card (when no board tasks) ══════ */}
-      {(isAuthor || isCollaborator) && taskCount === 0 && (
-        <div className="mt-4">
-          <IdeaGettingStarted
-            ideaId={idea.id}
-            hasDescription={!!idea.description && idea.description.length > 20}
-            agentCount={ideaTeam.ideaAgents.length}
-            boardTaskCount={taskCount}
-          />
-        </div>
+        <IdeaActionCards
+          ideaId={idea.id}
+          ideaTitle={idea.title}
+          currentDescription={idea.description}
+          isAuthor={isAuthor}
+          taskCount={taskCount}
+          agentCount={ideaTeam.ideaAgents.length}
+          hasDescription={!!idea.description && idea.description.length > 20}
+          userCanUseAi={userCanUseAi}
+          hasByokKey={userHasByokKey}
+          starterCredits={userStarterCredits}
+          bots={userBots}
+        />
       )}
 
       {/* ══ Discussions Preview ══════════════════════════════ */}

@@ -198,6 +198,21 @@
   50% { box-shadow: 0 0 12px 4px rgba(139, 92, 246, 0.35); }
 }
 
+@keyframes pulse-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(139, 92, 246, 0); }
+  50% { box-shadow: 0 0 20px 4px rgba(139, 92, 246, 0.15); }
+}
+
+.animate-pulse-glow {
+  animation: pulse-glow 2.5s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-glow {
+    animation: none;
+  }
+}
+
 .enhance-streaming-cursor {
   display: inline-block;
   width: 2px;
