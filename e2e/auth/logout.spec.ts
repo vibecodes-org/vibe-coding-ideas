@@ -1,22 +1,26 @@
 import { test, expect } from "../fixtures/auth";
 import { EXPECT_TIMEOUT } from "../fixtures/constants";
 
-// TODO: Logout test needs investigation — the user menu selector
-// doesn't reliably find the dropdown trigger across browsers.
-// Tracked as a follow-up task.
 test.describe("Logout", () => {
-  test.skip(() => true, "Logout menu selector needs investigation");
-
-  test("should log out and redirect to landing page", async ({ userAPage: page }) => {
+  test("should log out and redirect to landing page", async ({ userAPage: page }, testInfo) => {
     await page.goto("/dashboard");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
 
-    const userMenu = page.locator("header button").last();
-    await userMenu.click();
+    const isMobile = testInfo.project.name === "Mobile Chrome";
 
-    await page.getByText(/sign out|log out/i).first().click();
+    if (isMobile) {
+      // Mobile: open hamburger menu first
+      await page.getByLabel("Open navigation menu").click();
+      await page.getByRole("button", { name: /Sign Out/i }).click();
+    } else {
+      // Desktop: click avatar dropdown, then Sign Out menu item
+      const avatarButton = page.locator("header button.rounded-full");
+      await avatarButton.click();
+      await page.getByRole("menuitem", { name: /Sign Out/i }).click();
+    }
 
+    // Should redirect to landing or login
     await page.waitForURL(/\/(login)?$/, { timeout: EXPECT_TIMEOUT });
   });
 });
