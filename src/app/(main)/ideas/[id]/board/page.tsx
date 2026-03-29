@@ -1,6 +1,6 @@
 import { notFound } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, MessagesSquare } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { initializeBoardColumns } from "@/actions/board";
@@ -10,7 +10,6 @@ import { BoardRealtime } from "@/components/board/board-realtime";
 import { GuestBoardBanner } from "@/components/board/guest-board-banner";
 import { BoardPageTabs } from "@/components/board/board-page-tabs";
 import { KitAppliedToast } from "@/components/board/kit-applied-toast";
-import { Button } from "@/components/ui/button";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import type {
   BoardColumnWithTasks,
@@ -76,7 +75,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
   // Fetch idea (include visibility for access control)
   const { data: idea } = await supabase
     .from("ideas")
-    .select("id, title, description, author_id, visibility, discussion_count, project_kit:project_kits!ideas_project_kit_id_fkey(name, icon)")
+    .select("id, title, description, author_id, visibility, project_kit:project_kits!ideas_project_kit_id_fkey(name, icon)")
     .eq("id", id)
     .single();
 
@@ -224,30 +223,18 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     <div className="flex h-full flex-col overflow-hidden px-4 sm:px-6 lg:px-8">
       <BoardRealtime ideaId={id} />
 
-      {/* Header */}
-      <div className="flex shrink-0 items-center gap-4 py-4">
-        <div className="flex items-center gap-1">
-          <Link href={`/ideas/${id}`}>
-            <Button variant="ghost" size="sm" className="gap-2">
-              <ArrowLeft className="h-4 w-4" />
-              Back to idea
-            </Button>
-          </Link>
-          {idea.discussion_count > 0 && (
-            <>
-              <span className="text-muted-foreground/40">·</span>
-              <Link
-                href={`/ideas/${id}/discussions`}
-                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors px-1.5 py-1"
-              >
-                <MessagesSquare className="h-3 w-3" />
-                Discussions ({idea.discussion_count})
-              </Link>
-            </>
-          )}
-        </div>
-        <h1 className="text-xl font-bold">{idea.title} — Board</h1>
-      </div>
+      {/* Breadcrumb header */}
+      <nav aria-label="Breadcrumb" className="flex shrink-0 items-center gap-1.5 py-4 text-sm">
+        <Link href="/dashboard" className="text-muted-foreground transition-colors hover:text-foreground">
+          Dashboard
+        </Link>
+        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />
+        <Link href={`/ideas/${id}`} className="text-muted-foreground transition-colors hover:text-foreground">
+          {idea.title}
+        </Link>
+        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/50" />
+        <span className="font-medium text-foreground">Board</span>
+      </nav>
 
       {/* Guest banner */}
       {isReadOnly && (

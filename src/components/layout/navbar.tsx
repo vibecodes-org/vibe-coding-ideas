@@ -70,10 +70,15 @@ export function Navbar() {
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2">
-            <Sparkles className="h-6 w-6 text-primary" />
-            <span className="text-xl font-bold">VibeCodes</span>
-          </Link>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2">
+                <Sparkles className="h-6 w-6 text-primary" />
+                <span className="text-xl font-bold">VibeCodes</span>
+              </Link>
+            </TooltipTrigger>
+            <TooltipContent>{user ? "Dashboard" : "Home"}</TooltipContent>
+          </Tooltip>
 
           {/* Desktop nav */}
           <div className="hidden items-center gap-4 md:flex">
@@ -247,6 +252,15 @@ export function Navbar() {
                 </div>
               ) : user ? (
                 <>
+                  <Link
+                    href="/dashboard"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <Button variant={isActive("/dashboard") ? "secondary" : "ghost"} className="w-full justify-start gap-2">
+                      <Sparkles className="h-4 w-4 text-primary" />
+                      Dashboard
+                    </Button>
+                  </Link>
                   <Link
                     href="/ideas"
                     onClick={() => setMobileMenuOpen(false)}
