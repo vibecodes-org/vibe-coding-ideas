@@ -129,6 +129,7 @@ export function Navbar() {
                   <Button
                     variant="ghost"
                     className="relative h-8 w-8 rounded-full"
+                    data-testid="user-menu-trigger"
                   >
                     <Avatar className="h-8 w-8">
                       <AvatarImage

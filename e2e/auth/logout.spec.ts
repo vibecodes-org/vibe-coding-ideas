@@ -16,10 +16,8 @@ test.describe("Logout", () => {
       await page.waitForTimeout(500);
       await page.getByRole("button", { name: /Sign Out/i }).click();
     } else {
-      // Desktop: click the avatar/user menu trigger, then Sign Out
-      // The trigger is a button containing an Avatar (img or fallback text)
-      const trigger = page.locator("header").locator("button", { has: page.locator("span[class*='avatar'], img[alt]") }).last();
-      await trigger.click();
+      // Desktop: click avatar dropdown trigger, then Sign Out menu item
+      await page.getByTestId("user-menu-trigger").click();
       await page.waitForTimeout(300);
       await page.getByRole("menuitem", { name: /Sign Out/i }).click();
     }
