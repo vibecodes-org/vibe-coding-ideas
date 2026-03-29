@@ -87,14 +87,13 @@ describe("ProjectTypeSelector", () => {
     expect(lastButton.textContent).toContain("Custom");
   });
 
-  it("shows both step count and role count pills for non-Custom kits", () => {
+  it("shows both workflow count and agent count pills for non-Custom kits", () => {
     render(
       <ProjectTypeSelector kits={mockKits} selectedKitId={null} onSelect={() => {}} />
     );
-    expect(screen.getByText("4 steps")).toBeDefined();
-    expect(screen.getByText("2 roles")).toBeDefined();
-    expect(screen.getByText("2 steps")).toBeDefined();
-    expect(screen.getByText("3 roles")).toBeDefined();
+    expect(screen.getAllByText("1 workflow")).toHaveLength(2);
+    expect(screen.getByText("2 agents")).toBeDefined();
+    expect(screen.getByText("3 agents")).toBeDefined();
     expect(screen.getByText("Your choice")).toBeDefined();
   });
 
