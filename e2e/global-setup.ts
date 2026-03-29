@@ -24,10 +24,10 @@ const MAX_CHUNK_SIZE = 3180;
 
 /**
  * Build Supabase SSR auth cookies from a session.
- * Supabase SSR stores the session as a JSON-encoded cookie value.
+ * Supabase SSR stores the full session object as a JSON-encoded cookie value.
  * If the value exceeds ~3180 bytes, it's chunked into .0, .1, etc.
  */
-function buildAuthCookies(session: { access_token: string; refresh_token: string }) {
+function buildAuthCookies(session: Record<string, unknown>) {
   const value = JSON.stringify(session);
   const cookies: { name: string; value: string; domain: string; path: string; httpOnly: boolean; secure: boolean; sameSite: "Lax" }[] = [];
 
@@ -93,10 +93,7 @@ setup("create test users and authenticate", async ({ browser }) => {
 
     // Create a browser context, inject auth cookies, and save storage state
     const context = await browser.newContext();
-    const cookies = buildAuthCookies({
-      access_token: data.session.access_token,
-      refresh_token: data.session.refresh_token,
-    });
+    const cookies = buildAuthCookies(data.session);
     await context.addCookies(cookies);
 
     // Verify the cookies work by navigating to dashboard
