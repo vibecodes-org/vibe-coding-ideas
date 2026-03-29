@@ -2,14 +2,15 @@ import { test, expect } from "../fixtures/auth";
 import { EXPECT_TIMEOUT } from "../fixtures/constants";
 
 test.describe("Logout", () => {
-  // Only run on Desktop Chrome — logout destroys the session, and since
-  // Desktop runs before Mobile in the single-job setup, the Mobile Chrome
-  // tests would fail with an invalidated session.
-  test.skip(({}, testInfo) => testInfo.project.name === "Mobile Chrome",
-    "Logout destroys session — only run on Desktop to avoid breaking Mobile tests");
-
   // Use userBPage to avoid invalidating userA's session (used by other tests)
-  test("should log out and redirect to landing page", async ({ userBPage: page }) => {
+  test("should log out and redirect to landing page", async ({ userBPage: page }, testInfo) => {
+    // Only run on Desktop Chrome — logout destroys the session, and since
+    // Desktop runs before Mobile, Mobile Chrome tests would fail
+    if (testInfo.project.name === "Mobile Chrome") {
+      test.skip();
+      return;
+    }
+
     await page.goto("/dashboard");
     await page.waitForLoadState("domcontentloaded");
     await page.waitForTimeout(2000);
