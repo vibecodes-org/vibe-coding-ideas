@@ -27,7 +27,8 @@ const MAX_CHUNK_SIZE = 3180;
  * Supabase SSR stores the full session object as a JSON-encoded cookie value.
  * If the value exceeds ~3180 bytes, it's chunked into .0, .1, etc.
  */
-function buildAuthCookies(session: Record<string, unknown>) {
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildAuthCookies(session: any) {
   const value = JSON.stringify(session);
   const cookies: { name: string; value: string; domain: string; path: string; httpOnly: boolean; secure: boolean; sameSite: "Lax" }[] = [];
 
