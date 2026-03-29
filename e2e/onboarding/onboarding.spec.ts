@@ -1,11 +1,14 @@
 import { test, expect } from "../fixtures/auth";
 import { EXPECT_TIMEOUT } from "../fixtures/constants";
 
+// Use the visible heading (with !) to avoid strict mode violation with the sr-only dialog title
+const WELCOME_HEADING = page => page.getByRole("heading", { name: "Welcome to VibeCodes!" });
+
 test.describe("Onboarding", () => {
   test.describe("Fresh user (onboarding not completed)", () => {
     test("should show onboarding wizard on dashboard", async ({ freshPage: page }) => {
       await page.goto("/dashboard");
-      await expect(page.getByText(/Welcome to VibeCodes/i)).toBeVisible({ timeout: EXPECT_TIMEOUT });
+      await expect(WELCOME_HEADING(page)).toBeVisible({ timeout: EXPECT_TIMEOUT });
       await expect(page.getByRole("button", { name: /Let's get started/i })).toBeVisible();
     });
 
@@ -51,9 +54,8 @@ test.describe("Onboarding", () => {
 
     test("should allow skipping the entire onboarding", async ({ freshPage: page }) => {
       await page.goto("/dashboard");
-      await expect(page.getByText(/Welcome to VibeCodes/i)).toBeVisible({ timeout: EXPECT_TIMEOUT });
+      await expect(WELCOME_HEADING(page)).toBeVisible({ timeout: EXPECT_TIMEOUT });
       await page.getByText(/Skip for now/i).click();
-      // After skipping, the onboarding dialog should close
       await expect(page.getByRole("button", { name: /Let's get started/i })).not.toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
   });
@@ -62,7 +64,6 @@ test.describe("Onboarding", () => {
     test("should NOT show onboarding wizard on dashboard", async ({ userAPage: page }) => {
       await page.goto("/dashboard");
       await page.waitForLoadState("domcontentloaded");
-      // Wait for dashboard content to load, then verify no onboarding
       await page.waitForTimeout(2000);
       await expect(page.getByRole("button", { name: /Let's get started/i })).not.toBeVisible();
     });
