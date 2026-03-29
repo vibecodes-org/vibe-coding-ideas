@@ -60,6 +60,7 @@ jobs:
           path: |
             playwright-report/
             test-results/
+            e2e/.auth/*-debug.png
           retention-days: 14
 
   create-failure-task:

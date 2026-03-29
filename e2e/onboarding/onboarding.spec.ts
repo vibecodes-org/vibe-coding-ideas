@@ -5,13 +5,12 @@ import { EXPECT_TIMEOUT } from "../fixtures/constants";
 const WELCOME_HEADING = (page: import("@playwright/test").Page) => page.getByRole("heading", { name: "Welcome to VibeCodes!" });
 
 test.describe("Onboarding", () => {
-  // TODO: Fresh user tests need investigation — the freshPage session
-  // doesn't survive in CI (cookie not accepted by middleware).
-  // Tracked as a follow-up task.
   test.describe("Fresh user (onboarding not completed)", () => {
-    test.skip(() => true, "Fresh user session not working in CI — needs investigation");
     test("should show onboarding wizard on dashboard", async ({ freshPage: page }) => {
       await page.goto("/dashboard");
+      // Debug: capture where we actually are
+      console.log(`[Fresh user test] URL after goto: ${page.url()}`);
+      await page.screenshot({ path: "test-results/fresh-user-debug.png" });
       await expect(WELCOME_HEADING(page)).toBeVisible({ timeout: EXPECT_TIMEOUT });
       await expect(page.getByRole("button", { name: /Let's get started/i })).toBeVisible();
     });

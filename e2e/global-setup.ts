@@ -105,7 +105,9 @@ setup("create test users and authenticate", async ({ browser }) => {
       console.log(`[E2E Setup] ${config.key} dashboard verified`);
     } catch {
       console.warn(`[E2E Setup] ${config.key} dashboard navigation timed out at: ${page.url()}`);
-      // Don't throw — the cookies might still work for individual tests
+      // Take a screenshot so we can see what the user sees
+      await page.screenshot({ path: path.join(AUTH_DIR, `${config.key}-debug.png`) });
+      console.log(`[E2E Setup] ${config.key} debug screenshot saved`);
     }
 
     // Save auth state
