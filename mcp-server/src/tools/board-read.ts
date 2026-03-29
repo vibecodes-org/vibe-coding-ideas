@@ -4,6 +4,16 @@ import type { McpContext } from "../context";
 
 export const getBoardSchema = z.object({
   idea_id: z.string().uuid().describe("The idea ID"),
+  column_ids: z
+    .array(z.string().uuid())
+    .optional()
+    .describe("Only return these columns (by ID). Overrides exclude_done when provided."),
+  column_names: z
+    .array(z.string())
+    .optional()
+    .describe(
+      "Only return columns matching these names (case-insensitive). Overrides exclude_done when provided."
+    ),
   include_archived: z
     .boolean()
     .default(false)
@@ -83,14 +93,26 @@ export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardS
     .select("*")
     .eq("idea_id", params.idea_id);
 
-  // Determine which columns to exclude (done columns when exclude_done is true)
-  const doneColumnIds = params.exclude_done
-    ? new Set(columns!.filter((c) => c.is_done_column).map((c) => c.id))
-    : new Set<string>();
+  // Filter columns: explicit filters override exclude_done
+  const hasExplicitFilter = params.column_ids || params.column_names;
+
+  const columnIdSet = params.column_ids ? new Set(params.column_ids) : null;
+  const columnNameSet = params.column_names
+    ? new Set(params.column_names.map((n) => n.toLowerCase()))
+    : null;
+
+  const doneColumnIds =
+    !hasExplicitFilter && params.exclude_done
+      ? new Set(columns!.filter((c) => c.is_done_column).map((c) => c.id))
+      : new Set<string>();
 
   // Group tasks by column, omit descriptions to keep payload small (use get_task for full details)
   const board = columns!
-    .filter((col) => !doneColumnIds.has(col.id))
+    .filter((col) => {
+      if (columnIdSet) return columnIdSet.has(col.id);
+      if (columnNameSet) return columnNameSet.has(col.title.toLowerCase());
+      return !doneColumnIds.has(col.id);
+    })
     .map((col) => ({
       ...col,
       tasks: (tasks ?? [])
