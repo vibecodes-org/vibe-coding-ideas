@@ -12,6 +12,8 @@ interface BoardEmptyStateProps {
   onDismiss: () => void;
   onImport?: () => void;
   isReadOnly: boolean;
+  hasAgents?: boolean;
+  hasWorkflows?: boolean;
 }
 
 export function BoardEmptyState({
@@ -22,6 +24,8 @@ export function BoardEmptyState({
   onDismiss,
   onImport,
   isReadOnly,
+  hasAgents = false,
+  hasWorkflows = false,
 }: BoardEmptyStateProps) {
   if (isReadOnly) {
     return (
@@ -87,8 +91,8 @@ export function BoardEmptyState({
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15">
               <Bot className="h-4 w-4 text-emerald-400" />
             </div>
-            <p className="mt-2.5 text-[13px] font-semibold text-emerald-400">Add AI Agents</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">Build your team to automate workflow steps</p>
+            <p className="mt-2.5 text-[13px] font-semibold text-emerald-400">{hasAgents ? "Manage Agents" : "Add AI Agents"}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">{hasAgents ? "View and configure your agent team" : "Build your team to automate workflow steps"}</p>
             <ArrowRight className="mt-2 h-3.5 w-3.5 text-emerald-400/40 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-400/70" />
           </Link>
           <Link
@@ -98,8 +102,8 @@ export function BoardEmptyState({
             <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15">
               <Workflow className="h-4 w-4 text-amber-400" />
             </div>
-            <p className="mt-2.5 text-[13px] font-semibold text-amber-400">Set Up Workflows</p>
-            <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">Define step-by-step processes for tasks</p>
+            <p className="mt-2.5 text-[13px] font-semibold text-amber-400">{hasWorkflows ? "Manage Workflows" : "Set Up Workflows"}</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">{hasWorkflows ? "View and configure your workflow templates" : "Define step-by-step processes for tasks"}</p>
             <ArrowRight className="mt-2 h-3.5 w-3.5 text-amber-400/40 transition-transform group-hover:translate-x-0.5 group-hover:text-amber-400/70" />
           </Link>
         </div>

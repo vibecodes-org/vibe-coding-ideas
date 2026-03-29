@@ -958,6 +958,8 @@ export function KanbanBoard({
           onDismiss={() => setEmptyStateDismissed(true)}
           onImport={() => setEmptyStateDismissed(true)}
           isReadOnly={isReadOnly}
+          hasAgents={ideaAgents.length > 0}
+          hasWorkflows={hasWorkflowTemplates}
         />
       ) : (
         <DndContext
