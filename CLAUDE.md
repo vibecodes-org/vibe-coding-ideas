@@ -10,7 +10,7 @@
 
 ## Tech Stack
 
-Next.js 16 (App Router), TypeScript, Tailwind CSS v4, shadcn/ui (New York, Zinc), Supabase (Auth, Postgres, Realtime, RLS), Vercel AI SDK (`ai` + `@ai-sdk/anthropic`), mcp-handler (remote MCP + OAuth 2.1), Sentry, Resend, PostHog, Vitest + Playwright, zod, @dnd-kit, sonner, vaul, next-themes (dark default)
+Next.js 16 (App Router), TypeScript, Tailwind CSS v4, shadcn/ui (New York, Zinc), Supabase (Auth, Postgres, Realtime, RLS), Vercel AI SDK (`ai` + `@ai-sdk/anthropic`), mcp-handler (remote MCP + OAuth 2.1), Sentry, Resend, PostHog, Vitest + Playwright, zod v4, @dnd-kit, sonner, vaul, next-themes (dark default), cmdk (command palette), react-markdown + rehype-highlight + remark-gfm, date-fns, lucide-react, @marsidev/react-turnstile
 
 ## Workflow Rules (MANDATORY)
 
@@ -63,8 +63,8 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - Structured JSON output; level via `LOG_LEVEL` env var (default: `warn` prod, `debug` dev)
 
 ### Auth & Middleware
-- Middleware protects `/dashboard`, `/ideas`, `/members`, `/profile`, `/admin`, `/agents`
-- Middleware excludes `.well-known`, `api/mcp`, `api/oauth`, `oauth`, `monitoring`, `sw.js`, `ingest`
+- Middleware protects `/dashboard`, `/ideas`, `/members`, `/profile`, `/admin`, `/agents`, `/feed`
+- Middleware excludes `.well-known`, `api/mcp`, `api/oauth`, `oauth`, `monitoring`, `sw.js`, `ingest`, `callback`
 - `useUser()` hook for client-side auth state
 
 ### Board
@@ -86,9 +86,9 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 
 ## Database
 
-39 tables with RLS (`supabase/migrations/`):
+40 tables with RLS (`supabase/migrations/`):
 - **Core**: users, ideas, comments, collaborators, votes, notifications, feedback, idea_attachments
-- **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_task_activity, board_task_comments, board_task_attachments
+- **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_checklist_items, board_task_activity, board_task_comments, board_task_attachments
 - **Workflows**: workflow_templates, workflow_auto_rules, workflow_runs, task_workflow_steps, workflow_step_comments, workflow_library_templates
 - **Discussions**: idea_discussions, idea_discussion_replies, discussion_votes, discussion_attachments
 - **Agents**: bot_profiles, idea_agents, agent_votes, featured_teams, featured_team_agents
@@ -119,8 +119,10 @@ NOTIFICATION_WEBHOOK_SECRET
 ANTHROPIC_API_KEY, PLATFORM_AI_DAILY_LIMIT (default 50)
 
 # Third-party
-NEXT_PUBLIC_SENTRY_DSN, RESEND_API_KEY
-NEXT_PUBLIC_TURNSTILE_SITE_KEY, NEXT_PUBLIC_POSTHOG_KEY
+NEXT_PUBLIC_SENTRY_DSN, SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT
+RESEND_API_KEY
+NEXT_PUBLIC_TURNSTILE_SITE_KEY, TURNSTILE_SECRET_KEY
+NEXT_PUBLIC_POSTHOG_KEY
 
 # Logging
 LOG_LEVEL (default: warn prod, debug dev)
@@ -160,6 +162,9 @@ See `docs/release-process.md` for full details.
 - Tests co-located as `*.test.ts` / `*.test.tsx`
 - E2E: `e2e/fixtures/constants.ts` for shared constants, `scopedTitle()` for unique data
 - Scope locators to `page.getByRole("main")` to avoid strict mode violations
+- E2E auth uses API-based login (service-role client) to bypass Turnstile CAPTCHA — not browser login
+- CI matrix: Chrome + Mobile Chrome only (Firefox dropped)
+- 11 E2E spec files across auth, board, onboarding, and workflows
 
 ## .vibecodes/ Config
 
@@ -168,3 +173,29 @@ See `docs/release-process.md` for full details.
 ```
 
 Auto-injects `idea_id` into MCP tool calls from `.vibecodes/config.json`.
+
+## Project Structure
+
+```
+src/
+├── actions/       # 22 server action files ("use server")
+├── app/           # Next.js App Router
+│   ├── (auth)/    # Login, signup, password reset, callback
+│   ├── (main)/    # Admin, agents, dashboard, feed, ideas, members, profile
+│   ├── api/       # AI, health, MCP, notifications, OAuth
+│   ├── guide/     # 9 help/guide pages
+│   ├── changelog/ # Public changelog
+│   └── ...        # Privacy, terms, feed.xml, .well-known
+├── components/    # 20 directories, ~170 component files
+│   ├── ui/        # shadcn/ui primitives (don't edit except markdown.tsx)
+│   └── ...        # admin, agents, ai, board, comments, dashboard,
+│                  # discussions, guide, ideas, kits, landing, layout,
+│                  # members, onboarding, posthog, profile, pwa, shared
+├── data/          # Static data (changelog entries)
+├── hooks/         # Custom hooks (use-media-query, use-mentions,
+│                  # use-realtime, use-scroll-to-hash, use-user)
+├── lib/           # ~30 utility/helper modules + supabase/ client setup
+├── test/          # Test utilities
+└── types/         # database.ts (manual), index.ts
+mcp-server/src/    # MCP server (shared tools, 22 tool files)
+```
