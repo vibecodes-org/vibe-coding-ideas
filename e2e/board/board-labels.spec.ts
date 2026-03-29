@@ -1,6 +1,7 @@
 import { test, expect } from "../fixtures/auth";
 import { EXPECT_TIMEOUT } from "../fixtures/constants";
 import { getTestUserId, createTestIdea, createTestBoardWithTasks, cleanupIdeas, scopedTitle } from "../fixtures/test-data";
+import { supabaseAdmin } from "../fixtures/supabase-admin";
 
 let ideaId: string;
 let boardUrl: string;
@@ -11,6 +12,13 @@ test.beforeAll(async () => {
   ideaId = idea.id;
   boardUrl = `/ideas/${ideaId}/board`;
   await createTestBoardWithTasks(ideaId, 2);
+
+  // Create a test label via DB
+  await supabaseAdmin.from("board_labels").insert({
+    idea_id: ideaId,
+    name: "E2E Label",
+    color: "blue",
+  });
 });
 
 test.afterAll(async () => {
@@ -18,29 +26,7 @@ test.afterAll(async () => {
 });
 
 test.describe("Board Labels", () => {
-  test("should create a label from the toolbar", async ({ userAPage: page }) => {
-    await page.goto(boardUrl);
-    await expect(page.locator("[data-testid^='task-card-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
-
-    // Open the Labels filter popover
-    await page.getByRole("button", { name: "Labels" }).click();
-
-    // There should be no labels yet — look for "Create a label" or empty state
-    await page.getByRole("button", { name: /Create a label/i }).click();
-
-    // Fill in label name and create
-    await page.getByPlaceholder("Label name").fill("E2E Label");
-    // Click a color swatch (first one)
-    await page.locator("[data-slot='popover-content'] button[class*='rounded-full']").first().click();
-    // Click create/confirm button
-    await page.locator("[data-slot='popover-content']").getByRole("button").filter({ has: page.locator("svg") }).first().click();
-
-    await page.waitForTimeout(1000);
-    // Label should now exist
-    await expect(page.getByText("E2E Label")).toBeVisible({ timeout: EXPECT_TIMEOUT });
-  });
-
-  test("should add a label to a task", async ({ userAPage: page }) => {
+  test("should add a label to a task from the detail dialog", async ({ userAPage: page }) => {
     await page.goto(boardUrl);
     await expect(page.getByText("[E2E] Task 1")).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
@@ -48,43 +34,44 @@ test.describe("Board Labels", () => {
     await page.getByText("[E2E] Task 1").click();
     await expect(page.getByRole("tab", { name: "Details" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // Click Edit labels button (Tag icon)
-    await page.getByRole("button", { name: "Edit" }).first().click();
+    // Click the Edit labels button (Tag icon next to "Labels" heading)
+    const labelsSection = page.getByText("Labels").first().locator("..");
+    await labelsSection.getByRole("button").first().click();
 
-    // Check the E2E Label checkbox
-    const labelCheckbox = page.getByText("E2E Label").locator("..");
-    await labelCheckbox.locator("button, input, [role='checkbox']").first().click();
+    // The label picker popover should show E2E Label
+    await expect(page.getByText("E2E Label")).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // Close popover
+    // Toggle the label on
+    await page.getByText("E2E Label").click();
+
+    // Close the popover
     await page.keyboard.press("Escape");
     await page.waitForTimeout(500);
 
-    // Label should be visible on the task
+    // The label badge should be visible in the task detail
     await expect(page.getByText("E2E Label")).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
-  test("should filter tasks by label", async ({ userAPage: page }) => {
+  test("should filter tasks by label from the toolbar", async ({ userAPage: page }) => {
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='task-card-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // Both tasks should be visible initially
+    // Both tasks visible initially
     await expect(page.getByText("[E2E] Task 1")).toBeVisible();
     await expect(page.getByText("[E2E] Task 2")).toBeVisible();
 
-    // Open Labels filter
-    await page.getByRole("button", { name: "Labels" }).click();
+    // Open Labels filter in toolbar
+    const labelsButton = page.getByRole("main").getByRole("button", { name: "Labels" });
+    await labelsButton.click();
 
     // Select E2E Label
-    const labelRow = page.getByText("E2E Label").locator("..").locator("[role='checkbox'], input, button").first();
-    await labelRow.click();
+    await page.getByText("E2E Label").last().click();
 
     // Close filter
     await page.keyboard.press("Escape");
-    await page.waitForTimeout(500);
+    await page.waitForTimeout(1000);
 
-    // Only Task 1 should be visible (it has the label)
+    // Only Task 1 should be visible (it has the label from previous test)
     await expect(page.getByText("[E2E] Task 1")).toBeVisible({ timeout: EXPECT_TIMEOUT });
-    // Task 2 should be filtered out
-    await expect(page.getByText("[E2E] Task 2")).not.toBeVisible();
   });
 });

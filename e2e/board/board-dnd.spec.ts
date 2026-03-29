@@ -19,24 +19,22 @@ test.afterAll(async () => {
 });
 
 test.describe("Board Drag and Drop", () => {
-  // DnD is desktop-only — skip on mobile
-  test.skip(({}, testInfo) => testInfo.project.name === "Mobile Chrome", "DnD not available on mobile");
+  test("should drag a task to another column", async ({ userAPage: page }, testInfo) => {
+    // DnD is desktop-only
+    if (testInfo.project.name === "Mobile Chrome") {
+      test.skip();
+      return;
+    }
 
-  test("should drag a task to another column", async ({ userAPage: page }) => {
     await page.goto(boardUrl);
     await expect(page.getByText("[E2E] Task 1")).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // Get the task card and the "In Progress" column
     const taskCard = page.locator("[data-testid^='task-card-']").filter({ hasText: "[E2E] Task 1" });
     const inProgressColumn = page.locator("[data-testid^='column-']").filter({ hasText: "In Progress" });
 
-    // Drag task to In Progress
     await dragTaskToColumn(page, taskCard, inProgressColumn);
-
-    // Wait for the move to take effect
     await page.waitForTimeout(2000);
 
-    // Verify the task is now in the In Progress column
     const inProgressTasks = inProgressColumn.locator("[data-testid^='task-card-']");
     await expect(inProgressTasks.filter({ hasText: "[E2E] Task 1" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });

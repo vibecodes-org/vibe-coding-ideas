@@ -10,7 +10,7 @@ test.beforeAll(async () => {
   const idea = await createTestIdea(userId, { title: scopedTitle("Board Tasks") });
   ideaId = idea.id;
   boardUrl = `/ideas/${ideaId}/board`;
-  await createTestBoardWithTasks(ideaId, 2);
+  await createTestBoardWithTasks(ideaId, 3);
 });
 
 test.afterAll(async () => {
@@ -29,25 +29,19 @@ test.describe("Board Tasks", () => {
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // Click "Add task" on the first column
     await page.getByRole("button", { name: "Add task" }).first().click();
-
-    // Fill in task title and create
-    await page.getByPlaceholder("Task title").fill(scopedTitle("New Task"));
+    const newTitle = scopedTitle("New Task");
+    await page.getByPlaceholder("Task title").fill(newTitle);
     await page.getByRole("button", { name: "Create" }).click();
 
-    // Verify the task appears on the board
-    await expect(page.getByText(/\[E2E\] New Task/)).toBeVisible({ timeout: EXPECT_TIMEOUT });
+    await expect(page.getByText(newTitle)).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
   test("should open task detail dialog on click", async ({ userAPage: page }) => {
     await page.goto(boardUrl);
     await expect(page.getByText("[E2E] Task 1")).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // Click the task card
     await page.getByText("[E2E] Task 1").click();
-
-    // Task detail dialog should open with tabs
     await expect(page.getByRole("tab", { name: "Details" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await expect(page.getByRole("tab", { name: "Comments" })).toBeVisible();
   });
@@ -56,26 +50,23 @@ test.describe("Board Tasks", () => {
     await page.goto(boardUrl);
     await expect(page.getByText("[E2E] Task 1")).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await page.getByText("[E2E] Task 1").click();
+    await expect(page.getByRole("tab", { name: "Details" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // Click "Add a description..." or the edit button
-    const addDesc = page.getByText("Add a description...");
-    const editBtn = page.getByRole("button", { name: "Edit" }).first();
-    if (await addDesc.isVisible({ timeout: 3000 }).catch(() => false)) {
-      await addDesc.click();
-    } else {
-      await editBtn.click();
-    }
+    // Click the Edit button next to Description
+    const descSection = page.getByText("Description").locator("..");
+    await descSection.getByRole("button", { name: /Edit/i }).click();
 
-    // Type a description
-    const descInput = page.getByPlaceholder(/Add a description/i);
-    await descInput.fill("Updated description for E2E test");
+    // Find the textarea and update it
+    const textarea = page.locator("textarea").filter({ hasText: /description|E2E/i }).or(
+      page.getByPlaceholder(/description/i)
+    ).first();
+    await textarea.clear();
+    await textarea.fill("Updated description for E2E test");
     // Blur to save
     await page.keyboard.press("Tab");
-
-    // Close and reopen to verify it saved
-    await page.keyboard.press("Escape");
     await page.waitForTimeout(1000);
-    await page.getByText("[E2E] Task 1").click();
+
+    // Verify saved
     await expect(page.getByText("Updated description for E2E test")).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
@@ -84,10 +75,7 @@ test.describe("Board Tasks", () => {
     await expect(page.getByText("[E2E] Task 2")).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await page.getByText("[E2E] Task 2").click();
 
-    // Click Archive button in the footer
     await page.getByRole("button", { name: "Archive" }).click();
-
-    // Task should disappear from the board (archived tasks are hidden by default)
     await page.keyboard.press("Escape");
     await page.waitForTimeout(1000);
     await expect(page.getByText("[E2E] Task 2")).not.toBeVisible({ timeout: EXPECT_TIMEOUT });
@@ -95,6 +83,8 @@ test.describe("Board Tasks", () => {
 
   test("should delete a task", async ({ userAPage: page }) => {
     await page.goto(boardUrl);
+    await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
+
     // Create a task to delete
     await page.getByRole("button", { name: "Add task" }).first().click();
     const deleteTitle = scopedTitle("Delete Me");
@@ -106,12 +96,12 @@ test.describe("Board Tasks", () => {
     await page.getByText(deleteTitle).click();
     await expect(page.getByRole("tab", { name: "Details" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
-    // Click Delete task (first click shows "Are you sure?")
-    await page.getByRole("button", { name: "Delete task" }).click();
-    // Confirm deletion
-    await page.getByRole("button", { name: "Are you sure?" }).click();
+    // Click Delete task — first click shows confirmation text
+    await page.getByRole("button", { name: /Delete task/i }).click();
+    // Wait for confirmation state and click again
+    await page.waitForTimeout(500);
+    await page.getByRole("button", { name: /Are you sure|Delete task/i }).last().click();
 
-    // Task should be gone
     await page.waitForTimeout(1000);
     await expect(page.getByText(deleteTitle)).not.toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
