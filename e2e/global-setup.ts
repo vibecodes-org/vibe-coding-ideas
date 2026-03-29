@@ -14,13 +14,21 @@ const userConfigs = [
 setup.setTimeout(120_000); // 2 minutes for user creation + 4 sequential logins
 
 setup("create test users and authenticate", async ({ browser }) => {
+  // Debug: log which Supabase URL we're using
+  console.log(`[E2E Setup] SUPABASE_URL: ${process.env.NEXT_PUBLIC_SUPABASE_URL}`);
+  console.log(`[E2E Setup] ANON_KEY starts with: ${process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY?.slice(0, 20)}...`);
+  console.log(`[E2E Setup] SERVICE_KEY starts with: ${process.env.SUPABASE_SERVICE_ROLE_KEY?.slice(0, 20)}...`);
+
   // Ensure test users exist in Supabase
-  await ensureTestUsers();
+  console.log("[E2E Setup] Creating test users...");
+  const users = await ensureTestUsers();
+  console.log(`[E2E Setup] Test users ready: ${Object.keys(users).join(", ")}`);
 
   // Log in each user in a fresh browser context and save storage state
   for (const config of userConfigs) {
     const email = process.env[config.envEmail] ?? `test-${config.key.toLowerCase()}@vibecodes-test.local`;
     const password = process.env[config.envPassword] ?? "TestPassword123!";
+    console.log(`[E2E Setup] Logging in ${config.key} (${email})...`);
 
     const context = await browser.newContext();
     const page = await context.newPage();
@@ -47,10 +55,13 @@ setup("create test users and authenticate", async ({ browser }) => {
     await page.getByLabel("Password").fill(password);
     await page.getByRole("button", { name: /sign in/i }).click();
 
-    // Wait for the client-side redirect after signInWithPassword to complete,
-    // then navigate to dashboard explicitly. The middleware verifies the auth token
-    // which can be slow in CI (cold Supabase), so we retry navigation if needed.
+    // Wait for the client-side redirect after signInWithPassword to complete
     await page.waitForTimeout(3000);
+
+    // Debug: log where we ended up after login
+    console.log(`[E2E Setup] ${config.key} after login: ${page.url()}`);
+    const errorText = await page.locator(".text-destructive").textContent().catch(() => null);
+    if (errorText) console.log(`[E2E Setup] ${config.key} login error: ${errorText}`);
 
     // Retry dashboard navigation up to 3 times — middleware may timeout on cold starts
     let dashboardReached = false;
