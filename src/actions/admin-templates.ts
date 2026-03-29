@@ -38,7 +38,8 @@ export async function listLibraryTemplates(activeOnly = false) {
 export async function createLibraryTemplate(
   name: string,
   description: string | null,
-  steps: WorkflowTemplateStep[]
+  steps: WorkflowTemplateStep[],
+  suggestedLabel?: { name: string; color: string } | null
 ) {
   const { user, supabase } = await requireAdmin();
   const validName = validateTitle(name);
@@ -60,6 +61,8 @@ export async function createLibraryTemplate(
     steps: validSteps,
     display_order: nextOrder,
     created_by: user.id,
+    suggested_label_name: suggestedLabel?.name?.trim() || null,
+    suggested_label_color: suggestedLabel?.color || null,
   });
   if (error) {
     if (error.code === "23505") throw new Error("A template with this name already exists");
@@ -76,6 +79,7 @@ export async function updateLibraryTemplate(
     steps?: WorkflowTemplateStep[];
     is_active?: boolean;
     display_order?: number;
+    suggested_label?: { name: string; color: string } | null;
   }
 ) {
   const { supabase } = await requireAdmin();
@@ -90,6 +94,10 @@ export async function updateLibraryTemplate(
     patch.steps = validateWorkflowTemplateSteps(updates.steps);
   if (updates.is_active !== undefined) patch.is_active = updates.is_active;
   if (updates.display_order !== undefined) patch.display_order = updates.display_order;
+  if (updates.suggested_label !== undefined) {
+    patch.suggested_label_name = updates.suggested_label?.name?.trim() || null;
+    patch.suggested_label_color = updates.suggested_label?.color || null;
+  }
 
   if (Object.keys(patch).length === 0) return;
 

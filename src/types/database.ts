@@ -2041,6 +2041,8 @@ export type Database = {
           is_active: boolean;
           display_order: number;
           created_by: string | null;
+          suggested_label_name: string | null;
+          suggested_label_color: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -2052,6 +2054,8 @@ export type Database = {
           is_active?: boolean;
           display_order?: number;
           created_by?: string | null;
+          suggested_label_name?: string | null;
+          suggested_label_color?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -2063,6 +2067,8 @@ export type Database = {
           is_active?: boolean;
           display_order?: number;
           created_by?: string | null;
+          suggested_label_name?: string | null;
+          suggested_label_color?: string | null;
           created_at?: string;
           updated_at?: string;
         };

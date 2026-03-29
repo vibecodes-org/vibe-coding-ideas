@@ -1,0 +1,802 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phase 1: Template Suggested Labels — UX Design</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --border: #27272a;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --violet: #8b5cf6;
+      --violet-bg: rgba(139, 92, 246, 0.1);
+      --violet-border: rgba(139, 92, 246, 0.25);
+      --emerald: #34d399;
+      --emerald-bg: rgba(52, 211, 153, 0.15);
+      --emerald-border: rgba(52, 211, 153, 0.25);
+      --red: #ef4444;
+      --cyan: #06b6d4;
+      --pink: #ec4899;
+      --orange: #f97316;
+      --blue: #3b82f6;
+      --amber: #f59e0b;
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 40px 20px;
+      line-height: 1.5;
+    }
+
+    .container { max-width: 900px; margin: 0 auto; }
+
+    h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+    h2 { font-size: 18px; font-weight: 600; margin: 40px 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h3 { font-size: 14px; font-weight: 600; margin: 24px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+
+    p { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
+
+    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+
+    .mockup-frame {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 16px 0 32px;
+      max-width: 480px;
+    }
+
+    .dialog-header {
+      padding: 16px 20px 12px;
+      border-bottom: 1px solid var(--border);
+      font-size: 16px;
+      font-weight: 600;
+    }
+
+    .dialog-body {
+      padding: 12px 20px;
+    }
+
+    .dialog-footer {
+      padding: 12px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 8px;
+    }
+
+    /* Template card */
+    .template-card {
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      margin-bottom: 8px;
+    }
+
+    .template-card-header {
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+      padding: 10px 12px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+
+    .template-card-header:hover {
+      background: rgba(255,255,255,0.03);
+    }
+
+    .template-card-header.selected {
+      background: var(--violet-bg);
+    }
+
+    .template-card-header.imported {
+      background: rgba(255,255,255,0.02);
+      opacity: 0.6;
+    }
+
+    .checkbox {
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid var(--muted);
+      border-radius: 3px;
+      flex-shrink: 0;
+      margin-top: 2px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .checkbox.checked {
+      background: var(--violet);
+      border-color: var(--violet);
+    }
+
+    .checkbox.imported-check {
+      background: rgba(161, 161, 170, 0.3);
+      border-color: rgba(161, 161, 170, 0.3);
+    }
+
+    .checkmark { color: white; font-size: 11px; line-height: 1; }
+
+    .template-info { flex: 1; min-width: 0; }
+
+    .template-name-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .template-name {
+      font-size: 13px;
+      font-weight: 500;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .template-desc {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .template-meta {
+      font-size: 10px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* Badges */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 10px;
+      font-weight: 500;
+      padding: 1px 6px;
+      border-radius: 9999px;
+      border: 1px solid;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .badge-imported {
+      background: var(--emerald-bg);
+      border-color: var(--emerald-border);
+      color: var(--emerald);
+    }
+
+    .badge-label {
+      border-color: rgba(255,255,255,0.1);
+      background: rgba(255,255,255,0.05);
+    }
+
+    .color-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+
+    /* Auto-wire checkbox */
+    .auto-wire-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 0;
+      border-top: 1px solid var(--border);
+      margin-top: 4px;
+    }
+
+    .auto-wire-checkbox {
+      width: 16px;
+      height: 16px;
+      border: 1.5px solid var(--violet);
+      background: var(--violet);
+      border-radius: 3px;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .auto-wire-label {
+      font-size: 12px;
+      color: var(--text);
+    }
+
+    .auto-wire-hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-left: 24px;
+      margin-top: 2px;
+    }
+
+    /* Buttons */
+    .btn {
+      padding: 6px 14px;
+      border-radius: 6px;
+      font-size: 13px;
+      font-weight: 500;
+      border: none;
+      cursor: pointer;
+    }
+
+    .btn-ghost {
+      background: transparent;
+      color: var(--muted);
+    }
+
+    .btn-primary {
+      background: var(--text);
+      color: var(--bg);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+    }
+
+    /* Expand chevron */
+    .chevron {
+      color: var(--muted);
+      font-size: 14px;
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    /* Step preview */
+    .step-preview {
+      border-top: 1px solid var(--border);
+      background: rgba(255,255,255,0.02);
+      padding: 8px 12px;
+    }
+
+    .step-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 5px 8px;
+      font-size: 12px;
+      border-radius: 4px;
+    }
+
+    .step-num {
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.08);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      font-weight: 600;
+      color: var(--muted);
+      flex-shrink: 0;
+    }
+
+    .step-title {
+      flex: 1;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+
+    .role-badge {
+      font-size: 10px;
+      padding: 1px 6px;
+      border-radius: 9999px;
+      border: 1px solid;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .role-ba { background: rgba(59,130,246,0.15); color: #60a5fa; border-color: rgba(59,130,246,0.25); }
+    .role-ux { background: rgba(236,72,153,0.15); color: #f472b6; border-color: rgba(236,72,153,0.25); }
+    .role-dev { background: rgba(139,92,246,0.15); color: #a78bfa; border-color: rgba(139,92,246,0.25); }
+    .role-qa { background: rgba(6,182,212,0.15); color: #22d3ee; border-color: rgba(6,182,212,0.25); }
+
+    /* Admin section */
+    .form-group {
+      margin-bottom: 12px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 6px 10px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text);
+      font-size: 13px;
+    }
+
+    .form-input::placeholder {
+      color: rgba(161,161,170,0.5);
+    }
+
+    .color-picker-row {
+      display: flex;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+
+    .color-swatch {
+      width: 24px;
+      height: 24px;
+      border-radius: 6px;
+      cursor: pointer;
+      border: 2px solid transparent;
+      transition: border-color 0.15s;
+    }
+
+    .color-swatch.active {
+      border-color: white;
+    }
+
+    .inline-row {
+      display: flex;
+      gap: 12px;
+      align-items: flex-end;
+    }
+
+    .inline-row .form-group {
+      flex: 1;
+    }
+
+    /* Annotations */
+    .annotation {
+      background: rgba(139, 92, 246, 0.08);
+      border: 1px solid rgba(139, 92, 246, 0.2);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 12px 0;
+      font-size: 13px;
+      color: #c4b5fd;
+    }
+
+    .annotation strong {
+      color: var(--violet);
+    }
+
+    .flow-diagram {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 16px;
+      overflow-x: auto;
+    }
+
+    .flow-box {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 16px;
+      text-align: center;
+      font-size: 12px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .flow-box .flow-label {
+      font-weight: 500;
+      font-size: 13px;
+    }
+
+    .flow-box .flow-desc {
+      color: var(--muted);
+      font-size: 11px;
+      margin-top: 2px;
+    }
+
+    .flow-arrow {
+      color: var(--muted);
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+
+    .flow-box.highlight {
+      border-color: var(--violet-border);
+      background: var(--violet-bg);
+    }
+
+    .toast-mockup {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px 16px;
+      font-size: 13px;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      margin: 8px 0;
+    }
+
+    .toast-icon {
+      color: var(--emerald);
+      font-size: 16px;
+    }
+
+    .section-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 48px 0;
+    }
+
+    .new-badge {
+      display: inline-block;
+      background: var(--violet-bg);
+      color: var(--violet);
+      border: 1px solid var(--violet-border);
+      font-size: 10px;
+      font-weight: 600;
+      padding: 1px 6px;
+      border-radius: 4px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Phase 1: Template Suggested Labels + Auto-Wiring</h1>
+    <p class="subtitle">UX Design Document — building on BA Bob's requirements specification</p>
+
+    <!-- ========== SECTION 1: USER FLOW ========== -->
+    <h2>1. Import Flow Overview</h2>
+    <p>The current import is a copy-only operation. Phase 1 adds an optional auto-wire step that creates labels + auto-rules alongside the template import. The user controls this with a single checkbox.</p>
+
+    <div class="flow-diagram">
+      <div class="flow-box">
+        <div class="flow-label">Open Import</div>
+        <div class="flow-desc">Template Library dialog</div>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">
+        <div class="flow-label">Select Templates</div>
+        <div class="flow-desc">See suggested labels</div>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box highlight">
+        <div class="flow-label">Auto-wire ✓</div>
+        <div class="flow-desc">Checkbox (default on)</div>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">
+        <div class="flow-label">Import</div>
+        <div class="flow-desc">Template + label + rule</div>
+      </div>
+      <span class="flow-arrow">→</span>
+      <div class="flow-box">
+        <div class="flow-label">Toast</div>
+        <div class="flow-desc">Summary of results</div>
+      </div>
+    </div>
+
+    <!-- ========== SECTION 2: IMPORT DIALOG ========== -->
+    <h2>2. Import Template Library Dialog</h2>
+    <p>The dialog gains two additions: (A) a suggested label badge on each template card, and (B) an auto-wire checkbox in the footer area.</p>
+
+    <h3>2a. Default State — Templates with Suggested Labels</h3>
+
+    <div class="mockup-frame">
+      <div class="dialog-header">Template Library</div>
+      <div class="dialog-body">
+        <!-- Template 1: Feature Development (selected) -->
+        <div class="template-card">
+          <div class="template-card-header selected">
+            <div class="checkbox checked"><span class="checkmark">✓</span></div>
+            <div class="template-info">
+              <div class="template-name-row">
+                <span class="template-name">Feature Development</span>
+                <span class="badge badge-label">
+                  <span class="color-dot" style="background: var(--violet)"></span>
+                  Feature
+                </span>
+              </div>
+              <p class="template-desc">End-to-end feature workflow: requirements → design → review → implementation → QA → sign-off</p>
+              <p class="template-meta">6 steps · 2 gates</p>
+            </div>
+            <span class="chevron">›</span>
+          </div>
+        </div>
+
+        <!-- Template 2: Bug Fix -->
+        <div class="template-card">
+          <div class="template-card-header">
+            <div class="checkbox"></div>
+            <div class="template-info">
+              <div class="template-name-row">
+                <span class="template-name">Bug Fix</span>
+                <span class="badge badge-label">
+                  <span class="color-dot" style="background: var(--red)"></span>
+                  Bug
+                </span>
+              </div>
+              <p class="template-desc">Triage → reproduce → fix → verify workflow for bug resolution</p>
+              <p class="template-meta">4 steps · 1 gate</p>
+            </div>
+            <span class="chevron">›</span>
+          </div>
+        </div>
+
+        <!-- Template 3: Technical Spike -->
+        <div class="template-card">
+          <div class="template-card-header">
+            <div class="checkbox"></div>
+            <div class="template-info">
+              <div class="template-name-row">
+                <span class="template-name">Technical Spike</span>
+                <span class="badge badge-label">
+                  <span class="color-dot" style="background: var(--cyan)"></span>
+                  Research
+                </span>
+              </div>
+              <p class="template-desc">Time-boxed investigation to reduce uncertainty before committing to implementation</p>
+              <p class="template-meta">3 steps · 1 gate</p>
+            </div>
+            <span class="chevron">›</span>
+          </div>
+        </div>
+
+        <!-- Template 4: Already imported -->
+        <div class="template-card">
+          <div class="template-card-header imported">
+            <div class="checkbox imported-check"><span class="checkmark">✓</span></div>
+            <div class="template-info">
+              <div class="template-name-row">
+                <span class="template-name">Design Review</span>
+                <span class="badge badge-imported">Imported</span>
+                <span class="badge badge-label">
+                  <span class="color-dot" style="background: var(--pink)"></span>
+                  Design
+                </span>
+              </div>
+              <p class="template-desc">Structured design review with stakeholder feedback loop</p>
+              <p class="template-meta">4 steps · 1 gate</p>
+            </div>
+            <span class="chevron">›</span>
+          </div>
+        </div>
+
+        <!-- Auto-wire checkbox -->
+        <div class="auto-wire-row">
+          <div class="auto-wire-checkbox"><span class="checkmark">✓</span></div>
+          <span class="auto-wire-label">Also create labels & auto-rules</span>
+        </div>
+        <p class="auto-wire-hint">When a suggested label exists, importing will create the label and an auto-rule that triggers the workflow when the label is applied to a task.</p>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-primary">Import (1)</button>
+      </div>
+    </div>
+
+    <div class="annotation">
+      <strong>Design decisions:</strong><br>
+      • The suggested label badge uses a neutral style (not the label's actual color as the full badge) to avoid visual overload — just a small color dot + name.<br>
+      • The badge appears inline with the template name, not on a separate row, to keep the card compact.<br>
+      • "Imported" badge takes visual priority (shown first) when both are present.<br>
+      • The auto-wire checkbox is positioned between the template list and footer — it's a global option, not per-template.
+    </div>
+
+    <h3>2b. With Auto-Wire Unchecked</h3>
+    <p>When unchecked, the hint text changes and the label badges remain visible (informational only). Import behavior reverts to the current copy-only approach.</p>
+
+    <div class="mockup-frame" style="max-width: 480px;">
+      <div class="dialog-body" style="padding: 10px 20px;">
+        <div class="auto-wire-row" style="border-top: none;">
+          <div style="width: 16px; height: 16px; border: 1.5px solid var(--muted); border-radius: 3px; flex-shrink: 0;"></div>
+          <span class="auto-wire-label" style="color: var(--muted);">Also create labels & auto-rules</span>
+        </div>
+        <p class="auto-wire-hint">Labels and auto-rules will not be created. You can set these up manually later from the Workflows tab.</p>
+      </div>
+    </div>
+
+    <!-- ========== SECTION 3: SUCCESS TOAST ========== -->
+    <h2>3. Success Feedback</h2>
+    <p>The toast message changes to reflect what was actually created, giving users confidence about the auto-wiring.</p>
+
+    <h3>3a. With Auto-Wire (typical case)</h3>
+    <div class="toast-mockup">
+      <span class="toast-icon">✓</span>
+      Imported 2 templates, 2 labels, 1 auto-rule
+    </div>
+
+    <div class="annotation">
+      <strong>Why different counts?</strong> Labels created may differ from templates imported (e.g. a label already existed, or a template had no suggested label). Auto-rules may differ too (if one already existed). Show each count individually so the user understands exactly what happened.
+    </div>
+
+    <h3>3b. Without Auto-Wire</h3>
+    <div class="toast-mockup">
+      <span class="toast-icon">✓</span>
+      Imported 2 templates
+    </div>
+
+    <h3>3c. Partial Failure</h3>
+    <div class="toast-mockup">
+      <span class="toast-icon">✓</span>
+      Imported 1 template, 1 label, 1 auto-rule
+    </div>
+    <div class="toast-mockup" style="border-color: rgba(239,68,68,0.3);">
+      <span style="color: var(--red);">✗</span>
+      Failed to import 1 template
+    </div>
+
+    <hr class="section-divider" />
+
+    <!-- ========== SECTION 4: ADMIN TEMPLATE EDITOR ========== -->
+    <h2>4. Admin Template Editor — Suggested Label Fields</h2>
+    <p>The admin template editor gains an optional "Suggested Label" section between the description and steps. This is a lightweight addition — just a name input and a color picker row.</p>
+
+    <div class="mockup-frame" style="max-width: 480px;">
+      <div class="dialog-header">Edit Template</div>
+      <div class="dialog-body">
+        <!-- Existing fields (abbreviated) -->
+        <div class="form-group">
+          <label class="form-label">Template Name</label>
+          <input class="form-input" value="Feature Development" readonly />
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Description (optional)</label>
+          <input class="form-input" value="End-to-end feature workflow..." readonly style="color: var(--muted);" />
+        </div>
+
+        <!-- NEW: Suggested Label section -->
+        <div style="border: 1px solid var(--violet-border); border-radius: 8px; padding: 12px; margin-bottom: 12px; background: var(--violet-bg);">
+          <label class="form-label" style="color: #c4b5fd; margin-bottom: 8px; font-weight: 500;">
+            Suggested Label <span class="new-badge">NEW</span>
+          </label>
+          <p style="font-size: 11px; color: var(--muted); margin-bottom: 10px;">
+            When users import this template, the label below will be auto-created and linked via an auto-rule.
+          </p>
+          <div class="inline-row">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">Label Name</label>
+              <input class="form-input" value="Feature" placeholder="e.g. Bug, Feature, Research" />
+            </div>
+          </div>
+          <div class="form-group" style="margin-top: 8px; margin-bottom: 0;">
+            <label class="form-label">Color</label>
+            <div class="color-picker-row">
+              <div class="color-swatch" style="background: #ef4444;" title="Red"></div>
+              <div class="color-swatch" style="background: #f97316;" title="Orange"></div>
+              <div class="color-swatch" style="background: #f59e0b;" title="Amber"></div>
+              <div class="color-swatch" style="background: #84cc16;" title="Lime"></div>
+              <div class="color-swatch" style="background: #34d399;" title="Emerald"></div>
+              <div class="color-swatch" style="background: #06b6d4;" title="Cyan"></div>
+              <div class="color-swatch" style="background: #3b82f6;" title="Blue"></div>
+              <div class="color-swatch active" style="background: #8b5cf6;" title="Violet"></div>
+              <div class="color-swatch" style="background: #ec4899;" title="Pink"></div>
+              <div class="color-swatch" style="background: #71717a;" title="Gray"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Steps (abbreviated) -->
+        <div class="form-group">
+          <label class="form-label">Steps</label>
+          <div style="font-size: 12px; color: var(--muted); padding: 8px; border: 1px solid var(--border); border-radius: 6px;">
+            6 steps configured (collapsed for brevity)
+          </div>
+        </div>
+      </div>
+      <div class="dialog-footer">
+        <button class="btn btn-ghost">Cancel</button>
+        <button class="btn btn-primary">Save Changes</button>
+      </div>
+    </div>
+
+    <div class="annotation">
+      <strong>Design decisions:</strong><br>
+      • The suggested label section is visually distinct (violet highlight border) to draw attention to the new feature without disrupting the existing form flow.<br>
+      • Color picker uses the same 10 colors as the board label system (LABEL_COLORS constant) — no new colors introduced.<br>
+      • Both fields are optional — clearing the name removes the suggested label entirely.<br>
+      • The "NEW" badge is temporary and can be removed after a few weeks.
+    </div>
+
+    <hr class="section-divider" />
+
+    <!-- ========== SECTION 5: STATES ========== -->
+    <h2>5. State Inventory</h2>
+
+    <h3>Import Dialog States</h3>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <tr style="border-bottom: 1px solid var(--border);">
+        <th style="text-align: left; padding: 8px; color: var(--muted);">State</th>
+        <th style="text-align: left; padding: 8px; color: var(--muted);">Label Badge</th>
+        <th style="text-align: left; padding: 8px; color: var(--muted);">Behavior</th>
+      </tr>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;">Template with suggested label</td>
+        <td style="padding: 8px;">Color dot + name shown</td>
+        <td style="padding: 8px;">Auto-wire creates label + rule on import</td>
+      </tr>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;">Template without suggested label</td>
+        <td style="padding: 8px;">No badge shown</td>
+        <td style="padding: 8px;">Import creates template only (same as today)</td>
+      </tr>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;">Already imported template</td>
+        <td style="padding: 8px;">"Imported" badge + label badge (if any)</td>
+        <td style="padding: 8px;">Greyed out, not selectable</td>
+      </tr>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;">Auto-wire checkbox unchecked</td>
+        <td style="padding: 8px;">Still shown (informational)</td>
+        <td style="padding: 8px;">Import creates template only</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px;">Label already exists on board</td>
+        <td style="padding: 8px;">Badge shown normally</td>
+        <td style="padding: 8px;">Existing label reused, color NOT overridden</td>
+      </tr>
+    </table>
+
+    <h3>Admin Editor States</h3>
+    <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+      <tr style="border-bottom: 1px solid var(--border);">
+        <th style="text-align: left; padding: 8px; color: var(--muted);">State</th>
+        <th style="text-align: left; padding: 8px; color: var(--muted);">Behavior</th>
+      </tr>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;">Create new template</td>
+        <td style="padding: 8px;">Label fields empty, no color selected</td>
+      </tr>
+      <tr style="border-bottom: 1px solid var(--border);">
+        <td style="padding: 8px;">Edit template with suggested label</td>
+        <td style="padding: 8px;">Fields pre-filled, color highlighted</td>
+      </tr>
+      <tr>
+        <td style="padding: 8px;">Clear label name</td>
+        <td style="padding: 8px;">Both fields reset to null on save</td>
+      </tr>
+    </table>
+
+    <hr class="section-divider" />
+
+    <!-- ========== SECTION 6: ACCESSIBILITY ========== -->
+    <h2>6. Accessibility Notes</h2>
+    <ul style="font-size: 13px; color: var(--muted); padding-left: 20px; line-height: 2;">
+      <li>Auto-wire checkbox uses a real <code>&lt;label&gt;</code> element for click-to-toggle and screen reader association</li>
+      <li>Color swatches in admin editor have <code>title</code> attributes and are keyboard-navigable</li>
+      <li>Suggested label badge uses <code>aria-label</code> (e.g. "Suggested label: Feature, violet")</li>
+      <li>Toast messages are announced via the existing sonner ARIA live region</li>
+      <li>Color dots use sufficient contrast against the card background (all ≥ 3:1 on dark surface)</li>
+    </ul>
+
+    <hr class="section-divider" />
+
+    <!-- ========== SECTION 7: IMPLEMENTATION NOTES ========== -->
+    <h2>7. Implementation Guidance</h2>
+    <ul style="font-size: 13px; color: var(--muted); padding-left: 20px; line-height: 2;">
+      <li>Color picker reuses LABEL_COLORS from <code>src/lib/constants.ts</code> — no new component needed, just map swatches</li>
+      <li>The <code>WorkflowLibraryTemplate</code> type already includes all Row fields; adding two nullable strings is straightforward</li>
+      <li>The auto-wire checkbox state is local to the dialog — no need to persist it</li>
+      <li>Import dialog already receives <code>existingTemplateNames</code> — extend to also pass existing label names for dedup hints (nice-to-have, not required)</li>
+      <li>The <code>importTemplateWithLabel()</code> server action should be atomic per-template (template + label + rule in one call), but partial failure across multiple templates is acceptable</li>
+    </ul>
+  </div>
+</body>
+</html>

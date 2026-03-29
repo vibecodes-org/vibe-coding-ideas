@@ -69,6 +69,105 @@ export async function createWorkflowTemplate(
   return data;
 }
 
+export async function importTemplateWithLabel(
+  ideaId: string,
+  libraryTemplate: {
+    name: string;
+    description: string | null;
+    steps: WorkflowTemplateStep[];
+    suggested_label_name: string | null;
+    suggested_label_color: string | null;
+  },
+  createLabelAndRule: boolean
+): Promise<{ templateId: string; labelId?: string; autoRuleId?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // Step 1: Create the per-idea template copy
+  const { data: template, error: tplError } = await supabase
+    .from("workflow_templates")
+    .insert({
+      idea_id: ideaId,
+      name: validateWorkflowTemplateName(libraryTemplate.name),
+      description: validateOptionalDescription(libraryTemplate.description),
+      steps: validateWorkflowTemplateSteps(libraryTemplate.steps),
+      created_by: user.id,
+    })
+    .select("*")
+    .single();
+
+  if (tplError) throw new Error(tplError.message);
+
+  const result: { templateId: string; labelId?: string; autoRuleId?: string } = {
+    templateId: template.id,
+  };
+
+  // Step 2: If auto-wiring requested and template has a suggested label
+  if (
+    createLabelAndRule &&
+    libraryTemplate.suggested_label_name
+  ) {
+    try {
+      // Find existing label (case-insensitive) or create new one
+      const { data: existingLabels } = await supabase
+        .from("board_labels")
+        .select("*")
+        .eq("idea_id", ideaId)
+        .ilike("name", libraryTemplate.suggested_label_name);
+
+      let labelId: string;
+
+      if (existingLabels && existingLabels.length > 0) {
+        // Reuse existing label — don't override its color
+        labelId = existingLabels[0].id;
+      } else {
+        // Create new label
+        const { data: newLabel, error: labelError } = await supabase
+          .from("board_labels")
+          .insert({
+            idea_id: ideaId,
+            name: libraryTemplate.suggested_label_name,
+            color: libraryTemplate.suggested_label_color || "zinc",
+          })
+          .select("*")
+          .single();
+
+        if (labelError) throw labelError;
+        labelId = newLabel.id;
+      }
+
+      result.labelId = labelId;
+
+      // Step 3: Create auto-rule (skip on conflict)
+      const { data: rule, error: ruleError } = await supabase
+        .from("workflow_auto_rules")
+        .insert({
+          idea_id: ideaId,
+          label_id: labelId,
+          template_id: template.id,
+        })
+        .select("id")
+        .maybeSingle();
+
+      if (ruleError) {
+        // 23505 = unique constraint violation — auto-rule already exists for this label
+        if (ruleError.code !== "23505") throw ruleError;
+      } else if (rule) {
+        result.autoRuleId = rule.id;
+      }
+    } catch {
+      // Label/rule creation failed — template still succeeded (partial success is OK)
+    }
+  }
+
+  revalidatePath(`/ideas/${ideaId}/board`);
+  return result;
+}
+
 export async function updateWorkflowTemplate(
   templateId: string,
   updates: {

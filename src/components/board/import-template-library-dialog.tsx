@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { Lock, ChevronDown, ChevronRight, Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Dialog,
   DialogContent,
@@ -13,7 +14,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { listLibraryTemplates } from "@/actions/admin-templates";
-import { createWorkflowTemplate } from "@/actions/workflow-templates";
+import { importTemplateWithLabel } from "@/actions/workflow-templates";
+import { LABEL_COLORS } from "@/lib/constants";
 import type { WorkflowLibraryTemplate } from "@/types";
 import type { WorkflowTemplateStep } from "@/types/database";
 
@@ -30,6 +32,10 @@ function getRoleBadgeClasses(role: string): string {
   if (/\bhuman\b|review|approv|manual/.test(r))
     return "bg-amber-500/15 text-amber-400 border-amber-500/25";
   return "bg-zinc-500/15 text-zinc-400 border-zinc-500/25";
+}
+
+function getLabelSwatchClass(color: string): string {
+  return LABEL_COLORS.find((c) => c.value === color)?.swatchColor ?? "bg-zinc-500";
 }
 
 interface ImportTemplateLibraryDialogProps {
@@ -52,6 +58,7 @@ export function ImportTemplateLibraryDialog({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [templates, setTemplates] = useState<WorkflowLibraryTemplate[]>([]);
   const [loading, setLoading] = useState(false);
+  const [autoWire, setAutoWire] = useState(true);
 
   const existingNames = new Set(existingTemplateNames.map((n) => n.toLowerCase()));
 
@@ -91,23 +98,39 @@ export function ImportTemplateLibraryDialog({
     const toImport = templates.filter((tpl) => selected.has(tpl.id));
     const results = await Promise.allSettled(
       toImport.map((tpl) =>
-        createWorkflowTemplate(ideaId, tpl.name, tpl.description, tpl.steps as WorkflowTemplateStep[])
+        importTemplateWithLabel(
+          ideaId,
+          {
+            name: tpl.name,
+            description: tpl.description,
+            steps: tpl.steps as WorkflowTemplateStep[],
+            suggested_label_name: tpl.suggested_label_name,
+            suggested_label_color: tpl.suggested_label_color,
+          },
+          autoWire
+        )
       )
     );
 
-    const succeeded = results.filter((r) => r.status === "fulfilled").length;
+    const succeeded = results.filter((r) => r.status === "fulfilled");
     const failed = results.filter((r) => r.status === "rejected").length;
 
-    // Get the last successfully created template ID
+    // Count labels and auto-rules created
+    let labelsCreated = 0;
+    let rulesCreated = 0;
     let lastCreatedId: string | undefined;
-    for (const result of results) {
-      if (result.status === "fulfilled") {
-        lastCreatedId = result.value.id;
-      }
+    for (const result of succeeded) {
+      const val = result.value;
+      lastCreatedId = val.templateId;
+      if (val.labelId) labelsCreated++;
+      if (val.autoRuleId) rulesCreated++;
     }
 
-    if (succeeded > 0) {
-      toast.success(`Imported ${succeeded} template${succeeded !== 1 ? "s" : ""}`);
+    if (succeeded.length > 0) {
+      const parts = [`${succeeded.length} template${succeeded.length !== 1 ? "s" : ""}`];
+      if (labelsCreated > 0) parts.push(`${labelsCreated} label${labelsCreated !== 1 ? "s" : ""}`);
+      if (rulesCreated > 0) parts.push(`${rulesCreated} auto-rule${rulesCreated !== 1 ? "s" : ""}`);
+      toast.success(`Imported ${parts.join(", ")}`);
     }
     if (failed > 0) {
       toast.error(`Failed to import ${failed} template${failed !== 1 ? "s" : ""}`);
@@ -123,6 +146,7 @@ export function ImportTemplateLibraryDialog({
     if (!nextOpen) {
       setSelected(new Set());
       setExpandedId(null);
+      setAutoWire(true);
     }
     onOpenChange(nextOpen);
   }
@@ -197,6 +221,18 @@ export function ImportTemplateLibraryDialog({
                             Imported
                           </Badge>
                         )}
+                        {tpl.suggested_label_name && (
+                          <Badge
+                            variant="outline"
+                            className="shrink-0 text-[10px] gap-1 border-border bg-muted/30"
+                            aria-label={`Suggested label: ${tpl.suggested_label_name}, ${tpl.suggested_label_color}`}
+                          >
+                            <span
+                              className={`inline-block h-1.5 w-1.5 rounded-full ${getLabelSwatchClass(tpl.suggested_label_color ?? "zinc")}`}
+                            />
+                            {tpl.suggested_label_name}
+                          </Badge>
+                        )}
                       </div>
                       <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">
                         {tpl.description}
@@ -254,6 +290,24 @@ export function ImportTemplateLibraryDialog({
             })
           )}
         </div>
+
+        {/* Auto-wire checkbox */}
+        {!loading && templates.length > 0 && (
+          <div className="border-t border-border pt-3 pb-1">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <Checkbox
+                checked={autoWire}
+                onCheckedChange={(v) => setAutoWire(v === true)}
+              />
+              <span className="text-xs">Also create labels & auto-rules</span>
+            </label>
+            <p className="mt-1 text-[11px] text-muted-foreground ml-6">
+              {autoWire
+                ? "Importing will create suggested labels and auto-rules that trigger workflows when labels are applied."
+                : "Labels and auto-rules will not be created. You can set these up manually later."}
+            </p>
+          </div>
+        )}
 
         <DialogFooter>
           <Button

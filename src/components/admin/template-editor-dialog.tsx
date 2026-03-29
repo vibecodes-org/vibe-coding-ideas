@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { createLibraryTemplate, updateLibraryTemplate } from "@/actions/admin-templates";
 import { RoleCombobox } from "@/components/ui/role-combobox";
+import { LABEL_COLORS } from "@/lib/constants";
 import type { WorkflowTemplateStep } from "@/types/database";
 import type { WorkflowLibraryTemplate } from "@/types";
 
@@ -45,6 +46,8 @@ export function TemplateEditorDialog({
   const [steps, setSteps] = useState<WorkflowTemplateStep[]>([{ ...DEFAULT_STEP }]);
   const [saving, setSaving] = useState(false);
   const [deliverableStrings, setDeliverableStrings] = useState<string[]>([""]);
+  const [suggestedLabelName, setSuggestedLabelName] = useState("");
+  const [suggestedLabelColor, setSuggestedLabelColor] = useState("");
 
   const isEditing = !!editTemplate;
 
@@ -57,11 +60,15 @@ export function TemplateEditorDialog({
         : [{ ...DEFAULT_STEP }];
       setSteps(loadedSteps);
       setDeliverableStrings(loadedSteps.map((s) => (s.deliverables ?? []).join(", ")));
+      setSuggestedLabelName(editTemplate.suggested_label_name ?? "");
+      setSuggestedLabelColor(editTemplate.suggested_label_color ?? "");
     } else {
       setName("");
       setDescription("");
       setSteps([{ ...DEFAULT_STEP }]);
       setDeliverableStrings([""]);
+      setSuggestedLabelName("");
+      setSuggestedLabelColor("");
     }
   }, [editTemplate]);
 
@@ -70,6 +77,8 @@ export function TemplateEditorDialog({
     setDescription("");
     setSteps([{ ...DEFAULT_STEP }]);
     setDeliverableStrings([""]);
+    setSuggestedLabelName("");
+    setSuggestedLabelColor("");
   }
 
   function updateStep(idx: number, patch: Partial<WorkflowTemplateStep>) {
@@ -130,15 +139,19 @@ export function TemplateEditorDialog({
           .map((d) => d.trim())
           .filter(Boolean),
       }));
+      const suggestedLabel = suggestedLabelName.trim()
+        ? { name: suggestedLabelName.trim(), color: suggestedLabelColor || "zinc" }
+        : null;
       if (isEditing) {
         await updateLibraryTemplate(editTemplate.id, {
           name: name.trim(),
           description: description.trim() || null,
           steps: finalSteps,
+          suggested_label: suggestedLabel,
         });
         toast.success("Template updated");
       } else {
-        await createLibraryTemplate(name.trim(), description.trim() || null, finalSteps);
+        await createLibraryTemplate(name.trim(), description.trim() || null, finalSteps, suggestedLabel);
         toast.success("Template created");
       }
       reset();
@@ -186,6 +199,40 @@ export function TemplateEditorDialog({
               placeholder="Describe what this workflow covers..."
               className="min-h-[60px] resize-none text-sm"
             />
+          </div>
+
+          {/* Suggested Label */}
+          <div className="space-y-2 rounded-md border border-violet-500/25 bg-violet-500/5 p-3">
+            <Label className="text-xs text-violet-400">Suggested Label (optional)</Label>
+            <p className="text-[11px] text-muted-foreground">
+              When users import this template, this label and an auto-rule will be created automatically.
+            </p>
+            <Input
+              value={suggestedLabelName}
+              onChange={(e) => setSuggestedLabelName(e.target.value)}
+              placeholder="e.g. Bug, Feature, Research"
+              className="h-7 text-xs"
+            />
+            {suggestedLabelName.trim() && (
+              <div className="space-y-1">
+                <span className="text-[10px] text-muted-foreground">Color</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {LABEL_COLORS.map((c) => (
+                    <button
+                      key={c.value}
+                      type="button"
+                      title={c.label}
+                      className={`h-6 w-6 rounded ${c.swatchColor} transition-all ${
+                        suggestedLabelColor === c.value
+                          ? "ring-2 ring-white ring-offset-1 ring-offset-background"
+                          : "hover:scale-110"
+                      }`}
+                      onClick={() => setSuggestedLabelColor(c.value)}
+                    />
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Steps */}
