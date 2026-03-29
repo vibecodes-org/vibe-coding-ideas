@@ -93,6 +93,24 @@ export async function ensureTestUsers(): Promise<Record<string, TestUser>> {
         .from("users")
         .update({ full_name: config.fullName, onboarding_completed_at: new Date().toISOString() })
         .eq("id", users[key].id);
+    } else {
+      // Reset fresh user to pre-onboarding state so the wizard shows
+      // 1. Clear onboarding_completed_at
+      await supabaseAdmin
+        .from("users")
+        .update({ onboarding_completed_at: null })
+        .eq("id", users[key].id);
+      // 2. Delete any ideas created by the fresh user in previous runs
+      //    (the wizard only shows when user has zero ideas AND zero collaborations)
+      await supabaseAdmin
+        .from("ideas")
+        .delete()
+        .eq("author_id", users[key].id);
+      // 3. Remove any collaborations
+      await supabaseAdmin
+        .from("collaborators")
+        .delete()
+        .eq("user_id", users[key].id);
     }
   }
 

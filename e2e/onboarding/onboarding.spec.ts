@@ -8,9 +8,6 @@ test.describe("Onboarding", () => {
   test.describe("Fresh user (onboarding not completed)", () => {
     test("should show onboarding wizard on dashboard", async ({ freshPage: page }) => {
       await page.goto("/dashboard");
-      // Debug: capture where we actually are
-      console.log(`[Fresh user test] URL after goto: ${page.url()}`);
-      await page.screenshot({ path: "test-results/fresh-user-debug.png" });
       await expect(WELCOME_HEADING(page)).toBeVisible({ timeout: EXPECT_TIMEOUT });
       await expect(page.getByRole("button", { name: /Let's get started/i })).toBeVisible();
     });
