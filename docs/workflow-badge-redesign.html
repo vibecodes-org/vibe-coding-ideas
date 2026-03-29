@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Workflow Badge Redesign — Idle &amp; Complete States</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,400;0,9..40,500;0,9..40,600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg-root: #0c0c0f;
+    --bg-surface: #141419;
+    --bg-card: #1a1a22;
+    --bg-card-hover: #1f1f29;
+    --border: #27272f;
+    --border-subtle: #1f1f27;
+    --text: #e4e4e7;
+    --text-muted: #71717a;
+    --text-dim: #52525b;
+    --emerald: #34d399;
+    --blue: #60a5fa;
+    --amber: #fbbf24;
+    --red: #f87171;
+    --violet: #a78bfa;
+    --pink: #f472b6;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'DM Sans', sans-serif;
+    background: var(--bg-root);
+    color: var(--text);
+    padding: 48px;
+  }
+
+  .header {
+    margin-bottom: 40px;
+  }
+  .header-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--violet);
+    background: rgba(167,139,250,0.12);
+    border: 1px solid rgba(167,139,250,0.25);
+    border-radius: 100px;
+    padding: 4px 12px;
+    margin-bottom: 16px;
+  }
+  .header h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; margin-bottom: 6px; }
+  .header p { font-size: 14px; color: var(--text-muted); line-height: 1.6; max-width: 560px; }
+
+  .section-title {
+    font-size: 12px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-muted);
+    margin-bottom: 20px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .section-title::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .comparison {
+    display: grid;
+    grid-template-columns: 1fr 32px 1fr;
+    gap: 0;
+    align-items: start;
+    margin-bottom: 48px;
+  }
+  .comparison-arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding-top: 140px;
+    color: var(--text-dim);
+    opacity: 0.4;
+  }
+
+  .col-label {
+    text-align: center;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 8px;
+    border-radius: 6px;
+    margin-bottom: 8px;
+  }
+  .col-label.before { color: var(--text-dim); background: rgba(255,255,255,0.02); border: 1px dashed var(--border); }
+  .col-label.after { color: var(--emerald); background: rgba(52,211,153,0.08); border: 1px solid rgba(52,211,153,0.2); }
+
+  /* Card */
+  .card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 6px;
+  }
+  .card.glow-amber {
+    border-color: rgba(251,191,36,0.4);
+    box-shadow: 0 0 12px rgba(251,191,36,0.2);
+    ring: 1px solid rgba(251,191,36,0.2);
+  }
+  .card.border-red { border-left: 2px solid var(--red); }
+  .card.border-amber-stale { border-left: 2px solid var(--amber); }
+
+  .labels { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+  .label { font-size: 10px; font-weight: 600; padding: 2px 8px; border-radius: 100px; }
+  .label.bug { background: rgba(248,113,113,0.1); color: var(--red); }
+  .label.feature { background: rgba(167,139,250,0.12); color: var(--violet); }
+  .label.ux { background: rgba(244,114,182,0.1); color: var(--pink); }
+
+  .card-title { font-size: 13px; font-weight: 500; line-height: 1.45; margin-bottom: 8px; }
+
+  /* Metadata row */
+  .meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+  .meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-dim);
+  }
+  .meta-item svg { width: 12px; height: 12px; }
+
+  /* Status badges — all states */
+  .wf-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px 2px 6px;
+    border-radius: 100px;
+    white-space: nowrap;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .wf-badge svg { width: 11px; height: 11px; flex-shrink: 0; }
+  .wf-badge .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  .wf-badge.active { color: var(--blue); background: rgba(96,165,250,0.15); border: 1px solid rgba(96,165,250,0.25); }
+  .wf-badge.approval { color: var(--amber); background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.25); }
+  .wf-badge.failed { color: var(--red); background: rgba(248,113,113,0.1); border: 1px solid rgba(248,113,113,0.2); }
+  .wf-badge.stale { color: var(--amber); background: rgba(251,191,36,0.1); border: 1px solid rgba(251,191,36,0.2); }
+  .wf-badge.complete { color: var(--emerald); background: rgba(52,211,153,0.1); border: 1px solid rgba(52,211,153,0.2); }
+
+  /* OLD idle — plain text, no pill */
+  .wf-old-idle {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-dim);
+  }
+  .wf-old-idle svg { width: 12px; height: 12px; }
+
+  /* OLD complete — pill but different style */
+  .wf-old-complete {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px 2px 6px;
+    border-radius: 100px;
+    color: var(--emerald);
+    background: rgba(52,211,153,0.1);
+    border: 1px solid rgba(52,211,153,0.2);
+  }
+  .wf-old-complete svg { width: 11px; height: 11px; }
+
+  /* NEW: Unified idle — subtle pill that matches the family */
+  .wf-badge.idle {
+    color: var(--text-dim);
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+  }
+
+  .fraction {
+    font-size: 10px;
+    font-weight: 500;
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  /* Spinner */
+  .spin { animation: spin 1.2s linear infinite; }
+  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+
+  /* Legend */
+  .legend {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 10px;
+    margin-top: 32px;
+  }
+  .legend-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 14px;
+    background: var(--bg-surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+  }
+  .legend-item .legend-icon { flex-shrink: 0; margin-top: 2px; }
+  .legend-item h4 { font-size: 12px; font-weight: 600; margin-bottom: 3px; }
+  .legend-item p { font-size: 11px; color: var(--text-muted); line-height: 1.5; }
+
+  /* SVG icons */
+  svg.icon { width: 12px; height: 12px; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="header-tag">Refinement</div>
+  <h1>Workflow Badge — Idle &amp; Complete Consistency</h1>
+  <p>The idle state (plain text + CheckSquare) and complete state (pill with "Done") look inconsistent with the active/approval/failed badges. This proposes making all states use the same pill shape.</p>
+</div>
+
+<!-- Before / After -->
+<div class="section-title">Before &amp; After</div>
+<div class="comparison">
+
+  <!-- BEFORE -->
+  <div>
+    <div class="col-label before">Current</div>
+
+    <!-- Active — already fine -->
+    <div class="card">
+      <div class="labels"><span class="label bug">Bug</span></div>
+      <div class="card-title">Fix auth token refresh race condition</div>
+      <div class="meta">
+        <span class="wf-badge active">
+          <svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>
+          Implement Fix in progress
+        </span>
+        <span class="fraction">2/4</span>
+      </div>
+    </div>
+
+    <!-- Idle — OLD: plain text, no pill, mismatched -->
+    <div class="card">
+      <div class="labels"><span class="label feature">Feature</span></div>
+      <div class="card-title">Implement webhook retry logic with backoff</div>
+      <div class="meta">
+        <span class="wf-old-idle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          0/6
+        </span>
+        <span class="meta-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          1
+        </span>
+      </div>
+    </div>
+
+    <!-- Complete — OLD: pill but with " · Done" text -->
+    <div class="card">
+      <div class="labels"><span class="label ux">UX</span></div>
+      <div class="card-title">Redesign settings page layout</div>
+      <div class="meta">
+        <span class="wf-old-complete">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          4/4 · Done
+        </span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Arrow -->
+  <div class="comparison-arrow">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14"/><path d="M12 5l7 7-7 7"/></svg>
+  </div>
+
+  <!-- AFTER -->
+  <div>
+    <div class="col-label after">Proposed</div>
+
+    <!-- Active — unchanged -->
+    <div class="card">
+      <div class="labels"><span class="label bug">Bug</span></div>
+      <div class="card-title">Fix auth token refresh race condition</div>
+      <div class="meta">
+        <span class="wf-badge active">
+          <svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>
+          Implement Fix in progress
+        </span>
+        <span class="fraction">2/4</span>
+      </div>
+    </div>
+
+    <!-- Idle — NEW: subtle pill with border, same shape as others -->
+    <div class="card">
+      <div class="labels"><span class="label feature">Feature</span></div>
+      <div class="card-title">Implement webhook retry logic with backoff</div>
+      <div class="meta">
+        <span class="wf-badge idle">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+          0/6
+        </span>
+        <span class="meta-item">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+          1
+        </span>
+      </div>
+    </div>
+
+    <!-- Complete — NEW: same pill shape, just emerald with check + fraction -->
+    <div class="card">
+      <div class="labels"><span class="label ux">UX</span></div>
+      <div class="card-title">Redesign settings page layout</div>
+      <div class="meta">
+        <span class="wf-badge complete">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+          4/4
+        </span>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<!-- Legend -->
+<div class="section-title">All States — Unified Pill Family</div>
+<div class="legend">
+  <div class="legend-item">
+    <div class="legend-icon">
+      <span class="wf-badge active" style="padding:3px 8px">
+        <svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 12a9 9 0 11-6.219-8.56"/></svg>
+        In progress
+      </span>
+    </div>
+    <div>
+      <h4 style="color:var(--blue)">Active</h4>
+      <p>Blue pill + spinner. Unchanged.</p>
+    </div>
+  </div>
+
+  <div class="legend-item">
+    <div class="legend-icon">
+      <span class="wf-badge approval" style="padding:3px 8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 8A6 6 0 006 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 01-3.46 0"/></svg>
+        Needs approval
+      </span>
+    </div>
+    <div>
+      <h4 style="color:var(--amber)">Approval</h4>
+      <p>Amber pill + bell. Card glow. Unchanged.</p>
+    </div>
+  </div>
+
+  <div class="legend-item">
+    <div class="legend-icon">
+      <span class="wf-badge failed" style="padding:3px 8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Failed
+      </span>
+    </div>
+    <div>
+      <h4 style="color:var(--red)">Failed</h4>
+      <p>Red pill + warning. Left border. Unchanged.</p>
+    </div>
+  </div>
+
+  <div class="legend-item">
+    <div class="legend-icon">
+      <span class="wf-badge stale" style="padding:3px 8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Stale · 4h
+      </span>
+    </div>
+    <div>
+      <h4 style="color:var(--amber)">Stale</h4>
+      <p>Amber pill + clock. Left border. Unchanged.</p>
+    </div>
+  </div>
+
+  <div class="legend-item" style="border-color: rgba(52,211,153,0.15)">
+    <div class="legend-icon">
+      <span class="wf-badge complete" style="padding:3px 8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        4/4
+      </span>
+    </div>
+    <div>
+      <h4 style="color:var(--emerald)">Complete</h4>
+      <p><strong>Changed:</strong> Removed " · Done" text. Just the fraction in an emerald pill. Cleaner, consistent shape, and "Done" is redundant when all steps match.</p>
+    </div>
+  </div>
+
+  <div class="legend-item" style="border-color: var(--border)">
+    <div class="legend-icon">
+      <span class="wf-badge idle" style="padding:3px 8px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 01-2 2H5a2 2 0 01-2-2V5a2 2 0 012-2h11"/></svg>
+        0/6
+      </span>
+    </div>
+    <div>
+      <h4>Idle</h4>
+      <p><strong>Changed:</strong> Now a subtle pill with faint border and background instead of plain text. Same shape as all other states — just muted colours. Sits naturally alongside attachment/comment counts.</p>
+    </div>
+  </div>
+
+</div>
+
+</body>
+</html>

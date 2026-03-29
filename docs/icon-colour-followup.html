@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Icon Colour Follow-up — Design Proposal</title>
+<style>
+  :root {
+    --zinc-50: #fafafa; --zinc-400: #a1a1aa; --zinc-500: #71717a;
+    --zinc-600: #52525b; --zinc-700: #3f3f46; --zinc-800: #27272a;
+    --zinc-900: #18181b; --zinc-950: #09090b;
+    --amber-400: #fbbf24; --blue-400: #60a5fa; --emerald-400: #34d399;
+    --violet-400: #a78bfa; --cyan-400: #22d3ee; --red-400: #f87171;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: system-ui, -apple-system, sans-serif; background: var(--zinc-950); color: var(--zinc-50); line-height: 1.6; }
+
+  .page { max-width: 1000px; margin: 0 auto; padding: 48px 24px; }
+  h1 { font-size: 24px; font-weight: 700; margin-bottom: 8px; }
+  h1 span { color: var(--emerald-400); }
+  .subtitle { color: var(--zinc-400); font-size: 14px; margin-bottom: 40px; }
+  h2 { font-size: 18px; font-weight: 700; margin-bottom: 20px; color: var(--zinc-50); }
+  h2 span { font-size: 12px; font-weight: 400; color: var(--zinc-500); margin-left: 8px; }
+
+  .comparison { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 48px; }
+  .panel { background: var(--zinc-900); border: 1px solid var(--zinc-800); border-radius: 12px; padding: 24px; }
+  .panel-label { font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px; margin-bottom: 16px; font-weight: 600; }
+  .panel-label.before { color: var(--zinc-500); }
+  .panel-label.after { color: var(--emerald-400); }
+
+  /* Dashboard section mockup */
+  .section-row { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: var(--zinc-800); border: 1px solid var(--zinc-700); border-radius: 8px; margin-bottom: 8px; }
+  .section-row svg { width: 20px; height: 20px; flex-shrink: 0; }
+  .section-row .label { font-size: 14px; font-weight: 600; }
+  .section-row .count { font-size: 11px; background: var(--zinc-700); padding: 1px 8px; border-radius: 10px; color: var(--zinc-400); margin-left: 4px; }
+  .mono { color: var(--zinc-400); }
+
+  /* Navbar mockup */
+  .navbar-mock { display: flex; align-items: center; gap: 4px; padding: 8px 16px; background: var(--zinc-800); border: 1px solid var(--zinc-700); border-radius: 8px; }
+  .nav-item { display: flex; align-items: center; gap: 6px; padding: 6px 12px; border-radius: 6px; font-size: 13px; font-weight: 500; color: var(--zinc-400); }
+  .nav-item svg { width: 16px; height: 16px; }
+
+  /* Stats card mockup */
+  .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; }
+  .stat-card { background: var(--zinc-800); border: 1px solid var(--zinc-700); border-radius: 8px; padding: 16px; }
+  .stat-card svg { width: 20px; height: 20px; margin-bottom: 8px; }
+  .stat-card .value { font-size: 24px; font-weight: 700; }
+  .stat-card .stat-label { font-size: 11px; color: var(--zinc-500); }
+
+  @media (max-width: 768px) {
+    .comparison { grid-template-columns: 1fr; }
+    .stats-grid { grid-template-columns: 1fr 1fr; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1><span>Icon Colour Follow-up</span> — Design Proposal</h1>
+<p class="subtitle">Building on the "Audit Current UX" findings. Every change shown before/after.</p>
+
+<!-- ════ Dashboard Section Headers ════ -->
+<h2>Dashboard Section Headers <span>dashboard/page.tsx</span></h2>
+<div class="comparison">
+  <div class="panel">
+    <div class="panel-label before">Before (monochrome)</div>
+    <div class="section-row">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mono"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>
+      <span class="label" style="color: var(--zinc-400)">My Tasks</span><span class="count">9</span>
+    </div>
+    <div class="section-row">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mono"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span class="label" style="color: var(--zinc-400)">Collaborations</span><span class="count">6</span>
+    </div>
+    <div class="section-row">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mono"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      <span class="label" style="color: var(--zinc-400)">Recent Activity</span><span class="count">15</span>
+    </div>
+    <div class="section-row">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="mono"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/></svg>
+      <span class="label" style="color: var(--zinc-400)">Active Discussions</span><span class="count">5</span>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-label after">After (coloured)</div>
+    <div class="section-row">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--blue-400)"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>
+      <span class="label">My Tasks</span><span class="count">9</span>
+    </div>
+    <div class="section-row">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--blue-400)"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+      <span class="label">Collaborations</span><span class="count">6</span>
+    </div>
+    <div class="section-row">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--amber-400)"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>
+      <span class="label">Recent Activity</span><span class="count">15</span>
+    </div>
+    <div class="section-row">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--violet-400)"><path d="M7.9 20A9 9 0 1 0 4 16.1L2 22Z"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/></svg>
+      <span class="label">Active Discussions</span><span class="count">5</span>
+    </div>
+  </div>
+</div>
+
+<!-- ════ Navbar ════ -->
+<h2>Navbar Icons <span>navbar.tsx (desktop + mobile)</span></h2>
+<div class="comparison">
+  <div class="panel">
+    <div class="panel-label before">Before (monochrome)</div>
+    <div class="navbar-mock">
+      <div class="nav-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="9" y1="18" x2="15" y2="18"/><line x1="10" y1="22" x2="14" y2="22"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>
+        Ideas
+      </div>
+      <div class="nav-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 8V4H8"/><rect x="8" y="8" width="8" height="4" rx="1"/><path d="M16 12v4h-2"/><path d="M6 12v4h2"/><rect x="6" y="16" width="12" height="4" rx="1"/></svg>
+        Agents
+      </div>
+      <div class="nav-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Admin
+      </div>
+      <div class="nav-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+        Guide
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-label after">After (coloured)</div>
+    <div class="navbar-mock">
+      <div class="nav-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--amber-400)"><line x1="9" y1="18" x2="15" y2="18"/><line x1="10" y1="22" x2="14" y2="22"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>
+        Ideas
+      </div>
+      <div class="nav-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--emerald-400)"><path d="M12 8V4H8"/><rect x="8" y="8" width="8" height="4" rx="1"/><path d="M16 12v4h-2"/><path d="M6 12v4h2"/><rect x="6" y="16" width="12" height="4" rx="1"/></svg>
+        Agents
+      </div>
+      <div class="nav-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--violet-400)"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Admin
+      </div>
+      <div class="nav-item">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--cyan-400)"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg>
+        Guide
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ════ Stats Cards ════ -->
+<h2>Stats Cards <span>stats-cards.tsx</span></h2>
+<div class="comparison">
+  <div class="panel">
+    <div class="panel-label before">Before</div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--amber-400)"><line x1="9" y1="18" x2="15" y2="18"/><line x1="10" y1="22" x2="14" y2="22"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>
+        <div class="value">18</div>
+        <div class="stat-label">Ideas Created</div>
+      </div>
+      <div class="stat-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--blue-400)"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <div class="value">6</div>
+        <div class="stat-label">Collaborations</div>
+      </div>
+      <div class="stat-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--emerald-400)"><polyline points="18 15 12 9 6 15"/></svg>
+        <div class="value">6</div>
+        <div class="stat-label">Upvotes Received</div>
+      </div>
+      <div class="stat-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: #c084fc"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>
+        <div class="value">9</div>
+        <div class="stat-label">Tasks Assigned</div>
+      </div>
+    </div>
+  </div>
+  <div class="panel">
+    <div class="panel-label after">After (Tasks: purple &rarr; blue)</div>
+    <div class="stats-grid">
+      <div class="stat-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--amber-400)"><line x1="9" y1="18" x2="15" y2="18"/><line x1="10" y1="22" x2="14" y2="22"/><path d="M15.09 14c.18-.98.65-1.74 1.41-2.5A4.65 4.65 0 0 0 18 8 6 6 0 0 0 6 8c0 1 .23 2.23 1.5 3.5A4.61 4.61 0 0 1 8.91 14"/></svg>
+        <div class="value">18</div>
+        <div class="stat-label">Ideas Created</div>
+      </div>
+      <div class="stat-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--blue-400)"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+        <div class="value">6</div>
+        <div class="stat-label">Collaborations</div>
+      </div>
+      <div class="stat-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--emerald-400)"><polyline points="18 15 12 9 6 15"/></svg>
+        <div class="value">6</div>
+        <div class="stat-label">Upvotes Received</div>
+      </div>
+      <div class="stat-card">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color: var(--blue-400)"><path d="m9 11-6 6v3h9l3-3"/><path d="m22 12-4.6 4.6a2 2 0 0 1-2.8 0l-5.2-5.2a2 2 0 0 1 0-2.8L14 4"/></svg>
+        <div class="value">9</div>
+        <div class="stat-label">Tasks Assigned</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Summary -->
+<div style="background: var(--zinc-900); border: 1px solid var(--zinc-800); border-radius: 12px; padding: 24px; margin-top: 16px;">
+  <h2 style="margin-bottom: 12px;">Change Summary</h2>
+  <table style="width: 100%; font-size: 13px; border-collapse: collapse;">
+    <thead><tr style="border-bottom: 1px solid var(--zinc-700); text-align: left;">
+      <th style="padding: 8px; color: var(--zinc-400);">Location</th>
+      <th style="padding: 8px; color: var(--zinc-400);">Icon</th>
+      <th style="padding: 8px; color: var(--zinc-400);">Before</th>
+      <th style="padding: 8px; color: var(--zinc-400);">After</th>
+    </tr></thead>
+    <tbody>
+      <tr style="border-bottom: 1px solid var(--zinc-800);"><td style="padding: 8px;">Dashboard: My Tasks</td><td style="padding: 8px;">CheckSquare</td><td style="padding: 8px; color: var(--zinc-500);">monochrome</td><td style="padding: 8px; color: var(--blue-400);">blue-400</td></tr>
+      <tr style="border-bottom: 1px solid var(--zinc-800);"><td style="padding: 8px;">Dashboard: Collaborations</td><td style="padding: 8px;">Users</td><td style="padding: 8px; color: var(--zinc-500);">monochrome</td><td style="padding: 8px; color: var(--blue-400);">blue-400</td></tr>
+      <tr style="border-bottom: 1px solid var(--zinc-800);"><td style="padding: 8px;">Dashboard: Recent Activity</td><td style="padding: 8px;">Bell</td><td style="padding: 8px; color: var(--zinc-500);">monochrome</td><td style="padding: 8px; color: var(--amber-400);">amber-400</td></tr>
+      <tr style="border-bottom: 1px solid var(--zinc-800);"><td style="padding: 8px;">Dashboard: Active Discussions</td><td style="padding: 8px;">MessagesSquare</td><td style="padding: 8px; color: var(--zinc-500);">monochrome</td><td style="padding: 8px; color: var(--violet-400);">violet-400</td></tr>
+      <tr style="border-bottom: 1px solid var(--zinc-800);"><td style="padding: 8px;">Navbar: Ideas</td><td style="padding: 8px;">Lightbulb</td><td style="padding: 8px; color: var(--zinc-500);">monochrome</td><td style="padding: 8px; color: var(--amber-400);">amber-400</td></tr>
+      <tr style="border-bottom: 1px solid var(--zinc-800);"><td style="padding: 8px;">Navbar: Agents</td><td style="padding: 8px;">Bot</td><td style="padding: 8px; color: var(--zinc-500);">monochrome</td><td style="padding: 8px; color: var(--emerald-400);">emerald-400</td></tr>
+      <tr style="border-bottom: 1px solid var(--zinc-800);"><td style="padding: 8px;">Navbar: Admin</td><td style="padding: 8px;">Shield</td><td style="padding: 8px; color: var(--zinc-500);">monochrome</td><td style="padding: 8px; color: var(--violet-400);">violet-400</td></tr>
+      <tr style="border-bottom: 1px solid var(--zinc-800);"><td style="padding: 8px;">Navbar: Guide</td><td style="padding: 8px;">BookOpen</td><td style="padding: 8px; color: var(--zinc-500);">monochrome</td><td style="padding: 8px; color: var(--cyan-400);">cyan-400</td></tr>
+      <tr><td style="padding: 8px;">Stats: Tasks Assigned</td><td style="padding: 8px;">CheckSquare</td><td style="padding: 8px; color: #c084fc;">purple-400</td><td style="padding: 8px; color: var(--blue-400);">blue-400</td></tr>
+    </tbody>
+  </table>
+</div>
+
+</div>
+</body>
+</html>

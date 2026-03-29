@@ -202,7 +202,18 @@
       "WebFetch(domain:www.bitcot.com)",
       "mcp__vibecodes-remote__remove_workflow",
       "mcp__vibecodes-remote__create_discussion",
-      "Bash(a specific label.\" Visible even when triggers exist, so users understand:*)"
+      "Bash(a specific label.\" Visible even when triggers exist, so users understand:*)",
+      "mcp__claude_ai_Vercel__get_runtime_logs",
+      "Bash(ls /c/Users/nicho/projects/vibe-coding-ideas/src/app/\\\\\\(main\\\\\\)/guide/)",
+      "Bash(ls /c/Users/nicho/projects/vibe-coding-ideas/src/app/\\\\\\(main\\\\\\)/guide/mcp-integration/)",
+      "Bash(ls /c/Users/nicho/projects/vibe-coding-ideas/src/app/\\\\\\(main\\\\\\)/guide/getting-started/)",
+      "Bash(xargs -I{} gh run view {} --log-failed)",
+      "Bash(sed -i 's/className=\"\"h-6 w-6 text-primary\"\"/className=\"\"h-6 w-6 text-amber-400\"\"/' \"src/app/guide/ideas-and-voting/page.tsx\")",
+      "Bash(sed -i 's/className=\"\"h-6 w-6 text-primary\"\"/className=\"\"h-6 w-6 text-blue-400\"\"/' \"src/app/guide/collaboration/page.tsx\")",
+      "Bash(sed -i 's/className=\"\"h-6 w-6 text-primary\"\"/className=\"\"h-6 w-6 text-violet-400\"\"/' \"src/app/guide/discussions/page.tsx\")",
+      "Bash(sed -i 's/className=\"\"h-6 w-6 text-primary\"\"/className=\"\"h-6 w-6 text-blue-400\"\"/' \"src/app/guide/kanban-boards/page.tsx\")",
+      "Bash(sed -i 's/className=\"\"h-6 w-6 text-primary\"\"/className=\"\"h-6 w-6 text-cyan-400\"\"/' \"src/app/guide/mcp-integration/page.tsx\")",
+      "Bash(gh secret:*)"
     ]
   },
   "enableAllProjectMcpServers": true,

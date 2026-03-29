@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Kit Tab Redesign — Compass (UX Designer)</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #09090b;
+      color: #a1a1aa;
+      padding: 40px 20px;
+    }
+    .container { max-width: 700px; margin: 0 auto; }
+    h1 { color: #fafafa; font-size: 1.5rem; margin-bottom: 8px; }
+    .subtitle { color: #71717a; font-size: 0.85rem; margin-bottom: 40px; }
+    .problem-box {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 40px;
+    }
+    .problem-box h2 { color: #ef4444; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.1em; margin-bottom: 8px; }
+    .problem-box p { font-size: 0.82rem; line-height: 1.5; }
+    .option { margin-bottom: 48px; }
+    .option-header {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-bottom: 6px;
+    }
+    .option-header h2 { color: #fafafa; font-size: 1.1rem; }
+    .option-header .badge {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      padding: 2px 8px;
+      border-radius: 9999px;
+      font-weight: 600;
+    }
+    .badge-recommended { background: #22c55e20; color: #4ade80; }
+    .option-desc { font-size: 0.8rem; color: #71717a; margin-bottom: 16px; line-height: 1.5; }
+    .preview-label {
+      font-size: 0.6rem;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: #52525b;
+      margin-bottom: 8px;
+      font-weight: 700;
+    }
+
+    /* Shared kit preview frame */
+    .kit-frame {
+      background: #18181b;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      padding: 20px;
+    }
+    .section-label {
+      font-size: 0.6rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #71717a;
+      margin-bottom: 8px;
+    }
+
+    /* Step chain (same across all options) */
+    .step-chain {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .step-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 5px 11px;
+      border-radius: 6px;
+      font-size: 0.78rem;
+      border: 1px solid #27272a;
+      background: rgba(63, 63, 70, 0.15);
+      color: #a1a1aa;
+    }
+    .step-pill.approval {
+      border-color: rgba(245, 158, 11, 0.25);
+      background: rgba(245, 158, 11, 0.08);
+    }
+    .step-pill .lock { font-size: 0.7rem; }
+    .step-arrow { color: #3f3f46; font-size: 0.75rem; }
+
+    .triggered-by {
+      font-size: 0.7rem;
+      color: #52525b;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .trigger-label {
+      font-size: 0.6rem;
+      font-weight: 600;
+      padding: 1px 8px;
+      border-radius: 9999px;
+    }
+    .trigger-label.violet { background: rgba(139, 92, 246, 0.12); color: #a78bfa; }
+    .trigger-label.green { background: rgba(34, 197, 94, 0.12); color: #4ade80; }
+
+    /* =========================================
+       OPTION A — Underline tabs
+       ========================================= */
+    .tabs-underline {
+      display: flex;
+      gap: 0;
+      border-bottom: 1px solid #27272a;
+      margin-bottom: 12px;
+    }
+    .tabs-underline .tab {
+      padding: 8px 14px;
+      font-size: 0.78rem;
+      font-weight: 500;
+      color: #71717a;
+      cursor: pointer;
+      border-bottom: 2px solid transparent;
+      transition: all 0.15s;
+      background: none;
+      border-top: none;
+      border-left: none;
+      border-right: none;
+    }
+    .tabs-underline .tab:hover { color: #a1a1aa; }
+    .tabs-underline .tab.active {
+      color: #a78bfa;
+      border-bottom-color: #a78bfa;
+    }
+    .tabs-underline .tab .count {
+      font-size: 0.65rem;
+      color: #52525b;
+      margin-left: 3px;
+    }
+    .tabs-underline .tab.active .count { color: #7c3aed80; }
+
+    /* =========================================
+       OPTION B — Segmented control
+       ========================================= */
+    .tabs-segmented {
+      display: inline-flex;
+      background: rgba(39, 39, 42, 0.5);
+      border-radius: 8px;
+      padding: 3px;
+      gap: 2px;
+      margin-bottom: 12px;
+    }
+    .tabs-segmented .tab {
+      padding: 6px 14px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #71717a;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.15s;
+      background: none;
+      border: none;
+    }
+    .tabs-segmented .tab:hover { color: #a1a1aa; }
+    .tabs-segmented .tab.active {
+      background: #27272a;
+      color: #fafafa;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .tabs-segmented .tab .count {
+      font-size: 0.62rem;
+      color: #52525b;
+      margin-left: 3px;
+    }
+    .tabs-segmented .tab.active .count { color: #71717a; }
+
+    /* =========================================
+       OPTION C — Card-style tabs with icon
+       ========================================= */
+    .tabs-cards {
+      display: flex;
+      gap: 6px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
+    }
+    .tabs-cards .tab {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      padding: 7px 14px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #71717a;
+      cursor: pointer;
+      border-radius: 8px;
+      transition: all 0.15s;
+      background: none;
+      border: 1px solid transparent;
+    }
+    .tabs-cards .tab:hover {
+      background: rgba(39, 39, 42, 0.3);
+      border-color: #27272a;
+    }
+    .tabs-cards .tab.active {
+      background: rgba(139, 92, 246, 0.08);
+      border-color: rgba(139, 92, 246, 0.2);
+      color: #c4b5fd;
+    }
+    .tabs-cards .tab .icon {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.55rem;
+      font-weight: 700;
+    }
+    .tabs-cards .tab .icon { background: rgba(63, 63, 70, 0.3); color: #71717a; }
+    .tabs-cards .tab.active .icon { background: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+    .tabs-cards .tab .count {
+      font-size: 0.6rem;
+      color: #52525b;
+    }
+    .tabs-cards .tab.active .count { color: #7c3aed80; }
+
+    /* =========================================
+       OPTION D — Vertical sidebar tabs (recommended)
+       ========================================= */
+    .tabs-vertical-layout {
+      display: grid;
+      grid-template-columns: 180px 1fr;
+      gap: 16px;
+      margin-bottom: 0;
+    }
+    .tabs-vertical {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+      border-right: 1px solid #27272a;
+      padding-right: 16px;
+    }
+    .tabs-vertical .tab {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      font-size: 0.75rem;
+      font-weight: 500;
+      color: #71717a;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: all 0.15s;
+      background: none;
+      border: none;
+      text-align: left;
+      width: 100%;
+    }
+    .tabs-vertical .tab:hover { background: rgba(39, 39, 42, 0.3); color: #a1a1aa; }
+    .tabs-vertical .tab.active {
+      background: rgba(139, 92, 246, 0.1);
+      color: #c4b5fd;
+    }
+    .tabs-vertical .tab .count {
+      font-size: 0.6rem;
+      color: #52525b;
+      background: rgba(39, 39, 42, 0.5);
+      padding: 1px 6px;
+      border-radius: 9999px;
+    }
+    .tabs-vertical .tab.active .count {
+      background: rgba(139, 92, 246, 0.15);
+      color: #a78bfa;
+    }
+    .tabs-vertical-content { min-width: 0; }
+
+    /* Pros/Cons */
+    .analysis {
+      margin-top: 12px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .analysis div { font-size: 0.75rem; line-height: 1.6; }
+    .analysis .label { font-weight: 600; font-size: 0.65rem; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 4px; }
+    .analysis .pros .label { color: #4ade80; }
+    .analysis .cons .label { color: #f87171; }
+
+    hr { border: none; border-top: 1px solid #1a1a1e; margin: 24px 0; }
+
+    .recommendation {
+      background: linear-gradient(135deg, rgba(139, 92, 246, 0.06), rgba(34, 197, 94, 0.04));
+      border: 1px solid rgba(139, 92, 246, 0.15);
+      border-radius: 12px;
+      padding: 20px;
+      margin-top: 12px;
+    }
+    .recommendation h2 { color: #c4b5fd; font-size: 0.9rem; margin-bottom: 8px; }
+    .recommendation p { font-size: 0.8rem; line-height: 1.6; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Kit Tab Redesign</h1>
+    <p class="subtitle">Compass (UX Designer) — 27 March 2026</p>
+
+    <!-- Problem statement -->
+    <div class="problem-box">
+      <h2>Problem</h2>
+      <p>
+        The workflow template tabs look almost identical to the step pills below them.
+        Both use the same rounded-pill shape, similar sizing, and muted styling.
+        Users don't realise the "tabs" are clickable — they just look like another row of labels.
+        The active tab's violet highlight is too subtle against the violet step-pill borders.
+      </p>
+    </div>
+
+    <!-- ======== OPTION A: Underline Tabs ======== -->
+    <div class="option">
+      <div class="option-header">
+        <h2>Option A — Underline Tabs</h2>
+        <span class="badge badge-recommended">Recommended</span>
+      </div>
+      <p class="option-desc">
+        Classic underline tab pattern. Universally recognised as navigation.
+        The horizontal rule creates a clear boundary between tabs and content.
+        No overlap with the rounded pill shape used by steps.
+      </p>
+      <p class="preview-label">Preview</p>
+      <div class="kit-frame">
+        <p class="section-label">&#9889; Workflow Templates (3)</p>
+        <div class="tabs-underline">
+          <button class="tab active">Web Application Feature <span class="count">(6)</span></button>
+          <button class="tab">Bug Fix <span class="count">(4)</span></button>
+          <button class="tab">Infrastructure Change <span class="count">(5)</span></button>
+        </div>
+        <div class="step-chain">
+          <span class="step-pill">1. Requirements & Acceptance Criteria</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill">2. UX Design & Prototyping</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill approval">3. Design Approval <span class="lock">&#x1F512;</span></span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill">4. Implementation & Unit Tests</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill">5. QA & Security Review</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill approval">6. Release Sign-off <span class="lock">&#x1F512;</span></span>
+        </div>
+        <div class="triggered-by">
+          <span>Triggered by:</span>
+          <span class="trigger-label violet">Feature</span>
+          <span class="trigger-label green">Enhancement</span>
+        </div>
+      </div>
+      <div class="analysis">
+        <div class="pros">
+          <p class="label">Pros</p>
+          <p>Universally understood tab pattern. Clean visual separation from pills. Minimal footprint. Works well on mobile. Matches shadcn/ui Tabs component styling.</p>
+        </div>
+        <div class="cons">
+          <p class="label">Cons</p>
+          <p>Slightly less visually distinctive than segmented control. Underline can feel dated in some contexts.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======== OPTION B: Segmented Control ======== -->
+    <div class="option">
+      <div class="option-header">
+        <h2>Option B — Segmented Control</h2>
+      </div>
+      <p class="option-desc">
+        iOS/macOS-style segmented control. The recessed track background clearly signals
+        "this is a toggle group". The active segment has an elevated card appearance
+        that's visually distinct from the flat step pills.
+      </p>
+      <p class="preview-label">Preview</p>
+      <div class="kit-frame">
+        <p class="section-label">&#9889; Workflow Templates (3)</p>
+        <div class="tabs-segmented">
+          <button class="tab active">Web Application Feature <span class="count">(6)</span></button>
+          <button class="tab">Bug Fix <span class="count">(4)</span></button>
+          <button class="tab">Infrastructure Change <span class="count">(5)</span></button>
+        </div>
+        <div class="step-chain">
+          <span class="step-pill">1. Requirements & Acceptance Criteria</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill">2. UX Design & Prototyping</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill approval">3. Design Approval <span class="lock">&#x1F512;</span></span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill">4. Implementation & Unit Tests</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill">5. QA & Security Review</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill approval">6. Release Sign-off <span class="lock">&#x1F512;</span></span>
+        </div>
+        <div class="triggered-by">
+          <span>Triggered by:</span>
+          <span class="trigger-label violet">Feature</span>
+          <span class="trigger-label green">Enhancement</span>
+        </div>
+      </div>
+      <div class="analysis">
+        <div class="pros">
+          <p class="label">Pros</p>
+          <p>Very clear "toggle" affordance. Recessed track + elevated active state is unambiguous. Modern, polished feel. Groups options tightly.</p>
+        </div>
+        <div class="cons">
+          <p class="label">Cons</p>
+          <p>Can feel cramped with long template names. Less familiar as "tabs" for web users. Wider horizontal footprint than underline.</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======== OPTION C: Card Tabs with Icon ======== -->
+    <div class="option">
+      <div class="option-header">
+        <h2>Option C — Card Tabs with Step Count Badge</h2>
+      </div>
+      <p class="option-desc">
+        Each tab gets a small icon square and a more button-like appearance.
+        The active state uses a violet tint background + border — still a pill shape,
+        but the icon and larger padding make it clearly a different UI element from the step chain.
+      </p>
+      <p class="preview-label">Preview</p>
+      <div class="kit-frame">
+        <p class="section-label">&#9889; Workflow Templates (3)</p>
+        <div class="tabs-cards">
+          <button class="tab active">
+            <span class="icon">&#9889;</span>
+            Web Application Feature
+            <span class="count">(6)</span>
+          </button>
+          <button class="tab">
+            <span class="icon">&#9889;</span>
+            Bug Fix
+            <span class="count">(4)</span>
+          </button>
+          <button class="tab">
+            <span class="icon">&#9889;</span>
+            Infrastructure Change
+            <span class="count">(5)</span>
+          </button>
+        </div>
+        <div class="step-chain">
+          <span class="step-pill">1. Requirements & Acceptance Criteria</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill">2. UX Design & Prototyping</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill approval">3. Design Approval <span class="lock">&#x1F512;</span></span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill">4. Implementation & Unit Tests</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill">5. QA & Security Review</span>
+          <span class="step-arrow">&rarr;</span>
+          <span class="step-pill approval">6. Release Sign-off <span class="lock">&#x1F512;</span></span>
+        </div>
+        <div class="triggered-by">
+          <span>Triggered by:</span>
+          <span class="trigger-label violet">Feature</span>
+          <span class="trigger-label green">Enhancement</span>
+        </div>
+      </div>
+      <div class="analysis">
+        <div class="pros">
+          <p class="label">Pros</p>
+          <p>Icon adds visual weight and differentiator. Larger tap target. Active state with tinted background is more prominent than current design.</p>
+        </div>
+        <div class="cons">
+          <p class="label">Cons</p>
+          <p>Still pill-shaped — risk of confusion remains. Most horizontal space of all options. Icons are decorative (same icon repeated).</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======== OPTION D: Vertical Sidebar ======== -->
+    <div class="option">
+      <div class="option-header">
+        <h2>Option D — Vertical Sidebar Tabs</h2>
+      </div>
+      <p class="option-desc">
+        Templates listed vertically on the left, step chain on the right.
+        Completely different layout axis from the horizontal step chain,
+        making it impossible to confuse tabs with steps.
+      </p>
+      <p class="preview-label">Preview</p>
+      <div class="kit-frame">
+        <p class="section-label">&#9889; Workflow Templates (3)</p>
+        <div class="tabs-vertical-layout">
+          <div class="tabs-vertical">
+            <button class="tab active">
+              Web Application Feature
+              <span class="count">6</span>
+            </button>
+            <button class="tab">
+              Bug Fix
+              <span class="count">4</span>
+            </button>
+            <button class="tab">
+              Infrastructure Change
+              <span class="count">5</span>
+            </button>
+          </div>
+          <div class="tabs-vertical-content">
+            <div class="step-chain">
+              <span class="step-pill">1. Requirements & Acceptance Criteria</span>
+              <span class="step-arrow">&rarr;</span>
+              <span class="step-pill">2. UX Design & Prototyping</span>
+              <span class="step-arrow">&rarr;</span>
+              <span class="step-pill approval">3. Design Approval <span class="lock">&#x1F512;</span></span>
+              <span class="step-arrow">&rarr;</span>
+              <span class="step-pill">4. Implementation & Unit Tests</span>
+              <span class="step-arrow">&rarr;</span>
+              <span class="step-pill">5. QA & Security Review</span>
+              <span class="step-arrow">&rarr;</span>
+              <span class="step-pill approval">6. Release Sign-off <span class="lock">&#x1F512;</span></span>
+            </div>
+            <div class="triggered-by" style="margin-top: 8px;">
+              <span>Triggered by:</span>
+              <span class="trigger-label violet">Feature</span>
+              <span class="trigger-label green">Enhancement</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="analysis">
+        <div class="pros">
+          <p class="label">Pros</p>
+          <p>Zero confusion — different axis entirely. Step count badges are clean. Works well when template names are long. Clear visual hierarchy.</p>
+        </div>
+        <div class="cons">
+          <p class="label">Cons</p>
+          <p>Takes more vertical space. Doesn't work well on narrow mobile screens (would need to collapse to horizontal). More complex layout implementation.</p>
+        </div>
+      </div>
+    </div>
+
+    <hr>
+
+    <!-- Recommendation -->
+    <div class="recommendation">
+      <h2>Recommendation: Option A (Underline Tabs)</h2>
+      <p>
+        <strong>Why:</strong> The underline tab is the most universally understood "this is navigation" pattern on the web.
+        The horizontal rule creates a clear visual boundary between the tab row and the step chain content.
+        It's the simplest to implement (maps directly to shadcn/ui's <code>Tabs</code> component with the default style),
+        takes the least space, and works perfectly on mobile. No one has ever looked at an underline tab and wondered
+        whether it was clickable.
+      </p>
+      <p style="margin-top: 10px;">
+        <strong>Alternative:</strong> If you want something more modern/polished, Option B (segmented control) is the runner-up.
+        It has equally clear affordance and a more premium feel, but takes slightly more horizontal space.
+      </p>
+    </div>
+  </div>
+
+  <!-- Interactivity for demo purposes -->
+  <script>
+    document.querySelectorAll('.tabs-underline, .tabs-segmented, .tabs-cards, .tabs-vertical').forEach(tabGroup => {
+      tabGroup.querySelectorAll('.tab').forEach(tab => {
+        tab.addEventListener('click', () => {
+          tabGroup.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+          tab.classList.add('active');
+        });
+      });
+    });
+  </script>
+</body>
+</html>
