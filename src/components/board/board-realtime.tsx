@@ -5,12 +5,19 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const DEBOUNCE_MS = 500;
-const FOLLOW_UP_DELAY_MS = 1500;
+
+// Workflow step events need multiple follow-up refreshes because:
+// 1. The DB trigger that denormalizes counts to board_tasks may not have
+//    committed by the time the first refresh reads the data
+// 2. Supabase read replicas add additional lag
+// 3. Rapid-fire events (complete + claim + set_identity) cause debounce
+//    resets that swallow intermediate refreshes
+const WORKFLOW_REFRESH_DELAYS = [500, 2000, 5000];
 
 export function BoardRealtime({ ideaId }: { ideaId: string }) {
   const router = useRouter();
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const followUpRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const workflowTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
 
   const debouncedRefresh = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -20,17 +27,22 @@ export function BoardRealtime({ ideaId }: { ideaId: string }) {
     }, DEBOUNCE_MS);
   }, [router]);
 
-  // Workflow step changes need a follow-up refresh to catch denormalized
-  // column updates on board_tasks that may not be visible on the first read
-  // due to read replica lag or Next.js RSC caching.
-  const debouncedRefreshWithFollowUp = useCallback(() => {
-    debouncedRefresh();
-    if (followUpRef.current) clearTimeout(followUpRef.current);
-    followUpRef.current = setTimeout(() => {
-      router.refresh();
-      followUpRef.current = null;
-    }, FOLLOW_UP_DELAY_MS);
-  }, [debouncedRefresh, router]);
+  // Workflow step changes fire a cascade of refreshes at increasing delays.
+  // Each refresh is independent (not debounced) so rapid events can't
+  // cancel later retries. Previous cascade timers are cleared when a new
+  // workflow event arrives to avoid stacking.
+  const workflowRefresh = useCallback(() => {
+    // Clear any previous cascade timers
+    for (const t of workflowTimersRef.current) clearTimeout(t);
+    workflowTimersRef.current = [];
+
+    for (const delay of WORKFLOW_REFRESH_DELAYS) {
+      const timer = setTimeout(() => {
+        router.refresh();
+      }, delay);
+      workflowTimersRef.current.push(timer);
+    }
+  }, [router]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -84,7 +96,7 @@ export function BoardRealtime({ ideaId }: { ideaId: string }) {
           table: "task_workflow_steps",
           filter: `idea_id=eq.${ideaId}`,
         },
-        debouncedRefreshWithFollowUp
+        workflowRefresh
       )
       .on(
         "postgres_changes",
@@ -110,10 +122,10 @@ export function BoardRealtime({ ideaId }: { ideaId: string }) {
 
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (followUpRef.current) clearTimeout(followUpRef.current);
+      for (const t of workflowTimersRef.current) clearTimeout(t);
       channel.unsubscribe();
     };
-  }, [ideaId, debouncedRefresh, debouncedRefreshWithFollowUp]);
+  }, [ideaId, debouncedRefresh, workflowRefresh]);
 
   return null;
 }
