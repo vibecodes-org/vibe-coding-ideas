@@ -1,23 +1,24 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const DEBOUNCE_MS = 500;
 
-// Workflow step events need multiple follow-up refreshes because:
+// Workflow step events need a delayed hard refresh because:
 // 1. The DB trigger that denormalizes counts to board_tasks may not have
-//    committed by the time the first refresh reads the data
-// 2. Supabase read replicas add additional lag
-// 3. Rapid-fire events (complete + claim + set_identity) cause debounce
-//    resets that swallow intermediate refreshes
-const WORKFLOW_REFRESH_DELAYS = [500, 2000, 5000];
+//    committed by the time router.refresh() reads the data
+// 2. router.refresh() can deduplicate/cache repeated calls
+// 3. Supabase read replicas add additional lag
+const WORKFLOW_HARD_REFRESH_DELAY = 2000;
 
 export function BoardRealtime({ ideaId }: { ideaId: string }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const workflowTimersRef = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const workflowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const debouncedRefresh = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -27,22 +28,23 @@ export function BoardRealtime({ ideaId }: { ideaId: string }) {
     }, DEBOUNCE_MS);
   }, [router]);
 
-  // Workflow step changes fire a cascade of refreshes at increasing delays.
-  // Each refresh is independent (not debounced) so rapid events can't
-  // cancel later retries. Previous cascade timers are cleared when a new
-  // workflow event arrives to avoid stacking.
+  // For workflow step changes, do an immediate router.refresh() plus a
+  // delayed cache-busting navigation to guarantee the board re-renders
+  // with fresh data even if router.refresh() returns stale RSC payload.
   const workflowRefresh = useCallback(() => {
-    // Clear any previous cascade timers
-    for (const t of workflowTimersRef.current) clearTimeout(t);
-    workflowTimersRef.current = [];
+    // Immediate soft refresh — may catch it if the trigger is fast
+    router.refresh();
 
-    for (const delay of WORKFLOW_REFRESH_DELAYS) {
-      const timer = setTimeout(() => {
-        router.refresh();
-      }, delay);
-      workflowTimersRef.current.push(timer);
-    }
-  }, [router]);
+    // Delayed hard refresh — navigates to the same page with a cache-bust
+    // param, forcing Next.js to fetch a completely fresh RSC payload
+    if (workflowTimerRef.current) clearTimeout(workflowTimerRef.current);
+    workflowTimerRef.current = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set("_t", Date.now().toString());
+      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
+      workflowTimerRef.current = null;
+    }, WORKFLOW_HARD_REFRESH_DELAY);
+  }, [router, pathname, searchParams]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -122,7 +124,7 @@ export function BoardRealtime({ ideaId }: { ideaId: string }) {
 
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      for (const t of workflowTimersRef.current) clearTimeout(t);
+      if (workflowTimerRef.current) clearTimeout(workflowTimerRef.current);
       channel.unsubscribe();
     };
   }, [ideaId, debouncedRefresh, workflowRefresh]);
