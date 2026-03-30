@@ -100,6 +100,11 @@ Use the answers above to inform your enhanced description. Make the enhancement 
       userPrompt = `${prompt}\n\n---\n\n**Idea Title:** ${idea.title}\n\n**Current Description:**\n${idea.description}`;
     }
 
+    // Decrement credit upfront BEFORE the AI call — prevents "use now, pay never"
+    if (keyType === "platform") {
+      await decrementStarterCredit(supabase, user.id);
+    }
+
     const result = streamText({
       model: anthropic(AI_MODEL),
       system: systemPrompt,
@@ -107,7 +112,7 @@ Use the answers above to inform your enhanced description. Make the enhancement 
       maxOutputTokens: 16000,
     });
 
-    // Stream text, then log usage & decrement credits before closing
+    // Stream text, then log usage before closing
     // (onFinish runs async and may not complete before Vercel kills the function)
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
@@ -128,9 +133,6 @@ Use the answers above to inform your enhanced description. Make the enhancement 
           ideaId,
           keyType,
         });
-        if (keyType === "platform") {
-          await decrementStarterCredit(supabase, user.id);
-        }
         if (finishReason === "length") {
           logger.warn("AI enhance output truncated", { ideaId });
           controller.enqueue(encoder.encode("\n\n__TRUNCATED__"));

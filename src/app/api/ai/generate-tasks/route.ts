@@ -115,8 +115,8 @@ export async function POST(req: Request) {
     const hasAgent = !!(personaPrompt || agentRole || agentSkills?.length);
 
     const systemPrompt = hasAgent
-      ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a software project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
-      : "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").";
+      ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a software project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. Include any scaffolding or setup tasks relevant to your domain (e.g. a DevOps agent should include CI/CD and deployment setup). If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
+      : "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. Include project scaffolding and setup tasks (e.g. repo setup, dev environment, CI/CD, deployment config) — not just feature work. Order tasks so foundational/setup tasks come first. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").";
 
     const contextParts = buildPromptContextParts({
       prompt,
@@ -129,6 +129,12 @@ export async function POST(req: Request) {
       agentSkills,
       agentBio,
     });
+
+    // Decrement credit upfront BEFORE the AI call — prevents "use now, pay never"
+    // when the post-stream decrement fails due to expired auth context
+    if (keyType === "platform") {
+      await decrementStarterCredit(supabase, user.id);
+    }
 
     const result = streamObject({
       model: anthropic(AI_MODEL),
@@ -161,9 +167,6 @@ export async function POST(req: Request) {
           ideaId,
           keyType,
         });
-        if (keyType === "platform") {
-          await decrementStarterCredit(supabase, user.id);
-        }
         controller.close();
       },
     });

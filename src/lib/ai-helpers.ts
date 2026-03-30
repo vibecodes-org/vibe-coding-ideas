@@ -100,7 +100,8 @@ export async function getStarterCreditsRemaining(
   return data?.ai_starter_credits ?? 0;
 }
 
-/** Atomically decrement a starter credit. Returns remaining count. */
+/** Atomically decrement a starter credit. Returns remaining count.
+ *  Throws on failure so callers know the credit was NOT deducted. */
 export async function decrementStarterCredit(
   supabase: SupabaseClient<Database>,
   userId: string
@@ -110,7 +111,7 @@ export async function decrementStarterCredit(
   });
   if (error) {
     logger.error("Failed to decrement starter credit", { userId, error: error.message });
-    return 0;
+    throw new Error(`Failed to decrement starter credit: ${error.message}`);
   }
   return data ?? 0;
 }

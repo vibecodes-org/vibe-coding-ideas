@@ -72,6 +72,11 @@ Use the answers above to inform your enhanced description. Make the enhancement 
       userPrompt = `${prompt}\n\n---\n\n**Idea Title:** ${title}\n\n**Current Description:**\n${description || title}`;
     }
 
+    // Decrement credit upfront BEFORE the AI call — prevents "use now, pay never"
+    if (keyType === "platform") {
+      await decrementStarterCredit(supabase, user.id);
+    }
+
     const result = streamText({
       model: anthropic(AI_MODEL),
       system: systemPrompt,
@@ -98,9 +103,6 @@ Use the answers above to inform your enhanced description. Make the enhancement 
           ideaId: null,
           keyType,
         });
-        if (keyType === "platform") {
-          await decrementStarterCredit(supabase, user.id);
-        }
         if (finishReason === "length") {
           logger.warn("AI create enhance output truncated");
         }
