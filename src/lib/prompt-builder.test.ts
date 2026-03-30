@@ -216,6 +216,125 @@ describe("parsePromptToFields — markdown headers", () => {
   });
 });
 
+describe("generatePromptFromFields — expertise", () => {
+  it("includes expertise section when provided", () => {
+    const result = generatePromptFromFields("Developer", {
+      goal: "Ship clean code",
+      expertise: "SOLID principles. N+1 query detection.",
+      constraints: "Skip tests",
+      approach: "Write tests first",
+    });
+    expect(result).toBe(
+      "You are a Developer. Ship clean code\n\n" +
+        "Domain expertise: SOLID principles. N+1 query detection.\n\n" +
+        "You must not: Skip tests\n\n" +
+        "Your approach: Write tests first"
+    );
+  });
+
+  it("omits expertise section when empty", () => {
+    const result = generatePromptFromFields("Developer", {
+      goal: "Ship code",
+      expertise: "",
+      constraints: "Skip tests",
+      approach: "Write tests",
+    });
+    expect(result).not.toContain("Domain expertise:");
+  });
+
+  it("omits expertise section when undefined", () => {
+    const result = generatePromptFromFields("Developer", {
+      goal: "Ship code",
+      constraints: "Skip tests",
+      approach: "Write tests",
+    });
+    expect(result).not.toContain("Domain expertise:");
+  });
+});
+
+describe("parsePromptToFields — expertise (inline)", () => {
+  it("parses prompt with expertise marker", () => {
+    const prompt =
+      "You are a Developer. Ship clean code\n\n" +
+      "Domain expertise: SOLID principles. N+1 detection.\n\n" +
+      "You must not: Skip tests\n\n" +
+      "Your approach: Write tests first";
+    const result = parsePromptToFields(prompt);
+    expect(result).toEqual({
+      goal: "Ship clean code",
+      expertise: "SOLID principles. N+1 detection.",
+      constraints: "Skip tests",
+      approach: "Write tests first",
+    });
+  });
+
+  it("parses prompt without expertise — returns undefined expertise", () => {
+    const prompt =
+      "You are a Developer. Ship code\n\nYou must not: Skip tests\n\nYour approach: Write tests";
+    const result = parsePromptToFields(prompt);
+    expect(result?.expertise).toBeUndefined();
+  });
+
+  it("round-trips with expertise", () => {
+    const original: StructuredPromptFields = {
+      goal: "Ship clean code",
+      expertise: "SOLID principles. Contract-first API design.",
+      constraints: "Skip tests",
+      approach: "Write tests first",
+    };
+    const prompt = generatePromptFromFields("Developer", original);
+    const parsed = parsePromptToFields(prompt);
+    expect(parsed).toEqual(original);
+  });
+
+  it("round-trips without expertise", () => {
+    const original: StructuredPromptFields = {
+      goal: "Ship code",
+      constraints: "Skip tests",
+      approach: "Write tests",
+    };
+    const prompt = generatePromptFromFields("Developer", original);
+    const parsed = parsePromptToFields(prompt);
+    expect(parsed).toEqual(original);
+  });
+});
+
+describe("parsePromptToFields — expertise (markdown)", () => {
+  it("parses ## Expertise section", () => {
+    const prompt =
+      "## Goal\nShip clean code.\n\n" +
+      "## Expertise\nSOLID principles. N+1 detection.\n\n" +
+      "## Constraints\nSkip tests.\n\n" +
+      "## Approach\nWrite tests first.";
+    const result = parsePromptToFields(prompt);
+    expect(result).toEqual({
+      goal: "Ship clean code.",
+      expertise: "SOLID principles. N+1 detection.",
+      constraints: "Skip tests.",
+      approach: "Write tests first.",
+    });
+  });
+
+  it("parses markdown without ## Expertise — returns undefined", () => {
+    const prompt =
+      "## Goal\nShip code.\n\n## Constraints\nSkip tests.\n\n## Approach\nWrite tests.";
+    const result = parsePromptToFields(prompt);
+    expect(result?.expertise).toBeUndefined();
+  });
+
+  it("counts ## Expertise toward the 2-header minimum", () => {
+    const prompt =
+      "## Goal\nShip code.\n\n## Expertise\nSOLID principles.";
+    const result = parsePromptToFields(prompt);
+    expect(result).toEqual({
+      goal: "Ship code.",
+      expertise: "SOLID principles.",
+      constraints: "",
+      approach: "",
+    });
+  });
+});
+
 describe("isStructuredPrompt", () => {
   it("returns true for structured prompt", () => {
     expect(

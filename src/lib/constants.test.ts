@@ -166,11 +166,17 @@ describe("BOT_ROLE_TEMPLATES", () => {
   it("each template has role, prompt, and structured fields", () => {
     for (const template of BOT_ROLE_TEMPLATES) {
       expect(template.role).toBeTruthy();
-      expect(template.prompt).toBeTruthy();
+      expect(typeof template.prompt).toBe("string");
       expect(template.structured).toBeDefined();
       expect(template.structured.goal).toBeTruthy();
       expect(template.structured.constraints).toBeTruthy();
       expect(template.structured.approach).toBeTruthy();
+    }
+  });
+
+  it("each template has expertise in structured fields", () => {
+    for (const template of BOT_ROLE_TEMPLATES) {
+      expect(template.structured.expertise).toBeTruthy();
     }
   });
 

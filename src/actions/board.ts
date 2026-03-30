@@ -492,8 +492,6 @@ export async function triggerAutoRulesForTasks(
 ) {
   if (taskLabelPairs.length === 0) return;
 
-  console.log(`[DEBUG triggerAutoRules] Received ${taskLabelPairs.length} task-label pairs`);
-
   const supabase = await createClient();
   const {
     data: { user },
@@ -510,30 +508,18 @@ export async function triggerAutoRulesForTasks(
 
   // Process in batches of 5 for controlled concurrency
   const BATCH_SIZE = 5;
-  let successCount = 0;
-  let skipCount = 0;
-  let errorCount = 0;
   for (let i = 0; i < taskLabelPairs.length; i += BATCH_SIZE) {
     const batch = taskLabelPairs.slice(i, i + BATCH_SIZE);
-    console.log(`[DEBUG triggerAutoRules] Processing batch ${Math.floor(i / BATCH_SIZE) + 1} of ${Math.ceil(taskLabelPairs.length / BATCH_SIZE)}`);
     await Promise.all(
       batch.map(async ({ taskId, labelIds }) => {
         for (const labelId of labelIds) {
-          console.log(`[DEBUG triggerAutoRules] Checking task=${taskId.slice(0, 8)} label=${labelId.slice(0, 8)}`);
-          try {
-            await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyFn);
-            successCount++;
-          } catch (err) {
-            errorCount++;
-            console.error(`[DEBUG triggerAutoRules] ERROR task=${taskId.slice(0, 8)} label=${labelId.slice(0, 8)}:`, err);
-          }
+          await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyFn);
         }
         onProgress?.(taskId);
       })
     );
   }
 
-  console.log(`[DEBUG triggerAutoRules] Complete: ${successCount} success, ${skipCount} skipped, ${errorCount} errors, ${roleMatchCache.size} cached templates`);
   logger.info("Auto-rules triggered", {
     taskCount: taskLabelPairs.length,
     cachedTemplates: roleMatchCache.size,

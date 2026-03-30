@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Agent Prompt Expertise — UX Design (v2)</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --border: #27272a;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --dim: #71717a;
+      --violet: #8b5cf6;
+      --violet-bg: rgba(139, 92, 246, 0.1);
+      --violet-border: rgba(139, 92, 246, 0.25);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 40px 20px;
+      line-height: 1.5;
+    }
+
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+    h2 { font-size: 18px; font-weight: 600; margin: 40px 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h3 { font-size: 14px; font-weight: 600; margin: 24px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    p { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
+    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+
+    .annotation {
+      background: var(--violet-bg);
+      border: 1px solid var(--violet-border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 16px 0;
+      font-size: 13px;
+      color: #c4b5fd;
+    }
+    .annotation strong { color: var(--violet); }
+
+    .rec-badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      background: var(--violet);
+      color: white;
+      padding: 2px 6px;
+      border-radius: 4px;
+      margin-left: 8px;
+      vertical-align: middle;
+    }
+    .new-badge {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+      background: #22c55e;
+      color: var(--bg);
+      padding: 1px 5px;
+      border-radius: 4px;
+      margin-left: 6px;
+      vertical-align: middle;
+    }
+
+    /* Mockup styles */
+    .mockup-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--dim);
+      margin-bottom: 10px;
+    }
+    .dialog-mock {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      max-width: 520px;
+      overflow: hidden;
+      margin: 16px 0 24px;
+    }
+    .dialog-body { padding: 20px; }
+
+    .field-group { margin-bottom: 16px; }
+    .field-label {
+      font-size: 11px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      font-weight: 500;
+    }
+    .field-textarea {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      color: var(--text);
+      font-size: 13px;
+      font-family: inherit;
+      resize: none;
+      line-height: 1.4;
+    }
+    .field-textarea::placeholder { color: var(--dim); }
+    .field-textarea.new {
+      border-color: var(--violet-border);
+      box-shadow: 0 0 0 1px var(--violet-border);
+    }
+
+    /* Chip grid */
+    .chip-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin: 8px 0;
+    }
+    .chip {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 6px 8px;
+      font-size: 11px;
+      text-align: center;
+      cursor: pointer;
+      transition: border-color 0.15s;
+    }
+    .chip:hover { border-color: var(--violet-border); }
+    .chip.selected {
+      border-color: var(--violet);
+      background: var(--violet-bg);
+    }
+    .chip.more {
+      border-style: dashed;
+      color: var(--dim);
+    }
+    .chip.more:hover { color: var(--muted); border-color: var(--violet-border); }
+    .chip-icon { font-size: 16px; display: block; margin-bottom: 2px; }
+    .chip-role { font-size: 10px; color: var(--muted); line-height: 1.2; }
+
+    /* Expanded state */
+    .expanded-grid {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+      margin: 6px 0 0;
+      padding-top: 6px;
+      border-top: 1px dashed var(--border);
+    }
+
+    /* Dropdown select */
+    .role-select {
+      width: 100%;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 7px 10px;
+      color: var(--dim);
+      font-size: 12px;
+      font-family: inherit;
+      margin-top: 8px;
+      cursor: pointer;
+    }
+
+    .section-divider {
+      border: none;
+      border-top: 1px solid var(--border);
+      margin: 40px 0;
+    }
+
+    /* Tabs mockup */
+    .tabs-bar {
+      display: flex;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 2px;
+      margin-bottom: 12px;
+    }
+    .tab {
+      flex: 1;
+      text-align: center;
+      padding: 4px 8px;
+      font-size: 11px;
+      color: var(--dim);
+      border-radius: 4px;
+      cursor: pointer;
+    }
+    .tab.active {
+      background: var(--surface);
+      color: var(--text);
+      font-weight: 600;
+    }
+
+    .comparison {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 24px;
+      margin: 16px 0;
+    }
+    @media (max-width: 700px) {
+      .comparison { grid-template-columns: 1fr; }
+    }
+    .comparison > div {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+    .comparison-header {
+      padding: 10px 16px;
+      font-size: 13px;
+      font-weight: 600;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .comparison-body { padding: 16px; }
+
+    .pros-cons { font-size: 12px; margin: 8px 0 0 16px; color: var(--muted); }
+    .pros-cons li { margin-bottom: 3px; }
+    .pro { color: #4ade80; }
+    .con { color: #f87171; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Agent Prompt Expertise &mdash; UX Design (v2)</h1>
+    <p class="subtitle">Reworked: 15 template chips was too many. Two alternative approaches for template selection, plus the unchanged expertise field design.</p>
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <h2>1. PromptBuilder &mdash; Expertise Field (unchanged)</h2>
+    <p>Optional "Expertise" textarea between Goal and Constraints. No changes from v1.</p>
+
+    <div class="mockup-label">Prompt Builder &mdash; Builder Tab</div>
+    <div class="dialog-mock">
+      <div class="dialog-body">
+        <div class="tabs-bar">
+          <div class="tab active">Builder</div>
+          <div class="tab">Raw</div>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Goal</div>
+          <textarea class="field-textarea" rows="2">Deliver production-ready features across the entire stack.</textarea>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Expertise <span class="new-badge">NEW</span></div>
+          <textarea class="field-textarea new" rows="3">SOLID principles and clean architecture boundaries. Contract-first API design with OpenAPI specs. Optimistic UI patterns with rollback on server rejection.</textarea>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Constraints</div>
+          <textarea class="field-textarea" rows="2">Never ship code without tests. Do not make changes outside the scope of your assigned task.</textarea>
+        </div>
+        <div class="field-group">
+          <div class="field-label">Approach</div>
+          <textarea class="field-textarea" rows="2">Read existing code before writing new code. Break work into small, focused commits.</textarea>
+        </div>
+      </div>
+    </div>
+
+    <hr class="section-divider" />
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <h2>2. Template Chips &mdash; Two Options</h2>
+    <p>Both options keep the initial view clean (8 chips in the familiar 4&times;2 grid) while making all 15 roles accessible.</p>
+
+    <div class="comparison">
+      <!-- OPTION A -->
+      <div>
+        <div class="comparison-header">Option A: 8 chips + "More&hellip;" expander <span class="rec-badge">RECOMMENDED</span></div>
+        <div class="comparison-body">
+          <div class="field-label">Start from a template</div>
+          <div class="chip-grid">
+            <div class="chip selected">
+              <span class="chip-icon">&#x1F4BB;</span>
+              <span class="chip-role">Full Stack</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F310;</span>
+              <span class="chip-role">Front End</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F3A8;</span>
+              <span class="chip-role">UX Designer</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F50D;</span>
+              <span class="chip-role">QA</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F680;</span>
+              <span class="chip-role">DevOps</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F6E1;</span>
+              <span class="chip-role">Security</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F4CB;</span>
+              <span class="chip-role">Prod Owner</span>
+            </div>
+            <div class="chip more">
+              <span class="chip-icon">+</span>
+              <span class="chip-role">More&hellip;</span>
+            </div>
+          </div>
+
+          <!-- Expanded state -->
+          <div class="expanded-grid">
+            <div class="chip">
+              <span class="chip-icon">&#x2699;&#xFE0F;</span>
+              <span class="chip-role">Backend</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F4BE;</span>
+              <span class="chip-role">Data Eng</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F4DD;</span>
+              <span class="chip-role">Code Review</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F4CA;</span>
+              <span class="chip-role">Analyst</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F4E6;</span>
+              <span class="chip-role">Product Mgr</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F4D6;</span>
+              <span class="chip-role">Tech Writer</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F4E3;</span>
+              <span class="chip-role">Marketing</span>
+            </div>
+          </div>
+
+          <ul class="pros-cons">
+            <li class="pro">+ Minimal change &mdash; existing 4&times;2 grid untouched</li>
+            <li class="pro">+ "More&hellip;" is a familiar progressive disclosure pattern</li>
+            <li class="pro">+ Expanded rows use same chip style &mdash; no new components</li>
+            <li class="pro">+ "More&hellip;" chip replaces Business Analyst (moved to expanded) to keep 8 visible</li>
+            <li class="con">&minus; Expanded state makes the template section taller</li>
+          </ul>
+        </div>
+      </div>
+
+      <!-- OPTION D -->
+      <div>
+        <div class="comparison-header">Option D: 6 popular chips + dropdown</div>
+        <div class="comparison-body">
+          <div class="field-label">Start from a template</div>
+          <div class="chip-grid" style="grid-template-columns: repeat(3, 1fr);">
+            <div class="chip selected">
+              <span class="chip-icon">&#x1F4BB;</span>
+              <span class="chip-role">Full Stack</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F310;</span>
+              <span class="chip-role">Front End</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F3A8;</span>
+              <span class="chip-role">UX Designer</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F50D;</span>
+              <span class="chip-role">QA</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F680;</span>
+              <span class="chip-role">DevOps</span>
+            </div>
+            <div class="chip">
+              <span class="chip-icon">&#x1F6E1;</span>
+              <span class="chip-role">Security</span>
+            </div>
+          </div>
+
+          <select class="role-select">
+            <option>Browse all 15 roles&hellip;</option>
+            <option>Backend Engineer</option>
+            <option>Business Analyst</option>
+            <option>Code Reviewer</option>
+            <option>Data Engineer</option>
+            <option>Finance &amp; Ops</option>
+            <option>Marketing Strategist</option>
+            <option>Product Manager</option>
+            <option>Product Owner</option>
+            <option>Technical Writer</option>
+          </select>
+
+          <ul class="pros-cons">
+            <li class="pro">+ Most compact &mdash; 2&times;3 chips + one dropdown</li>
+            <li class="pro">+ Dropdown lists ALL remaining roles alphabetically</li>
+            <li class="con">&minus; Dropdown is a different interaction model than chips</li>
+            <li class="con">&minus; Reduces visible chips from 8 to 6 (loses Prod Owner, Analyst)</li>
+            <li class="con">&minus; Native &lt;select&gt; doesn't match design system (would need shadcn Select)</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="annotation">
+      <strong>Recommendation: Option A.</strong> It preserves the existing 4&times;2 chip layout, requires no new component patterns, and makes all 15 roles accessible with a single click. The "More&hellip;" chip is a well-understood pattern (GitHub labels, Slack emoji picker, etc.). Option D is more compact but mixes interaction paradigms and loses 2 visible chips.
+    </div>
+
+    <hr class="section-divider" />
+
+    <!-- ═══════════════════════════════════════════════════════════ -->
+    <h2>3. Option A &mdash; Interaction Detail</h2>
+
+    <h3>Default state (collapsed)</h3>
+    <p>7 role chips + 1 "More&hellip;" chip in the existing 4&times;2 grid. Clicking "More&hellip;" reveals the expanded row below with a dashed separator.</p>
+
+    <h3>Expanded state</h3>
+    <p>Additional 7 chips appear below the separator in the same 4-column grid (2 rows, last row has 3 chips). The "More&hellip;" chip changes to "Less &uarr;" to collapse. State persists in sessionStorage so returning users see their preference.</p>
+
+    <h3>Selection</h3>
+    <p>Clicking any chip (visible or expanded) works identically &mdash; populates role, goal, expertise, constraints, approach. Selected chip gets the violet highlight. Only one chip can be selected at a time.</p>
+
+    <h3>Mobile (&lt;640px)</h3>
+    <p>Grid falls back to 3 columns. Default: 3&times;2 + "More&hellip;" (7 chips total). Expanded: additional 3&times;3 rows.</p>
+
+    <h3>Accessibility</h3>
+    <ul style="font-size: 13px; color: var(--muted); margin-left: 20px;">
+      <li>"More&hellip;" chip: <code>aria-expanded="false"</code>, toggles to <code>"true"</code></li>
+      <li>Expanded section: <code>role="group"</code> with <code>aria-label="Additional role templates"</code></li>
+      <li>Focus management: expanding moves focus to first new chip</li>
+    </ul>
+  </div>
+</body>
+</html>

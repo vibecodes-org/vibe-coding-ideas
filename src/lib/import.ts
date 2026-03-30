@@ -992,13 +992,11 @@ export async function insertTasksSequentially(
   // get aborted when the client navigates away.
   let autoRulesApplied = 0;
   if (autoRulePairs.length > 0) {
-    console.log(`[DEBUG import] autoRulePairs count: ${autoRulePairs.length}`, autoRulePairs.map(p => ({ taskId: p.taskId, labelCount: p.labelIds.length })));
     callbacks.onAutoRulesStart?.(autoRulePairs.length);
     try {
-      await triggerAutoRulesForTasks(autoRulePairs, ideaId, (taskId) => {
-        autoRulesApplied++;
-        callbacks.onAutoRuleApplied?.(taskId, autoRulesApplied, autoRulePairs.length);
-      });
+      // No callback — triggerAutoRulesForTasks is a server action and
+      // functions can't cross the client→server serialization boundary
+      await triggerAutoRulesForTasks(autoRulePairs, ideaId);
     } catch (err) {
       logger.error("Auto-rule trigger failed during sequential import", { error: err instanceof Error ? err.message : String(err), ideaId });
     }

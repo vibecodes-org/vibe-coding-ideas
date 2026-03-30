@@ -23,7 +23,7 @@ import { createClient } from "@/lib/supabase/client";
 import { cn, getInitials } from "@/lib/utils";
 import type { StructuredPromptFields } from "@/lib/prompt-builder";
 
-const TEMPLATE_CHIPS: { role: string; icon: string }[] = [
+const PRIMARY_CHIPS: { role: string; icon: string }[] = [
   { role: "Full Stack Engineer", icon: "\u{1F4BB}" },
   { role: "Front End Engineer", icon: "\u{1F310}" },
   { role: "UX Designer", icon: "\u{1F3A8}" },
@@ -31,7 +31,19 @@ const TEMPLATE_CHIPS: { role: string; icon: string }[] = [
   { role: "DevOps Engineer", icon: "\u{2699}" },
   { role: "Security Engineer", icon: "\u{1F6E1}" },
   { role: "Product Owner", icon: "\u{1F4CB}" },
+];
+
+const EXPANDED_CHIPS: { role: string; icon: string }[] = [
+  { role: "Backend Engineer", icon: "\u{2699}\u{FE0F}" },
+  { role: "Code Reviewer", icon: "\u{1F4DD}" },
+  { role: "Data Engineer", icon: "\u{1F4BE}" },
   { role: "Business Analyst", icon: "\u{1F4CA}" },
+  { role: "Product Manager", icon: "\u{1F4E6}" },
+  { role: "Technical Writer", icon: "\u{1F4D6}" },
+  { role: "CEO / Founder", icon: "\u{1F680}" },
+  { role: "Marketing Strategist", icon: "\u{1F4E3}" },
+  { role: "Sales Lead", icon: "\u{1F4B0}" },
+  { role: "Finance & Operations", icon: "\u{1F4C8}" },
 ];
 
 interface CreateAgentDialogProps {
@@ -46,6 +58,7 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
   const [bio, setBio] = useState("");
   const [skillsInput, setSkillsInput] = useState("");
   const [selectedTemplate, setSelectedTemplate] = useState<string | null>(null);
+  const [showMoreTemplates, setShowMoreTemplates] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(false);
   const [createdName, setCreatedName] = useState("");
@@ -285,7 +298,7 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
           <div className="space-y-2">
             <Label className="text-xs">Start from a template</Label>
             <div className="grid grid-cols-4 gap-1.5">
-              {TEMPLATE_CHIPS.map((t) => (
+              {PRIMARY_CHIPS.map((t) => (
                 <button
                   key={t.role}
                   type="button"
@@ -301,7 +314,36 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
                   {t.role}
                 </button>
               ))}
+              <button
+                type="button"
+                onClick={() => setShowMoreTemplates((v) => !v)}
+                aria-expanded={showMoreTemplates}
+                className="flex flex-col items-center gap-0.5 rounded-md border border-dashed py-2 px-2 text-xs font-medium text-muted-foreground transition-colors hover:border-violet-500/30 hover:text-foreground"
+              >
+                <span className="text-base">{showMoreTemplates ? "\u2191" : "+"}</span>
+                {showMoreTemplates ? "Less" : "More\u2026"}
+              </button>
             </div>
+            {showMoreTemplates && (
+              <div className="grid grid-cols-4 gap-1.5 border-t border-dashed border-border pt-2" role="group" aria-label="Additional role templates">
+                {EXPANDED_CHIPS.map((t) => (
+                  <button
+                    key={t.role}
+                    type="button"
+                    onClick={() => handleTemplateSelect(t.role)}
+                    className={cn(
+                      "flex flex-col items-center gap-0.5 rounded-md border py-2 px-2 text-xs font-medium transition-colors",
+                      selectedTemplate === t.role
+                        ? "border-violet-500 bg-violet-500/15 text-violet-400"
+                        : "border-border text-muted-foreground hover:border-violet-500/30 hover:text-foreground"
+                    )}
+                  >
+                    <span className="text-base">{t.icon}</span>
+                    {t.role}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Role */}

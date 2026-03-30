@@ -19,6 +19,7 @@ interface PromptBuilderProps {
 
 const EMPTY_FIELDS: StructuredPromptFields = {
   goal: "",
+  expertise: "",
   constraints: "",
   approach: "",
 };
@@ -113,6 +114,20 @@ export function PromptBuilder({
               onChange={(e) => updateField("goal", e.target.value)}
               placeholder="e.g. Ship clean, tested code"
               rows={2}
+              maxLength={500}
+              className="text-sm"
+            />
+          </div>
+          <div className="space-y-1">
+            <Label htmlFor="prompt-expertise" className="text-xs text-muted-foreground">
+              Expertise
+            </Label>
+            <Textarea
+              id="prompt-expertise"
+              value={fields.expertise ?? ""}
+              onChange={(e) => updateField("expertise", e.target.value)}
+              placeholder="Domain-specific principles, frameworks, or knowledge this agent should apply"
+              rows={3}
               maxLength={500}
               className="text-sm"
             />

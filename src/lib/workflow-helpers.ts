@@ -27,10 +27,7 @@ export async function checkAndApplyAutoRules(
       .eq("label_id", labelId)
       .maybeSingle();
 
-    if (!rule) {
-      console.log(`[DEBUG checkAndApply] No rule for label=${labelId.slice(0, 8)} idea=${ideaId.slice(0, 8)}`);
-      return;
-    }
+    if (!rule) return;
 
     // Check for existing active workflow run on this task
     const { data: activeRun } = await supabase
@@ -40,16 +37,10 @@ export async function checkAndApplyAutoRules(
       .not("status", "in", '("completed","failed")')
       .maybeSingle();
 
-    if (activeRun) {
-      console.log(`[DEBUG checkAndApply] Skipping task=${taskId.slice(0, 8)} — already has active run ${activeRun.id.slice(0, 8)}`);
-      return;
-    }
+    if (activeRun) return;
 
-    console.log(`[DEBUG checkAndApply] Applying template=${rule.template_id.slice(0, 8)} to task=${taskId.slice(0, 8)}`);
     await applyFn(taskId, rule.template_id);
-    console.log(`[DEBUG checkAndApply] SUCCESS task=${taskId.slice(0, 8)}`);
   } catch (err) {
-    console.error(`[DEBUG checkAndApply] FAILED task=${taskId.slice(0, 8)}:`, err instanceof Error ? err.message : String(err));
     logger.error("Failed to apply auto-rule", {
       error: err instanceof Error ? err.message : String(err),
       taskId,

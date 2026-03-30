@@ -1,9 +1,11 @@
 export interface StructuredPromptFields {
   goal: string;
+  expertise?: string;
   constraints: string;
   approach: string;
 }
 
+const EXPERTISE_MARKER = "Domain expertise:";
 const CONSTRAINTS_MARKER = "You must not:";
 const APPROACH_MARKER = "Your approach:";
 const ROLE_PREFIX = "You are a";
@@ -12,7 +14,7 @@ export function generatePromptFromFields(
   role: string,
   fields: StructuredPromptFields
 ): string {
-  const { goal, constraints, approach } = fields;
+  const { goal, expertise, constraints, approach } = fields;
   const parts: string[] = [];
 
   // Role + goal paragraph
@@ -24,6 +26,10 @@ export function generatePromptFromFields(
     parts.push(rolePart);
   } else if (goalPart) {
     parts.push(goalPart);
+  }
+
+  if (expertise?.trim()) {
+    parts.push(`${EXPERTISE_MARKER} ${expertise.trim()}`);
   }
 
   if (constraints.trim()) {
@@ -48,37 +54,38 @@ export function parsePromptToFields(
   const mdResult = parseMarkdownHeaders(text);
   if (mdResult) return mdResult;
 
-  // Fall back to inline marker format: "You must not:" / "Your approach:"
+  // Fall back to inline marker format: "Domain expertise:" / "You must not:" / "Your approach:"
+  const expertiseIdx = text.indexOf(EXPERTISE_MARKER);
   const constraintsIdx = text.indexOf(CONSTRAINTS_MARKER);
   const approachIdx = text.indexOf(APPROACH_MARKER);
 
   // Need at least one section marker to consider it structured
-  if (constraintsIdx === -1 && approachIdx === -1) return null;
+  if (constraintsIdx === -1 && approachIdx === -1 && expertiseIdx === -1) return null;
 
   let goal = "";
+  let expertise: string | undefined;
   let constraints = "";
   let approach = "";
 
-  // Extract constraints
-  if (constraintsIdx !== -1) {
-    const start = constraintsIdx + CONSTRAINTS_MARKER.length;
-    const end = approachIdx > constraintsIdx ? approachIdx : text.length;
-    constraints = text.slice(start, end).trim();
+  // Build ordered marker positions for slicing
+  const markers: { key: string; idx: number; len: number }[] = [];
+  if (expertiseIdx !== -1) markers.push({ key: "expertise", idx: expertiseIdx, len: EXPERTISE_MARKER.length });
+  if (constraintsIdx !== -1) markers.push({ key: "constraints", idx: constraintsIdx, len: CONSTRAINTS_MARKER.length });
+  if (approachIdx !== -1) markers.push({ key: "approach", idx: approachIdx, len: APPROACH_MARKER.length });
+  markers.sort((a, b) => a.idx - b.idx);
+
+  // Extract each section's content
+  for (let i = 0; i < markers.length; i++) {
+    const start = markers[i].idx + markers[i].len;
+    const end = i + 1 < markers.length ? markers[i + 1].idx : text.length;
+    const content = text.slice(start, end).trim();
+    if (markers[i].key === "expertise") expertise = content;
+    else if (markers[i].key === "constraints") constraints = content;
+    else if (markers[i].key === "approach") approach = content;
   }
 
-  // Extract approach
-  if (approachIdx !== -1) {
-    approach = text.slice(approachIdx + APPROACH_MARKER.length).trim();
-  }
-
-  // Extract goal: everything before the first section marker, minus the role prefix
-  const firstMarkerIdx =
-    constraintsIdx !== -1 && approachIdx !== -1
-      ? Math.min(constraintsIdx, approachIdx)
-      : constraintsIdx !== -1
-        ? constraintsIdx
-        : approachIdx;
-
+  // Extract goal: everything before the first marker, minus the role prefix
+  const firstMarkerIdx = markers[0]?.idx ?? text.length;
   let goalSection = text.slice(0, firstMarkerIdx).trim();
 
   // Strip "You are a [role]." prefix from goal
@@ -91,16 +98,17 @@ export function parsePromptToFields(
 
   goal = goalSection;
 
-  return { goal, constraints, approach };
+  return { goal, expertise, constraints, approach };
 }
 
 function parseMarkdownHeaders(text: string): StructuredPromptFields | null {
   const goalMatch = text.match(/##\s*Goal\s*\n/i);
+  const expertiseMatch = text.match(/##\s*Expertise\s*\n/i);
   const constraintsMatch = text.match(/##\s*Constraints\s*\n/i);
   const approachMatch = text.match(/##\s*Approach\s*\n/i);
 
   // Need at least two markdown section headers to consider it structured
-  const matchCount = [goalMatch, constraintsMatch, approachMatch].filter(Boolean).length;
+  const matchCount = [goalMatch, expertiseMatch, constraintsMatch, approachMatch].filter(Boolean).length;
   if (matchCount < 2) return null;
 
   // Build ordered list of section boundaries
@@ -108,6 +116,10 @@ function parseMarkdownHeaders(text: string): StructuredPromptFields | null {
   if (goalMatch) {
     const idx = text.indexOf(goalMatch[0]);
     sections.push({ key: "goal", start: idx, headerEnd: idx + goalMatch[0].length });
+  }
+  if (expertiseMatch) {
+    const idx = text.indexOf(expertiseMatch[0]);
+    sections.push({ key: "expertise", start: idx, headerEnd: idx + expertiseMatch[0].length });
   }
   if (constraintsMatch) {
     const idx = text.indexOf(constraintsMatch[0]);
@@ -126,7 +138,12 @@ function parseMarkdownHeaders(text: string): StructuredPromptFields | null {
     fields[sections[i].key] = text.slice(sections[i].headerEnd, end).trim();
   }
 
-  return { goal: fields.goal, constraints: fields.constraints, approach: fields.approach };
+  return {
+    goal: fields.goal,
+    expertise: fields.expertise || undefined,
+    constraints: fields.constraints,
+    approach: fields.approach,
+  };
 }
 
 export function isStructuredPrompt(prompt: string): boolean {
