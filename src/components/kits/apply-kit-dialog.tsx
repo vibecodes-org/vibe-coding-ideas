@@ -102,7 +102,11 @@ export function ApplyKitDialog({
         compact
       />
       {selectedKit && !isCustom && (
-        <KitPreview kit={selectedKit} compact />
+        <KitPreview
+          kit={selectedKit}
+          selectedIndex={selectableKits.sort((a, b) => a.display_order - b.display_order).findIndex((k) => k.id === selectedKitId)}
+          columnCount={3}
+        />
       )}
     </div>
   );

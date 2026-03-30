@@ -78,17 +78,18 @@ const makeKit = (overrides = {}): KitWithSteps => ({
   ...overrides,
 } as KitWithSteps);
 
-function expandPreview() {
-  const toggleBtn = screen.getByText("Show details").closest("button")!;
-  fireEvent.click(toggleBtn);
-}
-
 describe("KitPreview", () => {
-  it("returns null for Custom kit", () => {
-    const { container } = render(
-      <KitPreview kit={makeKit({ name: "Custom" })} />
-    );
-    expect(container.innerHTML).toBe("");
+  // --- Header ---
+
+  it("renders kit name and description in header", () => {
+    render(<KitPreview kit={makeKit()} />);
+    expect(screen.getByText("Web Application")).toBeDefined();
+    expect(screen.getByText(/Full-stack web app/)).toBeDefined();
+  });
+
+  it("shows Custom empty state", () => {
+    render(<KitPreview kit={makeKit({ name: "Custom", workflow_mappings: [], agent_roles: [] })} />);
+    expect(screen.getByText(/Start from scratch/)).toBeDefined();
   });
 
   it("has aria-live attribute for accessibility", () => {
@@ -96,139 +97,91 @@ describe("KitPreview", () => {
     expect(container.querySelector("[aria-live='polite']")).toBeDefined();
   });
 
-  // --- Summary bar (collapsed) ---
+  // --- AI Team ---
 
-  it("summary bar shows workflow and trigger counts with mappings", () => {
+  it("renders agent role chips", () => {
     render(<KitPreview kit={makeKit()} />);
-    expect(screen.getByText(/2 workflows/)).toBeDefined();
-    expect(screen.getByText(/3 triggers/)).toBeDefined();
-  });
-
-  it("summary bar shows old counts when no mappings", () => {
-    render(<KitPreview kit={makeKit({ workflow_mappings: [] })} />);
-    expect(screen.getByText(/5-step workflow/)).toBeDefined();
-    expect(screen.getByText(/1 trigger/)).toBeDefined();
-  });
-
-  // --- Compact mode ---
-
-  it("renders compact mode with workflow and trigger counts when mappings exist", () => {
-    render(<KitPreview kit={makeKit()} compact />);
-    expect(screen.getByText(/3 agents/)).toBeDefined();
-    expect(screen.getByText(/2 workflows/)).toBeDefined();
-    expect(screen.getByText(/3 labels/)).toBeDefined();
-    expect(screen.getByText(/3 triggers/)).toBeDefined();
-  });
-
-  it("renders compact mode with old counts when no mappings", () => {
-    render(
-      <KitPreview kit={makeKit({ workflow_mappings: [] })} compact />
-    );
-    expect(screen.getByText(/3 agents/)).toBeDefined();
-    expect(screen.getByText(/5-step workflow/)).toBeDefined();
-    expect(screen.getByText(/3 labels/)).toBeDefined();
-    expect(screen.getByText(/1 trigger/)).toBeDefined();
-  });
-
-  it("compact mode does not show individual role names", () => {
-    render(<KitPreview kit={makeKit()} compact />);
-    expect(screen.queryByText("Full Stack Engineer")).toBeNull();
-  });
-
-  // --- Expanded mode with mappings ---
-
-  it("renders tabbed workflow templates when expanded with mappings", () => {
-    render(<KitPreview kit={makeKit()} />);
-    expandPreview();
-    // Tab buttons for unique templates
-    const tabs = screen.getAllByRole("tab");
-    expect(tabs.length).toBe(2); // Web Application Feature + Bug Fix
-  });
-
-  it("shows primary template steps by default when expanded", () => {
-    render(<KitPreview kit={makeKit()} />);
-    expandPreview();
-    expect(screen.getByText(/1\. UX Review/)).toBeDefined();
-    expect(screen.getByText(/2\. Implementation/)).toBeDefined();
-  });
-
-  it("switches template steps when clicking a different tab", () => {
-    render(<KitPreview kit={makeKit()} />);
-    expandPreview();
-    // Click "Bug Fix" tab
-    const bugFixTab = screen.getByRole("tab", { name: /Bug Fix/ });
-    fireEvent.click(bugFixTab);
-    expect(screen.getByText(/1\. Triage/)).toBeDefined();
-    expect(screen.getByText(/2\. Fix/)).toBeDefined();
-  });
-
-  it("shows 'Triggered by' labels under active tab", () => {
-    render(<KitPreview kit={makeKit()} />);
-    expandPreview();
-    expect(screen.getByText("Triggered by:")).toBeDefined();
-  });
-
-  it("shows workflow trigger summary count when expanded with mappings", () => {
-    render(<KitPreview kit={makeKit()} />);
-    expandPreview();
-    expect(screen.getByText(/3 of 3 labels have workflow triggers/)).toBeDefined();
-  });
-
-  it("renders agent roles when expanded", () => {
-    render(<KitPreview kit={makeKit()} />);
-    expandPreview();
     expect(screen.getByText("Full Stack Engineer")).toBeDefined();
     expect(screen.getByText("UX Designer")).toBeDefined();
     expect(screen.getByText("QA Engineer")).toBeDefined();
   });
 
-  it("renders label presets when expanded", () => {
-    render(<KitPreview kit={makeKit()} />);
-    expandPreview();
-    // Bug appears in both labels section and as a tab trigger label
-    expect(screen.getAllByText("Bug").length).toBeGreaterThanOrEqual(1);
-  });
-
-  // --- Expanded mode without mappings (fallback) ---
-
-  it("falls back to single step chain when no mappings", () => {
-    render(<KitPreview kit={makeKit({ workflow_mappings: [] })} />);
-    expandPreview();
-    expect(screen.getByText(/Workflow Template \(5 steps\)/)).toBeDefined();
-    expect(screen.getByText(/1\. UX Review/)).toBeDefined();
-  });
-
-  it("shows old-style trigger when no mappings", () => {
-    render(<KitPreview kit={makeKit({ workflow_mappings: [] })} />);
-    expandPreview();
-    expect(screen.getByText(/Workflow Trigger/)).toBeDefined();
-    expect(screen.getByText(/Web Application workflow/)).toBeDefined();
-  });
-
-  // --- Edge cases ---
-
   it("hides agent section when no roles", () => {
     render(<KitPreview kit={makeKit({ agent_roles: [] })} />);
-    expandPreview();
-    expect(screen.queryByText(/Agent Team/)).toBeNull();
+    expect(screen.queryByText(/Your AI Team/)).toBeNull();
   });
 
-  it("hides workflow section when no steps and no mappings", () => {
-    render(<KitPreview kit={makeKit({ workflow_steps: [], workflow_mappings: [] })} />);
-    expandPreview();
-    expect(screen.queryByText(/Workflow Template/)).toBeNull();
+  // --- Workflows ---
+
+  it("renders workflow rows with names and step counts", () => {
+    render(<KitPreview kit={makeKit()} />);
+    expect(screen.getByText("Web Application Feature")).toBeDefined();
+    expect(screen.getByText("Bug Fix")).toBeDefined();
+    expect(screen.getByText("5 steps")).toBeDefined();
+    expect(screen.getByText("4 steps")).toBeDefined();
   });
 
-  it("hides label section when no presets", () => {
-    render(<KitPreview kit={makeKit({ label_presets: [] })} />);
-    expandPreview();
-    expect(screen.queryByText(/Board Labels/)).toBeNull();
+  it("shows PRIMARY badge on primary workflow", () => {
+    render(<KitPreview kit={makeKit()} />);
+    expect(screen.getByText("PRIMARY")).toBeDefined();
   });
 
-  it("highlights approval gate steps with lock icon when expanded", () => {
+  it("shows trigger labels on workflow rows", () => {
+    render(<KitPreview kit={makeKit()} />);
+    // Feature and Enhancement trigger Web Application Feature
+    const featureLabels = screen.getAllByText("Feature");
+    expect(featureLabels.length).toBeGreaterThanOrEqual(1);
+    const bugLabels = screen.getAllByText("Bug");
+    expect(bugLabels.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("expands primary workflow step chain by default", () => {
+    render(<KitPreview kit={makeKit()} />);
+    // Primary workflow steps should be visible
+    expect(screen.getByText("UX Review")).toBeDefined();
+    expect(screen.getByText("Implementation")).toBeDefined();
+    expect(screen.getByText("Deploy")).toBeDefined();
+  });
+
+  it("clicking a different workflow expands its step chain", () => {
+    render(<KitPreview kit={makeKit()} />);
+    // Click Bug Fix workflow row
+    fireEvent.click(screen.getByText("Bug Fix"));
+    // Bug Fix steps should now be visible
+    expect(screen.getByText("Triage")).toBeDefined();
+    expect(screen.getByText("Fix")).toBeDefined();
+    // Primary steps should be hidden
+    expect(screen.queryByText("Deploy")).toBeNull();
+  });
+
+  it("highlights approval gate steps with lock icon", () => {
     const { container } = render(<KitPreview kit={makeKit()} />);
-    expandPreview();
     const lockIcons = container.querySelectorAll("svg.lucide-lock");
     expect(lockIcons.length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("hides workflow section when no mappings", () => {
+    render(<KitPreview kit={makeKit({ workflow_mappings: [] })} />);
+    expect(screen.queryByText(/Workflows/)).toBeNull();
+  });
+
+  // --- Key ---
+
+  it("shows key explaining lock and auto-assign symbols", () => {
+    render(<KitPreview kit={makeKit()} />);
+    expect(screen.getByText(/Requires your approval/)).toBeDefined();
+    expect(screen.getByText(/Labels auto-assign workflows/)).toBeDefined();
+  });
+
+  // --- Arrow positioning ---
+
+  it("positions arrow based on selectedIndex and columnCount", () => {
+    const { container } = render(
+      <KitPreview kit={makeKit()} selectedIndex={1} columnCount={3} />
+    );
+    const arrow = container.querySelector("[class*='rotate-45']") as HTMLElement;
+    expect(arrow).toBeDefined();
+    // Column 1 of 3 → arrow at 50% (center of second column)
+    expect(arrow?.style.left).toContain("50%");
   });
 });

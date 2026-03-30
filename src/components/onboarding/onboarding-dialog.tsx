@@ -545,7 +545,15 @@ export function OnboardingDialog({
                     compact
                   />
                   {selectedKit && (
-                    <KitPreview kit={selectedKit} compact />
+                    <KitPreview
+                      kit={selectedKit}
+                      selectedIndex={[...kits].sort((a, b) => {
+                        if (a.name === "Custom") return 1;
+                        if (b.name === "Custom") return -1;
+                        return a.display_order - b.display_order;
+                      }).findIndex((k) => k.id === selectedKitId)}
+                      columnCount={3}
+                    />
                   )}
                 </div>
               )}

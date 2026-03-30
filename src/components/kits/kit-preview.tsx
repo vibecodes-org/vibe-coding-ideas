@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { ArrowRight, ChevronDown, Lock } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ArrowRight, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { KitWithSteps, WorkflowMapping } from "@/actions/kits";
 
@@ -10,7 +10,10 @@ type LabelPreset = { name: string; color: string };
 
 interface KitPreviewProps {
   kit: KitWithSteps;
-  compact?: boolean;
+  /** Index of the selected card in the grid (0-based) for arrow positioning */
+  selectedIndex?: number;
+  /** Number of columns in the grid */
+  columnCount?: number;
 }
 
 const ROLE_ICONS: Record<string, string> = {
@@ -55,7 +58,6 @@ function getUniqueTemplates(mappings: WorkflowMapping[]) {
       seen.set(m.template_name, { mapping: m, labels: [m.label_name] });
     }
   }
-  // Sort: primary first, then by name
   return Array.from(seen.values()).sort((a, b) => {
     if (a.mapping.is_primary && !b.mapping.is_primary) return -1;
     if (!a.mapping.is_primary && b.mapping.is_primary) return 1;
@@ -63,287 +65,177 @@ function getUniqueTemplates(mappings: WorkflowMapping[]) {
   });
 }
 
-export function KitPreview({ kit, compact = false }: KitPreviewProps) {
-  const [expanded, setExpanded] = useState(false);
-  const [activeTab, setActiveTab] = useState(0);
+export function KitPreview({ kit, selectedIndex = 0, columnCount = 3 }: KitPreviewProps) {
+  const [expandedWf, setExpandedWf] = useState(0);
   const agentRoles = (kit.agent_roles ?? []) as AgentRole[];
   const labelPresets = (kit.label_presets ?? []) as LabelPreset[];
-  const workflowSteps = kit.workflow_steps ?? [];
   const mappings = kit.workflow_mappings ?? [];
   const isCustom = kit.name === "Custom";
+  const uniqueTemplates = mappings.length > 0 ? getUniqueTemplates(mappings) : [];
 
-  const hasMappings = mappings.length > 0;
-  const uniqueTemplates = hasMappings ? getUniqueTemplates(mappings) : [];
-  const triggerCount = mappings.length;
-  const templateCount = uniqueTemplates.length;
+  // Reset expanded workflow to primary (index 0) when kit changes
+  useEffect(() => {
+    setExpandedWf(0);
+  }, [kit.id]);
 
-  if (isCustom) return null;
-
-  if (compact) {
-    return (
-      <div
-        className="mt-3 rounded-lg border border-border bg-card p-3 animate-in slide-in-from-top-2 duration-200"
-        aria-live="polite"
-      >
-        <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-          What you&apos;ll get
-        </p>
-        <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
-          {agentRoles.length > 0 && (
-            <span>{"\u{1F9D1}\u200D\u{1F4BB}"} {agentRoles.length} agent{agentRoles.length !== 1 ? "s" : ""}</span>
-          )}
-          {hasMappings ? (
-            <>
-              <span>{"\u26A1"} {templateCount} workflow{templateCount !== 1 ? "s" : ""}</span>
-            </>
-          ) : workflowSteps.length > 0 ? (
-            <span>{"\u26A1"} {workflowSteps.length}-step workflow</span>
-          ) : null}
-          {labelPresets.length > 0 && (
-            <span>{"\u{1F3F7}\uFE0F"} {labelPresets.length} label{labelPresets.length !== 1 ? "s" : ""}</span>
-          )}
-          {hasMappings ? (
-            <span>{"\u{1F504}"} {triggerCount} trigger{triggerCount !== 1 ? "s" : ""}</span>
-          ) : kit.auto_rule_label ? (
-            <span>{"\u{1F504}"} 1 trigger</span>
-          ) : null}
-        </div>
-      </div>
-    );
-  }
-
-  // Summary bar counts
-  const summaryWorkflowText = hasMappings
-    ? `${templateCount} workflow${templateCount !== 1 ? "s" : ""}`
-    : workflowSteps.length > 0
-      ? `${workflowSteps.length}-step workflow`
-      : null;
-  const summaryTriggerText = hasMappings
-    ? `${triggerCount} trigger${triggerCount !== 1 ? "s" : ""}`
-    : kit.auto_rule_label
-      ? "1 trigger"
-      : null;
+  // Arrow position based on which column the selected card is in
+  const col = selectedIndex % columnCount;
+  const arrowLeftPercent = ((col + 0.5) / columnCount) * 100;
 
   return (
-    <div aria-live="polite" className="animate-in slide-in-from-top-2 duration-200">
-      {/* Summary toggle bar */}
-      <button
-        type="button"
-        onClick={() => setExpanded((prev) => !prev)}
-        className="mt-2 flex w-full items-center gap-2 rounded-lg border border-border px-3 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted/30"
-      >
-        <ChevronDown
-          className={cn(
-            "h-3.5 w-3.5 shrink-0 transition-transform duration-200",
-            expanded && "rotate-180"
-          )}
-        />
-        <div className="flex flex-1 flex-wrap gap-3">
-          {agentRoles.length > 0 && (
-            <span>{"\u{1F9D1}\u200D\u{1F4BB}"} {agentRoles.length} agent{agentRoles.length !== 1 ? "s" : ""}</span>
-          )}
-          {summaryWorkflowText && <span>{"\u26A1"} {summaryWorkflowText}</span>}
-          {labelPresets.length > 0 && (
-            <span>{"\u{1F3F7}\uFE0F"} {labelPresets.length} label{labelPresets.length !== 1 ? "s" : ""}</span>
-          )}
-          {summaryTriggerText && <span>{"\u{1F504}"} {summaryTriggerText}</span>}
+    <div
+      className="relative mt-2 rounded-[10px] border border-violet-500 bg-zinc-900 p-4 shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_20px_rgba(139,92,246,0.25)] animate-in slide-in-from-top-2 duration-200"
+      aria-live="polite"
+    >
+      {/* Arrow */}
+      <div
+        className="absolute -top-[6px] h-[10px] w-[10px] rotate-45 border-l border-t border-violet-500 bg-zinc-900"
+        style={{ left: `calc(${arrowLeftPercent}% - 5px)` }}
+      />
+
+      {/* Header */}
+      <div className="mb-3 flex items-center gap-2.5 border-b border-violet-500/15 pb-3">
+        <span className="text-xl">{kit.icon}</span>
+        <div>
+          <div className="text-sm font-bold">{kit.name}</div>
+          <div className="text-[0.65rem] text-muted-foreground">{kit.description}</div>
         </div>
-        <span className="shrink-0 text-[11px] text-muted-foreground/60">
-          {expanded ? "Hide" : "Show"} details
-        </span>
-      </button>
+      </div>
 
-      {/* Expanded details */}
-      {expanded && (
-        <div className="mt-2 rounded-xl border border-border bg-card p-5 animate-in slide-in-from-top-2 duration-300">
-          {/* Agent Team */}
-          {agentRoles.length > 0 && (
-            <div className="mb-4">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                {"\u{1F9D1}\u200D\u{1F4BB}"} Agent Team ({agentRoles.length} role{agentRoles.length !== 1 ? "s" : ""})
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {agentRoles.map((role) => (
-                  <span
-                    key={role.role}
-                    className="inline-flex items-center gap-1.5 rounded-md border border-border bg-muted/30 px-[0.7rem] py-[0.3rem] text-[0.78rem] text-muted-foreground"
-                  >
-                    <span className="text-[0.85rem]">{ROLE_ICONS[role.role] ?? "\u{1F464}"}</span>
-                    {role.role}
-                  </span>
-                ))}
-              </div>
-              <p className="mt-2 text-[11px] text-muted-foreground/70">
-                Agents will be cloned to your account. You can customise names,
-                prompts, and skills afterwards.
-              </p>
-            </div>
-          )}
+      {/* Custom empty state */}
+      {isCustom && (
+        <p className="py-2 text-center text-sm text-muted-foreground">
+          Start from scratch — add agents, workflows, and labels after setup.
+        </p>
+      )}
 
-          {/* Workflow Templates — Tabbed (Option B) or single chain */}
-          {hasMappings && uniqueTemplates.length > 0 ? (
-            <div className="mb-4">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                {"\u26A1"} Workflow Templates ({templateCount})
-              </p>
+      {/* AI Team */}
+      {agentRoles.length > 0 && (
+        <div className="mb-3">
+          <p className="mb-1.5 text-[0.6rem] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Your AI Team ({agentRoles.length})
+          </p>
+          <div className="flex flex-wrap gap-1.5">
+            {agentRoles.map((role) => (
+              <span
+                key={role.role}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-white/[0.04] px-2 py-0.5 text-[0.7rem] text-muted-foreground"
+              >
+                <span className="text-[0.8rem]">{ROLE_ICONS[role.role] ?? "\u{1F464}"}</span>
+                {role.role}
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
 
-              {/* Tab buttons — underline style */}
-              <div className="mb-3 flex border-b border-border" role="tablist">
-                {uniqueTemplates.map((t, i) => (
-                  <button
-                    key={t.mapping.template_name}
-                    type="button"
-                    role="tab"
-                    aria-selected={activeTab === i}
-                    onClick={() => setActiveTab(i)}
-                    className={cn(
-                      "px-3 py-2 text-[0.75rem] font-medium transition-colors border-b-2 -mb-px",
-                      activeTab === i
-                        ? "text-violet-400 border-violet-400"
-                        : "text-muted-foreground border-transparent hover:text-foreground/80"
-                    )}
-                  >
-                    {t.mapping.template_name}
-                    <span className={cn(
-                      "ml-1 text-[0.65rem]",
-                      activeTab === i ? "text-violet-400/60" : "text-muted-foreground/50"
-                    )}>
-                      ({t.mapping.template_step_count})
-                    </span>
-                  </button>
-                ))}
-              </div>
-
-              {/* Active tab: step chain */}
-              {uniqueTemplates[activeTab] && (
-                <div role="tabpanel">
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    {uniqueTemplates[activeTab].mapping.template_steps.map((step, i) => (
-                      <span key={i} className="contents">
-                        {i > 0 && (
-                          <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
-                        )}
-                        <span
-                          className={cn(
-                            "inline-flex items-center gap-1.5 rounded-md border px-[0.7rem] py-[0.3rem] text-[0.78rem] text-muted-foreground",
-                            step.requires_approval
-                              ? "border-amber-500/25 bg-amber-500/[0.12]"
-                              : "border-border bg-muted/30"
-                          )}
-                        >
-                          {i + 1}. {step.title}
-                          {step.requires_approval && (
-                            <Lock className="h-3 w-3 text-amber-400" />
-                          )}
-                        </span>
-                      </span>
-                    ))}
-                  </div>
-
-                  {/* "Triggered by" labels */}
-                  <p className="mt-2 flex flex-wrap items-center gap-1.5 text-[0.7rem] text-muted-foreground/70">
-                    <span>Triggered by:</span>
-                    {uniqueTemplates[activeTab].labels.map((labelName) => {
-                      const preset = labelPresets.find(
-                        (lp) => lp.name.toLowerCase() === labelName.toLowerCase()
-                      );
-                      const colors = getLabelClasses(preset?.color ?? "zinc");
-                      return (
-                        <span
-                          key={labelName}
-                          className={cn(
-                            "rounded-full px-2 py-0.5 text-[0.6rem] font-semibold",
-                            colors.bg,
-                            colors.text
-                          )}
-                        >
-                          {labelName}
-                        </span>
-                      );
-                    })}
-                  </p>
-                </div>
-              )}
-            </div>
-          ) : workflowSteps.length > 0 ? (
-            /* Fallback: single template step chain (old behaviour) */
-            <div className="mb-4">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                {"\u26A1"} Workflow Template ({workflowSteps.length} step{workflowSteps.length !== 1 ? "s" : ""})
-              </p>
-              <div className="flex flex-wrap items-center gap-1.5">
-                {workflowSteps.map((step, i) => (
-                  <span key={i} className="contents">
-                    {i > 0 && (
-                      <ArrowRight className="h-3 w-3 shrink-0 text-muted-foreground/50" />
-                    )}
-                    <span
-                      className={cn(
-                        "inline-flex items-center gap-1.5 rounded-md border px-[0.7rem] py-[0.3rem] text-[0.78rem] text-muted-foreground",
-                        step.requires_approval
-                          ? "border-amber-500/25 bg-amber-500/[0.12]"
-                          : "border-border bg-muted/30"
-                      )}
-                    >
-                      {i + 1}. {step.title}
-                      {step.requires_approval && (
-                        <Lock className="h-3 w-3 text-amber-400" />
-                      )}
-                    </span>
-                  </span>
-                ))}
-              </div>
-            </div>
-          ) : null}
-
-          {/* Board Labels */}
-          {labelPresets.length > 0 && (
-            <div className="mb-4">
-              <p className="mb-2 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                {"\u{1F3F7}\uFE0F"} Board Labels
-              </p>
-              <div className="flex flex-wrap gap-1.5">
-                {labelPresets.map((label) => {
-                  const colors = getLabelClasses(label.color);
-                  return (
-                    <span
-                      key={label.name}
-                      className={cn(
-                        "rounded-full px-2 py-0.5 text-[0.65rem] font-semibold",
-                        colors.bg,
-                        colors.text
-                      )}
-                    >
-                      {label.name}
-                    </span>
+      {/* Workflows */}
+      {uniqueTemplates.length > 0 && (
+        <div>
+          <p className="mb-1.5 text-[0.6rem] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Workflows{" "}
+            <span className="font-normal normal-case tracking-normal text-muted-foreground/50">
+              — click to view steps
+            </span>
+          </p>
+          <div className="flex flex-col gap-1">
+            {uniqueTemplates.map((t, i) => {
+              const isExpanded = expandedWf === i;
+              const triggerLabels = t.labels
+                .map((name) => {
+                  const preset = labelPresets.find(
+                    (lp) => lp.name.toLowerCase() === name.toLowerCase()
                   );
-                })}
-              </div>
-            </div>
-          )}
+                  return { name, color: preset?.color ?? "zinc" };
+                });
 
-          {/* Workflow Triggers summary */}
-          {hasMappings ? (
-            <div>
-              <p className="text-[0.7rem] text-muted-foreground/70">
-                {"\u{1F504}"} {triggerCount} of {labelPresets.length} labels have workflow triggers.
-                When a task is labelled, the matching workflow is automatically applied.
-              </p>
-            </div>
-          ) : kit.auto_rule_label ? (
-            <div>
-              <p className="mb-1 text-[10px] font-bold uppercase tracking-wider text-muted-foreground">
-                {"\u{1F504}"} Workflow Trigger
-              </p>
-              <p className="text-xs text-muted-foreground">
-                When a task is labelled{" "}
-                <span className="rounded-full bg-violet-500/[0.12] px-1.5 py-0.5 text-[0.65rem] font-semibold text-violet-400">
-                  {kit.auto_rule_label}
-                </span>
-                , the {kit.name} workflow will be automatically applied.
-              </p>
-            </div>
-          ) : null}
+              return (
+                <div key={t.mapping.template_name}>
+                  {/* Workflow row */}
+                  <button
+                    type="button"
+                    onClick={() => setExpandedWf(isExpanded ? -1 : i)}
+                    className={cn(
+                      "flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left transition-all",
+                      isExpanded
+                        ? "border-violet-500 bg-violet-500/[0.12]"
+                        : "border-border bg-white/[0.02] hover:border-violet-500/30 hover:bg-white/[0.04]"
+                    )}
+                  >
+                    <div className="flex items-center gap-2 min-w-0">
+                      {t.mapping.is_primary && (
+                        <span className="shrink-0 rounded bg-violet-500/[0.12] px-1 py-px text-[0.5rem] font-bold text-violet-400">
+                          PRIMARY
+                        </span>
+                      )}
+                      <span className="truncate text-[0.7rem] font-semibold">
+                        {t.mapping.template_name}
+                      </span>
+                      <span className="shrink-0 text-[0.6rem] text-muted-foreground/50">
+                        {t.mapping.template_step_count} steps
+                      </span>
+                    </div>
+                    <div className="flex shrink-0 gap-1">
+                      {triggerLabels.map((l) => {
+                        const colors = getLabelClasses(l.color);
+                        return (
+                          <span
+                            key={l.name}
+                            className={cn(
+                              "rounded-full px-1.5 py-px text-[0.55rem] font-semibold",
+                              colors.bg,
+                              colors.text
+                            )}
+                          >
+                            {l.name}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </button>
+
+                  {/* Expanded step chain */}
+                  {isExpanded && t.mapping.template_steps && (
+                    <div className="mt-1 rounded-md border border-violet-500/10 bg-violet-500/[0.04] px-2.5 py-2 animate-in slide-in-from-top-1 duration-150">
+                      <div className="flex flex-wrap items-center gap-1">
+                        {t.mapping.template_steps.map((step, si) => (
+                          <span key={si} className="contents">
+                            {si > 0 && (
+                              <ArrowRight className="h-2.5 w-2.5 shrink-0 text-muted-foreground/40" />
+                            )}
+                            <span
+                              className={cn(
+                                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.65rem] text-muted-foreground",
+                                step.requires_approval
+                                  ? "bg-amber-500/10 border border-amber-500/20"
+                                  : "bg-white/[0.06]"
+                              )}
+                            >
+                              {step.title}
+                              {step.requires_approval && (
+                                <Lock className="h-2.5 w-2.5 text-amber-400" />
+                              )}
+                            </span>
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+
+          {/* Key */}
+          <div className="mt-2.5 flex items-center gap-3 text-[0.55rem] text-muted-foreground/50">
+            <span className="inline-flex items-center gap-1">
+              <Lock className="h-2.5 w-2.5 text-amber-400" />
+              Requires your approval
+            </span>
+            <span className="inline-flex items-center gap-1">
+              ⚡ Labels auto-assign workflows
+            </span>
+          </div>
         </div>
       )}
     </div>

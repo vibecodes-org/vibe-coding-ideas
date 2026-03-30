@@ -172,7 +172,7 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
   const originalDescRef = useRef("");
   const [enhanceDialogOpen, setEnhanceDialogOpen] = useState(false);
 
-  const isCompactPreview = useMediaQuery("(max-width: 479px)");
+  // isCompactPreview removed — KitPreview no longer has compact mode
   const selectedKit = kits?.find((k) => k.id === selectedKitId) ?? null;
   const isCustomKit = selectedKit?.name === "Custom";
   const hasKit = !!selectedKitId && !isCustomKit;
@@ -278,7 +278,15 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
                 onSelect={setSelectedKitId}
               />
               {selectedKit && !isCustomKit && (
-                <KitPreview kit={selectedKit} compact={isCompactPreview} />
+                <KitPreview
+                  kit={selectedKit}
+                  selectedIndex={[...kits].sort((a, b) => {
+                    if (a.name === "Custom") return 1;
+                    if (b.name === "Custom") return -1;
+                    return a.display_order - b.display_order;
+                  }).findIndex((k) => k.id === selectedKitId)}
+                  columnCount={3}
+                />
               )}
             </div>
           )}
