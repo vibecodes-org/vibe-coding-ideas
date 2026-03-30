@@ -26,15 +26,18 @@ test.afterAll(async () => {
 
 test.describe("Board Labels", () => {
   test("should show labels in the toolbar filter", async ({ userAPage: page }, testInfo) => {
-    // Labels filter button is behind Filters sheet on mobile
-    if (testInfo.project.name === "Mobile Chrome") {
-      test.skip();
-      return;
-    }
-
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='task-card-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
+    const isMobile = testInfo.project.name === "Mobile Chrome";
+
+    if (isMobile) {
+      // Mobile: open the Filters sheet first, then find Labels
+      await page.getByRole("button", { name: /Filters/i }).click();
+      await page.waitForTimeout(500);
+    }
+
+    // Click the Labels filter button
     await page.getByRole("button", { name: "Labels" }).click();
     await expect(page.getByText("E2E-Bug")).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
