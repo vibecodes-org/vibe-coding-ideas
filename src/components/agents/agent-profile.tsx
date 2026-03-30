@@ -253,7 +253,8 @@ export function AgentProfile({
           <h2 className="text-sm font-semibold flex items-center gap-2">
             &#x1F9E0; Personality & Instructions
           </h2>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="flex flex-col gap-3">
+            {/* Goal — full width */}
             {promptFields.goal && (
               <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
                 <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-emerald-500">
@@ -264,36 +265,51 @@ export function AgentProfile({
                 </div>
               </div>
             )}
+            {/* Expertise — full width, bullet points */}
             {promptFields.expertise && (
               <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
                 <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-violet-500">
                   &#x1F4A1; Expertise
                 </div>
-                <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
-                  {promptFields.expertise}
-                </div>
-              </div>
-            )}
-            {promptFields.constraints && (
-              <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
-                <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-red-500">
-                  &#x1F6AB; Constraints
-                </div>
                 <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
-                  {promptFields.constraints}
+                  <ul className="list-none space-y-2">
+                    {promptFields.expertise.split("\n").filter(l => l.trim().startsWith("- ")).map((line, i) => (
+                      <li key={i} className="flex gap-2">
+                        <span className="mt-1.5 h-1 w-1 shrink-0 rounded-full bg-violet-500/50" />
+                        <span>{line.replace(/^- /, "")}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {/* Fallback for non-bullet expertise */}
+                  {!promptFields.expertise.includes("\n- ") && (
+                    <span>{promptFields.expertise}</span>
+                  )}
                 </div>
               </div>
             )}
-            {promptFields.approach && (
-              <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
-                <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-blue-500">
-                  &#x1F4CB; Approach
+            {/* Constraints + Approach — side by side */}
+            <div className="grid gap-3 sm:grid-cols-2">
+              {promptFields.constraints && (
+                <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
+                  <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-red-500">
+                    &#x1F6AB; Constraints
+                  </div>
+                  <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
+                    {promptFields.constraints}
+                  </div>
                 </div>
-                <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
-                  {promptFields.approach}
+              )}
+              {promptFields.approach && (
+                <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
+                  <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-blue-500">
+                    &#x1F4CB; Approach
+                  </div>
+                  <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
+                    {promptFields.approach}
+                  </div>
                 </div>
-              </div>
-            )}
+              )}
+            </div>
           </div>
         </>
       )}
