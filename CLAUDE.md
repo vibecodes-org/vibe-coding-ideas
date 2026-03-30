@@ -24,8 +24,8 @@ Next.js 16 (App Router), TypeScript, Tailwind CSS v4, shadcn/ui (New York, Zinc)
 
 Applies even when resuming from context compaction or implementing a provided plan.
 
-### Push to Live = Move Verify to Done
-After pushing, move ALL "Verify" tasks to "Done" on the VibeCodes board.
+### Push to Live = Move YOUR Task to Verify
+After pushing, move only the specific task you worked on to "Verify" (or "Done"). NEVER batch-move other tasks in the Verify column — those belong to other contributors.
 
 ### Blocked Tasks
 Move to "Blocked/Requires User Input" with a comment explaining why.
