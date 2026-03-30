@@ -992,6 +992,7 @@ export async function insertTasksSequentially(
   // get aborted when the client navigates away.
   let autoRulesApplied = 0;
   if (autoRulePairs.length > 0) {
+    console.log(`[DEBUG import] autoRulePairs count: ${autoRulePairs.length}`, autoRulePairs.map(p => ({ taskId: p.taskId, labelCount: p.labelIds.length })));
     callbacks.onAutoRulesStart?.(autoRulePairs.length);
     try {
       await triggerAutoRulesForTasks(autoRulePairs, ideaId, (taskId) => {
