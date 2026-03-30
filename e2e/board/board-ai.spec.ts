@@ -22,17 +22,28 @@ test.afterAll(async () => {
 
 test.describe("Board AI Generation", () => {
   test("should show AI Generate button on board toolbar", async ({ userAPage: page }, testInfo) => {
-    // AI Generate and Import buttons are hidden on mobile toolbar
-    if (testInfo.project.name === "Mobile Chrome") { test.skip(); return; }
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
-    await expect(page.getByRole("button", { name: /AI Generate/i })).toBeVisible();
+
+    if (testInfo.project.name === "Mobile Chrome") {
+      // On mobile, the button text is hidden — find by the violet-styled button with Sparkles icon
+      await expect(page.locator("button[class*='violet']")).toBeVisible();
+    } else {
+      await expect(page.getByRole("button", { name: /AI Generate/i })).toBeVisible();
+    }
   });
 
   test("should show Import button on board toolbar", async ({ userAPage: page }, testInfo) => {
-    if (testInfo.project.name === "Mobile Chrome") { test.skip(); return; }
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
-    await expect(page.getByRole("button", { name: /Import/i })).toBeVisible();
+
+    if (testInfo.project.name === "Mobile Chrome") {
+      // On mobile, Import text is hidden — find by the Upload icon button
+      // There should be at least 2 action buttons in the toolbar area (AI Generate + Import)
+      const toolbarButtons = page.locator("button[class*='outline']").filter({ has: page.locator("svg") });
+      await expect(toolbarButtons.first()).toBeVisible();
+    } else {
+      await expect(page.getByRole("button", { name: /Import/i })).toBeVisible();
+    }
   });
 });
