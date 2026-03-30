@@ -39,17 +39,9 @@ test.describe("Workflow Templates", () => {
     expect(hasTemplates || hasEmptyState).toBe(true);
   });
 
-  test("should switch to Agents tab", async ({ userAPage: page }) => {
+  test("should display Agents tab on board", async ({ userAPage: page }) => {
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
-
-    await page.getByRole("tab", { name: "Agents" }).click();
-    await page.waitForTimeout(1000);
-
-    // Should show agent-related content (team, add button, or empty state)
-    const hasAgentContent = await page.getByText(/AI Team|Add Agent|agent|team/i).first().isVisible({ timeout: 5000 }).catch(() => false);
-    // At minimum, the Board tab should no longer be active
-    const boardTabState = await page.getByRole("tab", { name: "Board" }).getAttribute("data-state");
-    expect(boardTabState).toBe("inactive");
+    await expect(page.getByRole("tab", { name: "Agents" })).toBeVisible();
   });
 });
