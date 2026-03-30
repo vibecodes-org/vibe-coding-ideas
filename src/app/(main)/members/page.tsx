@@ -41,7 +41,8 @@ export default async function MembersPage({
     .select("id, full_name, email, avatar_url, bio, github_username, is_admin, created_at", {
       count: "exact",
     })
-    .eq("is_bot", false);
+    .eq("is_bot", false)
+    .not("email", "like", "%@vibecodes-test.local");
 
   // Search filter
   if (search) {
