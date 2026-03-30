@@ -377,6 +377,7 @@ export function AiGenerateDialog({
             onAutoRulesStart: (totalTasks) => {
               if (totalTasks > 0) {
                 setWiringProgress({ current: 0, total: totalTasks });
+                setPhase("wiring-workflows");
               }
             },
             onAutoRuleApplied: (_taskId, current, total) => {
@@ -388,24 +389,7 @@ export function AiGenerateDialog({
 
         setInsertResult(result);
 
-        // Navigate to board immediately — auto-rules run in background
         if (result.failed.length === 0) {
-          // Store wiring state for the board banner
-          if (result.autoRulesPromise) {
-            const total = wiringProgress.total || 0;
-            if (total > 0) {
-              try {
-                sessionStorage.setItem(
-                  `board-wiring-${ideaId}`,
-                  JSON.stringify({ total, completed: 0, startedAt: Date.now() })
-                );
-              } catch { /* noop */ }
-            }
-            // Let auto-rules finish in background — errors already logged
-            result.autoRulesPromise.then(() => {
-              try { sessionStorage.removeItem(`board-wiring-${ideaId}`); } catch { /* noop */ }
-            });
-          }
           startLoadingBoard(result.created);
         } else {
           setPhase("complete");

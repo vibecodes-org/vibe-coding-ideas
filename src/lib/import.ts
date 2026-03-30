@@ -665,8 +665,7 @@ export interface SequentialInsertResult {
   failed: { index: number; title: string; error: string }[];
   columnsCreated: number;
   labelsCreated: number;
-  /** Promise that resolves when background auto-rule wiring completes. Fire-and-forget safe. */
-  autoRulesPromise?: Promise<void>;
+  autoRulesApplied: number;
 }
 
 export async function insertTasksSequentially(
@@ -986,22 +985,25 @@ export async function insertTasksSequentially(
     }
   }
 
-  // ── Trigger auto-rules for labelled tasks (fire-and-forget) ────────
-  // Auto-rules run in the background so the UI can navigate to the board
-  // immediately. The promise is returned so callers can optionally await.
-  let autoRulesPromise: Promise<void> | undefined;
+  // ── Trigger auto-rules for labelled tasks ──────────────────────────
+  // Awaited so all workflows are applied before the dialog navigates to
+  // the board. Phase 2 parallelisation (batches of 5 + role match cache)
+  // keeps this fast. Fire-and-forget was removed because server actions
+  // get aborted when the client navigates away.
+  let autoRulesApplied = 0;
   if (autoRulePairs.length > 0) {
     callbacks.onAutoRulesStart?.(autoRulePairs.length);
-    let autoRuleProgress = 0;
-    autoRulesPromise = triggerAutoRulesForTasks(autoRulePairs, ideaId, (taskId) => {
-      autoRuleProgress++;
-      callbacks.onAutoRuleApplied?.(taskId, autoRuleProgress, autoRulePairs.length);
-    }).catch((err) => {
+    try {
+      await triggerAutoRulesForTasks(autoRulePairs, ideaId, (taskId) => {
+        autoRulesApplied++;
+        callbacks.onAutoRuleApplied?.(taskId, autoRulesApplied, autoRulePairs.length);
+      });
+    } catch (err) {
       logger.error("Auto-rule trigger failed during sequential import", { error: err instanceof Error ? err.message : String(err), ideaId });
-    });
+    }
   } else {
     callbacks.onAutoRulesStart?.(0);
   }
 
-  return { created, failed, columnsCreated, labelsCreated, autoRulesPromise };
+  return { created, failed, columnsCreated, labelsCreated, autoRulesApplied };
 }
