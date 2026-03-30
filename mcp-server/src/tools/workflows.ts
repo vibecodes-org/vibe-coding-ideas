@@ -5,6 +5,20 @@ import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits } from "../../../src/lib/workflow-helpers";
 import { tierRank } from "../../../src/lib/role-matching";
 
+/**
+ * Touch board_tasks.updated_at so the board's Realtime subscription
+ * fires a refresh. Without this, workflow step changes only update
+ * task_workflow_steps — the DB trigger updates the denormalized counts
+ * on board_tasks, but the Realtime event can arrive before the trigger
+ * commits, causing stale data on the first router.refresh().
+ */
+async function touchBoardTask(ctx: McpContext, taskId: string) {
+  await ctx.supabase
+    .from("board_tasks")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", taskId);
+}
+
 // --- Shared step schema used by template tools ---
 
 const templateStepSchema = z.object({
@@ -385,6 +399,9 @@ export async function claimNextStep(
       .in("status", ["pending", "running", "failed"]);
   }
 
+  // Touch board_tasks so Realtime fires before denormalized counts arrive
+  await touchBoardTask(ctx, params.task_id);
+
   // Fetch rework instructions if this step was previously failed (retry scenario)
   // Look for failure output and changes_requested comments
   let rework_instructions: {
@@ -646,6 +663,9 @@ export async function completeStep(
   if (updateError) throw new Error(`Failed to complete step: ${updateError.message}`);
   if (!updated) throw new Error("Step is no longer in progress — it may have been modified by another agent");
 
+  // Touch board_tasks so Realtime fires before denormalized counts arrive
+  await touchBoardTask(ctx, updated.task_id);
+
   // Check if all steps in the run are done
   let runComplete = false;
   if (step.run_id && newStatus === "completed") {
@@ -725,6 +745,9 @@ export async function failStep(
 
   if (updateError) throw new Error(`Failed to fail step: ${updateError.message}`);
   if (!updated) throw new Error("Step is not in a state that can be failed (must be in_progress or awaiting_approval)");
+
+  // Touch board_tasks so Realtime fires before denormalized counts arrive
+  await touchBoardTask(ctx, updated.task_id);
 
   // Auto-create a failure comment so the output is preserved as a comment
   // (especially important before cascade wipes the step's output column)
@@ -844,6 +867,9 @@ export async function skipStep(
   if (updateError) throw new Error(`Failed to skip step: ${updateError.message}`);
   if (!updated) throw new Error("Step is no longer pending — it may have been claimed by another agent");
 
+  // Touch board_tasks so Realtime fires before denormalized counts arrive
+  await touchBoardTask(ctx, updated.task_id);
+
   // Check if all steps in the run are now resolved
   let runComplete = false;
   if (step.run_id) {
@@ -946,6 +972,9 @@ export async function approveStep(
 
   if (updateError) throw new Error(`Failed to approve step: ${updateError.message}`);
   if (!updated) throw new Error("Step is no longer awaiting approval — it may have been modified concurrently");
+
+  // Touch board_tasks so Realtime fires before denormalized counts arrive
+  await touchBoardTask(ctx, updated.task_id);
 
   // Insert approval comment if provided
   if (params.comment && step.idea_id) {

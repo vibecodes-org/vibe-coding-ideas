@@ -2065,3 +2065,125 @@ describe("claimNextStep — claimed_by", () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// touchBoardTask — realtime propagation tests
+// ---------------------------------------------------------------------------
+
+describe("workflow step mutations touch board_tasks for realtime", () => {
+  it("completeStep touches board_tasks.updated_at", async () => {
+    let boardTaskTouched = false;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() =>
+          Promise.resolve({
+            data: { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null },
+            error: null,
+          })
+        );
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({
+            data: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Step", agent_role: "dev", status: "completed", output: "done", completed_at: "2026-01-01" },
+            error: null,
+          })
+        );
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [], error: null }).then(resolve);
+        return chain.chain;
+      }
+
+      if (table === "board_tasks") {
+        boardTaskTouched = true;
+        const chain = createChain(null);
+        chain.chain.update = vi.fn((data: Record<string, unknown>) => {
+          expect(data).toHaveProperty("updated_at");
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await completeStep(ctx, { step_id: STEP_ID, output: "done" });
+    expect(boardTaskTouched).toBe(true);
+  });
+
+  it("approveStep touches board_tasks.updated_at", async () => {
+    let boardTaskTouched = false;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "users") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() =>
+          Promise.resolve({ data: { is_bot: false }, error: null })
+        );
+        return chain.chain;
+      }
+
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() =>
+          Promise.resolve({
+            data: { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, status: "awaiting_approval" },
+            error: null,
+          })
+        );
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({
+            data: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Step", agent_role: "dev", status: "completed", output: null, completed_at: "2026-01-01" },
+            error: null,
+          })
+        );
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [], error: null }).then(resolve);
+        return chain.chain;
+      }
+
+      if (table === "board_tasks") {
+        boardTaskTouched = true;
+        return createChain(null).chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await approveStep(ctx, { step_id: STEP_ID });
+    expect(boardTaskTouched).toBe(true);
+  });
+
+  it("failStep touches board_tasks.updated_at", async () => {
+    let boardTaskTouched = false;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() =>
+          Promise.resolve({
+            data: { id: STEP_ID, run_id: RUN_ID, step_order: 1, idea_id: IDEA_ID, bot_id: null, agent_role: "dev", status: "in_progress" },
+            error: null,
+          })
+        );
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({
+            data: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Step", agent_role: "dev", status: "failed", output: "error" },
+            error: null,
+          })
+        );
+        return chain.chain;
+      }
+
+      if (table === "board_tasks") {
+        boardTaskTouched = true;
+        return createChain(null).chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await failStep(ctx, { step_id: STEP_ID, output: "error" });
+    expect(boardTaskTouched).toBe(true);
+  });
+});
