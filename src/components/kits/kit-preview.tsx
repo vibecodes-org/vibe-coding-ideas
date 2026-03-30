@@ -111,134 +111,124 @@ export function KitPreview({ kit, selectedIndex = 0, columnCount = 3 }: KitPrevi
 
       {/* AI Team */}
       {agentRoles.length > 0 && (
-        <div className="mb-3">
-          <p className="mb-1.5 text-[0.6rem] font-semibold uppercase tracking-wider text-muted-foreground/70">
-            Your AI Team ({agentRoles.length})
-          </p>
-          <div className="flex flex-wrap gap-1.5">
-            {agentRoles.map((role) => {
-              const meta = ROLE_META[role.role];
-              return (
-                <span
-                  key={role.role}
-                  className="inline-flex items-center gap-1 rounded-md border border-border bg-white/[0.04] px-2 py-0.5 text-[0.7rem] text-muted-foreground"
-                  title={role.role}
-                >
-                  <span className="text-[0.8rem]">{meta?.icon ?? "\u{1F464}"}</span>
-                  {meta?.short ?? role.role}
-                </span>
-              );
-            })}
-          </div>
+        <div className="mb-2.5 flex items-center gap-1.5">
+          <span className="text-[0.55rem] font-semibold uppercase tracking-wider text-muted-foreground/70">
+            Team
+          </span>
+          {agentRoles.map((role) => {
+            const meta = ROLE_META[role.role];
+            return (
+              <span
+                key={role.role}
+                className="inline-flex items-center gap-1 rounded-md border border-border bg-white/[0.04] px-2 py-0.5 text-[0.65rem] text-muted-foreground"
+                title={role.role}
+              >
+                <span className="text-[0.75rem]">{meta?.icon ?? "\u{1F464}"}</span>
+                {meta?.short ?? role.role}
+              </span>
+            );
+          })}
         </div>
       )}
 
-      {/* Workflows */}
+      {/* Workflows — horizontal tags */}
       {uniqueTemplates.length > 0 && (
         <div>
-          <p className="mb-1.5 text-[0.6rem] font-semibold uppercase tracking-wider text-muted-foreground/70">
+          <p className="mb-1.5 text-[0.55rem] font-semibold uppercase tracking-wider text-muted-foreground/70">
             Workflows{" "}
-            <span className="font-normal normal-case tracking-normal text-muted-foreground/50">
+            <span className="font-normal normal-case tracking-normal text-muted-foreground/40">
               — click to view steps
             </span>
           </p>
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-wrap gap-1.5">
             {uniqueTemplates.map((t, i) => {
               const isExpanded = expandedWf === i;
-              const triggerLabels = t.labels
-                .map((name) => {
-                  const preset = labelPresets.find(
-                    (lp) => lp.name.toLowerCase() === name.toLowerCase()
-                  );
-                  return { name, color: preset?.color ?? "zinc" };
-                });
-
               return (
-                <div key={t.mapping.template_name}>
-                  {/* Workflow row */}
-                  <button
-                    type="button"
-                    onClick={() => setExpandedWf(isExpanded ? -1 : i)}
-                    className={cn(
-                      "flex w-full items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 text-left transition-all",
-                      isExpanded
-                        ? "border-violet-500 bg-violet-500/[0.12]"
-                        : "border-border bg-white/[0.02] hover:border-violet-500/30 hover:bg-white/[0.04]"
-                    )}
-                  >
-                    <div className="flex items-center gap-2 min-w-0">
-                      {t.mapping.is_primary && (
-                        <span className="shrink-0 rounded bg-violet-500/[0.12] px-1 py-px text-[0.5rem] font-bold text-violet-400">
-                          PRIMARY
-                        </span>
-                      )}
-                      <span className="truncate text-[0.7rem] font-semibold">
-                        {t.mapping.template_name}
-                      </span>
-                      <span className="shrink-0 text-[0.6rem] text-muted-foreground/50">
-                        {t.mapping.template_step_count} steps
-                      </span>
-                    </div>
-                    <div className="flex shrink-0 gap-1">
-                      {triggerLabels.map((l) => {
-                        const colors = getLabelClasses(l.color);
-                        return (
-                          <span
-                            key={l.name}
-                            className={cn(
-                              "rounded-full px-1.5 py-px text-[0.55rem] font-semibold",
-                              colors.bg,
-                              colors.text
-                            )}
-                          >
-                            {l.name}
-                          </span>
-                        );
-                      })}
-                    </div>
-                  </button>
-
-                  {/* Expanded step chain */}
-                  {isExpanded && t.mapping.template_steps && (
-                    <div className="mt-1 rounded-md border border-violet-500/10 bg-violet-500/[0.04] px-2.5 py-2 animate-in slide-in-from-top-1 duration-150">
-                      <div className="flex flex-wrap items-center gap-1">
-                        {t.mapping.template_steps.map((step, si) => (
-                          <span key={si} className="contents">
-                            {si > 0 && (
-                              <ArrowRight className="h-2.5 w-2.5 shrink-0 text-muted-foreground/40" />
-                            )}
-                            <span
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.65rem] text-muted-foreground",
-                                step.requires_approval
-                                  ? "bg-amber-500/10 border border-amber-500/20"
-                                  : "bg-white/[0.06]"
-                              )}
-                            >
-                              {step.title}
-                              {step.requires_approval && (
-                                <Lock className="h-2.5 w-2.5 text-amber-400" />
-                              )}
-                            </span>
-                          </span>
-                        ))}
-                      </div>
-                    </div>
+                <button
+                  key={t.mapping.template_name}
+                  type="button"
+                  onClick={() => setExpandedWf(isExpanded ? -1 : i)}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-[0.65rem] font-medium transition-all",
+                    isExpanded
+                      ? "border-violet-500 bg-violet-500/[0.12] text-foreground"
+                      : "border-border bg-white/[0.02] text-muted-foreground hover:border-violet-500/30 hover:bg-white/[0.04]"
                   )}
-                </div>
+                >
+                  {t.mapping.is_primary && (
+                    <span className="h-[5px] w-[5px] shrink-0 rounded-full bg-violet-500" />
+                  )}
+                  {t.mapping.template_name}
+                  <span className="text-[0.55rem] text-muted-foreground/50">
+                    ({t.mapping.template_step_count})
+                  </span>
+                </button>
               );
             })}
           </div>
 
+          {/* Expanded step chain + trigger labels */}
+          {expandedWf >= 0 && uniqueTemplates[expandedWf] && (() => {
+            const t = uniqueTemplates[expandedWf];
+            const triggerLabels = t.labels.map((name) => {
+              const preset = labelPresets.find(
+                (lp) => lp.name.toLowerCase() === name.toLowerCase()
+              );
+              return { name, color: preset?.color ?? "zinc" };
+            });
+            return (
+              <div className="mt-1.5 rounded-md border border-violet-500/10 bg-violet-500/[0.04] px-2.5 py-2 animate-in slide-in-from-top-1 duration-150">
+                <div className="flex flex-wrap items-center gap-1">
+                  {t.mapping.template_steps.map((step, si) => (
+                    <span key={si} className="contents">
+                      {si > 0 && (
+                        <ArrowRight className="h-2.5 w-2.5 shrink-0 text-muted-foreground/40" />
+                      )}
+                      <span
+                        className={cn(
+                          "inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-[0.6rem] text-muted-foreground",
+                          step.requires_approval
+                            ? "bg-amber-500/10 border border-amber-500/20"
+                            : "bg-white/[0.06]"
+                        )}
+                      >
+                        {step.title}
+                        {step.requires_approval && (
+                          <Lock className="h-2.5 w-2.5 text-amber-400" />
+                        )}
+                      </span>
+                    </span>
+                  ))}
+                </div>
+                <div className="mt-1.5 flex items-center gap-1 text-[0.55rem] text-muted-foreground/50">
+                  <span>Triggered by:</span>
+                  {triggerLabels.map((l) => {
+                    const colors = getLabelClasses(l.color);
+                    return (
+                      <span
+                        key={l.name}
+                        className={cn(
+                          "rounded-full px-1.5 py-px text-[0.5rem] font-semibold",
+                          colors.bg,
+                          colors.text
+                        )}
+                      >
+                        {l.name}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            );
+          })()}
+
           {/* Key */}
-          <div className="mt-2.5 flex items-center gap-3 text-[0.55rem] text-muted-foreground/50">
+          <div className="mt-2 flex items-center gap-3 text-[0.5rem] text-muted-foreground/40">
             <span className="inline-flex items-center gap-1">
-              <Lock className="h-2.5 w-2.5 text-amber-400" />
+              <Lock className="h-2 w-2 text-amber-400" />
               Requires your approval
             </span>
-            <span className="inline-flex items-center gap-1">
-              ⚡ Labels auto-assign workflows
-            </span>
+            <span>⚡ Labels auto-assign workflows</span>
           </div>
         </div>
       )}

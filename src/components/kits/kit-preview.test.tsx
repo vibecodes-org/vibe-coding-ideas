@@ -99,71 +99,57 @@ describe("KitPreview", () => {
 
   // --- AI Team ---
 
-  it("renders abbreviated agent role chips", () => {
+  it("renders abbreviated agent role chips inline", () => {
     render(<KitPreview kit={makeKit()} />);
     expect(screen.getByText("Full Stack")).toBeDefined();
     expect(screen.getByText("UX")).toBeDefined();
     expect(screen.getByText("QA")).toBeDefined();
+    expect(screen.getByText("Team")).toBeDefined();
   });
 
   it("hides agent section when no roles", () => {
     render(<KitPreview kit={makeKit({ agent_roles: [] })} />);
-    expect(screen.queryByText(/Your AI Team/)).toBeNull();
+    expect(screen.queryByText("Team")).toBeNull();
   });
 
   // --- Workflows ---
 
-  it("renders workflow rows with names and step counts", () => {
+  it("renders workflow tags with names and step counts", () => {
     render(<KitPreview kit={makeKit()} />);
     expect(screen.getByText("Web Application Feature")).toBeDefined();
     expect(screen.getByText("Bug Fix")).toBeDefined();
-    expect(screen.getByText("5 steps")).toBeDefined();
-    expect(screen.getByText("4 steps")).toBeDefined();
+    expect(screen.getByText("(5)")).toBeDefined();
+    expect(screen.getByText("(4)")).toBeDefined();
   });
 
-  it("shows PRIMARY badge on primary workflow", () => {
+  it("all workflows collapsed by default — no step chains visible", () => {
     render(<KitPreview kit={makeKit()} />);
-    expect(screen.getByText("PRIMARY")).toBeDefined();
-  });
-
-  it("shows trigger labels on workflow rows", () => {
-    render(<KitPreview kit={makeKit()} />);
-    // Feature and Enhancement trigger Web Application Feature
-    const featureLabels = screen.getAllByText("Feature");
-    expect(featureLabels.length).toBeGreaterThanOrEqual(1);
-    const bugLabels = screen.getAllByText("Bug");
-    expect(bugLabels.length).toBeGreaterThanOrEqual(1);
-  });
-
-  it("all workflows collapsed by default", () => {
-    render(<KitPreview kit={makeKit()} />);
-    // No step chains should be visible
     expect(screen.queryByText("UX Review")).toBeNull();
     expect(screen.queryByText("Triage")).toBeNull();
+    // Trigger labels should not be visible either
+    expect(screen.queryByText("Triggered by:")).toBeNull();
   });
 
-  it("clicking a workflow expands its step chain", () => {
+  it("clicking a workflow tag expands its step chain and trigger labels", () => {
     render(<KitPreview kit={makeKit()} />);
-    // Click primary workflow
     fireEvent.click(screen.getByText("Web Application Feature"));
     expect(screen.getByText("UX Review")).toBeDefined();
     expect(screen.getByText("Deploy")).toBeDefined();
+    expect(screen.getByText("Triggered by:")).toBeDefined();
   });
 
-  it("clicking an expanded workflow collapses it", () => {
+  it("clicking an expanded workflow tag collapses it", () => {
     render(<KitPreview kit={makeKit()} />);
     fireEvent.click(screen.getByText("Web Application Feature"));
     expect(screen.getByText("UX Review")).toBeDefined();
-    // Click again to collapse
     fireEvent.click(screen.getByText("Web Application Feature"));
     expect(screen.queryByText("UX Review")).toBeNull();
   });
 
-  it("clicking a different workflow collapses the previous one", () => {
+  it("clicking a different workflow tag collapses the previous one", () => {
     render(<KitPreview kit={makeKit()} />);
     fireEvent.click(screen.getByText("Web Application Feature"));
     expect(screen.getByText("UX Review")).toBeDefined();
-    // Click Bug Fix
     fireEvent.click(screen.getByText("Bug Fix"));
     expect(screen.getByText("Triage")).toBeDefined();
     expect(screen.queryByText("Deploy")).toBeNull();
