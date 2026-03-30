@@ -336,6 +336,7 @@ export function BoardToolbar({
             variant="outline"
             size="sm"
             className="h-8 gap-1.5 text-xs"
+            data-testid="import-button"
             onClick={() => setImportOpen(true)}
           >
             <Upload className="h-3.5 w-3.5" />

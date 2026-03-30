@@ -33,12 +33,9 @@ test.describe("Board AI Generation", () => {
     }
   });
 
-  test("should show Import button on board toolbar", async ({ userAPage: page }, testInfo) => {
-    // Import button text hidden on mobile, icon-only selector unreliable
-    if (testInfo.project.name === "Mobile Chrome") { test.skip(); return; }
-
+  test("should show Import button on board toolbar", async ({ userAPage: page }) => {
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
-    await expect(page.getByRole("button", { name: /Import/i })).toBeVisible();
+    await expect(page.getByTestId("import-button")).toBeVisible();
   });
 });
