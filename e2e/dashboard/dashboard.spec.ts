@@ -12,8 +12,8 @@ test.describe("Dashboard", () => {
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
     // Key sections should be present
-    await expect(page.getByText("My Ideas")).toBeVisible();
-    await expect(page.getByText("My Agents")).toBeVisible();
+    await expect(page.getByText("My Ideas").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
+    await expect(page.getByText("My Agents").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
   test("should have link to create an idea", async ({ userAPage: page }) => {

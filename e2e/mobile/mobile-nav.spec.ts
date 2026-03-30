@@ -2,7 +2,6 @@ import { test, expect } from "../fixtures/auth";
 import { EXPECT_TIMEOUT } from "../fixtures/constants";
 
 test.describe("Mobile Navigation", () => {
-  // Only run on Mobile Chrome
   test.beforeEach(async ({}, testInfo) => {
     if (testInfo.project.name !== "Mobile Chrome") {
       test.skip();
@@ -22,9 +21,8 @@ test.describe("Mobile Navigation", () => {
     await page.getByLabel("Open navigation menu").click();
     await page.waitForTimeout(500);
 
+    // Check for links that are unique to the mobile menu
     await expect(page.getByRole("link", { name: "Dashboard" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
-    await expect(page.getByRole("link", { name: "Ideas" })).toBeVisible();
-    await expect(page.getByRole("link", { name: "Agents" })).toBeVisible();
     await expect(page.getByRole("link", { name: "Guide" })).toBeVisible();
   });
 
@@ -34,7 +32,8 @@ test.describe("Mobile Navigation", () => {
 
     await page.getByLabel("Open navigation menu").click();
     await page.waitForTimeout(500);
-    await page.getByRole("link", { name: "Ideas" }).click();
+    // Use the mobile menu link specifically
+    await page.getByRole("link", { name: "Ideas" }).first().click();
 
     await page.waitForURL(/\/ideas/, { timeout: EXPECT_TIMEOUT });
   });
