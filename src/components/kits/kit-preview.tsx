@@ -16,15 +16,15 @@ interface KitPreviewProps {
   columnCount?: number;
 }
 
-const ROLE_ICONS: Record<string, string> = {
-  "Full Stack Engineer": "\u{1F528}",
-  "Front End Engineer": "\u{1F3A8}",
-  "UX Designer": "\u{1F3A8}",
-  "QA Engineer": "\u{1F50D}",
-  "Security Engineer": "\u{1F6E1}\uFE0F",
-  "DevOps Engineer": "\u{1F680}",
-  "Product Owner": "\u{1F4CB}",
-  "Business Analyst": "\u{1F4CA}",
+const ROLE_META: Record<string, { icon: string; short: string }> = {
+  "Full Stack Engineer": { icon: "\u{1F528}", short: "Full Stack" },
+  "Front End Engineer": { icon: "\u{1F3A8}", short: "Frontend" },
+  "UX Designer": { icon: "\u{1F3A8}", short: "UX" },
+  "QA Engineer": { icon: "\u{1F50D}", short: "QA" },
+  "Security Engineer": { icon: "\u{1F6E1}\uFE0F", short: "Security" },
+  "DevOps Engineer": { icon: "\u{1F680}", short: "DevOps" },
+  "Product Owner": { icon: "\u{1F4CB}", short: "PO" },
+  "Business Analyst": { icon: "\u{1F4CA}", short: "BA" },
 };
 
 const LABEL_COLOR_MAP: Record<string, { bg: string; text: string }> = {
@@ -73,9 +73,9 @@ export function KitPreview({ kit, selectedIndex = 0, columnCount = 3 }: KitPrevi
   const isCustom = kit.name === "Custom";
   const uniqueTemplates = mappings.length > 0 ? getUniqueTemplates(mappings) : [];
 
-  // Reset expanded workflow to primary (index 0) when kit changes
+  // All workflows collapsed by default when kit changes
   useEffect(() => {
-    setExpandedWf(0);
+    setExpandedWf(-1);
   }, [kit.id]);
 
   // Arrow position based on which column the selected card is in
@@ -116,15 +116,19 @@ export function KitPreview({ kit, selectedIndex = 0, columnCount = 3 }: KitPrevi
             Your AI Team ({agentRoles.length})
           </p>
           <div className="flex flex-wrap gap-1.5">
-            {agentRoles.map((role) => (
-              <span
-                key={role.role}
-                className="inline-flex items-center gap-1 rounded-md border border-border bg-white/[0.04] px-2 py-0.5 text-[0.7rem] text-muted-foreground"
-              >
-                <span className="text-[0.8rem]">{ROLE_ICONS[role.role] ?? "\u{1F464}"}</span>
-                {role.role}
-              </span>
-            ))}
+            {agentRoles.map((role) => {
+              const meta = ROLE_META[role.role];
+              return (
+                <span
+                  key={role.role}
+                  className="inline-flex items-center gap-1 rounded-md border border-border bg-white/[0.04] px-2 py-0.5 text-[0.7rem] text-muted-foreground"
+                  title={role.role}
+                >
+                  <span className="text-[0.8rem]">{meta?.icon ?? "\u{1F464}"}</span>
+                  {meta?.short ?? role.role}
+                </span>
+              );
+            })}
           </div>
         </div>
       )}

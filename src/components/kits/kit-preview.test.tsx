@@ -99,11 +99,11 @@ describe("KitPreview", () => {
 
   // --- AI Team ---
 
-  it("renders agent role chips", () => {
+  it("renders abbreviated agent role chips", () => {
     render(<KitPreview kit={makeKit()} />);
-    expect(screen.getByText("Full Stack Engineer")).toBeDefined();
-    expect(screen.getByText("UX Designer")).toBeDefined();
-    expect(screen.getByText("QA Engineer")).toBeDefined();
+    expect(screen.getByText("Full Stack")).toBeDefined();
+    expect(screen.getByText("UX")).toBeDefined();
+    expect(screen.getByText("QA")).toBeDefined();
   });
 
   it("hides agent section when no roles", () => {
@@ -135,29 +135,46 @@ describe("KitPreview", () => {
     expect(bugLabels.length).toBeGreaterThanOrEqual(1);
   });
 
-  it("expands primary workflow step chain by default", () => {
+  it("all workflows collapsed by default", () => {
     render(<KitPreview kit={makeKit()} />);
-    // Primary workflow steps should be visible
+    // No step chains should be visible
+    expect(screen.queryByText("UX Review")).toBeNull();
+    expect(screen.queryByText("Triage")).toBeNull();
+  });
+
+  it("clicking a workflow expands its step chain", () => {
+    render(<KitPreview kit={makeKit()} />);
+    // Click primary workflow
+    fireEvent.click(screen.getByText("Web Application Feature"));
     expect(screen.getByText("UX Review")).toBeDefined();
-    expect(screen.getByText("Implementation")).toBeDefined();
     expect(screen.getByText("Deploy")).toBeDefined();
   });
 
-  it("clicking a different workflow expands its step chain", () => {
+  it("clicking an expanded workflow collapses it", () => {
     render(<KitPreview kit={makeKit()} />);
-    // Click Bug Fix workflow row
+    fireEvent.click(screen.getByText("Web Application Feature"));
+    expect(screen.getByText("UX Review")).toBeDefined();
+    // Click again to collapse
+    fireEvent.click(screen.getByText("Web Application Feature"));
+    expect(screen.queryByText("UX Review")).toBeNull();
+  });
+
+  it("clicking a different workflow collapses the previous one", () => {
+    render(<KitPreview kit={makeKit()} />);
+    fireEvent.click(screen.getByText("Web Application Feature"));
+    expect(screen.getByText("UX Review")).toBeDefined();
+    // Click Bug Fix
     fireEvent.click(screen.getByText("Bug Fix"));
-    // Bug Fix steps should now be visible
     expect(screen.getByText("Triage")).toBeDefined();
-    expect(screen.getByText("Fix")).toBeDefined();
-    // Primary steps should be hidden
     expect(screen.queryByText("Deploy")).toBeNull();
   });
 
-  it("highlights approval gate steps with lock icon", () => {
+  it("highlights approval gate steps with lock icon when expanded", () => {
     const { container } = render(<KitPreview kit={makeKit()} />);
+    fireEvent.click(screen.getByText("Web Application Feature"));
     const lockIcons = container.querySelectorAll("svg.lucide-lock");
-    expect(lockIcons.length).toBeGreaterThanOrEqual(1);
+    // At least 1 in the step chain + 1 in the key
+    expect(lockIcons.length).toBeGreaterThanOrEqual(2);
   });
 
   it("hides workflow section when no mappings", () => {
