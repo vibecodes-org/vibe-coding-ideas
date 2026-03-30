@@ -178,12 +178,12 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
             </div>
 
             {/* Personality & Instructions */}
-            {promptFields && (promptFields.goal || promptFields.constraints || promptFields.approach) && (
+            {promptFields && (promptFields.goal || promptFields.expertise || promptFields.constraints || promptFields.approach) && (
               <>
                 <h3 className="text-sm font-semibold flex items-center gap-2">
                   &#x1F9E0; Personality & Instructions
                 </h3>
-                <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2">
                   {promptFields.goal && (
                     <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
                       <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-emerald-500">
@@ -191,6 +191,16 @@ export function AgentProfileDialog({ botId, open, onOpenChange, onRemove, remove
                       </div>
                       <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed">
                         {promptFields.goal}
+                      </div>
+                    </div>
+                  )}
+                  {promptFields.expertise && (
+                    <div className="rounded-lg border border-border bg-muted/30 overflow-hidden">
+                      <div className="flex items-center gap-2 px-3.5 py-2.5 border-b border-border/50 text-xs font-semibold text-violet-500">
+                        &#x1F4A1; Expertise
+                      </div>
+                      <div className="px-3.5 py-3 text-xs text-muted-foreground leading-relaxed whitespace-pre-wrap">
+                        {promptFields.expertise}
                       </div>
                     </div>
                   )}
