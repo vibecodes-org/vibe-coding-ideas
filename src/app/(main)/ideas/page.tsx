@@ -46,7 +46,8 @@ export default async function FeedPage({
 
   let query = supabase
     .from("ideas")
-    .select("*, author:users!ideas_author_id_fkey(*)", { count: "exact" });
+    .select("*, author:users!ideas_author_id_fkey(*)", { count: "exact" })
+    .not("title", "like", "[E2E]%");
 
   // View filter
   if (view === "mine" && user) {
