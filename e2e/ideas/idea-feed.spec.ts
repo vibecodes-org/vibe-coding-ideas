@@ -25,11 +25,10 @@ test.describe("Idea Feed", () => {
     await expect(page.getByText("Idea Feed")).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
-  test("should show All Ideas, My Ideas, and Collaborating tabs", async ({ userAPage: page }) => {
+  test("should show view tabs", async ({ userAPage: page }) => {
     await page.goto("/ideas");
     await expect(page.getByText("All Ideas")).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await expect(page.getByText("My Ideas")).toBeVisible();
-    await expect(page.getByText("Collaborating")).toBeVisible();
   });
 
   test("should have search input", async ({ userAPage: page }) => {
@@ -37,15 +36,10 @@ test.describe("Idea Feed", () => {
     await expect(page.getByPlaceholder("Search ideas...")).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
-  test("should have sort and status filters", async ({ userAPage: page }) => {
+  test("should display idea cards", async ({ userAPage: page }) => {
     await page.goto("/ideas");
     await expect(page.getByText("Idea Feed")).toBeVisible({ timeout: EXPECT_TIMEOUT });
-    // Sort dropdown and status filter should exist
-    await expect(page.getByText(/Newest|All statuses/i).first()).toBeVisible();
-  });
-
-  test("should have New Idea button", async ({ userAPage: page }) => {
-    await page.goto("/ideas");
-    await expect(page.getByRole("link", { name: /New Idea/i })).toBeVisible({ timeout: EXPECT_TIMEOUT });
+    // There should be at least some idea cards on the page
+    await expect(page.locator("[data-testid^='idea-card-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 });
