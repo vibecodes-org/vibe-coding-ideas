@@ -1,0 +1,209 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>In-Progress Border Design — Task Card States</title>
+<style>
+  :root {
+    --bg: #0a0a0a;
+    --surface: #141414;
+    --border: #2a2a2a;
+    --text: #e5e5e5;
+    --text-muted: #888;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 2rem;
+    max-width: 900px;
+    margin: 0 auto;
+  }
+  h1 { font-size: 1.5rem; margin-bottom: 0.5rem; }
+  h2 { font-size: 1.1rem; margin: 2rem 0 1rem; color: #3b82f6; }
+  p { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 1.5rem; line-height: 1.5; }
+
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; margin: 1.5rem 0; }
+  @media (max-width: 600px) { .cards { grid-template-columns: 1fr; } }
+
+  .card {
+    background: var(--surface);
+    border-radius: 8px;
+    padding: 1rem;
+    border: 1px solid var(--border);
+    min-height: 120px;
+  }
+  .card-label { font-size: 0.65rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.75rem; }
+  .card-title { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.5rem; }
+  .card-desc { font-size: 0.75rem; color: var(--text-muted); margin-bottom: 0.75rem; }
+
+  /* Badge styles */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .badge-idle { border: 1px solid var(--border); background: rgba(255,255,255,0.04); color: var(--text-muted); }
+  .badge-active { border: 1px solid rgba(59,130,246,0.25); background: rgba(59,130,246,0.15); color: #60a5fa; }
+  .badge-approval { border: 1px solid rgba(245,158,11,0.25); background: rgba(245,158,11,0.15); color: #fbbf24; }
+  .badge-failed { border: 1px solid rgba(239,68,68,0.2); background: rgba(239,68,68,0.1); color: #f87171; }
+  .badge-complete { border: 1px solid rgba(34,197,94,0.2); background: rgba(34,197,94,0.1); color: #4ade80; }
+
+  .spinner {
+    width: 10px; height: 10px;
+    border: 1.5px solid rgba(96,165,250,0.3);
+    border-top-color: #60a5fa;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ===== BORDER STATES ===== */
+
+  /* Default — no workflow activity */
+  .state-default { border: 1px solid var(--border); }
+
+  /* Awaiting approval — static amber (existing) */
+  .state-approval {
+    border: 1px solid rgba(245,158,11,0.4);
+    box-shadow: 0 0 12px rgba(251,191,36,0.2);
+    ring: 1px solid rgba(245,158,11,0.2);
+  }
+
+  /* IN PROGRESS — animated blue (NEW) */
+  @keyframes pulse-blue {
+    0%, 100% {
+      border-color: rgba(59,130,246,0.4);
+      box-shadow: 0 0 8px rgba(59,130,246,0.15);
+    }
+    50% {
+      border-color: rgba(59,130,246,0.7);
+      box-shadow: 0 0 16px rgba(59,130,246,0.3);
+    }
+  }
+  .state-in-progress {
+    border: 1px solid rgba(59,130,246,0.4);
+    box-shadow: 0 0 8px rgba(59,130,246,0.15);
+    animation: pulse-blue 2s ease-in-out infinite;
+  }
+
+  /* Failed — red left border (existing) */
+  .state-failed {
+    border: 1px solid var(--border);
+    border-left: 2px solid #ef4444;
+  }
+
+  /* Stale — amber left border (existing) */
+  .state-stale {
+    border: 1px solid var(--border);
+    border-left: 2px solid #f59e0b;
+  }
+
+  .state-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: 0.5rem;
+    padding: 3px 8px;
+    border-radius: 4px;
+    display: inline-block;
+  }
+  .state-label-new { background: rgba(59,130,246,0.2); color: #60a5fa; }
+  .state-label-existing { background: rgba(255,255,255,0.05); color: var(--text-muted); }
+
+  .spec { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; padding: 1.25rem; margin: 1rem 0; }
+  .spec h3 { font-size: 0.9rem; margin-bottom: 0.5rem; }
+  .spec code { background: rgba(255,255,255,0.08); padding: 1px 5px; border-radius: 3px; font-size: 0.8rem; }
+  .spec ul { padding-left: 1.25rem; margin: 0.5rem 0; }
+  .spec li { font-size: 0.82rem; margin: 0.3rem 0; color: var(--text-muted); }
+</style>
+</head>
+<body>
+
+<h1>In-Progress Border Design</h1>
+<p>Building on the <strong>Requirements</strong> step: add a blue animated border to task cards with active workflow steps. Below shows all 5 border states side-by-side, with the new in-progress state.</p>
+
+<h2>All Border States</h2>
+
+<div class="cards">
+  <div class="card state-default">
+    <span class="state-label state-label-existing">Existing — Default / Idle</span>
+    <div class="card-title">Refactor auth middleware</div>
+    <div class="card-desc">No active workflow steps</div>
+    <span class="badge badge-idle">&#10003; 2/4</span>
+  </div>
+
+  <div class="card state-in-progress">
+    <span class="state-label state-label-new">New — In Progress</span>
+    <div class="card-title">Add user notifications</div>
+    <div class="card-desc">Workflow step actively being worked on</div>
+    <span class="badge badge-active"><span class="spinner"></span> Implementation in progress</span>
+    <span class="badge badge-idle" style="margin-left: 4px;">2/6</span>
+  </div>
+
+  <div class="card state-approval">
+    <span class="state-label state-label-existing">Existing — Awaiting Approval</span>
+    <div class="card-title">Fix board generation hang</div>
+    <div class="card-desc">Workflow step needs human sign-off</div>
+    <span class="badge badge-approval">&#128276; Final Sign-off needs approval</span>
+    <span class="badge badge-idle" style="margin-left: 4px;">5/6</span>
+  </div>
+
+  <div class="card state-failed">
+    <span class="state-label state-label-existing">Existing — Failed</span>
+    <div class="card-title">Migrate database schema</div>
+    <div class="card-desc">A workflow step has failed</div>
+    <span class="badge badge-failed">&#9888; Implementation failed</span>
+    <span class="badge badge-idle" style="margin-left: 4px;">1/4</span>
+  </div>
+
+  <div class="card state-stale">
+    <span class="state-label state-label-existing">Existing — Stale (> 2h)</span>
+    <div class="card-title">Review API endpoints</div>
+    <div class="card-desc">In progress but no activity for 2+ hours</div>
+    <span class="badge badge-approval">&#128337; QA Testing stale &middot; 4h</span>
+    <span class="badge badge-idle" style="margin-left: 4px;">3/5</span>
+  </div>
+</div>
+
+<h2>Animation Spec</h2>
+
+<div class="spec">
+  <h3>CSS Animation: <code>pulse-blue</code></h3>
+  <ul>
+    <li><strong>Duration:</strong> 2s, ease-in-out, infinite</li>
+    <li><strong>0% / 100%:</strong> <code>border-color: rgba(59,130,246,0.4)</code>, <code>box-shadow: 0 0 8px rgba(59,130,246,0.15)</code></li>
+    <li><strong>50%:</strong> <code>border-color: rgba(59,130,246,0.7)</code>, <code>box-shadow: 0 0 16px rgba(59,130,246,0.3)</code></li>
+    <li>Subtle pulse — the border brightens and the glow expands slightly, then fades back</li>
+    <li>2s cycle is slow enough to not be distracting, fast enough to notice</li>
+  </ul>
+</div>
+
+<div class="spec">
+  <h3>Tailwind Implementation</h3>
+  <p style="margin-bottom: 0.5rem;">The animation can't be fully expressed with Tailwind utility classes — needs a custom <code>@keyframes</code> in the component or global CSS. Recommended approach:</p>
+  <ul>
+    <li>Add the <code>animate-pulse-blue</code> class with inline <code>style</code> for the keyframes, OR</li>
+    <li>Define the keyframe in Tailwind config / global CSS and reference via class</li>
+    <li>Static classes: <code>border-blue-500/40 ring-1 ring-blue-500/20</code> as the base, with the animation handling the glow pulse</li>
+  </ul>
+</div>
+
+<div class="spec">
+  <h3>Accessibility</h3>
+  <ul>
+    <li>Animation respects <code>prefers-reduced-motion: reduce</code> — disable the pulse, keep the static blue border</li>
+    <li>Blue-500 on dark background meets WCAG contrast requirements for decorative borders</li>
+    <li>The border is decorative (status info is also conveyed by the badge text) — not relying solely on colour/animation</li>
+  </ul>
+</div>
+
+</body>
+</html>

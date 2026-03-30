@@ -379,11 +379,13 @@ export const BoardTaskCard = memo(function BoardTaskCard({
             ? "border-primary ring-2 ring-primary/50"
             : task.workflow_step_awaiting_approval > 0
               ? "border-amber-500/40 ring-1 ring-amber-500/20 shadow-[0_0_12px_rgba(251,191,36,0.2)]"
-              : task.workflow_step_failed > 0
-                ? "border-l-2 border-l-red-500 border-border"
-                : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (Date.now() - new Date(task.workflow_step_started_at).getTime()) >= STALE_THRESHOLD_MS
-                  ? "border-l-2 border-l-amber-500 border-border"
-                  : "border-border"
+              : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (Date.now() - new Date(task.workflow_step_started_at).getTime()) < STALE_THRESHOLD_MS
+                ? "border-blue-500/40 ring-1 ring-blue-500/20 animate-workflow-in-progress"
+                : task.workflow_step_failed > 0
+                  ? "border-l-2 border-l-red-500 border-border"
+                  : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (Date.now() - new Date(task.workflow_step_started_at).getTime()) >= STALE_THRESHOLD_MS
+                    ? "border-l-2 border-l-amber-500 border-border"
+                    : "border-border"
         } ${isDragging ? "opacity-50" : ""} ${isArchived ? "opacity-50" : ""}`}
         onClick={() => {
           setInitialTab(undefined);

@@ -213,6 +213,27 @@
   }
 }
 
+@keyframes workflow-in-progress {
+  0%, 100% {
+    border-color: rgba(59, 130, 246, 0.4);
+    box-shadow: 0 0 8px rgba(59, 130, 246, 0.15);
+  }
+  50% {
+    border-color: rgba(59, 130, 246, 0.7);
+    box-shadow: 0 0 16px rgba(59, 130, 246, 0.3);
+  }
+}
+
+.animate-workflow-in-progress {
+  animation: workflow-in-progress 2s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-workflow-in-progress {
+    animation: none;
+  }
+}
+
 .enhance-streaming-cursor {
   display: inline-block;
   width: 2px;
