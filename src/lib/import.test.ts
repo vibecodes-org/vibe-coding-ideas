@@ -11,6 +11,7 @@ import {
   getUniqueColumnNames,
   type ImportTask,
   type CsvFieldMapping,
+  type SequentialInsertCallbacks,
 } from "./import";
 import type { BoardColumnWithTasks } from "@/types";
 
@@ -569,5 +570,57 @@ describe("getUniqueColumnNames", () => {
 
   it("returns empty array for empty task list", () => {
     expect(getUniqueColumnNames([])).toEqual([]);
+  });
+});
+
+// ── SequentialInsertCallbacks type ────────────────────────────────────
+
+describe("SequentialInsertCallbacks", () => {
+  it("accepts callbacks with auto-rule progress hooks", () => {
+    const callbacks: SequentialInsertCallbacks = {
+      onTaskCreated: () => {},
+      onTaskError: () => {},
+      onSetupComplete: () => {},
+      onAutoRulesStart: (totalTasks: number) => {
+        expect(typeof totalTasks).toBe("number");
+      },
+      onAutoRuleApplied: (taskId: string, current: number, total: number) => {
+        expect(typeof taskId).toBe("string");
+        expect(typeof current).toBe("number");
+        expect(typeof total).toBe("number");
+      },
+    };
+
+    // Verify all callbacks are callable
+    callbacks.onTaskCreated(0, "test");
+    callbacks.onTaskError(0, "test", "error");
+    callbacks.onSetupComplete?.({ columns: 1, labels: 2 });
+    callbacks.onAutoRulesStart?.(5);
+    callbacks.onAutoRuleApplied?.("task-1", 1, 5);
+  });
+
+  it("works without optional auto-rule callbacks", () => {
+    const callbacks: SequentialInsertCallbacks = {
+      onTaskCreated: () => {},
+      onTaskError: () => {},
+    };
+
+    // Should compile and run without error
+    expect(callbacks.onAutoRulesStart).toBeUndefined();
+    expect(callbacks.onAutoRuleApplied).toBeUndefined();
+  });
+
+  it("onAutoRulesStart receives 0 when no auto-rules exist", () => {
+    let receivedTotal: number | undefined;
+    const callbacks: SequentialInsertCallbacks = {
+      onTaskCreated: () => {},
+      onTaskError: () => {},
+      onAutoRulesStart: (totalTasks) => {
+        receivedTotal = totalTasks;
+      },
+    };
+
+    callbacks.onAutoRulesStart?.(0);
+    expect(receivedTotal).toBe(0);
   });
 });

@@ -262,6 +262,25 @@ export async function applyWorkflowTemplate(
 
   if (!user) throw new Error("Not authenticated");
 
+  return applyWorkflowTemplateWithContext(supabase, user.id, taskId, templateId);
+}
+
+/**
+ * Core workflow template application logic.
+ * Accepts a shared supabase client and userId to avoid per-call auth overhead
+ * when called in batch (e.g. from triggerAutoRulesForTasks).
+ *
+ * Optional `roleMatchCache` enables caching AI role matches across multiple
+ * tasks using the same template — avoids redundant Claude API calls.
+ */
+export async function applyWorkflowTemplateWithContext(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: any,
+  userId: string,
+  taskId: string,
+  templateId: string,
+  roleMatchCache?: Map<string, Record<string, import("@/lib/ai-role-matching").RoleMatchWithTier>>
+) {
   // Fetch the template
   const { data: template, error: templateError } = await supabase
     .from("workflow_templates")
@@ -305,7 +324,7 @@ export async function applyWorkflowTemplate(
       task_id: taskId,
       template_id: templateId,
       status: "pending",
-      started_by: user.id,
+      started_by: userId,
     })
     .select("*")
     .single();
@@ -322,22 +341,29 @@ export async function applyWorkflowTemplate(
 
   // Build agent candidates with names for AI role matching
   const candidates = (poolAgents ?? [])
-    .map((agent) => {
-      const profile = agent.bot_profiles as unknown as { id: string; name: string | null; role: string | null };
+    .map((agent: { bot_id: string; bot_profiles: unknown }) => {
+      const profile = agent.bot_profiles as { id: string; name: string | null; role: string | null };
       return profile?.role ? { botId: agent.bot_id, name: profile.name ?? "", role: profile.role } : null;
     })
-    .filter((c): c is { botId: string; name: string; role: string } => c !== null);
+    .filter((c: unknown): c is { botId: string; name: string; role: string } => c !== null);
 
   // Collect unique step roles for matching
   const templateSteps = template.steps as WorkflowTemplateStep[];
-  const stepRoles = [...new Set(templateSteps.map((s) => s.role).filter(Boolean))];
+  const stepRoles = [...new Set(templateSteps.map((s: WorkflowTemplateStep) => s.role).filter(Boolean))];
 
-  // Match roles using AI (with fuzzy fallback)
-  const roleMatches = await matchRolesWithAiOrFuzzy(supabase, user.id, stepRoles, candidates);
+  // Match roles — use cache if available (avoids redundant AI calls for same template)
+  let roleMatches: Record<string, import("@/lib/ai-role-matching").RoleMatchWithTier>;
+  const cacheKey = `${templateId}:${task.idea_id}`;
+  if (roleMatchCache?.has(cacheKey)) {
+    roleMatches = roleMatchCache.get(cacheKey)!;
+  } else {
+    roleMatches = await matchRolesWithAiOrFuzzy(supabase, userId, stepRoles, candidates);
+    roleMatchCache?.set(cacheKey, roleMatches);
+  }
 
   // Create workflow steps from template steps
   const steps = templateSteps.map(
-    (step, index) => {
+    (step: WorkflowTemplateStep, index: number) => {
       const match = step.role ? roleMatches[step.role] : undefined;
       return {
         task_id: taskId,

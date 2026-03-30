@@ -48,6 +48,7 @@ interface BoardTaskCardProps {
   canUseAi?: boolean;
   hasByokKey?: boolean;
   starterCredits?: number;
+  isWiring?: boolean;
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
@@ -102,9 +103,22 @@ function getWorkflowStatus(task: BoardTaskWithAssignee) {
   return { type: "idle" as const, title: null };
 }
 
-function WorkflowStatusBadge({ task }: { task: BoardTaskWithAssignee }) {
+function WiringWorkflowBadge() {
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-violet-500/20 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-400">
+      <span className="h-1.5 w-1.5 shrink-0 animate-pulse rounded-full bg-violet-400" />
+      Wiring workflow&hellip;
+    </span>
+  );
+}
+
+function WorkflowStatusBadge({ task, isWiring }: { task: BoardTaskWithAssignee; isWiring?: boolean }) {
   const status = getWorkflowStatus(task);
-  if (!status) return null;
+  if (!status) {
+    // Show wiring indicator if background auto-rules are running and task has labels
+    if (isWiring && task.labels.length > 0) return <WiringWorkflowBadge />;
+    return null;
+  }
 
   const { workflow_step_completed, workflow_step_total } = task;
   const fraction = `${workflow_step_completed}/${workflow_step_total}`;
@@ -212,6 +226,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   canUseAi = false,
   hasByokKey = false,
   starterCredits = 0,
+  isWiring = false,
 }: BoardTaskCardProps) {
   const botRoles = useBotRoles();
   // Use context for auto-open — bypasses memo chain and reacts to URL navigation
@@ -441,7 +456,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                 )}
                 {task.due_date && <DueDateBadge dueDate={task.due_date} />}
                 {task.workflow_step_total > 0 && (
-                  <WorkflowStatusBadge task={task} />
+                  <WorkflowStatusBadge task={task} isWiring={isWiring} />
                 )}
                 {!!attachmentCount && attachmentCount > 0 && (
                   <Tooltip>

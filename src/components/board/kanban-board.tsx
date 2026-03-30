@@ -30,6 +30,7 @@ import { BoardToolbar } from "./board-toolbar";
 import { BoardEmptyState } from "./board-empty-state";
 import { NudgeBanner } from "@/components/shared/nudge-banner";
 import { BoardOpsContext, type BoardOptimisticOps } from "./board-context";
+import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { moveBoardTask, reorderBoardColumns } from "@/actions/board";
 import { POSITION_GAP } from "@/lib/constants";
@@ -301,6 +302,19 @@ export function KanbanBoard({
 
   // AI Generate dialog state (lifted so both toolbar and empty state can trigger it)
   const [aiGenerateOpen, setAiGenerateOpen] = useState(false);
+
+  // Check if background wiring is in progress (from AI generation)
+  const isWiring = useMemo(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      const raw = sessionStorage.getItem(`board-wiring-${ideaId}`);
+      if (!raw) return false;
+      const wiring = JSON.parse(raw) as { startedAt: number };
+      // Auto-expire after 2 minutes
+      return Date.now() - wiring.startedAt < 120_000;
+    } catch { return false; }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ideaId, columns]); // Re-evaluate when columns change (Realtime refresh)
 
   // Board empty state — true when every column has zero tasks
   const isBoardEmpty = useMemo(
@@ -899,6 +913,38 @@ export function KanbanBoard({
         aiGenerateOpen={aiGenerateOpen}
         onAiGenerateOpenChange={setAiGenerateOpen}
       />
+      {/* Background wiring banner — shown when AI generation just fired auto-rules */}
+      {(() => {
+        if (typeof window === "undefined") return null;
+        try {
+          const wiringRaw = sessionStorage.getItem(`board-wiring-${ideaId}`);
+          if (!wiringRaw) return null;
+          const wiring = JSON.parse(wiringRaw) as { total: number; completed: number; startedAt: number };
+          // Auto-expire after 2 minutes
+          if (Date.now() - wiring.startedAt > 120_000) {
+            sessionStorage.removeItem(`board-wiring-${ideaId}`);
+            return null;
+          }
+          return (
+            <div className="mb-3 flex shrink-0 items-center gap-3 rounded-lg border border-violet-500/20 bg-violet-500/[0.06] px-4 py-2.5 text-sm">
+              <Loader2 className="h-4 w-4 shrink-0 animate-spin text-violet-400" />
+              <span className="text-violet-300/90">
+                Setting up workflows in the background&hellip;
+              </span>
+              <button
+                onClick={() => {
+                  try { sessionStorage.removeItem(`board-wiring-${ideaId}`); } catch { /* noop */ }
+                  // Force re-render by toggling a harmless state
+                  setEmptyStateDismissed((v) => v);
+                }}
+                className="ml-auto text-xs text-zinc-500 hover:text-zinc-400"
+              >
+                &times;
+              </button>
+            </div>
+          );
+        } catch { return null; }
+      })()}
       {/* State-aware nudge banners (only when board has tasks, first match wins) */}
       {!isReadOnly && !isBoardEmpty && (() => {
         const hasAllocatedAgents = ideaAgents.length > 0;
@@ -1004,7 +1050,7 @@ export function KanbanBoard({
                       ideaDescription={ideaDescription}
                       isReadOnly={isReadOnly}
                       isDragTarget={dragOverColumnId === filteredCol.id}
-
+                      isWiring={isWiring}
                     />
                   );
                 })}

@@ -5,7 +5,9 @@ import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_BOARD_COLUMNS, POSITION_GAP } from "@/lib/constants";
 import { validateTitle, validateOptionalDescription, validateLabelName, validateLabelColor, validateComment } from "@/lib/validation";
 import { checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow } from "@/lib/workflow-helpers";
-import { applyWorkflowTemplate } from "@/actions/workflow-templates";
+import { applyWorkflowTemplate, applyWorkflowTemplateWithContext } from "@/actions/workflow-templates";
+import { logger } from "@/lib/logger";
+import type { RoleMatchWithTier } from "@/lib/ai-role-matching";
 
 export async function initializeBoardColumns(ideaId: string) {
   const supabase = await createClient();
@@ -480,11 +482,13 @@ export async function addLabelsToTask(
 
 /**
  * Trigger auto-rules for tasks that already have labels assigned.
- * Used by import flows where labels are inserted directly (not via addLabelsToTask).
+ * Uses controlled concurrency (batches of 5) with a shared Supabase client
+ * and cached role matching to avoid redundant auth + AI calls.
  */
 export async function triggerAutoRulesForTasks(
   taskLabelPairs: { taskId: string; labelIds: string[] }[],
-  ideaId: string
+  ideaId: string,
+  onProgress?: (taskId: string) => void
 ) {
   if (taskLabelPairs.length === 0) return;
 
@@ -495,11 +499,31 @@ export async function triggerAutoRulesForTasks(
 
   if (!user) throw new Error("Not authenticated");
 
-  for (const { taskId, labelIds } of taskLabelPairs) {
-    for (const labelId of labelIds) {
-      await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate);
-    }
+  // Shared role match cache — same template+idea pair reuses AI results
+  const roleMatchCache = new Map<string, Record<string, RoleMatchWithTier>>();
+
+  // Wrap applyWorkflowTemplate to use shared client + cache
+  const applyFn = (taskId: string, templateId: string) =>
+    applyWorkflowTemplateWithContext(supabase, user.id, taskId, templateId, roleMatchCache);
+
+  // Process in batches of 5 for controlled concurrency
+  const BATCH_SIZE = 5;
+  for (let i = 0; i < taskLabelPairs.length; i += BATCH_SIZE) {
+    const batch = taskLabelPairs.slice(i, i + BATCH_SIZE);
+    await Promise.all(
+      batch.map(async ({ taskId, labelIds }) => {
+        for (const labelId of labelIds) {
+          await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyFn);
+        }
+        onProgress?.(taskId);
+      })
+    );
   }
+
+  logger.info("Auto-rules triggered", {
+    taskCount: taskLabelPairs.length,
+    cachedTemplates: roleMatchCache.size,
+  });
 }
 
 export async function checkLabelAutoRuleWorkflow(

@@ -656,6 +656,8 @@ export interface SequentialInsertCallbacks {
   onTaskCreated: (index: number, title: string) => void;
   onTaskError: (index: number, title: string, error: string) => void;
   onSetupComplete?: (stats: { columns: number; labels: number }) => void;
+  onAutoRulesStart?: (totalTasks: number) => void;
+  onAutoRuleApplied?: (taskId: string, current: number, total: number) => void;
 }
 
 export interface SequentialInsertResult {
@@ -663,6 +665,8 @@ export interface SequentialInsertResult {
   failed: { index: number; title: string; error: string }[];
   columnsCreated: number;
   labelsCreated: number;
+  /** Promise that resolves when background auto-rule wiring completes. Fire-and-forget safe. */
+  autoRulesPromise?: Promise<void>;
 }
 
 export async function insertTasksSequentially(
@@ -982,14 +986,22 @@ export async function insertTasksSequentially(
     }
   }
 
-  // ── Trigger auto-rules for labelled tasks ──────────────────────────
+  // ── Trigger auto-rules for labelled tasks (fire-and-forget) ────────
+  // Auto-rules run in the background so the UI can navigate to the board
+  // immediately. The promise is returned so callers can optionally await.
+  let autoRulesPromise: Promise<void> | undefined;
   if (autoRulePairs.length > 0) {
-    try {
-      await triggerAutoRulesForTasks(autoRulePairs, ideaId);
-    } catch (err) {
+    callbacks.onAutoRulesStart?.(autoRulePairs.length);
+    let autoRuleProgress = 0;
+    autoRulesPromise = triggerAutoRulesForTasks(autoRulePairs, ideaId, (taskId) => {
+      autoRuleProgress++;
+      callbacks.onAutoRuleApplied?.(taskId, autoRuleProgress, autoRulePairs.length);
+    }).catch((err) => {
       logger.error("Auto-rule trigger failed during sequential import", { error: err instanceof Error ? err.message : String(err), ideaId });
-    }
+    });
+  } else {
+    callbacks.onAutoRulesStart?.(0);
   }
 
-  return { created, failed, columnsCreated, labelsCreated };
+  return { created, failed, columnsCreated, labelsCreated, autoRulesPromise };
 }

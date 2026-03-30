@@ -64,6 +64,7 @@ type DialogPhase =
   | "configure"
   | "preview"
   | "inserting"
+  | "wiring-workflows"
   | "complete"
   | "loading-board";
 
@@ -128,7 +129,11 @@ export function AiGenerateDialog({
   // Track whether AI generation happened (credit consumed) so we refresh on close
   const didGenerateRef = useRef(false);
 
-  const busy = generating || phase === "inserting" || phase === "loading-board";
+  // Wiring workflows progress
+  const [wiringProgress, setWiringProgress] = useState({ current: 0, total: 0 });
+  const wiringStartRef = useRef<number>(0);
+
+  const busy = generating || phase === "inserting" || phase === "wiring-workflows" || phase === "loading-board";
 
   // User's own active bots (already filtered to is_active at query level)
   const myAgents = userBotProfiles;
@@ -369,14 +374,38 @@ export function AiGenerateDialog({
                 toast.info(`Created ${parts.join(" and ")}`);
               }
             },
+            onAutoRulesStart: (totalTasks) => {
+              if (totalTasks > 0) {
+                setWiringProgress({ current: 0, total: totalTasks });
+              }
+            },
+            onAutoRuleApplied: (_taskId, current, total) => {
+              setWiringProgress({ current, total });
+            },
           },
           controller.signal
         );
 
         setInsertResult(result);
 
-        // Auto-transition to loading board if no failures
+        // Navigate to board immediately — auto-rules run in background
         if (result.failed.length === 0) {
+          // Store wiring state for the board banner
+          if (result.autoRulesPromise) {
+            const total = wiringProgress.total || 0;
+            if (total > 0) {
+              try {
+                sessionStorage.setItem(
+                  `board-wiring-${ideaId}`,
+                  JSON.stringify({ total, completed: 0, startedAt: Date.now() })
+                );
+              } catch { /* noop */ }
+            }
+            // Let auto-rules finish in background — errors already logged
+            result.autoRulesPromise.then(() => {
+              try { sessionStorage.removeItem(`board-wiring-${ideaId}`); } catch { /* noop */ }
+            });
+          }
           startLoadingBoard(result.created);
         } else {
           setPhase("complete");
@@ -434,6 +463,7 @@ export function AiGenerateDialog({
     setInsertProgress({ current: 0, total: 0 });
     setInsertResult(null);
     setSelectedIndices(new Set());
+    setWiringProgress({ current: 0, total: 0 });
     if (loadingTimeoutRef.current) {
       clearTimeout(loadingTimeoutRef.current);
       loadingTimeoutRef.current = null;
@@ -459,12 +489,13 @@ export function AiGenerateDialog({
       ? Math.round((insertProgress.current / insertProgress.total) * 100)
       : 0;
 
-  const isWidePhase = phase === "preview" || phase === "inserting";
+  const isWidePhase = phase === "preview" || phase === "inserting" || phase === "wiring-workflows";
 
   const phaseDescriptions: Record<DialogPhase, string> = {
     configure: "AI will create tasks, columns, and labels based on the idea description.",
     preview: generating ? "AI is generating tasks..." : "Review generated tasks and select which to apply.",
     inserting: "Creating tasks on the board...",
+    "wiring-workflows": "Setting up workflows for your tasks...",
     "loading-board": "Preparing your board view...",
     complete: "Task generation complete.",
   };
@@ -698,6 +729,46 @@ export function AiGenerateDialog({
             </div>
           )}
 
+          {/* ── Wiring Workflows Phase ─────────────────────────── */}
+          {phase === "wiring-workflows" && (
+            <div className="space-y-4">
+              <div className="flex items-center gap-3">
+                <Loader2 className="h-5 w-5 shrink-0 animate-spin text-violet-400" />
+                <div>
+                  <p className="text-sm font-medium" role="status" aria-live="polite">
+                    Setting up workflows...
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {wiringProgress.current > 0
+                      ? `Applying workflow templates \u2014 ${wiringProgress.current} of ${wiringProgress.total} tasks wired`
+                      : "Applying workflow templates to your tasks"}
+                  </p>
+                </div>
+              </div>
+
+              {/* Indeterminate shimmer progress bar */}
+              <Progress
+                value={100}
+                className="h-1.5 [&>div]:animate-pulse [&>div]:bg-gradient-to-r [&>div]:from-violet-600 [&>div]:to-violet-400"
+              />
+
+              {/* Dimmed task list */}
+              <div className="max-h-[400px] overflow-y-auto rounded-lg border opacity-40">
+                <div className="divide-y divide-border">
+                  {taskStatuses.map((task, i) => (
+                    <div
+                      key={i}
+                      className="flex items-center gap-2.5 px-3.5 py-2 text-sm text-muted-foreground"
+                    >
+                      <Check className="h-4 w-4 shrink-0 text-green-400" />
+                      <span className="min-w-0 truncate">{task.title}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )}
+
           {/* ── Loading Board Phase ────────────────────────────── */}
           {phase === "loading-board" && (
             <div className="space-y-4 py-8">
@@ -831,6 +902,16 @@ export function AiGenerateDialog({
             >
               Cancel
             </Button>
+          </div>
+        )}
+
+        {/* Wiring workflows phase footer */}
+        {phase === "wiring-workflows" && (
+          <div className="shrink-0 border-t border-border bg-background px-4 py-3 sm:px-6">
+            <div className="flex items-center justify-center gap-2 text-xs text-muted-foreground">
+              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              {insertProgress.current} task{insertProgress.current !== 1 ? "s" : ""} created &middot; wiring workflows...
+            </div>
           </div>
         )}
 
