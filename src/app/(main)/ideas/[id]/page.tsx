@@ -20,7 +20,6 @@ import { StatusSelect } from "@/components/ideas/status-select";
 import { CommentThread } from "@/components/comments/comment-thread";
 import { IdeaDetailRealtime } from "@/components/ideas/idea-detail-realtime";
 import { DeleteIdeaButton } from "@/components/ideas/delete-idea-button";
-import { EnhanceIdeaButton } from "@/components/ideas/enhance-idea-button";
 import { IdeaActionsMenu } from "@/components/ideas/idea-actions-menu";
 import { AddCollaboratorPopover } from "@/components/ideas/add-collaborator-popover";
 import { InlineIdeaHeader } from "@/components/ideas/inline-idea-header";
@@ -280,26 +279,13 @@ export default async function IdeaDetailPage({ params }: PageProps) {
                 title={idea.title}
                 isAuthor={isAuthor}
               />
-              {/* Actions: Visibility + Enhance (prominent) + Edit/Delete (icon buttons) */}
+              {/* Actions: Visibility + Edit/Delete (icon buttons) */}
               <div className="flex shrink-0 items-center gap-1.5 mt-1">
                 <VisibilityToggle
                   ideaId={idea.id}
                   visibility={idea.visibility}
                   isAuthor={isAuthor}
                 />
-                {isAuthor && (
-                  <span className="hidden sm:inline-flex">
-                    <EnhanceIdeaButton
-                      ideaId={idea.id}
-                      ideaTitle={idea.title}
-                      currentDescription={idea.description}
-                      bots={userBots}
-                      disabled={!userCanUseAi}
-                      hasByokKey={userHasByokKey}
-                      starterCredits={userStarterCredits}
-                    />
-                  </span>
-                )}
                 {isAuthor && (
                   <Tooltip>
                     <TooltipTrigger asChild>
