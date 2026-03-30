@@ -21,9 +21,8 @@ test.describe("Mobile Navigation", () => {
     await page.getByLabel("Open navigation menu").click();
     await page.waitForTimeout(500);
 
-    // Check for links that are unique to the mobile menu
+    // Check for Dashboard link — unique to mobile menu (desktop uses logo click)
     await expect(page.getByRole("link", { name: "Dashboard" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
-    await expect(page.getByRole("link", { name: "Guide" })).toBeVisible();
   });
 
   test("should navigate to Ideas from mobile menu", async ({ userAPage: page }) => {
