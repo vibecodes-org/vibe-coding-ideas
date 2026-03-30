@@ -21,13 +21,16 @@ test.afterAll(async () => {
 });
 
 test.describe("Board AI Generation", () => {
-  test("should show AI Generate button on board toolbar", async ({ userAPage: page }) => {
+  test("should show AI Generate button on board toolbar", async ({ userAPage: page }, testInfo) => {
+    // AI Generate and Import buttons are hidden on mobile toolbar
+    if (testInfo.project.name === "Mobile Chrome") { test.skip(); return; }
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await expect(page.getByRole("button", { name: /AI Generate/i })).toBeVisible();
   });
 
-  test("should show Import button on board toolbar", async ({ userAPage: page }) => {
+  test("should show Import button on board toolbar", async ({ userAPage: page }, testInfo) => {
+    if (testInfo.project.name === "Mobile Chrome") { test.skip(); return; }
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await expect(page.getByRole("button", { name: /Import/i })).toBeVisible();
