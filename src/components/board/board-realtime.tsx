@@ -1,24 +1,16 @@
 "use client";
 
 import { useEffect, useRef, useCallback } from "react";
-import { useRouter, usePathname, useSearchParams } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const DEBOUNCE_MS = 500;
-
-// Workflow step events need a delayed hard refresh because:
-// 1. The DB trigger that denormalizes counts to board_tasks may not have
-//    committed by the time router.refresh() reads the data
-// 2. router.refresh() can deduplicate/cache repeated calls
-// 3. Supabase read replicas add additional lag
-const WORKFLOW_HARD_REFRESH_DELAY = 2000;
+const FOLLOW_UP_DELAY_MS = 1500;
 
 export function BoardRealtime({ ideaId }: { ideaId: string }) {
   const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const workflowTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const followUpRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const debouncedRefresh = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
@@ -28,23 +20,17 @@ export function BoardRealtime({ ideaId }: { ideaId: string }) {
     }, DEBOUNCE_MS);
   }, [router]);
 
-  // For workflow step changes, do an immediate router.refresh() plus a
-  // delayed cache-busting navigation to guarantee the board re-renders
-  // with fresh data even if router.refresh() returns stale RSC payload.
-  const workflowRefresh = useCallback(() => {
-    // Immediate soft refresh — may catch it if the trigger is fast
-    router.refresh();
-
-    // Delayed hard refresh — navigates to the same page with a cache-bust
-    // param, forcing Next.js to fetch a completely fresh RSC payload
-    if (workflowTimerRef.current) clearTimeout(workflowTimerRef.current);
-    workflowTimerRef.current = setTimeout(() => {
-      const params = new URLSearchParams(searchParams.toString());
-      params.set("_t", Date.now().toString());
-      router.replace(`${pathname}?${params.toString()}`, { scroll: false });
-      workflowTimerRef.current = null;
-    }, WORKFLOW_HARD_REFRESH_DELAY);
-  }, [router, pathname, searchParams]);
+  // Workflow step changes need a follow-up refresh to catch denormalized
+  // column updates on board_tasks that may not be visible on the first read
+  // due to read replica lag or Next.js RSC caching.
+  const debouncedRefreshWithFollowUp = useCallback(() => {
+    debouncedRefresh();
+    if (followUpRef.current) clearTimeout(followUpRef.current);
+    followUpRef.current = setTimeout(() => {
+      router.refresh();
+      followUpRef.current = null;
+    }, FOLLOW_UP_DELAY_MS);
+  }, [debouncedRefresh, router]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -98,7 +84,7 @@ export function BoardRealtime({ ideaId }: { ideaId: string }) {
           table: "task_workflow_steps",
           filter: `idea_id=eq.${ideaId}`,
         },
-        workflowRefresh
+        debouncedRefreshWithFollowUp
       )
       .on(
         "postgres_changes",
@@ -124,10 +110,10 @@ export function BoardRealtime({ ideaId }: { ideaId: string }) {
 
     return () => {
       if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      if (workflowTimerRef.current) clearTimeout(workflowTimerRef.current);
+      if (followUpRef.current) clearTimeout(followUpRef.current);
       channel.unsubscribe();
     };
-  }, [ideaId, debouncedRefresh, workflowRefresh]);
+  }, [ideaId, debouncedRefresh, debouncedRefreshWithFollowUp]);
 
   return null;
 }
