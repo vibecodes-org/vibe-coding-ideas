@@ -223,7 +223,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
 
   return (
     <div className="flex h-full flex-col overflow-hidden px-4 sm:px-6 lg:px-8">
-      <BoardRealtime ideaId={id} />
+      <BoardRealtime ideaId={id} taskIds={(rawTasks ?? []).map((t) => t.id)} />
 
       {/* Breadcrumb header */}
       <nav aria-label="Breadcrumb" className="flex shrink-0 items-center gap-1.5 py-4 text-sm">

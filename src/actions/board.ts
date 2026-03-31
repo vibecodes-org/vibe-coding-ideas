@@ -1,6 +1,5 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_BOARD_COLUMNS, POSITION_GAP } from "@/lib/constants";
 import { validateTitle, validateOptionalDescription, validateLabelName, validateLabelColor, validateComment } from "@/lib/validation";
@@ -77,8 +76,7 @@ export async function createBoardColumn(ideaId: string, title: string) {
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
-
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
   return data;
 }
 
@@ -110,7 +108,7 @@ export async function updateBoardColumn(
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
 
 export async function deleteBoardColumn(columnId: string, ideaId: string) {
@@ -129,7 +127,7 @@ export async function deleteBoardColumn(columnId: string, ideaId: string) {
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
 
 export async function reorderBoardColumns(
@@ -200,8 +198,7 @@ export async function createBoardTask(
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
-
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
   return data.id;
 }
 
@@ -262,7 +259,7 @@ export async function updateBoardTask(
     }
   }
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
 
 export async function archiveColumnTasks(columnId: string, ideaId: string) {
@@ -293,8 +290,7 @@ export async function archiveColumnTasks(columnId: string, ideaId: string) {
 
   await Promise.all(updates);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
-
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
   return tasks.length;
 }
 
@@ -371,7 +367,7 @@ export async function createBoardLabel(
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
   return data;
 }
 
@@ -402,7 +398,7 @@ export async function updateBoardLabel(
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
 
 export async function deleteBoardLabel(labelId: string, ideaId: string) {
@@ -421,7 +417,7 @@ export async function deleteBoardLabel(labelId: string, ideaId: string) {
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
 
 export async function addLabelToTask(
@@ -446,7 +442,7 @@ export async function addLabelToTask(
   // Check for auto-rule workflow application
   await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
 
 export async function addLabelsToTask(
@@ -477,7 +473,7 @@ export async function addLabelsToTask(
     await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate);
   }
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
 
 /**
@@ -569,7 +565,7 @@ export async function removeLabelFromTask(
     workflowRemoved = result.removed;
   }
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
   return { workflowRemoved };
 }
 
@@ -604,7 +600,7 @@ export async function createTaskComment(
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
 
 export async function updateTaskComment(
@@ -630,7 +626,7 @@ export async function updateTaskComment(
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
 
 export async function deleteTaskComment(commentId: string, ideaId: string) {
@@ -649,5 +645,5 @@ export async function deleteTaskComment(commentId: string, ideaId: string) {
 
   if (error) throw new Error(error.message);
 
-  revalidatePath(`/ideas/${ideaId}/board`);
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
