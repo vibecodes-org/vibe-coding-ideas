@@ -563,7 +563,7 @@ export function TaskDetailDialog({
           </TabsList>
 
           {/* Details tab */}
-          <TabsContent value="details" className="min-h-[400px] flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
+          <TabsContent value="details" className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
             <div className="space-y-5">
               {/* Labels */}
               <div className="space-y-2">
@@ -804,7 +804,7 @@ export function TaskDetailDialog({
           </TabsContent>
 
           {/* Comments tab */}
-          <TabsContent value="comments" className="min-h-[400px] flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
+          <TabsContent value="comments" className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
             <TaskCommentsSection
               taskId={task.id}
               ideaId={ideaId}
@@ -816,7 +816,7 @@ export function TaskDetailDialog({
           </TabsContent>
 
           {/* Files tab */}
-          <TabsContent value="files" className="min-h-[400px] flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
+          <TabsContent value="files" className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
             <TaskAttachmentsSection
               taskId={task.id}
               ideaId={ideaId}
@@ -828,14 +828,14 @@ export function TaskDetailDialog({
           </TabsContent>
 
           {/* Activity tab */}
-          <TabsContent value="activity" className="min-h-[400px] flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
+          <TabsContent value="activity" className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-6 py-4">
             <ActivityTimeline taskId={task.id} ideaId={ideaId} />
           </TabsContent>
         </Tabs>
 
         {/* Footer — hidden for read-only guests */}
         {!isReadOnly && (
-          <div className="flex justify-between border-t border-border px-6 py-3">
+          <div className="flex shrink-0 justify-between border-t border-border px-6 py-3">
             <Button
               variant="ghost"
               size="sm"
