@@ -14,7 +14,6 @@ import {
   ChevronUp,
   ChevronDown,
   Loader2,
-  BookOpen,
   Bookmark,
   Play,
   Check,
@@ -55,8 +54,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { CreateTemplateDialog } from "./create-template-dialog";
-import { ImportTemplateLibraryDialog } from "./import-template-library-dialog";
+import { AddTemplateDialog } from "./add-template-dialog";
 import { SaveTemplateDialog } from "./save-template-dialog";
 import { ApplyKitDialog } from "@/components/kits/apply-kit-dialog";
 import {
@@ -717,8 +715,8 @@ export function WorkflowsTab({
   const [rules, setRules] = useState<WorkflowAutoRule[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [libraryOpen, setLibraryOpen] = useState(false);
+  const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [addDialogTab, setAddDialogTab] = useState<"my" | "platform" | "create" | undefined>(undefined);
   const [kitDialogOpen, setKitDialogOpen] = useState(false);
 
   // Editing state
@@ -857,26 +855,14 @@ export function WorkflowsTab({
               <HelpLink href="/guide/workflows" tooltip="How workflows work" />
             </span>
             {!isReadOnly && (
-              <div className="flex shrink-0 items-center gap-1">
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 gap-1 text-[10px]"
-                  onClick={() => setLibraryOpen(true)}
-                >
-                  <BookOpen className="h-3 w-3" />
-                  Library
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-6 gap-1 text-[10px]"
-                  onClick={() => setCreateOpen(true)}
-                >
-                  <Plus className="h-3 w-3" />
-                  New
-                </Button>
-              </div>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 gap-1 text-[10px]"
+                onClick={() => { setAddDialogTab(undefined); setAddDialogOpen(true); }}
+              >
+                <Plus className="h-3 w-3" />
+              </Button>
             )}
           </div>
           {kitName && (
@@ -928,16 +914,16 @@ export function WorkflowsTab({
                     variant="outline"
                     size="sm"
                     className="h-7 w-full gap-1 text-xs"
-                    onClick={() => setLibraryOpen(true)}
+                    onClick={() => { setAddDialogTab("platform"); setAddDialogOpen(true); }}
                   >
-                    <BookOpen className="h-3 w-3" />
-                    Import from library
+                    <Plus className="h-3 w-3" />
+                    Import from templates
                   </Button>
                   <Button
                     variant="ghost"
                     size="sm"
                     className="h-7 gap-1 text-xs"
-                    onClick={() => setCreateOpen(true)}
+                    onClick={() => { setAddDialogTab("create"); setAddDialogOpen(true); }}
                   >
                     <Plus className="h-3 w-3" />
                     Create from scratch
@@ -1034,16 +1020,16 @@ export function WorkflowsTab({
                         variant="outline"
                         size="sm"
                         className="gap-1.5"
-                        onClick={() => setLibraryOpen(true)}
+                        onClick={() => { setAddDialogTab("platform"); setAddDialogOpen(true); }}
                       >
-                        <BookOpen className="h-3.5 w-3.5" />
-                        Import from library
+                        <Plus className="h-3.5 w-3.5" />
+                        Import from templates
                       </Button>
                       <Button
                         variant="outline"
                         size="sm"
                         className="gap-1.5"
-                        onClick={() => setCreateOpen(true)}
+                        onClick={() => { setAddDialogTab("create"); setAddDialogOpen(true); }}
                       >
                         <Plus className="h-3.5 w-3.5" />
                         Create template
@@ -1207,24 +1193,15 @@ export function WorkflowsTab({
         )}
       </div>
 
-      {/* Create dialog */}
+      {/* Add template dialog (unified: My Templates / Platform / Create New) */}
       {!isReadOnly && (
-        <CreateTemplateDialog
-          open={createOpen}
-          onOpenChange={setCreateOpen}
-          ideaId={ideaId}
-          onCreated={handleCreated}
-        />
-      )}
-
-      {/* Import from library dialog */}
-      {!isReadOnly && (
-        <ImportTemplateLibraryDialog
-          open={libraryOpen}
-          onOpenChange={setLibraryOpen}
+        <AddTemplateDialog
+          open={addDialogOpen}
+          onOpenChange={setAddDialogOpen}
           ideaId={ideaId}
           existingTemplateNames={templates.map((t) => t.name)}
-          onImported={handleCreated}
+          onCreated={handleCreated}
+          initialTab={addDialogTab}
         />
       )}
 

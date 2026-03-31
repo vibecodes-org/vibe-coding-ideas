@@ -2,6 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { importTemplateWithLabel } from "@/actions/workflow-templates";
+import type { WorkflowTemplateStep } from "@/types/database";
 
 export async function saveToMyTemplates(
   templateId: string,
@@ -92,6 +94,38 @@ export async function deleteMyTemplate(id: string) {
     .eq("id", id);
 
   if (error) throw new Error(error.message);
+}
+
+export async function importFromMyTemplate(
+  userTemplateId: string,
+  ideaId: string,
+  autoWire: boolean
+): Promise<{ templateId: string; labelId?: string; autoRuleId?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data: myTemplate, error } = await supabase
+    .from("user_workflow_templates")
+    .select("*")
+    .eq("id", userTemplateId)
+    .single();
+
+  if (error || !myTemplate) throw new Error("Personal template not found");
+
+  return importTemplateWithLabel(
+    ideaId,
+    {
+      name: myTemplate.name,
+      description: myTemplate.description,
+      steps: myTemplate.steps as WorkflowTemplateStep[],
+      suggested_label_name: myTemplate.suggested_label_name,
+      suggested_label_color: myTemplate.suggested_label_color,
+    },
+    autoWire
+  );
 }
 
 export async function isTemplateSaved(
