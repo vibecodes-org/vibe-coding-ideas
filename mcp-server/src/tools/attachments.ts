@@ -178,6 +178,197 @@ export async function uploadAttachment(
   };
 }
 
+// --- request_upload_url ---
+
+export const requestUploadUrlSchema = z.object({
+  task_id: z.string().uuid().describe("The task ID"),
+  idea_id: z.string().uuid().describe("The idea ID"),
+  file_name: z.string().min(1).max(255).describe("The file name including extension"),
+  content_type: z.string().min(1).describe("MIME content type (e.g. image/png, application/pdf)"),
+  file_size: z.number().int().positive().describe("File size in bytes"),
+});
+
+export async function requestUploadUrl(
+  ctx: McpContext,
+  params: z.infer<typeof requestUploadUrlSchema>
+) {
+  // Validate content type
+  if (!ALLOWED_CONTENT_TYPES.includes(params.content_type)) {
+    throw new Error(
+      `Content type "${params.content_type}" not allowed. Allowed types: ${ALLOWED_CONTENT_TYPES.join(", ")}`
+    );
+  }
+
+  // Validate file size
+  if (params.file_size > MAX_FILE_SIZE) {
+    throw new Error(
+      `File size ${params.file_size} bytes exceeds maximum of ${MAX_FILE_SIZE} bytes (10MB)`
+    );
+  }
+
+  // Generate storage path
+  const lastDot = params.file_name.lastIndexOf(".");
+  const ext = lastDot > 0 ? params.file_name.slice(lastDot + 1) : "bin";
+  const storagePath = `${params.idea_id}/${params.task_id}/${randomUUID()}.${ext}`;
+
+  // Create presigned upload URL
+  const { data: signedData, error: signError } = await ctx.supabase.storage
+    .from("task-attachments")
+    .createSignedUploadUrl(storagePath);
+
+  if (signError || !signedData) {
+    throw new Error(`Failed to create upload URL: ${signError?.message ?? "unknown error"}`);
+  }
+
+  // Store pending upload record (expires in 10 minutes)
+  const token = randomUUID();
+  const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString();
+  const userId = ctx.ownerUserId ?? ctx.userId;
+
+  const { error: insertError } = await ctx.supabase
+    .from("pending_uploads")
+    .insert({
+      token,
+      storage_path: storagePath,
+      file_name: params.file_name,
+      content_type: params.content_type,
+      file_size: params.file_size,
+      user_id: userId,
+      idea_id: params.idea_id,
+      task_id: params.task_id,
+      expires_at: expiresAt,
+    });
+
+  if (insertError) {
+    throw new Error(`Failed to create pending upload: ${insertError.message}`);
+  }
+
+  // Clean up any expired pending uploads (fire and forget)
+  ctx.supabase
+    .from("pending_uploads")
+    .delete()
+    .lt("expires_at", new Date().toISOString())
+    .then(() => {});
+
+  // Build a ready-to-use curl command
+  const curlCommand = `curl -X PUT -H "Content-Type: ${params.content_type}" -T "<LOCAL_FILE_PATH>" "${signedData.signedUrl}"`;
+
+  return {
+    signed_url: signedData.signedUrl,
+    upload_token: token,
+    storage_path: storagePath,
+    expires_in_seconds: 600,
+    curl_command: curlCommand,
+    instructions: "Upload the file using the curl command above (replace <LOCAL_FILE_PATH> with the actual file path), then call confirm_upload with the upload_token.",
+  };
+}
+
+// --- confirm_upload ---
+
+export const confirmUploadSchema = z.object({
+  upload_token: z.string().uuid().describe("The upload token from request_upload_url"),
+  task_id: z.string().uuid().describe("The task ID"),
+  idea_id: z.string().uuid().describe("The idea ID"),
+});
+
+export async function confirmUpload(
+  ctx: McpContext,
+  params: z.infer<typeof confirmUploadSchema>
+) {
+  // Look up pending upload by token
+  const { data: pending, error: fetchError } = await ctx.supabase
+    .from("pending_uploads")
+    .select("*")
+    .eq("token", params.upload_token)
+    .eq("task_id", params.task_id)
+    .eq("idea_id", params.idea_id)
+    .maybeSingle();
+
+  if (fetchError) throw new Error(`Failed to look up upload token: ${fetchError.message}`);
+  if (!pending) throw new Error("Upload token not found or does not match the task/idea");
+
+  // Check expiry
+  if (new Date(pending.expires_at) < new Date()) {
+    // Clean up expired record
+    await ctx.supabase.from("pending_uploads").delete().eq("id", pending.id);
+    throw new Error("Upload token has expired. Request a new upload URL.");
+  }
+
+  // Verify file exists in storage
+  const { data: fileList, error: listError } = await ctx.supabase.storage
+    .from("task-attachments")
+    .list(pending.storage_path.split("/").slice(0, -1).join("/"), {
+      search: pending.storage_path.split("/").pop(),
+    });
+
+  if (listError) {
+    throw new Error(`Failed to verify upload: ${listError.message}`);
+  }
+
+  const fileName = pending.storage_path.split("/").pop();
+  const fileExists = fileList?.some((f) => f.name === fileName);
+  if (!fileExists) {
+    throw new Error(
+      "File not found in storage. Make sure you uploaded the file using the signed URL before calling confirm_upload."
+    );
+  }
+
+  // Create DB record
+  const { data: attachment, error: dbError } = await ctx.supabase
+    .from("board_task_attachments")
+    .insert({
+      task_id: params.task_id,
+      idea_id: params.idea_id,
+      uploaded_by: ctx.userId,
+      file_name: pending.file_name,
+      file_size: pending.file_size,
+      content_type: pending.content_type,
+      storage_path: pending.storage_path,
+    })
+    .select("id, file_name, storage_path")
+    .single();
+
+  if (dbError) throw new Error(`Failed to save attachment record: ${dbError.message}`);
+
+  // Auto-set cover image if first image upload
+  if (pending.content_type.startsWith("image/")) {
+    const { data: task } = await ctx.supabase
+      .from("board_tasks")
+      .select("cover_image_path")
+      .eq("id", params.task_id)
+      .single();
+
+    if (!task?.cover_image_path) {
+      await ctx.supabase
+        .from("board_tasks")
+        .update({ cover_image_path: pending.storage_path })
+        .eq("id", params.task_id);
+    }
+  }
+
+  // Log activity + generate signed URL + clean up pending record
+  const [, , urlResult] = await Promise.all([
+    logActivity(ctx, params.task_id, params.idea_id, "attachment_added", {
+      file_name: pending.file_name,
+    }),
+    ctx.supabase.from("pending_uploads").delete().eq("id", pending.id),
+    ctx.supabase.storage
+      .from("task-attachments")
+      .createSignedUrl(pending.storage_path, 3600),
+  ]);
+
+  return {
+    success: true,
+    attachment: {
+      id: attachment.id,
+      file_name: attachment.file_name,
+      file_size: pending.file_size,
+      storage_path: attachment.storage_path,
+      url: urlResult.data?.signedUrl ?? null,
+    },
+  };
+}
+
 // --- delete_attachment ---
 
 export const deleteAttachmentSchema = z.object({

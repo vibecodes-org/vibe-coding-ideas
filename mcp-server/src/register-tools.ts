@@ -98,6 +98,10 @@ import {
   uploadAttachmentSchema,
   deleteAttachment,
   deleteAttachmentSchema,
+  requestUploadUrl,
+  requestUploadUrlSchema,
+  confirmUpload,
+  confirmUploadSchema,
 } from "./tools/attachments";
 import {
   listNotifications,
@@ -741,6 +745,34 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await deleteAttachment(ctx, deleteAttachmentSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "request_upload_url",
+    "Get a presigned URL for uploading a file attachment to a task. Use this for files that may exceed 3MB. Returns a signed URL and curl command — upload the file directly to the URL, then call confirm_upload. Max 10MB.",
+    requestUploadUrlSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await requestUploadUrl(ctx, requestUploadUrlSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "confirm_upload",
+    "Confirm that a file was uploaded via presigned URL. Call this after uploading the file using the signed URL from request_upload_url. Creates the attachment record on the task.",
+    confirmUploadSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await confirmUpload(ctx, confirmUploadSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

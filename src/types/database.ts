@@ -2139,6 +2139,63 @@ export type Database = {
           },
         ];
       };
+      pending_uploads: {
+        Row: {
+          id: string;
+          token: string;
+          storage_path: string;
+          file_name: string;
+          content_type: string;
+          file_size: number;
+          user_id: string;
+          idea_id: string;
+          task_id: string;
+          expires_at: string;
+          created_at: string;
+        };
+        Insert: {
+          id?: string;
+          token?: string;
+          storage_path: string;
+          file_name: string;
+          content_type: string;
+          file_size: number;
+          user_id: string;
+          idea_id: string;
+          task_id: string;
+          expires_at: string;
+          created_at?: string;
+        };
+        Update: {
+          id?: string;
+          token?: string;
+          storage_path?: string;
+          file_name?: string;
+          content_type?: string;
+          file_size?: number;
+          user_id?: string;
+          idea_id?: string;
+          task_id?: string;
+          expires_at?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "pending_uploads_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "pending_uploads_idea_id_fkey";
+            columns: ["idea_id"];
+            isOneToOne: false;
+            referencedRelation: "ideas";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
     project_kits: {
       Row: {
         id: string;
