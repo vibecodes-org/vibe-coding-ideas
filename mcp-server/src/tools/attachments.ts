@@ -294,20 +294,12 @@ export async function confirmUpload(
     throw new Error("Upload token has expired. Request a new upload URL.");
   }
 
-  // Verify file exists in storage
-  const { data: fileList, error: listError } = await ctx.supabase.storage
+  // Verify file exists in storage (fast: create a short-lived signed URL — fails if file doesn't exist)
+  const { error: verifyError } = await ctx.supabase.storage
     .from("task-attachments")
-    .list(pending.storage_path.split("/").slice(0, -1).join("/"), {
-      search: pending.storage_path.split("/").pop(),
-    });
+    .createSignedUrl(pending.storage_path, 10);
 
-  if (listError) {
-    throw new Error(`Failed to verify upload: ${listError.message}`);
-  }
-
-  const fileName = pending.storage_path.split("/").pop();
-  const fileExists = fileList?.some((f) => f.name === fileName);
-  if (!fileExists) {
+  if (verifyError) {
     throw new Error(
       "File not found in storage. Make sure you uploaded the file using the signed URL before calling confirm_upload."
     );
