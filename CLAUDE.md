@@ -83,13 +83,23 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - `claim_next_step` returns `bot_id`, `available_agents`, `context` (prior step outputs), `rework_instructions`
 - `human_check_required` routes to `awaiting_approval` instead of `completed`
 - `fail_step` with `reset_to_step_id` enables cascade rejection back to any earlier step
+- Identity mismatch on `complete_step`/`fail_step` resets step to `pending` — forces re-claim
+
+### Personal Template Library
+- Users can save per-idea workflow templates to `user_workflow_templates` for reuse across boards
+- "Save to My Templates" button on template detail header (emerald styled, transitions to "Saved")
+- Unified "Add Template" dialog with 3 tabs: My Templates / Platform Templates / Create New
+- Smart default tab: opens on "My Templates" if user has saved templates, else "Platform Templates"
+- Single "+" button in workflows sidebar replaces old book + plus icons
+- Server actions in `src/actions/user-templates.ts`: save, list, delete, isTemplateSaved, importFromMyTemplate
+- Copy-based: templates are copied, not referenced — no cross-idea dependencies
 
 ## Database
 
-40 tables with RLS (`supabase/migrations/`):
+41 tables with RLS (`supabase/migrations/`):
 - **Core**: users, ideas, comments, collaborators, votes, notifications, feedback, idea_attachments
 - **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_checklist_items, board_task_activity, board_task_comments, board_task_attachments
-- **Workflows**: workflow_templates, workflow_auto_rules, workflow_runs, task_workflow_steps, workflow_step_comments, workflow_library_templates
+- **Workflows**: workflow_templates, workflow_auto_rules, workflow_runs, task_workflow_steps, workflow_step_comments, workflow_library_templates, user_workflow_templates
 - **Discussions**: idea_discussions, idea_discussion_replies, discussion_votes, discussion_attachments
 - **Agents**: bot_profiles, idea_agents, agent_votes, featured_teams, featured_team_agents
 - **Project Kits**: project_kits, kit_workflow_mappings
@@ -178,7 +188,7 @@ Auto-injects `idea_id` into MCP tool calls from `.vibecodes/config.json`.
 
 ```
 src/
-├── actions/       # 22 server action files ("use server")
+├── actions/       # 23 server action files ("use server")
 ├── app/           # Next.js App Router
 │   ├── (auth)/    # Login, signup, password reset, callback
 │   ├── (main)/    # Admin, agents, dashboard, feed, ideas, members, profile
