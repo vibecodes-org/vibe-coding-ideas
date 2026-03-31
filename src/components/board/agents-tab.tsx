@@ -9,10 +9,10 @@ import {
   ExternalLink,
   Trash2,
   Check,
-  AlertTriangle,
   Loader2,
   Users,
   RotateCcw,
+  ChevronDown,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -365,85 +365,193 @@ export function AgentsTab({
         )}
       </div>
 
-      {/* Role Coverage Panel */}
-      {roleCoverage.length > 0 && (
-        <div className="rounded-lg border bg-card p-4">
-          <h3 className="mb-3 text-sm font-medium text-muted-foreground">
-            Role Coverage
-          </h3>
-          <div className="flex flex-wrap gap-2">
-            {roleCoverage.map((rc) => {
-              const badgeClass = rc.covered
-                ? rc.matchTier === "manual"
-                  ? "gap-1 border-blue-500/30 bg-blue-500/10 text-blue-400"
-                  : rc.matchTier === "ai"
-                    ? "gap-1 border-violet-500/30 bg-violet-500/10 text-violet-400"
-                    : rc.matchTier && rc.matchTier !== "exact"
-                      ? "gap-1 border-amber-500/30 bg-amber-500/10 text-amber-400"
-                      : "gap-1 border-emerald-500/30 bg-emerald-500/10 text-emerald-500"
-                : "gap-1 border-amber-500/30 bg-amber-500/10 text-amber-500";
+      {/* Workflow Roles Panel */}
+      {roleCoverage.length > 0 && (() => {
+        const coveredCount = roleCoverage.filter((rc) => rc.covered).length;
+        const totalCount = roleCoverage.length;
 
-              const badgeContent = (
-                <>
-                  {rc.covered ? (
-                    <Check className="h-3 w-3" />
-                  ) : (
-                    <AlertTriangle className="h-3 w-3" />
-                  )}
-                  {rc.role}
-                  {rc.covered && rc.matchedAgentName ? (
-                    <span className="font-normal text-muted-foreground">
-                      &rarr; {rc.matchedAgentName}
-                      {rc.matchTier && rc.matchTier !== "exact" && (
-                        <span
-                          className={`ml-1 rounded px-1 py-0.5 text-[10px] font-semibold ${
-                            rc.matchTier === "manual"
-                              ? "bg-blue-500/10 text-blue-400"
-                              : rc.matchTier === "ai"
-                                ? "bg-violet-500/10 text-violet-400"
-                                : "bg-amber-500/10 text-amber-400"
-                          }`}
-                        >
-                          {rc.matchTier === "manual" ? "Manual" : rc.matchTier === "ai" ? "AI matched" : "Approximate"}
-                        </span>
+        // Tier dot colour helper
+        const tierDotColor = (tier: string | null, covered: boolean) => {
+          if (!covered) return "bg-red-400";
+          switch (tier) {
+            case "manual": return "bg-blue-400";
+            case "ai": return "bg-violet-400";
+            case "exact": return "bg-emerald-400";
+            default: return "bg-amber-400"; // substring, word-overlap
+          }
+        };
+
+        return (
+          <div className="rounded-lg border bg-card p-4">
+            {/* Header */}
+            <div className="mb-2 flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-[13px] font-semibold text-foreground">Workflow Roles</h3>
+                <p className="text-[11px] text-muted-foreground">Which of your agents handle each workflow role</p>
+              </div>
+              <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[11px] text-muted-foreground">
+                {coveredCount} / {totalCount}
+              </span>
+            </div>
+
+            {/* Legend */}
+            <div className="mb-2.5 flex flex-wrap gap-x-3 gap-y-1 border-b border-border pb-2.5">
+              <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" /> Matched
+              </span>
+              <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-violet-400" /> AI matched
+              </span>
+              <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400" /> Manual
+              </span>
+              <span className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                <span className="inline-block h-1.5 w-1.5 rounded-full bg-red-400" /> Unmatched
+              </span>
+            </div>
+
+            {/* Badges */}
+            <div className="flex flex-wrap gap-1.5">
+              {roleCoverage.map((rc) => {
+                const dotColor = tierDotColor(rc.matchTier, rc.covered);
+
+                // Find the agent details for avatar rendering
+                const matchedAgent = rc.covered && rc.matchedAgentName
+                  ? ideaAgentDetails.find((a) => a.bot.name === rc.matchedAgentName)
+                  : null;
+                const agentColors = matchedAgent ? getRoleColor(matchedAgent.bot.role) : null;
+
+                // Two-tone badge content
+                const badgeInner = (
+                  <span
+                    className={`inline-flex items-center overflow-hidden rounded-full border text-xs transition-all ${
+                      rc.covered
+                        ? "border-border"
+                        : "border-dashed border-red-400/30"
+                    } ${(!isReadOnly && isTeamMember) ? "cursor-pointer hover:border-muted-foreground/40" : ""}`}
+                  >
+                    {/* Left zone — role + tier dot */}
+                    <span className={`flex items-center gap-1.5 py-1 pl-2.5 pr-2 ${!rc.covered ? "text-red-400" : "text-muted-foreground"}`}
+                      style={{ background: "rgba(255,255,255,0.02)" }}
+                    >
+                      <span className={`inline-block h-1.5 w-1.5 shrink-0 rounded-full ${dotColor}`} />
+                      <span className="max-w-[160px] truncate">{rc.role}</span>
+                    </span>
+                    {/* Right zone — agent avatar + name + chevron */}
+                    <span className={`flex items-center gap-1.5 border-l py-1 pl-2 pr-2 ${
+                      rc.covered ? "border-border" : "border-red-400/15"
+                    }`}>
+                      {rc.covered && matchedAgent ? (
+                        <>
+                          <Avatar className="h-4 w-4">
+                            <AvatarImage src={matchedAgent.bot.avatar_url ?? undefined} />
+                            <AvatarFallback className={`text-[7px] font-bold ${agentColors?.avatarBg} ${agentColors?.avatarText}`}>
+                              {matchedAgent.bot.name?.[0]?.toUpperCase() ?? "?"}
+                            </AvatarFallback>
+                          </Avatar>
+                          <span className="max-w-[100px] truncate font-medium text-foreground">
+                            {rc.matchedAgentName}
+                          </span>
+                        </>
+                      ) : (
+                        <span className="text-[11px] text-red-400">assign</span>
+                      )}
+                      {!isReadOnly && isTeamMember && (
+                        <ChevronDown className="h-2.5 w-2.5 shrink-0 text-muted-foreground" />
                       )}
                     </span>
-                  ) : !rc.covered ? (
-                    <span className="font-normal">— no agent</span>
-                  ) : null}
-                </>
-              );
-
-              // Read-only: static badge
-              if (isReadOnly || !isTeamMember) {
-                return (
-                  <Badge key={rc.role} variant="outline" className={badgeClass}>
-                    {badgeContent}
-                    {!rc.covered && (
-                      <Link href="/agents" className="ml-1 font-normal underline hover:text-amber-300">
-                        Browse Agents &rarr;
-                      </Link>
-                    )}
-                  </Badge>
+                  </span>
                 );
-              }
 
-              // Editable: clickable badge with popover
-              return (
-                <Popover key={rc.role} open={openRolePopover === rc.role} onOpenChange={(open) => setOpenRolePopover(open ? rc.role : null)}>
-                  <PopoverTrigger asChild>
-                    <button type="button" className="focus:outline-none">
-                      <Badge
-                        variant="outline"
-                        className={`${badgeClass} cursor-pointer transition-all hover:brightness-110 hover:shadow-[0_0_0_2px_rgba(255,255,255,0.05)]`}
-                      >
-                        {badgeContent}
-                        {rc.matchTier === "manual" && (
+                // Read-only: static badge with tooltip for uncovered
+                if (isReadOnly || !isTeamMember) {
+                  if (!rc.covered) {
+                    return (
+                      <Tooltip key={rc.role}>
+                        <TooltipTrigger asChild>{badgeInner}</TooltipTrigger>
+                        <TooltipContent>
+                          <p className="text-xs">Unmatched — assign to ensure the right agent handles this role</p>
+                        </TooltipContent>
+                      </Tooltip>
+                    );
+                  }
+                  return <span key={rc.role}>{badgeInner}</span>;
+                }
+
+                // Editable: clickable badge with popover
+                return (
+                  <Popover key={rc.role} open={openRolePopover === rc.role} onOpenChange={(open) => setOpenRolePopover(open ? rc.role : null)}>
+                    <PopoverTrigger asChild>
+                      {!rc.covered ? (
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <button type="button" className="focus:outline-none">{badgeInner}</button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            <p className="text-xs">Unmatched — assign to ensure the right agent handles this role</p>
+                          </TooltipContent>
+                        </Tooltip>
+                      ) : (
+                        <button type="button" className="focus:outline-none">{badgeInner}</button>
+                      )}
+                    </PopoverTrigger>
+                    <PopoverContent className="w-60 p-2" align="start">
+                      <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                        Assign agent to {rc.role}
+                      </p>
+                      <div className="max-h-[200px] space-y-0.5 overflow-y-auto">
+                        {ideaAgentDetails.map((agent) => {
+                          const colors = getRoleColor(agent.bot.role);
+                          const isSelected = rc.covered && rc.matchedAgentName === agent.bot.name;
+                          return (
+                            <button
+                              key={agent.bot_id}
+                              type="button"
+                              className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
+                              onClick={async () => {
+                                setOpenRolePopover(null);
+                                const prevCoverage = roleCoverage;
+                                setRoleCoverage((prev) =>
+                                  prev.map((r) =>
+                                    r.role === rc.role
+                                      ? { ...r, covered: true, matchedAgentName: agent.bot.name ?? null, matchedAgentRole: agent.bot.role ?? null, matchTier: "manual" }
+                                      : r
+                                  )
+                                );
+                                try {
+                                  await setManualRoleMatch(ideaId, rc.role, agent.bot_id);
+                                  toast.success(`Assigned "${agent.bot.name}" to ${rc.role}`);
+                                } catch {
+                                  setRoleCoverage(prevCoverage);
+                                  toast.error("Failed to assign agent");
+                                }
+                              }}
+                            >
+                              <Avatar className="h-5 w-5">
+                                <AvatarImage src={agent.bot.avatar_url ?? undefined} />
+                                <AvatarFallback className={`text-[10px] ${colors.avatarBg} ${colors.avatarText}`}>
+                                  {agent.bot.name?.[0]?.toUpperCase() ?? "?"}
+                                </AvatarFallback>
+                              </Avatar>
+                              <div className="flex flex-col text-left leading-tight">
+                                <span>{agent.bot.name}</span>
+                                {agent.bot.role && (
+                                  <span className="text-[11px] text-muted-foreground">{agent.bot.role}</span>
+                                )}
+                              </div>
+                              {isSelected && <Check className="ml-auto h-3.5 w-3.5 text-emerald-400" />}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {rc.covered && (
+                        <>
+                          <div className="my-1 border-t border-border" />
                           <button
                             type="button"
-                            className="ml-1 inline-flex h-4 w-4 items-center justify-center rounded bg-blue-500/15 text-blue-400 transition-colors hover:bg-blue-500/30"
-                            onClick={async (e) => {
-                              e.stopPropagation();
+                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent"
+                            onClick={async () => {
+                              setOpenRolePopover(null);
                               const prevCoverage = roleCoverage;
                               try {
                                 await clearManualRoleMatch(ideaId, rc.role);
@@ -456,101 +564,23 @@ export function AgentsTab({
                                 toast.error("Failed to revert");
                               }
                             }}
-                            title="Revert to auto-match"
                           >
-                            <RotateCcw className="h-2.5 w-2.5" />
-                          </button>
-                        )}
-                      </Badge>
-                    </button>
-                  </PopoverTrigger>
-                  <PopoverContent className="w-60 p-2" align="start">
-                    <p className="mb-2 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-                      Assign agent to {rc.role}
-                    </p>
-                    <div className="max-h-[200px] space-y-0.5 overflow-y-auto">
-                      {ideaAgentDetails.map((agent) => {
-                        const colors = getRoleColor(agent.bot.role);
-                        const isSelected = rc.covered && rc.matchedAgentName === agent.bot.name;
-                        return (
-                          <button
-                            key={agent.bot_id}
-                            type="button"
-                            className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent"
-                            onClick={async () => {
-                              setOpenRolePopover(null);
-                              // Optimistic update
-                              const prevCoverage = roleCoverage;
-                              setRoleCoverage((prev) =>
-                                prev.map((r) =>
-                                  r.role === rc.role
-                                    ? { ...r, covered: true, matchedAgentName: agent.bot.name ?? null, matchedAgentRole: agent.bot.role ?? null, matchTier: "manual" }
-                                    : r
-                                )
-                              );
-                              try {
-                                await setManualRoleMatch(ideaId, rc.role, agent.bot_id);
-                                toast.success(`Assigned "${agent.bot.name}" to ${rc.role}`);
-                              } catch {
-                                setRoleCoverage(prevCoverage);
-                                toast.error("Failed to assign agent");
-                              }
-                            }}
-                          >
-                            <Avatar className="h-5 w-5">
-                              <AvatarImage src={agent.bot.avatar_url ?? undefined} />
-                              <AvatarFallback className={`text-[10px] ${colors.avatarBg} ${colors.avatarText}`}>
-                                {agent.bot.name?.[0]?.toUpperCase() ?? "?"}
-                              </AvatarFallback>
-                            </Avatar>
+                            <RotateCcw className="h-3.5 w-3.5" />
                             <div className="flex flex-col text-left leading-tight">
-                              <span>{agent.bot.name}</span>
-                              {agent.bot.role && (
-                                <span className="text-[11px] text-muted-foreground">{agent.bot.role}</span>
-                              )}
+                              <span>Auto-match</span>
+                              <span className="text-[11px] text-muted-foreground">Let the system decide</span>
                             </div>
-                            {isSelected && <Check className="ml-auto h-3.5 w-3.5 text-emerald-400" />}
                           </button>
-                        );
-                      })}
-                    </div>
-                    {rc.covered && (
-                      <>
-                        <div className="my-1 border-t border-border" />
-                        <button
-                          type="button"
-                          className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent"
-                          onClick={async () => {
-                            setOpenRolePopover(null);
-                            const prevCoverage = roleCoverage;
-                            try {
-                              await clearManualRoleMatch(ideaId, rc.role);
-                              // Refresh from server to get the auto-matched result
-                              const pool = ideaAgentDetails.map((a) => ({ botId: a.bot_id, name: a.bot.name ?? "", role: a.bot.role ?? "" }));
-                              const updated = await getRoleCoverage(ideaId, pool);
-                              setRoleCoverage(updated);
-                              toast.success(`Reverted "${rc.role}" to auto-match`);
-                            } catch {
-                              setRoleCoverage(prevCoverage);
-                              toast.error("Failed to revert");
-                            }
-                          }}
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" />
-                          <div className="flex flex-col text-left leading-tight">
-                            <span>Auto-match</span>
-                            <span className="text-[11px] text-muted-foreground">Let the system decide</span>
-                          </div>
-                        </button>
-                      </>
-                    )}
-                  </PopoverContent>
-                </Popover>
-              );
-            })}
+                        </>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                );
+              })}
+            </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* Loading state for stats */}
       {loading && (
