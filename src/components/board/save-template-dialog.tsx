@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { toast } from "sonner";
 import { Bookmark, Lock, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -44,12 +44,13 @@ export function SaveTemplateDialog({
   const [description, setDescription] = useState(templateDescription ?? "");
   const [saving, setSaving] = useState(false);
 
-  // Reset form when dialog opens with new template
+  // Reset form when the template changes or dialog opens
+  useEffect(() => {
+    setName(templateName);
+    setDescription(templateDescription ?? "");
+  }, [templateName, templateDescription]);
+
   const handleOpenChange = (isOpen: boolean) => {
-    if (isOpen) {
-      setName(templateName);
-      setDescription(templateDescription ?? "");
-    }
     onOpenChange(isOpen);
   };
 
