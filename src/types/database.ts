@@ -2082,63 +2082,6 @@ export type Database = {
           },
         ];
       };
-      user_workflow_templates: {
-        Row: {
-          id: string;
-          user_id: string;
-          name: string;
-          description: string | null;
-          steps: WorkflowTemplateStep[];
-          source_idea_id: string | null;
-          source_idea_title: string | null;
-          suggested_label_name: string | null;
-          suggested_label_color: string | null;
-          created_at: string;
-          updated_at: string;
-        };
-        Insert: {
-          id?: string;
-          user_id: string;
-          name: string;
-          description?: string | null;
-          steps: WorkflowTemplateStep[];
-          source_idea_id?: string | null;
-          source_idea_title?: string | null;
-          suggested_label_name?: string | null;
-          suggested_label_color?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Update: {
-          id?: string;
-          user_id?: string;
-          name?: string;
-          description?: string | null;
-          steps?: WorkflowTemplateStep[];
-          source_idea_id?: string | null;
-          source_idea_title?: string | null;
-          suggested_label_name?: string | null;
-          suggested_label_color?: string | null;
-          created_at?: string;
-          updated_at?: string;
-        };
-        Relationships: [
-          {
-            foreignKeyName: "user_workflow_templates_user_id_fkey";
-            columns: ["user_id"];
-            isOneToOne: false;
-            referencedRelation: "users";
-            referencedColumns: ["id"];
-          },
-          {
-            foreignKeyName: "user_workflow_templates_source_idea_id_fkey";
-            columns: ["source_idea_id"];
-            isOneToOne: false;
-            referencedRelation: "ideas";
-            referencedColumns: ["id"];
-          },
-        ];
-      };
     project_kits: {
       Row: {
         id: string;
