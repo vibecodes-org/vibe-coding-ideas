@@ -40,6 +40,7 @@ interface UserStats {
   platformCalls: number;
   platformInputTokens: number;
   platformOutputTokens: number;
+  creditsUsed: number;
 }
 
 export function UserCreditsTable({ userCredits, allPlatformLogs, isSuperAdmin }: UserCreditsTableProps) {
@@ -54,11 +55,13 @@ export function UserCreditsTable({ userCredits, allPlatformLogs, isSuperAdmin }:
         existing.platformCalls++;
         existing.platformInputTokens += log.input_tokens;
         existing.platformOutputTokens += log.output_tokens;
+        existing.creditsUsed++;
       } else {
         map.set(log.user_id, {
           platformCalls: 1,
           platformInputTokens: log.input_tokens,
           platformOutputTokens: log.output_tokens,
+          creditsUsed: 1,
         });
       }
     }
@@ -115,10 +118,6 @@ export function UserCreditsTable({ userCredits, allPlatformLogs, isSuperAdmin }:
                 ? estimateCost(stats.platformInputTokens, stats.platformOutputTokens)
                 : 0;
 
-              // Credits used = default (10) minus what's left in DB
-              // This correctly excludes free onboarding usage
-              const creditsUsed = Math.max(0, 10 - user.ai_starter_credits);
-
               return (
                 <TableRow key={user.id}>
                   <TableCell>
@@ -138,7 +137,7 @@ export function UserCreditsTable({ userCredits, allPlatformLogs, isSuperAdmin }:
                     {user.ai_starter_credits}
                   </TableCell>
                   <TableCell className="text-right text-xs">
-                    {creditsUsed}
+                    {stats?.creditsUsed ?? 0}
                   </TableCell>
                   <TableCell className="text-right text-xs">
                     {stats?.platformCalls ?? 0}
