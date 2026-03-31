@@ -15,6 +15,7 @@ import {
   ChevronDown,
   Loader2,
   BookOpen,
+  Bookmark,
   Play,
   Check,
   ChevronsUpDown,
@@ -56,6 +57,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { CreateTemplateDialog } from "./create-template-dialog";
 import { ImportTemplateLibraryDialog } from "./import-template-library-dialog";
+import { SaveTemplateDialog } from "./save-template-dialog";
 import { ApplyKitDialog } from "@/components/kits/apply-kit-dialog";
 import {
   listWorkflowTemplates,
@@ -66,6 +68,7 @@ import {
   deleteWorkflowAutoRule,
   applyAutoRuleRetroactively,
 } from "@/actions/workflow-templates";
+import { isTemplateSaved } from "@/actions/user-templates";
 import { createBoardLabel } from "@/actions/board";
 import { LABEL_COLORS } from "@/lib/constants";
 import { getRoleBadgeClasses } from "./task-workflow-section";
@@ -725,6 +728,10 @@ export function WorkflowsTab({
   const [editSteps, setEditSteps] = useState<WorkflowTemplateStep[]>([]);
   const [saving, setSaving] = useState(false);
 
+  // Save to My Templates state
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [savedTemplateIds, setSavedTemplateIds] = useState<Set<string>>(new Set());
+
   const selected = templates.find((t) => t.id === selectedId) ?? null;
   const { poolRoles, userRoles } = useRoleSuggestions(ideaId);
 
@@ -750,6 +757,17 @@ export function WorkflowsTab({
   useEffect(() => {
     fetchData();
   }, [fetchData]);
+
+  // Check saved state when selected template changes
+  useEffect(() => {
+    if (!selected) return;
+    if (savedTemplateIds.has(selected.id)) return;
+    isTemplateSaved(selected.id, ideaId).then((saved) => {
+      if (saved) {
+        setSavedTemplateIds((prev) => new Set(prev).add(selected.id));
+      }
+    }).catch(() => {});
+  }, [selected, ideaId, savedTemplateIds]);
 
   function startEditing() {
     if (!selected) return;
@@ -1099,6 +1117,27 @@ export function WorkflowsTab({
               </div>
               {!isReadOnly && (
                 <div className="flex items-center gap-1">
+                  {savedTemplateIds.has(selected.id) ? (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1 text-xs opacity-60 cursor-default"
+                      disabled
+                    >
+                      <Check className="h-3 w-3" />
+                      Saved
+                    </Button>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1 text-xs bg-emerald-500/15 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/25"
+                      onClick={() => setSaveDialogOpen(true)}
+                    >
+                      <Bookmark className="h-3 w-3" />
+                      Save to My Templates
+                    </Button>
+                  )}
                   <Button
                     variant="ghost"
                     size="sm"
@@ -1197,6 +1236,22 @@ export function WorkflowsTab({
           ideaId={ideaId}
           onApplied={() => {
             fetchData();
+          }}
+        />
+      )}
+
+      {/* Save to My Templates dialog */}
+      {selected && (
+        <SaveTemplateDialog
+          open={saveDialogOpen}
+          onOpenChange={setSaveDialogOpen}
+          templateId={selected.id}
+          ideaId={ideaId}
+          templateName={selected.name}
+          templateDescription={selected.description}
+          steps={selected.steps}
+          onSaved={() => {
+            setSavedTemplateIds((prev) => new Set(prev).add(selected.id));
           }}
         />
       )}
