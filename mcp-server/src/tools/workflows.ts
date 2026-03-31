@@ -645,10 +645,17 @@ export async function completeStep(
 
     const agentName = agent?.name ?? "unknown";
     const agentRole = agent?.role ?? step.agent_role ?? "unknown";
+
+    // Reset step to pending so it must be re-claimed and re-executed
+    await ctx.supabase
+      .from("task_workflow_steps")
+      .update({ status: "pending", claimed_by: null, started_at: null })
+      .eq("id", params.step_id);
+
     throw new Error(
       `Identity mismatch: this step is assigned to ${agentName} (${agentRole}). ` +
-      `The work was performed under the wrong identity and must be redone. ` +
-      `Call set_agent_identity with agent_id "${step.bot_id}", then re-claim and re-execute this step as the correct agent. ` +
+      `The step has been reset to pending. ` +
+      `Call set_agent_identity with agent_id "${step.bot_id}", then use claim_next_step to re-claim and re-execute this step. ` +
       `(caller=${ctx.userId}, expected=${step.bot_id})`
     );
   }
@@ -737,10 +744,17 @@ export async function failStep(
 
     const agentName = agent?.name ?? "unknown";
     const agentRole = agent?.role ?? step.agent_role ?? "unknown";
+
+    // Reset step to pending so it must be re-claimed and re-executed
+    await ctx.supabase
+      .from("task_workflow_steps")
+      .update({ status: "pending", claimed_by: null, started_at: null })
+      .eq("id", params.step_id);
+
     throw new Error(
       `Identity mismatch: this step is assigned to ${agentName} (${agentRole}). ` +
-      `Call set_agent_identity with agent_id "${step.bot_id}" before failing this step. ` +
-      `Any work done under the wrong identity should be discarded. ` +
+      `The step has been reset to pending. ` +
+      `Call set_agent_identity with agent_id "${step.bot_id}", then use claim_next_step to re-claim and re-execute this step. ` +
       `(caller=${ctx.userId}, expected=${step.bot_id})`
     );
   }
