@@ -17,6 +17,7 @@ import { RoleCombobox } from "@/components/ui/role-combobox";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { BOT_ROLE_TEMPLATES } from "@/lib/constants";
 import { createBot } from "@/actions/bots";
+import { getDefaultSkillsForRole } from "@/lib/agent-skills";
 import { PromptBuilder } from "@/components/profile/prompt-builder";
 import { generatePromptFromFields } from "@/lib/prompt-builder";
 import { createClient } from "@/lib/supabase/client";
@@ -87,6 +88,9 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
         setTemplateStructured(null);
       }
       setPromptKey((k) => k + 1);
+      // Auto-populate skills based on role
+      const defaultSkills = getDefaultSkillsForRole(template.role);
+      setSkillsInput(defaultSkills.join(", "));
     }
   }
 
