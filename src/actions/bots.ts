@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateBio, validateSkills } from "@/lib/validation";
+import { getDefaultSkillsForRole } from "@/lib/agent-skills";
 import type { BotProfile, FeaturedTeamWithAgents } from "@/types";
 
 export async function createBot(
@@ -24,7 +25,9 @@ export async function createBot(
   if (name.length > 100) throw new Error("Agent name must be 100 characters or less");
 
   const validatedBio = validateBio(bio ?? null);
-  const validatedSkills = validateSkills(skills ?? []);
+  // Use provided skills, or fall back to role-based defaults
+  const rawSkills = skills && skills.length > 0 ? skills : getDefaultSkillsForRole(role);
+  const validatedSkills = validateSkills(rawSkills);
 
   const { data, error } = await supabase.rpc("create_bot_user", {
     p_name: name.trim(),
