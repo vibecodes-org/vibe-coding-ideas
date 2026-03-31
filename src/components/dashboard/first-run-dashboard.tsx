@@ -2,13 +2,14 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Check, Plus, Bot, Copy, Sparkles } from "lucide-react";
+import { Check, Plus, Bot, Copy, Sparkles, Monitor } from "lucide-react";
 import { toast } from "sonner";
 import { useSwitchToStandard } from "./dashboard-mode-switch";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { getRoleColor } from "@/lib/agent-colors";
-import { MCP_COMMAND } from "@/lib/constants";
+import { MCP_COMMAND, CLAUDE_CODE_INSTALL_COMMAND, MCP_SUGGESTED_PROMPT, MCP_GUIDE_URL } from "@/lib/constants";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { cn } from "@/lib/utils";
 import type { BotProfile } from "@/types";
 import type { ActiveBoard } from "./active-boards";
@@ -373,15 +374,37 @@ export function FirstRunDashboard({
   );
 }
 
-function FirstRunMcpCard() {
-  const [copied, setCopied] = useState(false);
+function StepNumber({ n }: { n: number }) {
+  return (
+    <div className="flex h-[22px] w-[22px] shrink-0 items-center justify-center rounded-full border-[1.5px] border-violet-500 bg-violet-500/10 text-[11px] font-bold text-violet-400">
+      {n}
+    </div>
+  );
+}
 
-  const handleCopy = async () => {
+function FirstRunMcpCard() {
+  const [copiedCommand, setCopiedCommand] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  const isMobile = useMediaQuery("(max-width: 640px)");
+
+  const handleCopyCommand = async () => {
     try {
       await navigator.clipboard.writeText(MCP_COMMAND);
-      setCopied(true);
+      setCopiedCommand(true);
       toast.success("MCP command copied to clipboard");
-      setTimeout(() => setCopied(false), 2000);
+      setTimeout(() => setCopiedCommand(false), 2000);
+    } catch {
+      toast.error("Failed to copy — please copy manually");
+    }
+  };
+
+  const handleCopyGuideLink = async () => {
+    try {
+      const url = `${window.location.origin}${MCP_GUIDE_URL}`;
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      toast.success("Setup link copied — paste it on your computer");
+      setTimeout(() => setCopiedLink(false), 2000);
     } catch {
       toast.error("Failed to copy — please copy manually");
     }
@@ -390,27 +413,125 @@ function FirstRunMcpCard() {
   return (
     <div className="rounded-xl border border-amber-500/25 bg-amber-500/[0.12] p-4 sm:p-5">
       <h3 className="text-sm font-semibold text-foreground">
-        📡 Next: Connect Claude Code
+        📡 Connect Claude Code to Your Board
       </h3>
       <p className="mt-1.5 text-sm text-muted-foreground">
-        Your agents can&apos;t work until you connect Claude Code via MCP (Model Context Protocol). Run
-        this command:
+        Your agents can&apos;t work until you bridge the gap. Follow these steps:
       </p>
-      <div className="mt-3 overflow-x-auto rounded-lg bg-black/80 px-3 py-2 font-mono text-xs leading-relaxed">
-        <span className="text-emerald-400">$</span>{" "}
-        <span className="text-foreground">{MCP_COMMAND}</span>
+
+      {/* Mobile context-switch banner */}
+      {isMobile && (
+        <div className="mt-3 flex items-start gap-2.5 rounded-lg border border-cyan-500/25 bg-cyan-500/[0.06] p-3">
+          <Monitor className="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
+          <div className="min-w-0">
+            <p className="text-xs font-semibold text-foreground">
+              You&apos;ll need a computer for this step
+            </p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground">
+              Claude Code runs in a terminal. Open the{" "}
+              <Link href={MCP_GUIDE_URL} className="font-medium text-cyan-400 hover:text-cyan-300">
+                setup guide
+              </Link>{" "}
+              on your dev machine to continue.
+            </p>
+            <button
+              onClick={handleCopyGuideLink}
+              className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-foreground transition-colors hover:bg-card/80"
+            >
+              {copiedLink ? (
+                <Check className="h-3 w-3 text-emerald-400" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+              {copiedLink ? "Copied!" : "Copy setup link"}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step 1: Install */}
+      <div className="mt-4 flex items-start gap-3 pt-1">
+        <StepNumber n={1} />
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-foreground">Install Claude Code</p>
+          <p className="text-xs text-muted-foreground">
+            Anthropic&apos;s CLI tool for AI-powered coding. Skip if already installed.
+          </p>
+          <code className="mt-1.5 inline-block rounded-md border border-border bg-black/80 px-2.5 py-1 font-mono text-[11px] text-foreground">
+            {CLAUDE_CODE_INSTALL_COMMAND}
+          </code>
+        </div>
       </div>
-      <button
-        onClick={handleCopy}
-        className="mt-3 inline-flex items-center gap-1.5 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition-colors hover:bg-amber-400"
-      >
-        {copied ? (
-          <Check className="h-3 w-3" />
-        ) : (
-          <Copy className="h-3 w-3" />
-        )}
-        {copied ? "Copied!" : "Copy command"}
-      </button>
+
+      {/* Step 2: Open terminal */}
+      <div className="mt-1 flex items-start gap-3 border-t border-amber-500/15 pt-3">
+        <StepNumber n={2} />
+        <div className="min-w-0">
+          <p className="text-[13px] font-semibold text-foreground">Open a terminal in your project folder</p>
+          <p className="text-xs text-muted-foreground">
+            Navigate to the directory where you want to code, or create a new one.
+          </p>
+        </div>
+      </div>
+
+      {/* Step 3: Connect */}
+      <div className="mt-1 flex items-start gap-3 border-t border-amber-500/15 pt-3">
+        <StepNumber n={3} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold text-foreground">Run the MCP connect command</p>
+          <p className="text-xs text-muted-foreground">
+            This registers VibeCodes as a tool server for Claude Code.
+          </p>
+          <div className="mt-2 overflow-x-auto rounded-lg border border-border bg-black/80 px-3 py-2 font-mono text-xs leading-relaxed">
+            <div>
+              <span className="text-emerald-400">$</span>{" "}
+              <span className="text-foreground">{MCP_COMMAND}</span>
+            </div>
+            <div className="text-muted-foreground/50">→ Opening browser for authentication...</div>
+            <div className="text-emerald-400">✓ Connected!</div>
+          </div>
+          <div className="mt-2 flex items-center gap-3">
+            <button
+              onClick={handleCopyCommand}
+              className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs font-semibold text-foreground transition-colors hover:bg-card/80"
+            >
+              {copiedCommand ? (
+                <Check className="h-3 w-3 text-emerald-400" />
+              ) : (
+                <Copy className="h-3 w-3" />
+              )}
+              {copiedCommand ? "Copied!" : "Copy command"}
+            </button>
+            <Link
+              href={MCP_GUIDE_URL}
+              className="text-xs font-medium text-violet-400 hover:text-violet-300"
+            >
+              Full guide →
+            </Link>
+          </div>
+        </div>
+      </div>
+
+      {/* Step 4: Start coding */}
+      <div className="mt-1 flex items-start gap-3 border-t border-amber-500/15 pt-3">
+        <StepNumber n={4} />
+        <div className="min-w-0 flex-1">
+          <p className="text-[13px] font-semibold text-foreground">Start Claude Code and tell it to check your board</p>
+          <p className="text-xs text-muted-foreground">
+            Run{" "}
+            <code className="rounded border border-border bg-black/80 px-1.5 py-0.5 font-mono text-[11px]">
+              claude
+            </code>{" "}
+            in your terminal, then try this prompt:
+          </p>
+          <div className="mt-2 rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-xs text-violet-300">
+            <span className="font-semibold text-violet-400">Try this: </span>
+            <code className="rounded bg-violet-500/15 px-1.5 py-0.5 text-[11px] text-foreground">
+              &quot;{MCP_SUGGESTED_PROMPT}&quot;
+            </code>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }

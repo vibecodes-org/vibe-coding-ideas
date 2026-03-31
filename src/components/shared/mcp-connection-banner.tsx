@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { Cable, X, Copy, Check } from "lucide-react";
 import { toast } from "sonner";
-import { MCP_COMMAND } from "@/lib/constants";
+import { MCP_COMMAND, MCP_SUGGESTED_PROMPT } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 
 const SESSION_DISMISS_KEY = "mcp-banner-dismissed";
@@ -90,6 +90,10 @@ export function McpConnectionBanner({
           >
             Learn more &rarr;
           </Link>
+          {" · "}
+          <span className="text-muted-foreground">
+            Then try: <em className="text-violet-400">&quot;{MCP_SUGGESTED_PROMPT}&quot;</em>
+          </span>
         </p>
         {dismissable && (
           <button
@@ -146,6 +150,16 @@ export function McpConnectionBanner({
           <div className="mt-3 overflow-x-auto rounded-lg bg-black/80 px-3 py-2 font-mono text-xs leading-relaxed">
             <span className="text-emerald-400">$</span>{" "}
             <span className="text-foreground">{MCP_COMMAND}</span>
+          </div>
+          {/* Suggested first prompt */}
+          <div className="mt-2.5 rounded-lg border border-violet-500/25 bg-violet-500/10 px-3 py-2 text-xs text-violet-300">
+            <span className="font-semibold text-violet-400">Once connected: </span>
+            run{" "}
+            <code className="rounded bg-violet-500/15 px-1 py-0.5 text-[11px] text-foreground">claude</code>
+            {" "}and ask{" "}
+            <code className="rounded bg-violet-500/15 px-1 py-0.5 text-[11px] text-foreground">
+              &quot;{MCP_SUGGESTED_PROMPT}&quot;
+            </code>
           </div>
         </div>
 

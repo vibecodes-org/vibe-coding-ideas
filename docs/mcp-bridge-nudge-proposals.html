@@ -1,0 +1,1062 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MCP Bridge Nudge — Design Proposals</title>
+  <style>
+    :root {
+      --bg: #09090b;
+      --surface: #18181b;
+      --border: #27272a;
+      --text: #fafafa;
+      --muted: #a1a1aa;
+      --violet: #8b5cf6;
+      --violet-bg: rgba(139, 92, 246, 0.1);
+      --violet-border: rgba(139, 92, 246, 0.25);
+      --emerald: #34d399;
+      --emerald-bg: rgba(52, 211, 153, 0.08);
+      --emerald-border: rgba(52, 211, 153, 0.25);
+      --amber: #f59e0b;
+      --amber-bg: rgba(245, 158, 11, 0.12);
+      --amber-border: rgba(245, 158, 11, 0.25);
+      --cyan: #22d3ee;
+      --cyan-bg: rgba(34, 211, 238, 0.06);
+      --cyan-border: rgba(34, 211, 238, 0.25);
+      --blue: #3b82f6;
+      --blue-bg: rgba(59, 130, 246, 0.08);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 40px 20px;
+      line-height: 1.5;
+    }
+
+    .container { max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 24px; font-weight: 600; margin-bottom: 8px; }
+    h2 { font-size: 18px; font-weight: 600; margin: 48px 0 16px; border-bottom: 1px solid var(--border); padding-bottom: 8px; }
+    h3 { font-size: 14px; font-weight: 600; margin: 24px 0 12px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.05em; }
+    p { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
+    .subtitle { color: var(--muted); font-size: 14px; margin-bottom: 32px; }
+
+    .annotation {
+      background: var(--violet-bg);
+      border: 1px solid var(--violet-border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 12px 0;
+      font-size: 13px;
+      color: #c4b5fd;
+    }
+    .annotation strong { color: var(--violet); }
+
+    .recommendation {
+      background: var(--emerald-bg);
+      border: 1px solid var(--emerald-border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 12px 0;
+      font-size: 13px;
+      color: #6ee7b7;
+    }
+    .recommendation strong { color: var(--emerald); }
+
+    .warning {
+      background: var(--amber-bg);
+      border: 1px solid var(--amber-border);
+      border-radius: 8px;
+      padding: 12px 16px;
+      margin: 12px 0;
+      font-size: 13px;
+      color: #fcd34d;
+    }
+    .warning strong { color: var(--amber); }
+
+    .tag {
+      display: inline-block;
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-right: 6px;
+      margin-bottom: 4px;
+    }
+    .tag-high { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+    .tag-medium { background: var(--amber-bg); color: #fbbf24; }
+    .tag-recommended { background: var(--emerald-bg); color: var(--emerald); border: 1px solid var(--emerald-border); }
+
+    /* ── Mockup containers ── */
+    .mockup-frame {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 16px 0;
+    }
+    .mockup-label {
+      background: rgba(139, 92, 246, 0.08);
+      border-bottom: 1px solid var(--border);
+      padding: 8px 16px;
+      font-size: 11px;
+      font-weight: 600;
+      color: var(--violet);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    .mockup-body {
+      padding: 24px;
+    }
+
+    /* ── Shared mockup component styles ── */
+    .terminal-block {
+      background: #0a0a0a;
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px 16px;
+      font-family: 'SF Mono', 'Cascadia Code', 'Fira Code', monospace;
+      font-size: 12px;
+      line-height: 1.7;
+      overflow-x: auto;
+    }
+    .terminal-block .prompt { color: var(--emerald); }
+    .terminal-block .cmd { color: var(--text); }
+    .terminal-block .url { color: var(--amber); }
+    .terminal-block .output { color: #52525b; }
+    .terminal-block .success { color: var(--emerald); }
+    .terminal-block .name { color: var(--violet); font-weight: 600; }
+
+    .copy-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      color: var(--text);
+      cursor: pointer;
+    }
+    .copy-btn:hover { background: #27272a; }
+
+    .guide-link {
+      font-size: 12px;
+      color: var(--violet);
+      text-decoration: none;
+    }
+    .guide-link:hover { text-decoration: underline; }
+
+    .cta-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 8px 16px;
+      border-radius: 8px;
+      font-size: 13px;
+      font-weight: 600;
+      border: none;
+      cursor: pointer;
+    }
+    .cta-primary {
+      background: var(--amber);
+      color: #18181b;
+    }
+    .cta-outline {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--muted);
+    }
+
+    .step-number {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--violet-bg);
+      border: 1.5px solid var(--violet);
+      color: var(--violet);
+      font-size: 11px;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+
+    .step-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 10px 0;
+    }
+    .step-row + .step-row {
+      border-top: 1px solid rgba(39, 39, 42, 0.5);
+    }
+    .step-content { flex: 1; }
+    .step-title { font-size: 13px; font-weight: 600; color: var(--text); }
+    .step-desc { font-size: 12px; color: var(--muted); margin-top: 2px; }
+    .step-code {
+      display: inline-block;
+      background: #0a0a0a;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 10px;
+      font-family: 'SF Mono', monospace;
+      font-size: 11px;
+      color: var(--text);
+      margin-top: 6px;
+    }
+
+    .suggested-prompt {
+      background: var(--violet-bg);
+      border: 1px solid var(--violet-border);
+      border-radius: 8px;
+      padding: 10px 14px;
+      font-size: 12px;
+      color: #c4b5fd;
+    }
+    .suggested-prompt strong { color: var(--violet); }
+    .suggested-prompt code {
+      background: rgba(139, 92, 246, 0.15);
+      padding: 2px 6px;
+      border-radius: 4px;
+      font-size: 11px;
+      color: var(--text);
+    }
+
+    /* Mobile banner */
+    .mobile-banner {
+      background: var(--cyan-bg);
+      border: 1px solid var(--cyan-border);
+      border-radius: 8px;
+      padding: 12px 14px;
+      display: flex;
+      align-items: flex-start;
+      gap: 10px;
+    }
+    .mobile-banner .icon { color: var(--cyan); font-size: 16px; flex-shrink: 0; margin-top: 1px; }
+    .mobile-banner p { color: var(--muted); font-size: 12px; margin: 0; }
+    .mobile-banner a { color: var(--cyan); text-decoration: none; font-weight: 600; }
+
+    /* Comparison table */
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 13px;
+      margin: 16px 0;
+    }
+    th, td {
+      text-align: left;
+      padding: 10px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    th {
+      font-weight: 600;
+      color: var(--text);
+      background: rgba(39, 39, 42, 0.3);
+    }
+    td { color: var(--muted); }
+    td:first-child { color: var(--text); font-weight: 500; }
+
+    .check { color: var(--emerald); }
+    .cross { color: #52525b; }
+    .new-badge { color: var(--emerald); font-weight: 600; font-size: 11px; }
+
+    /* Side by side proposals */
+    .proposals-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      margin: 16px 0;
+    }
+    @media (max-width: 700px) {
+      .proposals-grid { grid-template-columns: 1fr; }
+    }
+
+    .mini-label {
+      font-size: 10px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+
+    /* ── Full dashboard mockup ── */
+    .dashboard-mockup {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      overflow: hidden;
+      margin: 16px 0;
+    }
+    .dashboard-chrome {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 10px 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .chrome-dot {
+      width: 10px; height: 10px; border-radius: 50%;
+    }
+    .chrome-dot-red { background: #ef4444; }
+    .chrome-dot-yellow { background: #eab308; }
+    .chrome-dot-green { background: #22c55e; }
+    .chrome-url {
+      flex: 1;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-size: 11px;
+      color: var(--muted);
+      margin-left: 8px;
+    }
+    .dashboard-content {
+      padding: 24px;
+    }
+    .dashboard-grid {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+    }
+    @media (max-width: 700px) {
+      .dashboard-grid { grid-template-columns: 1fr; }
+    }
+    .dash-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+    }
+    .dash-card-ghost {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      opacity: 0.5;
+    }
+    .dash-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+    }
+    .progress-bar-track {
+      height: 6px;
+      background: rgba(39, 39, 42, 0.6);
+      border-radius: 99px;
+      overflow: hidden;
+      margin-bottom: 12px;
+    }
+    .progress-bar-fill {
+      height: 100%;
+      border-radius: 99px;
+      background: var(--violet);
+    }
+    .progress-steps {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+      text-align: center;
+    }
+    .progress-step-circle {
+      width: 24px; height: 24px; border-radius: 50%;
+      display: inline-flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700;
+      margin: 0 auto 4px;
+    }
+    .progress-step-label { font-size: 10px; }
+    .step-done { border: 2px solid var(--emerald); background: rgba(52, 211, 153, 0.1); color: var(--emerald); }
+    .step-current { border: 2px solid var(--amber); background: rgba(245, 158, 11, 0.1); color: var(--amber); }
+    .step-future { border: 2px solid var(--border); background: rgba(39, 39, 42, 0.5); color: var(--muted); }
+
+    .board-mini-col {
+      flex: 1;
+      min-width: 90px;
+      background: rgba(39, 39, 42, 0.3);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 8px;
+    }
+    .board-mini-col-title {
+      font-size: 9px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .board-mini-task {
+      background: rgba(39, 39, 42, 0.5);
+      border: 1px solid var(--border);
+      border-radius: 4px;
+      padding: 4px 6px;
+      font-size: 10px;
+      color: var(--muted);
+      margin-bottom: 4px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .pill {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 4px;
+      margin-right: 4px;
+    }
+    .pill-blue { background: rgba(59, 130, 246, 0.1); color: #60a5fa; }
+    .pill-emerald { background: rgba(52, 211, 153, 0.1); color: var(--emerald); }
+    .pill-amber { background: var(--amber-bg); color: #fbbf24; }
+
+    .highlight-outline {
+      outline: 2px solid var(--amber);
+      outline-offset: 2px;
+      border-radius: 14px;
+      position: relative;
+    }
+    .highlight-label {
+      position: absolute;
+      top: -10px;
+      left: 16px;
+      background: var(--amber);
+      color: #18181b;
+      font-size: 10px;
+      font-weight: 700;
+      padding: 1px 8px;
+      border-radius: 4px;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .agent-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 0;
+    }
+    .agent-avatar {
+      width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 10px; font-weight: 700;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>MCP Bridge Nudge — Design Proposals</h1>
+    <p class="subtitle">
+      Building on the <strong style="color: var(--text)">Audit Current UX</strong> findings:
+      the First-Run MCP Card is a dead end, prerequisites aren't surfaced, mobile users are stranded,
+      and the suggested first prompt only appears in onboarding Step 4.
+      Below are two proposals to fix these gaps.
+    </p>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <h2>Full Dashboard Context — Proposal A In Situ</h2>
+    <!-- ══════════════════════════════════════════════════════════ -->
+
+    <p>
+      This shows where the new MCP card sits within the first-run dashboard. The highlighted card
+      is the <strong style="color: var(--text)">Proposal A</strong> replacement — everything else
+      is the existing dashboard layout.
+    </p>
+
+    <div class="dashboard-mockup">
+      <!-- Browser chrome -->
+      <div class="dashboard-chrome">
+        <div class="chrome-dot chrome-dot-red"></div>
+        <div class="chrome-dot chrome-dot-yellow"></div>
+        <div class="chrome-dot chrome-dot-green"></div>
+        <div class="chrome-url">vibecodes.co.uk/dashboard</div>
+      </div>
+
+      <div class="dashboard-content">
+        <!-- Header -->
+        <div class="dash-header">
+          <div>
+            <div style="font-size: 18px; font-weight: 700;">Welcome back, Nick 👋</div>
+            <div style="font-size: 12px; color: var(--muted); margin-top: 2px;">Here's where you are with getting set up.</div>
+          </div>
+          <button style="background: rgba(39,39,42,0.5); border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px; font-size: 11px; color: var(--muted); cursor: pointer;">Switch to full dashboard</button>
+        </div>
+
+        <!-- Setup Progress -->
+        <div class="dash-card" style="margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+            <span style="font-size: 13px; font-weight: 700;">Your Setup Progress</span>
+            <span style="font-size: 13px; font-weight: 600; color: var(--violet);">3 of 5 complete</span>
+          </div>
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" style="width: 60%;"></div>
+          </div>
+          <div class="progress-steps">
+            <div>
+              <div class="progress-step-circle step-done">✓</div>
+              <div class="progress-step-label" style="color: var(--muted);">Account</div>
+            </div>
+            <div>
+              <div class="progress-step-circle step-done">✓</div>
+              <div class="progress-step-label" style="color: var(--muted);">Idea</div>
+            </div>
+            <div>
+              <div class="progress-step-circle step-done">✓</div>
+              <div class="progress-step-label" style="color: var(--muted);">Board</div>
+            </div>
+            <div>
+              <div class="progress-step-circle step-current">4</div>
+              <div class="progress-step-label" style="color: var(--amber); font-weight: 600;">MCP</div>
+            </div>
+            <div>
+              <div class="progress-step-circle step-future">5</div>
+              <div class="progress-step-label" style="color: var(--muted);">First task</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Two-column layout -->
+        <div class="dashboard-grid">
+          <!-- LEFT COLUMN -->
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+
+            <!-- Project card (existing) -->
+            <div class="dash-card">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div style="font-size: 14px; font-weight: 600;">Bath Monitoring App</div>
+                <a href="#" style="font-size: 12px; color: var(--violet); text-decoration: none;">Go to board →</a>
+              </div>
+              <div style="display: flex; gap: 6px; margin-bottom: 10px;">
+                <span class="pill pill-blue">8 tasks</span>
+                <span class="pill pill-emerald">5 agents</span>
+                <span class="pill pill-amber">2 workflows</span>
+              </div>
+              <div style="display: flex; gap: 8px; overflow: hidden;">
+                <div class="board-mini-col">
+                  <div class="board-mini-col-title">To Do <span style="background: rgba(39,39,42,0.6); padding: 0 4px; border-radius: 3px; font-size: 8px;">3</span></div>
+                  <div class="board-mini-task">Set up auth flow</div>
+                  <div class="board-mini-task">Design dashboard</div>
+                  <div class="board-mini-task">API endpoints</div>
+                </div>
+                <div class="board-mini-col">
+                  <div class="board-mini-col-title">In Progress <span style="background: rgba(39,39,42,0.6); padding: 0 4px; border-radius: 3px; font-size: 8px;">2</span></div>
+                  <div class="board-mini-task">Sensor integration</div>
+                  <div class="board-mini-task">Data model</div>
+                </div>
+                <div class="board-mini-col">
+                  <div class="board-mini-col-title">Done <span style="background: rgba(39,39,42,0.6); padding: 0 4px; border-radius: 3px; font-size: 8px;">3</span></div>
+                  <div class="board-mini-task">Project scaffolding</div>
+                  <div class="board-mini-task">CI/CD pipeline</div>
+                  <div class="board-mini-task">README</div>
+                </div>
+              </div>
+            </div>
+
+            <!-- ★ NEW MCP CARD (Proposal A) — highlighted -->
+            <div class="highlight-outline" style="background: var(--amber-bg); border: 1px solid var(--amber-border); border-radius: 12px; padding: 16px;">
+              <div class="highlight-label">Proposal A — New Card</div>
+
+              <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+                <span style="font-size: 15px;">📡</span>
+                <span style="font-size: 13px; font-weight: 700; color: var(--text);">Connect Claude Code to Your Board</span>
+              </div>
+              <p style="font-size: 12px; margin-bottom: 14px; color: var(--muted);">
+                Your agents can't work until you bridge the gap. Follow these steps:
+              </p>
+
+              <!-- Step 1 -->
+              <div style="display: flex; align-items: flex-start; gap: 10px; padding: 8px 0;">
+                <div style="width: 20px; height: 20px; border-radius: 50%; background: var(--violet-bg); border: 1.5px solid var(--violet); color: var(--violet); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">1</div>
+                <div>
+                  <div style="font-size: 12px; font-weight: 600; color: var(--text);">Install Claude Code</div>
+                  <div style="font-size: 11px; color: var(--muted);">Skip if already installed.</div>
+                  <div style="display: inline-block; background: #0a0a0a; border: 1px solid var(--border); border-radius: 5px; padding: 3px 8px; font-family: monospace; font-size: 10px; color: var(--text); margin-top: 4px;">npm install -g @anthropic-ai/claude-code</div>
+                </div>
+              </div>
+
+              <!-- Step 2 -->
+              <div style="display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(39,39,42,0.4);">
+                <div style="width: 20px; height: 20px; border-radius: 50%; background: var(--violet-bg); border: 1.5px solid var(--violet); color: var(--violet); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">2</div>
+                <div>
+                  <div style="font-size: 12px; font-weight: 600; color: var(--text);">Open a terminal in your project folder</div>
+                  <div style="font-size: 11px; color: var(--muted);">Navigate to where you want to code, or create a new one.</div>
+                </div>
+              </div>
+
+              <!-- Step 3 -->
+              <div style="display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(39,39,42,0.4);">
+                <div style="width: 20px; height: 20px; border-radius: 50%; background: var(--violet-bg); border: 1.5px solid var(--violet); color: var(--violet); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">3</div>
+                <div style="flex: 1;">
+                  <div style="font-size: 12px; font-weight: 600; color: var(--text);">Run the MCP connect command</div>
+                  <div style="font-size: 11px; color: var(--muted); margin-bottom: 6px;">This registers VibeCodes as a tool server.</div>
+                  <div style="background: #0a0a0a; border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; font-family: monospace; font-size: 11px; line-height: 1.7;">
+                    <div><span style="color: var(--emerald);">$</span> <span style="color: var(--text);">claude mcp add -s user --transport http vibecodes-remote</span> <span style="color: var(--amber);">https://vibecodes.co.uk/api/mcp</span></div>
+                    <div style="color: #52525b;">→ Opening browser for authentication...</div>
+                    <div style="color: var(--emerald);">✓ Connected!</div>
+                  </div>
+                  <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                    <button style="display: inline-flex; align-items: center; gap: 5px; padding: 5px 10px; border-radius: 5px; font-size: 11px; font-weight: 600; border: 1px solid var(--border); background: var(--surface); color: var(--text); cursor: pointer;">📋 Copy command</button>
+                    <a href="#" style="font-size: 11px; color: var(--violet); text-decoration: none;">Full guide →</a>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Step 4 -->
+              <div style="display: flex; align-items: flex-start; gap: 10px; padding: 8px 0; border-top: 1px solid rgba(39,39,42,0.4);">
+                <div style="width: 20px; height: 20px; border-radius: 50%; background: var(--violet-bg); border: 1.5px solid var(--violet); color: var(--violet); font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">4</div>
+                <div style="flex: 1;">
+                  <div style="font-size: 12px; font-weight: 600; color: var(--text);">Start Claude Code and tell it to check your board</div>
+                  <div style="font-size: 11px; color: var(--muted); margin-bottom: 6px;">Run <code style="background: #0a0a0a; padding: 1px 5px; border-radius: 3px; font-size: 10px; border: 1px solid var(--border);">claude</code> in your terminal, then try:</div>
+                  <div style="background: var(--violet-bg); border: 1px solid var(--violet-border); border-radius: 6px; padding: 8px 12px; font-size: 11px; color: #c4b5fd;">
+                    <strong style="color: var(--violet);">Try this:</strong> <code style="background: rgba(139,92,246,0.15); padding: 1px 5px; border-radius: 3px; font-size: 10px; color: var(--text);">"Check my VibeCodes board and start working on the top priority task"</code>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- RIGHT COLUMN -->
+          <div style="display: flex; flex-direction: column; gap: 16px;">
+            <!-- Agent Team (existing) -->
+            <div class="dash-card">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                <div style="font-size: 13px; font-weight: 600;">Your Agent Team</div>
+                <a href="#" style="font-size: 12px; color: var(--violet); text-decoration: none;">Manage →</a>
+              </div>
+              <div class="agent-row">
+                <div class="agent-avatar" style="background: rgba(139,92,246,0.15); color: var(--violet);">A</div>
+                <div>
+                  <div style="font-size: 11px; font-weight: 600;">Atlas</div>
+                  <div style="font-size: 10px; color: var(--muted);">Full Stack Engineer</div>
+                </div>
+              </div>
+              <div class="agent-row">
+                <div class="agent-avatar" style="background: rgba(52,211,153,0.15); color: var(--emerald);">C</div>
+                <div>
+                  <div style="font-size: 11px; font-weight: 600;">Compass</div>
+                  <div style="font-size: 10px; color: var(--muted);">UX Designer</div>
+                </div>
+              </div>
+              <div class="agent-row">
+                <div class="agent-avatar" style="background: rgba(59,130,246,0.15); color: var(--blue);">P</div>
+                <div>
+                  <div style="font-size: 11px; font-weight: 600;">Pixel</div>
+                  <div style="font-size: 10px; color: var(--muted);">Front End Engineer</div>
+                </div>
+              </div>
+              <div style="font-size: 10px; color: var(--muted); margin-top: 4px;">+4 more agents</div>
+            </div>
+
+            <!-- Quick Links (existing) -->
+            <div class="dash-card">
+              <div style="font-size: 13px; font-weight: 600; margin-bottom: 8px;">Quick Links</div>
+              <div style="display: flex; flex-direction: column; gap: 4px;">
+                <a href="#" style="font-size: 11px; color: var(--violet); text-decoration: none; padding: 3px 0;">→ MCP Integration Guide</a>
+                <a href="#" style="font-size: 11px; color: var(--violet); text-decoration: none; padding: 3px 0;">→ How Workflows Work</a>
+                <a href="#" style="font-size: 11px; color: var(--violet); text-decoration: none; padding: 3px 0;">→ Browse Community Agents</a>
+                <a href="#" style="font-size: 11px; color: var(--violet); text-decoration: none; padding: 3px 0;">→ Invite Collaborators</a>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="annotation">
+      <strong>Layout placement:</strong> The new MCP card sits in the <strong>left column, below the project/board preview card</strong>.
+      This is the same position as the current <code>FirstRunMcpCard</code> — it only renders when
+      <code>hasMcpConnection</code> is false (setup step 4 incomplete). Once the user connects,
+      this card disappears and the progress bar fills to step 4. No layout shifts — the card slot
+      simply empties and the left column gets shorter.
+    </div>
+
+    <div class="annotation">
+      <strong>Visual weight:</strong> The amber background (<code>amber-500/12%</code>) matches the current card's styling
+      and draws attention without competing with the board preview above. The numbered steps add vertical height
+      (~280px vs the current ~150px), but this is acceptable because the card is the primary CTA at this stage
+      and deserves the space.
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <h2>Proposal A: Stepped Setup Card (Detail) <span class="tag tag-recommended">Recommended</span></h2>
+    <!-- ══════════════════════════════════════════════════════════ -->
+
+    <p>
+      Replace the existing <code>FirstRunMcpCard</code> with a stepped setup card that walks users
+      through prerequisite → connect → verify, all inline. No separate page needed.
+    </p>
+
+    <div class="annotation">
+      <strong>Addresses audit gaps:</strong> #1 (dead-end card), #2 (no prerequisites), #4 (no "what happens next"),
+      #5 (guide link missing), #6 (no suggested first prompt). Gap #3 (mobile) is handled by a sub-component below.
+    </div>
+
+    <h3>Desktop Mockup — First-Run MCP Card (Expanded)</h3>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">FirstRunMcpCard — Proposal A</div>
+      <div class="mockup-body">
+        <!-- Card header -->
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+          <span style="font-size: 16px;">📡</span>
+          <span style="font-size: 14px; font-weight: 700; color: var(--text);">Connect Claude Code to Your Board</span>
+        </div>
+        <p style="font-size: 13px; margin-bottom: 16px;">
+          Your agents can't work until you bridge the gap. Follow these steps:
+        </p>
+
+        <!-- Step 1: Install -->
+        <div class="step-row">
+          <div class="step-number">1</div>
+          <div class="step-content">
+            <div class="step-title">Install Claude Code</div>
+            <div class="step-desc">Anthropic's CLI tool for AI-powered coding. Skip if already installed.</div>
+            <div class="step-code">npm install -g @anthropic-ai/claude-code</div>
+          </div>
+        </div>
+
+        <!-- Step 2: Open terminal -->
+        <div class="step-row">
+          <div class="step-number">2</div>
+          <div class="step-content">
+            <div class="step-title">Open a terminal in your project folder</div>
+            <div class="step-desc">Navigate to the directory where you want to code, or create a new one.</div>
+          </div>
+        </div>
+
+        <!-- Step 3: Connect -->
+        <div class="step-row">
+          <div class="step-number">3</div>
+          <div class="step-content">
+            <div class="step-title">Run the MCP connect command</div>
+            <div class="step-desc">This registers VibeCodes as a tool server for Claude Code.</div>
+          </div>
+        </div>
+
+        <!-- Terminal block -->
+        <div class="terminal-block" style="margin: 8px 0 12px 34px;">
+          <div><span class="prompt">$</span> <span class="cmd">claude mcp add -s user --transport http vibecodes-remote</span> <span class="url">https://vibecodes.co.uk/api/mcp</span></div>
+          <div class="output">→ Opening browser for authentication...</div>
+          <div class="success">✓ Connected!</div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; margin: 0 0 16px 34px;">
+          <button class="copy-btn">📋 Copy command</button>
+          <a href="#" class="guide-link">Full guide →</a>
+        </div>
+
+        <!-- Step 4: Start coding -->
+        <div class="step-row">
+          <div class="step-number">4</div>
+          <div class="step-content">
+            <div class="step-title">Start Claude Code and tell it to check your board</div>
+            <div class="step-desc">Run <code style="background: #0a0a0a; padding: 2px 6px; border-radius: 4px; font-size: 11px; border: 1px solid var(--border);">claude</code> in your terminal, then try this prompt:</div>
+          </div>
+        </div>
+
+        <!-- Suggested prompt -->
+        <div class="suggested-prompt" style="margin: 4px 0 0 34px;">
+          <strong>Try this:</strong> <code>"Check my VibeCodes board and start working on the top priority task"</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="recommendation">
+      <strong>Why this is recommended:</strong> The stepped layout uses progressive disclosure (Hick's Law) —
+      each step is a clear, small action. Users who already have Claude Code installed can skip step 1 at a glance.
+      The suggested prompt at the end gives them a clear "what to do next" that the current card completely lacks.
+    </div>
+
+    <!-- ── Mobile sub-variant ── -->
+    <h3>Mobile Viewport — Context-Switch Nudge</h3>
+    <p>
+      On viewports ≤ 640px, show a device-aware message above the steps. Uses <code>useMediaQuery</code>
+      hook already in the codebase.
+    </p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">Mobile viewport — additional banner</div>
+      <div class="mockup-body" style="max-width: 375px;">
+        <div class="mobile-banner">
+          <span class="icon">💻</span>
+          <div>
+            <p style="font-weight: 600; color: var(--text); margin-bottom: 4px;">You'll need a computer for this step</p>
+            <p>
+              Claude Code runs in a terminal. Open
+              <a href="#">vibecodes.co.uk/guide/mcp-integration</a>
+              on your dev machine to continue setup.
+            </p>
+          </div>
+        </div>
+
+        <div style="margin-top: 12px; display: flex; gap: 8px;">
+          <button class="copy-btn" style="flex: 1; justify-content: center;">📋 Copy setup link</button>
+        </div>
+        <p style="font-size: 11px; color: #52525b; text-align: center; margin-top: 6px; margin-bottom: 0;">
+          Copies the guide URL so you can paste it on your computer
+        </p>
+      </div>
+    </div>
+
+    <div class="annotation">
+      <strong>Implementation note:</strong> On mobile, "Copy setup link" copies
+      <code>https://vibecodes.co.uk/guide/mcp-integration</code> to clipboard instead of the MCP command.
+      The full step-by-step is still visible below the banner for reference, but the primary CTA
+      redirects users to their dev machine.
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <h2>Proposal B: Minimal Card + Inline Prereq</h2>
+    <!-- ══════════════════════════════════════════════════════════ -->
+
+    <p>
+      Keep the existing card structure but add the three most critical missing elements:
+      a prerequisite hint, the guide link, and a suggested first prompt. Lower effort, lower impact.
+    </p>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">FirstRunMcpCard — Proposal B (Minimal Enhancement)</div>
+      <div class="mockup-body">
+        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px;">
+          <span style="font-size: 16px;">📡</span>
+          <span style="font-size: 14px; font-weight: 700; color: var(--text);">Next: Connect Claude Code</span>
+        </div>
+        <p style="font-size: 13px; margin-bottom: 12px;">
+          Your agents can't work until you connect Claude Code via MCP. Run this command in your terminal:
+        </p>
+
+        <!-- Terminal block (same as current) -->
+        <div class="terminal-block" style="margin-bottom: 12px;">
+          <div><span class="prompt">$</span> <span class="cmd">claude mcp add -s user --transport http vibecodes-remote</span> <span class="url">https://vibecodes.co.uk/api/mcp</span></div>
+        </div>
+
+        <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 14px;">
+          <button class="cta-primary cta-btn">📋 Copy command</button>
+          <a href="#" class="guide-link">Setup guide →</a>
+        </div>
+
+        <!-- NEW: Prerequisite hint -->
+        <div style="border-top: 1px solid var(--border); padding-top: 12px; margin-bottom: 12px;">
+          <p style="font-size: 12px; color: #71717a; margin-bottom: 4px;">
+            <strong style="color: var(--muted);">Don't have Claude Code?</strong>
+            Install it first:
+            <code style="background: #0a0a0a; padding: 2px 6px; border-radius: 4px; font-size: 11px; border: 1px solid var(--border);">npm install -g @anthropic-ai/claude-code</code>
+          </p>
+        </div>
+
+        <!-- NEW: Suggested first prompt -->
+        <div class="suggested-prompt">
+          <strong>Once connected, try:</strong> <code>"Check my VibeCodes board and start working on the top priority task"</code>
+        </div>
+      </div>
+    </div>
+
+    <div class="warning">
+      <strong>Trade-off:</strong> Proposal B is faster to implement (~30 min vs ~2 hrs) but doesn't address
+      the mobile context-switch gap (audit gap #3) or provide the "what happens next" preview (gap #4).
+      It's a good interim fix if Proposal A is too large for the current sprint.
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <h2>Proposal Comparison</h2>
+    <!-- ══════════════════════════════════════════════════════════ -->
+
+    <table>
+      <thead>
+        <tr>
+          <th>Audit Gap</th>
+          <th>Proposal A (Stepped)</th>
+          <th>Proposal B (Minimal)</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>#1 Card is a dead end</td>
+          <td><span class="check">✓</span> Full walkthrough</td>
+          <td><span class="check">✓</span> Guide link + prompt</td>
+        </tr>
+        <tr>
+          <td>#2 No prerequisites</td>
+          <td><span class="check">✓</span> Step 1 is "Install"</td>
+          <td><span class="check">✓</span> Inline prereq hint</td>
+        </tr>
+        <tr>
+          <td>#3 Mobile context switch</td>
+          <td><span class="check">✓</span> Mobile-specific banner</td>
+          <td><span class="cross">✗</span> Not addressed</td>
+        </tr>
+        <tr>
+          <td>#4 No "what next" preview</td>
+          <td><span class="check">✓</span> Terminal output preview</td>
+          <td><span class="cross">✗</span> Not addressed</td>
+        </tr>
+        <tr>
+          <td>#5 Guide link missing</td>
+          <td><span class="check">✓</span> "Full guide →" link</td>
+          <td><span class="check">✓</span> "Setup guide →" link</td>
+        </tr>
+        <tr>
+          <td>#6 Suggested first prompt</td>
+          <td><span class="check">✓</span> Step 4 prompt block</td>
+          <td><span class="check">✓</span> Bottom prompt block</td>
+        </tr>
+        <tr>
+          <td style="font-weight: 600;">Implementation effort</td>
+          <td>~2 hours</td>
+          <td>~30 minutes</td>
+        </tr>
+        <tr>
+          <td style="font-weight: 600;">Files changed</td>
+          <td>first-run-dashboard.tsx</td>
+          <td>first-run-dashboard.tsx</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <h2>MCP Connection Banner — Supplementary Enhancements</h2>
+    <!-- ══════════════════════════════════════════════════════════ -->
+
+    <p>
+      Regardless of which proposal is chosen for the first-run card, the <code>McpConnectionBanner</code>
+      (shown on dashboard and board pages) should also get the suggested first prompt. This is a small
+      change that applies to both proposals.
+    </p>
+
+    <h3>Banner Enhancement — Full Variant</h3>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">McpConnectionBanner — Enhanced (full variant)</div>
+      <div class="mockup-body">
+        <div style="display: flex; align-items: flex-start; gap: 12px;">
+          <span style="color: var(--cyan); font-size: 18px; margin-top: 2px;">🔗</span>
+          <div style="flex: 1;">
+            <div style="font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 4px;">
+              Your agents are waiting — connect Claude Code
+            </div>
+            <p style="font-size: 12px; margin-bottom: 10px;">
+              You have 5 agents and 12 tasks ready to go, but agents need Claude Code (MCP) to work.
+            </p>
+            <div class="terminal-block" style="margin-bottom: 10px;">
+              <div><span class="prompt">$</span> <span class="cmd">claude mcp add -s user --transport http vibecodes-remote</span> <span class="url">https://vibecodes.co.uk/api/mcp</span></div>
+            </div>
+            <!-- NEW: suggested prompt -->
+            <div class="suggested-prompt" style="margin-bottom: 0;">
+              <strong>Once connected:</strong> run <code>claude</code> and ask <code>"Check my VibeCodes board and start working"</code>
+            </div>
+          </div>
+          <div style="display: flex; flex-direction: column; gap: 6px; flex-shrink: 0;">
+            <button class="cta-primary cta-btn" style="font-size: 12px; padding: 6px 12px;">📋 Copy command</button>
+            <button class="cta-outline cta-btn" style="font-size: 12px; padding: 6px 12px;">Learn more</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <h3>Banner Enhancement — Compact Variant (Board Page)</h3>
+
+    <div class="mockup-frame">
+      <div class="mockup-label">McpConnectionBanner — Enhanced (compact variant)</div>
+      <div class="mockup-body">
+        <div style="display: flex; align-items: center; gap: 10px; background: var(--cyan-bg); border: 1px solid var(--cyan-border); border-radius: 8px; padding: 8px 14px;">
+          <span style="color: var(--cyan); font-size: 14px; flex-shrink: 0;">🔗</span>
+          <p style="flex: 1; font-size: 12px; margin: 0;">
+            Your agents need <strong style="color: var(--text)">Claude Code</strong> to work.
+            <span style="color: var(--cyan); cursor: pointer; font-weight: 500;">Copy MCP command</span>
+            ·
+            <span style="color: var(--cyan); cursor: pointer; font-weight: 500;">Learn more →</span>
+            · Then try: <em style="color: #a78bfa;">"Check my board and start working"</em>
+          </p>
+          <span style="color: #52525b; cursor: pointer; font-size: 12px;">✕</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="annotation">
+      <strong>Compact variant change:</strong> Appends the suggested prompt inline after the existing links.
+      Minimal footprint increase — just ~20 extra characters visible.
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <h2>Implementation Scope</h2>
+    <!-- ══════════════════════════════════════════════════════════ -->
+
+    <h3>Proposal A — Files to Change</h3>
+    <table>
+      <thead>
+        <tr><th>File</th><th>Change</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>src/components/dashboard/first-run-dashboard.tsx</code></td>
+          <td>Replace <code>FirstRunMcpCard</code> with stepped variant + mobile detection</td>
+        </tr>
+        <tr>
+          <td><code>src/components/shared/mcp-connection-banner.tsx</code></td>
+          <td>Add suggested prompt to both full and compact variants</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Proposal B — Files to Change</h3>
+    <table>
+      <thead>
+        <tr><th>File</th><th>Change</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>src/components/dashboard/first-run-dashboard.tsx</code></td>
+          <td>Add prereq hint, guide link, and suggested prompt to existing <code>FirstRunMcpCard</code></td>
+        </tr>
+        <tr>
+          <td><code>src/components/shared/mcp-connection-banner.tsx</code></td>
+          <td>Add suggested prompt to both full and compact variants</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <h3>Shared (Both Proposals)</h3>
+    <table>
+      <thead>
+        <tr><th>Item</th><th>Detail</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>New constants</td>
+          <td><code>CLAUDE_CODE_INSTALL_COMMAND</code> in <code>src/lib/constants.ts</code> (already has <code>MCP_COMMAND</code>)</td>
+        </tr>
+        <tr>
+          <td>Suggested prompt text</td>
+          <td><code>MCP_SUGGESTED_PROMPT</code> in <code>src/lib/constants.ts</code> — reused across all touchpoints</td>
+        </tr>
+        <tr>
+          <td>Tests</td>
+          <td>Update existing component tests to verify new elements render</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <!-- ══════════════════════════════════════════════════════════ -->
+    <h2>Recommendation</h2>
+    <!-- ══════════════════════════════════════════════════════════ -->
+
+    <div class="recommendation">
+      <strong>Go with Proposal A (Stepped Setup Card).</strong>
+      It addresses all 6 audit gaps including the mobile context-switch problem.
+      The implementation is contained to 2 files and ~2 hours of work.
+      The stepped layout follows patterns users know from Linear and Notion onboarding,
+      and the mobile-aware banner prevents frustration for users who signed up on their phone.
+      <br><br>
+      The banner enhancements (suggested prompt) should ship with either proposal — they're
+      a 10-minute change that improves every MCP touchpoint.
+    </div>
+  </div>
+</body>
+</html>
