@@ -147,5 +147,8 @@ export type CollaborationRequestWithRequester = CollaborationRequest & {
 // Workflow Library
 export type WorkflowLibraryTemplate = Database["public"]["Tables"]["workflow_library_templates"]["Row"];
 
+// User Workflow Templates (personal saved templates)
+export type UserWorkflowTemplate = Database["public"]["Tables"]["user_workflow_templates"]["Row"];
+
 // Sort options
 export type SortOption = "newest" | "popular" | "discussed";
