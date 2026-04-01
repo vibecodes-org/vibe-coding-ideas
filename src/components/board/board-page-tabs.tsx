@@ -108,6 +108,7 @@ export function BoardPageTabs({
             isReadOnly={isReadOnly}
             hasAgents={ideaAgentDetails.length > 0}
             kitName={kitName}
+            agentCandidates={ideaAgentDetails.map((a) => ({ botId: a.bot.id, role: a.bot.role ?? "" }))}
           />
         )}
       </TabsContent>

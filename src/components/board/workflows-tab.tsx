@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { HelpLink } from "@/components/shared/help-link";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
@@ -72,6 +72,7 @@ import { LABEL_COLORS } from "@/lib/constants";
 import { getRoleBadgeClasses } from "./task-workflow-section";
 import { ApprovalLockIcon } from "./approval-lock-icon";
 import { approvalCount } from "@/lib/workflow-helpers";
+import { buildRoleMatcher, type AgentCandidate } from "@/lib/role-matching";
 import type { WorkflowTemplate, WorkflowAutoRule, BoardLabel } from "@/types";
 import type { WorkflowTemplateStep } from "@/types/database";
 
@@ -79,19 +80,24 @@ import type { WorkflowTemplateStep } from "@/types/database";
 // Step list (read-only display in detail panel)
 // ────────────────────────────────────────────
 
-function StepRow({ step, index }: { step: WorkflowTemplateStep; index: number }) {
+function StepRow({ step, index, isUnmatched }: { step: WorkflowTemplateStep; index: number; isUnmatched?: boolean }) {
   return (
     <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2.5">
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
         {index + 1}
       </span>
       <span className="flex-1 truncate text-sm font-medium">{step.title}</span>
-      <Badge
-        variant="outline"
-        className={`shrink-0 text-[10px] ${getRoleBadgeClasses(step.role)}`}
-      >
-        {step.role}
-      </Badge>
+      <span className="relative shrink-0">
+        <Badge
+          variant="outline"
+          className={`text-[10px] ${getRoleBadgeClasses(step.role)}`}
+        >
+          {step.role}
+        </Badge>
+        {isUnmatched && (
+          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full border-2 border-background bg-amber-400" />
+        )}
+      </span>
       {step.requires_approval && <ApprovalLockIcon />}
     </div>
   );
@@ -702,6 +708,7 @@ interface WorkflowsTabProps {
   isReadOnly?: boolean;
   hasAgents?: boolean;
   kitName?: string | null;
+  agentCandidates?: AgentCandidate[];
 }
 
 export function WorkflowsTab({
@@ -710,6 +717,7 @@ export function WorkflowsTab({
   isReadOnly = false,
   hasAgents = false,
   kitName,
+  agentCandidates = [],
 }: WorkflowsTabProps) {
   const [templates, setTemplates] = useState<WorkflowTemplate[]>([]);
   const [rules, setRules] = useState<WorkflowAutoRule[]>([]);
@@ -732,6 +740,20 @@ export function WorkflowsTab({
 
   const selected = templates.find((t) => t.id === selectedId) ?? null;
   const { poolRoles, userRoles } = useRoleSuggestions(ideaId);
+
+  // Role coverage: compute unmatched roles for the selected template
+  const roleMatcher = useMemo(() => buildRoleMatcher(agentCandidates), [agentCandidates]);
+  const unmatchedRoles = useMemo(() => {
+    if (!selected || selected.steps.length === 0) return [];
+    const seen = new Set<string>();
+    return selected.steps
+      .filter((s) => {
+        if (!s.role || seen.has(s.role)) return false;
+        seen.add(s.role);
+        return roleMatcher(s.role).tier === "none";
+      })
+      .map((s) => s.role);
+  }, [selected, roleMatcher]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -951,10 +973,19 @@ export function WorkflowsTab({
                 >
                   {t.name}
                 </p>
-                <p className="mt-0.5 text-[10px] text-muted-foreground">
-                  {t.steps.length} step{t.steps.length !== 1 ? "s" : ""}
-                  {approvalCount(t.steps) > 0 &&
-                    ` · ${approvalCount(t.steps)} approval${approvalCount(t.steps) !== 1 ? "s" : ""}`}
+                <p className="mt-0.5 flex items-center gap-1 text-[10px] text-muted-foreground">
+                  <span>
+                    {t.steps.length} step{t.steps.length !== 1 ? "s" : ""}
+                    {approvalCount(t.steps) > 0 &&
+                      ` · ${approvalCount(t.steps)} approval${approvalCount(t.steps) !== 1 ? "s" : ""}`}
+                  </span>
+                  <Zap
+                    className={`h-2.5 w-2.5 ${
+                      rules.some((r) => r.template_id === t.id)
+                        ? "text-emerald-400"
+                        : "text-amber-400 opacity-70"
+                    }`}
+                  />
                 </p>
               </button>
             ))
@@ -1094,10 +1125,63 @@ export function WorkflowsTab({
                     {selected.description}
                   </p>
                 )}
-                <p className="mt-1 text-[10px] text-muted-foreground">
-                  Used {selected.usage_count} time
-                  {selected.usage_count !== 1 ? "s" : ""}
-                </p>
+                <div className="mt-1 flex flex-wrap items-center gap-3">
+                  {selected.usage_count === 0 ? (
+                    <span className="text-[10px] text-muted-foreground">
+                      Not used yet{" "}
+                      <span className="mx-0.5">&middot;</span>{" "}
+                      <button
+                        onClick={() => document.getElementById("workflow-triggers-section")?.scrollIntoView({ behavior: "smooth" })}
+                        className="font-medium text-amber-400 hover:underline"
+                      >
+                        Set up a trigger &darr;
+                      </button>
+                    </span>
+                  ) : (
+                    <span className="text-[10px] text-muted-foreground">
+                      Used {selected.usage_count} time
+                      {selected.usage_count !== 1 ? "s" : ""}
+                    </span>
+                  )}
+                  {selected.steps.length > 0 && agentCandidates.length > 0 && (
+                    unmatchedRoles.length === 0 ? (
+                      <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400">
+                        <Check className="h-3 w-3" />
+                        All roles covered
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => {
+                          const params = new URLSearchParams(window.location.search);
+                          params.set("tab", "agents");
+                          window.history.pushState(null, "", `?${params.toString()}`);
+                          window.dispatchEvent(new PopStateEvent("popstate"));
+                        }}
+                        className="flex items-center gap-1 text-[10px] font-medium text-amber-400 hover:underline"
+                      >
+                        <AlertTriangle className="h-3 w-3" />
+                        {unmatchedRoles.length} role{unmatchedRoles.length !== 1 ? "s" : ""} need{unmatchedRoles.length === 1 ? "s" : ""} an agent
+                      </button>
+                    )
+                  )}
+                  {(() => {
+                    const triggerCount = rules.filter((r) => r.template_id === selected.id).length;
+                    return triggerCount > 0 ? (
+                      <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400">
+                        <Zap className="h-3 w-3" />
+                        {triggerCount} trigger{triggerCount !== 1 ? "s" : ""} active
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => document.getElementById("workflow-triggers-section")?.scrollIntoView({ behavior: "smooth" })}
+                        className="flex items-center gap-1 text-[10px] font-medium text-amber-400 hover:underline"
+                      >
+                        <Zap className="h-3 w-3" />
+                        No triggers
+                      </button>
+                    );
+                  })()}
+                </div>
               </div>
               {!isReadOnly && (
                 <div className="flex items-center gap-1">
@@ -1180,12 +1264,39 @@ export function WorkflowsTab({
               </div>
               <div className="space-y-1.5">
                 {selected.steps.map((step, idx) => (
-                  <StepRow key={idx} step={step} index={idx} />
+                  <StepRow key={idx} step={step} index={idx} isUnmatched={unmatchedRoles.includes(step.role)} />
                 ))}
               </div>
+              {unmatchedRoles.length > 0 && (
+                <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
+                  <p className="text-xs text-amber-400">
+                    {unmatchedRoles.map((role, i) => (
+                      <span key={role}>
+                        {i > 0 && ", "}
+                        <strong>{role}</strong>
+                      </span>
+                    ))}
+                    {unmatchedRoles.length === 1 ? " has " : " have "}
+                    no matching agent.{" "}
+                    <button
+                      onClick={() => {
+                        const params = new URLSearchParams(window.location.search);
+                        params.set("tab", "agents");
+                        window.history.pushState(null, "", `?${params.toString()}`);
+                        window.dispatchEvent(new PopStateEvent("popstate"));
+                      }}
+                      className="underline hover:text-amber-300"
+                    >
+                      Add one in Agents tab
+                    </button>
+                  </p>
+                </div>
+              )}
             </div>
 
             {/* Auto-rules */}
+            <div id="workflow-triggers-section">
             <AutoRulesSection
               rules={rules.filter((r) => r.template_id === selected.id)}
               templates={templates}
@@ -1195,6 +1306,7 @@ export function WorkflowsTab({
               onRulesChange={fetchData}
               selectedTemplateId={selected.id}
             />
+            </div>
           </div>
         )}
       </div>
