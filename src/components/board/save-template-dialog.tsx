@@ -2,7 +2,8 @@
 
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Bookmark, Lock, Loader2 } from "lucide-react";
+import { Bookmark, Loader2 } from "lucide-react";
+import { ApprovalLockIcon } from "@/components/board/approval-lock-icon";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -125,9 +126,7 @@ export function SaveTemplateDialog({
                   >
                     {step.role}
                   </Badge>
-                  {step.requires_approval && (
-                    <Lock className="h-3 w-3 shrink-0 text-amber-400" />
-                  )}
+                  {step.requires_approval && <ApprovalLockIcon className="h-3 w-3" />}
                 </div>
               ))}
             </div>

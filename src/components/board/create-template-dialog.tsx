@@ -274,7 +274,7 @@ export function CreateTemplateDialog({
                         }
                       />
                       <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                        Gate
+                        Approval
                       </span>
                     </div>
                   </div>

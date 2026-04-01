@@ -9,7 +9,6 @@ import {
   Loader2,
   XCircle,
   CircleDot,
-  Lock,
   Send,
   ChevronRight,
   Bot,
@@ -61,6 +60,7 @@ import {
 } from "@/actions/workflow";
 import { getInitials } from "@/lib/utils";
 import type { TaskWorkflowStep, WorkflowStepComment } from "@/types";
+import { ApprovalLockIcon } from "./approval-lock-icon";
 
 const STATUS_CONFIG = {
   pending: {
@@ -435,9 +435,7 @@ export function StepDetailDialog({
                 ) : step.agent_role && !step.bot_id ? (
                   <span className="text-[11px] text-amber-400">Unassigned</span>
                 ) : null}
-                {step.human_check_required && (
-                  <Lock className="h-3 w-3 text-amber-400" />
-                )}
+                {step.human_check_required && <ApprovalLockIcon className="h-3 w-3" />}
               </div>
             </div>
             {step.status === "pending" && !isReadOnly && !isEditing && (

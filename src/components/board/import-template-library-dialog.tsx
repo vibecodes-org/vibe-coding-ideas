@@ -2,7 +2,9 @@
 
 import { useState, useEffect } from "react";
 import { toast } from "sonner";
-import { Lock, ChevronDown, ChevronRight, Check, Loader2 } from "lucide-react";
+import { ChevronDown, ChevronRight, Check, Loader2 } from "lucide-react";
+import { ApprovalLockIcon } from "@/components/board/approval-lock-icon";
+import { approvalCount } from "@/lib/workflow-helpers";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -151,8 +153,6 @@ export function ImportTemplateLibraryDialog({
     onOpenChange(nextOpen);
   }
 
-  const gateCount = (steps: WorkflowTemplateStep[]) =>
-    steps.filter((s) => s.requires_approval).length;
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -177,7 +177,7 @@ export function ImportTemplateLibraryDialog({
               const isSelected = selected.has(tpl.id);
               const isExpanded = expandedId === tpl.id;
               const steps = tpl.steps as WorkflowTemplateStep[];
-              const gates = gateCount(steps);
+              const approvals = approvalCount(steps);
 
               return (
                 <div key={tpl.id} className="rounded-lg border border-border overflow-hidden">
@@ -239,7 +239,7 @@ export function ImportTemplateLibraryDialog({
                       </p>
                       <p className="mt-1 text-[10px] text-muted-foreground">
                         {steps.length} step{steps.length !== 1 ? "s" : ""}
-                        {gates > 0 && ` · ${gates} gate${gates !== 1 ? "s" : ""}`}
+                        {approvals > 0 && ` · ${approvals} approval${approvals !== 1 ? "s" : ""}`}
                       </p>
                     </div>
 
@@ -278,9 +278,7 @@ export function ImportTemplateLibraryDialog({
                           >
                             {step.role}
                           </Badge>
-                          {step.requires_approval && (
-                            <Lock className="h-3 w-3 shrink-0 text-amber-400" />
-                          )}
+                          {step.requires_approval && <ApprovalLockIcon className="h-3 w-3" />}
                         </div>
                       ))}
                     </div>

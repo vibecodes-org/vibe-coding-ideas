@@ -70,6 +70,8 @@ import { isTemplateSaved } from "@/actions/user-templates";
 import { createBoardLabel } from "@/actions/board";
 import { LABEL_COLORS } from "@/lib/constants";
 import { getRoleBadgeClasses } from "./task-workflow-section";
+import { ApprovalLockIcon } from "./approval-lock-icon";
+import { approvalCount } from "@/lib/workflow-helpers";
 import type { WorkflowTemplate, WorkflowAutoRule, BoardLabel } from "@/types";
 import type { WorkflowTemplateStep } from "@/types/database";
 
@@ -90,9 +92,7 @@ function StepRow({ step, index }: { step: WorkflowTemplateStep; index: number })
       >
         {step.role}
       </Badge>
-      {step.requires_approval && (
-        <Lock className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-      )}
+      {step.requires_approval && <ApprovalLockIcon />}
     </div>
   );
 }
@@ -202,7 +202,7 @@ function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: StepEdito
                   }
                 />
                 <span className="text-[10px] text-muted-foreground whitespace-nowrap">
-                  Gate
+                  Approval
                 </span>
               </div>
             </div>
@@ -840,8 +840,6 @@ export function WorkflowsTab({
     );
   }
 
-  const gateCount = (steps: WorkflowTemplateStep[]) =>
-    steps.filter((s) => s.requires_approval).length;
 
   return (
     <div className="flex h-full min-h-0 gap-4">
@@ -955,8 +953,8 @@ export function WorkflowsTab({
                 </p>
                 <p className="mt-0.5 text-[10px] text-muted-foreground">
                   {t.steps.length} step{t.steps.length !== 1 ? "s" : ""}
-                  {gateCount(t.steps) > 0 &&
-                    ` · ${gateCount(t.steps)} gate${gateCount(t.steps) !== 1 ? "s" : ""}`}
+                  {approvalCount(t.steps) > 0 &&
+                    ` · ${approvalCount(t.steps)} approval${approvalCount(t.steps) !== 1 ? "s" : ""}`}
                 </p>
               </button>
             ))
@@ -1002,7 +1000,7 @@ export function WorkflowsTab({
                       </li>
                       <li className="flex items-baseline gap-2">
                         <span className="flex h-[18px] w-[18px] shrink-0 items-center justify-center rounded-full bg-amber-500/12 text-[10px] font-bold text-amber-400">4</span>
-                        <span>Steps with <strong className="text-foreground font-medium">approval gates</strong> pause for human review</span>
+                        <span>Steps marked as <strong className="text-foreground font-medium">approvals</strong> pause for human review</span>
                       </li>
                     </ol>
                   </div>
@@ -1169,9 +1167,17 @@ export function WorkflowsTab({
 
             {/* Steps */}
             <div className="space-y-2">
-              <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-                Steps
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
+                  Steps
+                </h3>
+                {selected.steps.some((s) => s.requires_approval) && (
+                  <span className="flex items-center gap-1 text-[10px] text-muted-foreground">
+                    <Lock className="h-2.5 w-2.5 text-amber-400" />
+                    = Requires approval
+                  </span>
+                )}
+              </div>
               <div className="space-y-1.5">
                 {selected.steps.map((step, idx) => (
                   <StepRow key={idx} step={step} index={idx} />

@@ -5,7 +5,6 @@ import Link from "next/link";
 import { toast } from "sonner";
 import { HelpLink } from "@/components/shared/help-link";
 import {
-  Lock,
   Check,
   Loader2,
   XCircle,
@@ -59,6 +58,7 @@ import {
 } from "@/actions/workflow";
 import { applyWorkflowTemplate, listWorkflowTemplates, rematchWorkflowAgents } from "@/actions/workflow-templates";
 import { StepDetailDialog } from "./step-detail-dialog";
+import { ApprovalLockIcon } from "./approval-lock-icon";
 import type { TaskWorkflowStep, WorkflowRun, WorkflowTemplate } from "@/types";
 
 /** Map a role string to a color class for the role badge. */
@@ -551,9 +551,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                   )}
                   {config.label}
                 </Badge>
-                {step.human_check_required && (
-                  <Lock className="h-3.5 w-3.5 shrink-0 text-amber-400" />
-                )}
+                {step.human_check_required && <ApprovalLockIcon />}
                 <ChevronRight className="h-3.5 w-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
             );

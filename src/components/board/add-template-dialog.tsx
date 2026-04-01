@@ -6,7 +6,6 @@ import {
   Bookmark,
   Layers,
   Plus,
-  Lock,
   Check,
   ChevronDown,
   ChevronRight,
@@ -35,6 +34,8 @@ import { importTemplateWithLabel, createWorkflowTemplate } from "@/actions/workf
 import { RoleCombobox, useRoleSuggestions } from "@/components/ui/role-combobox";
 import { TEMPLATE_LABEL_SUGGESTIONS, LABEL_COLORS } from "@/lib/constants";
 import { getRoleBadgeClasses } from "@/components/board/task-workflow-section";
+import { ApprovalLockIcon } from "@/components/board/approval-lock-icon";
+import { approvalCount } from "@/lib/workflow-helpers";
 import type { WorkflowLibraryTemplate, UserWorkflowTemplate } from "@/types";
 import type { WorkflowTemplateStep } from "@/types/database";
 
@@ -354,8 +355,6 @@ export function AddTemplateDialog({
 
   // ── Shared helpers ──
 
-  const gateCount = (tplSteps: WorkflowTemplateStep[]) =>
-    tplSteps.filter((s) => s.requires_approval).length;
 
   const currentSelected = activeTab === "my" ? mySelected : platformSelected;
   const isImportTab = activeTab === "my" || activeTab === "platform";
@@ -383,7 +382,7 @@ export function AddTemplateDialog({
     }
   ) {
     const { steps: tplSteps, isSelected, isOnBoard, isExpanded, onToggleSelect, onToggleExpand, badges } = opts;
-    const gates = gateCount(tplSteps);
+    const approvals = approvalCount(tplSteps);
 
     return (
       <div key={tpl.id} className="rounded-lg border border-border overflow-hidden">
@@ -430,7 +429,7 @@ export function AddTemplateDialog({
             <p className="mt-0.5 text-xs text-muted-foreground line-clamp-2">{tpl.description}</p>
             <p className="mt-1 text-[10px] text-muted-foreground">
               {tplSteps.length} step{tplSteps.length !== 1 ? "s" : ""}
-              {gates > 0 && ` · ${gates} gate${gates !== 1 ? "s" : ""}`}
+              {approvals > 0 && ` · ${approvals} approval${approvals !== 1 ? "s" : ""}`}
             </p>
           </div>
 
@@ -462,7 +461,7 @@ export function AddTemplateDialog({
                 >
                   {step.role}
                 </Badge>
-                {step.requires_approval && <Lock className="h-3 w-3 shrink-0 text-amber-400" />}
+                {step.requires_approval && <ApprovalLockIcon className="h-3 w-3" />}
               </div>
             ))}
           </div>
@@ -718,7 +717,7 @@ export function AddTemplateDialog({
                       checked={step.requires_approval ?? false}
                       onCheckedChange={(v) => updateStep(idx, { requires_approval: v })}
                     />
-                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Gate</span>
+                    <span className="text-[10px] text-muted-foreground whitespace-nowrap">Approval</span>
                   </div>
                 </div>
                 <div className="flex items-center gap-3 pl-7">

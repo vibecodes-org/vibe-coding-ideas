@@ -4,6 +4,11 @@ import type { WorkflowTemplateStep } from "@/types/database";
 
 export const TERMINAL_STATUSES = ["completed", "skipped"] as const;
 
+/** Count how many steps in a template require human approval. */
+export function approvalCount(steps: Pick<WorkflowTemplateStep, "requires_approval">[]): number {
+  return steps.filter((s) => s.requires_approval).length;
+}
+
 /**
  * Check if any auto-rules match a label being added to a task.
  * If a match is found and no active workflow exists, applies the
