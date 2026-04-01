@@ -17,7 +17,7 @@ test.describe("Dashboard", () => {
   test("should have link to create an idea", async ({ userAPage: page }) => {
     await page.goto("/dashboard");
     await expect(page.getByRole("heading", { name: "Dashboard" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
-    await expect(page.getByRole("link", { name: /Create an idea|View all/i }).first()).toBeVisible();
+    await expect(page.getByRole("link", { name: /Create an idea|View all/i }).first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
   test("should have link to manage agents", async ({ userAPage: page }) => {
