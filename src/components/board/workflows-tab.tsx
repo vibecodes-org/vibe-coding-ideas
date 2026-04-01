@@ -21,6 +21,8 @@ import {
   AlertTriangle,
   Package,
   Lightbulb,
+  Info,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -734,6 +736,12 @@ export function WorkflowsTab({
   const [editSteps, setEditSteps] = useState<WorkflowTemplateStep[]>([]);
   const [saving, setSaving] = useState(false);
 
+  // Explainer banner dismiss state
+  const [explainerDismissed, setExplainerDismissed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    return localStorage.getItem("workflows-explainer-dismissed") === "1";
+  });
+
   // Save to My Templates state
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [savedTemplateIds, setSavedTemplateIds] = useState<Set<string>>(new Set());
@@ -864,7 +872,27 @@ export function WorkflowsTab({
 
 
   return (
-    <div className="flex h-full min-h-0 gap-4">
+    <div className="flex h-full min-h-0 flex-col gap-3">
+      {/* Explainer banner */}
+      {!explainerDismissed && (
+        <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/20 px-4 py-3">
+          <Info className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
+          <p className="text-xs leading-relaxed text-muted-foreground">
+            Workflow templates define a sequence of steps that AI agents follow when working on a task. Templates can be applied to tasks manually or triggered automatically when a label is added. Each step has an assigned role — agents matching that role claim and execute the step via MCP, producing deliverables that chain into the next step. Steps marked as approvals pause for human review before the workflow continues.
+          </p>
+          <button
+            onClick={() => {
+              setExplainerDismissed(true);
+              localStorage.setItem("workflows-explainer-dismissed", "1");
+            }}
+            className="mt-0.5 shrink-0 text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1 gap-4">
       {/* Left panel — template list */}
       <div className="flex w-60 shrink-0 flex-col rounded-lg border border-border bg-muted/20">
         {/* Sidebar header */}
@@ -1350,6 +1378,7 @@ export function WorkflowsTab({
           }}
         />
       )}
+      </div>
     </div>
   );
 }
