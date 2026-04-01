@@ -878,7 +878,7 @@ export function WorkflowsTab({
         <div className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/20 px-4 py-3">
           <Info className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
           <p className="text-xs leading-relaxed text-muted-foreground">
-            Workflow templates define a sequence of steps that AI agents follow when working on a task. Templates can be applied to tasks manually or triggered automatically when a label is added. Each step has an assigned role — agents matching that role claim and execute the step via MCP, producing deliverables that chain into the next step. Steps marked as approvals pause for human review before the workflow continues.
+            Workflow templates define a sequence of steps that <strong className="font-medium text-foreground">AI agents</strong> follow when working on a task. Templates can be applied to tasks manually or <strong className="font-medium text-foreground">triggered automatically</strong> when a label is added. Each step has an assigned role — agents matching that role claim and execute the step via MCP, producing deliverables that chain into the next step. Steps marked as <strong className="font-medium text-foreground">approvals</strong> pause for human review before the workflow continues.
           </p>
           <button
             onClick={() => {
