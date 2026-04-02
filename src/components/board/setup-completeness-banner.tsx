@@ -75,17 +75,6 @@ const VARIANT_STYLES: Record<
   },
 };
 
-// All possible setup steps in order — used to derive completed items in the checklist
-const ALL_STEP_LABELS: { type: GapType | null; label: string }[] = [
-  { type: null, label: "Create board tasks" },
-  { type: "no-agents", label: "Create AI agents" },
-  { type: "agents-not-allocated", label: "Add agents to this idea" },
-  { type: "no-workflows", label: "Set up workflow templates" },
-  { type: "no-auto-rules", label: "Create auto-rule triggers" },
-  { type: "unmatched-roles", label: "Assign agents to workflow roles" },
-  { type: "no-labels", label: "Add labels to trigger workflows" },
-];
-
 // Checklist action text — tab-specific labels matching the mockup
 const CHECKLIST_ACTION_TEXT: Record<GapType, string> = {
   "no-agents": "Browse agents \u2192",
@@ -169,10 +158,10 @@ export function SetupCompletenessBanner({
         role="status"
         aria-label="Setup completeness"
       >
-        {/* Progress dots */}
+        {/* Progress dots — 1 completed (tasks) + N gaps */}
         <div className="flex gap-1.5 shrink-0" aria-hidden="true">
-          {[...Array(4)].map((_, i) => {
-            const completedCount = 4 - gaps.length;
+          {[...Array(1 + gaps.length)].map((_, i) => {
+            const completedCount = 1; // "Create board tasks" is always done
             return (
               <div
                 key={i}
@@ -272,41 +261,32 @@ export function SetupCompletenessBanner({
           )}
         >
           <div className="flex flex-col gap-2">
-            {/* Show completed items first — derive from what's NOT in the gaps list */}
-            {ALL_STEP_LABELS
-              .filter((step) => !gaps.some((g) => g.type === step.type))
-              .map((step) => (
-                <div key={step.type ?? step.label} className="flex items-center gap-3 text-xs">
-                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500">
-                    <Check className="h-3 w-3" />
-                  </div>
-                  <span className="text-muted-foreground line-through">
-                    {step.label}
-                  </span>
+            {/* "Create board tasks" is always completed (banner only shows when tasks exist) */}
+            <div className="flex items-center gap-3 text-xs">
+              <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-emerald-500/10 text-emerald-500">
+                <Check className="h-3 w-3" />
+              </div>
+              <span className="text-muted-foreground line-through">
+                Create board tasks
+              </span>
+            </div>
+            {/* Show actual gaps as numbered todo items */}
+            {gaps.map((gap, i) => (
+              <div key={gap.type} className="flex items-center gap-3 text-xs">
+                <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground text-[10px] font-bold">
+                  {i + 2}
                 </div>
-              ))}
-            {/* Show remaining gaps */}
-            {gaps.map((gap, i) => {
-              const completedCount = ALL_STEP_LABELS.filter(
-                (step) => !gaps.some((g) => g.type === step.type)
-              ).length;
-              return (
-                <div key={gap.type} className="flex items-center gap-3 text-xs">
-                  <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-border bg-muted text-muted-foreground text-[10px] font-bold">
-                    {completedCount + i + 1}
-                  </div>
-                  <span className="flex-1 text-muted-foreground">
-                    {gap.title}
-                  </span>
-                  <Link
-                    href={gap.action.href}
-                    className="text-violet-400 hover:text-violet-300 transition-colors"
-                  >
-                    {CHECKLIST_ACTION_TEXT[gap.type]}
-                  </Link>
-                </div>
-              );
-            })}
+                <span className="flex-1 text-muted-foreground">
+                  {gap.title}
+                </span>
+                <Link
+                  href={gap.action.href}
+                  className="text-violet-400 hover:text-violet-300 transition-colors"
+                >
+                  {CHECKLIST_ACTION_TEXT[gap.type]}
+                </Link>
+              </div>
+            ))}
           </div>
         </div>
       )}
