@@ -143,9 +143,13 @@ describe("checkAndCompleteRun", () => {
 
 function createAutoRuleMockSupabase(options: {
   rule?: { id: string; template_id: string } | null;
-  activeRun?: { id: string } | null;
+  activeRun?: { id: string; template_id?: string } | null;
+  triggeringRule?: { id: string; label_id: string } | null;
+  labelStillOnTask?: boolean;
 }) {
   const calls: { table: string; method: string }[] = [];
+  const deletedRunIds: string[] = [];
+  let autoRuleCallCount = 0;
 
   const makeChain = (resolvedData: unknown) => {
     const chain: Record<string, unknown> = {};
@@ -161,17 +165,39 @@ function createAutoRuleMockSupabase(options: {
     return chain;
   };
 
-  const autoRuleChain = makeChain(options.rule ?? null);
   const activeRunChain = makeChain(options.activeRun ?? null);
+  const triggeringRuleChain = makeChain(options.triggeringRule ?? null);
+  const labelOnTaskChain = makeChain(
+    options.labelStillOnTask ? { id: "label-link-1" } : null
+  );
+
+  const deleteChain = {
+    eq: vi.fn((_col: string, val: string) => {
+      deletedRunIds.push(val);
+      return Promise.resolve({ error: null });
+    }),
+  };
 
   return {
     from: vi.fn((table: string) => {
       calls.push({ table, method: "from" });
-      if (table === "workflow_auto_rules") return autoRuleChain;
-      if (table === "workflow_runs") return activeRunChain;
+      if (table === "workflow_auto_rules") {
+        autoRuleCallCount++;
+        // First call is the rule lookup for the new label; second is the triggering rule lookup
+        if (autoRuleCallCount === 1) return makeChain(options.rule ?? null);
+        return triggeringRuleChain;
+      }
+      if (table === "workflow_runs") {
+        return {
+          ...activeRunChain,
+          delete: vi.fn(() => deleteChain),
+        };
+      }
+      if (table === "board_task_labels") return labelOnTaskChain;
       return makeChain(null);
     }),
     _calls: calls,
+    _deletedRunIds: deletedRunIds,
   };
 }
 
@@ -199,17 +225,66 @@ describe("checkAndApplyAutoRules", () => {
     expect(applyFn).not.toHaveBeenCalled();
   });
 
-  it("does not call applyFn when task has active workflow run", async () => {
+  it("does not call applyFn when task has active workflow run with same template", async () => {
     const applyFn = vi.fn();
     const supabase = createAutoRuleMockSupabase({
       rule: { id: "rule-1", template_id: "tmpl-1" },
-      activeRun: { id: "run-1" },
+      activeRun: { id: "run-1", template_id: "tmpl-1" },
     });
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await checkAndApplyAutoRules(supabase as any, "task-1", "label-1", "idea-1", applyFn);
 
     expect(applyFn).not.toHaveBeenCalled();
+  });
+
+  it("does not call applyFn when active run's label is still on task", async () => {
+    const applyFn = vi.fn();
+    const supabase = createAutoRuleMockSupabase({
+      rule: { id: "rule-2", template_id: "tmpl-2" },
+      activeRun: { id: "run-1", template_id: "tmpl-1" },
+      triggeringRule: { id: "rule-1", label_id: "label-A" },
+      labelStillOnTask: true,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await checkAndApplyAutoRules(supabase as any, "task-1", "label-B", "idea-1", applyFn);
+
+    expect(applyFn).not.toHaveBeenCalled();
+    expect(supabase._deletedRunIds).toHaveLength(0);
+  });
+
+  it("does not call applyFn when active run was manually applied (no triggering rule)", async () => {
+    const applyFn = vi.fn();
+    const supabase = createAutoRuleMockSupabase({
+      rule: { id: "rule-2", template_id: "tmpl-2" },
+      activeRun: { id: "run-1", template_id: "tmpl-manual" },
+      triggeringRule: null,
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await checkAndApplyAutoRules(supabase as any, "task-1", "label-B", "idea-1", applyFn);
+
+    expect(applyFn).not.toHaveBeenCalled();
+    expect(supabase._deletedRunIds).toHaveLength(0);
+  });
+
+  it("removes orphaned run and applies new workflow when label was swapped", async () => {
+    const applyFn = vi.fn().mockResolvedValue({});
+    const supabase = createAutoRuleMockSupabase({
+      rule: { id: "rule-2", template_id: "tmpl-2" },
+      activeRun: { id: "run-1", template_id: "tmpl-1" },
+      triggeringRule: { id: "rule-1", label_id: "label-A" },
+      labelStillOnTask: false, // label A was removed
+    });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await checkAndApplyAutoRules(supabase as any, "task-1", "label-B", "idea-1", applyFn);
+
+    // Should have deleted the orphaned run
+    expect(supabase._deletedRunIds).toContain("run-1");
+    // Should have applied the new workflow
+    expect(applyFn).toHaveBeenCalledWith("task-1", "tmpl-2");
   });
 
   it("does not throw when applyFn fails", async () => {

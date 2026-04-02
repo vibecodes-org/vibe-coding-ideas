@@ -242,8 +242,8 @@ export function RoleCombobox({
       {open && hasAnyGroup && (
         <div
           className={cn(
-            "bg-popover text-popover-foreground absolute top-full left-0 z-[100] mt-1 rounded-md border p-0 shadow-md",
-            compact ? "w-[200px]" : "w-full"
+            "bg-popover text-popover-foreground absolute top-full z-[100] mt-1 rounded-md border p-0 shadow-md",
+            compact ? "w-[200px] right-0" : "w-full left-0"
           )}
         >
           <Command shouldFilter={false}>

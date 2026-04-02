@@ -303,7 +303,7 @@ export function registerTools(
 
   server.tool(
     "create_task",
-    "Create a new task on a board. Requires idea_id and column_id. Position auto-calculated.",
+    "Create a new task on a board. Requires idea_id and column_id. Position auto-calculated. IMPORTANT: If you have images or files to attach (e.g. screenshots, mockups), call upload_attachment or request_upload_url after creating the task to attach them.",
     createTaskSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -725,7 +725,7 @@ export function registerTools(
 
   server.tool(
     "upload_attachment",
-    "Upload a file attachment to a task. Accepts base64-encoded file content. Max 10MB. Auto-sets cover image for first image upload.",
+    "Attach a file (image, PDF, document) to a task. Use this after create_task when you have screenshots or files to include. Accepts base64-encoded file content. Max 10MB. Auto-sets cover image for first image upload. For files over 3MB, use request_upload_url instead.",
     uploadAttachmentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -753,7 +753,7 @@ export function registerTools(
 
   server.tool(
     "request_upload_url",
-    "Get a presigned URL for uploading a file attachment to a task. Use this for files that may exceed 3MB. Returns a signed URL and curl command — upload the file directly to the URL, then call confirm_upload. Max 10MB.",
+    "Get a presigned URL for uploading a large file attachment to a task (alternative to upload_attachment for files over 3MB). Returns a signed URL and curl command — upload the file directly to the URL, then call confirm_upload to finalize. Max 10MB.",
     requestUploadUrlSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

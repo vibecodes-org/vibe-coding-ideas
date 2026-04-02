@@ -37,12 +37,44 @@ export async function checkAndApplyAutoRules(
     // Check for existing active workflow run on this task
     const { data: activeRun } = await supabase
       .from("workflow_runs")
-      .select("id")
+      .select("id, template_id")
       .eq("task_id", taskId)
       .not("status", "in", '("completed","failed")')
       .maybeSingle();
 
-    if (activeRun) return;
+    if (activeRun) {
+      // Same template already applied — nothing to do
+      if (activeRun.template_id === rule.template_id) return;
+
+      // Check if the active run was triggered by an auto-rule whose label
+      // is no longer on this task (swap case: label A removed + label B added)
+      const { data: triggeringRule } = await supabase
+        .from("workflow_auto_rules")
+        .select("id, label_id")
+        .eq("idea_id", ideaId)
+        .eq("template_id", activeRun.template_id)
+        .maybeSingle();
+
+      if (triggeringRule) {
+        const { data: labelStillOnTask } = await supabase
+          .from("board_task_labels")
+          .select("id")
+          .eq("task_id", taskId)
+          .eq("label_id", triggeringRule.label_id)
+          .maybeSingle();
+
+        if (!labelStillOnTask) {
+          // Triggering label was removed — delete the orphaned run so the new rule can apply
+          await supabase.from("workflow_runs").delete().eq("id", activeRun.id);
+        } else {
+          // Active run's label is still present — don't replace it
+          return;
+        }
+      } else {
+        // Active run wasn't auto-rule triggered (manually applied) — don't replace
+        return;
+      }
+    }
 
     await applyFn(taskId, rule.template_id);
   } catch (err) {

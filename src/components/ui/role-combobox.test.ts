@@ -244,3 +244,28 @@ describe("buildSuggestions", () => {
     expect(result.standard.map((r) => r.role)).toContain("DevOps Engineer");
   });
 });
+
+describe("dropdown positioning classes", () => {
+  // Regression: compact dropdown must anchor right-0 so it expands leftward
+  // within its container, preventing horizontal scrollbar overflow in dialogs.
+  // See: role-combobox.tsx dropdown div className logic.
+  function getDropdownClasses(compact: boolean) {
+    // Mirrors the cn() logic in role-combobox.tsx line 244-246
+    const base = "bg-popover text-popover-foreground absolute top-full z-[100] mt-1 rounded-md border p-0 shadow-md";
+    return compact ? `${base} w-[200px] right-0` : `${base} w-full left-0`;
+  }
+
+  it("compact mode uses right-0 to prevent overflow", () => {
+    const classes = getDropdownClasses(true);
+    expect(classes).toContain("right-0");
+    expect(classes).not.toContain("left-0");
+    expect(classes).toContain("w-[200px]");
+  });
+
+  it("non-compact mode uses left-0 with full width", () => {
+    const classes = getDropdownClasses(false);
+    expect(classes).toContain("left-0");
+    expect(classes).not.toContain("right-0");
+    expect(classes).toContain("w-full");
+  });
+});

@@ -818,7 +818,7 @@ export function AddTemplateDialog({
         </div>
 
         {/* Scrollable body */}
-        <div className="flex-1 overflow-y-auto space-y-2 py-2">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden space-y-2 py-2">
           {activeTab === "my" && renderMyTemplates()}
           {activeTab === "platform" && renderPlatformTemplates()}
           {activeTab === "create" && renderCreateForm()}
