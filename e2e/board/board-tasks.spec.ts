@@ -62,9 +62,14 @@ test.describe("Board Tasks", () => {
     await expect(page.getByText("[E2E] Task 2")).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await page.getByText("[E2E] Task 2").click();
 
+    // Wait for dialog to open, then archive
+    await expect(page.getByRole("button", { name: "Archive" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await page.getByRole("button", { name: "Archive" }).click();
-    await page.keyboard.press("Escape");
-    await page.waitForTimeout(1000);
+
+    // Wait for the dialog to close before checking the board
+    await expect(page.getByLabel("Task Details")).not.toBeVisible({ timeout: EXPECT_TIMEOUT });
+
+    // Task should no longer be visible on the board
     await expect(page.getByText("[E2E] Task 2")).not.toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
