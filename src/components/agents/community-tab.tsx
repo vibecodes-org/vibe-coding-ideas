@@ -14,17 +14,19 @@ import { AgentCard } from "./agent-card";
 import { AgentProfileDialog } from "./agent-profile-dialog";
 import { FeaturedTeams } from "./featured-teams";
 import type { BotProfileWithOwner, FeaturedTeamWithAgents } from "@/types";
+import type { UserIdea } from "./allocate-to-idea-dialog";
 
 interface CommunityTabProps {
   bots: BotProfileWithOwner[];
   userVotedBotIds: string[];
   userExistingRoles: string[];
   featuredTeams: FeaturedTeamWithAgents[];
+  userIdeas?: UserIdea[];
 }
 
 type SortOption = "popular" | "newest" | "most-added";
 
-export function CommunityTab({ bots, userVotedBotIds, userExistingRoles, featuredTeams }: CommunityTabProps) {
+export function CommunityTab({ bots, userVotedBotIds, userExistingRoles, featuredTeams, userIdeas = [] }: CommunityTabProps) {
   const [search, setSearch] = useState("");
   const [roleFilter, setRoleFilter] = useState("All Roles");
   const [sort, setSort] = useState<SortOption>("popular");
@@ -81,7 +83,7 @@ export function CommunityTab({ bots, userVotedBotIds, userExistingRoles, feature
   return (
     <div className="space-y-6">
       {/* Featured Teams */}
-      <FeaturedTeams teams={featuredTeams} userExistingRoles={userExistingRoles} />
+      <FeaturedTeams teams={featuredTeams} userExistingRoles={userExistingRoles} userIdeas={userIdeas} />
 
       {/* Individual Agents separator */}
       <div className="flex items-center gap-3 text-sm font-semibold text-muted-foreground">

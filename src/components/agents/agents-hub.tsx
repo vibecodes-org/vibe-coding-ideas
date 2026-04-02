@@ -10,6 +10,7 @@ import { CommunityTab } from "./community-tab";
 import { CreateAgentDialog } from "./create-agent-dialog";
 import { cn } from "@/lib/utils";
 import type { BotProfile, BotProfileWithOwner, FeaturedTeamWithAgents } from "@/types";
+import type { UserIdea } from "./allocate-to-idea-dialog";
 
 interface AgentsHubProps {
   myBots: BotProfile[];
@@ -18,6 +19,7 @@ interface AgentsHubProps {
   userVotedBotIds: string[];
   userExistingRoles: string[];
   featuredTeams: FeaturedTeamWithAgents[];
+  userIdeas?: UserIdea[];
 }
 
 type Tab = "my-agents" | "community";
@@ -29,6 +31,7 @@ export function AgentsHub({
   userVotedBotIds,
   userExistingRoles,
   featuredTeams,
+  userIdeas = [],
 }: AgentsHubProps) {
   const [activeTab, setActiveTab] = useState<Tab>("my-agents");
   const [createOpen, setCreateOpen] = useState(false);
@@ -140,6 +143,7 @@ export function AgentsHub({
           onSwitchToCommunity={() => setActiveTab("community")}
           featuredTeams={featuredTeams}
           userExistingRoles={userExistingRoles}
+          userIdeas={userIdeas}
         />
       ) : (
         <CommunityTab
@@ -147,10 +151,11 @@ export function AgentsHub({
           userVotedBotIds={userVotedBotIds}
           userExistingRoles={userExistingRoles}
           featuredTeams={featuredTeams}
+          userIdeas={userIdeas}
         />
       )}
 
-      <CreateAgentDialog open={createOpen} onOpenChange={setCreateOpen} />
+      <CreateAgentDialog open={createOpen} onOpenChange={setCreateOpen} userIdeas={userIdeas} />
     </div>
   );
 }

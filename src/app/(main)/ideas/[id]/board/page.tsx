@@ -13,6 +13,7 @@ import { GuestBoardBanner } from "@/components/board/guest-board-banner";
 import { BoardPageTabs } from "@/components/board/board-page-tabs";
 import { KitAppliedToast } from "@/components/board/kit-applied-toast";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
+import { computeIdeaHealth } from "@/lib/idea-health";
 import type {
   BoardColumnWithTasks,
   BoardTaskWithAssignee,
@@ -131,6 +132,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     ideaTeam,
     { data: userBotProfiles },
     { count: workflowTemplateCount },
+    { count: autoRuleCount },
   ] = await Promise.all([
     supabase.from("board_columns").select("*").eq("idea_id", id).order("position", { ascending: true }),
     supabase
@@ -163,10 +165,27 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       .from("workflow_templates")
       .select("*", { head: true, count: "exact" })
       .eq("idea_id", id),
+    // Auto-rule count for idea health
+    supabase
+      .from("workflow_auto_rules")
+      .select("*", { head: true, count: "exact" })
+      .eq("idea_id", id),
   ]);
 
   const hasWorkflowTemplates = (workflowTemplateCount ?? 0) > 0;
   const { teamMembers, ideaAgents, botProfiles: ideaAgentBotProfiles, ideaAgentDetails } = ideaTeam;
+
+  // Compute idea health for the setup completeness banner
+  const ideaHealth = computeIdeaHealth({
+    taskCount: (rawTasks ?? []).filter((t) => !t.archived).length,
+    allocatedAgentCount: ideaAgents.length,
+    ownedAgentCount: (userBotProfiles ?? []).length,
+    workflowTemplateCount: workflowTemplateCount ?? 0,
+    autoRuleCount: autoRuleCount ?? 0,
+    labelCount: (boardLabels ?? []).length,
+    unmatchedRoleCount: 0, // Computed separately in agents tab — lightweight health check skips this
+    hasKit: !!(idea as unknown as { project_kit: { name: string } | null }).project_kit,
+  });
 
   // Phase 3: Queries that depend on Phase 2 results
   const taskIds = (rawTasks ?? []).map((t) => t.id);
@@ -285,6 +304,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           coverImageUrls={coverImageUrls}
           isReadOnly={isReadOnly}
           hasWorkflowTemplates={hasWorkflowTemplates}
+          ideaHealth={ideaHealth}
         />
       </BoardPageTabs>
       <KitAppliedToast />

@@ -5,12 +5,14 @@ import { AgentAnimation } from "./agent-animation";
 import { Button } from "@/components/ui/button";
 import { FeaturedTeams } from "./featured-teams";
 import type { FeaturedTeamWithAgents } from "@/types";
+import type { UserIdea } from "./allocate-to-idea-dialog";
 
 interface EmptyStateProps {
   onCreateAgent: () => void;
   onBrowseCommunity: () => void;
   featuredTeams: FeaturedTeamWithAgents[];
   userExistingRoles: string[];
+  userIdeas?: UserIdea[];
 }
 
 export function EmptyState({
@@ -18,6 +20,7 @@ export function EmptyState({
   onBrowseCommunity,
   featuredTeams,
   userExistingRoles,
+  userIdeas = [],
 }: EmptyStateProps) {
   return (
     <div className="flex flex-col items-center gap-5 py-12 text-center">
@@ -60,6 +63,7 @@ export function EmptyState({
           <FeaturedTeams
             teams={featuredTeams}
             userExistingRoles={userExistingRoles}
+            userIdeas={userIdeas}
           />
         </div>
       )}

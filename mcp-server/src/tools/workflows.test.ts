@@ -1822,7 +1822,7 @@ describe("completeStep — identity enforcement", () => {
     const ctx = makeCompleteContext({
       stepData,
       updatedStep: {},
-      agentProfile: { name: "Atlas", role: "Full Stack Developer" },
+      agentProfile: { name: "Atlas", role: "Full Stack Engineer" },
     });
 
     await expect(
@@ -1844,12 +1844,12 @@ describe("completeStep — identity enforcement", () => {
     const ctx = makeCompleteContext({
       stepData,
       updatedStep: {},
-      agentProfile: { name: "Atlas", role: "Full Stack Developer" },
+      agentProfile: { name: "Atlas", role: "Full Stack Engineer" },
     });
 
     await expect(
       completeStep(ctx, { step_id: STEP_ID })
-    ).rejects.toThrow(/Atlas.*Full Stack Developer.*set_agent_identity/);
+    ).rejects.toThrow(/Atlas.*Full Stack Engineer.*set_agent_identity/);
   });
 
   it("succeeds when ctx.userId matches step.bot_id", async () => {

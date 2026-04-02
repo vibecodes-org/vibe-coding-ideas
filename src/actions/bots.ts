@@ -266,7 +266,7 @@ export async function cloneAgent(botId: string): Promise<string> {
 
 export async function addFeaturedTeam(
   teamId: string
-): Promise<{ created: string[]; skipped: string[] }> {
+): Promise<{ created: string[]; skipped: string[]; createdBotIds: string[] }> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -297,6 +297,7 @@ export async function addFeaturedTeam(
 
   const created: string[] = [];
   const skipped: string[] = [];
+  const createdBotIds: string[] = [];
 
   for (const entry of typedTeam.agents) {
     const bot = entry.bot;
@@ -308,15 +309,16 @@ export async function addFeaturedTeam(
     }
 
     try {
-      await cloneBotProfile(supabase, bot as unknown as BotProfile, user.id);
+      const newBotId = await cloneBotProfile(supabase, bot as unknown as BotProfile, user.id);
       created.push(role || bot.name);
+      if (newBotId) createdBotIds.push(newBotId);
     } catch {
       // Skip individual clone failures
     }
   }
 
   revalidatePath("/agents");
-  return { created, skipped };
+  return { created, skipped, createdBotIds };
 }
 
 export type AgentProfileData = {

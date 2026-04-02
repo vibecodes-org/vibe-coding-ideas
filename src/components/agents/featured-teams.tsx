@@ -5,19 +5,25 @@ import { Star, ChevronDown, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { addFeaturedTeam } from "@/actions/bots";
+import { allocateAllAgents } from "@/actions/idea-agents";
 import { toast } from "sonner";
 import { getRoleColor } from "@/lib/agent-colors";
 import { cn } from "@/lib/utils";
+import { AllocateToIdeaDialog, type UserIdea } from "./allocate-to-idea-dialog";
 import type { FeaturedTeamWithAgents } from "@/types";
 
 interface FeaturedTeamsProps {
   teams: FeaturedTeamWithAgents[];
   userExistingRoles: string[];
+  userIdeas?: UserIdea[];
 }
 
-export function FeaturedTeams({ teams, userExistingRoles }: FeaturedTeamsProps) {
+export function FeaturedTeams({ teams, userExistingRoles, userIdeas = [] }: FeaturedTeamsProps) {
   const [loadingTeamId, setLoadingTeamId] = useState<string | null>(null);
   const [expandedTeam, setExpandedTeam] = useState<string | null>(null);
+  const [allocDialogOpen, setAllocDialogOpen] = useState(false);
+  const [pendingBotIds, setPendingBotIds] = useState<string[]>([]);
+  const [pendingTeamName, setPendingTeamName] = useState<string>("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
@@ -47,17 +53,50 @@ export function FeaturedTeams({ teams, userExistingRoles }: FeaturedTeamsProps) 
 
   if (teams.length === 0) return null;
 
-  async function handleAddTeam(teamId: string) {
+  async function handleAddTeam(teamId: string, teamName: string) {
     setLoadingTeamId(teamId);
     try {
-      const { created, skipped } = await addFeaturedTeam(teamId);
-      if (created.length > 0) {
-        toast.success(
-          `Created ${created.length} agent${created.length > 1 ? "s" : ""}: ${created.join(", ")}`
-        );
-      }
+      const { created, skipped, createdBotIds } = await addFeaturedTeam(teamId);
       if (created.length === 0 && skipped.length > 0) {
         toast.info("All agents from this team already exist");
+        return;
+      }
+      if (created.length === 0) return;
+
+      const botIds = createdBotIds ?? [];
+
+      if (userIdeas.length === 0) {
+        // No ideas — toast with "Create an idea" CTA
+        toast.success(`${created.length} agents added to your team!`, {
+          description: "Create an idea to put them to work.",
+          action: { label: "Create an idea", onClick: () => window.location.assign("/ideas/new") },
+        });
+      } else if (userIdeas.length === 1) {
+        // 1 idea — auto-allocate
+        try {
+          await allocateAllAgents(userIdeas[0].id, botIds);
+          toast.success(
+            `${created.length} agents added and allocated to "${userIdeas[0].title}"`,
+            {
+              description: `${created.join(", ")} are now available for workflows on this idea.`,
+              action: { label: "View agents", onClick: () => window.location.assign(`/ideas/${userIdeas[0].id}/board?tab=agents`) },
+            }
+          );
+        } catch {
+          // Allocation failed but agents were created — still show success
+          toast.success(
+            `${created.length} agents added to your team`,
+            { description: "Allocate them to an idea from the Agents tab." }
+          );
+        }
+      } else {
+        // 2+ ideas — open allocation dialog
+        setPendingBotIds(botIds);
+        setPendingTeamName(teamName);
+        setAllocDialogOpen(true);
+        toast.success(
+          `${created.length} agent${created.length > 1 ? "s" : ""} added: ${created.join(", ")}`
+        );
       }
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to add team");
@@ -179,7 +218,7 @@ export function FeaturedTeams({ teams, userExistingRoles }: FeaturedTeamsProps) 
                     size="sm"
                     variant={existingCount > 0 ? "outline" : "default"}
                     className={`h-7 text-xs ${existingCount > 0 ? "border-violet-500/30 bg-violet-500/15 text-violet-400 hover:bg-violet-500/25" : ""}`}
-                    onClick={() => handleAddTeam(team.id)}
+                    onClick={() => handleAddTeam(team.id, team.name)}
                     disabled={loadingTeamId !== null}
                     title="Creates copies of these agents in your account. You can customise them afterwards."
                   >
@@ -200,6 +239,13 @@ export function FeaturedTeams({ teams, userExistingRoles }: FeaturedTeamsProps) 
         })}
         </div>
       </div>
+      <AllocateToIdeaDialog
+        open={allocDialogOpen}
+        onOpenChange={setAllocDialogOpen}
+        botIds={pendingBotIds}
+        ideas={userIdeas}
+        teamName={pendingTeamName}
+      />
     </div>
   );
 }

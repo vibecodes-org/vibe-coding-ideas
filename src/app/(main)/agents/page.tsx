@@ -87,6 +87,22 @@ export default async function AgentsPage() {
 
   const featuredTeams = (teamsData ?? []) as unknown as FeaturedTeamWithAgents[];
 
+  // Fetch user's ideas for allocation prompts (with counts for dialog metadata)
+  const { data: ideasData } = await supabase
+    .from("ideas")
+    .select("id, title, idea_agents(count), board_tasks(count), workflow_templates(count)")
+    .or(`author_id.eq.${user.id}`)
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  const userIdeas = (ideasData ?? []).map((i) => ({
+    id: i.id,
+    title: i.title,
+    agent_count: (i.idea_agents as unknown as { count: number }[])?.[0]?.count ?? 0,
+    task_count: (i.board_tasks as unknown as { count: number }[])?.[0]?.count ?? 0,
+    workflow_count: (i.workflow_templates as unknown as { count: number }[])?.[0]?.count ?? 0,
+  }));
+
   return (
     <div className="mx-auto max-w-5xl px-4 py-8">
       <AgentsHub
@@ -96,6 +112,7 @@ export default async function AgentsPage() {
         userVotedBotIds={userVotedBotIds}
         userExistingRoles={userExistingRoles}
         featuredTeams={featuredTeams}
+        userIdeas={userIdeas}
       />
 
       <div className="mt-6 flex items-start gap-2 rounded-lg border border-border bg-muted/30 p-4">

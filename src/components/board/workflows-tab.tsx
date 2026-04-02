@@ -74,7 +74,7 @@ import { LABEL_COLORS } from "@/lib/constants";
 import { getRoleBadgeClasses } from "./task-workflow-section";
 import { ApprovalLockIcon } from "./approval-lock-icon";
 import { approvalCount } from "@/lib/workflow-helpers";
-import { buildRoleMatcher, type AgentCandidate } from "@/lib/role-matching";
+import { getRoleCoverage, type RoleCoverageResult } from "@/actions/idea-agents";
 import type { WorkflowTemplate, WorkflowAutoRule, BoardLabel } from "@/types";
 import type { WorkflowTemplateStep } from "@/types/database";
 
@@ -82,7 +82,17 @@ import type { WorkflowTemplateStep } from "@/types/database";
 // Step list (read-only display in detail panel)
 // ────────────────────────────────────────────
 
-function StepRow({ step, index, isUnmatched }: { step: WorkflowTemplateStep; index: number; isUnmatched?: boolean }) {
+const TIER_DOT_COLOR: Record<string, string> = {
+  none: "bg-red-400",
+  "word-overlap": "bg-amber-400",
+  substring: "bg-amber-400",
+  ai: "bg-violet-400",
+  manual: "bg-blue-400",
+};
+
+function StepRow({ step, index, matchTier }: { step: WorkflowTemplateStep; index: number; matchTier?: string | null }) {
+  const dotColor = matchTier ? TIER_DOT_COLOR[matchTier] : undefined;
+
   return (
     <div className="flex items-center gap-3 rounded-md border border-border bg-muted/30 px-3 py-2.5">
       <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-semibold text-muted-foreground">
@@ -96,8 +106,8 @@ function StepRow({ step, index, isUnmatched }: { step: WorkflowTemplateStep; ind
         >
           {step.role}
         </Badge>
-        {isUnmatched && (
-          <span className="absolute -right-1 -top-1 h-2 w-2 rounded-full border-2 border-background bg-amber-400" />
+        {dotColor && (
+          <span className={`absolute -right-1 -top-1 h-2 w-2 rounded-full border-2 border-background ${dotColor}`} />
         )}
       </span>
       {step.requires_approval && <ApprovalLockIcon />}
@@ -710,7 +720,7 @@ interface WorkflowsTabProps {
   isReadOnly?: boolean;
   hasAgents?: boolean;
   kitName?: string | null;
-  agentCandidates?: AgentCandidate[];
+  agentCandidates?: { botId: string; name: string; role: string }[];
 }
 
 export function WorkflowsTab({
@@ -749,19 +759,51 @@ export function WorkflowsTab({
   const selected = templates.find((t) => t.id === selectedId) ?? null;
   const { poolRoles, userRoles } = useRoleSuggestions(ideaId);
 
-  // Role coverage: compute unmatched roles for the selected template
-  const roleMatcher = useMemo(() => buildRoleMatcher(agentCandidates), [agentCandidates]);
+  // Role coverage from server (same data source as Agents tab)
+  const [roleCoverage, setRoleCoverage] = useState<RoleCoverageResult[]>([]);
+
+  useEffect(() => {
+    if (agentCandidates.length === 0) {
+      setRoleCoverage([]);
+      return;
+    }
+    let cancelled = false;
+    getRoleCoverage(ideaId, agentCandidates).then((coverage) => {
+      if (!cancelled) setRoleCoverage(coverage);
+    }).catch(() => {
+      if (!cancelled) setRoleCoverage([]);
+    });
+    return () => { cancelled = true; };
+  }, [ideaId, agentCandidates]);
+
+  // Build a lookup map: role name → coverage result
+  const coverageMap = useMemo(() => {
+    const map = new Map<string, RoleCoverageResult>();
+    for (const rc of roleCoverage) map.set(rc.role, rc);
+    return map;
+  }, [roleCoverage]);
+
+  // Derive convenience lists for the selected template
   const unmatchedRoles = useMemo(() => {
-    if (!selected || selected.steps.length === 0) return [];
+    if (!selected) return [];
     const seen = new Set<string>();
     return selected.steps
       .filter((s) => {
         if (!s.role || seen.has(s.role)) return false;
         seen.add(s.role);
-        return roleMatcher(s.role).tier === "none";
+        const rc = coverageMap.get(s.role);
+        return !rc || !rc.covered;
       })
       .map((s) => s.role);
-  }, [selected, roleMatcher]);
+  }, [selected, coverageMap]);
+
+  const hasNonExactMatches = useMemo(() => {
+    if (!selected) return false;
+    return selected.steps.some((s) => {
+      const rc = coverageMap.get(s.role);
+      return rc?.covered && rc.matchTier !== "exact";
+    });
+  }, [selected, coverageMap]);
 
   const fetchData = useCallback(async () => {
     try {
@@ -1171,13 +1213,8 @@ export function WorkflowsTab({
                       {selected.usage_count !== 1 ? "s" : ""}
                     </span>
                   )}
-                  {selected.steps.length > 0 && agentCandidates.length > 0 && (
-                    unmatchedRoles.length === 0 ? (
-                      <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400">
-                        <Check className="h-3 w-3" />
-                        All roles covered
-                      </span>
-                    ) : (
+                  {selected.steps.length > 0 && roleCoverage.length > 0 && (
+                    unmatchedRoles.length > 0 ? (
                       <button
                         onClick={() => {
                           const params = new URLSearchParams(window.location.search);
@@ -1185,11 +1222,16 @@ export function WorkflowsTab({
                           window.history.pushState(null, "", `?${params.toString()}`);
                           window.dispatchEvent(new PopStateEvent("popstate"));
                         }}
-                        className="flex items-center gap-1 text-[10px] font-medium text-amber-400 hover:underline"
+                        className="flex items-center gap-1 text-[10px] font-medium text-red-400 hover:underline"
                       >
                         <AlertTriangle className="h-3 w-3" />
                         {unmatchedRoles.length} role{unmatchedRoles.length !== 1 ? "s" : ""} need{unmatchedRoles.length === 1 ? "s" : ""} an agent
                       </button>
+                    ) : (
+                      <span className="flex items-center gap-1 text-[10px] font-medium text-emerald-400">
+                        <Check className="h-3 w-3" />
+                        All roles covered
+                      </span>
                     )
                   )}
                   {(() => {
@@ -1277,6 +1319,32 @@ export function WorkflowsTab({
               )}
             </div>
 
+            {/* Match quality legend — only shown when non-exact matches or unmatched roles exist */}
+            {(hasNonExactMatches || unmatchedRoles.length > 0) && roleCoverage.length > 0 && (
+              <div className="flex flex-wrap items-center gap-2.5 rounded-md border border-border bg-muted/15 px-3 py-2 text-[10px] text-muted-foreground">
+                <span className="font-semibold text-muted-foreground/80">Match quality:</span>
+                <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-1.5 rounded-full bg-emerald-400" /> Exact</span>
+                <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-1.5 rounded-full bg-violet-400" /> AI matched</span>
+                <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-1.5 rounded-full bg-blue-400" /> Manual</span>
+                <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-1.5 rounded-full bg-amber-400" /> Fuzzy</span>
+                {unmatchedRoles.length > 0 && (
+                  <span className="flex items-center gap-1"><span className="inline-block h-1.5 w-1.5 rounded-full bg-red-400" /> Unmatched</span>
+                )}
+                <span className="mx-0.5 h-3 w-px bg-border" />
+                <button
+                  onClick={() => {
+                    const params = new URLSearchParams(window.location.search);
+                    params.set("tab", "agents");
+                    window.history.pushState(null, "", `?${params.toString()}`);
+                    window.dispatchEvent(new PopStateEvent("popstate"));
+                  }}
+                  className="ml-auto font-medium text-violet-400 hover:underline"
+                >
+                  Manage in Agents tab &rarr;
+                </button>
+              </div>
+            )}
+
             {/* Steps */}
             <div className="space-y-2">
               <div className="flex items-center justify-between">
@@ -1292,13 +1360,13 @@ export function WorkflowsTab({
               </div>
               <div className="space-y-1.5">
                 {selected.steps.map((step, idx) => (
-                  <StepRow key={idx} step={step} index={idx} isUnmatched={unmatchedRoles.includes(step.role)} />
+                  <StepRow key={idx} step={step} index={idx} matchTier={coverageMap.get(step.role)?.covered ? coverageMap.get(step.role)?.matchTier : coverageMap.has(step.role) ? "none" : undefined} />
                 ))}
               </div>
               {unmatchedRoles.length > 0 && (
-                <div className="mt-2 flex items-start gap-2 rounded-md border border-amber-500/20 bg-amber-500/5 px-3 py-2">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-400" />
-                  <p className="text-xs text-amber-400">
+                <div className="mt-2 flex items-start gap-2 rounded-md border border-red-500/20 bg-red-500/5 px-3 py-2">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-red-400" />
+                  <p className="text-xs text-red-400">
                     {unmatchedRoles.map((role, i) => (
                       <span key={role}>
                         {i > 0 && ", "}
@@ -1314,7 +1382,7 @@ export function WorkflowsTab({
                         window.history.pushState(null, "", `?${params.toString()}`);
                         window.dispatchEvent(new PopStateEvent("popstate"));
                       }}
-                      className="underline hover:text-amber-300"
+                      className="underline hover:text-red-300"
                     >
                       Add one in Agents tab
                     </button>

@@ -28,7 +28,8 @@ import { BoardColumn } from "./board-column";
 import { AddColumnButton } from "./add-column-button";
 import { BoardToolbar } from "./board-toolbar";
 import { BoardEmptyState } from "./board-empty-state";
-import { NudgeBanner } from "@/components/shared/nudge-banner";
+import { SetupCompletenessBanner } from "@/components/board/setup-completeness-banner";
+import type { IdeaHealth } from "@/lib/idea-health";
 import { BoardOpsContext, type BoardOptimisticOps } from "./board-context";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
@@ -130,6 +131,7 @@ interface KanbanBoardProps {
   coverImageUrls?: Record<string, string>;
   isReadOnly?: boolean;
   hasWorkflowTemplates?: boolean;
+  ideaHealth?: IdeaHealth;
 }
 
 // Edge-scroll constants
@@ -241,6 +243,7 @@ export function KanbanBoard({
   coverImageUrls = {},
   isReadOnly = false,
   hasWorkflowTemplates = false,
+  ideaHealth,
 }: KanbanBoardProps) {
   // Build botRoles map from botProfiles for @mention autocomplete
   const botRoles = useMemo(() => {
@@ -909,57 +912,15 @@ export function KanbanBoard({
         aiGenerateOpen={aiGenerateOpen}
         onAiGenerateOpenChange={setAiGenerateOpen}
       />
-      {/* Wiring banner removed — auto-rules are now awaited before board loads */}
-      {/* State-aware nudge banners (only when board has tasks, first match wins) */}
-      {!isReadOnly && !isBoardEmpty && (() => {
-        const hasAllocatedAgents = ideaAgents.length > 0;
-        const isPostGeneration = typeof window !== "undefined" && sessionStorage.getItem(`board-just-generated-${ideaId}`) === "true";
-
-        if (!hasWorkflowTemplates && isPostGeneration) {
-          // Mockup #4: Post-generation, no workflows (amber)
-          return (
-            <NudgeBanner
-              icon={<span className="text-amber-400">✨</span>}
-              title="Tasks generated! Set up workflows to automate them"
-              description="Your tasks are ready. Apply a workflow template so your agents know what to do with each task."
-              action={{ label: "Set up workflows →", href: "?tab=workflows" }}
-              variant="amber"
-              sessionDismissKey={`nudge-post-gen-workflows-${ideaId}`}
-              className="mb-3 shrink-0"
-            />
-          );
-        }
-        if (!hasWorkflowTemplates) {
-          // Mockup #1: Generic, no workflows (violet)
-          return (
-            <NudgeBanner
-              icon={<span className="text-violet-400">⚡</span>}
-              title="Automate your tasks with workflows"
-              description="Workflows let your agents work on tasks automatically — UX review, implementation, testing, and more. Import a template to get started."
-              action={{ label: "Set up workflows →", href: "?tab=workflows" }}
-              variant="violet"
-              sessionDismissKey={`nudge-workflows-${ideaId}`}
-              className="mb-3 shrink-0"
-            />
-          );
-        }
-        if (hasWorkflowTemplates && !hasAllocatedAgents) {
-          // Mockup #2: Templates exist, no agents (emerald)
-          return (
-            <NudgeBanner
-              icon={<span className="text-emerald-400">🤖</span>}
-              title="Your workflows need agents"
-              description="You have workflow steps waiting for agents. Add agents so they can pick up work."
-              action={{ label: "Add agents →", href: "?tab=agents" }}
-              variant="emerald"
-              sessionDismissKey={`nudge-agents-${ideaId}`}
-              className="mb-3 shrink-0"
-            />
-          );
-        }
-        // MCP banner handled by board page layout — no duplicate here
-        return null;
-      })()}
+      {/* Setup completeness banner — replaces individual NudgeBanners */}
+      {ideaHealth && !isBoardEmpty && (
+        <SetupCompletenessBanner
+          health={ideaHealth}
+          ideaId={ideaId}
+          isReadOnly={isReadOnly}
+          className="mb-3"
+        />
+      )}
       {showEmptyState ? (
         <BoardEmptyState
           canUseAi={canUseAi}

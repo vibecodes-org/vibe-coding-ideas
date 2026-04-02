@@ -23,6 +23,7 @@ import { FirstRunDashboard } from "@/components/dashboard/first-run-dashboard";
 import { DashboardModeSwitch } from "@/components/dashboard/dashboard-mode-switch";
 import { ActiveBoards } from "@/components/dashboard/active-boards";
 import type { ActiveBoard } from "@/components/dashboard/active-boards";
+import { computeIdeaHealth } from "@/lib/idea-health";
 import { MyBots } from "@/components/dashboard/my-bots";
 import { MyTasksList } from "@/components/dashboard/my-tasks-list";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
@@ -356,6 +357,33 @@ export default async function DashboardPage() {
     }
   }
 
+  // Per-idea health data: agent counts, workflow counts, auto-rule counts, label counts
+  const agentCountByIdea = new Map<string, number>();
+  const workflowCountByIdea = new Map<string, number>();
+  const autoRuleCountByIdea = new Map<string, number>();
+  const labelCountByIdea = new Map<string, number>();
+
+  if (allUserIdeaIds.length > 0) {
+    const [agentData, workflowData, autoRuleData, labelData] = await Promise.all([
+      supabase.from("idea_agents").select("idea_id").in("idea_id", allUserIdeaIds),
+      supabase.from("workflow_templates").select("idea_id").in("idea_id", allUserIdeaIds),
+      supabase.from("workflow_auto_rules").select("idea_id").in("idea_id", allUserIdeaIds),
+      supabase.from("board_labels").select("idea_id").in("idea_id", allUserIdeaIds),
+    ]);
+    for (const row of agentData.data ?? []) {
+      agentCountByIdea.set(row.idea_id, (agentCountByIdea.get(row.idea_id) ?? 0) + 1);
+    }
+    for (const row of workflowData.data ?? []) {
+      workflowCountByIdea.set(row.idea_id, (workflowCountByIdea.get(row.idea_id) ?? 0) + 1);
+    }
+    for (const row of autoRuleData.data ?? []) {
+      autoRuleCountByIdea.set(row.idea_id, (autoRuleCountByIdea.get(row.idea_id) ?? 0) + 1);
+    }
+    for (const row of labelData.data ?? []) {
+      labelCountByIdea.set(row.idea_id, (labelCountByIdea.get(row.idea_id) ?? 0) + 1);
+    }
+  }
+
   // Build active boards — only ideas with at least one task
   const activeBoards: ActiveBoard[] = [];
   for (const [ideaId, columns] of columnsByIdea) {
@@ -373,12 +401,39 @@ export default async function DashboardPage() {
       }))
       .filter((c) => c.count > 0);
 
+    const ideaAgentCount = agentCountByIdea.get(ideaId) ?? 0;
+    const ideaWorkflowCount = workflowCountByIdea.get(ideaId) ?? 0;
+    const ideaAutoRuleCount = autoRuleCountByIdea.get(ideaId) ?? 0;
+    const ideaLabelCount = labelCountByIdea.get(ideaId) ?? 0;
+
+    const health = computeIdeaHealth({
+      taskCount: totalTasks,
+      allocatedAgentCount: ideaAgentCount,
+      ownedAgentCount: botProfiles.length,
+      workflowTemplateCount: ideaWorkflowCount,
+      autoRuleCount: ideaAutoRuleCount,
+      labelCount: ideaLabelCount,
+      unmatchedRoleCount: 0,
+      hasKit: false, // Not tracked at dashboard level — conservative
+    });
+
+    const healthLabel =
+      health.status === "complete" || health.status === "ready"
+        ? "Ready"
+        : health.missing.length > 0
+          ? health.missing[0].title
+          : "Needs setup";
+
     activeBoards.push({
       ideaId,
       ideaTitle: title,
       totalTasks,
       columnSummary,
       lastActivity: lastActivityByIdea.get(ideaId) ?? new Date().toISOString(),
+      healthStatus: health.status,
+      healthLabel,
+      agentCount: ideaAgentCount,
+      workflowCount: ideaWorkflowCount,
     });
   }
 

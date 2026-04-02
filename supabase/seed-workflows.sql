@@ -112,7 +112,7 @@ INSERT INTO workflow_templates (id, idea_id, name, description, steps, created_b
       {"title": "Requirements", "description": "Gather and document requirements, define acceptance criteria, and estimate scope.", "role": "Product Owner", "requires_approval": false},
       {"title": "UX Design", "description": "Create wireframes and interaction flows based on the requirements.", "role": "UX Designer", "requires_approval": false},
       {"title": "Design Review", "description": "Review proposed designs against requirements and provide approval or feedback.", "role": "Product Owner", "requires_approval": true},
-      {"title": "Implementation", "description": "Build the feature with tests following project conventions.", "role": "Full Stack Developer", "requires_approval": false},
+      {"title": "Implementation", "description": "Build the feature with tests following project conventions.", "role": "Full Stack Engineer", "requires_approval": false},
       {"title": "QA Testing", "description": "Verify the implementation meets acceptance criteria and test edge cases.", "role": "QA Engineer", "requires_approval": false},
       {"title": "Final Sign-off", "description": "Confirm the feature is ready for release.", "role": "Product Owner", "requires_approval": true}
     ]'::jsonb,
@@ -126,7 +126,7 @@ INSERT INTO workflow_templates (id, idea_id, name, description, steps, created_b
     'Structured bug resolution from reproduction through verification.',
     '[
       {"title": "Reproduce & Investigate", "description": "Confirm the bug, identify root cause, and document reproduction steps.", "role": "QA Engineer", "requires_approval": false},
-      {"title": "Implement Fix", "description": "Fix the root cause and add regression tests.", "role": "Full Stack Developer", "requires_approval": false},
+      {"title": "Implement Fix", "description": "Fix the root cause and add regression tests.", "role": "Full Stack Engineer", "requires_approval": false},
       {"title": "Verify Fix", "description": "Confirm the fix resolves the issue without regressions.", "role": "QA Engineer", "requires_approval": false},
       {"title": "Regression Check", "description": "Final sign-off that the fix is complete and no side-effects remain.", "role": "Product Owner", "requires_approval": true}
     ]'::jsonb,
@@ -140,8 +140,8 @@ INSERT INTO workflow_templates (id, idea_id, name, description, steps, created_b
     'Time-boxed research to answer technical questions and recommend a path forward.',
     '[
       {"title": "Define Research Questions", "description": "Clarify what needs to be answered and set a time-box.", "role": "Product Owner", "requires_approval": false},
-      {"title": "Research & Prototype", "description": "Investigate options, build prototypes, and gather data.", "role": "Full Stack Developer", "requires_approval": false},
-      {"title": "Write Recommendation", "description": "Document findings, trade-offs, and a recommended approach.", "role": "Full Stack Developer", "requires_approval": false},
+      {"title": "Research & Prototype", "description": "Investigate options, build prototypes, and gather data.", "role": "Full Stack Engineer", "requires_approval": false},
+      {"title": "Write Recommendation", "description": "Document findings, trade-offs, and a recommended approach.", "role": "Full Stack Engineer", "requires_approval": false},
       {"title": "Review & Decide", "description": "Review the recommendation and decide on next steps.", "role": "Product Owner", "requires_approval": true}
     ]'::jsonb,
     'a1111111-1111-4111-a111-111111111111'
@@ -155,7 +155,7 @@ INSERT INTO workflow_templates (id, idea_id, name, description, steps, created_b
     '[
       {"title": "Audit Current UX", "description": "Review the current user experience and identify pain points.", "role": "UX Designer", "requires_approval": false},
       {"title": "Create Design Proposals", "description": "Produce design options with mockups and rationale.", "role": "UX Designer", "requires_approval": true},
-      {"title": "Implement Approved Design", "description": "Build the approved design with pixel-perfect accuracy.", "role": "Frontend Engineer", "requires_approval": false},
+      {"title": "Implement Approved Design", "description": "Build the approved design with pixel-perfect accuracy.", "role": "Front End Engineer", "requires_approval": false},
       {"title": "Visual QA", "description": "Verify the implementation matches the approved design across viewports.", "role": "QA Engineer", "requires_approval": false}
     ]'::jsonb,
     'a1111111-1111-4111-a111-111111111111'
@@ -197,7 +197,7 @@ INSERT INTO workflow_templates (id, idea_id, name, description, steps, created_b
     '[
       {"title": "Brief & Requirements", "description": "Gather client brief, clarify requirements, and document constraints.", "role": "Product Owner", "requires_approval": false},
       {"title": "Proposal & Scope", "description": "Draft proposal with scope, timeline, and cost estimate for client approval.", "role": "Product Owner", "requires_approval": true},
-      {"title": "Execute", "description": "Implement the agreed scope following project standards.", "role": "Full Stack Developer", "requires_approval": false},
+      {"title": "Execute", "description": "Implement the agreed scope following project standards.", "role": "Full Stack Engineer", "requires_approval": false},
       {"title": "Client Review", "description": "Present deliverables to client for review and feedback.", "role": "Product Owner", "requires_approval": true},
       {"title": "Deliver & Handoff", "description": "Package final deliverables, documentation, and handoff notes.", "role": "Product Owner", "requires_approval": false}
     ]'::jsonb,
@@ -269,7 +269,7 @@ INSERT INTO task_workflow_steps (id, task_id, idea_id, run_id, bot_id, title, de
     'Implement Fix',
     'Fix the root cause and add regression tests.',
     'in_progress',
-    2000, 2, 'Full Stack Developer', false,
+    2000, 2, 'Full Stack Engineer', false,
     NULL,
     now() - interval '45 minutes',
     NULL

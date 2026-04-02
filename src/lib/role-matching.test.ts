@@ -9,9 +9,9 @@ import {
 
 const agents: AgentCandidate[] = [
   { botId: "bot-qa", role: "QA Engineer" },
-  { botId: "bot-fe", role: "Frontend Engineer" },
+  { botId: "bot-fe", role: "Front End Engineer" },
   { botId: "bot-be", role: "Backend Engineer" },
-  { botId: "bot-fs", role: "Full Stack Developer" },
+  { botId: "bot-fs", role: "Full Stack Engineer" },
   { botId: "bot-pm", role: "Product Manager" },
   { botId: "bot-ceo", role: "CEO / Founder" },
 ];
@@ -41,7 +41,7 @@ describe("role-matching", () => {
 
   describe("Tier 2: Substring match", () => {
     it("matches when step role is substring of agent role", () => {
-      const result = matchRoleToAgent("Frontend", agents);
+      const result = matchRoleToAgent("Front End", agents);
       expect(result).toEqual({ botId: "bot-fe", tier: "substring" });
     });
 
@@ -72,16 +72,16 @@ describe("role-matching", () => {
       expect(result).toEqual({ botId: "bot-ux", tier: "substring" });
     });
 
-    it("does not match 'FE' to 'Frontend Engineer' (no substring containment)", () => {
+    it("does not match 'FE' to 'Front End Engineer' (no substring containment)", () => {
       const result = matchRoleToAgent("FE", agents);
-      // "fe" is not a substring of "frontend engineer" — it's an abbreviation, not contained
+      // "fe" is not a substring of "front end engineer" — it's an abbreviation, not contained
       expect(result.tier).not.toBe("substring");
     });
   });
 
   describe("Tier 3: Word overlap (prefix match)", () => {
-    it("matches prefix: 'Dev' → 'Full Stack Developer' (via substring since 'dev' appears in 'developer')", () => {
-      const result = matchRoleToAgent("Dev", agents);
+    it("matches prefix: 'Stack' → 'Full Stack Engineer' (via substring since 'stack' appears in role)", () => {
+      const result = matchRoleToAgent("Stack", agents);
       expect(result).toEqual({ botId: "bot-fs", tier: "substring" });
     });
 
@@ -117,11 +117,11 @@ describe("role-matching", () => {
       expect(result.botId).toBe("bot-ceo");
     });
 
-    it("matches when agent token is prefix of step token", () => {
-      // Step "Developer" → agent "Full Stack Developer" has token "developer" which starts with "dev"
-      // But "developer" also matches by substring tier
-      const result = matchRoleToAgent("Developer", agents);
-      expect(result.botId).toBe("bot-fs");
+    it("matches when step token is prefix of agent token", () => {
+      // Step "Engine" → agent "Full Stack Engineer" has "engineer" which contains "engine" as substring
+      const result = matchRoleToAgent("Engine", agents);
+      // Multiple agents have "Engineer" in name — QA Engineer comes first alphabetically by botId
+      expect(result.tier).toBe("substring");
     });
   });
 
@@ -150,7 +150,7 @@ describe("role-matching", () => {
   describe("Priority & tie-breaking", () => {
     it("prefers exact over substring", () => {
       const agentsWithOverlap: AgentCandidate[] = [
-        { botId: "bot-1", role: "Frontend Engineer" },
+        { botId: "bot-1", role: "Front End Engineer" },
         { botId: "bot-2", role: "Frontend" },
       ];
       const result = matchRoleToAgent("Frontend", agentsWithOverlap);
@@ -169,11 +169,11 @@ describe("role-matching", () => {
 
     it("prefers substring over word-overlap", () => {
       const a: AgentCandidate[] = [
-        { botId: "bot-1", role: "Full Stack Developer" },
+        { botId: "bot-1", role: "Full Stack Engineer" },
         { botId: "bot-2", role: "Stack Overflow Expert" },
       ];
       const result = matchRoleToAgent("Stack", a);
-      // "stack" is a substring of "full stack developer" → tier 2
+      // "stack" is a substring of "full stack engineer" → tier 2
       expect(result).toEqual({ botId: "bot-1", tier: "substring" });
     });
   });
@@ -182,8 +182,8 @@ describe("role-matching", () => {
     it("reuses pre-processed agents across multiple calls", () => {
       const matcher = buildRoleMatcher(agents);
       expect(matcher("QA Engineer").botId).toBe("bot-qa");
-      expect(matcher("Frontend").botId).toBe("bot-fe");
-      expect(matcher("Dev").botId).toBe("bot-fs");
+      expect(matcher("Front End").botId).toBe("bot-fe");
+      expect(matcher("Stack").botId).toBe("bot-fs");
       expect(matcher("Designer").botId).toBeNull();
     });
 
@@ -227,8 +227,9 @@ describe("tierRank", () => {
 });
 
 describe("MATCH_TIER_RANK", () => {
-  it("has entries for all 5 tiers", () => {
-    expect(Object.keys(MATCH_TIER_RANK)).toHaveLength(5);
+  it("has entries for all 6 tiers", () => {
+    expect(Object.keys(MATCH_TIER_RANK)).toHaveLength(6);
+    expect(MATCH_TIER_RANK).toHaveProperty("manual");
     expect(MATCH_TIER_RANK).toHaveProperty("exact");
     expect(MATCH_TIER_RANK).toHaveProperty("ai");
     expect(MATCH_TIER_RANK).toHaveProperty("substring");

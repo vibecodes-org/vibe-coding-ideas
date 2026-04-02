@@ -47,12 +47,16 @@ const EXPANDED_CHIPS: { role: string; icon: string }[] = [
   { role: "Finance & Operations", icon: "\u{1F4C8}" },
 ];
 
+import { allocateAllAgents } from "@/actions/idea-agents";
+import type { UserIdea } from "./allocate-to-idea-dialog";
+
 interface CreateAgentDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  userIdeas?: UserIdea[];
 }
 
-export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps) {
+export function CreateAgentDialog({ open, onOpenChange, userIdeas = [] }: CreateAgentDialogProps) {
   const [name, setName] = useState("");
   const [role, setRole] = useState("");
   const [systemPrompt, setSystemPrompt] = useState("");
@@ -63,6 +67,9 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
   const [submitting, setSubmitting] = useState(false);
   const [created, setCreated] = useState(false);
   const [createdName, setCreatedName] = useState("");
+  const [createdBotId, setCreatedBotId] = useState<string | null>(null);
+  const [allocatedIdeaId, setAllocatedIdeaId] = useState<string | null>(null);
+  const [allocatingToIdea, setAllocatingToIdea] = useState(false);
   const [templateStructured, setTemplateStructured] =
     useState<StructuredPromptFields | null>(null);
   const [promptKey, setPromptKey] = useState(0);
@@ -181,6 +188,7 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
       }
 
       setCreatedName(name.trim());
+      setCreatedBotId(botId ?? null);
       setCreated(true);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to create agent");
@@ -205,11 +213,63 @@ export function CreateAgentDialog({ open, onOpenChange }: CreateAgentDialogProps
                 <span className="font-medium text-foreground">{createdName}</span> is ready to go.
               </p>
             </div>
+            {/* Allocation step */}
+            {userIdeas.length > 0 && createdBotId && (
+              <div className="w-full rounded-lg border border-emerald-500/15 bg-emerald-500/[0.04] p-4">
+                <div className="flex items-start gap-3">
+                  <span className="mt-0.5 text-sm shrink-0 text-emerald-500">1</span>
+                  <div className="flex-1">
+                    <p className="text-sm font-medium">Allocate to an idea</p>
+                    <div className="mt-2 flex items-center gap-2">
+                      <select
+                        className="flex-1 rounded-md border border-border bg-background px-2.5 py-1.5 text-xs"
+                        value={allocatedIdeaId ?? ""}
+                        onChange={(e) => setAllocatedIdeaId(e.target.value || null)}
+                      >
+                        <option value="">Select an idea...</option>
+                        {userIdeas.map((idea) => (
+                          <option key={idea.id} value={idea.id}>{idea.title}</option>
+                        ))}
+                      </select>
+                      <Button
+                        size="sm"
+                        className="h-7 text-xs bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 hover:bg-emerald-500/20"
+                        disabled={!allocatedIdeaId || allocatingToIdea}
+                        onClick={async () => {
+                          if (!allocatedIdeaId || !createdBotId) return;
+                          setAllocatingToIdea(true);
+                          try {
+                            await allocateAllAgents(allocatedIdeaId, [createdBotId]);
+                            toast.success("Agent allocated to idea");
+                          } catch {
+                            toast.error("Failed to allocate");
+                          } finally {
+                            setAllocatingToIdea(false);
+                          }
+                        }}
+                      >
+                        {allocatingToIdea ? "Adding..." : "Add"}
+                      </Button>
+                    </div>
+                    <p className="mt-1.5 text-xs text-muted-foreground">
+                      So this agent can work on workflow steps for that idea.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+            {userIdeas.length === 0 && (
+              <div className="w-full rounded-lg border border-emerald-500/15 bg-emerald-500/[0.04] p-4">
+                <p className="text-sm text-muted-foreground">
+                  <Link href="/ideas/new" className="font-medium text-emerald-500 hover:text-emerald-400">Create an idea</Link> to put this agent to work on tasks.
+                </p>
+              </div>
+            )}
             <div className="w-full rounded-lg border border-violet-500/15 bg-violet-500/[0.04] p-4">
               <div className="flex items-start gap-3">
                 <Cable className="mt-0.5 h-4 w-4 shrink-0 text-violet-400" />
                 <div className="flex-1">
-                  <p className="text-sm font-medium">Next Step</p>
+                  <p className="text-sm font-medium">{userIdeas.length > 0 ? "2 " : ""}Connect via Claude Code (optional)</p>
                   <p className="mt-0.5 text-sm text-muted-foreground">
                     Connect your agent to{" "}
                     <span className="font-medium text-foreground">Claude Code</span>{" "}
