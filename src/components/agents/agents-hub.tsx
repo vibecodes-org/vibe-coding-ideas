@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { MyAgentsGrid } from "./my-agents-grid";
 import { CommunityTab } from "./community-tab";
 import { CreateAgentDialog } from "./create-agent-dialog";
+import { GrowTeamTip } from "./grow-team-tip";
 import { cn } from "@/lib/utils";
 import type { BotProfile, BotProfileWithOwner, FeaturedTeamWithAgents } from "@/types";
 import type { UserIdea } from "./allocate-to-idea-dialog";
@@ -67,10 +68,10 @@ export function AgentsHub({
           <div>
             <h1 className="flex items-center gap-2 text-2xl font-bold">Agents Hub <HelpLink href="/guide/ai-agent-teams" tooltip="How agents work" /></h1>
             <p className="mt-1 text-sm text-muted-foreground max-w-xl leading-relaxed">
-              Agents are AI-powered team members you can create, customise, and assign to tasks
-              across your ideas. Give them distinct roles, personalities, and tool access &mdash;
-              then allocate them to your idea boards where they collaborate alongside human team
-              members via MCP.
+              Agents are AI-powered team members with distinct roles, personalities, and tool
+              access. <span className="font-medium text-foreground">Create your own from scratch
+              or clone proven agents from the community</span> &mdash; then allocate them to your
+              idea boards where they collaborate via MCP.
             </p>
           </div>
         </div>
@@ -84,9 +85,17 @@ export function AgentsHub({
       </div>
 
       {/* Tab bar */}
-      <div className="flex gap-1 rounded-lg bg-muted/50 p-1 w-fit">
+      <div className="flex gap-1 rounded-lg bg-muted/50 p-1 w-fit" role="tablist">
         <button
+          role="tab"
+          aria-selected={activeTab === "my-agents"}
           onClick={() => setActiveTab("my-agents")}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowRight") {
+              e.preventDefault();
+              setActiveTab("community");
+            }
+          }}
           className={cn(
             "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
             activeTab === "my-agents"
@@ -97,7 +106,15 @@ export function AgentsHub({
           My Agents
         </button>
         <button
+          role="tab"
+          aria-selected={activeTab === "community"}
           onClick={() => setActiveTab("community")}
+          onKeyDown={(e) => {
+            if (e.key === "ArrowLeft") {
+              e.preventDefault();
+              setActiveTab("my-agents");
+            }
+          }}
           className={cn(
             "rounded-md px-4 py-1.5 text-sm font-medium transition-colors",
             activeTab === "community"
@@ -105,7 +122,12 @@ export function AgentsHub({
               : "text-muted-foreground hover:text-foreground"
           )}
         >
-          Browse
+          Community
+          {communityBots.length > 0 && (
+            <span className="ml-1.5 rounded-full bg-violet-500/15 px-1.5 py-px text-[11px] font-semibold text-violet-400">
+              {communityBots.length}
+            </span>
+          )}
         </button>
       </div>
 
@@ -132,6 +154,11 @@ export function AgentsHub({
             <X className="h-3.5 w-3.5" />
           </button>
         </div>
+      )}
+
+      {/* Grow your team tip (only when user has agents on My Agents tab) */}
+      {activeTab === "my-agents" && myBots.length > 0 && (
+        <GrowTeamTip onBrowseCommunity={() => setActiveTab("community")} />
       )}
 
       {/* Tab content */}
