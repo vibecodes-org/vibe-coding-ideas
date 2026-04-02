@@ -13,7 +13,9 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { X, Image as ImageIcon, Sparkles, Loader2, Eye, Pencil } from "lucide-react";
+import { X, Image as ImageIcon, Sparkles, Loader2, Eye, Pencil, Tag } from "lucide-react";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Checkbox } from "@/components/ui/checkbox";
 import { AssigneeSelect } from "./assignee-select";
 import { Markdown } from "@/components/ui/markdown";
 import { getLabelColorConfig } from "@/lib/utils";
@@ -420,27 +422,49 @@ export function TaskEditDialog({
           {boardLabels.length > 0 && (
             <div className="space-y-2">
               <Label>Labels</Label>
-              <div className="max-h-[120px] flex flex-wrap gap-2 overflow-y-auto">
-                {boardLabels.map((label) => {
-                  const config = getLabelColorConfig(label.color);
-                  const isSelected = selectedLabelIds.has(label.id);
-                  return (
-                    <button
-                      key={label.id}
-                      type="button"
-                      onClick={() => toggleLabel(label.id)}
-                      className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium transition-colors ${
-                        isSelected
-                          ? `${config.badgeClass} border-transparent`
-                          : "border-border text-muted-foreground hover:border-foreground/30"
-                      }`}
-                    >
-                      <span className={`h-2 w-2 rounded-full ${config.swatchColor}`} />
-                      {label.name}
-                    </button>
-                  );
-                })}
-              </div>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant="outline" size="sm" className="h-8 w-full justify-start gap-2 text-xs font-normal">
+                    <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                    {selectedLabelIds.size > 0 ? (
+                      <span className="flex flex-1 flex-wrap gap-1">
+                        {boardLabels
+                          .filter((l) => selectedLabelIds.has(l.id))
+                          .map((l) => {
+                            const config = getLabelColorConfig(l.color);
+                            return (
+                              <span key={l.id} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${config.badgeClass}`}>
+                                <span className={`h-1.5 w-1.5 rounded-full ${config.swatchColor}`} />
+                                {l.name}
+                              </span>
+                            );
+                          })}
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">Select labels…</span>
+                    )}
+                  </Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-[220px] p-2" align="start">
+                  <p className="mb-2 text-xs font-medium text-muted-foreground">Labels</p>
+                  <div className="max-h-[200px] space-y-1 overflow-y-auto">
+                    {boardLabels.map((label) => {
+                      const config = getLabelColorConfig(label.color);
+                      return (
+                        <div
+                          key={label.id}
+                          className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/50"
+                          onClick={() => toggleLabel(label.id)}
+                        >
+                          <Checkbox checked={selectedLabelIds.has(label.id)} onCheckedChange={() => toggleLabel(label.id)} />
+                          <span className={`h-3 w-3 shrink-0 rounded-sm ${config.swatchColor}`} />
+                          <span className="text-xs font-medium">{label.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </PopoverContent>
+              </Popover>
             </div>
           )}
 
