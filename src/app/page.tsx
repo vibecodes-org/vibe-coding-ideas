@@ -140,9 +140,21 @@ export default async function LandingPage() {
             </div>
           </div>
 
-          {/* Product preview — kanban board */}
+          {/* Pipeline flow — five stages */}
           <div className="mx-auto mt-16 max-w-5xl px-2 sm:mt-20">
-            <BoardPreview />
+            <div className="mb-16 text-center">
+              <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
+                From idea to production{" "}
+                <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
+                  in five stages
+                </span>
+              </h2>
+              <p className="mt-3 text-sm text-muted-foreground">
+                The complete VibeCodes automation pipeline
+              </p>
+            </div>
+
+            <PipelineFlow />
           </div>
         </div>
       </section>
@@ -172,25 +184,13 @@ export default async function LandingPage() {
         </div>
       </section>
 
-      {/* VibeCodes in 60 seconds — pipeline flow */}
+      {/* Product preview — kanban board */}
       <section className="relative overflow-hidden border-t border-border py-28">
         <div className="absolute inset-0 -z-10">
           <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-500/5" />
         </div>
         <div className="mx-auto max-w-5xl px-4 sm:px-6">
-          <div className="mb-16 text-center">
-            <h2 className="text-3xl font-bold tracking-tight sm:text-4xl">
-              From idea to production{" "}
-              <span className="bg-gradient-to-r from-primary to-purple-400 bg-clip-text text-transparent">
-                in five stages
-              </span>
-            </h2>
-            <p className="mt-3 text-sm text-muted-foreground">
-              The complete VibeCodes automation pipeline
-            </p>
-          </div>
-
-          <PipelineFlow />
+          <BoardPreview />
         </div>
       </section>
 
