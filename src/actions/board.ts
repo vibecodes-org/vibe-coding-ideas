@@ -647,3 +647,71 @@ export async function deleteTaskComment(commentId: string, ideaId: string) {
 
   // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
+
+// ── Board Switcher ────────────────────────────────────────────────────
+
+export interface RecentBoard {
+  ideaId: string;
+  title: string;
+  lastActivity: string;
+}
+
+/** Return up to 5 boards the user owns or collaborates on, ordered by most recent activity. */
+export async function getUserRecentBoards(): Promise<RecentBoard[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) return [];
+
+  // Get ideas the user owns or collaborates on
+  const [{ data: ownedIdeas }, { data: collabRows }] = await Promise.all([
+    supabase
+      .from("ideas")
+      .select("id, title, updated_at")
+      .eq("author_id", user.id)
+      .in("status", ["open", "in_progress"]),
+    supabase
+      .from("collaborators")
+      .select("idea:ideas!collaborators_idea_id_fkey(id, title, updated_at)")
+      .eq("user_id", user.id),
+  ]);
+
+  // Merge and dedupe
+  const ideasMap = new Map<string, { id: string; title: string; updated_at: string }>();
+  for (const idea of ownedIdeas ?? []) {
+    ideasMap.set(idea.id, idea);
+  }
+  for (const row of collabRows ?? []) {
+    const idea = row.idea as unknown as { id: string; title: string; updated_at: string } | null;
+    if (idea && !ideasMap.has(idea.id)) {
+      ideasMap.set(idea.id, idea);
+    }
+  }
+
+  if (ideasMap.size === 0) return [];
+
+  // Only include ideas that have board columns (i.e. have a board set up)
+  const ideaIds = [...ideasMap.keys()];
+  const { data: columnsData } = await supabase
+    .from("board_columns")
+    .select("idea_id")
+    .in("idea_id", ideaIds);
+
+  const ideaIdsWithBoards = new Set((columnsData ?? []).map((c) => c.idea_id));
+
+  // Build result, sorted by updated_at descending
+  const boards: RecentBoard[] = [];
+  for (const idea of ideasMap.values()) {
+    if (!ideaIdsWithBoards.has(idea.id)) continue;
+    boards.push({
+      ideaId: idea.id,
+      title: idea.title,
+      lastActivity: idea.updated_at,
+    });
+  }
+
+  boards.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
+  return boards.slice(0, 5);
+}

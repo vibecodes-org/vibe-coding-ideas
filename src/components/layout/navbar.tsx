@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { NotificationBell } from "./notification-bell";
 import { FeedbackDialog } from "./feedback-dialog";
+import { BoardSwitcher } from "./board-switcher";
 import { useUser } from "@/hooks/use-user";
 import { createClient } from "@/lib/supabase/client";
 import { useState, useEffect } from "react";
@@ -70,15 +71,19 @@ export function Navbar() {
       <div className="px-4 sm:px-6 lg:px-8">
         <div className="flex h-16 items-center justify-between">
           {/* Logo */}
-          <Tooltip>
-            <TooltipTrigger asChild>
-              <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2">
-                <Sparkles className="h-6 w-6 text-primary" />
-                <span className="text-xl font-bold">VibeCodes</span>
-              </Link>
-            </TooltipTrigger>
-            <TooltipContent>{user ? "Dashboard" : "Home"}</TooltipContent>
-          </Tooltip>
+          <div className="flex items-center gap-3">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Link href={user ? "/dashboard" : "/"} className="flex items-center gap-2">
+                  <Sparkles className="h-6 w-6 text-primary" />
+                  <span className="text-xl font-bold">VibeCodes</span>
+                </Link>
+              </TooltipTrigger>
+              <TooltipContent>{user ? "Dashboard" : "Home"}</TooltipContent>
+            </Tooltip>
+
+            {user && <BoardSwitcher />}
+          </div>
 
           {/* Desktop nav */}
           <div className="hidden items-center gap-4 md:flex">
