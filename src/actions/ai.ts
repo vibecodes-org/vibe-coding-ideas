@@ -450,11 +450,17 @@ export async function generateBoardTasks(
 ) {
   const { supabase, user, anthropic, keyType } = await requireAiAccess();
 
-  const { data: idea } = await supabase
-    .from("ideas")
-    .select("id, title, description, author_id")
-    .eq("id", ideaId)
-    .single();
+  const [{ data: idea }, { data: boardLabels }] = await Promise.all([
+    supabase
+      .from("ideas")
+      .select("id, title, description, author_id, project_kits(name, category)")
+      .eq("id", ideaId)
+      .single(),
+    supabase
+      .from("board_labels")
+      .select("name")
+      .eq("idea_id", ideaId),
+  ]);
 
   if (!idea) throw new Error("Idea not found");
 
@@ -487,17 +493,35 @@ export async function generateBoardTasks(
     ? `${personaPrompt}\n\nYou are generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
     : "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").";
 
+  const kit = (idea as Record<string, unknown>).project_kits as { name: string; category: string | null } | null;
+  const labelNames = (boardLabels ?? []).map((l: { name: string }) => l.name);
+
   const contextParts = [
     `${prompt}`,
+    "Include a project scaffolding/setup task (e.g. \"Set up project repository and development environment\") if the board doesn't already have one.",
     `---`,
     `**Idea Title:** ${idea.title}`,
     `**Idea Description:**\n${idea.description}`,
   ];
 
+  if (kit) {
+    contextParts.push(
+      `**Project Type:** ${kit.name}${kit.category ? ` (${kit.category})` : ""}`,
+      "Use this project type to inform the tech stack, tooling, and scaffolding steps. Tailor tasks to this type of project."
+    );
+  }
+
   if (existingColumns.length > 0) {
     contextParts.push(
       `**Existing Board Columns:** ${existingColumns.join(", ")}`,
       `Use existing column names where appropriate, or suggest new ones if needed.`
+    );
+  }
+
+  if (labelNames.length > 0) {
+    contextParts.push(
+      `**Available Labels:** ${labelNames.join(", ")}`,
+      "Assign 1-2 relevant labels to each task from this list. Use exact label names."
     );
   }
 

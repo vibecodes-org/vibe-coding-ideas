@@ -278,7 +278,7 @@ export async function generateBoardFromOnboarding(
   const [profileResult, dailyCountResult, ideaResult, columnsResult, labelsResult] = await Promise.all([
     supabase.from("users").select("onboarding_completed_at").eq("id", user.id).single(),
     PLATFORM_AI_DAILY_LIMIT > 0 ? getPlatformAiCallsToday(supabase, user.id) : Promise.resolve(0),
-    supabase.from("ideas").select("id, title, description").eq("id", ideaId).eq("author_id", user.id).single(),
+    supabase.from("ideas").select("id, title, description, project_kits(name, category)").eq("id", ideaId).eq("author_id", user.id).single(),
     supabase.from("board_columns").select("id, title, position").eq("idea_id", ideaId).order("position"),
     supabase.from("board_labels").select("id, name").eq("idea_id", ideaId),
   ]);
@@ -304,12 +304,22 @@ export async function generateBoardFromOnboarding(
 
   const anthropic = createAnthropic({ apiKey: platformKey });
 
+  const kit = (idea as Record<string, unknown>).project_kits as { name: string; category: string | null } | null;
+
   const contextParts = [
-    "Generate a structured task board for this project. Create 6-10 tasks. Each task should have a clear title, brief description with implementation steps as markdown task list, appropriate column placement, and relevant labels from the available list.",
+    "Generate a structured task board for this project. Create 15-20 tasks. Each task should have a clear title, brief description with implementation steps as markdown task list, appropriate column placement, and relevant labels from the available list.",
+    "The FIRST task should always be a project scaffolding/setup task (e.g. \"Set up project repository and development environment\") that covers initial setup, tooling, and dependencies.",
     "---",
     `**Project Title:** ${idea.title}`,
     `**Project Description:**\n${idea.description}`,
   ];
+
+  if (kit) {
+    contextParts.push(
+      `**Project Type:** ${kit.name}${kit.category ? ` (${kit.category})` : ""}`,
+      "Use this project type to inform the tech stack, tooling, and scaffolding steps. Tailor tasks to this type of project."
+    );
+  }
 
   if (allowedColumns.length > 0) {
     contextParts.push(
@@ -334,7 +344,7 @@ export async function generateBoardFromOnboarding(
         "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").",
       prompt: contextParts.join("\n\n"),
       schema: GeneratedBoardSchema,
-      maxOutputTokens: 4000,
+      maxOutputTokens: 8000,
       abortSignal: AbortSignal.timeout(ONBOARDING_GENERATE_TIMEOUT_MS),
     }));
   } catch (err) {
