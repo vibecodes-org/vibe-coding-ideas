@@ -81,7 +81,7 @@ export default async function DashboardPage() {
       .from("ideas")
       .select("*", { head: true, count: "exact" })
       .eq("author_id", user.id),
-    // All my idea IDs (for board queries)
+    // All my idea IDs (for board + stats queries)
     supabase
       .from("ideas")
       .select("id")
@@ -203,7 +203,7 @@ export default async function DashboardPage() {
     allUserIdeaIds.length > 0
       ? supabase
           .from("board_columns")
-          .select("id, idea_id, title, is_done_column, position, idea:ideas!board_columns_idea_id_fkey(id, title)")
+          .select("id, idea_id, title, is_done_column, position, idea:ideas!board_columns_idea_id_fkey(id, title, status)")
           .in("idea_id", allUserIdeaIds)
           .order("position")
       : Promise.resolve({ data: [] }),
@@ -326,21 +326,25 @@ export default async function DashboardPage() {
     });
 
   // Process active boards data
-  type BoardColumnRow = { id: string; idea_id: string; title: string; is_done_column: boolean; position: number; idea: { id: string; title: string } };
+  type BoardColumnRow = { id: string; idea_id: string; title: string; is_done_column: boolean; position: number; idea: { id: string; title: string; status: string } };
   const boardColumns = (boardColumnsResult.data ?? []) as unknown as BoardColumnRow[];
   const boardTasks = (boardTasksResult.data ?? []) as { idea_id: string; column_id: string; title: string; updated_at: string }[];
 
-  // Build idea title map from column joins (covers all ideas with boards)
+  // Build idea title map from column joins — exclude completed/archived ideas
   const ideaTitleMap = new Map<string, string>();
+  const activeIdeaIds = new Set<string>();
   for (const col of boardColumns) {
     if (col.idea && !ideaTitleMap.has(col.idea_id)) {
+      if (col.idea.status === "completed" || col.idea.status === "archived") continue;
       ideaTitleMap.set(col.idea_id, col.idea.title);
+      activeIdeaIds.add(col.idea_id);
     }
   }
 
-  // Group columns by idea
+  // Group columns by idea (only active ideas)
   const columnsByIdea = new Map<string, BoardColumnRow[]>();
   for (const col of boardColumns) {
+    if (!activeIdeaIds.has(col.idea_id)) continue;
     const arr = columnsByIdea.get(col.idea_id) ?? [];
     arr.push(col);
     columnsByIdea.set(col.idea_id, arr);
@@ -437,9 +441,8 @@ export default async function DashboardPage() {
     });
   }
 
-  // Sort by most recent activity and limit to 5
+  // Sort by most recent activity
   activeBoards.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
-  const topActiveBoards = activeBoards.slice(0, 5);
 
   // First-run activation check: user needs tasks AND at least one advanced feature
   const maxBoardTaskCount = activeBoards.reduce((max, b) => Math.max(max, b.totalTasks), 0);
@@ -544,9 +547,9 @@ export default async function DashboardPage() {
         sectionId="active-boards"
         title="Active Boards"
         icon={<LayoutDashboard className="h-5 w-5 text-blue-400" />}
-        count={topActiveBoards.length}
+        count={activeBoards.length}
       >
-        <ActiveBoards boards={topActiveBoards} />
+        <ActiveBoards boards={activeBoards} />
       </CollapsibleSection>
     ),
     "my-tasks": (
@@ -735,7 +738,7 @@ export default async function DashboardPage() {
               hasMcpConnection={hasMcpConnection}
               ideasCount={ideasCount}
               firstIdea={myIdeas[0] ? { id: myIdeas[0].id, title: myIdeas[0].title } : null}
-              activeBoards={topActiveBoards}
+              activeBoards={activeBoards}
               maxBoardTaskCount={maxBoardTaskCount}
               workflowCount={firstIdeaWorkflowCount}
               boardPreview={firstRunBoardPreview}
