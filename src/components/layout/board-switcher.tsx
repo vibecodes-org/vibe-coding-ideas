@@ -23,11 +23,11 @@ export function BoardSwitcher() {
 
   useEffect(() => {
     let cancelled = false;
-    getUserRecentBoards(currentIdeaId ?? undefined).then((result) => {
+    getUserRecentBoards().then((result) => {
       if (!cancelled) setBoards(result);
     });
     return () => { cancelled = true; };
-  }, [pathname, currentIdeaId]); // refetch when navigating
+  }, [pathname]); // refetch when navigating
   const currentBoard = boards.find((b) => b.ideaId === currentIdeaId);
 
   // Don't render if no boards
