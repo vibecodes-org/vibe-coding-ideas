@@ -17,17 +17,17 @@ export function BoardSwitcher() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  useEffect(() => {
-    let cancelled = false;
-    getUserRecentBoards().then((result) => {
-      if (!cancelled) setBoards(result);
-    });
-    return () => { cancelled = true; };
-  }, [pathname]); // refetch when navigating
-
   // Determine current board from URL (/ideas/{id}/*)
   const ideaIdMatch = pathname.match(/\/ideas\/([^/]+)/);
   const currentIdeaId = ideaIdMatch?.[1] ?? null;
+
+  useEffect(() => {
+    let cancelled = false;
+    getUserRecentBoards(currentIdeaId ?? undefined).then((result) => {
+      if (!cancelled) setBoards(result);
+    });
+    return () => { cancelled = true; };
+  }, [pathname, currentIdeaId]); // refetch when navigating
   const currentBoard = boards.find((b) => b.ideaId === currentIdeaId);
 
   // Don't render if no boards

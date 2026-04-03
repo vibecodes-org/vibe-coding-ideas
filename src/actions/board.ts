@@ -657,7 +657,7 @@ export interface RecentBoard {
 }
 
 /** Return up to 5 boards the user owns or collaborates on, ordered by most recent activity. */
-export async function getUserRecentBoards(): Promise<RecentBoard[]> {
+export async function getUserRecentBoards(currentIdeaId?: string): Promise<RecentBoard[]> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -713,5 +713,13 @@ export async function getUserRecentBoards(): Promise<RecentBoard[]> {
   }
 
   boards.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
-  return boards.slice(0, 5);
+
+  // Ensure the current board is always included even if not in top 5
+  const top = boards.slice(0, 5);
+  if (currentIdeaId && !top.some((b) => b.ideaId === currentIdeaId)) {
+    const current = boards.find((b) => b.ideaId === currentIdeaId);
+    if (current) top.push(current);
+  }
+
+  return top;
 }
