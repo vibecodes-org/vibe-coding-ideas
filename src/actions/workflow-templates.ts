@@ -224,7 +224,10 @@ export async function updateWorkflowTemplate(
   return data;
 }
 
-export async function deleteWorkflowTemplate(templateId: string) {
+export async function deleteWorkflowTemplate(
+  templateId: string,
+  options?: { removeTaskWorkflows?: boolean }
+) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -238,6 +241,28 @@ export async function deleteWorkflowTemplate(templateId: string) {
     .select("idea_id")
     .eq("id", templateId)
     .single();
+
+  // Optionally remove workflow runs from tasks that used this template
+  if (options?.removeTaskWorkflows && template) {
+    const { data: runs } = await supabase
+      .from("workflow_runs")
+      .select("id")
+      .eq("template_id", templateId)
+      .not("status", "in", '("completed","failed")');
+
+    if (runs && runs.length > 0) {
+      const runIds = runs.map((r) => r.id);
+      // Delete steps first (FK constraint), then runs
+      await supabase
+        .from("task_workflow_steps")
+        .delete()
+        .in("run_id", runIds);
+      await supabase
+        .from("workflow_runs")
+        .delete()
+        .in("id", runIds);
+    }
+  }
 
   const { error } = await supabase
     .from("workflow_templates")

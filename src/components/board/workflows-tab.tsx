@@ -883,10 +883,19 @@ export function WorkflowsTab({
     }
   }
 
+  const [removeTemplateWorkflows, setRemoveTemplateWorkflows] = useState(false);
+
   async function handleDelete(templateId: string) {
     try {
-      await deleteWorkflowTemplate(templateId);
-      toast.success("Template deleted");
+      await deleteWorkflowTemplate(templateId, {
+        removeTaskWorkflows: removeTemplateWorkflows,
+      });
+      toast.success(
+        removeTemplateWorkflows
+          ? "Template deleted and workflows removed from tasks"
+          : "Template deleted"
+      );
+      setRemoveTemplateWorkflows(false);
       if (selectedId === templateId) {
         setSelectedId(null);
       }
@@ -1304,6 +1313,21 @@ export function WorkflowsTab({
                           undone.
                         </AlertDialogDescription>
                       </AlertDialogHeader>
+                      <div className="flex items-center gap-2 py-2">
+                        <Checkbox
+                          id="remove-template-workflows"
+                          checked={removeTemplateWorkflows}
+                          onCheckedChange={(checked) =>
+                            setRemoveTemplateWorkflows(checked === true)
+                          }
+                        />
+                        <label
+                          htmlFor="remove-template-workflows"
+                          className="text-sm text-muted-foreground cursor-pointer"
+                        >
+                          Also remove active workflows from tasks using this template
+                        </label>
+                      </div>
                       <AlertDialogFooter>
                         <AlertDialogCancel>Cancel</AlertDialogCancel>
                         <AlertDialogAction
