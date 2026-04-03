@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { allocateAllAgents } from "./idea-agents";
 import { cloneBotProfile } from "./bots";
+import { applyAutoRuleRetroactively } from "./workflow-templates";
 import { BOT_ROLE_TEMPLATES, VIBECODES_USER_ID } from "@/lib/constants";
 import { generatePromptFromFields } from "@/lib/prompt-builder";
 import type { Database } from "@/types/database";
@@ -272,6 +273,7 @@ export async function applyKit(
   }
 
   // 3. Import workflow templates from kit_workflow_mappings
+  const createdRuleIds: string[] = [];
   const { data: mappings } = await supabase
     .from("kit_workflow_mappings")
     .select("label_name, is_primary, workflow_library_template_id")
@@ -329,12 +331,13 @@ export async function applyKit(
           if (!labelId) continue;
 
           try {
-            await supabase.from("workflow_auto_rules").insert({
+            const { data: newRule } = await supabase.from("workflow_auto_rules").insert({
               idea_id: ideaId,
               label_id: labelId,
               template_id: newTemplate.id,
-            });
+            }).select("id").single();
             result.triggersCreated++;
+            if (newRule) createdRuleIds.push(newRule.id);
             // Backwards compat: mark first trigger
             if (isPrimary) {
               result.templateImported = true;
@@ -384,13 +387,14 @@ export async function applyKit(
               .maybeSingle();
 
             if (matchingLabel) {
-              await supabase.from("workflow_auto_rules").insert({
+              const { data: newRule } = await supabase.from("workflow_auto_rules").insert({
                 idea_id: ideaId,
                 label_id: matchingLabel.id,
                 template_id: newTemplate.id,
-              });
+              }).select("id").single();
               result.autoRuleCreated = true;
               result.triggersCreated = 1;
+              if (newRule) createdRuleIds.push(newRule.id);
             }
           }
         }
@@ -405,6 +409,15 @@ export async function applyKit(
     .from("ideas")
     .update({ project_kit_id: kitId })
     .eq("id", ideaId);
+
+  // 5. Retroactively apply auto-rules to existing tasks that already have matching labels
+  for (const ruleId of createdRuleIds) {
+    try {
+      await applyAutoRuleRetroactively(ruleId);
+    } catch {
+      // Non-fatal — task may already have a workflow or rule may not match any tasks
+    }
+  }
 
   revalidatePath(`/ideas/${ideaId}`);
   revalidatePath(`/ideas/${ideaId}/board`);
