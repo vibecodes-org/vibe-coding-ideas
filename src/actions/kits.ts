@@ -411,12 +411,10 @@ export async function applyKit(
     .eq("id", ideaId);
 
   // 5. Retroactively apply auto-rules to existing tasks that already have matching labels
-  for (const ruleId of createdRuleIds) {
-    try {
-      await applyAutoRuleRetroactively(ruleId);
-    } catch {
-      // Non-fatal — task may already have a workflow or rule may not match any tasks
-    }
+  if (createdRuleIds.length > 0) {
+    await Promise.allSettled(
+      createdRuleIds.map((ruleId) => applyAutoRuleRetroactively(ruleId))
+    );
   }
 
   revalidatePath(`/ideas/${ideaId}`);
