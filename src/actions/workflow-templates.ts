@@ -243,25 +243,12 @@ export async function deleteWorkflowTemplate(
     .single();
 
   // Optionally remove workflow runs from tasks that used this template
+  // Steps and step comments cascade-delete automatically via FK ON DELETE CASCADE
   if (options?.removeTaskWorkflows && template) {
-    const { data: runs } = await supabase
+    await supabase
       .from("workflow_runs")
-      .select("id")
-      .eq("template_id", templateId)
-      .not("status", "in", '("completed","failed")');
-
-    if (runs && runs.length > 0) {
-      const runIds = runs.map((r) => r.id);
-      // Delete steps first (FK constraint), then runs
-      await supabase
-        .from("task_workflow_steps")
-        .delete()
-        .in("run_id", runIds);
-      await supabase
-        .from("workflow_runs")
-        .delete()
-        .in("id", runIds);
-    }
+      .delete()
+      .eq("template_id", templateId);
   }
 
   const { error } = await supabase
