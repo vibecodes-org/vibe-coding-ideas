@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { allocateAllAgents } from "./idea-agents";
 import { cloneBotProfile } from "./bots";
-import { applyAutoRuleRetroactively } from "./workflow-templates";
+import { triggerAutoRulesForTasks } from "./board";
 import { BOT_ROLE_TEMPLATES, VIBECODES_USER_ID } from "@/lib/constants";
 import { generatePromptFromFields } from "@/lib/prompt-builder";
 import type { Database } from "@/types/database";
@@ -410,11 +410,24 @@ export async function applyKit(
     .update({ project_kit_id: kitId })
     .eq("id", ideaId);
 
-  // 5. Retroactively apply auto-rules to existing tasks that already have matching labels
+  // 5. Retroactively apply auto-rules to existing labeled tasks (uses batched, cached path)
   if (createdRuleIds.length > 0) {
-    await Promise.allSettled(
-      createdRuleIds.map((ruleId) => applyAutoRuleRetroactively(ruleId))
-    );
+    const { data: taskLabels } = await supabase
+      .from("board_task_labels")
+      .select("task_id, label_id, board_tasks!inner(archived)")
+      .eq("board_tasks.idea_id", ideaId)
+      .eq("board_tasks.archived", false);
+
+    if (taskLabels && taskLabels.length > 0) {
+      const pairMap = new Map<string, string[]>();
+      for (const tl of taskLabels) {
+        const arr = pairMap.get(tl.task_id) ?? [];
+        arr.push(tl.label_id);
+        pairMap.set(tl.task_id, arr);
+      }
+      const pairs = [...pairMap.entries()].map(([taskId, labelIds]) => ({ taskId, labelIds }));
+      await triggerAutoRulesForTasks(pairs, ideaId);
+    }
   }
 
   revalidatePath(`/ideas/${ideaId}`);
