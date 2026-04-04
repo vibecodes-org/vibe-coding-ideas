@@ -693,22 +693,38 @@ export async function getUserRecentBoards(): Promise<RecentBoard[]> {
   if (ideasMap.size === 0) return [];
 
   // Only include ideas that have board columns (i.e. have a board set up)
+  // Also get the most recent task update per idea for accurate "last activity"
   const ideaIds = [...ideasMap.keys()];
-  const { data: columnsData } = await supabase
-    .from("board_columns")
-    .select("idea_id")
-    .in("idea_id", ideaIds);
+  const [{ data: columnsData }, { data: latestTasks }] = await Promise.all([
+    supabase
+      .from("board_columns")
+      .select("idea_id")
+      .in("idea_id", ideaIds),
+    supabase
+      .from("board_tasks")
+      .select("idea_id, updated_at")
+      .in("idea_id", ideaIds)
+      .order("updated_at", { ascending: false }),
+  ]);
 
   const ideaIdsWithBoards = new Set((columnsData ?? []).map((c) => c.idea_id));
 
-  // Build result, sorted by updated_at descending
+  // Build a map of most recent task activity per idea
+  const latestTaskActivity = new Map<string, string>();
+  for (const task of latestTasks ?? []) {
+    if (!latestTaskActivity.has(task.idea_id)) {
+      latestTaskActivity.set(task.idea_id, task.updated_at);
+    }
+  }
+
+  // Build result — use latest task activity, falling back to idea.updated_at
   const boards: RecentBoard[] = [];
   for (const idea of ideasMap.values()) {
     if (!ideaIdsWithBoards.has(idea.id)) continue;
     boards.push({
       ideaId: idea.id,
       title: idea.title,
-      lastActivity: idea.updated_at,
+      lastActivity: latestTaskActivity.get(idea.id) ?? idea.updated_at,
     });
   }
 
