@@ -26,8 +26,9 @@ test.describe("Board AI Generation", () => {
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
     if (testInfo.project.name === "Mobile Chrome") {
-      // On mobile, the button text is hidden — find by the violet-styled button with Sparkles icon
-      await expect(page.locator("button[class*='violet']")).toBeVisible();
+      // On mobile, the button text is hidden — find by the Sparkles icon inside the toolbar
+      const toolbar = page.getByRole("main");
+      await expect(toolbar.locator("button", { has: page.locator("svg.lucide-sparkles") })).toBeVisible();
     } else {
       await expect(page.getByRole("button", { name: /AI Generate/i })).toBeVisible();
     }

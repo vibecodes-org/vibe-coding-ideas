@@ -31,12 +31,13 @@ test.describe("Workflow Templates", () => {
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
     await page.getByRole("tab", { name: "Workflows" }).click();
-    await page.waitForTimeout(1000);
 
     // Should show template-related content (either templates list or empty state)
-    const hasTemplates = await page.getByText("TEMPLATES").first().isVisible({ timeout: 5000 }).catch(() => false);
-    const hasEmptyState = await page.getByText(/workflow|template/i).first().isVisible({ timeout: 3000 }).catch(() => false);
-    expect(hasTemplates || hasEmptyState).toBe(true);
+    // Scope to main to avoid matching navbar/banner text
+    const main = page.getByRole("main");
+    await expect(
+      main.getByText(/workflow|template|kit/i).first()
+    ).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
   test("should display Agents tab on board", async ({ userAPage: page }) => {
