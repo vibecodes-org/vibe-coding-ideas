@@ -92,7 +92,7 @@ export function AllocateToIdeaDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-2 py-2">
+        <div className="flex max-h-[320px] flex-col gap-2 overflow-y-auto py-2">
           {ideas.map((idea) => (
             <button
               key={idea.id}
@@ -107,8 +107,9 @@ export function AllocateToIdeaDialog({
             >
               <Checkbox
                 checked={selected.has(idea.id)}
-                onCheckedChange={() => toggleIdea(idea.id)}
-                className="shrink-0"
+                onCheckedChange={() => {/* handled by parent button */}}
+                onClick={(e) => e.stopPropagation()}
+                className="shrink-0 pointer-events-none"
               />
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium truncate">{idea.title}</div>
@@ -132,7 +133,7 @@ export function AllocateToIdeaDialog({
           ))}
         </div>
 
-        <DialogFooter className="gap-2 sm:gap-0">
+        <DialogFooter className="gap-2 border-t border-border pt-4 sm:gap-2">
           <Button variant="outline" onClick={handleSkip} disabled={allocating}>
             Skip for now
           </Button>
@@ -145,11 +146,10 @@ export function AllocateToIdeaDialog({
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                 Allocating...
               </>
+            ) : selected.size === 0 ? (
+              "Select ideas to allocate"
             ) : (
-              `Allocate to ${selected.size || ""} idea${selected.size !== 1 ? "s" : ""}`.replace(
-                "to  idea",
-                "to ideas"
-              )
+              `Allocate to ${selected.size} idea${selected.size !== 1 ? "s" : ""}`
             )}
           </Button>
         </DialogFooter>
