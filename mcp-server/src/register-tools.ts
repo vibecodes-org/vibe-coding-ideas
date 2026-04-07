@@ -549,7 +549,7 @@ export function registerTools(
 
   server.tool(
     "manage_labels",
-    "Create labels, add labels to tasks, or remove labels from tasks. Actions: create, add_to_task, remove_from_task.",
+    "Create labels, add labels to tasks, or remove labels from tasks. Actions: create (returns existing label if name matches case-insensitively — safe to call without checking first), add_to_task, remove_from_task.",
     manageLabelsSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

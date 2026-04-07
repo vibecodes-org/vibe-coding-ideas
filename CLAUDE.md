@@ -96,7 +96,7 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 
 ## Database
 
-41 tables with RLS (`supabase/migrations/`):
+42 tables with RLS (110 migrations in `supabase/migrations/`):
 - **Core**: users, ideas, comments, collaborators, votes, notifications, feedback, idea_attachments
 - **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_checklist_items, board_task_activity, board_task_comments, board_task_attachments
 - **Workflows**: workflow_templates, workflow_auto_rules, workflow_runs, task_workflow_steps, workflow_step_comments, workflow_library_templates, user_workflow_templates
@@ -111,7 +111,7 @@ Board tables use `is_idea_team_member()` RLS function. `is_super_admin` separate
 
 ## MCP Server
 
-Two modes sharing 77 tools via `mcp-server/src/register-tools.ts`:
+Two modes sharing 79 tools via `mcp-server/src/register-tools.ts`:
 - **Local (stdio)**: `mcp-server/src/index.ts` — service-role client, bypasses RLS
 - **Remote (HTTP)**: `src/app/api/mcp/[[...transport]]/route.ts` — OAuth 2.1 + PKCE, per-user RLS
 
@@ -174,7 +174,7 @@ See `docs/release-process.md` for full details.
 - Scope locators to `page.getByRole("main")` to avoid strict mode violations
 - E2E auth uses API-based login (service-role client) to bypass Turnstile CAPTCHA — not browser login
 - CI matrix: Chrome + Mobile Chrome only (Firefox dropped)
-- 11 E2E spec files across auth, board, onboarding, and workflows
+- 21 E2E spec files across admin, agents, auth, board, dashboard, discussions, ideas, members, mobile, onboarding, profile, and workflows
 
 ## .vibecodes/ Config
 
@@ -188,7 +188,7 @@ Auto-injects `idea_id` into MCP tool calls from `.vibecodes/config.json`.
 
 ```
 src/
-├── actions/       # 23 server action files ("use server")
+├── actions/       # 22 server action files ("use server")
 ├── app/           # Next.js App Router
 │   ├── (auth)/    # Login, signup, password reset, callback
 │   ├── (main)/    # Admin, agents, dashboard, feed, ideas, members, profile
@@ -196,15 +196,15 @@ src/
 │   ├── guide/     # 9 help/guide pages
 │   ├── changelog/ # Public changelog
 │   └── ...        # Privacy, terms, feed.xml, .well-known
-├── components/    # 20 directories, ~170 component files
+├── components/    # 20 directories, ~215 component files
 │   ├── ui/        # shadcn/ui primitives (don't edit except markdown.tsx)
-│   └── ...        # admin, agents, ai, board, comments, dashboard,
+│   └── ...        # admin, agents, ai, auth, board, comments, dashboard,
 │                  # discussions, guide, ideas, kits, landing, layout,
 │                  # members, onboarding, posthog, profile, pwa, shared
 ├── data/          # Static data (changelog entries)
 ├── hooks/         # Custom hooks (use-media-query, use-mentions,
 │                  # use-realtime, use-scroll-to-hash, use-user)
-├── lib/           # ~30 utility/helper modules + supabase/ client setup
+├── lib/           # 25 utility/helper modules + supabase/ client setup
 ├── test/          # Test utilities
 └── types/         # database.ts (manual), index.ts
 mcp-server/src/    # MCP server (shared tools, 22 tool files)

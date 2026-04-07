@@ -42,6 +42,17 @@ export async function manageLabels(
       throw new Error(`Invalid color: ${color}. Valid: ${VALID_LABEL_COLORS.join(", ")}`);
     }
 
+    // Check for existing label with same name (case-insensitive) to prevent duplicates
+    const { data: existing } = await ctx.supabase
+      .from("board_labels")
+      .select("id, name, color")
+      .eq("idea_id", params.idea_id)
+      .ilike("name", params.name);
+
+    if (existing && existing.length > 0) {
+      return { success: true, label: existing[0], already_existed: true };
+    }
+
     const { data, error } = await ctx.supabase
       .from("board_labels")
       .insert({ idea_id: params.idea_id, name: params.name, color })
