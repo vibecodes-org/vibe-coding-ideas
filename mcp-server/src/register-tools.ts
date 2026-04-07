@@ -259,7 +259,7 @@ export function registerTools(
 
   server.tool(
     "get_board",
-    "Get kanban board overview: columns with task summaries (no descriptions — use get_task for full details). Excludes done columns by default. Use column_ids or column_names to fetch specific columns only. Initializes default columns if none exist.",
+    "Get kanban board overview: columns with compact task summaries. Present this data directly to the user — NEVER write scripts to parse it. Use get_task for full task details. Use column_ids or column_names to fetch specific columns. Excludes done columns by default.",
     getBoardSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

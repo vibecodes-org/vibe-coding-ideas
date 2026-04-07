@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { McpContext } from "../context";
-import { getTask, getTaskSchema } from "./board-read";
+import { getBoard, getBoardSchema, getTask, getTaskSchema } from "./board-read";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -113,7 +113,124 @@ function buildContext(opts: {
 }
 
 // ---------------------------------------------------------------------------
-// Tests
+// getBoard — compact response
+// ---------------------------------------------------------------------------
+
+function buildBoardContext(opts: {
+  columns?: Record<string, unknown>[];
+  tasks?: Record<string, unknown>[];
+  labels?: Record<string, unknown>[];
+}): McpContext {
+  const columnsChain = createChain(
+    opts.columns ?? [
+      { id: "col-1", idea_id: IDEA_ID, title: "To Do", position: 0, is_done_column: false, created_at: "2026-01-01", updated_at: "2026-01-01" },
+      { id: "col-2", idea_id: IDEA_ID, title: "Done", position: 1000, is_done_column: true, created_at: "2026-01-01", updated_at: "2026-01-01" },
+    ]
+  );
+  const tasksChain = createChain(
+    opts.tasks ?? [
+      {
+        id: TASK_ID, title: "Test Task", column_id: "col-1", position: 1000,
+        due_date: null, archived: false, attachment_count: 0,
+        workflow_step_total: 4, workflow_step_completed: 2,
+        workflow_step_in_progress: 1, workflow_step_failed: 0, workflow_step_awaiting_approval: 0,
+        workflow_active_step_title: null, workflow_active_agent_name: null,
+        users: { id: USER_ID, full_name: "Test User" },
+        board_task_labels: [{ label_id: "lbl-1", board_labels: { id: "lbl-1", name: "Bug", color: "red" } }],
+      },
+    ]
+  );
+  const labelsChain = createChain(opts.labels ?? [{ id: "lbl-1", name: "Bug", color: "red" }]);
+
+  const fromFn = vi.fn((table: string) => {
+    switch (table) {
+      case "board_columns": return columnsChain;
+      case "board_tasks": return tasksChain;
+      case "board_labels": return labelsChain;
+      default: return createChain();
+    }
+  });
+
+  return {
+    supabase: { from: fromFn } as unknown as McpContext["supabase"],
+    userId: USER_ID,
+  };
+}
+
+describe("getBoard — compact response format", () => {
+  const params = getBoardSchema.parse({ idea_id: IDEA_ID });
+
+  it("returns compact task summaries without position, created_at, updated_at", async () => {
+    const ctx = buildBoardContext({});
+    const result = await getBoard(ctx, params);
+
+    const col = result.columns[0];
+    expect(col).not.toHaveProperty("created_at");
+    expect(col).not.toHaveProperty("updated_at");
+    expect(col).not.toHaveProperty("position");
+    expect(col).toHaveProperty("id");
+    expect(col).toHaveProperty("title");
+
+    const task = col.tasks[0];
+    expect(task).not.toHaveProperty("position");
+    expect(task).not.toHaveProperty("archived");
+    expect(task).toHaveProperty("id");
+    expect(task).toHaveProperty("title");
+  });
+
+  it("uses assignee name string instead of object", async () => {
+    const ctx = buildBoardContext({});
+    const result = await getBoard(ctx, params);
+
+    expect(result.columns[0].tasks[0].assignee).toBe("Test User");
+  });
+
+  it("uses label name strings instead of full objects", async () => {
+    const ctx = buildBoardContext({});
+    const result = await getBoard(ctx, params);
+
+    expect(result.columns[0].tasks[0].labels).toEqual(["Bug"]);
+  });
+
+  it("returns label names array instead of full objects at top level", async () => {
+    const ctx = buildBoardContext({});
+    const result = await getBoard(ctx, params);
+
+    expect(result.labels).toEqual(["Bug"]);
+  });
+
+  it("omits null/zero fields from task summaries", async () => {
+    const ctx = buildBoardContext({
+      tasks: [{
+        id: TASK_ID, title: "Bare Task", column_id: "col-1", position: 1000,
+        due_date: null, archived: false, attachment_count: 0,
+        workflow_step_total: 0, workflow_step_completed: 0,
+        workflow_step_in_progress: 0, workflow_step_failed: 0, workflow_step_awaiting_approval: 0,
+        workflow_active_step_title: null, workflow_active_agent_name: null,
+        users: null,
+        board_task_labels: [],
+      }],
+    });
+    const result = await getBoard(ctx, params);
+
+    const task = result.columns[0].tasks[0];
+    expect(task).not.toHaveProperty("assignee");
+    expect(task).not.toHaveProperty("due_date");
+    expect(task).not.toHaveProperty("labels");
+    expect(task).not.toHaveProperty("workflow");
+    expect(task).not.toHaveProperty("attachments");
+  });
+
+  it("includes compact workflow summary string", async () => {
+    const ctx = buildBoardContext({});
+    const result = await getBoard(ctx, params);
+
+    expect(result.columns[0].tasks[0].workflow).toBe("2/4 done, 1 in progress");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getTask — workflow_instruction
 // ---------------------------------------------------------------------------
 
 describe("getTask — workflow_instruction", () => {
@@ -176,11 +293,13 @@ describe("getTask — workflow_instruction", () => {
     expect(result.workflow_instruction).not.toContain("human approval");
   });
 
-  it("omits workflow_instruction when no workflow steps exist", async () => {
+  it("includes self-assign instruction when no workflow steps exist", async () => {
     const ctx = buildContext({ steps: [] });
 
     const result = await getTask(ctx, params);
 
-    expect(result.workflow_instruction).toBeNull();
+    expect(result.workflow_instruction).not.toBeNull();
+    expect(result.workflow_instruction).toContain("update_task");
+    expect(result.workflow_instruction).toContain("assignee_id");
   });
 });

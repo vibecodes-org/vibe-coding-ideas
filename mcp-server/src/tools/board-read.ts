@@ -106,7 +106,7 @@ export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardS
       ? new Set(columns!.filter((c) => c.is_done_column).map((c) => c.id))
       : new Set<string>();
 
-  // Group tasks by column, omit descriptions to keep payload small (use get_task for full details)
+  // Group tasks by column, keep payload compact (use get_task for full details)
   const board = columns!
     .filter((col) => {
       if (columnIdSet) return columnIdSet.has(col.id);
@@ -114,32 +114,41 @@ export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardS
       return !doneColumnIds.has(col.id);
     })
     .map((col) => ({
-      ...col,
+      id: col.id,
+      title: col.title,
+      is_done_column: col.is_done_column,
       tasks: (tasks ?? [])
         .filter((t) => t.column_id === col.id)
-        .map((t) => ({
-          id: t.id,
-          title: t.title,
-          position: t.position,
-          assignee: (t as Record<string, unknown>).users ?? null,
-          due_date: t.due_date,
-          archived: t.archived,
-          workflow_step_total: t.workflow_step_total,
-          workflow_step_completed: t.workflow_step_completed,
-          workflow_step_in_progress: t.workflow_step_in_progress,
-          workflow_step_failed: t.workflow_step_failed,
-          workflow_step_awaiting_approval: t.workflow_step_awaiting_approval,
-          workflow_active_step_title: t.workflow_active_step_title,
-          workflow_active_agent_name: t.workflow_active_agent_name,
-          attachment_count: t.attachment_count,
-          labels:
+        .map((t) => {
+          const assigneeData = (t as Record<string, unknown>).users as Record<string, unknown> | null;
+          const labelData =
             ((t as Record<string, unknown>).board_task_labels as Array<Record<string, unknown>>)?.map(
-              (tl) => tl.board_labels
-            ) ?? [],
-        })),
+              (tl) => {
+                const label = tl.board_labels as Record<string, unknown>;
+                return label?.name as string;
+              }
+            ).filter(Boolean) ?? [];
+
+          // Build compact task summary — only include non-null/non-zero fields
+          const summary: Record<string, unknown> = {
+            id: t.id,
+            title: t.title,
+          };
+          if (assigneeData) summary.assignee = assigneeData.full_name;
+          if (t.due_date) summary.due_date = t.due_date;
+          if (labelData.length > 0) summary.labels = labelData;
+          if (t.workflow_step_total > 0) {
+            summary.workflow = `${t.workflow_step_completed}/${t.workflow_step_total} done`;
+            if (t.workflow_step_in_progress > 0) summary.workflow += `, ${t.workflow_step_in_progress} in progress`;
+            if (t.workflow_step_failed > 0) summary.workflow += `, ${t.workflow_step_failed} failed`;
+            if (t.workflow_step_awaiting_approval > 0) summary.workflow += `, ${t.workflow_step_awaiting_approval} awaiting approval`;
+          }
+          if (t.attachment_count > 0) summary.attachments = t.attachment_count;
+          return summary;
+        }),
     }));
 
-  return { columns: board, labels: labels ?? [] };
+  return { columns: board, labels: (labels ?? []).map((l) => l.name) };
 }
 
 export const getTaskSchema = z.object({
