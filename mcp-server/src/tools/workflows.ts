@@ -4,6 +4,17 @@ import type { McpContext } from "../context";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits } from "../../../src/lib/workflow-helpers";
 import { tierRank } from "../../../src/lib/role-matching";
+import { logActivity } from "../activity";
+
+// Column names that indicate "in progress", checked in priority order (case-insensitive)
+const IN_PROGRESS_COLUMN_NAMES = [
+  "in progress",
+  "doing",
+  "in development",
+  "development",
+  "working",
+  "wip",
+];
 
 /**
  * Touch board_tasks.updated_at so the board's Realtime subscription
@@ -388,7 +399,16 @@ export async function claimNextStep(
   if (!updated) throw new Error("Step is no longer pending — it may have been claimed by another agent");
 
   // Update workflow run status if step has a run_id
+  let wasRunPending = false;
   if (step.run_id) {
+    // Check current run status before updating (to detect first claim)
+    const { data: run } = await ctx.supabase
+      .from("workflow_runs")
+      .select("status")
+      .eq("id", step.run_id)
+      .single();
+    wasRunPending = run?.status === "pending";
+
     await ctx.supabase
       .from("workflow_runs")
       .update({
@@ -397,6 +417,61 @@ export async function claimNextStep(
       })
       .eq("id", step.run_id)
       .in("status", ["pending", "running", "failed"]);
+  }
+
+  // Auto-move task to "In Progress" column on first step claim
+  if (wasRunPending && step.idea_id) {
+    try {
+      // Get the task's current column and the board's columns in one parallel fetch
+      const [{ data: task }, { data: columns }] = await Promise.all([
+        ctx.supabase
+          .from("board_tasks")
+          .select("column_id")
+          .eq("id", params.task_id)
+          .single(),
+        ctx.supabase
+          .from("board_columns")
+          .select("id, title")
+          .eq("idea_id", step.idea_id),
+      ]);
+
+      if (task && columns) {
+        // Find the best "in progress" column by priority order
+        const columnsLower = columns.map((c) => ({ ...c, titleLower: c.title.trim().toLowerCase() }));
+        const inProgressCol = IN_PROGRESS_COLUMN_NAMES
+          .map((name) => columnsLower.find((c) => c.titleLower === name))
+          .find(Boolean);
+
+        if (inProgressCol && task.column_id !== inProgressCol.id) {
+          // Get the from-column name for activity log
+          const fromCol = columns.find((c) => c.id === task.column_id);
+
+          // Move the task — append to end of target column
+          const { data: lastTask } = await ctx.supabase
+            .from("board_tasks")
+            .select("position")
+            .eq("column_id", inProgressCol.id)
+            .eq("idea_id", step.idea_id)
+            .order("position", { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          const newPosition = (lastTask?.position ?? 0) + 1000;
+
+          await ctx.supabase
+            .from("board_tasks")
+            .update({ column_id: inProgressCol.id, position: newPosition })
+            .eq("id", params.task_id);
+
+          await logActivity(ctx, params.task_id, step.idea_id, "moved", {
+            from_column: fromCol?.title ?? "Unknown",
+            to_column: inProgressCol.title,
+          });
+        }
+      }
+    } catch {
+      // Non-fatal — don't block step claim if auto-move fails
+    }
   }
 
   // Touch board_tasks so Realtime fires before denormalized counts arrive
