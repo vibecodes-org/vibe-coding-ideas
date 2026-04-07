@@ -205,6 +205,12 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
       `Do NOT begin implementation directly. Use claim_next_step(task_id) to claim and execute steps sequentially — ` +
       `each step has specific deliverables, role requirements, and instructions that are only revealed when claimed.` +
       (hasApprovalGates ? ` Some steps require human approval before proceeding.` : ``);
+  } else if (steps.length === 0) {
+    // No workflow — instruct the agent to assign itself so the board shows in-progress
+    workflow_instruction =
+      `This task has no workflow. Before starting work, call update_task with assignee_id set to your bot user ID ` +
+      `(from set_agent_identity) so the board shows you are actively working on it. ` +
+      `When finished, move the task to the appropriate done/verify column using move_task.`;
   }
 
   return {
