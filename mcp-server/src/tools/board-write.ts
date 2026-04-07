@@ -212,10 +212,35 @@ export async function updateTask(ctx: McpContext, params: z.infer<typeof updateT
       await logActivity(ctx, params.task_id, params.idea_id, "assigned", {
         assignee_id: params.assignee_id,
       });
+      // Auto-set working_started_at for bot assignees on non-workflow tasks
+      const { data: assignee } = await ctx.supabase
+        .from("bot_profiles")
+        .select("id")
+        .eq("id", params.assignee_id)
+        .maybeSingle();
+      if (assignee) {
+        // Only set if task has no active workflow run
+        const { count } = await ctx.supabase
+          .from("workflow_runs")
+          .select("*", { head: true, count: "exact" })
+          .eq("task_id", params.task_id)
+          .not("status", "in", '("completed","failed")');
+        if ((count ?? 0) === 0) {
+          await ctx.supabase
+            .from("board_tasks")
+            .update({ working_started_at: new Date().toISOString() })
+            .eq("id", params.task_id);
+        }
+      }
     } else {
       await logActivity(ctx, params.task_id, params.idea_id, "unassigned", {
         assignee_id: current.assignee_id!,
       });
+      // Clear working_started_at when unassigned
+      await ctx.supabase
+        .from("board_tasks")
+        .update({ working_started_at: null })
+        .eq("id", params.task_id);
     }
   }
   if (params.due_date !== undefined && params.due_date !== current.due_date) {
@@ -253,16 +278,22 @@ export async function moveTask(ctx: McpContext, params: z.infer<typeof moveTaskS
   const position =
     params.position ?? (await getNextPosition(ctx, params.column_id, params.idea_id));
 
-  // Get column name for activity log
+  // Get column details for activity log + done column check
   const { data: column } = await ctx.supabase
     .from("board_columns")
-    .select("title")
+    .select("title, is_done_column")
     .eq("id", params.column_id)
     .single();
 
+  // Clear working_started_at when moved to a done column
+  const taskUpdate: Record<string, unknown> = { column_id: params.column_id, position };
+  if (column?.is_done_column) {
+    taskUpdate.working_started_at = null;
+  }
+
   const { error } = await ctx.supabase
     .from("board_tasks")
-    .update({ column_id: params.column_id, position })
+    .update(taskUpdate)
     .eq("id", params.task_id)
     .eq("idea_id", params.idea_id);
 

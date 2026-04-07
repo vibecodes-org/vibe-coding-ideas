@@ -385,7 +385,11 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                   ? "border-l-2 border-l-red-500 border-border"
                   : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (Date.now() - new Date(task.workflow_step_started_at).getTime()) >= STALE_THRESHOLD_MS
                     ? "border-l-2 border-l-amber-500 border-border"
-                    : "border-border"
+                    : task.working_started_at && task.assignee?.is_bot && !task.workflow_step_total && (Date.now() - new Date(task.working_started_at).getTime()) < STALE_THRESHOLD_MS
+                      ? "border-blue-500/40 ring-1 ring-blue-500/20 animate-workflow-in-progress"
+                      : task.working_started_at && task.assignee?.is_bot && !task.workflow_step_total && (Date.now() - new Date(task.working_started_at).getTime()) >= STALE_THRESHOLD_MS
+                        ? "border-l-2 border-l-amber-500 border-border"
+                        : "border-border"
         } ${isDragging ? "opacity-50" : ""} ${isArchived ? "opacity-50" : ""}`}
         onClick={() => {
           setInitialTab(undefined);
@@ -460,6 +464,31 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                 {task.workflow_step_total > 0 && (
                   <WorkflowStatusBadge task={task} isWiring={isWiring} />
                 )}
+                {!task.workflow_step_total && task.working_started_at && task.assignee?.is_bot && (() => {
+                  const elapsed = Date.now() - new Date(task.working_started_at!).getTime();
+                  const isStale = elapsed >= STALE_THRESHOLD_MS;
+                  const hours = Math.floor(elapsed / (60 * 60 * 1000));
+                  const timeLabel = hours >= 24 ? `${Math.floor(hours / 24)}d` : `${hours}h`;
+                  return (
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <span className={`inline-flex max-w-full items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                          isStale
+                            ? "border border-amber-500/25 bg-amber-500/10 text-amber-400"
+                            : "border border-blue-500/25 bg-blue-500/15 text-blue-400"
+                        }`}>
+                          {isStale ? null : <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin" />}
+                          <span className="truncate">
+                            {task.assignee?.full_name ?? "Agent"} {isStale ? `stale (${timeLabel})` : "working"}
+                          </span>
+                        </span>
+                      </TooltipTrigger>
+                      <TooltipContent>
+                        {task.assignee?.full_name ?? "Agent"} {isStale ? `has been working for ${timeLabel} — may be stuck` : "is actively working on this task"}
+                      </TooltipContent>
+                    </Tooltip>
+                  );
+                })()}
                 {!!attachmentCount && attachmentCount > 0 && (
                   <Tooltip>
                     <TooltipTrigger asChild>

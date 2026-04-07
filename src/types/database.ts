@@ -385,6 +385,7 @@ export type Database = {
           comment_count: number;
           cover_image_path: string | null;
           discussion_id: string | null;
+          working_started_at: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -409,6 +410,7 @@ export type Database = {
           comment_count?: number;
           cover_image_path?: string | null;
           discussion_id?: string | null;
+          working_started_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -433,6 +435,7 @@ export type Database = {
           comment_count?: number;
           cover_image_path?: string | null;
           discussion_id?: string | null;
+          working_started_at?: string | null;
           created_at?: string;
           updated_at?: string;
         };
