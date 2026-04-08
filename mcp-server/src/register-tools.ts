@@ -102,6 +102,8 @@ import {
   requestUploadUrlSchema,
   confirmUpload,
   confirmUploadSchema,
+  downloadAttachment,
+  downloadAttachmentSchema,
 } from "./tools/attachments";
 import {
   listNotifications,
@@ -773,6 +775,20 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await confirmUpload(ctx, confirmUploadSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "download_attachment",
+    "Read a task attachment. Returns text content inline for text files (md, html, csv, txt, json) or a signed download URL for binary files (images, PDFs, etc.). Use this to review screenshots, read documents, or access any file attached to a task.",
+    downloadAttachmentSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await downloadAttachment(ctx, downloadAttachmentSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

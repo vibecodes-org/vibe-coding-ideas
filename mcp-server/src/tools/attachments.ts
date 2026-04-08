@@ -361,6 +361,77 @@ export async function confirmUpload(
   };
 }
 
+// --- download_attachment ---
+
+const TEXT_CONTENT_TYPES = [
+  "text/plain",
+  "text/csv",
+  "text/markdown",
+  "text/html",
+  "application/json",
+];
+
+export const downloadAttachmentSchema = z.object({
+  attachment_id: z.string().uuid().describe("The attachment ID"),
+  task_id: z.string().uuid().describe("The task ID"),
+  idea_id: z.string().uuid().describe("The idea ID"),
+});
+
+export async function downloadAttachment(
+  ctx: McpContext,
+  params: z.infer<typeof downloadAttachmentSchema>
+) {
+  // Look up attachment
+  const { data: attachment, error } = await ctx.supabase
+    .from("board_task_attachments")
+    .select("id, file_name, file_size, content_type, storage_path")
+    .eq("id", params.attachment_id)
+    .eq("task_id", params.task_id)
+    .eq("idea_id", params.idea_id)
+    .maybeSingle();
+
+  if (error) throw new Error(`Failed to fetch attachment: ${error.message}`);
+  if (!attachment) throw new Error(`Attachment not found: ${params.attachment_id}`);
+
+  // Generate signed URL
+  const { data: urlData, error: urlError } = await ctx.supabase.storage
+    .from("task-attachments")
+    .createSignedUrl(attachment.storage_path, 3600);
+
+  if (urlError || !urlData?.signedUrl) {
+    throw new Error(`Failed to generate download URL: ${urlError?.message ?? "unknown error"}`);
+  }
+
+  const isText = TEXT_CONTENT_TYPES.includes(attachment.content_type);
+
+  if (isText) {
+    // Fetch and return text content inline
+    const response = await fetch(urlData.signedUrl);
+    if (!response.ok) {
+      throw new Error(`Failed to download file: HTTP ${response.status}`);
+    }
+    const content = await response.text();
+
+    return {
+      id: attachment.id,
+      file_name: attachment.file_name,
+      content_type: attachment.content_type,
+      file_size: attachment.file_size,
+      content,
+    };
+  }
+
+  // Binary file — return signed URL only
+  return {
+    id: attachment.id,
+    file_name: attachment.file_name,
+    content_type: attachment.content_type,
+    file_size: attachment.file_size,
+    url: urlData.signedUrl,
+    hint: `This is a binary file (${attachment.content_type}). Use the URL to download it — Claude Code can read images and PDFs directly via the Read tool after downloading.`,
+  };
+}
+
 // --- delete_attachment ---
 
 export const deleteAttachmentSchema = z.object({

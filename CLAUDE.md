@@ -111,7 +111,7 @@ Board tables use `is_idea_team_member()` RLS function. `is_super_admin` separate
 
 ## MCP Server
 
-Two modes sharing 79 tools via `mcp-server/src/register-tools.ts`:
+Two modes sharing 80 tools via `mcp-server/src/register-tools.ts`:
 - **Local (stdio)**: `mcp-server/src/index.ts` — service-role client, bypasses RLS
 - **Remote (HTTP)**: `src/app/api/mcp/[[...transport]]/route.ts` — OAuth 2.1 + PKCE, per-user RLS
 

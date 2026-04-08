@@ -8,7 +8,7 @@ import { MCP_COMMAND } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
   description:
-    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 79 tools.",
+    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 80 tools.",
 };
 
 function ToolTable({
@@ -273,7 +273,7 @@ export default function McpIntegrationPage() {
           <h2 className="mb-4 text-2xl font-semibold">Available Tools</h2>
           <p className="mb-4 text-muted-foreground">
             Once connected, Claude Code has access to{" "}
-            <strong className="text-foreground">79 tools</strong> across 10
+            <strong className="text-foreground">80 tools</strong> across 10
             categories:
           </p>
 
@@ -408,7 +408,7 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Attachments" toolCount={5}>
+            <CollapsibleTools title="Attachments" toolCount={6}>
               <ToolTable
                 tools={[
                   { name: "list_attachments", description: "List task attachments with signed download URLs" },
@@ -416,6 +416,7 @@ export default function McpIntegrationPage() {
                   { name: "delete_attachment", description: "Delete an attachment from a task" },
                   { name: "request_upload_url", description: "Get a presigned URL for file upload" },
                   { name: "confirm_upload", description: "Confirm a file upload after uploading to the presigned URL" },
+                  { name: "download_attachment", description: "Read attachment content (text inline, binary via signed URL)" },
                 ]}
               />
             </CollapsibleTools>
