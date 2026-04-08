@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { MessageSquare, ArrowLeft, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { MessageSquare, ArrowLeft } from "lucide-react";
 
 export const metadata = {
   title: "Discussions Guide",
@@ -222,20 +221,6 @@ export default function DiscussionsPage() {
         </section>
       </div>
 
-      <div className="mt-12 flex justify-between border-t border-border pt-6">
-        <Link href="/guide/collaboration">
-          <Button variant="outline" className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Collaboration
-          </Button>
-        </Link>
-        <Link href="/guide/kanban-boards">
-          <Button variant="outline" className="gap-2">
-            Kanban Boards
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }

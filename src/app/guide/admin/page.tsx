@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { Shield, ArrowLeft } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 export const metadata = {
   title: "Admin Guide",
@@ -103,6 +102,21 @@ export default function AdminPage() {
         </section>
 
         <section>
+          <h2 className="mb-4 text-2xl font-semibold">
+            Featured Teams & Project Kits
+          </h2>
+          <p className="mb-4 text-muted-foreground">
+            Admins can also manage{" "}
+            <strong className="text-foreground">Featured Agent Teams</strong>{" "}
+            — curated collections of agents that appear in the Agents Hub for
+            all users to clone.{" "}
+            <strong className="text-foreground">Project Kits</strong>, which
+            bundle agents, workflows, labels, and triggers for specific project
+            types, are also managed by admins.
+          </p>
+        </section>
+
+        <section>
           <h2 className="mb-4 text-2xl font-semibold">Content Moderation</h2>
           <p className="mb-4 text-muted-foreground">
             Admins have moderation capabilities to keep the platform clean:
@@ -130,14 +144,6 @@ export default function AdminPage() {
         </section>
       </div>
 
-      <div className="mt-12 flex justify-start border-t border-border pt-6">
-        <Link href="/guide/ai-agent-teams">
-          <Button variant="outline" className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            AI Agent Teams
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }

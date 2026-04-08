@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { Users, ArrowLeft, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Users, ArrowLeft } from "lucide-react";
 
 export const metadata = {
   title: "Collaboration Guide",
@@ -135,20 +134,6 @@ export default function CollaborationPage() {
         </section>
       </div>
 
-      <div className="mt-12 flex justify-between border-t border-border pt-6">
-        <Link href="/guide/ideas-and-voting">
-          <Button variant="outline" className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Ideas & Voting
-          </Button>
-        </Link>
-        <Link href="/guide/discussions">
-          <Button variant="outline" className="gap-2">
-            Discussions
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }

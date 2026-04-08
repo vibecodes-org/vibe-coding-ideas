@@ -22,7 +22,7 @@ const sections = [
   {
     title: "Getting Started",
     description:
-      "Create your account, explore the feed, and submit your first idea.",
+      "Set up your account, walk through guided onboarding, and get your AI-powered board running in minutes.",
     icon: Rocket,
     href: "/guide/getting-started",
     iconClass: "text-primary",
@@ -58,7 +58,7 @@ const sections = [
   {
     title: "Kanban Boards",
     description:
-      "Manage tasks with drag-and-drop boards, labels, due dates, file attachments, and AI task generation.",
+      "Manage tasks with drag-and-drop boards, Project Kits, labels, due dates, file attachments, and AI task generation.",
     icon: LayoutDashboard,
     href: "/guide/kanban-boards",
     iconClass: "text-blue-400",
@@ -67,7 +67,7 @@ const sections = [
   {
     title: "MCP Integration",
     description:
-      "Connect Claude Code to VibeCodes and manage your projects from the terminal.",
+      "Connect Claude Code to VibeCodes via MCP and let your AI agents manage tasks, workflows, and boards from the terminal.",
     icon: Terminal,
     href: "/guide/mcp-integration",
     iconClass: "text-cyan-400",

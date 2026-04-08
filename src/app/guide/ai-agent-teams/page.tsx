@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { Bot, ArrowLeft, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Bot, ArrowLeft } from "lucide-react";
 
 export const metadata = {
   title: "AI Agent Teams Guide",
@@ -230,7 +229,7 @@ export default function AiAgentTeamsPage() {
             <strong className="text-foreground">Featured teams</strong> are
             curated collections of agents (e.g., a &quot;Full Stack Team&quot;
             with Developer, QA, DevOps, and UX agents) managed by admins. Click{" "}
-            <strong className="text-foreground">Add Team</strong> to clone all
+            <strong className="text-foreground">Clone Team to My Agents</strong> to clone all
             agents from a featured team into your account in one go.
           </p>
 
@@ -692,20 +691,6 @@ export default function AiAgentTeamsPage() {
         </section>
       </div>
 
-      <div className="mt-12 flex justify-between border-t border-border pt-6">
-        <Link href="/guide/workflows">
-          <Button variant="outline" className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Workflows
-          </Button>
-        </Link>
-        <Link href="/guide/admin">
-          <Button variant="outline" className="gap-2">
-            Admin
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }

@@ -1,11 +1,10 @@
 import Link from "next/link";
-import { Rocket, ArrowLeft, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Rocket, ArrowLeft } from "lucide-react";
 
 export const metadata = {
   title: "Getting Started Guide",
   description:
-    "Create your account, explore the idea feed, and submit your first idea on VibeCodes.",
+    "Set up your account, walk through the guided onboarding wizard, and get your AI-powered board running in minutes.",
 };
 
 export default function GettingStartedPage() {
@@ -55,6 +54,91 @@ export default function GettingStartedPage() {
             Forgot your password? Use the{" "}
             <strong className="text-foreground">reset link</strong> on the login
             page to receive a password reset email.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">Guided Onboarding</h2>
+          <p className="mb-4 text-muted-foreground">
+            After signing up, VibeCodes walks you through a{" "}
+            <strong className="text-foreground">6-step onboarding wizard</strong>{" "}
+            that gets your AI-powered board running in under a minute:
+          </p>
+          <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              <strong className="text-foreground">Welcome</strong> — overview of
+              what VibeCodes does: AI agents work as real team members on your
+              board
+            </li>
+            <li>
+              <strong className="text-foreground">Profile Setup</strong> —
+              display name, bio, and GitHub username (takes about 10 seconds)
+            </li>
+            <li>
+              <strong className="text-foreground">Describe Your Project</strong>{" "}
+              — name your project, write a description (AI can enhance it for
+              free), choose a Project Kit (e.g. Web App, Mobile App, API), and
+              set visibility
+            </li>
+            <li>
+              <strong className="text-foreground">Board Ready</strong> — AI
+              generates tasks, allocates agents from your kit, and applies
+              workflow triggers automatically
+            </li>
+            <li>
+              <strong className="text-foreground">Connect Claude Code</strong> —
+              copy a single terminal command to connect Claude Code via MCP.
+              This is how your AI agents come to life.
+            </li>
+            <li>
+              <strong className="text-foreground">You&apos;re All Set</strong> —
+              summary of what was created: tasks, agents, and active workflows
+            </li>
+          </ul>
+          <div className="mt-4 rounded-xl border border-border bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">Tip:</strong> You can skip
+              onboarding and set up manually later, but the wizard gets you to a
+              working board in under a minute.
+            </p>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">Project Kits</h2>
+          <p className="mb-4 text-muted-foreground">
+            During onboarding you choose a{" "}
+            <strong className="text-foreground">Project Kit</strong> that bundles
+            everything your board needs to get started:
+          </p>
+          <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              <strong className="text-foreground">AI Agents</strong> — a team
+              matched to your project type (e.g. frontend, backend, QA)
+            </li>
+            <li>
+              <strong className="text-foreground">Workflow Templates</strong> —
+              pre-built workflows like Bug Fix, Feature Development, and more
+            </li>
+            <li>
+              <strong className="text-foreground">Board Labels</strong> —
+              categorisation labels such as Bug, Feature, UX, etc.
+            </li>
+            <li>
+              <strong className="text-foreground">Workflow Triggers</strong> —
+              labels automatically apply the right workflow to new tasks
+            </li>
+          </ul>
+          <p className="text-muted-foreground">
+            Kits are also available via MCP using the{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-sm">
+              list_kits
+            </code>{" "}
+            and{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-sm">
+              apply_kit
+            </code>{" "}
+            tools, so you can apply them programmatically at any time.
           </p>
         </section>
 
@@ -109,6 +193,8 @@ export default function GettingStartedPage() {
             <li>
               <strong className="text-foreground">Active Boards</strong> — your
               5 most recently active kanban boards with per-column task counts
+              and <strong className="text-foreground">Idea Health</strong>{" "}
+              indicators showing overall project momentum
             </li>
             <li>
               <strong className="text-foreground">My Tasks</strong> — tasks
@@ -142,6 +228,15 @@ export default function GettingStartedPage() {
             buttons and move them between the left and right columns. Your
             layout is saved to your browser.
           </p>
+          <p className="mt-4 text-muted-foreground">
+            Use the{" "}
+            <strong className="text-foreground">Board Switcher</strong> in the
+            navbar to quickly jump between your boards without going back to the
+            dashboard. New users see a{" "}
+            <strong className="text-foreground">first-run dashboard mode</strong>{" "}
+            with guided prompts to help you create your first idea and get
+            oriented.
+          </p>
         </section>
 
         <section>
@@ -171,10 +266,12 @@ export default function GettingStartedPage() {
         </section>
 
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">Submit Your First Idea</h2>
+          <h2 className="mb-4 text-2xl font-semibold">Creating Additional Ideas</h2>
           <p className="mb-4 text-muted-foreground">
-            Click <strong className="text-foreground">New Idea</strong> in the
-            navbar to create your first idea. Each idea has:
+            Your first idea is created during onboarding, complete with a board,
+            agents, and workflows. To create additional ideas, click{" "}
+            <strong className="text-foreground">New Idea</strong> in the navbar.
+            Each idea has:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
@@ -208,14 +305,6 @@ export default function GettingStartedPage() {
         </section>
       </div>
 
-      <div className="mt-12 flex justify-end border-t border-border pt-6">
-        <Link href="/guide/ideas-and-voting">
-          <Button variant="outline" className="gap-2">
-            Ideas & Voting
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }

@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { GitBranch, ArrowLeft, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { GitBranch, ArrowLeft } from "lucide-react";
 
 export const metadata = {
   title: "Workflows Guide — Automate Multi-Step Processes",
@@ -88,7 +87,12 @@ export default function WorkflowsPage() {
               <strong className="text-foreground">Tip:</strong> Use the{" "}
               <strong className="text-foreground">Template Library</strong>{" "}
               to import pre-built templates like Feature Development, Bug Fix,
-              Design Sprint, and more. Find it on the Workflows tab.
+              Design Sprint, and more. Find it on the Workflows tab. You can
+              also save workflow templates to your{" "}
+              <strong className="text-foreground">Personal Template Library</strong>{" "}
+              for reuse across different boards. Use the{" "}
+              <strong className="text-foreground">&quot;Save to My Templates&quot;</strong>{" "}
+              button on any template detail view.
             </p>
           </div>
         </section>
@@ -528,20 +532,6 @@ export default function WorkflowsPage() {
         </section>
       </div>
 
-      <div className="mt-12 flex justify-between border-t border-border pt-6">
-        <Link href="/guide/mcp-integration">
-          <Button variant="outline" className="gap-2">
-            <ArrowLeft className="h-4 w-4" aria-hidden="true" />
-            MCP Integration
-          </Button>
-        </Link>
-        <Link href="/guide/ai-agent-teams">
-          <Button variant="outline" className="gap-2">
-            AI Agent Teams
-            <ArrowRight className="h-4 w-4" aria-hidden="true" />
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }

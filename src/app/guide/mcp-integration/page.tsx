@@ -1,7 +1,6 @@
 import Link from "next/link";
 import type { Metadata } from "next";
-import { Terminal, ArrowLeft, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Terminal, ArrowLeft } from "lucide-react";
 import { CodeBlock } from "@/components/guide/code-block";
 import { CollapsibleTools } from "@/components/guide/collapsible-tools";
 import { MCP_COMMAND } from "@/lib/constants";
@@ -9,7 +8,7 @@ import { MCP_COMMAND } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
   description:
-    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 78 tools.",
+    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 79 tools.",
 };
 
 function ToolTable({
@@ -130,7 +129,7 @@ export default function McpIntegrationPage() {
             <p className="text-muted-foreground">
               The first time you use it, Claude Code will open your browser for
               OAuth authentication. Log in with your VibeCodes account and
-              authorize the connection. After that, Claude Code can use all 54
+              authorize the connection. After that, Claude Code can use all 79
               VibeCodes tools on your behalf.
             </p>
             <div className="rounded-xl border border-border bg-muted/30 p-6">
@@ -274,7 +273,7 @@ export default function McpIntegrationPage() {
           <h2 className="mb-4 text-2xl font-semibold">Available Tools</h2>
           <p className="mb-4 text-muted-foreground">
             Once connected, Claude Code has access to{" "}
-            <strong className="text-foreground">78 tools</strong> across 9
+            <strong className="text-foreground">79 tools</strong> across 10
             categories:
           </p>
 
@@ -314,7 +313,7 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Workflows" toolCount={21}>
+            <CollapsibleTools title="Workflows" toolCount={22}>
               <ToolTable
                 tools={[
                   { name: "list_workflow_templates", description: "List all workflow templates for an idea" },
@@ -337,6 +336,8 @@ export default function McpIntegrationPage() {
                   { name: "update_workflow_auto_rule", description: "Update a workflow trigger's template mapping" },
                   { name: "delete_workflow_auto_rule", description: "Delete a workflow trigger" },
                   { name: "apply_auto_rule_retroactively", description: "Apply a workflow trigger to existing tasks with matching label" },
+                  { name: "update_step", description: "Update a workflow step's properties" },
+                  { name: "resync_workflow_template", description: "Re-sync a template's steps to a task's active workflow" },
                 ]}
               />
             </CollapsibleTools>
@@ -360,7 +361,7 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Discussions" toolCount={7}>
+            <CollapsibleTools title="Discussions" toolCount={8}>
               <ToolTable
                 tools={[
                   { name: "list_discussions", description: "List discussions for an idea with optional status filter" },
@@ -370,11 +371,12 @@ export default function McpIntegrationPage() {
                   { name: "delete_discussion", description: "Delete a discussion thread and all its replies" },
                   { name: "add_discussion_reply", description: "Reply to a discussion thread (supports nested replies)" },
                   { name: "get_discussions_ready_to_convert", description: "Find discussions queued for conversion to board tasks" },
+                  { name: "update_discussion_reply", description: "Edit an existing discussion reply" },
                 ]}
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Agents & Identity" toolCount={12}>
+            <CollapsibleTools title="Agents & Identity" toolCount={13}>
               <ToolTable
                 tools={[
                   { name: "list_agents", description: "List your agent personas with name, role, and active status" },
@@ -389,6 +391,7 @@ export default function McpIntegrationPage() {
                   { name: "allocate_agent", description: "Add your agent to an idea's agent team" },
                   { name: "remove_idea_agent", description: "Remove an agent from an idea's team" },
                   { name: "list_idea_agents", description: "List agents in an idea's agent team" },
+                  { name: "allocate_all_agents", description: "Allocate all agents from a user's profile to an idea" },
                 ]}
               />
             </CollapsibleTools>
@@ -405,12 +408,23 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Attachments" toolCount={3}>
+            <CollapsibleTools title="Attachments" toolCount={5}>
               <ToolTable
                 tools={[
                   { name: "list_attachments", description: "List task attachments with signed download URLs" },
                   { name: "upload_attachment", description: "Upload a file to a task (max 10MB, base64)" },
                   { name: "delete_attachment", description: "Delete an attachment from a task" },
+                  { name: "request_upload_url", description: "Get a presigned URL for file upload" },
+                  { name: "confirm_upload", description: "Confirm a file upload after uploading to the presigned URL" },
+                ]}
+              />
+            </CollapsibleTools>
+
+            <CollapsibleTools title="Project Kits" toolCount={2}>
+              <ToolTable
+                tools={[
+                  { name: "list_kits", description: "List available project kits" },
+                  { name: "apply_kit", description: "Apply a project kit to an idea (agents, workflows, labels, triggers)" },
                 ]}
               />
             </CollapsibleTools>
@@ -648,20 +662,6 @@ export default function McpIntegrationPage() {
         </section>
       </div>
 
-      <div className="mt-12 flex justify-between border-t border-border pt-6">
-        <Link href="/guide/kanban-boards">
-          <Button variant="outline" className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Kanban Boards
-          </Button>
-        </Link>
-        <Link href="/guide/workflows">
-          <Button variant="outline" className="gap-2">
-            Workflows
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }

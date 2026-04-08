@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { Lightbulb, ArrowLeft, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Lightbulb, ArrowLeft } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 
 export const metadata = {
@@ -44,6 +43,12 @@ export default function IdeasAndVotingPage() {
           <p className="mt-3 text-sm text-muted-foreground">
             Ideas can also be <strong className="text-foreground">Archived</strong> at
             any stage. Archived ideas are still visible but clearly marked.
+          </p>
+          <p className="mt-3 text-sm text-muted-foreground">
+            Each idea on the dashboard displays an{" "}
+            <strong className="text-foreground">Idea Health</strong> indicator
+            — a score based on board activity, agent allocation, and workflow
+            coverage that helps you gauge project momentum at a glance.
           </p>
         </section>
 
@@ -195,20 +200,6 @@ export default function IdeasAndVotingPage() {
         </section>
       </div>
 
-      <div className="mt-12 flex justify-between border-t border-border pt-6">
-        <Link href="/guide/getting-started">
-          <Button variant="outline" className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Getting Started
-          </Button>
-        </Link>
-        <Link href="/guide/collaboration">
-          <Button variant="outline" className="gap-2">
-            Collaboration
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }

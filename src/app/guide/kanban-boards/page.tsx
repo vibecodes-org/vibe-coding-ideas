@@ -1,6 +1,5 @@
 import Link from "next/link";
-import { LayoutDashboard, ArrowLeft, ArrowRight } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { LayoutDashboard, ArrowLeft } from "lucide-react";
 
 export const metadata = {
   title: "Kanban Boards Guide",
@@ -35,7 +34,49 @@ export default function KanbanBoardsPage() {
             time you visit a board, it&apos;s initialized with three default
             columns: <strong className="text-foreground">To Do</strong>,{" "}
             <strong className="text-foreground">In Progress</strong>, and{" "}
-            <strong className="text-foreground">Done</strong>.
+            <strong className="text-foreground">Done</strong>. When a
+            Project Kit is applied (during onboarding or via MCP), the board
+            comes pre-configured with labels, workflow templates, and workflow
+            triggers tailored to your project type.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">Board Switcher</h2>
+          <p className="text-muted-foreground">
+            The Board Switcher in the navbar lets you quickly jump between
+            your recent boards without navigating back to the dashboard. It
+            shows your 5 most recently active boards.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">Board Setup Banner</h2>
+          <p className="mb-4 text-muted-foreground">
+            New boards display a setup completeness banner at the top that
+            guides you through getting your board fully configured. The
+            banner tracks progress on:
+          </p>
+          <ul className="list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              Adding tasks (minimum 3)
+            </li>
+            <li>Allocating AI agents</li>
+            <li>Setting up workflows</li>
+            <li>Connecting Claude Code via MCP</li>
+          </ul>
+          <p className="mt-4 text-muted-foreground">
+            The banner disappears once your board is fully activated.
+          </p>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">Contextual Nudges</h2>
+          <p className="text-muted-foreground">
+            VibeCodes shows contextual nudge banners when your board needs
+            attention — for example, suggesting AI task generation when the
+            board is empty, or recommending agent allocation when workflows
+            have unmatched roles.
           </p>
         </section>
 
@@ -252,20 +293,6 @@ export default function KanbanBoardsPage() {
         </section>
       </div>
 
-      <div className="mt-12 flex justify-between border-t border-border pt-6">
-        <Link href="/guide/discussions">
-          <Button variant="outline" className="gap-2">
-            <ArrowLeft className="h-4 w-4" />
-            Discussions
-          </Button>
-        </Link>
-        <Link href="/guide/mcp-integration">
-          <Button variant="outline" className="gap-2">
-            MCP Integration
-            <ArrowRight className="h-4 w-4" />
-          </Button>
-        </Link>
-      </div>
     </div>
   );
 }
