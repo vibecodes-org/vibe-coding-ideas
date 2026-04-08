@@ -19,6 +19,8 @@ import {
   SkipForward,
   MoreHorizontal,
   Trash2,
+  FileText,
+  MessageSquare,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -526,6 +528,18 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                     {isActionLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
                     Retry
                   </Button>
+                )}
+
+                {step.output && (
+                  <span className="shrink-0 text-blue-400" title="Has output">
+                    <FileText className="h-3.5 w-3.5" />
+                  </span>
+                )}
+                {(step.comment_count ?? 0) > 0 && (
+                  <span className="flex shrink-0 items-center gap-0.5 text-[10px] text-muted-foreground" title={`${step.comment_count} comment${step.comment_count === 1 ? "" : "s"}`}>
+                    <MessageSquare className="h-3 w-3" />
+                    {step.comment_count}
+                  </span>
                 )}
 
                 {step.agent_role && (
