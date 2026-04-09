@@ -37,8 +37,8 @@ test.describe("Board Labels", () => {
       await page.waitForTimeout(500);
     }
 
-    // Click the Labels filter button
-    await page.getByRole("button", { name: "Labels" }).click();
+    // Click the Labels filter button (scoped to main to avoid strict mode violation)
+    await page.getByRole("main").getByRole("button", { name: "Labels" }).click();
     await expect(page.getByText("E2E-Bug")).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 });
