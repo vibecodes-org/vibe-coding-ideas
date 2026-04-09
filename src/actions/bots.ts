@@ -4,6 +4,8 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateBio, validateSkills } from "@/lib/validation";
 import { getDefaultSkillsForRole } from "@/lib/agent-skills";
+import { generateSkillMd, parseSkillMd, inferRole, slugifyName } from "@/lib/skill-md";
+import type { ParsedSkill } from "@/lib/skill-md";
 import type { BotProfile, FeaturedTeamWithAgents } from "@/types";
 
 export async function createBot(
@@ -465,5 +467,171 @@ export async function getAgentProfile(
     })),
     clonedFromBot,
   };
+}
+
+// ---------------------------------------------------------------------------
+// Agent Skills (SKILL.md import/export)
+// ---------------------------------------------------------------------------
+
+export async function exportAgentAsSkill(botId: string): Promise<string> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  // Allow export if owner OR if agent is published (prompt is already public)
+  const { data: bot, error } = await supabase
+    .from("bot_profiles")
+    .select("id, name, role, system_prompt, bio, skills, owner_id, is_published")
+    .eq("id", botId)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!bot) throw new Error("Agent not found");
+  if (bot.owner_id !== user.id && !bot.is_published) {
+    throw new Error("You can only export your own agents or published agents");
+  }
+
+  return generateSkillMd(bot);
+}
+
+export async function importAgentFromSkill(
+  parsed: ParsedSkill,
+  existingBotId?: string
+): Promise<string> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const role = parsed.metadata.role ?? inferRole(parsed) ?? null;
+  const displayName = parsed.name
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+
+  // Update existing agent
+  if (existingBotId) {
+    const updates: Record<string, unknown> = {
+      system_prompt: parsed.body || null,
+    };
+    if (role) updates.role = role;
+    if (parsed.metadata.bio) updates.bio = validateBio(parsed.metadata.bio);
+    if (parsed.metadata.tags) updates.skills = validateSkills(parsed.metadata.tags);
+
+    const { error: updateErr } = await supabase
+      .from("bot_profiles")
+      .update(updates)
+      .eq("id", existingBotId)
+      .eq("owner_id", user.id);
+
+    if (updateErr) throw new Error(updateErr.message);
+
+    revalidatePath("/agents");
+    revalidatePath(`/agents/${existingBotId}`);
+    return existingBotId;
+  }
+
+  // Create new agent
+  const botId = await createBot(
+    displayName,
+    role,
+    parsed.body || null,
+    null,
+    parsed.metadata.bio ?? null,
+    parsed.metadata.tags ?? undefined
+  );
+
+  return botId;
+}
+
+export async function importAgentFromUrl(url: string): Promise<ParsedSkill> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  if (!url.startsWith("https://")) {
+    throw new Error("Only HTTPS URLs are supported");
+  }
+
+  // Block private/internal URLs (SSRF protection)
+  const parsed = new URL(url);
+  const hostname = parsed.hostname.toLowerCase();
+  const blockedPatterns = [
+    "localhost", "127.0.0.1", "0.0.0.0", "[::1]",
+    "169.254.", "10.", "172.16.", "172.17.", "172.18.", "172.19.",
+    "172.20.", "172.21.", "172.22.", "172.23.", "172.24.", "172.25.",
+    "172.26.", "172.27.", "172.28.", "172.29.", "172.30.", "172.31.",
+    "192.168.", "metadata.google.internal",
+  ];
+  if (blockedPatterns.some((p) => hostname.startsWith(p) || hostname === p)) {
+    throw new Error("URL points to a private or reserved address");
+  }
+
+  // Check Content-Length before reading body
+  const res = await fetch(url, {
+    headers: { Accept: "text/plain, text/markdown, */*" },
+    signal: AbortSignal.timeout(10000),
+  });
+  if (!res.ok) throw new Error(`Failed to fetch URL: HTTP ${res.status}`);
+
+  const contentLength = res.headers.get("content-length");
+  if (contentLength && parseInt(contentLength, 10) > 50000) {
+    throw new Error("File too large (max 50KB)");
+  }
+
+  const text = await res.text();
+  if (text.length > 50000) throw new Error("File too large (max 50KB)");
+
+  return parseSkillMd(text);
+}
+
+export async function checkDuplicateAgent(
+  name: string,
+  sourceId?: string
+): Promise<{ exists: boolean; existingId?: string; existingName?: string }> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  // Check by source_id first (exact round-trip match)
+  if (sourceId) {
+    const { data: bySourceId } = await supabase
+      .from("bot_profiles")
+      .select("id, name")
+      .eq("id", sourceId)
+      .eq("owner_id", user.id)
+      .maybeSingle();
+
+    if (bySourceId) {
+      return { exists: true, existingId: bySourceId.id, existingName: bySourceId.name };
+    }
+  }
+
+  // Fall back to name-based matching
+  const displayName = name
+    .split("-")
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(" ");
+
+  const { data: byName } = await supabase
+    .from("bot_profiles")
+    .select("id, name")
+    .eq("owner_id", user.id)
+    .ilike("name", displayName)
+    .limit(1)
+    .maybeSingle();
+
+  if (byName) {
+    return { exists: true, existingId: byName.id, existingName: byName.name };
+  }
+
+  return { exists: false };
 }
 

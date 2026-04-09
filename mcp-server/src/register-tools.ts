@@ -201,6 +201,12 @@ import {
   applyKitSchema,
   applyKitMcp,
 } from "./tools/kits";
+import {
+  exportAgentSkill,
+  exportAgentSkillSchema,
+  importAgentSkill,
+  importAgentSkillSchema,
+} from "./tools/agent-skill";
 
 function jsonResult(data: unknown) {
   return {
@@ -1389,6 +1395,36 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await applyAutoRuleRetroactively(ctx, applyAutoRuleRetroactivelySchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  // --- Agent Skills (SKILL.md import/export) ---
+
+  server.tool(
+    "export_agent_skill",
+    "Export a VibeCodes agent as a SKILL.md file (Agent Skills open standard). Returns the SKILL.md content and suggested filename. The exported file can be used in Claude Code, Cursor, Copilot, and other tools.",
+    exportAgentSkillSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await exportAgentSkill(ctx, exportAgentSkillSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "import_agent_skill",
+    "Import a SKILL.md file to create a new VibeCodes agent. Parses YAML frontmatter for name/role/metadata and markdown body for the system prompt. Detects round-trip imports (source: vibecodes) and updates existing agents instead of creating duplicates.",
+    importAgentSkillSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await importAgentSkill(ctx, importAgentSkillSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

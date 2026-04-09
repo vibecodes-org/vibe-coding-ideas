@@ -3,11 +3,12 @@
 import { useState, useEffect } from "react";
 import { HelpLink } from "@/components/shared/help-link";
 import Link from "next/link";
-import { Bot, Plus, X, Cable } from "lucide-react";
+import { Bot, Plus, X, Cable, FileDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MyAgentsGrid } from "./my-agents-grid";
 import { CommunityTab } from "./community-tab";
 import { CreateAgentDialog } from "./create-agent-dialog";
+import { ImportSkillDialog } from "./import-skill-dialog";
 import { GrowTeamTip } from "./grow-team-tip";
 import { cn } from "@/lib/utils";
 import type { BotProfile, BotProfileWithOwner, FeaturedTeamWithAgents } from "@/types";
@@ -36,6 +37,7 @@ export function AgentsHub({
 }: AgentsHubProps) {
   const [activeTab, setActiveTab] = useState<Tab>("my-agents");
   const [createOpen, setCreateOpen] = useState(false);
+  const [importOpen, setImportOpen] = useState(false);
   const [bannerDismissed, setBannerDismissed] = useState(true);
 
   useEffect(() => {
@@ -75,13 +77,23 @@ export function AgentsHub({
             </p>
           </div>
         </div>
-        <Button
-          className="shrink-0 gap-2"
-          onClick={() => setCreateOpen(true)}
-        >
-          <Plus className="h-4 w-4" />
-          Create Agent
-        </Button>
+        <div className="flex gap-2 shrink-0">
+          <Button
+            variant="outline"
+            className="gap-2"
+            onClick={() => setImportOpen(true)}
+          >
+            <FileDown className="h-4 w-4" />
+            Import Skill
+          </Button>
+          <Button
+            className="gap-2"
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="h-4 w-4" />
+            Create Agent
+          </Button>
+        </div>
       </div>
 
       {/* Tab bar */}
@@ -183,6 +195,7 @@ export function AgentsHub({
       )}
 
       <CreateAgentDialog open={createOpen} onOpenChange={setCreateOpen} userIdeas={userIdeas} />
+      <ImportSkillDialog open={importOpen} onOpenChange={setImportOpen} />
     </div>
   );
 }
