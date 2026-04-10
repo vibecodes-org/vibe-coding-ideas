@@ -14,6 +14,8 @@ import {
   AlertTriangle,
   ExternalLink,
   ArrowLeft,
+  ChevronDown,
+  FileCode,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -28,6 +30,7 @@ import {
 import { addSkillToAgent, fetchSkillsDirectory, importAgentFromUrl } from "@/actions/bots";
 import { parseSkillMd } from "@/lib/skill-md";
 import type { SkillDirectoryEntry } from "@/lib/skills-directory";
+import { Markdown } from "@/components/ui/markdown";
 import { cn } from "@/lib/utils";
 
 interface AddSkillDialogProps {
@@ -74,6 +77,7 @@ export function AddSkillDialog({
   const [category, setCategory] = useState("All");
   const [fetchError, setFetchError] = useState(false);
   const [selectedSkill, setSelectedSkill] = useState<SkillDirectoryEntry | null>(null);
+  const [showInstructions, setShowInstructions] = useState(false);
 
   // File/URL state
   const [url, setUrl] = useState("");
@@ -109,6 +113,7 @@ export function AddSkillDialog({
       setUrl("");
       setIsDragging(false);
       setSelectedSkill(null);
+      setShowInstructions(false);
       dragCounterRef.current = 0;
     }
   }
@@ -307,38 +312,37 @@ export function AddSkillDialog({
                 <>
                   {/* Skill detail view */}
                   {selectedSkill ? (
-                    <div className="space-y-3">
+                    <div className="flex flex-col h-full">
                       <button
-                        onClick={() => setSelectedSkill(null)}
-                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors"
+                        onClick={() => { setSelectedSkill(null); setShowInstructions(false); }}
+                        className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground transition-colors mb-3"
                       >
                         <ArrowLeft className="h-3 w-3" />
                         Back to directory
                       </button>
 
-                      <div className="rounded-lg border border-border bg-muted/20 p-4 space-y-3">
-                        <div className="flex items-start justify-between gap-2">
-                          <span className="font-mono text-sm font-medium">{selectedSkill.name}</span>
-                          {selectedSkill.category && (
-                            <Badge
-                              variant="outline"
-                              className={cn("text-[10px] shrink-0 border", getCategoryBadgeClass(selectedSkill.category))}
-                            >
-                              {selectedSkill.category}
-                            </Badge>
-                          )}
-                        </div>
+                      {/* Skill header */}
+                      <div className="flex items-center gap-2.5 mb-2">
+                        <span className="font-mono text-sm font-medium">{selectedSkill.name}</span>
+                        {selectedSkill.category && (
+                          <Badge
+                            variant="outline"
+                            className={cn("text-[10px] shrink-0 border", getCategoryBadgeClass(selectedSkill.category))}
+                          >
+                            {selectedSkill.category}
+                          </Badge>
+                        )}
+                      </div>
 
-                        <p className="text-xs text-muted-foreground leading-relaxed">
-                          {selectedSkill.description}
-                        </p>
-
-                        <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60">
-                          <span className="inline-flex items-center gap-1">
-                            <svg viewBox="0 0 16 16" className="h-2.5 w-2.5 fill-current"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
-                            Anthropic
-                          </span>
-                          {selectedSkill.source_url && (
+                      {/* Source */}
+                      <div className="flex items-center gap-2 text-[10px] text-muted-foreground/60 mb-3">
+                        <span className="inline-flex items-center gap-1">
+                          <svg viewBox="0 0 16 16" className="h-2.5 w-2.5 fill-current"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                          Anthropic
+                        </span>
+                        {selectedSkill.source_url && (
+                          <>
+                            <span className="text-border">&#x2022;</span>
                             <a
                               href={selectedSkill.source_url}
                               target="_blank"
@@ -347,28 +351,49 @@ export function AddSkillDialog({
                             >
                               View on GitHub <ExternalLink className="h-2 w-2" />
                             </a>
-                          )}
-                        </div>
+                          </>
+                        )}
                       </div>
 
-                      {/* Instructions preview */}
-                      <div>
-                        <p className="text-[10px] font-medium text-muted-foreground mb-1.5">
-                          Skill Instructions
+                      {/* Description — fully visible */}
+                      <div className="mb-3">
+                        <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide mb-1">
+                          What this skill does
                         </p>
-                        <div className="relative max-h-[200px] overflow-hidden rounded-lg border border-border bg-background/50 p-3">
-                          <pre className="whitespace-pre-wrap text-[11px] font-mono text-muted-foreground leading-relaxed">
-                            {selectedSkill.content.slice(0, 2000)}
-                            {selectedSkill.content.length > 2000 && "..."}
-                          </pre>
-                          {selectedSkill.content.length > 400 && (
-                            <div className="pointer-events-none absolute inset-x-0 bottom-0 h-12 bg-gradient-to-t from-background/80 to-transparent" />
+                        <p className="text-xs text-muted-foreground leading-relaxed">
+                          {selectedSkill.description}
+                        </p>
+                      </div>
+
+                      {/* Collapsible instructions */}
+                      <div className="mb-3">
+                        <button
+                          onClick={() => setShowInstructions(!showInstructions)}
+                          className={cn(
+                            "flex items-center justify-between w-full px-3 py-2.5 text-xs font-medium rounded-lg border border-border bg-background/50 hover:border-border/80 transition-colors",
+                            showInstructions && "rounded-b-none border-b-0"
                           )}
-                        </div>
+                        >
+                          <span className="flex items-center gap-2 text-muted-foreground">
+                            <FileCode className="h-3.5 w-3.5" />
+                            Skill Instructions
+                          </span>
+                          <span className="flex items-center gap-1 text-[10px] text-violet-400">
+                            {showInstructions ? "Hide" : "Show"}
+                            <ChevronDown className={cn("h-3.5 w-3.5 transition-transform", showInstructions && "rotate-180")} />
+                          </span>
+                        </button>
+                        {showInstructions && (
+                          <div className="max-h-[220px] overflow-y-auto rounded-b-lg border border-t-0 border-border bg-background/50 p-3">
+                            <div className="text-xs [&_h1]:text-sm [&_h1]:font-bold [&_h1]:mt-3 [&_h1]:mb-1.5 [&_h2]:text-xs [&_h2]:font-semibold [&_h2]:mt-3 [&_h2]:mb-1 [&_h3]:text-xs [&_h3]:font-medium [&_h3]:mt-2 [&_h3]:mb-1 [&_p]:text-muted-foreground [&_p]:leading-relaxed [&_p]:mb-2 [&_li]:text-muted-foreground [&_ul]:pl-4 [&_ol]:pl-4 [&_code]:text-[10px] [&_code]:bg-muted/50 [&_code]:px-1 [&_code]:py-0.5 [&_code]:rounded [&_pre]:text-[10px] [&_pre]:bg-muted/30 [&_pre]:p-2.5 [&_pre]:rounded [&_pre]:my-2 [&_pre]:overflow-x-auto">
+                              <Markdown>{selectedSkill.content}</Markdown>
+                            </div>
+                          </div>
+                        )}
                       </div>
 
                       {/* Add button */}
-                      <div className="flex justify-end">
+                      <div className="flex justify-end pt-1">
                         {addedNames.has(selectedSkill.name) ? (
                           <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-500">
                             <Check className="h-3.5 w-3.5" /> Added to {botName}
