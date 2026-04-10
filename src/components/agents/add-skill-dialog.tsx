@@ -416,7 +416,7 @@ export function AddSkillDialog({
                   ) : (
                   <>
                   {/* Skills grid */}
-                  <div className="grid grid-cols-2 gap-2 max-h-[280px] overflow-y-auto pr-1">
+                  <div className="grid grid-cols-2 gap-2">
                     {filtered.map((skill) => {
                       const isAdded = addedNames.has(skill.name);
                       const isAdding = adding === skill.name;
