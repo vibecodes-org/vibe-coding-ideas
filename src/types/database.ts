@@ -1601,6 +1601,53 @@ export type Database = {
           },
         ];
       };
+      agent_skills: {
+        Row: {
+          id: string;
+          bot_id: string;
+          name: string;
+          description: string;
+          content: string;
+          source_url: string | null;
+          category: string | null;
+          source_type: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          bot_id: string;
+          name: string;
+          description: string;
+          content: string;
+          source_url?: string | null;
+          category?: string | null;
+          source_type?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          bot_id?: string;
+          name?: string;
+          description?: string;
+          content?: string;
+          source_url?: string | null;
+          category?: string | null;
+          source_type?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "agent_skills_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bot_profiles";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       featured_teams: {
         Row: {
           id: string;

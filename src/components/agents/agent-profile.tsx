@@ -1,7 +1,9 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { toast } from "sonner";
 import {
   ArrowRight,
   MessageSquare,
@@ -9,6 +11,10 @@ import {
   Lightbulb,
   ExternalLink,
   FileDown,
+  Zap,
+  Plus,
+  X,
+  Package,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
@@ -17,10 +23,12 @@ import { AgentVoteButton } from "./agent-vote-button";
 import { CloneAgentButton } from "./clone-agent-button";
 import { EditAgentDialog } from "./edit-agent-dialog";
 import { ExportSkillDialog } from "./export-skill-dialog";
+import { AddSkillDialog } from "./add-skill-dialog";
 import { parsePromptToFields } from "@/lib/prompt-builder";
 import { cn, getInitials } from "@/lib/utils";
 import { getRoleColor } from "@/lib/agent-colors";
-import type { BotProfile } from "@/types";
+import { removeSkillFromAgent } from "@/actions/bots";
+import type { BotProfile, AgentSkill } from "@/types";
 
 interface ActivityItem {
   id: string;
@@ -46,6 +54,7 @@ interface AgentProfileProps {
   contributingIdeas: Array<{ id: string; title: string; assignedCount: number }>;
   recentActivity: ActivityItem[];
   clonedFromBot: { id: string; name: string } | null;
+  agentSkills: AgentSkill[];
 }
 
 function formatRelativeTime(dateStr: string) {
@@ -78,9 +87,13 @@ export function AgentProfile({
   contributingIdeas,
   recentActivity,
   clonedFromBot,
+  agentSkills,
 }: AgentProfileProps) {
   const [editOpen, setEditOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [addSkillOpen, setAddSkillOpen] = useState(false);
+  const [removingSkillId, setRemovingSkillId] = useState<string | null>(null);
+  const router = useRouter();
 
   const initials = getInitials(bot.name);
 
@@ -344,6 +357,122 @@ export function AgentProfile({
           </div>
         )}
 
+      {/* Skills & Capabilities */}
+      <div className="space-y-2">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold flex items-center gap-2">
+            <Zap className="h-4 w-4 text-amber-400" /> Skills & Capabilities
+            {agentSkills.length > 0 && (
+              <span className="rounded-full bg-violet-500/15 px-1.5 py-px text-[10px] font-semibold text-violet-400">
+                {agentSkills.length}
+              </span>
+            )}
+          </h2>
+          {isOwner && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-7 text-xs text-emerald-400 hover:text-emerald-300"
+              onClick={() => setAddSkillOpen(true)}
+            >
+              <Plus className="h-3.5 w-3.5 mr-1" />
+              Add Skill
+            </Button>
+          )}
+        </div>
+
+        {agentSkills.length === 0 ? (
+          <div className="flex flex-col items-center gap-2 rounded-lg border border-dashed border-border py-6">
+            <Package className="h-6 w-6 text-muted-foreground/30" />
+            <p className="text-xs text-muted-foreground">
+              No skills attached. Add skills to give <span className="font-medium text-foreground">{bot.name}</span> new capabilities.
+            </p>
+            {isOwner && (
+              <Button
+                size="sm"
+                className="mt-1 h-7 text-xs bg-emerald-500/12 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/20"
+                onClick={() => setAddSkillOpen(true)}
+              >
+                <Plus className="h-3 w-3 mr-1" />
+                Add Skill
+              </Button>
+            )}
+          </div>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            {agentSkills.map((skill) => (
+              <div
+                key={skill.id}
+                className="flex items-start gap-3 rounded-lg border border-border bg-muted/30 p-3"
+              >
+                <Package className="h-4 w-4 text-violet-400 mt-0.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-xs font-medium">{skill.name}</span>
+                    {skill.category && (
+                      <span className={cn(
+                        "rounded-full px-1.5 py-px text-[9px] font-semibold border",
+                        skill.category === "Development" && "bg-violet-500/12 text-violet-400 border-violet-500/25",
+                        skill.category === "Creative" && "bg-amber-500/12 text-amber-400 border-amber-500/25",
+                        skill.category === "Enterprise" && "bg-pink-500/12 text-pink-400 border-pink-500/25",
+                        skill.category === "Document" && "bg-cyan-500/12 text-cyan-400 border-cyan-500/25",
+                      )}>
+                        {skill.category}
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-0.5 line-clamp-2 leading-relaxed">
+                    {skill.description}
+                  </p>
+                  <div className="flex items-center gap-2 mt-1">
+                    {skill.source_type === "github" && (
+                      <span className="inline-flex items-center gap-1 text-[9px] text-muted-foreground/60 border border-border/50 rounded px-1 py-px">
+                        <svg viewBox="0 0 16 16" className="h-2 w-2 fill-current"><path d="M8 0C3.58 0 0 3.58 0 8c0 3.54 2.29 6.53 5.47 7.59.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49-2.01.37-2.53-.49-2.69-.94-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.51-1.07-1.78-.2-3.64-.89-3.64-3.95 0-.87.31-1.59.82-2.15-.08-.2-.36-1.02.08-2.12 0 0 .67-.21 2.2.82.64-.18 1.32-.27 2-.27.68 0 1.36.09 2 .27 1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.56.82 1.27.82 2.15 0 3.07-1.87 3.75-3.65 3.95.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.2 0 .21.15.46.55.38A8.013 8.013 0 0016 8c0-4.42-3.58-8-8-8z"/></svg>
+                        GitHub
+                      </span>
+                    )}
+                    {skill.source_type === "file" && (
+                      <span className="text-[9px] text-muted-foreground/60 border border-border/50 rounded px-1 py-px">
+                        File upload
+                      </span>
+                    )}
+                    {skill.source_type === "url" && (
+                      <span className="text-[9px] text-muted-foreground/60 border border-border/50 rounded px-1 py-px">
+                        URL import
+                      </span>
+                    )}
+                  </div>
+                </div>
+                {isOwner && (
+                  <button
+                    className={cn(
+                      "text-muted-foreground/40 hover:text-red-400 transition-colors p-0.5",
+                      removingSkillId === skill.id && "opacity-50 pointer-events-none"
+                    )}
+                    title="Remove skill"
+                    disabled={removingSkillId === skill.id}
+                    onClick={async () => {
+                      setRemovingSkillId(skill.id);
+                      try {
+                        await removeSkillFromAgent(skill.id);
+                        toast.success(`Removed "${skill.name}"`);
+                        router.refresh();
+                      } catch (e) {
+                        toast.error(e instanceof Error ? e.message : "Failed to remove skill");
+                      } finally {
+                        setRemovingSkillId(null);
+                      }
+                    }}
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
       {/* Two-column: Activity + Contributing Ideas */}
       <div className="grid grid-cols-1 gap-6 sm:grid-cols-2">
         {/* Recent Activity */}
@@ -451,6 +580,17 @@ export function AgentProfile({
           onOpenChange={setExportOpen}
           botId={bot.id}
           botName={bot.name}
+        />
+      )}
+
+      {/* Add Skill dialog */}
+      {isOwner && (
+        <AddSkillDialog
+          open={addSkillOpen}
+          onOpenChange={setAddSkillOpen}
+          botId={bot.id}
+          botName={bot.name}
+          existingSkillNames={agentSkills.map((s) => s.name)}
         />
       )}
     </div>

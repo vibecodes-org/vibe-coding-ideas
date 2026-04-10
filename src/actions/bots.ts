@@ -6,7 +6,9 @@ import { validateBio, validateSkills } from "@/lib/validation";
 import { getDefaultSkillsForRole } from "@/lib/agent-skills";
 import { generateSkillMd, parseSkillMd, inferRole, slugifyName } from "@/lib/skill-md";
 import type { ParsedSkill } from "@/lib/skill-md";
-import type { BotProfile, FeaturedTeamWithAgents } from "@/types";
+import { fetchSkillsFromGitHub } from "@/lib/skills-directory";
+import type { SkillDirectoryEntry } from "@/lib/skills-directory";
+import type { BotProfile, FeaturedTeamWithAgents, AgentSkill } from "@/types";
 
 export async function createBot(
   name: string,
@@ -633,5 +635,121 @@ export async function checkDuplicateAgent(
   }
 
   return { exists: false };
+}
+
+// ---------------------------------------------------------------------------
+// Agent Skills (capabilities attached to agents)
+// ---------------------------------------------------------------------------
+
+export async function addSkillToAgent(
+  botId: string,
+  skill: {
+    name: string;
+    description: string;
+    content: string;
+    source_url?: string | null;
+    category?: string | null;
+    source_type: "github" | "file" | "url";
+  }
+): Promise<string> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  // Verify ownership
+  const { data: bot } = await supabase
+    .from("bot_profiles")
+    .select("id")
+    .eq("id", botId)
+    .eq("owner_id", user.id)
+    .maybeSingle();
+  if (!bot) throw new Error("Agent not found or not owned by you");
+
+  if (!skill.name.trim()) throw new Error("Skill name is required");
+  if (skill.name.length > 64) throw new Error("Skill name must be 64 characters or less");
+  if (!skill.description.trim()) throw new Error("Skill description is required");
+  if (!["github", "file", "url"].includes(skill.source_type)) {
+    throw new Error("Invalid source type");
+  }
+
+  const { data, error } = await supabase
+    .from("agent_skills")
+    .insert({
+      bot_id: botId,
+      name: skill.name.trim(),
+      description: skill.description.trim().slice(0, 1024),
+      content: skill.content.slice(0, 200_000),
+      source_url: skill.source_url ?? null,
+      category: skill.category ?? null,
+      source_type: skill.source_type,
+    })
+    .select("id")
+    .single();
+
+  if (error) {
+    if (error.code === "23505") throw new Error("This agent already has a skill with that name");
+    throw new Error(error.message);
+  }
+
+  revalidatePath(`/agents/${botId}`);
+  return data.id;
+}
+
+export async function removeSkillFromAgent(skillId: string): Promise<void> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  // Fetch skill with ownership check for revalidation path
+  const { data: skill } = await supabase
+    .from("agent_skills")
+    .select("bot_id, bot_profiles!inner(owner_id)")
+    .eq("id", skillId)
+    .maybeSingle();
+
+  if (!skill) throw new Error("Skill not found");
+
+  const owner = skill.bot_profiles as unknown as { owner_id: string };
+  if (owner.owner_id !== user.id) throw new Error("Not authorized");
+
+  const { error } = await supabase
+    .from("agent_skills")
+    .delete()
+    .eq("id", skillId);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/agents/${skill.bot_id}`);
+}
+
+export async function getAgentSkills(botId: string): Promise<AgentSkill[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("agent_skills")
+    .select("*")
+    .eq("bot_id", botId)
+    .order("created_at");
+
+  if (error) throw new Error(error.message);
+  return (data ?? []) as AgentSkill[];
+}
+
+export async function fetchSkillsDirectory(): Promise<SkillDirectoryEntry[]> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  return fetchSkillsFromGitHub();
 }
 

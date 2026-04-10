@@ -219,10 +219,10 @@ export function ImportSkillDialog({ open, onOpenChange }: ImportSkillDialogProps
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <FileText className="h-5 w-5 text-violet-400" />
-            Import Skill
+            Import Agent
           </DialogTitle>
           <DialogDescription>
-            Import an agent from a SKILL.md file — the{" "}
+            Import an agent definition from a SKILL.md file — the{" "}
             <span className="font-medium text-foreground">Agent Skills</span>{" "}
             open standard.
           </DialogDescription>

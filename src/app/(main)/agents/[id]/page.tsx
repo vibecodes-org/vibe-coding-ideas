@@ -1,7 +1,7 @@
 import { notFound } from "next/navigation";
 import { requireAuth } from "@/lib/auth";
 import { AgentProfile } from "@/components/agents/agent-profile";
-import type { BotProfile } from "@/types";
+import type { BotProfile, AgentSkill } from "@/types";
 import type { Metadata } from "next";
 
 interface AgentPageProps {
@@ -115,6 +115,13 @@ export default async function AgentPage({ params }: AgentPageProps) {
     .order("created_at", { ascending: false })
     .limit(5);
 
+  // Fetch attached skills
+  const { data: agentSkills } = await supabase
+    .from("agent_skills")
+    .select("*")
+    .eq("bot_id", id)
+    .order("created_at");
+
   // Cloned from info
   let clonedFromBot: { id: string; name: string } | null = null;
   if (typedBot.cloned_from) {
@@ -143,6 +150,7 @@ export default async function AgentPage({ params }: AgentPageProps) {
           taskTitle: (a.board_tasks as { title: string }).title,
         }))}
         clonedFromBot={clonedFromBot}
+        agentSkills={(agentSkills ?? []) as AgentSkill[]}
       />
     </div>
   );

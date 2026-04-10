@@ -204,3 +204,44 @@ describe("importAgentSkill", () => {
     expect(result.bot_id).toBe(BOT_ID);
   });
 });
+
+// ---------------------------------------------------------------------------
+// get_agent_skill_content
+// ---------------------------------------------------------------------------
+
+describe("getAgentSkillContent", () => {
+  it("returns skill content for active agent", async () => {
+    const skillData = {
+      name: "webapp-testing",
+      description: "Test web applications",
+      content: "## How to test\n1. Launch browser\n2. Navigate",
+      category: "Development",
+    };
+
+    const chain = createChain(skillData);
+    const ctx: McpContext = {
+      supabase: { from: vi.fn(() => chain) } as unknown as McpContext["supabase"],
+      userId: BOT_ID, // active agent identity
+    };
+
+    const { getAgentSkillContent, getAgentSkillContentSchema } = await import("./agent-skill");
+    const params = getAgentSkillContentSchema.parse({ skill_name: "webapp-testing" });
+    const result = await getAgentSkillContent(ctx, params);
+
+    expect(result.skill_name).toBe("webapp-testing");
+    expect(result.instructions).toContain("Launch browser");
+  });
+
+  it("throws when skill not found", async () => {
+    const chain = createChain(null);
+    const ctx: McpContext = {
+      supabase: { from: vi.fn(() => chain) } as unknown as McpContext["supabase"],
+      userId: BOT_ID,
+    };
+
+    const { getAgentSkillContent, getAgentSkillContentSchema } = await import("./agent-skill");
+    const params = getAgentSkillContentSchema.parse({ skill_name: "nonexistent" });
+
+    await expect(getAgentSkillContent(ctx, params)).rejects.toThrow("not found");
+  });
+});

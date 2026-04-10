@@ -191,6 +191,19 @@ export async function setBotIdentity(
     .update({ active_bot_id: bot.id })
     .eq("id", persistUserId);
 
+  // Fetch attached skills for progressive disclosure catalog
+  const { data: skills, error: skillsError } = await ctx.supabase
+    .from("agent_skills")
+    .select("name, description")
+    .eq("bot_id", bot.id)
+    .order("created_at")
+    .limit(50);
+
+  // Non-fatal: if skills query fails, proceed without skills
+  if (skillsError) {
+    // Log but don't throw — identity switch should still work
+  }
+
   const result: Record<string, unknown> = {
     active_bot: {
       id: bot.id,
@@ -199,6 +212,15 @@ export async function setBotIdentity(
     },
   };
 
+  // Include skill catalog if agent has skills
+  if (skills && skills.length > 0) {
+    result.available_skills = skills;
+  }
+
+  const skillInstruction = skills && skills.length > 0
+    ? ` This agent has ${skills.length} skill(s) available. When a task matches a skill's description, use the get_agent_skill_content tool with the skill name to load the full instructions before proceeding.`
+    : "";
+
   if (bot.system_prompt) {
     result.system_prompt = bot.system_prompt;
     result.instruction =
@@ -206,12 +228,14 @@ export async function setBotIdentity(
       `All your actions (comments, task updates, activity) will be attributed to this agent. ` +
       `This identity has been persisted and will survive reconnections. ` +
       `IMPORTANT: You MUST follow the system_prompt above for the rest of this session. ` +
-      `It defines your persona, behavior, and how you should approach tasks.`;
+      `It defines your persona, behavior, and how you should approach tasks.` +
+      skillInstruction;
   } else {
     result.instruction =
       `You are now acting as "${bot.name}"${bot.role ? ` (${bot.role})` : ""}. ` +
       `All your actions (comments, task updates, activity) will be attributed to this agent. ` +
-      `This identity has been persisted and will survive reconnections.`;
+      `This identity has been persisted and will survive reconnections.` +
+      skillInstruction;
   }
 
   return result;

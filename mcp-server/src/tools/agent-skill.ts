@@ -148,3 +148,40 @@ export async function importAgentSkill(
     message: `Created agent "${displayName}" from SKILL.md`,
   };
 }
+
+// --- Get Agent Skill Content (progressive disclosure) ---
+
+export const getAgentSkillContentSchema = z.object({
+  skill_name: z
+    .string()
+    .min(1)
+    .describe("Name of the skill to load full instructions for (from the available_skills list)"),
+});
+
+export async function getAgentSkillContent(
+  ctx: McpContext,
+  args: z.infer<typeof getAgentSkillContentSchema>
+) {
+  // ctx.userId is the active agent identity (set by set_agent_identity)
+  const { data: skill, error } = await ctx.supabase
+    .from("agent_skills")
+    .select("name, description, content, category")
+    .eq("bot_id", ctx.userId)
+    .eq("name", args.skill_name)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!skill) {
+    throw new Error(
+      `Skill "${args.skill_name}" not found for the active agent. ` +
+      `Make sure you've called set_agent_identity first and the skill name matches one from available_skills.`
+    );
+  }
+
+  return {
+    skill_name: skill.name,
+    skill_description: skill.description,
+    category: skill.category,
+    instructions: skill.content,
+  };
+}

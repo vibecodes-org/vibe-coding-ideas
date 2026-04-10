@@ -63,6 +63,7 @@ export type IdeaAttachment = Database["public"]["Tables"]["idea_attachments"]["R
 export type DiscussionAttachment = Database["public"]["Tables"]["discussion_attachments"]["Row"];
 export type BotProfile = Database["public"]["Tables"]["bot_profiles"]["Row"];
 export type AgentVote = Database["public"]["Tables"]["agent_votes"]["Row"];
+export type AgentSkill = Database["public"]["Tables"]["agent_skills"]["Row"];
 export type BotProfileWithOwner = BotProfile & {
   owner: { id: string; full_name: string | null; avatar_url: string | null };
 };

@@ -84,7 +84,7 @@ export function AgentsHub({
             onClick={() => setImportOpen(true)}
           >
             <FileDown className="h-4 w-4" />
-            Import Skill
+            Import Agent
           </Button>
           <Button
             className="gap-2"
