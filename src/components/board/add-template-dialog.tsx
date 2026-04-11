@@ -28,14 +28,29 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { listMyTemplates, importFromMyTemplate } from "@/actions/user-templates";
+import {
+  listMyTemplates,
+  importFromMyTemplate,
+  deleteMyTemplate,
+} from "@/actions/user-templates";
 import { listLibraryTemplates } from "@/actions/admin-templates";
 import { importTemplateWithLabel, createWorkflowTemplate } from "@/actions/workflow-templates";
 import { RoleCombobox, useRoleSuggestions } from "@/components/ui/role-combobox";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { TEMPLATE_LABEL_SUGGESTIONS, LABEL_COLORS } from "@/lib/constants";
 import { getRoleBadgeClasses } from "@/components/board/task-workflow-section";
 import { ApprovalLockIcon } from "@/components/board/approval-lock-icon";
 import { approvalCount } from "@/lib/workflow-helpers";
+import { removeTemplateOptimistic } from "@/lib/user-template-helpers";
 import type { WorkflowLibraryTemplate, UserWorkflowTemplate } from "@/types";
 import type { WorkflowTemplateStep } from "@/types/database";
 
@@ -108,6 +123,10 @@ export function AddTemplateDialog({
   const [importing, setImporting] = useState(false);
   const [saving, setSaving] = useState(false);
 
+  // Delete saved template state
+  const [deletingTemplate, setDeletingTemplate] = useState<UserWorkflowTemplate | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+
   const { poolRoles, userRoles } = useRoleSuggestions(ideaId);
 
   const existingNames = new Set(existingTemplateNames.map((n) => n.toLowerCase()));
@@ -166,6 +185,33 @@ export function AddTemplateDialog({
 
   function isAlreadyOnBoard(tplName: string) {
     return existingNames.has(tplName.toLowerCase());
+  }
+
+  async function handleConfirmDelete() {
+    if (!deletingTemplate) return;
+    const target = deletingTemplate;
+    const { next, rollback } = removeTemplateOptimistic(myTemplates, target.id);
+
+    setIsDeleting(true);
+    setMyTemplates(next);
+    setMySelected((prev) => {
+      if (!prev.has(target.id)) return prev;
+      const nextSel = new Set(prev);
+      nextSel.delete(target.id);
+      return nextSel;
+    });
+    if (myExpandedId === target.id) setMyExpandedId(null);
+
+    try {
+      await deleteMyTemplate(target.id);
+      toast.success("Template deleted");
+      setDeletingTemplate(null);
+    } catch {
+      setMyTemplates((current) => rollback(current));
+      toast.error("Failed to delete template");
+    } finally {
+      setIsDeleting(false);
+    }
   }
 
   function toggleMySelected(id: string) {
@@ -379,9 +425,19 @@ export function AddTemplateDialog({
       onToggleSelect: () => void;
       onToggleExpand: () => void;
       badges: React.ReactNode;
+      onDelete?: () => void;
     }
   ) {
-    const { steps: tplSteps, isSelected, isOnBoard, isExpanded, onToggleSelect, onToggleExpand, badges } = opts;
+    const {
+      steps: tplSteps,
+      isSelected,
+      isOnBoard,
+      isExpanded,
+      onToggleSelect,
+      onToggleExpand,
+      badges,
+      onDelete,
+    } = opts;
     const approvals = approvalCount(tplSteps);
 
     return (
@@ -433,17 +489,33 @@ export function AddTemplateDialog({
             </p>
           </div>
 
-          {/* Expand toggle */}
-          <button
-            type="button"
-            className="mt-0.5 shrink-0 rounded p-0.5 text-muted-foreground hover:text-foreground"
-            onClick={(e) => {
-              e.stopPropagation();
-              onToggleExpand();
-            }}
-          >
-            {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
+          {/* Right-side actions */}
+          <div className="mt-0.5 flex shrink-0 items-center gap-0.5">
+            {onDelete && (
+              <button
+                type="button"
+                className="rounded p-1 text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-destructive/40"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onDelete();
+                }}
+                aria-label={`Delete template: ${tpl.name}`}
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+            <button
+              type="button"
+              className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleExpand();
+              }}
+              aria-label={isExpanded ? "Collapse steps" : "Expand steps"}
+            >
+              {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+            </button>
+          </div>
         </div>
 
         {/* Expanded step preview */}
@@ -531,6 +603,7 @@ export function AddTemplateDialog({
         isExpanded: myExpandedId === tpl.id,
         onToggleSelect: () => toggleMySelected(tpl.id),
         onToggleExpand: () => setMyExpandedId((prev) => (prev === tpl.id ? null : tpl.id)),
+        onDelete: () => setDeletingTemplate(tpl),
         badges: (
           <>
             {tpl.source_idea_title && (
@@ -775,6 +848,7 @@ export function AddTemplateDialog({
   const setCurrentAutoWire = activeTab === "my" ? setMyAutoWire : setPlatformAutoWire;
 
   return (
+    <>
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-lg max-h-[80vh] flex flex-col">
         <DialogHeader>
@@ -869,5 +943,37 @@ export function AddTemplateDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+
+    <AlertDialog
+      open={deletingTemplate !== null}
+      onOpenChange={(nextOpen) => {
+        if (!nextOpen && !isDeleting) setDeletingTemplate(null);
+      }}
+    >
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>Delete template?</AlertDialogTitle>
+          <AlertDialogDescription>
+            &ldquo;{deletingTemplate?.name}&rdquo; will be removed from your personal library.
+            This cannot be undone. Workflows already imported to boards are not affected.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel disabled={isDeleting}>Cancel</AlertDialogCancel>
+          <AlertDialogAction
+            onClick={(e) => {
+              e.preventDefault();
+              void handleConfirmDelete();
+            }}
+            disabled={isDeleting}
+            className="bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/40"
+          >
+            {isDeleting && <Loader2 className="mr-1 h-3 w-3 animate-spin" />}
+            Delete
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+    </>
   );
 }
