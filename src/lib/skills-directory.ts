@@ -35,6 +35,11 @@ interface SkillSource {
   contentsPath: string;
   /** Path prefix for raw.githubusercontent.com URLs */
   rawPath: string;
+  /**
+   * If true, contentsPath contains category directories and the real
+   * SKILL.md files live one level deeper — e.g. skills/python/foo/SKILL.md.
+   */
+  nested?: boolean;
 }
 
 const SOURCES: SkillSource[] = [
@@ -51,6 +56,14 @@ const SOURCES: SkillSource[] = [
     repo: "skills",
     contentsPath: ".github/skills",
     rawPath: ".github/skills",
+  },
+  {
+    provider: "Microsoft",
+    owner: "microsoft",
+    repo: "skills",
+    contentsPath: "skills",
+    rawPath: "skills",
+    nested: true,
   },
   {
     provider: "Vercel",
@@ -175,31 +188,50 @@ async function _fetchAllSources(): Promise<SkillDirectoryEntry[]> {
   }
 }
 
-/** Fetch skills from a single GitHub source */
-async function _fetchFromSource(source: SkillSource): Promise<SkillDirectoryEntry[]> {
-  const apiUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${source.contentsPath}`;
-
+async function _listDirs(apiUrl: string): Promise<GitHubContent[]> {
   const res = await fetch(apiUrl, {
     headers: { Accept: "application/vnd.github.v3+json" },
     signal: AbortSignal.timeout(10000),
   });
-
-  // Handle rate limiting — return empty for this source
   if (res.status === 403 || res.status === 429) return [];
   if (!res.ok) return [];
-
   const contents: GitHubContent[] = await res.json();
-  const dirs = contents.filter((c) => c.type === "dir");
+  return contents.filter((c) => c.type === "dir");
+}
+
+/** Fetch skills from a single GitHub source */
+async function _fetchFromSource(source: SkillSource): Promise<SkillDirectoryEntry[]> {
+  const topApiUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${source.contentsPath}`;
+  const topDirs = await _listDirs(topApiUrl);
+
+  // For nested sources, each top-level entry is a category — list one level deeper.
+  // skillDirs is a list of { pathSegments } relative to source.rawPath.
+  const skillPaths: string[] = [];
+
+  if (source.nested) {
+    const nestedResults = await Promise.allSettled(
+      topDirs.map(async (categoryDir) => {
+        const nestedApi = `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${source.contentsPath}/${categoryDir.name}`;
+        const innerDirs = await _listDirs(nestedApi);
+        return innerDirs.map((d) => `${categoryDir.name}/${d.name}`);
+      })
+    );
+    for (const r of nestedResults) {
+      if (r.status === "fulfilled") skillPaths.push(...r.value);
+    }
+  } else {
+    for (const d of topDirs) skillPaths.push(d.name);
+  }
 
   // Fetch each skill's SKILL.md in parallel (batched)
   const entries: SkillDirectoryEntry[] = [];
   const batchSize = 5;
 
-  for (let i = 0; i < dirs.length; i += batchSize) {
-    const batch = dirs.slice(i, i + batchSize);
+  for (let i = 0; i < skillPaths.length; i += batchSize) {
+    const batch = skillPaths.slice(i, i + batchSize);
     const results = await Promise.allSettled(
-      batch.map(async (dir) => {
-        const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/main/${source.rawPath}/${dir.name}/SKILL.md`;
+      batch.map(async (relPath) => {
+        const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/main/${source.rawPath}/${relPath}/SKILL.md`;
         const skillRes = await fetch(rawUrl, {
           signal: AbortSignal.timeout(5000),
         });
@@ -213,7 +245,7 @@ async function _fetchFromSource(source: SkillSource): Promise<SkillDirectoryEntr
           description: parsed.description,
           content: parsed.body.slice(0, MAX_CONTENT_LENGTH),
           category: inferCategory(parsed.name, parsed.description),
-          source_url: `https://github.com/${source.owner}/${source.repo}/tree/main/${source.rawPath}/${dir.name}`,
+          source_url: `https://github.com/${source.owner}/${source.repo}/tree/main/${source.rawPath}/${relPath}`,
           provider: source.provider,
         } satisfies SkillDirectoryEntry;
       })
@@ -240,7 +272,7 @@ export function getFallbackSkills(): SkillDirectoryEntry[] {
  * Get the list of all provider names.
  */
 export function getProviders(): string[] {
-  return SOURCES.map((s) => s.provider);
+  return Array.from(new Set(SOURCES.map((s) => s.provider)));
 }
 
 /**
