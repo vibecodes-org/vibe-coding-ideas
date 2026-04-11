@@ -2,10 +2,14 @@
  * Fetches and caches the community skills directory from multiple GitHub repos.
  * Falls back to a built-in curated list when GitHub is unavailable.
  *
- * Sources:
- * - Anthropic (17 skills): github.com/anthropics/skills
- * - Microsoft (132 skills): github.com/microsoft/skills
- * - Vercel (6 skills): github.com/vercel-labs/agent-skills
+ * Uses the GitHub git trees recursive API to find every SKILL.md in a repo
+ * with a single API call, regardless of directory depth or symlinks.
+ *
+ * Sources (approximate SKILL.md counts):
+ * - Anthropic (~18): github.com/anthropics/skills
+ * - Microsoft (~177): github.com/microsoft/skills — skills live under
+ *   .github/skills and .github/plugins/{plugin}/skills
+ * - Vercel (~7): github.com/vercel-labs/agent-skills
  */
 
 import { parseSkillMd } from "./skill-md";
@@ -26,20 +30,18 @@ let inflight: Promise<SkillDirectoryEntry[]> | null = null;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_CONTENT_LENGTH = 200_000; // 200KB per skill
 
-/** Skill sources — each is a GitHub repo with SKILL.md files */
+/** Skill sources — each is a GitHub repo scanned via git trees API */
 interface SkillSource {
   provider: string;
   owner: string;
   repo: string;
-  /** Path within the repo where skill directories live */
-  contentsPath: string;
-  /** Path prefix for raw.githubusercontent.com URLs */
-  rawPath: string;
+  branch: string;
   /**
-   * If true, contentsPath contains category directories and the real
-   * SKILL.md files live one level deeper — e.g. skills/python/foo/SKILL.md.
+   * Optional path filter. If set, only SKILL.md files whose path starts
+   * with one of these prefixes are included. Use to exclude docs/test
+   * SKILL.md files that aren't real skills.
    */
-  nested?: boolean;
+  pathPrefixes?: string[];
 }
 
 const SOURCES: SkillSource[] = [
@@ -47,30 +49,20 @@ const SOURCES: SkillSource[] = [
     provider: "Anthropic",
     owner: "anthropics",
     repo: "skills",
-    contentsPath: "skills",
-    rawPath: "skills",
+    branch: "main",
   },
   {
     provider: "Microsoft",
     owner: "microsoft",
     repo: "skills",
-    contentsPath: ".github/skills",
-    rawPath: ".github/skills",
-  },
-  {
-    provider: "Microsoft",
-    owner: "microsoft",
-    repo: "skills",
-    contentsPath: "skills",
-    rawPath: "skills",
-    nested: true,
+    branch: "main",
+    pathPrefixes: [".github/skills/", ".github/plugins/"],
   },
   {
     provider: "Vercel",
     owner: "vercel-labs",
     repo: "agent-skills",
-    contentsPath: "skills",
-    rawPath: "skills",
+    branch: "main",
   },
 ];
 
@@ -133,11 +125,14 @@ const FALLBACK_SKILLS: SkillDirectoryEntry[] = [
   },
 ];
 
-interface GitHubContent {
-  name: string;
-  type: string;
+interface GitHubTreeEntry {
   path: string;
-  download_url: string | null;
+  type: string;
+}
+
+interface GitHubTreeResponse {
+  tree: GitHubTreeEntry[];
+  truncated: boolean;
 }
 
 /**
@@ -188,64 +183,57 @@ async function _fetchAllSources(): Promise<SkillDirectoryEntry[]> {
   }
 }
 
-async function _listDirs(apiUrl: string): Promise<GitHubContent[]> {
-  const res = await fetch(apiUrl, {
+/**
+ * List every SKILL.md path in a repo using the git trees recursive API.
+ * Returns an array of paths like ".github/plugins/foo/skills/bar/SKILL.md".
+ */
+async function _listSkillPaths(source: SkillSource): Promise<string[]> {
+  const treeUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/git/trees/${source.branch}?recursive=1`;
+  const res = await fetch(treeUrl, {
     headers: { Accept: "application/vnd.github.v3+json" },
-    signal: AbortSignal.timeout(10000),
+    signal: AbortSignal.timeout(15000),
   });
   if (res.status === 403 || res.status === 429) return [];
   if (!res.ok) return [];
-  const contents: GitHubContent[] = await res.json();
-  return contents.filter((c) => c.type === "dir");
+
+  const json = (await res.json()) as GitHubTreeResponse;
+  let paths = json.tree
+    .filter((e) => e.type === "blob" && e.path.endsWith("/SKILL.md"))
+    .map((e) => e.path);
+
+  if (source.pathPrefixes && source.pathPrefixes.length > 0) {
+    paths = paths.filter((p) => source.pathPrefixes!.some((prefix) => p.startsWith(prefix)));
+  }
+  return paths;
 }
 
-/** Fetch skills from a single GitHub source */
+/** Fetch skills from a single GitHub source using the git trees API */
 async function _fetchFromSource(source: SkillSource): Promise<SkillDirectoryEntry[]> {
-  const topApiUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${source.contentsPath}`;
-  const topDirs = await _listDirs(topApiUrl);
+  const skillPaths = await _listSkillPaths(source);
 
-  // For nested sources, each top-level entry is a category — list one level deeper.
-  // skillDirs is a list of { pathSegments } relative to source.rawPath.
-  const skillPaths: string[] = [];
-
-  if (source.nested) {
-    const nestedResults = await Promise.allSettled(
-      topDirs.map(async (categoryDir) => {
-        const nestedApi = `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${source.contentsPath}/${categoryDir.name}`;
-        const innerDirs = await _listDirs(nestedApi);
-        return innerDirs.map((d) => `${categoryDir.name}/${d.name}`);
-      })
-    );
-    for (const r of nestedResults) {
-      if (r.status === "fulfilled") skillPaths.push(...r.value);
-    }
-  } else {
-    for (const d of topDirs) skillPaths.push(d.name);
-  }
-
-  // Fetch each skill's SKILL.md in parallel (batched)
   const entries: SkillDirectoryEntry[] = [];
-  const batchSize = 5;
+  const batchSize = 15;
 
   for (let i = 0; i < skillPaths.length; i += batchSize) {
     const batch = skillPaths.slice(i, i + batchSize);
     const results = await Promise.allSettled(
-      batch.map(async (relPath) => {
-        const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/main/${source.rawPath}/${relPath}/SKILL.md`;
+      batch.map(async (filePath) => {
+        const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/${source.branch}/${filePath}`;
         const skillRes = await fetch(rawUrl, {
-          signal: AbortSignal.timeout(5000),
+          signal: AbortSignal.timeout(8000),
         });
         if (!skillRes.ok) return null;
 
         const text = await skillRes.text();
         const parsed = parseSkillMd(text);
+        const dirPath = filePath.slice(0, -"/SKILL.md".length);
 
         return {
           name: parsed.name,
           description: parsed.description,
           content: parsed.body.slice(0, MAX_CONTENT_LENGTH),
           category: inferCategory(parsed.name, parsed.description),
-          source_url: `https://github.com/${source.owner}/${source.repo}/tree/main/${source.rawPath}/${relPath}`,
+          source_url: `https://github.com/${source.owner}/${source.repo}/tree/${source.branch}/${dirPath}`,
           provider: source.provider,
         } satisfies SkillDirectoryEntry;
       })
