@@ -1,6 +1,11 @@
 /**
- * Fetches and caches the community skills directory from Anthropic's GitHub repo.
+ * Fetches and caches the community skills directory from multiple GitHub repos.
  * Falls back to a built-in curated list when GitHub is unavailable.
+ *
+ * Sources:
+ * - Anthropic (17 skills): github.com/anthropics/skills
+ * - Microsoft (132 skills): github.com/microsoft/skills
+ * - Vercel (6 skills): github.com/vercel-labs/agent-skills
  */
 
 import { parseSkillMd } from "./skill-md";
@@ -11,6 +16,7 @@ export interface SkillDirectoryEntry {
   content: string;
   category: string | null;
   source_url: string;
+  provider: string;
 }
 
 // In-memory cache with TTL + in-flight deduplication
@@ -20,15 +26,52 @@ let inflight: Promise<SkillDirectoryEntry[]> | null = null;
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_CONTENT_LENGTH = 200_000; // 200KB per skill
 
+/** Skill sources — each is a GitHub repo with SKILL.md files */
+interface SkillSource {
+  provider: string;
+  owner: string;
+  repo: string;
+  /** Path within the repo where skill directories live */
+  contentsPath: string;
+  /** Path prefix for raw.githubusercontent.com URLs */
+  rawPath: string;
+}
+
+const SOURCES: SkillSource[] = [
+  {
+    provider: "Anthropic",
+    owner: "anthropics",
+    repo: "skills",
+    contentsPath: "skills",
+    rawPath: "skills",
+  },
+  {
+    provider: "Microsoft",
+    owner: "microsoft",
+    repo: "skills",
+    contentsPath: ".github/skills",
+    rawPath: ".github/skills",
+  },
+  {
+    provider: "Vercel",
+    owner: "vercel-labs",
+    repo: "agent-skills",
+    contentsPath: "skills",
+    rawPath: "skills",
+  },
+];
+
 /** Category inference from skill name/description */
 function inferCategory(name: string, description: string): string | null {
   const text = `${name} ${description}`.toLowerCase();
 
   if (/pdf|docx|pptx|xlsx|document|spreadsheet|presentation/.test(text)) return "Document";
   if (/test|qa|debug|lint|review/.test(text)) return "Development";
-  if (/mcp|api|server|build|deploy|code/.test(text)) return "Development";
-  if (/design|art|pixel|canvas|theme|frontend|ui|ux/.test(text)) return "Creative";
-  if (/brand|comms|internal|enterprise|legal/.test(text)) return "Enterprise";
+  if (/mcp|api|server|build|deploy|code|sdk|cli/.test(text)) return "Development";
+  if (/design|art|pixel|canvas|theme|frontend|ui|ux|css|react|animation/.test(text)) return "Creative";
+  if (/brand|comms|internal|enterprise|legal|architect/.test(text)) return "Enterprise";
+  if (/azure|cosmos|blob|event|service.bus|entra|key.vault|monitor/.test(text)) return "Cloud";
+  if (/python|dotnet|typescript|java|rust|spring/.test(text)) return "Development";
 
   return null;
 }
@@ -41,6 +84,7 @@ const FALLBACK_SKILLS: SkillDirectoryEntry[] = [
     content: "# Web App Testing\n\nUse this skill when testing web applications.\n\n1. Launch a browser\n2. Navigate to the target URL\n3. Interact with elements\n4. Verify expected behavior\n5. Report findings",
     category: "Development",
     source_url: "https://github.com/anthropics/skills/tree/main/skills/webapp-testing",
+    provider: "Anthropic",
   },
   {
     name: "create-pdf",
@@ -48,6 +92,7 @@ const FALLBACK_SKILLS: SkillDirectoryEntry[] = [
     content: "# PDF Creation\n\nUse this skill when creating PDF documents.\n\n1. Set up document structure\n2. Add content (text, images, tables)\n3. Apply formatting\n4. Generate the PDF file",
     category: "Document",
     source_url: "https://github.com/anthropics/skills/tree/main/skills/pdf",
+    provider: "Anthropic",
   },
   {
     name: "mcp-builder",
@@ -55,20 +100,23 @@ const FALLBACK_SKILLS: SkillDirectoryEntry[] = [
     content: "# MCP Server Builder\n\nUse this skill when building MCP servers.\n\n1. Set up the transport layer\n2. Register tools with schemas\n3. Implement handlers\n4. Add error handling",
     category: "Development",
     source_url: "https://github.com/anthropics/skills/tree/main/skills/mcp-builder",
+    provider: "Anthropic",
   },
   {
-    name: "frontend-design",
-    description: "Create distinctive, production-grade frontend interfaces with high design quality.",
-    content: "# Frontend Design\n\nUse this skill when building web interfaces.\n\n1. Understand the context and audience\n2. Choose a bold aesthetic direction\n3. Implement with attention to detail\n4. Ensure accessibility and responsiveness",
+    name: "react-best-practices",
+    description: "40+ performance rules across 8 categories for React applications including waterfalls, bundle optimization, and re-renders.",
+    content: "# React Best Practices\n\nUse this skill when building React applications.\n\n1. Avoid render waterfalls\n2. Optimize bundle size\n3. Prevent unnecessary re-renders\n4. Use proper state management",
     category: "Creative",
-    source_url: "https://github.com/anthropics/skills/tree/main/skills/frontend-design",
+    source_url: "https://github.com/vercel-labs/agent-skills/tree/main/skills/react-best-practices",
+    provider: "Vercel",
   },
   {
-    name: "claude-api",
-    description: "Build applications using the Claude API and Anthropic SDKs with best practices for prompting, tool use, and error handling.",
-    content: "# Claude API\n\nUse this skill when building Claude API applications.\n\n1. Set up the Anthropic SDK\n2. Configure the client\n3. Implement tool use\n4. Handle streaming and errors",
+    name: "copilot-sdk-py",
+    description: "Build AI agents using the Microsoft Copilot SDK for Python with best practices for tool use and orchestration.",
+    content: "# Copilot SDK (Python)\n\nUse this skill when building AI agents with the Microsoft Copilot SDK.\n\n1. Set up the SDK\n2. Define agent capabilities\n3. Implement tool handlers\n4. Configure orchestration",
     category: "Development",
-    source_url: "https://github.com/anthropics/skills/tree/main/skills/claude-api",
+    source_url: "https://github.com/microsoft/skills/tree/main/.github/skills/copilot-sdk-py",
+    provider: "Microsoft",
   },
 ];
 
@@ -80,7 +128,7 @@ interface GitHubContent {
 }
 
 /**
- * Fetch skills from Anthropic's GitHub repo.
+ * Fetch skills from all configured GitHub repos.
  * Returns cached results if available and fresh.
  * Uses in-flight deduplication to prevent stampedes.
  */
@@ -93,79 +141,92 @@ export async function fetchSkillsFromGitHub(): Promise<SkillDirectoryEntry[]> {
   // Deduplicate in-flight requests
   if (inflight) return inflight;
 
-  inflight = _fetchFromGitHub().finally(() => { inflight = null; });
+  inflight = _fetchAllSources().finally(() => { inflight = null; });
   return inflight;
 }
 
-async function _fetchFromGitHub(): Promise<SkillDirectoryEntry[]> {
+/** Fetch from all sources in parallel, merge results */
+async function _fetchAllSources(): Promise<SkillDirectoryEntry[]> {
   try {
-    // List skill directories
-    const res = await fetch(
-      "https://api.github.com/repos/anthropics/skills/contents/skills",
-      {
-        headers: { Accept: "application/vnd.github.v3+json" },
-        signal: AbortSignal.timeout(10000),
-      }
+    const results = await Promise.allSettled(
+      SOURCES.map((source) => _fetchFromSource(source))
     );
 
-    // Handle rate limiting — keep stale cache, backoff
-    if (res.status === 403 || res.status === 429) {
-      if (cachedDirectory) {
-        cacheTimestamp = Date.now(); // prevent re-fetching immediately
-        return cachedDirectory;
-      }
-      return FALLBACK_SKILLS;
-    }
-
-    if (!res.ok) throw new Error(`GitHub API: ${res.status}`);
-
-    const contents: GitHubContent[] = await res.json();
-    const dirs = contents.filter((c) => c.type === "dir");
-
-    // Fetch each skill's SKILL.md in parallel (with limit)
-    const entries: SkillDirectoryEntry[] = [];
-    const batchSize = 5;
-
-    for (let i = 0; i < dirs.length; i += batchSize) {
-      const batch = dirs.slice(i, i + batchSize);
-      const results = await Promise.allSettled(
-        batch.map(async (dir) => {
-          const rawUrl = `https://raw.githubusercontent.com/anthropics/skills/main/skills/${dir.name}/SKILL.md`;
-          const skillRes = await fetch(rawUrl, {
-            signal: AbortSignal.timeout(5000),
-          });
-          if (!skillRes.ok) return null;
-
-          const text = await skillRes.text();
-          const parsed = parseSkillMd(text);
-
-          return {
-            name: parsed.name,
-            description: parsed.description,
-            content: parsed.body.slice(0, MAX_CONTENT_LENGTH),
-            category: inferCategory(parsed.name, parsed.description),
-            source_url: `https://github.com/anthropics/skills/tree/main/skills/${dir.name}`,
-          } satisfies SkillDirectoryEntry;
-        })
-      );
-
-      for (const result of results) {
-        if (result.status === "fulfilled" && result.value) {
-          entries.push(result.value);
-        }
+    const allEntries: SkillDirectoryEntry[] = [];
+    for (const result of results) {
+      if (result.status === "fulfilled") {
+        allEntries.push(...result.value);
       }
     }
 
-    // Cache results
-    cachedDirectory = entries;
-    cacheTimestamp = Date.now();
+    // If we got at least some results, cache them
+    if (allEntries.length > 0) {
+      cachedDirectory = allEntries;
+      cacheTimestamp = Date.now();
+      return allEntries;
+    }
 
-    return entries;
+    // All sources failed — use stale cache or fallback
+    if (cachedDirectory) return cachedDirectory;
+    return FALLBACK_SKILLS;
   } catch {
-    // On error, prefer stale cache over fallback
     if (cachedDirectory) return cachedDirectory;
     return FALLBACK_SKILLS;
   }
+}
+
+/** Fetch skills from a single GitHub source */
+async function _fetchFromSource(source: SkillSource): Promise<SkillDirectoryEntry[]> {
+  const apiUrl = `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${source.contentsPath}`;
+
+  const res = await fetch(apiUrl, {
+    headers: { Accept: "application/vnd.github.v3+json" },
+    signal: AbortSignal.timeout(10000),
+  });
+
+  // Handle rate limiting — return empty for this source
+  if (res.status === 403 || res.status === 429) return [];
+  if (!res.ok) return [];
+
+  const contents: GitHubContent[] = await res.json();
+  const dirs = contents.filter((c) => c.type === "dir");
+
+  // Fetch each skill's SKILL.md in parallel (batched)
+  const entries: SkillDirectoryEntry[] = [];
+  const batchSize = 5;
+
+  for (let i = 0; i < dirs.length; i += batchSize) {
+    const batch = dirs.slice(i, i + batchSize);
+    const results = await Promise.allSettled(
+      batch.map(async (dir) => {
+        const rawUrl = `https://raw.githubusercontent.com/${source.owner}/${source.repo}/main/${source.rawPath}/${dir.name}/SKILL.md`;
+        const skillRes = await fetch(rawUrl, {
+          signal: AbortSignal.timeout(5000),
+        });
+        if (!skillRes.ok) return null;
+
+        const text = await skillRes.text();
+        const parsed = parseSkillMd(text);
+
+        return {
+          name: parsed.name,
+          description: parsed.description,
+          content: parsed.body.slice(0, MAX_CONTENT_LENGTH),
+          category: inferCategory(parsed.name, parsed.description),
+          source_url: `https://github.com/${source.owner}/${source.repo}/tree/main/${source.rawPath}/${dir.name}`,
+          provider: source.provider,
+        } satisfies SkillDirectoryEntry;
+      })
+    );
+
+    for (const result of results) {
+      if (result.status === "fulfilled" && result.value) {
+        entries.push(result.value);
+      }
+    }
+  }
+
+  return entries;
 }
 
 /**
@@ -173,6 +234,13 @@ async function _fetchFromGitHub(): Promise<SkillDirectoryEntry[]> {
  */
 export function getFallbackSkills(): SkillDirectoryEntry[] {
   return FALLBACK_SKILLS;
+}
+
+/**
+ * Get the list of all provider names.
+ */
+export function getProviders(): string[] {
+  return SOURCES.map((s) => s.provider);
 }
 
 /**
