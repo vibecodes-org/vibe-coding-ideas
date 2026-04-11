@@ -31,14 +31,18 @@ test.describe("Board Labels", () => {
 
     const isMobile = testInfo.project.name === "Mobile Chrome";
 
+    // On mobile the inline desktop filter controls are hidden (display:none) but
+    // still present in the DOM inside <main>. The real Labels button lives inside
+    // the Filters sheet (Radix dialog portal, rendered outside <main>). Scope to
+    // the right container per viewport.
     if (isMobile) {
-      // Mobile: open the Filters sheet first, then find Labels
       await page.getByRole("button", { name: /Filters/i }).click();
-      await page.waitForTimeout(500);
+      const sheet = page.getByRole("dialog");
+      await expect(sheet).toBeVisible({ timeout: EXPECT_TIMEOUT });
+      await sheet.getByRole("button", { name: "Labels" }).click();
+    } else {
+      await page.getByRole("main").getByRole("button", { name: "Labels" }).click();
     }
-
-    // Click the Labels filter button (scoped to main to avoid strict mode violation)
-    await page.getByRole("main").getByRole("button", { name: "Labels" }).click();
     await expect(page.getByText("E2E-Bug")).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 });
