@@ -168,4 +168,36 @@ describe("fetchSkillsFromGitHub", () => {
   it("getProviders returns unique provider names", () => {
     expect(getProviders()).toEqual(["Anthropic", "Microsoft", "Vercel"]);
   });
+
+  it("deduplicates skills with the same name across sources, preferring source order", async () => {
+    installFetch((url) => {
+      if (url.includes("anthropics/skills/git/trees")) {
+        return treeResponse(["skills/mcp-builder/SKILL.md", "skills/unique-anth/SKILL.md"]);
+      }
+      if (url.includes("microsoft/skills/git/trees")) {
+        return treeResponse([
+          ".github/skills/mcp-builder/SKILL.md", // duplicate name, Microsoft version
+          ".github/skills/unique-ms/SKILL.md",
+        ]);
+      }
+      if (url.includes("vercel-labs/agent-skills/git/trees")) return treeResponse([]);
+
+      const rawMatch = url.match(/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)\/[^/]+\/(.+)\/SKILL\.md$/);
+      if (rawMatch) {
+        const [, owner, , pathNoSlash] = rawMatch;
+        const leaf = pathNoSlash.split("/").pop() ?? "unknown";
+        return textResponse(`---\nname: ${leaf}\ndescription: from ${owner}\n---\n\nbody`);
+      }
+      return new Response("nope", { status: 404 });
+    });
+
+    const skills = await fetchSkillsFromGitHub();
+    const builders = skills.filter((s) => s.name === "mcp-builder");
+    expect(builders).toHaveLength(1);
+    expect(builders[0].provider).toBe("Anthropic"); // first in SOURCES order
+    expect(builders[0].description).toBe("from anthropics");
+
+    const names = skills.map((s) => s.name).sort();
+    expect(names).toEqual(["mcp-builder", "unique-anth", "unique-ms"]);
+  });
 });

@@ -160,10 +160,19 @@ async function _fetchAllSources(): Promise<SkillDirectoryEntry[]> {
       SOURCES.map((source) => _fetchFromSource(source))
     );
 
+    // Dedupe by skill name, preserving first occurrence (source order wins —
+    // see SOURCES above). Multiple repos publish the same canonical skills
+    // (e.g. mcp-builder exists in both anthropics/skills and microsoft/skills),
+    // and showing duplicates breaks React key reconciliation in the UI.
+    const seenNames = new Set<string>();
     const allEntries: SkillDirectoryEntry[] = [];
     for (const result of results) {
       if (result.status === "fulfilled") {
-        allEntries.push(...result.value);
+        for (const entry of result.value) {
+          if (seenNames.has(entry.name)) continue;
+          seenNames.add(entry.name);
+          allEntries.push(entry);
+        }
       }
     }
 

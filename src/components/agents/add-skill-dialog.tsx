@@ -450,7 +450,7 @@ export function AddSkillDialog({
 
                       return (
                         <div
-                          key={skill.name}
+                          key={`${skill.provider}:${skill.name}`}
                           className="rounded-lg border border-border bg-muted/20 p-3 space-y-1.5 cursor-pointer hover:border-violet-500/30 transition-colors"
                           onClick={() => setSelectedSkill(skill)}
                         >
