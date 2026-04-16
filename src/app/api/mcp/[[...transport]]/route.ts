@@ -13,6 +13,59 @@ const serviceClient = createClient<Database>(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
+// In-memory JWT cache for API key sessions: userId → { accessToken, expiresAt (Unix s) }
+const apiKeySessionCache = new Map<string, { accessToken: string; expiresAt: number }>();
+
+/**
+ * Exchange a validated user_id (from a vbc_ API key lookup) for a real Supabase
+ * session JWT. Uses generateLink + verifyOtp so the JWT is properly signed and
+ * RLS-enforced, without requiring the user's password.  Results are cached for
+ * ~1 hour to avoid a round-trip on every MCP tool call.
+ */
+async function getSessionForApiKey(userId: string): Promise<string | null> {
+  const now = Math.floor(Date.now() / 1000);
+  const cached = apiKeySessionCache.get(userId);
+  // Reuse cached token if it has more than 60 s remaining
+  if (cached && cached.expiresAt > now + 60) {
+    return cached.accessToken;
+  }
+
+  // Resolve the user's email (needed for magic-link OTP flow)
+  const { data: { user }, error: userError } =
+    await serviceClient.auth.admin.getUserById(userId);
+  if (userError || !user?.email) {
+    logger.error("API key session: could not resolve user", { userId, error: userError?.message });
+    return null;
+  }
+
+  // Generate a one-time magic-link token (no email is sent)
+  const { data: linkData, error: linkError } =
+    await serviceClient.auth.admin.generateLink({ type: "magiclink", email: user.email });
+  if (linkError || !linkData.properties?.email_otp) {
+    logger.error("API key session: generateLink failed", { error: linkError?.message });
+    return null;
+  }
+
+  // Exchange the OTP for a real signed Supabase JWT via the anon client
+  const anonClient = createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+  const { data: sessionData, error: otpError } = await anonClient.auth.verifyOtp({
+    email: user.email,
+    token: linkData.properties.email_otp,
+    type: "magiclink",
+  });
+  if (otpError || !sessionData.session) {
+    logger.error("API key session: verifyOtp failed", { error: otpError?.message });
+    return null;
+  }
+
+  const { access_token, expires_in } = sessionData.session;
+  apiKeySessionCache.set(userId, { accessToken: access_token, expiresAt: now + (expires_in ?? 3600) });
+  return access_token;
+}
+
 const handler = createMcpHandler(
   (server) => {
     // Per-connection mutable bot identity (set by set_bot_identity tool)
@@ -148,14 +201,21 @@ const verifyToken = async (_req: Request, bearerToken?: string) => {
         if (error) logger.error("API key last_used_at update failed", { error: error.message });
       });
 
+    // Exchange the API key for a real Supabase JWT so the registerTools context
+    // builder can attach it as Authorization: Bearer and get RLS enforcement.
+    const realJwt = await getSessionForApiKey(keyRow.user_id);
+    if (!realJwt) return undefined;
+
+    // Use the JWT's own expiry so mcp-handler knows when to re-authenticate
+    const jwtPayload = decodeJwtPayload(realJwt);
+    const jwtExp = jwtPayload?.exp as number | undefined;
+
     return {
-      token: bearerToken,
+      token: realJwt,
       clientId: "vibecodes-apikey",
       scopes: ["mcp:tools"],
       extra: { userId: keyRow.user_id },
-      expiresAt: keyRow.expires_at
-        ? Math.floor(new Date(keyRow.expires_at).getTime() / 1000)
-        : Math.floor(Date.now() / 1000) + 86400 * 365,
+      expiresAt: jwtExp ?? Math.floor(Date.now() / 1000) + 3600,
     };
   }
 
