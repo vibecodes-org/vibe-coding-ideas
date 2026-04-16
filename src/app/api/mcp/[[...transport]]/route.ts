@@ -1,5 +1,6 @@
 import { createMcpHandler, withMcpAuth } from "mcp-handler";
 import { createClient } from "@supabase/supabase-js";
+import { createHash } from "crypto";
 import { registerTools } from "../../../../../mcp-server/src/register-tools";
 import { instrumentServer } from "../../../../../mcp-server/src/instrument";
 import { logger } from "@/lib/logger";
@@ -125,6 +126,38 @@ function decodeJwtPayload(token: string): Record<string, unknown> | null {
 
 const verifyToken = async (_req: Request, bearerToken?: string) => {
   if (!bearerToken) return undefined;
+
+  // API key path — keys generated via the VibeCodes "MCP API Keys" settings panel
+  if (bearerToken.startsWith("vbc_")) {
+    const keyHash = createHash("sha256").update(bearerToken).digest("hex");
+    const { data: keyRow } = await serviceClient
+      .from("user_api_keys")
+      .select("user_id, expires_at")
+      .eq("key_hash", keyHash)
+      .maybeSingle();
+
+    if (!keyRow) return undefined;
+    if (keyRow.expires_at && new Date(keyRow.expires_at) < new Date()) return undefined;
+
+    // Fire-and-forget: record last used time
+    serviceClient
+      .from("user_api_keys")
+      .update({ last_used_at: new Date().toISOString() })
+      .eq("key_hash", keyHash)
+      .then(({ error }) => {
+        if (error) logger.error("API key last_used_at update failed", { error: error.message });
+      });
+
+    return {
+      token: bearerToken,
+      clientId: "vibecodes-apikey",
+      scopes: ["mcp:tools"],
+      extra: { userId: keyRow.user_id },
+      expiresAt: keyRow.expires_at
+        ? Math.floor(new Date(keyRow.expires_at).getTime() / 1000)
+        : Math.floor(Date.now() / 1000) + 86400 * 365,
+    };
+  }
 
   // Decode JWT to check expiry without an API call
   const payload = decodeJwtPayload(bearerToken);

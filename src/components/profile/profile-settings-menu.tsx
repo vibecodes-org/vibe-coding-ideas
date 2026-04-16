@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, Columns, Key, Settings } from "lucide-react";
+import { Bell, Columns, Key, Settings, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,6 +12,7 @@ import {
 import { NotificationSettings } from "./notification-settings";
 import { BoardColumnSettings } from "./board-column-settings";
 import { ApiKeySettings } from "./api-key-settings";
+import { McpApiKeys } from "./mcp-api-keys";
 import type { NotificationPreferences } from "@/types";
 
 interface ProfileSettingsMenuProps {
@@ -28,6 +29,7 @@ export function ProfileSettingsMenu({
   const [showNotifications, setShowNotifications] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showMcpKeys, setShowMcpKeys] = useState(false);
 
   return (
     <>
@@ -51,6 +53,10 @@ export function ProfileSettingsMenu({
             <Key className="mr-2 h-4 w-4" />
             API Key
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setShowMcpKeys(true)}>
+            <Terminal className="mr-2 h-4 w-4" />
+            MCP API Keys
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -69,6 +75,10 @@ export function ProfileSettingsMenu({
         hasKey={hasApiKey}
         open={showApiKey}
         onOpenChange={setShowApiKey}
+      />
+      <McpApiKeys
+        open={showMcpKeys}
+        onOpenChange={setShowMcpKeys}
       />
     </>
   );
