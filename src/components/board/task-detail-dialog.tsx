@@ -28,6 +28,7 @@ import { useBoardOps } from "./board-context";
 import { createClient } from "@/lib/supabase/client";
 import { logger } from "@/lib/logger";
 import { logTaskActivity } from "@/lib/activity";
+import { useDebouncedSave } from "@/hooks/use-debounced-save";
 import { useBotRoles } from "@/components/bot-roles-context";
 import { getRoleColor } from "@/lib/agent-colors";
 import { getInitials } from "@/lib/utils";
@@ -157,25 +158,34 @@ export function TaskDetailDialog({
     setLastOpen(open);
   }
 
+  const titleSave = useDebouncedSave({
+    value: title,
+    skip: isReadOnly,
+    onSave: async (v: string) => {
+      const trimmed = v.trim();
+      if (!trimmed) {
+        setTitle(task.title);
+        return;
+      }
+      if (trimmed === task.title) return;
+      setSavingTitle(true);
+      try {
+        await updateBoardTask(task.id, ideaId, { title: trimmed });
+        logTaskActivity(task.id, ideaId, currentUserId, "title_changed", {
+          from: task.title,
+          to: trimmed,
+        });
+      } catch {
+        toast.error("Failed to update title");
+        setTitle(task.title);
+      } finally {
+        setSavingTitle(false);
+      }
+    },
+  });
+
   async function handleTitleBlur() {
-    if (title.trim() === task.title) return;
-    if (!title.trim()) {
-      setTitle(task.title);
-      return;
-    }
-    setSavingTitle(true);
-    try {
-      await updateBoardTask(task.id, ideaId, { title: title.trim() });
-      logTaskActivity(task.id, ideaId, currentUserId, "title_changed", {
-        from: task.title,
-        to: title.trim(),
-      });
-    } catch {
-      toast.error("Failed to update title");
-      setTitle(task.title);
-    } finally {
-      setSavingTitle(false);
-    }
+    await titleSave.flush();
   }
 
   function detectDescMention(value: string, cursorPos: number) {
@@ -237,6 +247,48 @@ export function TaskDetailDialog({
     }
   }
 
+  const descSave = useDebouncedSave({
+    value: description,
+    skip: isReadOnly,
+    onSave: async (v: string) => {
+      const newDesc = v.trim() || null;
+      if (newDesc === (task.description ?? null)) return;
+      const savedMentionedUserIds = new Set(descMentionedUserIds);
+      setDescMentionedUserIds(new Set());
+      setSavingDesc(true);
+      try {
+        await updateBoardTask(task.id, ideaId, { description: newDesc });
+        logTaskActivity(task.id, ideaId, currentUserId, "description_changed");
+        if (savedMentionedUserIds.size > 0) {
+          const supabase = createClient();
+          for (const userId of savedMentionedUserIds) {
+            if (userId === currentUserId) continue;
+            const member = teamMembers.find((m) => m.id === userId);
+            if (!member) continue;
+            if (member.notification_preferences?.task_mentions === false) continue;
+            supabase
+              .from("notifications")
+              .insert({
+                user_id: userId,
+                actor_id: currentUserId,
+                type: "task_mention" as const,
+                idea_id: ideaId,
+                task_id: task.id,
+              })
+              .then(({ error }) => {
+                if (error) logger.error("Failed to send mention notification", { error: error.message, userId });
+              });
+          }
+        }
+      } catch {
+        toast.error("Failed to update description");
+        setDescription(task.description ?? "");
+      } finally {
+        setSavingDesc(false);
+      }
+    },
+  });
+
   async function handleDescriptionBlur() {
     if (skipBlurRef.current) {
       skipBlurRef.current = false;
@@ -245,42 +297,7 @@ export function TaskDetailDialog({
     setEditingDescription(false);
     setPreviewDesc(false);
     setDescMentionQuery(null);
-    const newDesc = description.trim() || null;
-    if (newDesc === (task.description ?? null)) return;
-    const savedMentionedUserIds = new Set(descMentionedUserIds);
-    setDescMentionedUserIds(new Set());
-    setSavingDesc(true);
-    try {
-      await updateBoardTask(task.id, ideaId, { description: newDesc });
-      logTaskActivity(task.id, ideaId, currentUserId, "description_changed");
-      // Send mention notifications (fire-and-forget)
-      if (savedMentionedUserIds.size > 0) {
-        const supabase = createClient();
-        for (const userId of savedMentionedUserIds) {
-          if (userId === currentUserId) continue;
-          const member = teamMembers.find((m) => m.id === userId);
-          if (!member) continue;
-          if (member.notification_preferences?.task_mentions === false) continue;
-          supabase
-            .from("notifications")
-            .insert({
-              user_id: userId,
-              actor_id: currentUserId,
-              type: "task_mention" as const,
-              idea_id: ideaId,
-              task_id: task.id,
-            })
-            .then(({ error }) => {
-              if (error) logger.error("Failed to send mention notification", { error: error.message, userId });
-            });
-        }
-      }
-    } catch {
-      toast.error("Failed to update description");
-      setDescription(task.description ?? "");
-    } finally {
-      setSavingDesc(false);
-    }
+    await descSave.flush();
   }
 
   const showAiEnhance = canUseAi && !isReadOnly && editingDescription && description.trim().length > 10;
@@ -469,9 +486,10 @@ export function TaskDetailDialog({
           setCoverPreviewOpen(false);
           return;
         }
-        if (!v && editingDescription) {
-          // Save description when closing dialog while editing (including preview mode)
-          handleDescriptionBlur();
+        if (!v) {
+          // Flush any pending auto-saves before the dialog unmounts
+          void titleSave.flush();
+          void descSave.flush();
         }
         onOpenChange(v);
       }}
@@ -519,9 +537,13 @@ export function TaskDetailDialog({
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
                 className="min-h-0 flex-1 resize-none border-none p-0 text-lg font-semibold shadow-none focus-visible:ring-0"
                 rows={1}
-                disabled={savingTitle}
                 style={{ fieldSizing: "content" } as React.CSSProperties}
               />
+              {savingTitle && (
+                <span className="mt-1.5 shrink-0 text-[10px] text-muted-foreground">
+                  Saving…
+                </span>
+              )}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -675,7 +697,12 @@ export function TaskDetailDialog({
               {/* Description */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Description</span>
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium">Description</span>
+                    {savingDesc && (
+                      <span className="text-[10px] text-muted-foreground">Saving…</span>
+                    )}
+                  </div>
                   <div className="flex items-center gap-1">
                     {showAiEnhance && (
                       <Button
@@ -765,7 +792,6 @@ export function TaskDetailDialog({
                         placeholder="Add a description... (@ to mention, supports markdown)"
                         rows={6}
                         className="text-sm"
-                        disabled={savingDesc}
                         autoFocus
                       />
                     </div>
