@@ -174,23 +174,16 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
 
   if (!user) throw new Error("Not authenticated");
 
-  // Fetch the step to check human_check_required and bot_id for identity enforcement
+  // Fetch the step to determine target status. Identity (bot_id) enforcement
+  // lives in the MCP `complete_step` tool, not here — this server action is
+  // only called from the UI by humans manually advancing a step. RLS already
+  // restricts callers to idea team members.
   const { data: existing } = await supabase
     .from("task_workflow_steps")
-    .select("human_check_required, idea_id, bot_id, agent_role")
+    .select("human_check_required, idea_id")
     .eq("id", stepId)
     .single();
 
-  // Identity guard: reject if caller doesn't match the pre-matched agent
-  if (existing?.bot_id && user.id !== existing.bot_id) {
-    throw new Error(
-      `Identity mismatch: this step is assigned to a different agent (${existing.agent_role ?? "unknown"}). ` +
-      `The work was performed under the wrong identity and must be redone. ` +
-      `Switch identity, then re-claim and re-execute this step as the correct agent.`
-    );
-  }
-
-  // If step requires human approval, route to awaiting_approval instead of completed
   const newStatus =
     existing?.human_check_required ? "awaiting_approval" : "completed";
 
@@ -262,22 +255,9 @@ export async function failWorkflowStep(
 
   if (!user) throw new Error("Not authenticated");
 
-  // Pre-fetch step for identity enforcement
-  const { data: existing } = await supabase
-    .from("task_workflow_steps")
-    .select("bot_id, agent_role, status")
-    .eq("id", stepId)
-    .single();
-
-  // Identity guard: reject if caller doesn't match the pre-matched agent
-  // Skip for awaiting_approval steps — humans reject those regardless of bot_id
-  if (existing?.bot_id && existing.status !== "awaiting_approval" && user.id !== existing.bot_id) {
-    throw new Error(
-      `Identity mismatch: this step is assigned to a different agent (${existing.agent_role ?? "unknown"}). ` +
-      `Switch identity before failing this step. ` +
-      `Any work done under the wrong identity should be discarded.`
-    );
-  }
+  // Identity (bot_id) enforcement lives in the MCP `fail_step` tool, not here —
+  // this server action is only called from the UI by humans manually failing
+  // or rejecting a step. RLS restricts callers to idea team members.
 
   const { data, error } = await supabase
     .from("task_workflow_steps")
