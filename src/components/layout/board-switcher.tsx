@@ -1,98 +1,100 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LayoutGrid, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
-  PopoverTrigger,
 } from "@/components/ui/popover";
-import { cn, formatRelativeTime } from "@/lib/utils";
 import { getUserRecentBoards, type RecentBoard } from "@/actions/board";
+import { useUser } from "@/hooks/use-user";
+import { useKeyboardShortcut } from "@/hooks/use-keyboard-shortcut";
+import { BoardPicker } from "./board-picker";
 
 export function BoardSwitcher() {
   const [boards, setBoards] = useState<RecentBoard[]>([]);
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
+  const { user } = useUser();
 
-  // Determine current board from URL (/ideas/{id}/*)
   const ideaIdMatch = pathname.match(/\/ideas\/([^/]+)/);
   const currentIdeaId = ideaIdMatch?.[1] ?? null;
 
   useEffect(() => {
+    if (!user) return;
     let cancelled = false;
     getUserRecentBoards().then((result) => {
       if (!cancelled) setBoards(result);
     });
     return () => { cancelled = true; };
-  }, [pathname]); // refetch when navigating
+  }, [pathname, user]);
+
   const currentBoard = boards.find((b) => b.ideaId === currentIdeaId);
 
-  // Don't render if no boards
-  if (boards.length === 0) return null;
+  const toggle = useCallback(() => setOpen((o) => !o), []);
+  useKeyboardShortcut("mod+b", toggle);
 
-  const displayName = currentBoard?.title ?? boards[0].title;
-  const displayHref = currentBoard
-    ? `/ideas/${currentBoard.ideaId}/board`
-    : `/ideas/${boards[0].ideaId}/board`;
+  if (!user) return null;
+
+  // First word of full_name, falling back to the email prefix.
+  const fullName = (user.user_metadata?.full_name as string | undefined) ?? "";
+  const firstName = fullName.trim().split(/\s+/)[0] || user.email?.split("@")[0] || "User";
+  const initial = (firstName[0] ?? "U").toUpperCase();
 
   return (
     <div className="hidden items-center md:flex">
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            className="flex items-center gap-1.5 rounded-md border border-violet-500/20 bg-violet-500/8 px-2.5 py-1.5 text-sm font-semibold text-foreground transition-colors hover:bg-violet-500/15"
-          >
-            <LayoutGrid className="h-3.5 w-3.5 text-violet-400" />
-            <span className="max-w-[180px] truncate">{displayName}</span>
-            <ChevronDown className="h-3 w-3 text-muted-foreground" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent className="w-[260px] p-1.5" align="start">
-          <p className="px-2 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-            Recent Boards
-          </p>
-          <div className="max-h-[240px] space-y-0.5 overflow-y-auto">
-            {boards.map((board) => {
-              const isCurrent = board.ideaId === currentIdeaId;
-              return (
-                <Link
-                  key={board.ideaId}
-                  href={`/ideas/${board.ideaId}/board`}
-                  onClick={() => setOpen(false)}
-                  className={cn(
-                    "flex items-center gap-2.5 rounded-md px-2 py-2 text-xs transition-colors",
-                    isCurrent
-                      ? "bg-violet-500/10 text-foreground"
-                      : "text-muted-foreground hover:bg-muted hover:text-foreground"
-                  )}
-                >
-                  <span
-                    className={cn(
-                      "h-2 w-2 shrink-0 rounded-full",
-                      isCurrent ? "bg-violet-400" : "bg-muted-foreground/30"
-                    )}
-                  />
-                  <span className="flex-1 truncate font-medium">{board.title}</span>
-                  <span className="shrink-0 text-[10px] text-muted-foreground/60">
-                    {isCurrent ? "Current" : formatRelativeTime(board.lastActivity)}
-                  </span>
-                </Link>
-              );
-            })}
-          </div>
-          <div className="mt-1 border-t border-border pt-1">
+        <PopoverAnchor asChild>
+          <div className="inline-flex items-center overflow-hidden rounded-md border border-border bg-muted/30 text-sm">
             <Link
               href="/dashboard"
-              onClick={() => setOpen(false)}
-              className="flex items-center gap-2 rounded-md px-2 py-2 text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 font-medium text-foreground transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+              aria-label={`Go to dashboard (${firstName})`}
             >
-              <LayoutGrid className="h-3.5 w-3.5" />
-              All boards…
+              <span className="flex h-4 w-4 items-center justify-center rounded bg-gradient-to-br from-violet-500 to-blue-500 text-[10px] font-bold text-white">
+                {initial}
+              </span>
+              <span className="hidden lg:inline">{firstName}</span>
             </Link>
+            {currentBoard && (
+              <>
+                <span aria-hidden="true" className="select-none text-muted-foreground/40">
+                  /
+                </span>
+                <button
+                  type="button"
+                  onClick={toggle}
+                  aria-haspopup="menu"
+                  aria-expanded={open}
+                  aria-label="Switch board"
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 font-semibold text-foreground transition-colors hover:bg-muted/60 focus-visible:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-violet-500/50"
+                >
+                  <span className="max-w-[160px] truncate">{currentBoard.title}</span>
+                  <ChevronDown className="h-3 w-3 text-muted-foreground" />
+                </button>
+              </>
+            )}
           </div>
+        </PopoverAnchor>
+        <PopoverContent
+          className="w-[300px] p-0"
+          align="start"
+          onOpenAutoFocus={(e) => {
+            // Let BoardPicker manage its own focus (search input)
+            e.preventDefault();
+          }}
+        >
+          {/* Remount BoardPicker on every open so query/activeIndex reset cleanly */}
+          {open && (
+            <BoardPicker
+              boards={boards}
+              currentIdeaId={currentIdeaId}
+              onSelect={() => setOpen(false)}
+            />
+          )}
         </PopoverContent>
       </Popover>
     </div>
