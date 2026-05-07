@@ -100,6 +100,8 @@ export type DashboardBot = BotProfile & {
   currentTask: DashboardBotTask | null;
   lastActivity: DashboardBotActivity | null;
   isActiveMcpBot: boolean;
+  /** Workflow-aware status (preferred over currentTask). Computed via getAgentStatus. */
+  currentStatus: import("@/lib/agent-status").AgentStatus;
 };
 
 // Discussion types

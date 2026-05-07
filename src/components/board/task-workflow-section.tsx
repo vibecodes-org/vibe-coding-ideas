@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useContext } from "react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { HelpLink } from "@/components/shared/help-link";
@@ -60,6 +60,7 @@ import {
 } from "@/actions/workflow";
 import { applyWorkflowTemplate, listWorkflowTemplates, rematchWorkflowAgents } from "@/actions/workflow-templates";
 import { StepDetailDialog } from "./step-detail-dialog";
+import { TaskAutoOpenContext } from "./kanban-board";
 import { ApprovalLockIcon } from "./approval-lock-icon";
 import type { TaskWorkflowStep, WorkflowRun, WorkflowTemplate } from "@/types";
 
@@ -166,6 +167,10 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
   // Track whether we've already attempted a rematch for this task to avoid loops
   const rematchAttemptedRef = useRef(false);
 
+  // Auto-open a specific step when arriving via ?stepId= deep link
+  const { autoOpenStepId, onAutoOpenConsumed } = useContext(TaskAutoOpenContext);
+  const autoOpenStepHandledRef = useRef(false);
+
   const supabaseRef = useRef(createClient());
 
   const fetchData = useCallback(async () => {
@@ -239,6 +244,18 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
   useEffect(() => {
     rematchAttemptedRef.current = false;
   }, [taskId]);
+
+  // Auto-open the step dialog when arriving via ?stepId= deep link from the
+  // dashboard My Agents panel. Only fire once per mount to avoid re-opening
+  // after the user manually closes the dialog.
+  useEffect(() => {
+    if (!autoOpenStepId || !steps || autoOpenStepHandledRef.current) return;
+    const target = steps.find((s) => s.id === autoOpenStepId);
+    if (!target) return;
+    autoOpenStepHandledRef.current = true;
+    setSelectedStep(target);
+    onAutoOpenConsumed();
+  }, [autoOpenStepId, steps, onAutoOpenConsumed]);
 
   // Load templates when user opens apply UI
   useEffect(() => {

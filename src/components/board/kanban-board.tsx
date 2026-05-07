@@ -48,8 +48,9 @@ import type {
 // Context for auto-open state — bypasses memo chain so task cards can react to URL navigation
 export const TaskAutoOpenContext = createContext<{
   autoOpenTaskId: string | undefined;
+  autoOpenStepId: string | undefined;
   onAutoOpenConsumed: () => void;
-}>({ autoOpenTaskId: undefined, onAutoOpenConsumed: () => {} });
+}>({ autoOpenTaskId: undefined, autoOpenStepId: undefined, onAutoOpenConsumed: () => {} });
 
 // Custom collision detection: pointerWithin finds the column, closestCenter bridges gaps
 const multiContainerCollision: CollisionDetection = (args) => {
@@ -259,7 +260,9 @@ export function KanbanBoard({
   // props when the board is already mounted (memo chain can block the update).
   const searchParams = useSearchParams();
   const urlTaskId = searchParams.get("taskId") ?? undefined;
+  const urlStepId = searchParams.get("stepId") ?? undefined;
   const [autoOpenTaskId, setAutoOpenTaskId] = useState<string | undefined>(initialTaskId);
+  const [autoOpenStepId, setAutoOpenStepId] = useState<string | undefined>(undefined);
 
   // Sync with server-provided initialTaskId (handles initial page load)
   useEffect(() => {
@@ -275,14 +278,20 @@ export function KanbanBoard({
     }
   }, [urlTaskId]);
 
+  // Sync stepId from URL (deep links from the dashboard My Agents panel)
+  useEffect(() => {
+    setAutoOpenStepId(urlStepId);
+  }, [urlStepId]);
+
   // Clear auto-open state once the dialog has been opened and then closed
   const handleAutoOpenConsumed = useCallback(() => {
     setAutoOpenTaskId(undefined);
+    setAutoOpenStepId(undefined);
   }, []);
 
   const autoOpenCtx = useMemo(
-    () => ({ autoOpenTaskId, onAutoOpenConsumed: handleAutoOpenConsumed }),
-    [autoOpenTaskId, handleAutoOpenConsumed]
+    () => ({ autoOpenTaskId, autoOpenStepId, onAutoOpenConsumed: handleAutoOpenConsumed }),
+    [autoOpenTaskId, autoOpenStepId, handleAutoOpenConsumed]
   );
 
   const [columns, setColumns] = useState(initialColumns);

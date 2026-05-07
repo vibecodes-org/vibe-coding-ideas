@@ -34,6 +34,7 @@ import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
 import { IdeaCard } from "@/components/ideas/idea-card";
 import { getActiveKitsWithSteps } from "@/actions/kits";
 import { computeIsActivated } from "@/lib/dashboard-activation";
+import { getAgentStatus, type AgentWorkflowStep } from "@/lib/agent-status";
 import { Button } from "@/components/ui/button";
 import type {
   IdeaWithAuthor,
@@ -179,7 +180,7 @@ export default async function DashboardPage() {
   const allUserIdeaIds = [...new Set([...myIdeaIds, ...collabIdeaIds])];
 
   // Phase 2: Dependent queries
-  const [collabIdeasResult, taskLabelsResult, boardColumnsResult, boardTasksResult, botTasksResult, botActivityResult, displayedTaskCountsResult, activeDiscussionsResult] = await Promise.all([
+  const [collabIdeasResult, taskLabelsResult, boardColumnsResult, boardTasksResult, botTasksResult, botActivityResult, botWorkflowStepsResult, displayedTaskCountsResult, activeDiscussionsResult] = await Promise.all([
     // Collaboration idea details
     collabIdeaIds.length > 0
       ? supabase
@@ -235,6 +236,17 @@ export default async function DashboardPage() {
           .order("created_at", { ascending: false })
           .limit(botUserIds.length * 3)
       : Promise.resolve({ data: [] }),
+    // Active workflow steps assigned to user's bots — drives the workflow-aware
+    // status on the My Agents panel. Only fetch steps in non-terminal states.
+    botUserIds.length > 0
+      ? supabase
+          .from("task_workflow_steps")
+          .select(
+            "id, title, status, started_at, completed_at, position, bot_id, task:board_tasks!task_workflow_steps_task_id_fkey(id, title, archived, idea_id, workflow_step_completed, workflow_step_total, idea:ideas!board_tasks_idea_id_fkey(id, title))"
+          )
+          .in("bot_id", botUserIds)
+          .in("status", ["pending", "in_progress", "failed", "awaiting_approval"])
+      : Promise.resolve({ data: [] }),
     // Task counts for all user ideas (for IdeaCard badge) — covers displayed ideas
     allUserIdeaIds.length > 0
       ? supabase
@@ -271,14 +283,42 @@ export default async function DashboardPage() {
   // Process bot dashboard data
   type BotTaskRow = { id: string; title: string; assignee_id: string; updated_at: string; column: { title: string; is_done_column: boolean }; idea: { id: string; title: string } };
   type BotActivityRow = { actor_id: string; action: string; created_at: string };
+  type BotWorkflowStepRow = {
+    id: string;
+    title: string;
+    status: "pending" | "in_progress" | "failed" | "awaiting_approval";
+    started_at: string | null;
+    completed_at: string | null;
+    position: number;
+    bot_id: string;
+    task: {
+      id: string;
+      title: string;
+      archived: boolean;
+      idea_id: string;
+      workflow_step_completed: number | null;
+      workflow_step_total: number | null;
+      idea: { id: string; title: string };
+    } | null;
+  };
   const botTaskRows = (botTasksResult.data ?? []) as unknown as BotTaskRow[];
   const botActivityRows = (botActivityResult.data ?? []) as BotActivityRow[];
+  const botWorkflowStepRows = (botWorkflowStepsResult.data ?? []) as unknown as BotWorkflowStepRow[];
 
-  // Find most recent non-done-column task per bot
+  // Find most recent non-done-column task per bot (used as the AC6 fallback —
+  // shown only when the bot has no active workflow steps)
+  const botFallbackTask = new Map<string, { taskId: string; taskTitle: string; ideaId: string; ideaTitle: string; columnTitle: string }>();
   const botCurrentTask = new Map<string, DashboardBotTask>();
   for (const t of botTaskRows) {
     if (t.column.is_done_column) continue;
-    if (!botCurrentTask.has(t.assignee_id)) {
+    if (!botFallbackTask.has(t.assignee_id)) {
+      botFallbackTask.set(t.assignee_id, {
+        taskId: t.id,
+        taskTitle: t.title,
+        ideaId: t.idea.id,
+        ideaTitle: t.idea.title,
+        columnTitle: t.column.title,
+      });
       botCurrentTask.set(t.assignee_id, {
         id: t.id,
         title: t.title,
@@ -286,6 +326,28 @@ export default async function DashboardPage() {
         column: { title: t.column.title },
       });
     }
+  }
+
+  // Group workflow steps by bot_id, skipping steps on archived tasks
+  const stepsByBot = new Map<string, AgentWorkflowStep[]>();
+  for (const row of botWorkflowStepRows) {
+    if (!row.task || row.task.archived) continue;
+    const list = stepsByBot.get(row.bot_id) ?? [];
+    list.push({
+      stepId: row.id,
+      stepTitle: row.title,
+      status: row.status,
+      startedAt: row.started_at,
+      completedAt: row.completed_at,
+      position: row.position,
+      taskId: row.task.id,
+      taskTitle: row.task.title,
+      ideaId: row.task.idea.id,
+      ideaTitle: row.task.idea.title,
+      runStepsCompleted: row.task.workflow_step_completed ?? 0,
+      runStepsTotal: row.task.workflow_step_total ?? 0,
+    });
+    stepsByBot.set(row.bot_id, list);
   }
 
   // Find most recent activity per bot
@@ -309,11 +371,16 @@ export default async function DashboardPage() {
       const lastActivityAge = lastActivity
         ? now - new Date(lastActivity.created_at).getTime()
         : Infinity;
+      const currentStatus = getAgentStatus(
+        stepsByBot.get(bot.id) ?? [],
+        botFallbackTask.get(bot.id) ?? null,
+      );
       return {
         ...bot,
         currentTask: botCurrentTask.get(bot.id) ?? null,
         lastActivity,
         isActiveMcpBot: lastActivityAge < MCP_ACTIVE_THRESHOLD_MS,
+        currentStatus,
       };
     })
     .sort((a, b) => {
