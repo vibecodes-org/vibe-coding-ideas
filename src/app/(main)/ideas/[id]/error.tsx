@@ -4,6 +4,7 @@ import * as Sentry from "@sentry/nextjs";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { AlertCircle } from "lucide-react";
+import { logClientError } from "@/actions/error-log";
 
 export default function IdeaDetailError({
   error,
@@ -14,6 +15,14 @@ export default function IdeaDetailError({
 }) {
   useEffect(() => {
     Sentry.captureException(error);
+    void logClientError({
+      message: error.message,
+      stack: error.stack,
+      digest: error.digest,
+      url: typeof window !== "undefined" ? window.location.href : undefined,
+      userAgent: typeof window !== "undefined" ? navigator.userAgent : undefined,
+      source: "error_boundary_idea",
+    }).catch(() => {});
   }, [error]);
 
   return (
