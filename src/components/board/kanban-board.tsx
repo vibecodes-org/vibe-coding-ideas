@@ -352,7 +352,13 @@ export function KanbanBoard({
   const isDragging = !!(activeTask || activeColumn);
   useEdgeScroll(scrollContainerRef, isDragging);
 
-  // Update columns when server data changes (via realtime refresh)
+  // Update columns when server data changes (via realtime refresh).
+  // workflow_active_step_title / workflow_active_agent_name are intentionally
+  // omitted: they get rewritten on every step transition AND on set_agent_identity
+  // mid-step (which doesn't change counts). The count fields above already capture
+  // every meaningful step transition, and the card reads the title/agent strings
+  // off the task prop directly — so they sync on the next count change without
+  // needing to drive a wholesale columns swap of their own.
   const serverKey = useMemo(
     () =>
       JSON.stringify(
@@ -369,8 +375,6 @@ export function KanbanBoard({
             t.workflow_step_in_progress,
             t.workflow_step_failed,
             t.workflow_step_awaiting_approval,
-            t.workflow_active_step_title,
-            t.workflow_active_agent_name,
             t.assignee_id,
             t.title,
             t.description,
@@ -390,18 +394,13 @@ export function KanbanBoard({
   const serverKeyRef = useRef(serverKey);
   serverKeyRef.current = serverKey;
 
-  // Fast-path sync when no recent moves
-  const withinCooldown = Date.now() - lastMoveTimeRef.current < MOVE_COOLDOWN_MS;
-  if (serverKey !== lastServerKey && !activeTask && !activeColumn && pendingOps === 0 && !withinCooldown) {
-    setColumns(initialColumns);
-    setLastServerKey(serverKey);
-  }
-
-  // Deferred sync: wait for cooldown to expire after rapid moves
-  const needsDeferredSync =
-    serverKey !== lastServerKey && !activeTask && !activeColumn && pendingOps === 0 && withinCooldown;
+  // Sync from server data when nothing is in flight. The cooldown lets rapid-fire
+  // optimistic updates settle before a server snapshot can revert them.
+  // Done as an effect (not render-time setState) so it can't trip React's
+  // max-update-depth guard if serverKey churns during heavy realtime activity.
   useEffect(() => {
-    if (!needsDeferredSync) return;
+    if (activeTask || activeColumn || pendingOps > 0) return;
+    if (serverKey === lastServerKey) return;
     const remaining = MOVE_COOLDOWN_MS - (Date.now() - lastMoveTimeRef.current);
     if (remaining <= 0) {
       setColumns(initialColumnsRef.current);
@@ -413,7 +412,7 @@ export function KanbanBoard({
       setLastServerKey(serverKeyRef.current);
     }, remaining + 100);
     return () => clearTimeout(timer);
-  }, [needsDeferredSync]);
+  }, [serverKey, lastServerKey, activeTask, activeColumn, pendingOps]);
 
   // Count archived tasks across all columns
   const archivedCount = useMemo(
