@@ -75,7 +75,7 @@ export function BoardPageTabs({
           </TabsTrigger>
           <TabsTrigger value="agents" className="gap-1.5">
             <Bot className="h-3.5 w-3.5 text-emerald-400" />
-            Agents
+            AI Team
           </TabsTrigger>
         </TabsList>
         <HelpLink
