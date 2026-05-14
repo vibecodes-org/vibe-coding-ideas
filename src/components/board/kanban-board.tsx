@@ -27,7 +27,14 @@ import { BotRolesProvider } from "@/components/bot-roles-context";
 import { BoardColumn } from "./board-column";
 import { AddColumnButton } from "./add-column-button";
 import { BoardToolbar } from "./board-toolbar";
-import { BoardEmptyState } from "./board-empty-state";
+import { BoardEmptyStateContent, BoardEmptyStateReadOnly } from "./board-empty-state";
+import { PlaceholderColumns } from "./placeholder-columns";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { SetupCompletenessBanner } from "@/components/board/setup-completeness-banner";
 import type { IdeaHealth } from "@/lib/idea-health";
 import { BoardOpsContext, type BoardOptimisticOps } from "./board-context";
@@ -929,18 +936,11 @@ export function KanbanBoard({
           className="mb-3"
         />
       )}
-      {showEmptyState ? (
-        <BoardEmptyState
-          canUseAi={canUseAi}
-          hasByokKey={hasByokKey}
-          starterCredits={starterCredits}
-          onAiGenerate={() => setAiGenerateOpen(true)}
-          onDismiss={() => setEmptyStateDismissed(true)}
-          onImport={() => setEmptyStateDismissed(true)}
-          isReadOnly={isReadOnly}
-          hasAgents={ideaAgents.length > 0}
-          hasWorkflows={hasWorkflowTemplates}
-        />
+      {/* Read-only viewers get the simpler message inline; editable boards always render the kanban */}
+      {showEmptyState && isReadOnly ? (
+        <BoardEmptyStateReadOnly />
+      ) : columns.length === 0 ? (
+        <PlaceholderColumns />
       ) : (
         <DndContext
           id="kanban-board"
@@ -1002,6 +1002,35 @@ export function KanbanBoard({
             </DragOverlay>
           )}
         </DndContext>
+      )}
+
+      {/* Empty-state overlay — opens automatically over the (placeholder or real) board */}
+      {!isReadOnly && (
+        <Dialog
+          open={showEmptyState}
+          onOpenChange={(open) => {
+            if (!open) setEmptyStateDismissed(true);
+          }}
+        >
+          <DialogContent
+            className="sm:max-w-md"
+            onPointerDownOutside={(e) => e.preventDefault()}
+          >
+            <DialogHeader className="sr-only">
+              <DialogTitle>Get started with AI</DialogTitle>
+            </DialogHeader>
+            <BoardEmptyStateContent
+              canUseAi={canUseAi}
+              hasByokKey={hasByokKey}
+              starterCredits={starterCredits}
+              onAiGenerate={() => setAiGenerateOpen(true)}
+              onDismiss={() => setEmptyStateDismissed(true)}
+              onImport={() => setEmptyStateDismissed(true)}
+              hasAgents={ideaAgents.length > 0}
+              hasWorkflows={hasWorkflowTemplates}
+            />
+          </DialogContent>
+        </Dialog>
       )}
     </div>
     </BotRolesProvider>
