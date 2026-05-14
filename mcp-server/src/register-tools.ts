@@ -202,8 +202,6 @@ import {
   applyKitMcp,
 } from "./tools/kits";
 import {
-  exportAgentSkill,
-  exportAgentSkillSchema,
   importAgentSkill,
   importAgentSkillSchema,
   getAgentSkillContent,
@@ -1403,21 +1401,7 @@ export function registerTools(
     }
   );
 
-  // --- Agent Skills (SKILL.md import/export) ---
-
-  server.tool(
-    "export_agent_skill",
-    "Export a VibeCodes agent as a SKILL.md file (Agent Skills open standard). Returns the SKILL.md content and suggested filename. The exported file can be used in Claude Code, Cursor, Copilot, and other tools.",
-    exportAgentSkillSchema.shape,
-    async (args: Record<string, unknown>, extra: ServerExtra) => {
-      try {
-        const ctx = await getContext(extra);
-        return jsonResult(await exportAgentSkill(ctx, exportAgentSkillSchema.parse(args)));
-      } catch (e) {
-        return errorResult(e);
-      }
-    }
-  );
+  // --- Agent Skills (SKILL.md import) ---
 
   server.tool(
     "import_agent_skill",

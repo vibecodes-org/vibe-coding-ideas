@@ -10,7 +10,6 @@ import {
   CheckCircle2,
   Lightbulb,
   ExternalLink,
-  FileDown,
   Zap,
   Plus,
   X,
@@ -22,7 +21,6 @@ import { Button } from "@/components/ui/button";
 import { AgentVoteButton } from "./agent-vote-button";
 import { CloneAgentButton } from "./clone-agent-button";
 import { EditAgentDialog } from "./edit-agent-dialog";
-import { ExportSkillDialog } from "./export-skill-dialog";
 import { AddSkillDialog } from "./add-skill-dialog";
 import { parsePromptToFields } from "@/lib/prompt-builder";
 import { cn, getInitials } from "@/lib/utils";
@@ -90,7 +88,6 @@ export function AgentProfile({
   agentSkills,
 }: AgentProfileProps) {
   const [editOpen, setEditOpen] = useState(false);
-  const [exportOpen, setExportOpen] = useState(false);
   const [addSkillOpen, setAddSkillOpen] = useState(false);
   const [removingSkillId, setRemovingSkillId] = useState<string | null>(null);
   const router = useRouter();
@@ -222,25 +219,14 @@ export function AgentProfile({
         {/* Actions */}
         <div className="shrink-0 flex gap-2 self-start">
           {isOwner ? (
-            <>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => setExportOpen(true)}
-              >
-                <FileDown className="mr-1.5 h-3.5 w-3.5" />
-                Export as Skill
-              </Button>
-              <Button
-                variant="outline"
-                size="sm"
-                className="text-xs"
-                onClick={() => setEditOpen(true)}
-              >
-                Edit Profile
-              </Button>
-            </>
+            <Button
+              variant="outline"
+              size="sm"
+              className="text-xs"
+              onClick={() => setEditOpen(true)}
+            >
+              Edit Profile
+            </Button>
           ) : (
             <>
               <AgentVoteButton
@@ -570,16 +556,6 @@ export function AgentProfile({
           bot={bot}
           open={editOpen}
           onOpenChange={setEditOpen}
-        />
-      )}
-
-      {/* Export as Skill dialog */}
-      {isOwner && (
-        <ExportSkillDialog
-          open={exportOpen}
-          onOpenChange={setExportOpen}
-          botId={bot.id}
-          botName={bot.name}
         />
       )}
 

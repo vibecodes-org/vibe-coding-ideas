@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateBio, validateSkills } from "@/lib/validation";
 import { getDefaultSkillsForRole } from "@/lib/agent-skills";
-import { generateSkillMd, parseSkillMd, inferRole, slugifyName } from "@/lib/skill-md";
+import { parseSkillMd, inferRole, slugifyName } from "@/lib/skill-md";
 import type { ParsedSkill } from "@/lib/skill-md";
 import { fetchSkillsFromGitHub } from "@/lib/skills-directory";
 import type { SkillDirectoryEntry } from "@/lib/skills-directory";
@@ -472,31 +472,8 @@ export async function getAgentProfile(
 }
 
 // ---------------------------------------------------------------------------
-// Agent Skills (SKILL.md import/export)
+// Agent Skills (SKILL.md import)
 // ---------------------------------------------------------------------------
-
-export async function exportAgentAsSkill(botId: string): Promise<string> {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) throw new Error("Not authenticated");
-
-  // Allow export if owner OR if agent is published (prompt is already public)
-  const { data: bot, error } = await supabase
-    .from("bot_profiles")
-    .select("id, name, role, system_prompt, bio, skills, owner_id, is_published")
-    .eq("id", botId)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  if (!bot) throw new Error("Agent not found");
-  if (bot.owner_id !== user.id && !bot.is_published) {
-    throw new Error("You can only export your own agents or published agents");
-  }
-
-  return generateSkillMd(bot);
-}
 
 export async function importAgentFromSkill(
   parsed: ParsedSkill,

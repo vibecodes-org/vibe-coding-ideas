@@ -1,8 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import type { McpContext } from "../context";
 import {
-  exportAgentSkill,
-  exportAgentSkillSchema,
   importAgentSkill,
   importAgentSkillSchema,
 } from "./agent-skill";
@@ -42,51 +40,6 @@ function createChain(resolveWith: unknown = null) {
 
   return chain;
 }
-
-const sampleBot = {
-  id: BOT_ID,
-  name: "Atlas",
-  role: "Full Stack Engineer",
-  system_prompt: "## Goal\nBuild features.",
-  bio: "Ship it right",
-  skills: ["TypeScript", "React"],
-  owner_id: USER_ID,
-  is_published: false,
-};
-
-// ---------------------------------------------------------------------------
-// export_agent_skill
-// ---------------------------------------------------------------------------
-
-describe("exportAgentSkill", () => {
-  const params = exportAgentSkillSchema.parse({ agent_id: BOT_ID });
-
-  it("returns SKILL.md content and filename", async () => {
-    const chain = createChain(sampleBot);
-    const ctx: McpContext = {
-      supabase: { from: vi.fn(() => chain) } as unknown as McpContext["supabase"],
-      userId: USER_ID,
-    };
-
-    const result = await exportAgentSkill(ctx, params);
-
-    expect(result.skill_md).toContain("name: atlas");
-    expect(result.skill_md).toContain("source: vibecodes");
-    expect(result.skill_md).toContain(`source_id: ${BOT_ID}`);
-    expect(result.skill_md).toContain("## Goal\nBuild features.");
-    expect(result.filename).toBe("atlas.skill.md");
-  });
-
-  it("throws when agent not found", async () => {
-    const chain = createChain(null);
-    const ctx: McpContext = {
-      supabase: { from: vi.fn(() => chain) } as unknown as McpContext["supabase"],
-      userId: USER_ID,
-    };
-
-    await expect(exportAgentSkill(ctx, params)).rejects.toThrow("Agent not found");
-  });
-});
 
 // ---------------------------------------------------------------------------
 // import_agent_skill

@@ -1,10 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
-  generateSkillMd,
   parseSkillMd,
   slugifyName,
   inferRole,
-  skillFilename,
 } from "./skill-md";
 import type { ParsedSkill } from "./skill-md";
 
@@ -32,69 +30,6 @@ describe("slugifyName", () => {
 
   it("handles empty string", () => {
     expect(slugifyName("")).toBe("");
-  });
-});
-
-describe("generateSkillMd", () => {
-  const fullBot = {
-    id: "abc-123",
-    name: "Atlas",
-    role: "Full Stack Engineer",
-    system_prompt: "## Goal\nDeliver production-ready features.",
-    bio: "Ship it right",
-    skills: ["TypeScript", "React", "Node.js"],
-  };
-
-  it("generates valid SKILL.md with all fields", () => {
-    const md = generateSkillMd(fullBot);
-
-    expect(md).toContain("---");
-    expect(md).toContain("name: atlas");
-    expect(md).toContain("description:");
-    expect(md).toContain("Full Stack Engineer agent");
-    expect(md).toContain("license: MIT");
-    expect(md).toContain("source: vibecodes");
-    expect(md).toContain("source_id: abc-123");
-    expect(md).toContain('role: Full Stack Engineer');
-    expect(md).toContain('bio: Ship it right');
-    expect(md).toContain('tags: ["TypeScript","React","Node.js"]');
-    expect(md).toContain("## Goal\nDeliver production-ready features.");
-  });
-
-  it("handles bot with no role", () => {
-    const md = generateSkillMd({ ...fullBot, role: null });
-    expect(md).toContain("VibeCodes agent");
-    expect(md).not.toContain("role:");
-  });
-
-  it("handles bot with no system prompt", () => {
-    const md = generateSkillMd({ ...fullBot, system_prompt: null });
-    expect(md).toContain("name: atlas");
-    // Body should be empty after frontmatter
-    const parts = md.split("---");
-    expect(parts[2].trim()).toBe("");
-  });
-
-  it("handles bot with no bio", () => {
-    const md = generateSkillMd({ ...fullBot, bio: null });
-    expect(md).not.toContain("bio:");
-  });
-
-  it("handles bot with no skills", () => {
-    const md = generateSkillMd({ ...fullBot, skills: null });
-    expect(md).not.toContain("tags:");
-  });
-
-  it("handles bot with empty skills array", () => {
-    const md = generateSkillMd({ ...fullBot, skills: [] });
-    expect(md).not.toContain("tags:");
-  });
-
-  it("truncates description to 1024 characters", () => {
-    const longPrompt = "x".repeat(2000);
-    const md = generateSkillMd({ ...fullBot, system_prompt: longPrompt });
-    const parsed = parseSkillMd(md);
-    expect(parsed.description.length).toBeLessThanOrEqual(1024);
   });
 });
 
@@ -178,65 +113,6 @@ describe("parseSkillMd", () => {
   });
 });
 
-describe("round-trip", () => {
-  it("generates and parses back to equivalent data", () => {
-    const bot = {
-      id: "test-uuid-123",
-      name: "Sentinel",
-      role: "QA Engineer",
-      system_prompt: "## Goal\nTest everything.\n\n## Expertise\n- E2E testing\n- Cross-browser",
-      bio: "Break it before users do",
-      skills: ["E2E Testing", "Cross-browser", "Accessibility"],
-    };
-
-    const md = generateSkillMd(bot);
-    const parsed = parseSkillMd(md);
-
-    expect(parsed.name).toBe("sentinel");
-    expect(parsed.metadata.source).toBe("vibecodes");
-    expect(parsed.metadata.source_id).toBe("test-uuid-123");
-    expect(parsed.metadata.role).toBe("QA Engineer");
-    expect(parsed.metadata.bio).toBe("Break it before users do");
-    expect(parsed.metadata.tags).toEqual(["E2E Testing", "Cross-browser", "Accessibility"]);
-    expect(parsed.body).toBe(bot.system_prompt);
-  });
-
-  it("round-trips a bot with special characters in bio", () => {
-    const bot = {
-      id: "x",
-      name: "Test Bot",
-      role: "Dev",
-      system_prompt: "Prompt.",
-      bio: 'Loves "clean" code & fast APIs',
-      skills: null,
-    };
-
-    const md = generateSkillMd(bot);
-    const parsed = parseSkillMd(md);
-
-    expect(parsed.metadata.bio).toBe('Loves "clean" code & fast APIs');
-  });
-
-  it("round-trips a bot with newlines in bio", () => {
-    const bot = {
-      id: "y",
-      name: "Multiline Bot",
-      role: "Dev",
-      system_prompt: "Prompt.",
-      bio: "Line one\nLine two",
-      skills: null,
-    };
-
-    const md = generateSkillMd(bot);
-    // Verify the newline is escaped in output
-    expect(md).toContain("\\n");
-    expect(md).not.toMatch(/bio: "Line one\nLine two"/);
-
-    const parsed = parseSkillMd(md);
-    expect(parsed.metadata.bio).toBe("Line one\nLine two");
-  });
-});
-
 describe("inferRole", () => {
   it("returns role from metadata", () => {
     const skill: ParsedSkill = {
@@ -269,12 +145,3 @@ describe("inferRole", () => {
   });
 });
 
-describe("skillFilename", () => {
-  it("generates a filename from agent name", () => {
-    expect(skillFilename("Atlas")).toBe("atlas.skill.md");
-  });
-
-  it("slugifies the name", () => {
-    expect(skillFilename("QA Engineer")).toBe("qa-engineer.skill.md");
-  });
-});

@@ -26,15 +26,6 @@ export interface ParsedSkill {
   body: string;
 }
 
-interface BotForExport {
-  id: string;
-  name: string;
-  role: string | null;
-  system_prompt: string | null;
-  bio: string | null;
-  skills: string[] | null;
-}
-
 /**
  * Slugify a name: "QA Engineer" → "qa-engineer"
  */
@@ -45,40 +36,6 @@ export function slugifyName(name: string): string {
     .replace(/-+/g, "-")
     .replace(/^-|-$/g, "")
     .slice(0, 64);
-}
-
-/**
- * Generate a SKILL.md string from a VibeCodes bot profile.
- */
-export function generateSkillMd(bot: BotForExport): string {
-  const slug = slugifyName(bot.name);
-
-  // Build description: "Role agent — first 200 chars of prompt"
-  const promptSnippet = (bot.system_prompt ?? "").slice(0, 200).replace(/\n/g, " ").trim();
-  const description = bot.role
-    ? `${bot.role} agent${promptSnippet ? ` — ${promptSnippet}` : ""}`
-    : `VibeCodes agent${promptSnippet ? ` — ${promptSnippet}` : ""}`;
-
-  const lines: string[] = ["---"];
-  lines.push(`name: ${slug}`);
-  lines.push(`description: ${yamlEscape(description.slice(0, 1024))}`);
-  lines.push("license: MIT");
-
-  // Metadata block
-  lines.push("metadata:");
-  lines.push("  source: vibecodes");
-  lines.push(`  source_id: ${bot.id}`);
-  if (bot.role) lines.push(`  role: ${yamlEscape(bot.role)}`);
-  if (bot.bio) lines.push(`  bio: ${yamlEscape(bot.bio)}`);
-  if (bot.skills && bot.skills.length > 0) {
-    lines.push(`  tags: ${JSON.stringify(bot.skills)}`);
-  }
-
-  lines.push("---");
-  lines.push("");
-  lines.push(bot.system_prompt ?? "");
-
-  return lines.join("\n");
 }
 
 /**
@@ -160,24 +117,7 @@ export function inferRole(skill: ParsedSkill): string | null {
   return null;
 }
 
-/**
- * Generate a filename for downloading a SKILL.md file.
- */
-export function skillFilename(name: string): string {
-  return `${slugifyName(name)}.skill.md`;
-}
-
 // --- Internal helpers ---
-
-/**
- * Escape a YAML string value. Wraps in quotes if it contains special chars.
- */
-function yamlEscape(value: string): string {
-  if (/[:#\[\]{}&*!|>'"%@`,?]/.test(value) || value.includes("\n")) {
-    return `"${value.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/\n/g, "\\n")}"`;
-  }
-  return value;
-}
 
 /**
  * Parse simple YAML (flat keys + one level of nesting for `metadata:`).

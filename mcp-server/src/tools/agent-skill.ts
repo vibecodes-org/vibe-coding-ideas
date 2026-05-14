@@ -1,12 +1,8 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
-import { generateSkillMd, parseSkillMd, skillFilename, inferRole } from "../lib/skill-md";
+import { parseSkillMd, inferRole } from "../lib/skill-md";
 
 // --- Schemas ---
-
-export const exportAgentSkillSchema = z.object({
-  agent_id: z.string().uuid().describe("The bot profile ID to export as SKILL.md"),
-});
 
 export const importAgentSkillSchema = z.object({
   skill_md_content: z
@@ -22,31 +18,6 @@ export const importAgentSkillSchema = z.object({
 });
 
 // --- Handlers ---
-
-export async function exportAgentSkill(
-  ctx: McpContext,
-  args: z.infer<typeof exportAgentSkillSchema>
-) {
-  const ownerId = ctx.ownerUserId ?? ctx.userId;
-
-  // Allow export if owner OR if agent is published
-  const { data: bot, error } = await ctx.supabase
-    .from("bot_profiles")
-    .select("id, name, role, system_prompt, bio, skills, owner_id, is_published")
-    .eq("id", args.agent_id)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  if (!bot) throw new Error("Agent not found");
-  if (bot.owner_id !== ownerId && !bot.is_published) {
-    throw new Error("You can only export your own agents or published agents");
-  }
-
-  const skillMd = generateSkillMd(bot);
-  const filename = skillFilename(bot.name);
-
-  return { skill_md: skillMd, filename };
-}
 
 export async function importAgentSkill(
   ctx: McpContext,
