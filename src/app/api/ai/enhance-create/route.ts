@@ -105,6 +105,7 @@ Use the answers above to inform your enhanced description. Make the enhancement 
         });
         if (finishReason === "length") {
           logger.warn("AI create enhance output truncated");
+          controller.enqueue(encoder.encode("\n\n__TRUNCATED__"));
         }
         controller.close();
       },
