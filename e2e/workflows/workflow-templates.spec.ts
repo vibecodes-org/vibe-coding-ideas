@@ -18,12 +18,12 @@ test.afterAll(async () => {
 });
 
 test.describe("Workflow Templates", () => {
-  test("should display Board, Workflows and Agents tabs", async ({ userAPage: page }) => {
+  test("should display Board, Workflows and AI Team tabs", async ({ userAPage: page }) => {
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await expect(page.getByRole("tab", { name: "Board" })).toBeVisible();
     await expect(page.getByRole("tab", { name: "Workflows" })).toBeVisible();
-    await expect(page.getByRole("tab", { name: "Agents" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "AI Team" })).toBeVisible();
   });
 
   test("should switch to Workflows tab", async ({ userAPage: page }) => {
@@ -40,9 +40,9 @@ test.describe("Workflow Templates", () => {
     ).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
-  test("should display Agents tab on board", async ({ userAPage: page }) => {
+  test("should display AI Team tab on board", async ({ userAPage: page }) => {
     await page.goto(boardUrl);
     await expect(page.locator("[data-testid^='column-']").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
-    await expect(page.getByRole("tab", { name: "Agents" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "AI Team" })).toBeVisible();
   });
 });
