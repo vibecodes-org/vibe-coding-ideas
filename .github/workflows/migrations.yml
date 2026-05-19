@@ -352,7 +352,7 @@ jobs:
                 '',
                 '### How to apply',
                 `1. Go to [Database Migrations workflow](${workflowUrl})`,
-                '2. Click **Run workflow** → branch \`master\` → target \`production\``,
+                '2. Click **Run workflow** → branch `master` → target `production`',
                 '3. Optionally enable **Dry run** first to preview',
                 '4. Approve the deployment when prompted',
                 '',
