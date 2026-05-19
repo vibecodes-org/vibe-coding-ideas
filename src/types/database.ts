@@ -2227,6 +2227,76 @@ export type Database = {
           },
         ];
       };
+      user_github_connections: {
+        Row: {
+          user_id: string;
+          github_user_id: number;
+          github_login: string;
+          github_avatar_url: string | null;
+          encrypted_access_token: string;
+          scopes: string[];
+          connected_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          github_user_id: number;
+          github_login: string;
+          github_avatar_url?: string | null;
+          encrypted_access_token: string;
+          scopes?: string[];
+          connected_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          github_user_id?: number;
+          github_login?: string;
+          github_avatar_url?: string | null;
+          encrypted_access_token?: string;
+          scopes?: string[];
+          connected_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "user_github_connections_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: true;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      github_oauth_states: {
+        Row: {
+          state: string;
+          user_id: string;
+          return_to: string;
+          created_at: string;
+        };
+        Insert: {
+          state: string;
+          user_id: string;
+          return_to: string;
+          created_at?: string;
+        };
+        Update: {
+          state?: string;
+          user_id?: string;
+          return_to?: string;
+          created_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "github_oauth_states_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       pending_uploads: {
         Row: {
           id: string;

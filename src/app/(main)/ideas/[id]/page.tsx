@@ -467,6 +467,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
       <div className="mt-4 rounded-xl border border-border bg-card p-4 sm:p-5">
         <InlineIdeaBody
           ideaId={idea.id}
+          ideaTitle={idea.title}
           description={idea.description}
           githubUrl={idea.github_url}
           isAuthor={isAuthor}

@@ -10,6 +10,7 @@ import { NotificationSettings } from "@/components/profile/notification-settings
 import { ApiKeySettings } from "@/components/profile/api-key-settings";
 import { BoardColumnSettings } from "@/components/profile/board-column-settings";
 import { McpApiKeys } from "@/components/profile/mcp-api-keys";
+import { GithubConnection } from "@/components/profile/github-connection";
 import Link from "next/link";
 import { Bot } from "lucide-react";
 import { stripMarkdownForMeta } from "@/lib/utils";
@@ -204,6 +205,7 @@ export default async function ProfilePage({ params }: PageProps) {
                 <BoardColumnSettings columns={profileUser.default_board_columns} />
                 <ApiKeySettings hasKey={!!profileUser.encrypted_anthropic_key} />
                 <McpApiKeys />
+                <GithubConnection />
               </div>
               {/* Mobile: Edit Profile visible + rest in dropdown */}
               <div className="contents sm:hidden">

@@ -3,13 +3,14 @@
 import { useState, useRef, useEffect } from "react";
 import { Github, ExternalLink, Pencil, Plus } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
 import { Markdown } from "@/components/ui/markdown";
 import { toast } from "sonner";
 import { updateIdeaFields } from "@/actions/ideas";
+import { GithubLinkDialog } from "./github-link-dialog";
 
 interface InlineIdeaBodyProps {
   ideaId: string;
+  ideaTitle: string;
   description: string;
   githubUrl: string | null;
   isAuthor: boolean;
@@ -17,6 +18,7 @@ interface InlineIdeaBodyProps {
 
 export function InlineIdeaBody({
   ideaId,
+  ideaTitle,
   description: initialDescription,
   githubUrl: initialGithubUrl,
   isAuthor,
@@ -35,8 +37,7 @@ export function InlineIdeaBody({
   }, [initialDescription, editingDescription]);
 
   const [githubUrl, setGithubUrl] = useState(initialGithubUrl ?? "");
-  const [editingGithubUrl, setEditingGithubUrl] = useState(false);
-  const previousGithubRef = useRef(initialGithubUrl ?? "");
+  const [githubDialogOpen, setGithubDialogOpen] = useState(false);
 
   // Description editing
   function startEditingDescription() {
@@ -69,80 +70,58 @@ export function InlineIdeaBody({
     }
   }
 
-  // GitHub URL editing
-  function startEditingGithub() {
+  function openGithubDialog() {
     if (!isAuthor) return;
-    setEditingGithubUrl(true);
+    setGithubDialogOpen(true);
   }
 
-  async function handleGithubBlur() {
-    setEditingGithubUrl(false);
-    const trimmed = githubUrl.trim();
-    if (trimmed === previousGithubRef.current) return;
-    try {
-      await updateIdeaFields(ideaId, { github_url: trimmed || null });
-      previousGithubRef.current = trimmed;
-    } catch {
-      toast.error("Failed to update GitHub URL");
-      setGithubUrl(previousGithubRef.current);
-    }
-  }
-
-  function handleGithubKeyDown(e: React.KeyboardEvent) {
-    if (e.key === "Enter") {
-      e.preventDefault();
-      (e.target as HTMLInputElement).blur();
-    } else if (e.key === "Escape") {
-      setGithubUrl(previousGithubRef.current);
-      setEditingGithubUrl(false);
-    }
+  function handleLinked(url: string) {
+    setGithubUrl(url);
   }
 
   return (
     <div className="space-y-4">
       {/* GitHub URL */}
       {isAuthor ? (
-        editingGithubUrl ? (
-          <div>
-            <Input
-              value={githubUrl}
-              onChange={(e) => setGithubUrl(e.target.value)}
-              onBlur={handleGithubBlur}
-              onKeyDown={handleGithubKeyDown}
-              placeholder="https://github.com/..."
-              autoFocus
-              className="max-w-md"
-            />
-          </div>
-        ) : githubUrl ? (
-          <div className="group/github inline-flex items-center gap-2">
-            <a
-              href={githubUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+        <>
+          {githubUrl ? (
+            <div className="group/github inline-flex items-center gap-2">
+              <a
+                href={githubUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 rounded-lg border border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
+              >
+                <Github className="h-4 w-4" />
+                View Repository
+                <ExternalLink className="h-3 w-3" />
+              </a>
+              <button
+                onClick={openGithubDialog}
+                className="text-muted-foreground opacity-0 group-hover/github:opacity-100 transition-opacity hover:text-foreground"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          ) : (
+            <button
+              onClick={openGithubDialog}
+              className="inline-flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
             >
               <Github className="h-4 w-4" />
-              View Repository
-              <ExternalLink className="h-3 w-3" />
-            </a>
-            <button
-              onClick={startEditingGithub}
-              className="text-muted-foreground opacity-0 group-hover/github:opacity-100 transition-opacity hover:text-foreground"
-            >
-              <Pencil className="h-3.5 w-3.5" />
+              <Plus className="h-3 w-3" />
+              Add GitHub URL
             </button>
-          </div>
-        ) : (
-          <button
-            onClick={startEditingGithub}
-            className="inline-flex items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm text-muted-foreground transition-colors hover:border-primary hover:text-foreground"
-          >
-            <Github className="h-4 w-4" />
-            <Plus className="h-3 w-3" />
-            Add GitHub URL
-          </button>
-        )
+          )}
+          <GithubLinkDialog
+            open={githubDialogOpen}
+            onOpenChange={setGithubDialogOpen}
+            ideaId={ideaId}
+            ideaTitle={ideaTitle}
+            currentUrl={githubUrl || null}
+            onLinked={handleLinked}
+          />
+        </>
       ) : (
         initialGithubUrl && (
           <a
