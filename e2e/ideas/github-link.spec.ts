@@ -143,6 +143,15 @@ test.describe("GitHub link dialog — disconnected state", () => {
 });
 
 test.describe("Profile settings — GitHub connection management", () => {
+  // The standalone GitHub connection button on the profile is a desktop-only
+  // surface (`hidden sm:contents` in profile/[id]/page.tsx); mobile uses the
+  // consolidated Settings menu, which does not expose GitHub. These tests
+  // target that desktop button, so skip them on mobile viewports.
+  test.skip(
+    ({ isMobile }) => !!isMobile,
+    "GitHub connection management is desktop-only on the profile page"
+  );
+
   // Pre-seed a fake connection so the connected-state UI renders.
   // We never actually call the GitHub API in these tests; the dialog renders
   // its connected chrome (login, scopes, Disconnect) directly from the row.
