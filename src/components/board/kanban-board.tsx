@@ -41,6 +41,7 @@ import { BoardOpsContext, type BoardOptimisticOps } from "./board-context";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { moveBoardTask, reorderBoardColumns } from "@/actions/board";
+import { mergeTrustedState, TRUST_WINDOW_MS, type TrustedTaskState } from "./trusted-state";
 import { POSITION_GAP } from "@/lib/constants";
 import { getDueDateStatus } from "@/lib/utils";
 import type {
@@ -318,6 +319,9 @@ export function KanbanBoard({
   // Cooldown after last move to let Realtime catch up before syncing
   const lastMoveTimeRef = useRef(0);
   const MOVE_COOLDOWN_MS = 1500;
+  // Recently-moved tasks we trust over (possibly stale, read-replica-lagged)
+  // server snapshots for a short window. Prevents the drag-drop bounce-back.
+  const trustedTasksRef = useRef(new Map<string, TrustedTaskState>());
 
   // AI Generate dialog state (lifted so both toolbar and empty state can trigger it)
   const [aiGenerateOpen, setAiGenerateOpen] = useState(false);
@@ -408,16 +412,25 @@ export function KanbanBoard({
   useEffect(() => {
     if (activeTask || activeColumn || pendingOps > 0) return;
     if (serverKey === lastServerKey) return;
+    // Merge trusted local moves over the (possibly stale) server snapshot so a
+    // lagging read replica can't revert a move the user just made, then prune
+    // any trusted entries the server has caught up on / that expired.
+    const applySync = () => {
+      const { columns: merged, resolved } = mergeTrustedState(
+        initialColumnsRef.current,
+        trustedTasksRef.current,
+        Date.now()
+      );
+      for (const id of resolved) trustedTasksRef.current.delete(id);
+      setColumns(merged);
+      setLastServerKey(serverKeyRef.current);
+    };
     const remaining = MOVE_COOLDOWN_MS - (Date.now() - lastMoveTimeRef.current);
     if (remaining <= 0) {
-      setColumns(initialColumnsRef.current);
-      setLastServerKey(serverKeyRef.current);
+      applySync();
       return;
     }
-    const timer = setTimeout(() => {
-      setColumns(initialColumnsRef.current);
-      setLastServerKey(serverKeyRef.current);
-    }, remaining + 100);
+    const timer = setTimeout(applySync, remaining + 100);
     return () => clearTimeout(timer);
   }, [serverKey, lastServerKey, activeTask, activeColumn, pendingOps]);
 
@@ -837,11 +850,18 @@ export function KanbanBoard({
         newPosition = Math.round((reordered[taskIndex - 1].position + reordered[taskIndex + 1].position) / 2);
       }
 
+      // Trust this move over stale server snapshots for the next few seconds.
+      trustedTasksRef.current.set(String(active.id), {
+        columnId: activeColumnId,
+        position: newPosition,
+        trustedUntil: Date.now() + TRUST_WINDOW_MS,
+      });
       setPendingOps((n) => n + 1);
       try {
         await moveBoardTask(String(active.id), ideaId, activeColumnId, newPosition);
       } catch {
         toast.error("Failed to move task");
+        trustedTasksRef.current.delete(String(active.id)); // don't trust a rejected move
         setLastServerKey(""); // force re-sync when pendingOps reaches 0
       } finally {
         setPendingOps((n) => n - 1);
