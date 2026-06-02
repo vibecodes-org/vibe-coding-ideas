@@ -22,7 +22,7 @@ import { TaskWorkflowSection } from "./task-workflow-section";
 import { TaskAttachmentsSection } from "./task-attachments-section";
 import { Markdown } from "@/components/ui/markdown";
 import { MentionAutocomplete } from "./mention-autocomplete";
-import { shouldSyncFieldFromProp } from "./task-sync";
+import { shouldSyncFieldFromProp, shouldPersistFieldEdit } from "./task-sync";
 import { updateBoardTask, deleteBoardTask } from "@/actions/board";
 import { enhanceTaskDescription } from "@/actions/ai";
 import { useBoardOps } from "./board-context";
@@ -96,6 +96,12 @@ export function TaskDetailDialog({
   const [previewDesc, setPreviewDesc] = useState(false);
   const skipBlurRef = useRef(false);
   const descriptionTextareaRef = useRef<HTMLTextAreaElement>(null);
+  // Track whether the current title/description buffer came from USER input (true)
+  // or from a prop-sync (false). The debounced auto-save only persists user edits,
+  // so a stale Realtime refresh written into the buffer can never be re-saved over
+  // newer content — the "description update bug" data-loss. See shouldPersistFieldEdit.
+  const titleDirtyRef = useRef(false);
+  const descDirtyRef = useRef(false);
 
   // @mention state for description
   const [descMentionQuery, setDescMentionQuery] = useState<string | null>(null);
@@ -119,9 +125,11 @@ export function TaskDetailDialog({
   const [lastTaskArchived, setLastTaskArchived] = useState(task.archived);
 
   if (task.id !== lastTaskId) {
-    // Different task — full reset
+    // Different task — full reset (prop-driven, so buffers are not user-dirty)
     setTitle(task.title);
     setDescription(task.description ?? "");
+    titleDirtyRef.current = false;
+    descDirtyRef.current = false;
     setLocalAssigneeId(task.assignee_id);
     setIsArchived(task.archived);
     setEditingDescription(false);
@@ -143,6 +151,7 @@ export function TaskDetailDialog({
       })
     ) {
       setDescription(task.description ?? "");
+      descDirtyRef.current = false; // value came from the prop, not user input
       setLastTaskDesc(task.description);
     }
     if (
@@ -153,6 +162,7 @@ export function TaskDetailDialog({
       })
     ) {
       setTitle(task.title);
+      titleDirtyRef.current = false; // value came from the prop, not user input
       setLastTaskTitle(task.title);
     }
     if (task.assignee_id !== lastTaskAssigneeId) {
@@ -181,9 +191,11 @@ export function TaskDetailDialog({
       const trimmed = v.trim();
       if (!trimmed) {
         setTitle(task.title);
+        titleDirtyRef.current = false;
         return;
       }
-      if (trimmed === task.title) return;
+      // Never persist a value the prop-sync wrote into the buffer — only user edits.
+      if (!shouldPersistFieldEdit({ dirty: titleDirtyRef.current, nextValue: trimmed, serverValue: task.title })) return;
       setSavingTitle(true);
       try {
         await updateBoardTask(task.id, ideaId, { title: trimmed });
@@ -194,6 +206,7 @@ export function TaskDetailDialog({
       } catch {
         toast.error("Failed to update title");
         setTitle(task.title);
+        titleDirtyRef.current = false;
       } finally {
         setSavingTitle(false);
       }
@@ -217,6 +230,7 @@ export function TaskDetailDialog({
 
   function handleDescInputChange(e: React.ChangeEvent<HTMLTextAreaElement>) {
     const value = e.target.value;
+    descDirtyRef.current = true;
     setDescription(value);
     detectDescMention(value, e.target.selectionStart);
   }
@@ -234,6 +248,7 @@ export function TaskDetailDialog({
 
     const name = user.full_name ?? user.email;
     const newText = textBeforeCursor.slice(0, atIndex) + `@${name} ` + textAfterCursor;
+    descDirtyRef.current = true;
     setDescription(newText);
     setDescMentionQuery(null);
     setDescMentionedUserIds((prev) => new Set(prev).add(user.id));
@@ -268,7 +283,9 @@ export function TaskDetailDialog({
     skip: isReadOnly,
     onSave: async (v: string) => {
       const newDesc = v.trim() || null;
-      if (newDesc === (task.description ?? null)) return;
+      // Never persist a value the prop-sync wrote into the buffer — only user edits.
+      // This breaks the stale-refresh → re-save loop behind the description data-loss.
+      if (!shouldPersistFieldEdit({ dirty: descDirtyRef.current, nextValue: newDesc, serverValue: task.description ?? null })) return;
       const savedMentionedUserIds = new Set(descMentionedUserIds);
       setDescMentionedUserIds(new Set());
       setSavingDesc(true);
@@ -299,6 +316,7 @@ export function TaskDetailDialog({
       } catch {
         toast.error("Failed to update description");
         setDescription(task.description ?? "");
+        descDirtyRef.current = false;
       } finally {
         setSavingDesc(false);
       }
@@ -323,6 +341,7 @@ export function TaskDetailDialog({
     setEnhancing(true);
     try {
       const result = await enhanceTaskDescription(ideaId, title.trim(), description.trim());
+      descDirtyRef.current = true; // user-initiated edit — should be persisted
       setDescription(result.enhanced);
       toast.success("Description enhanced");
     } catch (err) {
@@ -548,7 +567,10 @@ export function TaskDetailDialog({
             <div className="flex items-start gap-2">
               <Textarea
                 value={title}
-                onChange={(e) => setTitle(e.target.value)}
+                onChange={(e) => {
+                  titleDirtyRef.current = true;
+                  setTitle(e.target.value);
+                }}
                 onBlur={handleTitleBlur}
                 onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); e.currentTarget.blur(); } }}
                 className="min-h-0 flex-1 resize-none border-none p-0 text-lg font-semibold shadow-none focus-visible:ring-0"

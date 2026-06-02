@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { shouldSyncFieldFromProp } from "./task-sync";
+import { shouldSyncFieldFromProp, shouldPersistFieldEdit } from "./task-sync";
 
 describe("shouldSyncFieldFromProp", () => {
   it("syncs when the prop value changed and the field is idle", () => {
@@ -59,5 +59,34 @@ describe("shouldSyncFieldFromProp", () => {
         isSaving: false,
       })
     ).toBe(true);
+  });
+});
+
+describe("shouldPersistFieldEdit", () => {
+  it("persists a user edit that differs from the server value", () => {
+    expect(
+      shouldPersistFieldEdit({ dirty: true, nextValue: "new text", serverValue: "old" })
+    ).toBe(true);
+  });
+
+  // Regression: the "description update bug" data-loss. A stale Realtime refresh
+  // written into the buffer by the prop-sync (dirty=false) must NEVER be persisted,
+  // even though it differs from the server value — otherwise it overwrites newer text.
+  it("does NOT persist a value the prop-sync wrote (not user-dirty)", () => {
+    expect(
+      shouldPersistFieldEdit({ dirty: false, nextValue: "stale-from-realtime", serverValue: "newer-good-value" })
+    ).toBe(false);
+  });
+
+  it("does not persist a no-op (value already equals server)", () => {
+    expect(
+      shouldPersistFieldEdit({ dirty: true, nextValue: "same", serverValue: "same" })
+    ).toBe(false);
+  });
+
+  it("handles null values (cleared description)", () => {
+    expect(shouldPersistFieldEdit({ dirty: true, nextValue: null, serverValue: "had text" })).toBe(true);
+    expect(shouldPersistFieldEdit({ dirty: true, nextValue: null, serverValue: null })).toBe(false);
+    expect(shouldPersistFieldEdit({ dirty: false, nextValue: null, serverValue: "had text" })).toBe(false);
   });
 });
