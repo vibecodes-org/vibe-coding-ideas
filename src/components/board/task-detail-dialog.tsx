@@ -22,6 +22,7 @@ import { TaskWorkflowSection } from "./task-workflow-section";
 import { TaskAttachmentsSection } from "./task-attachments-section";
 import { Markdown } from "@/components/ui/markdown";
 import { MentionAutocomplete } from "./mention-autocomplete";
+import { shouldSyncFieldFromProp } from "./task-sync";
 import { updateBoardTask, deleteBoardTask } from "@/actions/board";
 import { enhanceTaskDescription } from "@/actions/ai";
 import { useBoardOps } from "./board-context";
@@ -130,12 +131,27 @@ export function TaskDetailDialog({
     setLastTaskAssigneeId(task.assignee_id);
     setLastTaskArchived(task.archived);
   } else {
-    // Same task — sync fields changed externally (only if user isn't actively editing)
-    if (task.description !== lastTaskDesc && !editingDescription) {
+    // Same task — sync fields changed externally, but never while the user is
+    // editing or a save is in flight (a stale Realtime refresh landing during the
+    // blur→save window must not clobber freshly-typed text — "description update bug").
+    if (
+      shouldSyncFieldFromProp({
+        incoming: task.description,
+        lastSynced: lastTaskDesc,
+        isEditing: editingDescription,
+        isSaving: savingDesc,
+      })
+    ) {
       setDescription(task.description ?? "");
       setLastTaskDesc(task.description);
     }
-    if (task.title !== lastTaskTitle && !savingTitle) {
+    if (
+      shouldSyncFieldFromProp({
+        incoming: task.title,
+        lastSynced: lastTaskTitle,
+        isSaving: savingTitle,
+      })
+    ) {
       setTitle(task.title);
       setLastTaskTitle(task.title);
     }
