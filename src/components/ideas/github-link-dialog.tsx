@@ -23,7 +23,7 @@ import {
   type GithubConnectionInfo,
   type RepoSummary,
 } from "@/actions/github";
-import { toRepoName } from "@/lib/github";
+import { toRepoName, parseRepoUrl } from "@/lib/github";
 
 interface GithubLinkDialogProps {
   open: boolean;
@@ -195,9 +195,17 @@ export function GithubLinkDialog({
   }
 
   function handleManualSave() {
+    // Validate client-side so the user gets a specific message. Server-action
+    // error messages are masked in production builds, so relying on the thrown
+    // message ("Not a valid GitHub repository URL") never reaches the toast.
+    const normalized = parseRepoUrl(manualUrl);
+    if (!normalized) {
+      toast.error("Not a valid GitHub repository URL");
+      return;
+    }
     startTransition(async () => {
       try {
-        const url = await linkRepoToIdea(ideaId, manualUrl.trim(), "manual");
+        const url = await linkRepoToIdea(ideaId, normalized, "manual");
         onLinked(url);
         onOpenChange(false);
         toast.success("Repository linked");
