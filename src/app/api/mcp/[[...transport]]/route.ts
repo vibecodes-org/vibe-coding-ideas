@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { registerTools } from "../../../../../mcp-server/src/register-tools";
 import { instrumentServer } from "../../../../../mcp-server/src/instrument";
+import { resolveActiveBotId } from "../../../../../mcp-server/src/bot-identity";
 import { logger } from "@/lib/logger";
 import type { McpContext } from "../../../../../mcp-server/src/context";
 import type { Database } from "@/types/database";
@@ -68,18 +69,16 @@ async function getSessionForApiKey(userId: string): Promise<string | null> {
 
 const handler = createMcpHandler(
   (server) => {
-    // Per-connection mutable bot identity (set by set_bot_identity tool)
-    let activeBotId: string | null = null;
-    let identityInitialized = false;
-
     const instrumentedServer = instrumentServer(
       server,
       async (extra) => {
         const authInfo = extra.authInfo;
         if (!authInfo) throw new Error("Authentication required");
         const realUserId = authInfo.extra?.userId as string;
-        // Lightweight context just for identity — not the full per-request client
-        return { supabase: serviceClient, userId: activeBotId || realUserId, ownerUserId: realUserId } as McpContext;
+        // Resolve identity from the DB per call (source of truth) so tool-log
+        // attribution matches the acting agent. Not cached — see resolveActiveBotId.
+        const activeBotId = await resolveActiveBotId(serviceClient, realUserId);
+        return { supabase: serviceClient, userId: activeBotId ?? realUserId, ownerUserId: realUserId } as McpContext;
       },
       (entry) => {
         serviceClient
@@ -125,37 +124,23 @@ const handler = createMcpHandler(
           }
         );
 
-        // Lazily read persisted bot identity on first tool call
-        if (!identityInitialized) {
-          identityInitialized = true;
-          const { data } = await supabase
-            .from("users")
-            .select("active_bot_id")
-            .eq("id", realUserId)
-            .maybeSingle();
-
-          if (data?.active_bot_id) {
-            const { data: bot } = await supabase
-              .from("bot_profiles")
-              .select("id, is_active")
-              .eq("id", data.active_bot_id)
-              .maybeSingle();
-
-            if (bot?.is_active) {
-              activeBotId = bot.id;
-            }
-          }
-        }
+        // Resolve persisted bot identity from the DB on EVERY tool call — it is
+        // the single source of truth (users.active_bot_id, written by
+        // set_agent_identity). Never cache it in instance memory: the remote MCP
+        // runs on serverless instances that fan out across requests, so a cached
+        // identity goes stale when a later call lands on a different instance —
+        // which previously caused spurious complete_step identity mismatches.
+        const activeBotId = await resolveActiveBotId(supabase, realUserId);
 
         return {
           supabase,
-          userId: activeBotId || realUserId,
+          userId: activeBotId ?? realUserId,
           ownerUserId: realUserId,
         } satisfies McpContext;
       },
-      (botId) => {
-        activeBotId = botId;
-      }
+      // Identity is resolved from the DB per request, so there is no in-memory
+      // state to update here. set_agent_identity persists to users.active_bot_id.
+      () => {}
     );
   },
   {

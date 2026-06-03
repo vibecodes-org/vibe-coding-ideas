@@ -9,7 +9,10 @@
  * must use ctx.ownerUserId ?? ctx.userId, NOT ctx.userId alone.
  */
 import { describe, it, expect, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { McpContext } from "./context";
+import type { Database } from "../../src/types/database";
+import { resolveActiveBotId } from "./bot-identity";
 
 import { listBots, createBot } from "./tools/bots";
 import {
@@ -364,5 +367,79 @@ describe("bot identity context — bot-identity operations", () => {
       expect(commentInsert).toBeDefined();
       expect(commentInsert.author_id).toBe(BOT_ID);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveActiveBotId — per-request identity resolution from the DB
+// ---------------------------------------------------------------------------
+
+/**
+ * Build a Supabase client mock whose `.from("users")` resolves to the given
+ * active_bot_id and `.from("bot_profiles")` resolves to the given bot row.
+ * Records which tables were queried so we can assert read behaviour.
+ */
+function resolveClient(opts: {
+  activeBotId: string | null;
+  bot?: { id: string; is_active: boolean } | null;
+}) {
+  const tablesQueried: string[] = [];
+  const client = {
+    from: (table: string) => {
+      tablesQueried.push(table);
+      const data =
+        table === "users"
+          ? { active_bot_id: opts.activeBotId }
+          : (opts.bot ?? null);
+      const chain: Record<string, unknown> = {};
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn(() => chain);
+      chain.maybeSingle = vi.fn(() => Promise.resolve({ data, error: null }));
+      return chain;
+    },
+  } as unknown as SupabaseClient<Database>;
+  return { client, tablesQueried };
+}
+
+describe("resolveActiveBotId", () => {
+  it("returns null when the user has no active_bot_id (acts as owner)", async () => {
+    const { client, tablesQueried } = resolveClient({ activeBotId: null });
+    const result = await resolveActiveBotId(client, HUMAN_ID);
+    expect(result).toBeNull();
+    // Short-circuits before querying bot_profiles
+    expect(tablesQueried).toEqual(["users"]);
+  });
+
+  it("returns the bot id when the active bot exists and is active", async () => {
+    const { client, tablesQueried } = resolveClient({
+      activeBotId: BOT_ID,
+      bot: { id: BOT_ID, is_active: true },
+    });
+    const result = await resolveActiveBotId(client, HUMAN_ID);
+    expect(result).toBe(BOT_ID);
+    expect(tablesQueried).toEqual(["users", "bot_profiles"]);
+  });
+
+  it("returns null when the active bot is inactive (falls back to owner)", async () => {
+    const { client } = resolveClient({
+      activeBotId: BOT_ID,
+      bot: { id: BOT_ID, is_active: false },
+    });
+    expect(await resolveActiveBotId(client, HUMAN_ID)).toBeNull();
+  });
+
+  it("returns null when active_bot_id points to a missing bot row", async () => {
+    const { client } = resolveClient({ activeBotId: BOT_ID, bot: null });
+    expect(await resolveActiveBotId(client, HUMAN_ID)).toBeNull();
+  });
+
+  it("reads the DB on every call — no caching across calls", async () => {
+    // First call: bot active. Second call (after a hypothetical identity switch
+    // to none): must reflect the new DB state, not a cached value.
+    const active = resolveClient({ activeBotId: BOT_ID, bot: { id: BOT_ID, is_active: true } });
+    expect(await resolveActiveBotId(active.client, HUMAN_ID)).toBe(BOT_ID);
+
+    const cleared = resolveClient({ activeBotId: null });
+    expect(await resolveActiveBotId(cleared.client, HUMAN_ID)).toBeNull();
   });
 });
