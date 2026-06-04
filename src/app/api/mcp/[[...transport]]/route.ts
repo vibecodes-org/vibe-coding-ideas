@@ -68,21 +68,22 @@ async function getSessionForApiKey(userId: string): Promise<string | null> {
 }
 
 /**
- * Derive a per-connection key from the caller's bearer token so concurrent MCP
+ * Derive a per-connection key from the caller's JWT so concurrent MCP
  * connections (same user account, different Claude Code sessions) get isolated
  * agent identities.
  *
- * Deliberately a hash of the TOKEN, not the JWT's `session_id` claim: the OAuth
- * token endpoint mints every client's tokens by refreshing the user's browser
- * Supabase session (token/route.ts), so all of a user's MCP connections share
- * one auth session and the `session_id` claim does NOT discriminate them —
- * verified empirically (concurrent sessions clobbered each other's rows). Each
- * code exchange / refresh DOES mint a distinct JWT string per client, so the
- * token hash is unique per connection and stable until that client's ~hourly
- * token refresh (after which the agent simply re-sets its identity — the
- * workflow protocol already sets identity before every step).
+ * The OAuth token endpoint mints a DEDICATED Supabase session per MCP client
+ * (api/oauth/token — mintSessionForUser), so the `session_id` claim uniquely
+ * identifies the connection and is stable across that client's token refreshes.
+ * (Before that change, all of a user's clients shared one browser-derived
+ * session — and even identical token strings — so neither the claim nor a
+ * token hash could discriminate them.) Falls back to a hash of the raw token
+ * for credentials without the claim.
  */
 function sessionKeyFromToken(token: string): string {
+  const payload = decodeJwtPayload(token);
+  const sid = payload?.session_id;
+  if (typeof sid === "string" && sid.length > 0) return sid;
   return createHash("sha256").update(token).digest("hex");
 }
 

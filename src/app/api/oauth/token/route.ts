@@ -26,6 +26,43 @@ function sha256(input: string): Buffer {
   return crypto.createHash("sha256").update(input).digest();
 }
 
+/**
+ * Mint a brand-new Supabase session for the user via the admin magic-link flow
+ * (no email is sent) — the same pattern the MCP route uses for API keys.
+ *
+ * Each MCP client that completes the code exchange gets its OWN auth session:
+ * its own `session_id` claim and its own refresh-token chain. Previously this
+ * endpoint refreshed the user's browser session (authCode.supabase_refresh_token),
+ * which meant every MCP client connected by the same user shared one session
+ * and converged on identical access tokens — making concurrent connections
+ * indistinguishable to the server and breaking per-connection agent identity
+ * (concurrent Claude Code sessions clobbered each other's active bot).
+ */
+async function mintSessionForUser(userId: string) {
+  const serviceClient = getServiceClient();
+
+  const { data: { user }, error: userError } =
+    await serviceClient.auth.admin.getUserById(userId);
+  if (userError || !user?.email) return null;
+
+  const { data: linkData, error: linkError } =
+    await serviceClient.auth.admin.generateLink({ type: "magiclink", email: user.email });
+  if (linkError || !linkData.properties?.email_otp) return null;
+
+  const anonClient = createClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+  );
+  const { data: sessionData, error: otpError } = await anonClient.auth.verifyOtp({
+    email: user.email,
+    token: linkData.properties.email_otp,
+    type: "magiclink",
+  });
+  if (otpError || !sessionData.session) return null;
+
+  return sessionData.session;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.formData();
@@ -127,28 +164,22 @@ async function handleAuthorizationCode(body: FormData) {
     .update({ used: true })
     .eq("code", code);
 
-  // Refresh the session to get fresh tokens with full TTL
-  const anonClient = createClient<Database>(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  );
+  // Mint a fresh, client-specific Supabase session. Deliberately NOT a refresh
+  // of the user's browser session — see mintSessionForUser for why.
+  const session = await mintSessionForUser(authCode.user_id);
 
-  const { data: refreshed, error: refreshError } = await anonClient.auth.refreshSession({
-    refresh_token: authCode.supabase_refresh_token,
-  });
-
-  if (refreshError || !refreshed.session) {
+  if (!session) {
     return jsonResponse(
-      { error: "invalid_grant", error_description: "Session expired — please re-authenticate" },
+      { error: "invalid_grant", error_description: "Failed to establish session — please re-authenticate" },
       400
     );
   }
 
   return jsonResponse({
-    access_token: refreshed.session.access_token,
+    access_token: session.access_token,
     token_type: "bearer",
-    expires_in: refreshed.session.expires_in,
-    refresh_token: refreshed.session.refresh_token,
+    expires_in: session.expires_in,
+    refresh_token: session.refresh_token,
     scope: authCode.scope || "mcp:tools",
   });
 }

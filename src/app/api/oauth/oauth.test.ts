@@ -4,10 +4,21 @@ import crypto from "crypto";
 // --- Mock setup ---
 
  
-const { mockFrom, mockAuthGetUser, mockAuthRefreshSession, makeChain } = vi.hoisted(() => {
+const {
+  mockFrom,
+  mockAuthGetUser,
+  mockAuthRefreshSession,
+  mockAdminGetUserById,
+  mockAdminGenerateLink,
+  mockAuthVerifyOtp,
+  makeChain,
+} = vi.hoisted(() => {
   const mockFrom = vi.fn();
   const mockAuthGetUser = vi.fn();
   const mockAuthRefreshSession = vi.fn();
+  const mockAdminGetUserById = vi.fn();
+  const mockAdminGenerateLink = vi.fn();
+  const mockAuthVerifyOtp = vi.fn();
 
   function makeChain(result: { data: unknown; error: unknown } = { data: null, error: null }) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -26,7 +37,15 @@ const { mockFrom, mockAuthGetUser, mockAuthRefreshSession, makeChain } = vi.hois
     return chain;
   }
 
-  return { mockFrom, mockAuthGetUser, mockAuthRefreshSession, makeChain };
+  return {
+    mockFrom,
+    mockAuthGetUser,
+    mockAuthRefreshSession,
+    mockAdminGetUserById,
+    mockAdminGenerateLink,
+    mockAuthVerifyOtp,
+    makeChain,
+  };
 });
 
 vi.mock("@supabase/supabase-js", () => ({
@@ -35,6 +54,11 @@ vi.mock("@supabase/supabase-js", () => ({
     auth: {
       getUser: mockAuthGetUser,
       refreshSession: mockAuthRefreshSession,
+      verifyOtp: mockAuthVerifyOtp,
+      admin: {
+        getUserById: mockAdminGetUserById,
+        generateLink: mockAdminGenerateLink,
+      },
     },
   })),
 }));
@@ -82,12 +106,33 @@ function makeTokenRequest(fields: Record<string, string>) {
   });
 }
 
+/** Mock the per-client session mint (admin magic-link flow) succeeding. */
+function mockSuccessfulMint(
+  session = { access_token: "minted-token", refresh_token: "minted-refresh", expires_in: 3600 }
+) {
+  mockAdminGetUserById.mockResolvedValue({
+    data: { user: { id: "test-user-id", email: "user@test.com" } },
+    error: null,
+  });
+  mockAdminGenerateLink.mockResolvedValue({
+    data: { properties: { email_otp: "123456" } },
+    error: null,
+  });
+  mockAuthVerifyOtp.mockResolvedValue({
+    data: { session },
+    error: null,
+  });
+}
+
 // --- Tests ---
 
 beforeEach(() => {
   mockFrom.mockReset();
   mockAuthGetUser.mockReset();
   mockAuthRefreshSession.mockReset();
+  mockAdminGetUserById.mockReset();
+  mockAdminGenerateLink.mockReset();
+  mockAuthVerifyOtp.mockReset();
   process.env.NEXT_PUBLIC_SUPABASE_URL = "https://test.supabase.co";
   process.env.SUPABASE_SERVICE_ROLE_KEY = "test-service-key";
   process.env.NEXT_PUBLIC_APP_URL = "https://test.vibecodes.app";
@@ -328,21 +373,16 @@ describe("GET /api/oauth/authorize", () => {
 // ==================== /api/oauth/token (authorization_code) ====================
 
 describe("POST /api/oauth/token (authorization_code)", () => {
-  it("exchanges valid authorization code with PKCE and returns fresh tokens", async () => {
+  it("exchanges valid authorization code with PKCE and returns freshly minted tokens", async () => {
     const authCode = makeAuthCode();
     const codeChain = makeChain({ data: authCode, error: null });
     const updateChain = makeChain({ data: null, error: null });
     mockFrom.mockReturnValueOnce(codeChain).mockReturnValueOnce(updateChain);
 
-    mockAuthRefreshSession.mockResolvedValue({
-      data: {
-        session: {
-          access_token: "fresh-access-token",
-          refresh_token: "fresh-refresh-token",
-          expires_in: 3600,
-        },
-      },
-      error: null,
+    mockSuccessfulMint({
+      access_token: "fresh-access-token",
+      refresh_token: "fresh-refresh-token",
+      expires_in: 3600,
     });
 
     const request = makeTokenRequest({
@@ -364,15 +404,24 @@ describe("POST /api/oauth/token (authorization_code)", () => {
     expect(body.scope).toBe("mcp:tools");
   });
 
-  it("returns error if refresh fails instead of stale tokens", async () => {
+  it("returns error if session minting fails instead of stale tokens", async () => {
     const authCode = makeAuthCode();
     const codeChain = makeChain({ data: authCode, error: null });
     const updateChain = makeChain({ data: null, error: null });
     mockFrom.mockReturnValueOnce(codeChain).mockReturnValueOnce(updateChain);
 
-    mockAuthRefreshSession.mockResolvedValue({
+    // Mint fails at the OTP-exchange stage
+    mockAdminGetUserById.mockResolvedValue({
+      data: { user: { id: "test-user-id", email: "user@test.com" } },
+      error: null,
+    });
+    mockAdminGenerateLink.mockResolvedValue({
+      data: { properties: { email_otp: "123456" } },
+      error: null,
+    });
+    mockAuthVerifyOtp.mockResolvedValue({
       data: { session: null },
-      error: { message: "Refresh failed" },
+      error: { message: "OTP exchange failed" },
     });
 
     const request = makeTokenRequest({
@@ -522,17 +571,7 @@ describe("POST /api/oauth/token (authorization_code)", () => {
     const codeChain = makeChain({ data: authCode, error: null });
     const updateChain = makeChain({ data: null, error: null });
     mockFrom.mockReturnValueOnce(codeChain).mockReturnValueOnce(updateChain);
-
-    mockAuthRefreshSession.mockResolvedValue({
-      data: {
-        session: {
-          access_token: "fresh-token",
-          refresh_token: "fresh-refresh",
-          expires_in: 3600,
-        },
-      },
-      error: null,
-    });
+    mockSuccessfulMint();
 
     const request = makeTokenRequest({
       grant_type: "authorization_code",
@@ -546,6 +585,62 @@ describe("POST /api/oauth/token (authorization_code)", () => {
     // Verify the update chain was used to mark code as used
     expect(updateChain.update).toHaveBeenCalledWith({ used: true });
     expect(updateChain.eq).toHaveBeenCalledWith("code", "test-auth-code");
+  });
+
+  it("mints a NEW per-client session — never refreshes the user's browser session", async () => {
+    const authCode = makeAuthCode();
+    const codeChain = makeChain({ data: authCode, error: null });
+    const updateChain = makeChain({ data: null, error: null });
+    mockFrom.mockReturnValueOnce(codeChain).mockReturnValueOnce(updateChain);
+    mockSuccessfulMint();
+
+    const response = await tokenPOST(
+      makeTokenRequest({
+        grant_type: "authorization_code",
+        code: "test-auth-code",
+        code_verifier: CODE_VERIFIER,
+        client_id: "test-client-id",
+      })
+    );
+
+    expect(response.status).toBe(200);
+    const body = await response.json();
+    expect(body.access_token).toBe("minted-token");
+    expect(body.refresh_token).toBe("minted-refresh");
+    expect(body.expires_in).toBe(3600);
+
+    // Regression guard: concurrent MCP clients must not share the user's
+    // browser session — exchanging a code mints a dedicated session instead of
+    // refreshing authCode.supabase_refresh_token. (Shared sessions made all of
+    // a user's connections converge on identical tokens, so per-connection
+    // agent identity could not work.)
+    expect(mockAuthRefreshSession).not.toHaveBeenCalled();
+    expect(mockAdminGetUserById).toHaveBeenCalledWith("test-user-id");
+    expect(mockAdminGenerateLink).toHaveBeenCalled();
+    expect(mockAuthVerifyOtp).toHaveBeenCalled();
+  });
+
+  it("returns invalid_grant when session minting fails", async () => {
+    const authCode = makeAuthCode();
+    const codeChain = makeChain({ data: authCode, error: null });
+    const updateChain = makeChain({ data: null, error: null });
+    mockFrom.mockReturnValueOnce(codeChain).mockReturnValueOnce(updateChain);
+
+    // Mint fails at the first step (user lookup)
+    mockAdminGetUserById.mockResolvedValue({ data: { user: null }, error: { message: "not found" } });
+
+    const response = await tokenPOST(
+      makeTokenRequest({
+        grant_type: "authorization_code",
+        code: "test-auth-code",
+        code_verifier: CODE_VERIFIER,
+        client_id: "test-client-id",
+      })
+    );
+
+    expect(response.status).toBe(400);
+    const body = await response.json();
+    expect(body.error).toBe("invalid_grant");
   });
 });
 
