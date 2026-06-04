@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Claim-Token Protocol — Design Document (Rev 3)</title>
+<style>
+  :root {
+    --bg: #0f1115; --surface: #171a21; --surface2: #1f242e;
+    --text: #e6e9ef; --muted: #9aa3b2; --accent: #5eead4;
+    --good: #4ade80; --bad: #f87171; --warn: #fbbf24; --line: #2a313d;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 2rem 1rem 5rem; }
+  main { max-width: 960px; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.2rem; margin: 2.4rem 0 .8rem; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: .4rem; }
+  h3 { font-size: 1rem; margin: 1.4rem 0 .5rem; }
+  .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1.5rem; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.25rem; margin: .8rem 0; }
+  .rev { border-color: var(--warn); }
+  pre { background: var(--surface2); border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1rem; overflow-x: auto; font-size: .82rem; line-height: 1.5; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--accent); font-size: .85em; }
+  pre code { color: var(--text); }
+  table { border-collapse: collapse; width: 100%; font-size: .85rem; margin: .6rem 0; }
+  th, td { border: 1px solid var(--line); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+  th { background: var(--surface2); }
+  .flow { display: flex; flex-direction: column; gap: .35rem; margin: .8rem 0; }
+  .step { display: flex; gap: .7rem; align-items: flex-start; background: var(--surface2); border: 1px solid var(--line); border-radius: 8px; padding: .55rem .8rem; font-size: .85rem; }
+  .step .who { min-width: 110px; font-weight: 600; color: var(--accent); }
+  .ok { color: var(--good); } .err { color: var(--bad); } .note { color: var(--warn); }
+  .pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: .05rem .6rem; font-size: .72rem; color: var(--muted); margin-left: .4rem; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Claim-Token Protocol — Design Document <span class="pill">Rev 3</span></h1>
+  <div class="meta">Compass (UX Designer) · Step 2 of 6 · Task d0824927 · Builds on the <strong>Requirements</strong> deliverable — references inline.</div>
+
+  <div class="card rev">
+    <strong>Rev 3 changelog (Design Review round 2, reviewer: Nick).</strong> The complete-time persona enforcement check is <strong>KEPT</strong> — Rev 2 deleted it as "theater", but the reviewer correctly identified it as a true-positive detector for <em>work done by the wrong agent</em>, now reliable since per-connection identity shipped (e8925b6). Enforcement becomes <strong>two-layer</strong>: claim token (capability) + persona consistency (quality), and the persona-mismatch rejection is <strong>non-destructive</strong> — the destructive reset-to-pending is the only thing removed. Amends the Rev 2 FR2 note: ambient identity IS consulted at complete, as a consistency gate beside the token.
+  </div>
+  <div class="card rev">
+    <strong>Rev 2 changelog (Design Review feedback, reviewer: Nick).</strong> Rev 1 flipped the loop to <em>set-identity-before-claim</em> to enable persona validation at claim — a chicken-and-egg: the orchestrator only learns which step (and bot) is next <em>from the claim response</em>. Rev 2 keeps the <strong>canonical order</strong> and changes the <em>claim semantics</em> instead: the claim is made <strong>on behalf of the step's assigned bot, by construction</strong>. This also amends Requirements <strong>FR1/AC3</strong>: "validate persona at claim" is superseded — there is nothing to validate when the claim is definitionally for the assigned bot; AC3 now applies only to <code>bot_id = null</code> steps with an explicit <code>agent_id</code> override.
+  </div>
+
+  <h2>1 · The loop — order unchanged, one value added</h2>
+  <div class="grid2">
+    <div class="card">
+      <h3>Today (ambient identity)</h3>
+      <div class="flow">
+        <div class="step"><span class="who">agent</span><span>claim_next_step(task) → bot_id + "set identity to X"</span></div>
+        <div class="step"><span class="who">agent</span><span>set_agent_identity(X) <span class="note">← state another session can overwrite</span></span></div>
+        <div class="step"><span class="who">agent</span><span>…work…</span></div>
+        <div class="step"><span class="who">agent</span><span>complete_step(step) <span class="err">← re-reads ambient identity: race → reset</span></span></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Rev 3 (claim token) — same order</h3>
+      <div class="flow">
+        <div class="step"><span class="who">agent</span><span>claim_next_step(task) → bot_id + "set identity to X" <strong>+ <code>claim_token</code></code></strong> <span class="ok">← claimed FOR X by construction</span></span></div>
+        <div class="step"><span class="who">agent</span><span>set_agent_identity(X) <span class="pill">persona + attribution + passes the complete-time check</span></span></div>
+        <div class="step"><span class="who">agent</span><span>…work…</span></div>
+        <div class="step"><span class="who">agent</span><span>complete_step(step, <code>claim_token</code>) <span class="ok">← two-layer: token (capability) + persona check (kept, non-destructive)</span></span></div>
+      </div>
+    </div>
+  </div>
+  <div class="card">Jakob's Law, applied to an API: orchestrators keep the loop they already know. The deltas an existing loop sees are exactly two: one extra response field, one extra request param.</div>
+
+  <h2>2 · API design</h2>
+  <h3>claim_next_step (Rev 2 semantics)</h3>
+  <pre><code>// request — unchanged; agent_id optional, used ONLY when step.bot_id is null
+{ "task_id": "…", "agent_id": "…(optional)" }
+
+// behaviour
+//  step.bot_id set  → claim is recorded FOR that bot: claimed_by = step.bot_id.
+//                     Nothing to validate — the step belongs to that persona.
+//  step.bot_id null → claimed_by = agent_id param ?? ambient identity ?? owner
+//                     (today's behaviour, now also captured truthfully).
+//  Either way: mint token, store sha256(token) on the step, return plaintext ONCE.
+
+// response (additions marked ★)
+{
+  "step": { …, "claimed_by": "<the bot the step was claimed FOR>" },   ★ semantics fixed
+  "claim_token": "ct_8f3a…",                                           ★
+  "instruction": "set_agent_identity(bot_id) for persona/attribution,  ★ wording
+                  do the work, then complete_step with step_id AND claim_token",
+  "context": [ … ], "available_agents": [ … ]
+}</code></pre>
+  <div class="card">
+    <strong>Note on the persona check (revised in Rev 3):</strong> it catches "orchestrator forgot to call set_agent_identity (or set the wrong one)" — which matters: the persona's system prompt shapes the work and ambient identity drives mid-work attribution. Rev 2 dismissed this as theater; the review correctly overruled that — the check stays as a hard gate. What goes is only its destructive consequence: a mismatch no longer resets the step (see E3, §4). <strong>Bonus:</strong> <code>claimed_by</code> stops echoing whatever identity happened to be ambient at claim time (often the <em>previous</em> step's bot — a long-standing audit-trail oddity) and becomes the bot the step was claimed <em>for</em>.
+  </div>
+
+  <h3>complete_step / fail_step (FR2, two-layer per Rev 3)</h3>
+  <pre><code>// request (additions marked ★)
+{ "step_id": "…", "claim_token": "ct_8f3a…", "output": "…" }     ★
+
+// server checks, in order:
+// 1. step exists & in_progress                       (unchanged)
+// 2. claim_token_hash matches sha256(claim_token)    ← capability (hard)
+// 3. step.bot_id set && caller ≠ step.bot_id → E3    ← persona check, KEPT (hard,
+//    non-destructive: no DB write, claim stays valid)
+// 4. on success: status→completed/awaiting_approval, claim_token_hash→NULL</code></pre>
+  <div class="card">
+    <strong>Why both layers (Rev 3):</strong> the token proves <em>the completer is the claimer</em>; the persona check proves <em>the right agent is at the wheel</em> — it catches "claimed, never adopted the persona, worked persona-less," which no token can detect. With per-connection identity now shipped, the check's false positives are gone; only its destructive consequence (reset-to-pending) is removed.
+  </div>
+
+  <h2>3 · Flows &amp; states (every state designed)</h2>
+  <h3>3a · Concurrent sessions — the June 2026 scenario, now safe (AC1)</h3>
+  <div class="flow">
+    <div class="step"><span class="who">session A</span><span>claims step (for Atlas) → receives token <code>T<sub>A</sub></code> → sets identity Atlas → works</span></div>
+    <div class="step"><span class="who">session B</span><span>set_agent_identity(ProdOwner) on a different board <span class="ok">← attribution only; cannot touch A's claim</span></span></div>
+    <div class="step"><span class="who">session A</span><span>complete_step(step, <code>T<sub>A</sub></code>) <span class="ok">→ succeeds. No cross-talk possible by construction.</span></span></div>
+  </div>
+
+  <h3>3b · Lost token (context compaction / restart) — FR4 recovery</h3>
+  <div class="flow">
+    <div class="step"><span class="who">agent</span><span>complete_step(step) — no token <span class="err">→ E2 (see §4): names the exact next action</span></span></div>
+    <div class="step"><span class="who">agent</span><span>claim_next_step(task) → re-claims (last-claim-wins; old hash overwritten = old token dead, FR3; displacement logged) → fresh token</span></div>
+    <div class="step"><span class="who">agent</span><span>complete_step(step, fresh token) <span class="ok">→ success. One-step recovery, no human needed.</span></span></div>
+  </div>
+
+  <h3>3c · Cascade rejection / reset (FR3)</h3>
+  <div class="flow">
+    <div class="step"><span class="who">reviewer</span><span>fail_step(step 3, reset_to_step_id: step 1) → steps 1–3 pending, <code>claim_token_hash → NULL</code> on each</span></div>
+    <div class="step"><span class="who">any holder</span><span>complete with a pre-reset token <span class="err">→ E2 — stale tokens die with the reset</span></span></div>
+  </div>
+
+  <h3>3d · Human paths unchanged (FR5)</h3>
+  <div class="card">UI server actions and <code>approve_step</code> authenticate the human session — <strong>no token field appears anywhere in the web UI</strong>. Boundary rule: <em>tokens are for unattended agents; humans are authenticated people</em>. The approval flow's screens are untouched.</div>
+
+  <h2>4 · Error catalogue (exact copy — information scent in every message)</h2>
+  <table>
+    <tr><th>ID</th><th>Condition</th><th>Message (verbatim)</th><th>Step state after</th></tr>
+    <tr><td>E1</td><td>Explicit <code>agent_id</code> on claim is unknown/inactive (only meaningful for <code>bot_id = null</code> steps)</td><td>"Agent not found or inactive — pass a valid agent_id, or omit it to claim with your current identity."</td><td>unchanged (pending)</td></tr>
+    <tr><td>E2</td><td>complete/fail without token, wrong token, or token invalidated by reset/re-claim (FR2/FR3/FR4)</td><td>"This step isn't claimed by you. Call claim_next_step to (re)claim it — you'll receive a claim_token to pass to complete_step."</td><td><strong>unchanged</strong> — never silently reset</td></tr>
+    <tr><td>E3</td><td>Persona mismatch at complete/fail — the KEPT enforcement check (Rev 3): valid token but caller identity ≠ <code>step.bot_id</code></td><td>"You're acting as X but this step belongs to Y. Call set_agent_identity("&lt;bot_id&gt;"), then complete_step again with the same claim_token."</td><td><strong>unchanged (in_progress)</strong>, token stays valid — recovery is one call; deliberate redo stays a reviewer decision via fail_step cascade</td></tr>
+    <tr><td>E4</td><td>Legacy call during back-compat window (FR7)</td><td>Succeeds via legacy identity check + deprecation notice in response: "claim_token will be required soon — re-claim to obtain one."</td><td>completed</td></tr>
+  </table>
+  <div class="card"><strong>Contrast with today:</strong> the current mismatch error <em>resets the step</em> (destructive, surprising — the agent loses its claim through no fault of its own). E2 and E3 deliberately leave the step in_progress: an error message should never be a state mutation. The reset never achieved a redo anyway — orchestrators re-claim and resubmit the same output — so nothing of value is lost by removing it.</div>
+
+  <h2>5 · Migration / rollout (FR7)</h2>
+  <table>
+    <tr><th>Phase</th><th>Server</th><th>Orchestrators</th></tr>
+    <tr><td>1. Deploy</td><td>Mints + returns tokens; complete accepts token OR legacy identity check behind <code>WORKFLOW_CLAIM_TOKEN_GRACE</code> env flag (logged)</td><td>New tool descriptions instruct token use immediately</td></tr>
+    <tr><td>2. Observe</td><td>Watch logs for legacy-path completes reaching zero</td><td>—</td></tr>
+    <tr><td>3. Cutover</td><td>Flag off → token required; legacy path + reset-on-mismatch handler deleted within one release cycle</td><td>—</td></tr>
+  </table>
+
+  <h2>6 · Out of scope / hand-offs</h2>
+  <div class="card">Per Requirements: dual identity store collapse and <code>mcp_agent_sessions</code> cleanup cron are separate follow-ups. stdio parity (FR6): same single code path; stdio orchestrators update their loop at cutover.</div>
+</main>
+</body>
+</html>

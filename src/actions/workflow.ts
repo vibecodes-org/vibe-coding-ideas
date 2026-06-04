@@ -326,6 +326,7 @@ export async function failWorkflowStep(
           started_at: null,
           completed_at: null,
           claimed_by: null,
+          claim_token_hash: null, // resets invalidate outstanding claim tokens
         })
         .eq("run_id", data.run_id)
         .gte("step_order", targetStep.step_order ?? 0);
@@ -403,6 +404,7 @@ export async function retryWorkflowStep(stepId: string) {
       started_at: null,
       completed_at: null,
       claimed_by: null,
+      claim_token_hash: null, // resets invalidate outstanding claim tokens
     })
     .eq("id", stepId)
     .eq("status", "failed")
@@ -442,6 +444,7 @@ export async function resetWorkflow(runId: string) {
       started_at: null,
       completed_at: null,
       claimed_by: null,
+      claim_token_hash: null, // resets invalidate outstanding claim tokens
     })
     .eq("run_id", runId);
 

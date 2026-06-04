@@ -1,5 +1,6 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, afterEach } from "vitest";
 import type { McpContext } from "../context";
+import { mintClaimToken, hashClaimToken } from "../claim-token";
 import {
   claimNextStep,
   claimNextStepSchema,
@@ -1358,7 +1359,7 @@ describe("failStep", () => {
     expect(commentTableAccessed).toBe(false);
   });
 
-  it("clears claimed_by on cascade-reset steps", async () => {
+  it("clears claimed_by and claim_token_hash on cascade-reset steps", async () => {
     const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
     const updatedStep = {
       id: STEP_ID,
@@ -1431,6 +1432,7 @@ describe("failStep", () => {
       started_at: null,
       completed_at: null,
       claimed_by: null,
+      claim_token_hash: null, // FR3: resets invalidate outstanding tokens
     });
   });
 
@@ -1827,7 +1829,7 @@ describe("completeStep — identity enforcement", () => {
 
     await expect(
       completeStep(ctx, { step_id: STEP_ID, output: "Done" })
-    ).rejects.toThrow("Identity mismatch");
+    ).rejects.toThrow(/You're acting as .* but this step belongs to/);
   });
 
   it("includes agent name and bot_id in error message", async () => {
@@ -1941,7 +1943,7 @@ describe("failStep — identity enforcement", () => {
 
     await expect(
       failStep(ctx, { step_id: STEP_ID, output: "Failed" })
-    ).rejects.toThrow("Identity mismatch");
+    ).rejects.toThrow(/You're acting as .* but this step belongs to/);
   });
 
   it("succeeds when step.bot_id is null", async () => {
@@ -2063,6 +2065,237 @@ describe("claimNextStep — claimed_by", () => {
       status: "in_progress",
       claimed_by: USER_ID,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Claim-token protocol tests (docs/claim-token-protocol-design.html Rev 3)
+// ---------------------------------------------------------------------------
+
+describe("claim-token protocol", () => {
+  const originalGrace = process.env.WORKFLOW_CLAIM_TOKEN_GRACE;
+  afterEach(() => {
+    if (originalGrace === undefined) delete process.env.WORKFLOW_CLAIM_TOKEN_GRACE;
+    else process.env.WORKFLOW_CLAIM_TOKEN_GRACE = originalGrace;
+  });
+
+  /** Claim-flow context: returns [step] for the list query, captures the claim update. */
+  function makeClaimCtx(step: Record<string, unknown>, onUpdate: (data: unknown) => void) {
+    const tableCounts: Record<string, number> = {};
+    return makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      const callNum = tableCounts[table];
+
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        if (callNum === 1) {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [step], error: null }).then(resolve);
+        } else if (callNum === 2) {
+          chain.chain.update = vi.fn((data: unknown) => {
+            onUpdate(data);
+            return chain.chain;
+          });
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: { ...step, status: "in_progress" }, error: null })
+          );
+        } else {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [], error: null }).then(resolve);
+        }
+        return chain.chain;
+      }
+
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: null, error: null }).then(resolve);
+        return chain.chain;
+      }
+
+      if (table === "workflow_step_comments") return createChain([]).chain;
+      if (table === "idea_agents") return createChain([]).chain;
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+  }
+
+  /** Complete/fail-flow context: serves stepData on .single(), captures updates. */
+  function makeCompleteCtx(
+    stepData: Record<string, unknown>,
+    onUpdate?: (data: unknown) => void
+  ) {
+    return makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() =>
+          Promise.resolve({ data: stepData, error: null })
+        );
+        chain.chain.update = vi.fn((data: unknown) => {
+          onUpdate?.(data);
+          return chain.chain;
+        });
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({
+            data: {
+              id: STEP_ID,
+              task_id: TASK_ID,
+              run_id: RUN_ID,
+              title: "Test Step",
+              agent_role: "developer",
+              status: "completed",
+              output: "Done",
+              completed_at: "2026-01-01T00:00:00Z",
+            },
+            error: null,
+          })
+        );
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [], error: null }).then(resolve);
+        return chain.chain;
+      }
+
+      if (table === "bot_profiles") {
+        const chain = createChain(null);
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: { name: "Atlas", role: "Full Stack Engineer" }, error: null })
+        );
+        return chain.chain;
+      }
+
+      if (table === "workflow_step_comments") return createChain(null).chain;
+
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [], error: null }).then(resolve);
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: null, error: null })
+        );
+        return chain.chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+  }
+
+  it("claimNextStep mints a one-time token and stores only its hash", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    let captured: Record<string, unknown> | null = null;
+    const ctx = makeClaimCtx(step, (d) => (captured = d as Record<string, unknown>));
+
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const claimToken = (result as { claim_token?: string }).claim_token;
+    expect(claimToken).toMatch(/^ct_[0-9a-f]{48}$/);
+    expect(captured!.claim_token_hash).toBe(hashClaimToken(claimToken!));
+    // Plaintext is never stored
+    expect(captured!.claim_token_hash).not.toBe(claimToken);
+  });
+
+  it("claims on behalf of the step's assigned bot (claimed_by = bot_id, not the caller)", async () => {
+    const step = makeStepRow({ step_order: 1, bot_id: BOT_ID });
+    let captured: Record<string, unknown> | null = null;
+    const ctx = makeClaimCtx(step, (d) => (captured = d as Record<string, unknown>));
+
+    await claimNextStep(ctx, { task_id: TASK_ID });
+
+    expect(captured!.claimed_by).toBe(BOT_ID);
+  });
+
+  it("re-claims an in_progress step (last-claim-wins) with a fresh token", async () => {
+    const { hash: oldHash } = mintClaimToken();
+    const step = makeStepRow({ step_order: 1, status: "in_progress", claim_token_hash: oldHash });
+    let captured: Record<string, unknown> | null = null;
+    const ctx = makeClaimCtx(step, (d) => (captured = d as Record<string, unknown>));
+
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    expect((result as { done: boolean }).done).toBe(false);
+    expect(captured!.claim_token_hash).not.toBe(oldHash); // old token displaced
+  });
+
+  it("completeStep succeeds with the valid claim token and clears the hash", async () => {
+    const { token, hash } = mintClaimToken();
+    let updateData: Record<string, unknown> | null = null;
+    const ctx = makeCompleteCtx(
+      { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null, claim_token_hash: hash },
+      (d) => (updateData = d as Record<string, unknown>)
+    );
+
+    const result = await completeStep(ctx, { step_id: STEP_ID, claim_token: token, output: "Done" });
+
+    expect(result.status).toBe("completed");
+    expect(updateData!.claim_token_hash).toBeNull(); // single-use
+  });
+
+  it("completeStep rejects a wrong token WITHOUT mutating the step (E2)", async () => {
+    const { hash } = mintClaimToken();
+    const { token: wrongToken } = mintClaimToken();
+    let updates = 0;
+    const ctx = makeCompleteCtx(
+      { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null, claim_token_hash: hash },
+      () => updates++
+    );
+
+    await expect(
+      completeStep(ctx, { step_id: STEP_ID, claim_token: wrongToken, output: "Done" })
+    ).rejects.toThrow("This step isn't claimed by you");
+    expect(updates).toBe(0); // an error is never a state change
+  });
+
+  it("completeStep requires the token once the grace window is off (cutover)", async () => {
+    process.env.WORKFLOW_CLAIM_TOKEN_GRACE = "false";
+    const { hash } = mintClaimToken();
+    const ctx = makeCompleteCtx(
+      { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null, claim_token_hash: hash }
+    );
+
+    await expect(
+      completeStep(ctx, { step_id: STEP_ID, output: "Done" })
+    ).rejects.toThrow("This step isn't claimed by you");
+  });
+
+  it("completeStep without a token passes during the grace window (E4 legacy path)", async () => {
+    delete process.env.WORKFLOW_CLAIM_TOKEN_GRACE;
+    const { hash } = mintClaimToken();
+    const ctx = makeCompleteCtx(
+      { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null, claim_token_hash: hash }
+    );
+
+    const result = await completeStep(ctx, { step_id: STEP_ID, output: "Done" });
+    expect(result.status).toBe("completed");
+  });
+
+  it("persona mismatch (E3) no longer resets the step — non-destructive", async () => {
+    const { token, hash } = mintClaimToken();
+    let updates = 0;
+    const ctx = makeCompleteCtx(
+      { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: BOT_ID, claim_token_hash: hash },
+      () => updates++
+    );
+
+    await expect(
+      completeStep(ctx, { step_id: STEP_ID, claim_token: token, output: "Done" })
+    ).rejects.toThrow(/belongs to .*set_agent_identity/);
+    // The destructive reset-to-pending is gone: no DB write of any kind.
+    expect(updates).toBe(0);
+  });
+
+  it("failStep on an awaiting_approval step needs no token (human gate)", async () => {
+    const { hash } = mintClaimToken();
+    const ctx = makeCompleteCtx({
+      id: STEP_ID,
+      run_id: RUN_ID,
+      step_order: 3,
+      idea_id: IDEA_ID,
+      bot_id: BOT_ID,
+      agent_role: "developer",
+      status: "awaiting_approval",
+      claim_token_hash: hash,
+    });
+
+    const result = await failStep(ctx, { step_id: STEP_ID, output: "Rejected by human" });
+    expect(result.step).toBeTruthy();
   });
 });
 

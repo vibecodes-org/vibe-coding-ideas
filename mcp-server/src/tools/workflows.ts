@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
+import { mintClaimToken, verifyClaimToken, isClaimTokenGraceEnabled } from "../claim-token";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits } from "../../../src/lib/workflow-helpers";
 import { tierRank } from "../../../src/lib/role-matching";
@@ -358,18 +359,28 @@ export async function applyWorkflowTemplate(
 
 export const claimNextStepSchema = z.object({
   task_id: z.string().uuid().describe("The board task ID"),
+  agent_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "Only used when the step has no pre-assigned bot: record the claim for this agent. Ignored when the step already has a bot_id (the claim is made on behalf of the assigned bot by construction)."
+    ),
 });
 
 export async function claimNextStep(
   ctx: McpContext,
   params: z.infer<typeof claimNextStepSchema>
 ) {
-  // Find first pending step ordered by step_order then position
+  // Find the first claimable step in order: the next pending step, or an
+  // in_progress step being re-claimed. Re-claiming is LAST-CLAIM-WINS — it
+  // overwrites the claim token so lost-token recovery needs no unlock tool
+  // (docs/claim-token-protocol-design.html §3b).
   const { data: steps, error } = await ctx.supabase
     .from("task_workflow_steps")
     .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, comment_count, started_at, completed_at, created_at")
     .eq("task_id", params.task_id)
-    .eq("status", "pending")
+    .in("status", ["pending", "in_progress"])
     .order("step_order", { ascending: true, nullsFirst: false })
     .order("position", { ascending: true })
     .limit(1);
@@ -382,21 +393,58 @@ export async function claimNextStep(
 
   const step = steps[0];
 
-  // Claim the step — status guard prevents concurrent claims
+  // The claim is recorded FOR the step's pre-assigned bot by construction —
+  // nothing to validate (design Rev 2 decision). For unassigned steps, the
+  // explicit agent_id param or the caller's current identity records the claimer.
+  let claimedFor = ctx.userId;
+  if (step.bot_id) {
+    claimedFor = step.bot_id;
+  } else if (params.agent_id) {
+    const { data: agent } = await ctx.supabase
+      .from("bot_profiles")
+      .select("id, is_active")
+      .eq("id", params.agent_id)
+      .maybeSingle();
+    if (!agent?.is_active) {
+      // E1 — no state changes before this point.
+      throw new Error(
+        "Agent not found or inactive — pass a valid agent_id, or omit it to claim with your current identity."
+      );
+    }
+    claimedFor = agent.id;
+  }
+
+  if (step.status === "in_progress") {
+    // Displacement of a live claim — allowed by design, logged for observability
+    // (Design Review condition 1).
+    logger.warn("claim_next_step displaced a live claim (last-claim-wins)", {
+      stepId: step.id,
+      taskId: params.task_id,
+      previousClaimedBy: step.claimed_by,
+      claimedFor,
+      callerUserId: ctx.userId,
+    });
+  }
+
+  // Mint the one-time claim token; only its hash is stored (capability layer
+  // verified by complete_step/fail_step).
+  const { token: claim_token, hash: claimTokenHash } = mintClaimToken();
+
   const { data: updated, error: updateError } = await ctx.supabase
     .from("task_workflow_steps")
     .update({
       status: "in_progress",
       started_at: new Date().toISOString(),
-      claimed_by: ctx.userId,
+      claimed_by: claimedFor,
+      claim_token_hash: claimTokenHash,
     })
     .eq("id", step.id)
-    .eq("status", "pending")
+    .in("status", ["pending", "in_progress"])
     .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, expected_deliverables, comment_count, started_at, completed_at, created_at")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to claim step: ${updateError.message}`);
-  if (!updated) throw new Error("Step is no longer pending — it may have been claimed by another agent");
+  if (!updated) throw new Error("Step is no longer claimable — it may have been completed or removed concurrently");
 
   // Update workflow run status if step has a run_id
   let wasRunPending = false;
@@ -591,6 +639,10 @@ export async function claimNextStep(
 
   const contextParts: string[] = [];
 
+  contextParts.push(
+    `CLAIM TOKEN: This response includes a one-time "claim_token" for this step. Keep it and pass it as the "claim_token" parameter of complete_step (or fail_step). If you lose it (e.g. after context compaction), call claim_next_step again to re-claim and receive a fresh one.`
+  );
+
   if (context.length > 0) {
     const stepNames = context.map((c) => `"${c.step_title}"`).join(", ");
     contextParts.push(
@@ -679,13 +731,19 @@ export async function claimNextStep(
 
   const instruction = [identityInstruction, ...contextParts].join("\n\n");
 
-  return { done: false, step: updated, instruction, rework_instructions, available_agents, context, expected_deliverables };
+  return { done: false, step: updated, claim_token, instruction, rework_instructions, available_agents, context, expected_deliverables };
 }
 
 // --- Complete Step ---
 
 export const completeStepSchema = z.object({
   step_id: z.string().uuid().describe("The workflow step ID"),
+  claim_token: z
+    .string()
+    .optional()
+    .describe(
+      "The one-time claim token returned by claim_next_step for this step. Proves you are the claimer. If lost, call claim_next_step to re-claim and receive a fresh token."
+    ),
   output: z.string().max(50000).optional().describe("Step output or deliverable. This is stored on the step's `output` column and is how subsequent steps receive context — when the next step is claimed, all prior completed steps' outputs are passed in the `context` array. Also posted as a step comment for UI display."),
 });
 
@@ -693,52 +751,66 @@ export async function completeStep(
   ctx: McpContext,
   params: z.infer<typeof completeStepSchema>
 ) {
-  // Fetch current step (include bot_id + agent_role for identity enforcement)
+  // Fetch current step (include claim_token_hash + bot_id for the two-layer check)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, idea_id, human_check_required, status, bot_id, agent_role")
+    .select("id, run_id, idea_id, human_check_required, status, bot_id, agent_role, claim_token_hash")
     .eq("id", params.step_id)
     .single();
 
   if (fetchError || !step) throw new Error(`Step not found: ${params.step_id}`);
 
-  // Identity guard: reject if caller doesn't match the pre-matched agent
+  // Two-layer enforcement (docs/claim-token-protocol-design.html §2).
+  // NEITHER layer mutates state on failure — an error is never a state change;
+  // deliberate redo stays a reviewer decision via fail_step cascade.
+
+  // Layer 1 — capability: the claim token proves the completer is the claimer (E2).
+  if (!verifyClaimToken(step.claim_token_hash, params.claim_token)) {
+    if (params.claim_token || !isClaimTokenGraceEnabled()) {
+      throw new Error(
+        "This step isn't claimed by you. Call claim_next_step to (re)claim it — " +
+        "you'll receive a claim_token to pass to complete_step."
+      );
+    }
+    // Grace window (E4): legacy caller without a token — fall through to the
+    // persona check below. Logged so cutover can be timed (flip
+    // WORKFLOW_CLAIM_TOKEN_GRACE=false once these reach zero).
+    logger.warn("complete_step legacy call without claim_token (grace window)", {
+      stepId: params.step_id,
+      callerUserId: ctx.userId,
+    });
+  }
+
+  // Layer 2 — persona consistency (KEPT per Design Review): the right agent
+  // must be at the wheel; catches "claimed but never adopted the persona" (E3).
   if (step.bot_id && ctx.userId !== step.bot_id) {
-    logger.warn("complete_step identity mismatch", {
+    logger.warn("complete_step persona mismatch", {
       stepId: params.step_id,
       stepBotId: step.bot_id,
       callerUserId: ctx.userId,
       ownerUserId: ctx.ownerUserId,
     });
 
-    // Look up the expected agent's name for a helpful error message
-    const { data: agent } = await ctx.supabase
-      .from("bot_profiles")
-      .select("name, role")
-      .eq("id", step.bot_id)
-      .maybeSingle();
+    const [{ data: agent }, { data: caller }] = await Promise.all([
+      ctx.supabase.from("bot_profiles").select("name, role").eq("id", step.bot_id).maybeSingle(),
+      ctx.supabase.from("bot_profiles").select("name").eq("id", ctx.userId).maybeSingle(),
+    ]);
 
     const agentName = agent?.name ?? "unknown";
     const agentRole = agent?.role ?? step.agent_role ?? "unknown";
-
-    // Reset step to pending so it must be re-claimed and re-executed
-    await ctx.supabase
-      .from("task_workflow_steps")
-      .update({ status: "pending", claimed_by: null, started_at: null })
-      .eq("id", params.step_id);
+    const callerName = caller?.name ?? "the owner identity";
 
     throw new Error(
-      `Identity mismatch: this step is assigned to ${agentName} (${agentRole}). ` +
-      `The step has been reset to pending. ` +
-      `Call set_agent_identity with agent_id "${step.bot_id}", then use claim_next_step to re-claim and re-execute this step. ` +
-      `(caller=${ctx.userId}, expected=${step.bot_id})`
+      `You're acting as ${callerName} but this step belongs to ${agentName} (${agentRole}). ` +
+      `Call set_agent_identity("${step.bot_id}"), then complete_step again with the same claim_token.`
     );
   }
 
   // Determine new status: awaiting_approval if human check required, else completed
   const newStatus = step.human_check_required ? "awaiting_approval" : "completed";
 
-  const updateFields: Record<string, unknown> = { status: newStatus, claimed_by: ctx.userId };
+  // Token is single-use: clear the hash as part of completion.
+  const updateFields: Record<string, unknown> = { status: newStatus, claimed_by: ctx.userId, claim_token_hash: null };
   if (params.output !== undefined) updateFields.output = params.output;
   if (newStatus === "completed") updateFields.completed_at = new Date().toISOString();
 
@@ -776,6 +848,12 @@ export async function completeStep(
 
 export const failStepSchema = z.object({
   step_id: z.string().uuid().describe("The workflow step ID"),
+  claim_token: z
+    .string()
+    .optional()
+    .describe(
+      "The one-time claim token returned by claim_next_step for this step. Not needed when rejecting an awaiting_approval step (human gate)."
+    ),
   output: z.string().max(10000).optional().describe(
     "Failure reason or error details (use `output`, not `reason`). Stored on the step's `output` column and auto-posted as a 'failure' comment. When cascade rejection is used and this step is re-claimed, this text is returned as `rework_instructions` to give the next agent context for retry."
   ),
@@ -792,51 +870,63 @@ export async function failStep(
   ctx: McpContext,
   params: z.infer<typeof failStepSchema>
 ) {
-  // Fetch current step to get run_id, step_order, status, and bot_id for identity check
+  // Fetch current step (include claim_token_hash + bot_id for the two-layer check)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status")
+    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash")
     .eq("id", params.step_id)
     .single();
 
   if (fetchError || !step) throw new Error(`Step not found: ${params.step_id}`);
 
-  // Identity guard: reject if caller doesn't match the pre-matched agent
-  // Skip for awaiting_approval steps — humans reject those regardless of bot_id
-  if (step.bot_id && step.status !== "awaiting_approval" && ctx.userId !== step.bot_id) {
-    logger.warn("fail_step identity mismatch", {
-      stepId: params.step_id,
-      stepBotId: step.bot_id,
-      callerUserId: ctx.userId,
-      ownerUserId: ctx.ownerUserId,
-    });
+  // Two-layer enforcement, mirroring complete_step. Both layers are skipped for
+  // awaiting_approval steps — humans reject those regardless of bot_id/token,
+  // and they hold no claim token (design §3d boundary). Neither layer mutates
+  // state on failure.
+  if (step.status !== "awaiting_approval") {
+    // Layer 1 — capability (E2)
+    if (!verifyClaimToken(step.claim_token_hash, params.claim_token)) {
+      if (params.claim_token || !isClaimTokenGraceEnabled()) {
+        throw new Error(
+          "This step isn't claimed by you. Call claim_next_step to (re)claim it — " +
+          "you'll receive a claim_token to pass to fail_step."
+        );
+      }
+      logger.warn("fail_step legacy call without claim_token (grace window)", {
+        stepId: params.step_id,
+        callerUserId: ctx.userId,
+      });
+    }
 
-    const { data: agent } = await ctx.supabase
-      .from("bot_profiles")
-      .select("name, role")
-      .eq("id", step.bot_id)
-      .maybeSingle();
+    // Layer 2 — persona consistency (KEPT, non-destructive — E3)
+    if (step.bot_id && ctx.userId !== step.bot_id) {
+      logger.warn("fail_step persona mismatch", {
+        stepId: params.step_id,
+        stepBotId: step.bot_id,
+        callerUserId: ctx.userId,
+        ownerUserId: ctx.ownerUserId,
+      });
 
-    const agentName = agent?.name ?? "unknown";
-    const agentRole = agent?.role ?? step.agent_role ?? "unknown";
+      const [{ data: agent }, { data: caller }] = await Promise.all([
+        ctx.supabase.from("bot_profiles").select("name, role").eq("id", step.bot_id).maybeSingle(),
+        ctx.supabase.from("bot_profiles").select("name").eq("id", ctx.userId).maybeSingle(),
+      ]);
 
-    // Reset step to pending so it must be re-claimed and re-executed
-    await ctx.supabase
-      .from("task_workflow_steps")
-      .update({ status: "pending", claimed_by: null, started_at: null })
-      .eq("id", params.step_id);
+      const agentName = agent?.name ?? "unknown";
+      const agentRole = agent?.role ?? step.agent_role ?? "unknown";
+      const callerName = caller?.name ?? "the owner identity";
 
-    throw new Error(
-      `Identity mismatch: this step is assigned to ${agentName} (${agentRole}). ` +
-      `The step has been reset to pending. ` +
-      `Call set_agent_identity with agent_id "${step.bot_id}", then use claim_next_step to re-claim and re-execute this step. ` +
-      `(caller=${ctx.userId}, expected=${step.bot_id})`
-    );
+      throw new Error(
+        `You're acting as ${callerName} but this step belongs to ${agentName} (${agentRole}). ` +
+        `Call set_agent_identity("${step.bot_id}"), then fail_step again with the same claim_token.`
+      );
+    }
   }
 
   const updateFields: Record<string, unknown> = {
     status: "failed",
     completed_at: new Date().toISOString(),
+    claim_token_hash: null,
   };
   if (params.output !== undefined) updateFields.output = params.output;
 
@@ -906,6 +996,7 @@ export async function failStep(
           started_at: null,
           completed_at: null,
           claimed_by: null,
+          claim_token_hash: null, // FR3: resets invalidate outstanding tokens
         })
         .eq("run_id", step.run_id)
         .gte("step_order", targetStep.step_order ?? 0)
@@ -1069,6 +1160,7 @@ export async function approveStep(
     .update({
       status: "completed",
       completed_at: new Date().toISOString(),
+      claim_token_hash: null, // token lifecycle ends with the step
     })
     .eq("id", params.step_id)
     .eq("status", "awaiting_approval")
@@ -1266,6 +1358,7 @@ export async function resetWorkflow(
       started_at: null,
       completed_at: null,
       claimed_by: null,
+      claim_token_hash: null, // FR3: resets invalidate outstanding tokens
     })
     .eq("run_id", run.id);
 
