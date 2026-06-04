@@ -130,6 +130,37 @@ export async function getBotPrompt(
   return data;
 }
 
+/**
+ * Persist the active agent identity. Remote (HTTP) connections carry a
+ * `sessionId` and store identity per-connection in `mcp_agent_sessions`, so
+ * concurrent sessions for the same user don't clobber each other. The local
+ * stdio MCP has no session and uses the legacy per-user `users.active_bot_id`.
+ */
+async function persistActiveBotId(
+  ctx: McpContext,
+  userId: string,
+  botId: string | null
+): Promise<void> {
+  if (ctx.sessionId) {
+    await ctx.supabase
+      .from("mcp_agent_sessions")
+      .upsert(
+        {
+          user_id: userId,
+          session_id: ctx.sessionId,
+          active_bot_id: botId,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "user_id,session_id" }
+      );
+  } else {
+    await ctx.supabase
+      .from("users")
+      .update({ active_bot_id: botId })
+      .eq("id", userId);
+  }
+}
+
 export async function setBotIdentity(
   ctx: McpContext,
   args: z.infer<typeof setBotIdentitySchema>,
@@ -141,11 +172,8 @@ export async function setBotIdentity(
   if (!args.agent_id && !args.agent_name) {
     onIdentityChange(null);
 
-    // Persist null to DB
-    await ctx.supabase
-      .from("users")
-      .update({ active_bot_id: null })
-      .eq("id", persistUserId);
+    // Persist null — per-session for remote, per-user for stdio.
+    await persistActiveBotId(ctx, persistUserId, null);
 
     return {
       active_bot: null,
@@ -185,11 +213,8 @@ export async function setBotIdentity(
 
   onIdentityChange(bot.id);
 
-  // Persist to DB
-  await ctx.supabase
-    .from("users")
-    .update({ active_bot_id: bot.id })
-    .eq("id", persistUserId);
+  // Persist — per-session for remote, per-user for stdio.
+  await persistActiveBotId(ctx, persistUserId, bot.id);
 
   // Fetch attached skills for progressive disclosure catalog
   const { data: skills, error: skillsError } = await ctx.supabase

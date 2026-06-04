@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { registerTools } from "../../../../../mcp-server/src/register-tools";
 import { instrumentServer } from "../../../../../mcp-server/src/instrument";
+import { resolveActiveBotId } from "../../../../../mcp-server/src/bot-identity";
 import { logger } from "@/lib/logger";
 import type { McpContext } from "../../../../../mcp-server/src/context";
 import type { Database } from "@/types/database";
@@ -66,20 +67,38 @@ async function getSessionForApiKey(userId: string): Promise<string | null> {
   return access_token;
 }
 
+/**
+ * Derive a stable per-connection key from the caller's JWT so concurrent MCP
+ * connections (same user account, different Claude Code sessions) get isolated
+ * agent identities. Prefers the Supabase `session_id` claim; falls back to a
+ * hash of the token if the claim is absent.
+ */
+function sessionKeyFromToken(token: string): string {
+  const payload = decodeJwtPayload(token);
+  const sid = payload?.session_id;
+  if (typeof sid === "string" && sid.length > 0) return sid;
+  return createHash("sha256").update(token).digest("hex");
+}
+
 const handler = createMcpHandler(
   (server) => {
-    // Per-connection mutable bot identity (set by set_bot_identity tool)
-    let activeBotId: string | null = null;
-    let identityInitialized = false;
-
     const instrumentedServer = instrumentServer(
       server,
       async (extra) => {
         const authInfo = extra.authInfo;
         if (!authInfo) throw new Error("Authentication required");
         const realUserId = authInfo.extra?.userId as string;
-        // Lightweight context just for identity — not the full per-request client
-        return { supabase: serviceClient, userId: activeBotId || realUserId, ownerUserId: realUserId } as McpContext;
+        // Resolve identity per request (source of truth: mcp_agent_sessions,
+        // scoped to this connection) so tool-log attribution matches the acting
+        // agent. Not cached — see resolveActiveBotId.
+        const sessionId = sessionKeyFromToken(authInfo.token);
+        const activeBotId = await resolveActiveBotId(serviceClient, realUserId, sessionId);
+        return {
+          supabase: serviceClient,
+          userId: activeBotId ?? realUserId,
+          ownerUserId: realUserId,
+          sessionId,
+        } as McpContext;
       },
       (entry) => {
         serviceClient
@@ -125,37 +144,24 @@ const handler = createMcpHandler(
           }
         );
 
-        // Lazily read persisted bot identity on first tool call
-        if (!identityInitialized) {
-          identityInitialized = true;
-          const { data } = await supabase
-            .from("users")
-            .select("active_bot_id")
-            .eq("id", realUserId)
-            .maybeSingle();
-
-          if (data?.active_bot_id) {
-            const { data: bot } = await supabase
-              .from("bot_profiles")
-              .select("id, is_active")
-              .eq("id", data.active_bot_id)
-              .maybeSingle();
-
-            if (bot?.is_active) {
-              activeBotId = bot.id;
-            }
-          }
-        }
+        // Resolve the active bot identity on EVERY tool call, scoped to this
+        // connection (mcp_agent_sessions, keyed by user + session). No in-memory
+        // cache: serverless instances fan out across requests, and concurrent
+        // connections for the same user must not share identity. set_agent_identity
+        // persists here; complete_step reads it back.
+        const sessionId = sessionKeyFromToken(token);
+        const activeBotId = await resolveActiveBotId(supabase, realUserId, sessionId);
 
         return {
           supabase,
-          userId: activeBotId || realUserId,
+          userId: activeBotId ?? realUserId,
           ownerUserId: realUserId,
+          sessionId,
         } satisfies McpContext;
       },
-      (botId) => {
-        activeBotId = botId;
-      }
+      // Identity is resolved from the DB per request, so there is no in-memory
+      // state to update here. set_agent_identity persists to mcp_agent_sessions.
+      () => {}
     );
   },
   {

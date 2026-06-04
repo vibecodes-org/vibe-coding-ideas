@@ -1307,6 +1307,42 @@ export type Database = {
           },
         ];
       };
+      mcp_agent_sessions: {
+        Row: {
+          user_id: string;
+          session_id: string;
+          active_bot_id: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          user_id: string;
+          session_id: string;
+          active_bot_id?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          user_id?: string;
+          session_id?: string;
+          active_bot_id?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "mcp_agent_sessions_user_id_fkey";
+            columns: ["user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "mcp_agent_sessions_active_bot_id_fkey";
+            columns: ["active_bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bot_profiles";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       mcp_oauth_clients: {
         Row: {
           client_id: string;

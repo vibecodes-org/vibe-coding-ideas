@@ -9,7 +9,10 @@
  * must use ctx.ownerUserId ?? ctx.userId, NOT ctx.userId alone.
  */
 import { describe, it, expect, vi } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
 import type { McpContext } from "./context";
+import type { Database } from "../../src/types/database";
+import { resolveActiveBotId } from "./bot-identity";
 
 import { listBots, createBot } from "./tools/bots";
 import {
@@ -364,5 +367,116 @@ describe("bot identity context — bot-identity operations", () => {
       expect(commentInsert).toBeDefined();
       expect(commentInsert.author_id).toBe(BOT_ID);
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveActiveBotId — per-connection identity resolution
+// ---------------------------------------------------------------------------
+
+const SESSION_ID = "sess-abc";
+
+/**
+ * Build a Supabase client mock. Records which tables/filters were queried so we
+ * can assert remote (mcp_agent_sessions) vs stdio (users) routing, and resolves
+ * each table to the configured row.
+ */
+function resolveClient(opts: {
+  sessionRow?: { active_bot_id: string | null } | null;
+  userRow?: { active_bot_id: string | null } | null;
+  bot?: { id: string; is_active: boolean } | null;
+}) {
+  const queried: { table: string; eqs: [string, unknown][] }[] = [];
+  const client = {
+    from: (table: string) => {
+      const record = { table, eqs: [] as [string, unknown][] };
+      queried.push(record);
+      const data =
+        table === "mcp_agent_sessions"
+          ? (opts.sessionRow ?? null)
+          : table === "users"
+            ? (opts.userRow ?? null)
+            : (opts.bot ?? null);
+      const chain: Record<string, unknown> = {};
+      chain.select = vi.fn(() => chain);
+      chain.eq = vi.fn((col: string, val: unknown) => {
+        record.eqs.push([col, val]);
+        return chain;
+      });
+      chain.maybeSingle = vi.fn(() => Promise.resolve({ data, error: null }));
+      return chain;
+    },
+  } as unknown as SupabaseClient<Database>;
+  return { client, queried };
+}
+
+describe("resolveActiveBotId", () => {
+  describe("remote (session-scoped)", () => {
+    it("reads mcp_agent_sessions keyed by user + session, not the users table", async () => {
+      const { client, queried } = resolveClient({
+        sessionRow: { active_bot_id: BOT_ID },
+        bot: { id: BOT_ID, is_active: true },
+      });
+
+      const result = await resolveActiveBotId(client, HUMAN_ID, SESSION_ID);
+
+      expect(result).toBe(BOT_ID);
+      const sessionQuery = queried.find((q) => q.table === "mcp_agent_sessions");
+      expect(sessionQuery).toBeDefined();
+      expect(sessionQuery!.eqs).toContainEqual(["user_id", HUMAN_ID]);
+      expect(sessionQuery!.eqs).toContainEqual(["session_id", SESSION_ID]);
+      // Must NOT fall back to the shared per-user users.active_bot_id.
+      expect(queried.find((q) => q.table === "users")).toBeUndefined();
+    });
+
+    it("returns null when this session has no bot set (acts as owner)", async () => {
+      const { client } = resolveClient({ sessionRow: { active_bot_id: null } });
+      expect(await resolveActiveBotId(client, HUMAN_ID, SESSION_ID)).toBeNull();
+    });
+
+    it("returns null when no row exists for this session", async () => {
+      const { client } = resolveClient({ sessionRow: null });
+      expect(await resolveActiveBotId(client, HUMAN_ID, SESSION_ID)).toBeNull();
+    });
+
+    it("isolates sessions: one session's identity does not leak via users table", async () => {
+      // Session has no bot, but the legacy users row does — must ignore users.
+      const { client } = resolveClient({
+        sessionRow: { active_bot_id: null },
+        userRow: { active_bot_id: BOT_ID },
+      });
+      expect(await resolveActiveBotId(client, HUMAN_ID, SESSION_ID)).toBeNull();
+    });
+
+    it("returns null when the session's bot is inactive", async () => {
+      const { client } = resolveClient({
+        sessionRow: { active_bot_id: BOT_ID },
+        bot: { id: BOT_ID, is_active: false },
+      });
+      expect(await resolveActiveBotId(client, HUMAN_ID, SESSION_ID)).toBeNull();
+    });
+  });
+
+  describe("stdio (no session)", () => {
+    it("falls back to users.active_bot_id when sessionId is undefined", async () => {
+      const { client, queried } = resolveClient({
+        userRow: { active_bot_id: BOT_ID },
+        bot: { id: BOT_ID, is_active: true },
+      });
+
+      const result = await resolveActiveBotId(client, HUMAN_ID);
+
+      expect(result).toBe(BOT_ID);
+      expect(queried.find((q) => q.table === "users")).toBeDefined();
+      expect(queried.find((q) => q.table === "mcp_agent_sessions")).toBeUndefined();
+    });
+  });
+
+  it("reads fresh every call — no caching across calls", async () => {
+    const a = resolveClient({ sessionRow: { active_bot_id: BOT_ID }, bot: { id: BOT_ID, is_active: true } });
+    expect(await resolveActiveBotId(a.client, HUMAN_ID, SESSION_ID)).toBe(BOT_ID);
+
+    const cleared = resolveClient({ sessionRow: { active_bot_id: null } });
+    expect(await resolveActiveBotId(cleared.client, HUMAN_ID, SESSION_ID)).toBeNull();
   });
 });

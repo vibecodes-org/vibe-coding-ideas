@@ -153,5 +153,8 @@ export type WorkflowLibraryTemplate = Database["public"]["Tables"]["workflow_lib
 // User Workflow Templates (personal saved templates)
 export type UserWorkflowTemplate = Database["public"]["Tables"]["user_workflow_templates"]["Row"];
 
+// MCP per-connection agent identity
+export type McpAgentSession = Database["public"]["Tables"]["mcp_agent_sessions"]["Row"];
+
 // Sort options
 export type SortOption = "newest" | "popular" | "discussed";
