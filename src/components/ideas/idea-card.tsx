@@ -33,7 +33,7 @@ export function IdeaCard({ idea, hasVoted, taskCount, latestDiscussion }: IdeaCa
         tabIndex={-1}
       />
       <CardHeader className="pb-3">
-        <div className="flex items-start gap-3">
+        <div className="flex min-w-0 items-start gap-3">
           <div className="relative z-10">
             <VoteButton
               ideaId={idea.id}
