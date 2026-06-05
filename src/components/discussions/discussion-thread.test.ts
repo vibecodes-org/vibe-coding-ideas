@@ -36,7 +36,6 @@ function makeReply(
       ai_enabled: true,
       default_board_columns: null,
       email_notifications: true,
-      active_bot_id: null,
       encrypted_anthropic_key: null,
       ai_starter_credits: 10,
       notification_preferences: {

@@ -457,20 +457,6 @@ describe("resolveActiveBotId", () => {
     });
   });
 
-  describe("stdio (no session)", () => {
-    it("falls back to users.active_bot_id when sessionId is undefined", async () => {
-      const { client, queried } = resolveClient({
-        userRow: { active_bot_id: BOT_ID },
-        bot: { id: BOT_ID, is_active: true },
-      });
-
-      const result = await resolveActiveBotId(client, HUMAN_ID);
-
-      expect(result).toBe(BOT_ID);
-      expect(queried.find((q) => q.table === "users")).toBeDefined();
-      expect(queried.find((q) => q.table === "mcp_agent_sessions")).toBeUndefined();
-    });
-  });
 
   it("reads fresh every call — no caching across calls", async () => {
     const a = resolveClient({ sessionRow: { active_bot_id: BOT_ID }, bot: { id: BOT_ID, is_active: true } });

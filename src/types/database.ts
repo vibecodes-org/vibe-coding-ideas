@@ -39,7 +39,6 @@ export type Database = {
           is_bot: boolean;
           ai_enabled: boolean;
           encrypted_anthropic_key: string | null;
-          active_bot_id: string | null;
           ai_daily_limit: number;
           ai_starter_credits: number;
           onboarding_completed_at: string | null;
@@ -74,7 +73,6 @@ export type Database = {
           is_bot?: boolean;
           ai_enabled?: boolean;
           encrypted_anthropic_key?: string | null;
-          active_bot_id?: string | null;
           ai_daily_limit?: number;
           ai_starter_credits?: number;
           onboarding_completed_at?: string | null;
@@ -109,7 +107,6 @@ export type Database = {
           is_bot?: boolean;
           ai_enabled?: boolean;
           encrypted_anthropic_key?: string | null;
-          active_bot_id?: string | null;
           ai_daily_limit?: number;
           ai_starter_credits?: number;
           onboarding_completed_at?: string | null;

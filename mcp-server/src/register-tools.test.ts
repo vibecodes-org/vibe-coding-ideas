@@ -218,12 +218,13 @@ describe("registerTools", () => {
 
   it("set_agent_identity calls onIdentityChange when provided", async () => {
     const server = createMockServer();
-    // Mock supabase with chained update call for identity persistence
-    const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
-    const mockFrom = vi.fn().mockReturnValue({ update: mockUpdate });
+    // Mock supabase with upsert for the single per-connection identity store
+    const mockUpsert = vi.fn().mockResolvedValue({ error: null });
+    const mockFrom = vi.fn().mockReturnValue({ upsert: mockUpsert });
     const mockContext: McpContext = {
       supabase: { from: mockFrom } as unknown as McpContext["supabase"],
       userId: "test-user",
+      sessionId: "test-session",
     };
     const getContext = vi.fn(() => mockContext);
     const onIdentityChange = vi.fn();
@@ -242,18 +243,26 @@ describe("registerTools", () => {
 
     expect(result.isError).toBeUndefined();
     expect(onIdentityChange).toHaveBeenCalledWith(null);
-    expect(mockFrom).toHaveBeenCalledWith("users");
-    expect(mockUpdate).toHaveBeenCalledWith({ active_bot_id: null });
+    expect(mockFrom).toHaveBeenCalledWith("mcp_agent_sessions");
+    expect(mockUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        user_id: "test-user",
+        session_id: "test-session",
+        active_bot_id: null,
+      }),
+      { onConflict: "user_id,session_id" }
+    );
   });
 
   it("set_agent_identity uses noop when onIdentityChange not provided", async () => {
     const server = createMockServer();
-    // Mock supabase with chained update call for identity persistence
-    const mockUpdate = vi.fn().mockReturnValue({ eq: vi.fn().mockResolvedValue({ error: null }) });
-    const mockFrom = vi.fn().mockReturnValue({ update: mockUpdate });
+    // Mock supabase with upsert for the single per-connection identity store
+    const mockUpsert = vi.fn().mockResolvedValue({ error: null });
+    const mockFrom = vi.fn().mockReturnValue({ upsert: mockUpsert });
     const mockContext: McpContext = {
       supabase: { from: mockFrom } as unknown as McpContext["supabase"],
       userId: "test-user",
+      sessionId: "test-session",
     };
     const getContext = vi.fn(() => mockContext);
 

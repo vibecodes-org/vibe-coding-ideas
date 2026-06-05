@@ -4,12 +4,19 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { supabase, BOT_USER_ID, OWNER_USER_ID } from "./supabase";
 import { registerTools } from "./register-tools";
 import { instrumentServer } from "./instrument";
+import { resolveActiveBotId } from "./bot-identity";
 import type { McpContext } from "./context";
 
 const server = new McpServer(
   { name: "vibecodes", version: "1.0.0" },
   { capabilities: { tools: {} } }
 );
+
+// Single identity store: stdio persists/reads its active agent in
+// mcp_agent_sessions under a static per-install session key, exactly like a
+// remote connection (see bot-identity.ts). users.active_bot_id is retired.
+const STDIO_SESSION_ID = `stdio:${BOT_USER_ID}`;
+const STDIO_ROW_USER = OWNER_USER_ID || BOT_USER_ID;
 
 // Session-level mutable identity
 // Can be overridden via VIBECODES_BOT_ID env var or set_agent_identity tool
@@ -31,6 +38,7 @@ const getContext = (): McpContext => ({
   // get_agent_mentions can discover agents the human created via the web UI.
   // Falls back to BOT_USER_ID when a bot identity is active (mirrors remote MCP).
   ownerUserId: OWNER_USER_ID || (activeBotId ? BOT_USER_ID : undefined),
+  sessionId: STDIO_SESSION_ID,
 });
 
 const instrumentedServer = instrumentServer(server, getContext, (entry) => {
@@ -57,26 +65,13 @@ registerTools(instrumentedServer, getContext, setActiveBotId);
 // --- Start server ---
 
 async function main() {
-  // If no explicit bot ID from env var, read persisted identity from DB
+  // If no explicit bot ID from env var, read the persisted identity for this
+  // install's static session key (single store: mcp_agent_sessions).
   if (!process.env.VIBECODES_BOT_ID) {
-    const { data } = await supabase
-      .from("users")
-      .select("active_bot_id")
-      .eq("id", BOT_USER_ID)
-      .maybeSingle();
-
-    if (data?.active_bot_id) {
-      // Verify the bot is still active
-      const { data: bot } = await supabase
-        .from("bot_profiles")
-        .select("id, is_active")
-        .eq("id", data.active_bot_id)
-        .maybeSingle();
-
-      if (bot?.is_active) {
-        setActiveBotId(bot.id);
-        console.error(`Restored persisted bot identity: ${bot.id}`);
-      }
+    const persisted = await resolveActiveBotId(supabase, STDIO_ROW_USER, STDIO_SESSION_ID);
+    if (persisted) {
+      setActiveBotId(persisted);
+      console.error(`Restored persisted bot identity: ${persisted}`);
     }
   }
 

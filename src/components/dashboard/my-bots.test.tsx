@@ -28,7 +28,6 @@ const baseBot = (overrides: Partial<DashboardBot> = {}): DashboardBot => ({
   avatar_url: null,
   bio: null,
   default_system_prompt: null,
-  active_bot_id: null,
   default_board_columns: null,
   onboarding_completed_at: null,
   is_default_template: false,
