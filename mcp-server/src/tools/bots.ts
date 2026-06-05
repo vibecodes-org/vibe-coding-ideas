@@ -31,6 +31,14 @@ export const setBotIdentitySchema = z.object({
     .describe("Agent name to search for (if agent_id not provided)."),
 });
 
+export const setOrchestrationModeSchema = z.object({
+  mode: z
+    .enum(["legacy", "subagent"])
+    .describe(
+      "Workflow orchestration mode for THIS session only. 'legacy' = role-play each persona via set_agent_identity (current default). 'subagent' = claim_next_step instructs you to spawn a fresh subagent per step with the persona as its system prompt."
+    ),
+});
+
 export const createBotSchema = z.object({
   name: z.string().min(1).max(100).describe("Agent display name"),
   role: z.string().max(50).optional().describe("Agent role (e.g. Developer, QA Tester)"),
@@ -154,6 +162,47 @@ async function persistActiveBotId(
       },
       { onConflict: "user_id,session_id" }
     );
+}
+
+/**
+ * Set the per-session orchestration mode (Phase II Slice 1). Scoped to the
+ * current connection via mcp_agent_sessions(user_id, session_id), so it never
+ * affects another session. Upserts ONLY orchestration_mode — active_bot_id is
+ * left in the payload-out so an existing row's identity is preserved, and a
+ * brand-new row defaults active_bot_id to NULL (no identity yet).
+ */
+export async function setOrchestrationMode(
+  ctx: McpContext,
+  args: z.infer<typeof setOrchestrationModeSchema>
+) {
+  if (!ctx.sessionId) {
+    throw new Error("Cannot set orchestration mode: context has no session id");
+  }
+  const persistUserId = ctx.ownerUserId ?? ctx.userId;
+
+  const { error } = await ctx.supabase
+    .from("mcp_agent_sessions")
+    .upsert(
+      {
+        user_id: persistUserId,
+        session_id: ctx.sessionId,
+        orchestration_mode: args.mode,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: "user_id,session_id" }
+    );
+
+  if (error) throw new Error(error.message);
+
+  return {
+    orchestration_mode: args.mode,
+    scope: "current session only",
+    session_id: ctx.sessionId,
+    instruction:
+      args.mode === "subagent"
+        ? "This session is now in SUBAGENT mode. From now on, claim_next_step will tell you to spawn a fresh subagent per step (persona as its system prompt) instead of calling set_agent_identity. Other sessions are unaffected."
+        : "This session is now in LEGACY mode (the default): role-play each persona via set_agent_identity. Other sessions are unaffected.",
+  };
 }
 
 export async function setBotIdentity(

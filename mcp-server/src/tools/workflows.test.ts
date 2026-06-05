@@ -2426,3 +2426,85 @@ describe("workflow step mutations touch board_tasks for realtime", () => {
     expect(boardTaskTouched).toBe(true);
   });
 });
+
+// ---------------------------------------------------------------------------
+// claimNextStep — orchestration mode branch (Phase II Slice 1)
+// ---------------------------------------------------------------------------
+
+describe("claimNextStep — orchestration mode instruction branch", () => {
+  /**
+   * Claim context with a per-session orchestration_mode. Serves the step list,
+   * the claim update, and an mcp_agent_sessions row carrying the mode.
+   */
+  function makeModeCtx(mode: string | null) {
+    const step = makeStepRow({ step_order: 1, bot_id: null });
+    const counts: Record<string, number> = {};
+    return {
+      supabase: {
+        from: (table: string) => {
+          counts[table] = (counts[table] ?? 0) + 1;
+          const n = counts[table];
+
+          if (table === "mcp_agent_sessions") {
+            const c = createChain(mode === null ? null : { orchestration_mode: mode });
+            return c.chain;
+          }
+          if (table === "task_workflow_steps") {
+            const c = createChain(null);
+            if (n === 1) {
+              c.chain.then = (resolve: (v: unknown) => void) =>
+                Promise.resolve({ data: [step], error: null }).then(resolve);
+            } else if (n === 2) {
+              c.chain.maybeSingle = vi.fn(() =>
+                Promise.resolve({ data: { ...step, status: "in_progress" }, error: null })
+              );
+            } else {
+              c.chain.then = (resolve: (v: unknown) => void) =>
+                Promise.resolve({ data: [], error: null }).then(resolve);
+            }
+            return c.chain;
+          }
+          if (table === "workflow_runs") {
+            // status check returns 'running' so the auto-move path is skipped
+            const c = createChain({ status: "running" });
+            return c.chain;
+          }
+          if (table === "idea_agents") return createChain([]).chain;
+          if (table === "workflow_step_comments") return createChain([]).chain;
+          return createChain(null).chain;
+        },
+      } as unknown as McpContext["supabase"],
+      userId: USER_ID,
+      sessionId: "sess-mode-test",
+    } as McpContext;
+  }
+
+  it("subagent mode → instruction tells the orchestrator to spawn a subagent, not set identity", async () => {
+    const ctx = makeModeCtx("subagent");
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const instruction = (result as { instruction: string }).instruction;
+
+    expect(instruction).toContain("SUBAGENT orchestration mode");
+    expect(instruction).toContain("Do NOT call set_agent_identity");
+    expect(instruction).toContain("get_agent_prompt");
+    expect(instruction).toContain("Spawn a FRESH subagent");
+  });
+
+  it("legacy mode → instruction is the current set_agent_identity guidance", async () => {
+    const ctx = makeModeCtx("legacy");
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const instruction = (result as { instruction: string }).instruction;
+
+    expect(instruction).toContain("call the set_agent_identity tool");
+    expect(instruction).not.toContain("SUBAGENT orchestration mode");
+  });
+
+  it("no mode set (no row) → fails safe to the legacy instruction", async () => {
+    const ctx = makeModeCtx(null);
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const instruction = (result as { instruction: string }).instruction;
+
+    expect(instruction).toContain("call the set_agent_identity tool");
+    expect(instruction).not.toContain("SUBAGENT orchestration mode");
+  });
+});

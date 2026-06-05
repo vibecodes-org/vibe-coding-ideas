@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Phase II · Slice 1 — Per-session switch for subagent orchestration</title>
+<style>
+  :root {
+    --bg: #0f1115;
+    --panel: #171a21;
+    --panel-2: #1e222b;
+    --ink: #e7ebf0;
+    --muted: #9aa4b2;
+    --line: #2a2f3a;
+    --legacy: #5b6675;
+    --subagent: #4ade80;
+    --accent: #7c9cff;
+    --warn: #fbbf24;
+    --danger: #f87171;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.7 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: 0 0 80px;
+  }
+  header {
+    padding: 40px 32px 28px; border-bottom: 1px solid var(--line);
+    background: linear-gradient(180deg, #14171e, #0f1115);
+  }
+  .kicker { color: var(--accent); font-weight: 600; letter-spacing: .08em; text-transform: uppercase; font-size: 12px; }
+  h1 { margin: 8px 0 6px; font-size: 26px; line-height: 1.25; }
+  h2 { margin: 40px 0 12px; font-size: 20px; border-left: 3px solid var(--accent); padding-left: 12px; }
+  h3 { margin: 24px 0 8px; font-size: 14px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .sub { color: var(--muted); max-width: 74ch; }
+  main { padding: 0 32px; max-width: 1000px; margin: 0 auto; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; }
+  .card.legacy { border-top: 3px solid var(--legacy); }
+  .card.subagent { border-top: 3px solid var(--subagent); }
+  .pill {
+    display: inline-block; font: 600 11px/1 var(--mono); padding: 5px 9px; border-radius: 999px;
+    letter-spacing: .04em; margin-right: 4px;
+  }
+  .pill.legacy { background: rgba(91,102,117,.18); color: #aab4c2; border: 1px solid var(--legacy); }
+  .pill.subagent { background: rgba(74,222,128,.12); color: var(--subagent); border: 1px solid var(--subagent); }
+  .pill.default { background: rgba(124,156,255,.12); color: var(--accent); border: 1px solid var(--accent); }
+  .flow { display: flex; flex-direction: column; gap: 10px; margin: 12px 0; }
+  .step {
+    display: grid; grid-template-columns: 30px 1fr; gap: 12px; align-items: start;
+    background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px;
+  }
+  .step .n { width: 26px; height: 26px; border-radius: 50%; background: var(--accent); color: #0b0e14;
+    display: grid; place-items: center; font: 700 13px var(--mono); }
+  .step.who-sub .n { background: var(--subagent); color: #07160c; }
+  .step.who-server .n { background: var(--warn); color: #1a1304; }
+  .who { font: 600 11px var(--mono); letter-spacing: .04em; text-transform: uppercase; }
+  .who.orch { color: var(--accent); } .who.sub { color: var(--subagent); } .who.server { color: var(--warn); }
+  table { border-collapse: collapse; width: 100%; margin: 12px 0; font-size: 15px; }
+  th, td { border: 1px solid var(--line); padding: 10px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--panel-2); color: var(--muted); font-weight: 600; }
+  .note { border-left: 3px solid var(--warn); background: rgba(251,191,36,.07); padding: 12px 16px; border-radius: 0 8px 8px 0; margin: 14px 0; }
+  .ok { color: var(--subagent); } .no { color: var(--danger); }
+  .legend { display: flex; gap: 18px; flex-wrap: wrap; margin: 10px 0; font-size: 14px; color: var(--muted); }
+  .legend span::before { content: "●"; margin-right: 6px; }
+  .l-orch::before { color: var(--accent); } .l-sub::before { color: var(--subagent); } .l-server::before { color: var(--warn); }
+  .say {
+    font-family: var(--mono); font-size: 13.5px; background: var(--panel-2);
+    border: 1px solid var(--line); border-radius: 8px; padding: 10px 14px; display: block;
+    color: #d7deea; margin: 6px 0; max-width: 74ch;
+  }
+  code { font-family: var(--mono); font-size: 13.5px; background: var(--panel-2); border: 1px solid var(--line); border-radius: 5px; padding: 1px 6px; }
+  footer { color: var(--muted); font-size: 14px; padding: 30px 32px 0; max-width: 1000px; margin: 0 auto; }
+  .big { font-size: 17px; color: var(--ink); }
+</style>
+</head>
+<body>
+<header>
+  <div class="kicker">Phase II · Slice 1 · Design</div>
+  <h1>A per-session switch for subagent orchestration</h1>
+  <p class="sub big">
+    This slice adds one thing: a switch that lets a single Claude session run workflow steps the new way (a fresh
+    subagent per step) while every other session keeps running them the current way. It's deliberately small so we can
+    turn it on in production, test it on a real workflow, and carry essentially no risk to anything else.
+  </p>
+</header>
+
+<main>
+
+  <h2>1 · Why</h2>
+  <p class="sub">
+    Right now a workflow is run by one session that plays every role in turn. Before each step it calls
+    <code>set_agent_identity</code>, which returns a persona's system prompt as tool-result text, and the session is
+    expected to follow it. Two known weaknesses: the persona is just text the model may stop honouring, and over a long
+    run the personas drift and bleed into each other.
+  </p>
+  <p class="sub">
+    The new approach removes the role-play entirely: each step runs in its own <strong>fresh subagent</strong> whose
+    actual system prompt <em>is</em> that step's persona. Clean context per step, no drift. This slice doesn't build all
+    of that — it builds the switch that lets us start using it, safely and selectively.
+  </p>
+
+  <h2>2 · What this slice delivers</h2>
+  <ul class="sub">
+    <li>A per-session setting, <code>orchestration_mode</code>, with two values: <span class="pill legacy">legacy</span>
+      (today's behaviour) and <span class="pill subagent">subagent</span> (the new behaviour). Default is
+      <span class="pill default">legacy</span>.</li>
+    <li>A new tool, <code>set_orchestration_mode</code>, to change that setting <strong>for the current session only</strong>.</li>
+    <li>A branch in <code>claim_next_step</code>: when the session is in <code>subagent</code> mode it returns the new
+      instructions; otherwise it returns exactly what it returns today.</li>
+  </ul>
+  <p class="sub"><strong>Not in this slice:</strong> per-role tool permissions, any persona-adherence scoring, and any
+    change to how steps are completed or enforced (that's already handled by the claim token and Fix 1).</p>
+
+  <h2>3 · The setting is per session, and that's the whole point</h2>
+  <p class="sub">
+    "Session" here means one Claude connection — you typically have several open at once. Each connection already has its
+    own identity record on the server; we add the mode to that same per-session record. So turning the switch on in one
+    session changes that session and nothing else.
+  </p>
+  <div class="grid2">
+    <div class="card legacy">
+      <span class="pill legacy">legacy</span> <span class="pill default">default</span>
+      <p class="sub">Identical to today. Any session that never calls the new tool stays here. No action needed to keep it,
+        and it's the value we fall back to whenever anything is unset or unexpected.</p>
+    </div>
+    <div class="card subagent">
+      <span class="pill subagent">subagent</span>
+      <p class="sub">Opt-in, set explicitly in the one session you're testing. It persists for that session — including
+        across token refreshes — until you set it back.</p>
+    </div>
+  </div>
+
+  <h3>Turning it on</h3>
+  <div class="flow">
+    <div class="step"><div class="n">1</div><div><div class="who orch">You, in the session under test</div>
+      Call <code>set_orchestration_mode("subagent")</code>.</div></div>
+    <div class="step who-server"><div class="n">2</div><div><div class="who server">Server</div>
+      Records <code>subagent</code> on this session's record only. Other sessions have their own records and are untouched.</div></div>
+    <div class="step who-server"><div class="n">3</div><div><div class="who server">Server → you</div>
+      Returns a clear confirmation: the new mode, and a note that it applies to this session only.</div></div>
+  </div>
+  <p class="sub">Switching back is the same call with <code>"legacy"</code>.</p>
+
+  <h2>4 · What changes when it's on</h2>
+  <p class="sub">
+    Only one thing changes: the <strong>instruction text</strong> that <code>claim_next_step</code> returns. The step
+    itself, the claim token, the list of available agents, and the prior-step context are all identical in both modes.
+    Keeping the change confined to the instructions is what makes this low-risk.
+  </p>
+  <div class="grid2">
+    <div class="card legacy">
+      <span class="pill legacy">legacy — unchanged</span>
+      <p class="say">"Before executing this step you must call <code>set_agent_identity</code> to switch to the
+        {name} ({role}) persona…"</p>
+      <p class="sub">Exactly what it returns today.</p>
+    </div>
+    <div class="card subagent">
+      <span class="pill subagent">subagent</span>
+      <p class="say">"This session is in subagent mode. Do not call <code>set_agent_identity</code>. Keep the claim token.
+        Fetch this step's persona with <code>get_agent_prompt</code>, spawn a fresh subagent whose system prompt is that
+        persona plus this step's description plus the prior context, let it produce the deliverable, then you call
+        <code>complete_step</code> with its result."</p>
+    </div>
+  </div>
+
+  <h3>The subagent flow</h3>
+  <div class="legend">
+    <span class="l-orch">Orchestrator (the session running the workflow)</span>
+    <span class="l-sub">Subagent (spawned fresh for one step)</span>
+    <span class="l-server">Server</span>
+  </div>
+  <div class="flow">
+    <div class="step"><div class="n">1</div><div><div class="who orch">Orchestrator</div><code>claim_next_step</code> → the step plus a claim token (it keeps the token).</div></div>
+    <div class="step"><div class="n">2</div><div><div class="who orch">Orchestrator</div><code>get_agent_prompt(bot_id)</code> → the persona's system prompt for this step.</div></div>
+    <div class="step who-sub"><div class="n">3</div><div><div class="who sub">Subagent</div>Spawned with that system prompt + the step description + the prior context. Runs the step in its own clean context and returns the deliverable.</div></div>
+    <div class="step"><div class="n">4</div><div><div class="who orch">Orchestrator</div><code>complete_step(token, output)</code> with what the subagent returned.</div></div>
+    <div class="step who-server"><div class="n">5</div><div><div class="who server">Server</div>Verifies the token, attributes the work to the step's agent, and passes the output to the next step as context.</div></div>
+  </div>
+  <div class="note">
+    The subagent never calls the MCP server itself — it just produces the deliverable and hands it back. The orchestrator
+    keeps the token and does all the workflow transitions. That's why subagents need no credentials of their own, which
+    is the "no API keys" point from earlier.
+  </div>
+
+  <h2>5 · Every case, and where it lands</h2>
+  <p class="sub">Anything unset or unexpected resolves to <code>legacy</code>, so the safe path is always the default.</p>
+  <table>
+    <tr><th>Case</th><th>Resolves to</th></tr>
+    <tr><td>Session never called the tool</td><td><span class="pill legacy">legacy</span> — today's behaviour <span class="ok">✓</span></td></tr>
+    <tr><td>You set <code>subagent</code> in this session</td><td><span class="pill subagent">subagent</span> <span class="ok">✓</span></td></tr>
+    <tr><td>Your other sessions, running concurrently</td><td><span class="pill legacy">legacy</span> — unaffected <span class="ok">✓</span></td></tr>
+    <tr><td>The setting is empty / no record yet</td><td><span class="pill legacy">legacy</span></td></tr>
+    <tr><td>The setting holds an unrecognised value</td><td><span class="pill legacy">legacy</span></td></tr>
+    <tr><td>You pass an invalid mode to the tool</td><td>Rejected with the valid options; nothing changes <span class="no">✗</span></td></tr>
+    <tr><td>Local (stdio) session vs. live (remote) session</td><td>Same setting; tool works in both</td></tr>
+  </table>
+
+  <h2>6 · The new tool</h2>
+  <p class="sub"><code>set_orchestration_mode</code></p>
+  <ul class="sub">
+    <li><strong>Input:</strong> <code>mode</code> — either <code>legacy</code> or <code>subagent</code>. Anything else is rejected before it does anything.</li>
+    <li><strong>Effect:</strong> writes the mode onto the current session's record. It doesn't touch the active persona, the login, or any other session.</li>
+    <li><strong>Returns:</strong> the new mode and a reminder that it's scoped to this session.</li>
+  </ul>
+  <p class="sub">It mirrors the existing <code>set_agent_identity</code> tool — same per-session record, same "changes only
+    this session" guarantee — so its behaviour is predictable.</p>
+
+  <h2>7 · Three choices to confirm</h2>
+  <ol class="sub">
+    <li><strong>Tool name:</strong> a dedicated <code>set_orchestration_mode</code>, separate from <code>set_agent_identity</code>.
+      They're different jobs, so I'd keep them separate.</li>
+    <li><strong>Parity:</strong> the subagent instruction should also tell the orchestrator to append a short summary to
+      the task description after each step, the same as legacy does. I'd keep them consistent.</li>
+    <li><strong>No web UI this slice:</strong> tool-only, which fits testing quietly in production. Agreed?</li>
+  </ol>
+
+</main>
+
+<footer>
+  Summary: a per-session, default-off switch that lets one session run the subagent-per-step flow in production, with
+  everything unset or unexpected falling back to today's behaviour.<br />
+  Next after approval: build the setting, the tool, and the <code>claim_next_step</code> branch, with tests — nothing
+  pushed live until you say so.
+</footer>
+</body>
+</html>

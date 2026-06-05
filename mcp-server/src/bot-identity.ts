@@ -41,3 +41,32 @@ export async function resolveActiveBotId(
 
   return bot?.is_active ? bot.id : null;
 }
+
+/** Orchestration modes a session can run workflow steps under. */
+export type OrchestrationMode = "legacy" | "subagent";
+
+/**
+ * Resolve the session's orchestration mode (Phase II Slice 1) — how
+ * claim_next_step should instruct the orchestrator to run a step.
+ *
+ * Per-session, like the active identity: stored on mcp_agent_sessions keyed by
+ * (user_id, session_id), so flipping it in one connection never affects another.
+ * Read fresh on every call (no instance cache). Fails SAFE: a missing row, NULL,
+ * or any unrecognised value resolves to "legacy" (current production behaviour).
+ */
+export async function resolveOrchestrationMode(
+  client: SupabaseClient<Database>,
+  userId: string,
+  sessionId: string | undefined
+): Promise<OrchestrationMode> {
+  if (!sessionId) return "legacy";
+
+  const { data } = await client
+    .from("mcp_agent_sessions")
+    .select("orchestration_mode")
+    .eq("user_id", userId)
+    .eq("session_id", sessionId)
+    .maybeSingle();
+
+  return data?.orchestration_mode === "subagent" ? "subagent" : "legacy";
+}

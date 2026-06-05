@@ -2,6 +2,7 @@ import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
 import { mintClaimToken, verifyClaimToken } from "../claim-token";
+import { resolveOrchestrationMode } from "../bot-identity";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits } from "../../../src/lib/workflow-helpers";
 import { tierRank } from "../../../src/lib/role-matching";
@@ -633,9 +634,34 @@ export async function claimNextStep(
     ? available_agents.find((a) => a.bot_id === updated.bot_id)
     : null;
 
-  const identityInstruction = matchedAgent
-    ? `IMPORTANT: Before executing this step, you MUST call the set_agent_identity tool with agent_id "${matchedAgent.bot_id}" to switch to the ${matchedAgent.bot_name} (${matchedAgent.bot_role}) persona. This ensures your work is attributed correctly and you follow the agent's system prompt.`
-    : `IMPORTANT: Before executing this step, you MUST call the set_agent_identity tool to assume an appropriate persona for the "${updated.agent_role}" role. Review the available_agents list and pick the best match by role, then call set_agent_identity with that agent's bot_id.`;
+  // Phase II Slice 1: branch the identity instruction on the session's
+  // orchestration mode. Per-session, fail-safe to "legacy" (resolver handles
+  // missing/unknown). Only this instruction string changes between modes —
+  // the step, claim_token, available_agents, and context are identical.
+  const orchestrationMode = await resolveOrchestrationMode(
+    ctx.supabase,
+    ctx.ownerUserId ?? ctx.userId,
+    ctx.sessionId
+  );
+
+  let identityInstruction: string;
+  if (orchestrationMode === "subagent") {
+    identityInstruction = matchedAgent
+      ? `IMPORTANT: This session is in SUBAGENT orchestration mode. Do NOT call set_agent_identity. Instead:\n` +
+        `1. Keep the claim_token from this response — do NOT pass it to the subagent.\n` +
+        `2. Call get_agent_prompt with agent_id "${matchedAgent.bot_id}" to fetch the ${matchedAgent.bot_name} (${matchedAgent.bot_role}) persona's full system prompt.\n` +
+        `3. Spawn a FRESH subagent whose system prompt IS that persona prompt, and whose task is this step's description plus the prior-step deliverables in the "context" array. Let it do the work in its own isolated context and return the deliverable.\n` +
+        `4. When it returns, YOU (the orchestrator) call complete_step with this step's id, the claim_token, and the subagent's deliverable as the output.`
+      : `IMPORTANT: This session is in SUBAGENT orchestration mode. Do NOT call set_agent_identity. Review available_agents, pick the best match for the "${updated.agent_role}" role, then:\n` +
+        `1. Keep the claim_token from this response — do NOT pass it to the subagent.\n` +
+        `2. Call get_agent_prompt with that agent's bot_id to fetch its system prompt.\n` +
+        `3. Spawn a FRESH subagent whose system prompt IS that persona prompt, tasked with this step's description plus the prior-step deliverables in the "context" array.\n` +
+        `4. When it returns, YOU call complete_step with the claim_token and the subagent's deliverable as the output.`;
+  } else {
+    identityInstruction = matchedAgent
+      ? `IMPORTANT: Before executing this step, you MUST call the set_agent_identity tool with agent_id "${matchedAgent.bot_id}" to switch to the ${matchedAgent.bot_name} (${matchedAgent.bot_role}) persona. This ensures your work is attributed correctly and you follow the agent's system prompt.`
+      : `IMPORTANT: Before executing this step, you MUST call the set_agent_identity tool to assume an appropriate persona for the "${updated.agent_role}" role. Review the available_agents list and pick the best match by role, then call set_agent_identity with that agent's bot_id.`;
+  }
 
   const contextParts: string[] = [];
 
