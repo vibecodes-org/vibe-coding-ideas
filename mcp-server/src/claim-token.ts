@@ -29,13 +29,3 @@ export function verifyClaimToken(
   const b = Buffer.from(hashClaimToken(token), "hex");
   return a.length === b.length && timingSafeEqual(a, b);
 }
-
-/**
- * Back-compat grace window (design §5, Design Review condition 2):
- * while enabled, complete_step/fail_step calls WITHOUT a token fall back to the
- * legacy persona-only check (logged). Cutover = set WORKFLOW_CLAIM_TOKEN_GRACE
- * to "false", then DELETE this flag and the legacy path within one release.
- */
-export function isClaimTokenGraceEnabled(): boolean {
-  return process.env.WORKFLOW_CLAIM_TOKEN_GRACE !== "false";
-}

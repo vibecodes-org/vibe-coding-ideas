@@ -1,9 +1,8 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect } from "vitest";
 import {
   mintClaimToken,
   hashClaimToken,
   verifyClaimToken,
-  isClaimTokenGraceEnabled,
 } from "./claim-token";
 
 describe("mintClaimToken", () => {
@@ -56,26 +55,3 @@ describe("verifyClaimToken", () => {
   });
 });
 
-describe("isClaimTokenGraceEnabled", () => {
-  const original = process.env.WORKFLOW_CLAIM_TOKEN_GRACE;
-
-  afterEach(() => {
-    if (original === undefined) delete process.env.WORKFLOW_CLAIM_TOKEN_GRACE;
-    else process.env.WORKFLOW_CLAIM_TOKEN_GRACE = original;
-  });
-
-  it("defaults to enabled (unset)", () => {
-    delete process.env.WORKFLOW_CLAIM_TOKEN_GRACE;
-    expect(isClaimTokenGraceEnabled()).toBe(true);
-  });
-
-  it("stays enabled for any value other than 'false'", () => {
-    process.env.WORKFLOW_CLAIM_TOKEN_GRACE = "true";
-    expect(isClaimTokenGraceEnabled()).toBe(true);
-  });
-
-  it("disables on explicit 'false' (the cutover switch)", () => {
-    process.env.WORKFLOW_CLAIM_TOKEN_GRACE = "false";
-    expect(isClaimTokenGraceEnabled()).toBe(false);
-  });
-});

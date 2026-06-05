@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
-import { mintClaimToken, verifyClaimToken, isClaimTokenGraceEnabled } from "../claim-token";
+import { mintClaimToken, verifyClaimToken } from "../claim-token";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits } from "../../../src/lib/workflow-helpers";
 import { tierRank } from "../../../src/lib/role-matching";
@@ -766,19 +766,10 @@ export async function completeStep(
 
   // Layer 1 — capability: the claim token proves the completer is the claimer (E2).
   if (!verifyClaimToken(step.claim_token_hash, params.claim_token)) {
-    if (params.claim_token || !isClaimTokenGraceEnabled()) {
-      throw new Error(
-        "This step isn't claimed by you. Call claim_next_step to (re)claim it — " +
-        "you'll receive a claim_token to pass to complete_step."
-      );
-    }
-    // Grace window (E4): legacy caller without a token — fall through to the
-    // persona check below. Logged so cutover can be timed (flip
-    // WORKFLOW_CLAIM_TOKEN_GRACE=false once these reach zero).
-    logger.warn("complete_step legacy call without claim_token (grace window)", {
-      stepId: params.step_id,
-      callerUserId: ctx.userId,
-    });
+    throw new Error(
+      "This step isn't claimed by you. Call claim_next_step to (re)claim it — " +
+      "you'll receive a claim_token to pass to complete_step."
+    );
   }
 
   // Layer 2 — persona consistency (KEPT per Design Review): the right agent
@@ -886,16 +877,10 @@ export async function failStep(
   if (step.status !== "awaiting_approval") {
     // Layer 1 — capability (E2)
     if (!verifyClaimToken(step.claim_token_hash, params.claim_token)) {
-      if (params.claim_token || !isClaimTokenGraceEnabled()) {
-        throw new Error(
-          "This step isn't claimed by you. Call claim_next_step to (re)claim it — " +
-          "you'll receive a claim_token to pass to fail_step."
-        );
-      }
-      logger.warn("fail_step legacy call without claim_token (grace window)", {
-        stepId: params.step_id,
-        callerUserId: ctx.userId,
-      });
+      throw new Error(
+        "This step isn't claimed by you. Call claim_next_step to (re)claim it — " +
+        "you'll receive a claim_token to pass to fail_step."
+      );
     }
 
     // Layer 2 — persona consistency (KEPT, non-destructive — E3)

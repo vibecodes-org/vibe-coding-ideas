@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { McpContext } from "../context";
 import { mintClaimToken, hashClaimToken } from "../claim-token";
+
+// Shared valid claim token: post-cutover, every complete/fail needs one.
+const TCT = mintClaimToken();
 import {
   claimNextStep,
   claimNextStepSchema,
@@ -494,6 +497,7 @@ describe("claimNextStep", () => {
 describe("completeStep", () => {
   it("does not create output comment on completion (output column is sufficient)", async () => {
     const stepData = {
+      claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       idea_id: IDEA_ID,
@@ -549,7 +553,7 @@ describe("completeStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await completeStep(ctx, { step_id: STEP_ID, output: "My output" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "My output" });
 
     // Output is stored on the step's output column only — no duplicate comment
     expect(commentInserted).toBe(false);
@@ -557,6 +561,7 @@ describe("completeStep", () => {
 
   it("returns stop message when step routes to awaiting_approval", async () => {
     const stepData = {
+      claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       idea_id: IDEA_ID,
@@ -605,7 +610,7 @@ describe("completeStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    const result = await completeStep(ctx, { step_id: STEP_ID, output: "My output" });
+    const result = await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "My output" });
 
     expect(result.status).toBe("awaiting_approval");
     expect(result).toHaveProperty("message");
@@ -615,6 +620,7 @@ describe("completeStep", () => {
 
   it("does not return stop message for normal completion", async () => {
     const stepData = {
+      claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       idea_id: IDEA_ID,
@@ -663,7 +669,7 @@ describe("completeStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    const result = await completeStep(ctx, { step_id: STEP_ID, output: "My output" });
+    const result = await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "My output" });
 
     expect(result.status).toBe("completed");
     expect(result).not.toHaveProperty("message");
@@ -671,6 +677,7 @@ describe("completeStep", () => {
 
   it("does not create output comment when output is omitted", async () => {
     const stepData = {
+      claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       idea_id: IDEA_ID,
@@ -726,7 +733,7 @@ describe("completeStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await completeStep(ctx, { step_id: STEP_ID });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID });
 
     expect(commentInserted).toBe(false);
   });
@@ -989,6 +996,7 @@ describe("approveStep", () => {
 
   it("allows human callers", async () => {
     const stepData = {
+      claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       idea_id: IDEA_ID,
@@ -1053,7 +1061,8 @@ const RESET_TO_STEP_ID = "00000000-0000-4000-a000-000000000099";
 
 describe("failStep", () => {
   it("resets the failed step itself when cascade is used", async () => {
-    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
+    const stepFetched = {
+      claim_token_hash: TCT.hash, id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
     const updatedStep = {
       id: STEP_ID,
       task_id: TASK_ID,
@@ -1112,7 +1121,7 @@ describe("failStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    const result = await failStep(ctx, {
+    const result = await failStep(ctx, { claim_token: TCT.token,
       step_id: STEP_ID,
       output: "Needs rework",
       reset_to_step_id: RESET_TO_STEP_ID,
@@ -1127,7 +1136,8 @@ describe("failStep", () => {
   });
 
   it("sets run to running when cascade is used", async () => {
-    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
+    const stepFetched = {
+      claim_token_hash: TCT.hash, id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
     const updatedStep = {
       id: STEP_ID,
       task_id: TASK_ID,
@@ -1185,7 +1195,7 @@ describe("failStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await failStep(ctx, {
+    await failStep(ctx, { claim_token: TCT.token,
       step_id: STEP_ID,
       output: "Needs rework",
       reset_to_step_id: RESET_TO_STEP_ID,
@@ -1195,7 +1205,8 @@ describe("failStep", () => {
   });
 
   it("sets run to failed when no cascade", async () => {
-    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
+    const stepFetched = {
+      claim_token_hash: TCT.hash, id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
     const updatedStep = {
       id: STEP_ID,
       task_id: TASK_ID,
@@ -1238,7 +1249,7 @@ describe("failStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await failStep(ctx, {
+    await failStep(ctx, { claim_token: TCT.token,
       step_id: STEP_ID,
       output: "Fatal error",
     });
@@ -1247,7 +1258,8 @@ describe("failStep", () => {
   });
 
   it("auto-creates failure comment when output is provided", async () => {
-    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
+    const stepFetched = {
+      claim_token_hash: TCT.hash, id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
     const updatedStep = {
       id: STEP_ID,
       task_id: TASK_ID,
@@ -1294,7 +1306,7 @@ describe("failStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await failStep(ctx, {
+    await failStep(ctx, { claim_token: TCT.token,
       step_id: STEP_ID,
       output: "Design does not meet requirements",
     });
@@ -1309,7 +1321,8 @@ describe("failStep", () => {
   });
 
   it("does not create failure comment when no output", async () => {
-    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
+    const stepFetched = {
+      claim_token_hash: TCT.hash, id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
     const updatedStep = {
       id: STEP_ID,
       task_id: TASK_ID,
@@ -1352,7 +1365,7 @@ describe("failStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await failStep(ctx, {
+    await failStep(ctx, { claim_token: TCT.token,
       step_id: STEP_ID,
     });
 
@@ -1360,7 +1373,8 @@ describe("failStep", () => {
   });
 
   it("clears claimed_by and claim_token_hash on cascade-reset steps", async () => {
-    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
+    const stepFetched = {
+      claim_token_hash: TCT.hash, id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
     const updatedStep = {
       id: STEP_ID,
       task_id: TASK_ID,
@@ -1420,7 +1434,7 @@ describe("failStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await failStep(ctx, {
+    await failStep(ctx, { claim_token: TCT.token,
       step_id: STEP_ID,
       output: "Needs rework",
       reset_to_step_id: RESET_TO_STEP_ID,
@@ -1437,7 +1451,8 @@ describe("failStep", () => {
   });
 
   it("sets completed_at when failing a step", async () => {
-    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
+    const stepFetched = {
+      claim_token_hash: TCT.hash, id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
     const updatedStep = {
       id: STEP_ID,
       task_id: TASK_ID,
@@ -1483,7 +1498,7 @@ describe("failStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await failStep(ctx, {
+    await failStep(ctx, { claim_token: TCT.token,
       step_id: STEP_ID,
       output: "Error occurred",
     });
@@ -1493,7 +1508,8 @@ describe("failStep", () => {
   });
 
   it("failure comment uses idea_id not task_id", async () => {
-    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
+    const stepFetched = {
+      claim_token_hash: TCT.hash, id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID };
     const updatedStep = {
       id: STEP_ID,
       task_id: TASK_ID,
@@ -1540,7 +1556,7 @@ describe("failStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await failStep(ctx, {
+    await failStep(ctx, { claim_token: TCT.token,
       step_id: STEP_ID,
       output: "Bad design",
     });
@@ -1557,7 +1573,8 @@ describe("failStep", () => {
   });
 
   it("cascade creates changes_requested comment on target step", async () => {
-    const stepFetched = { id: STEP_ID, run_id: RUN_ID, step_order: 5, idea_id: IDEA_ID };
+    const stepFetched = {
+      claim_token_hash: TCT.hash, id: STEP_ID, run_id: RUN_ID, step_order: 5, idea_id: IDEA_ID };
     const updatedStep = {
       id: STEP_ID,
       task_id: TASK_ID,
@@ -1615,7 +1632,7 @@ describe("failStep", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await failStep(ctx, {
+    await failStep(ctx, { claim_token: TCT.token,
       step_id: STEP_ID,
       output: "Validation logic is wrong",
       reset_to_step_id: RESET_TO_STEP_ID,
@@ -1812,6 +1829,7 @@ describe("completeStep — identity enforcement", () => {
 
   it("rejects when ctx.userId does not match step.bot_id", async () => {
     const stepData = {
+      claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       idea_id: IDEA_ID,
@@ -1828,12 +1846,13 @@ describe("completeStep — identity enforcement", () => {
     });
 
     await expect(
-      completeStep(ctx, { step_id: STEP_ID, output: "Done" })
+      completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "Done" })
     ).rejects.toThrow(/You're acting as .* but this step belongs to/);
   });
 
   it("includes agent name and bot_id in error message", async () => {
     const stepData = {
+      claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       idea_id: IDEA_ID,
@@ -1850,12 +1869,13 @@ describe("completeStep — identity enforcement", () => {
     });
 
     await expect(
-      completeStep(ctx, { step_id: STEP_ID })
+      completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID })
     ).rejects.toThrow(/Atlas.*Full Stack Engineer.*set_agent_identity/);
   });
 
   it("succeeds when ctx.userId matches step.bot_id", async () => {
     const stepData = {
+      claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       idea_id: IDEA_ID,
@@ -1877,12 +1897,13 @@ describe("completeStep — identity enforcement", () => {
 
     const ctx = makeCompleteContext({ stepData, updatedStep });
 
-    const result = await completeStep(ctx, { step_id: STEP_ID, output: "Done" });
+    const result = await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "Done" });
     expect(result.status).toBe("completed");
   });
 
   it("succeeds when step.bot_id is null (no pre-matched agent)", async () => {
     const stepData = {
+      claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       idea_id: IDEA_ID,
@@ -1904,7 +1925,7 @@ describe("completeStep — identity enforcement", () => {
 
     const ctx = makeCompleteContext({ stepData, updatedStep });
 
-    const result = await completeStep(ctx, { step_id: STEP_ID, output: "Done" });
+    const result = await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "Done" });
     expect(result.status).toBe("completed");
   });
 });
@@ -1916,6 +1937,7 @@ describe("completeStep — identity enforcement", () => {
 describe("failStep — identity enforcement", () => {
   it("rejects when ctx.userId does not match step.bot_id", async () => {
     const stepFetched = {
+      claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       step_order: 3,
@@ -1942,12 +1964,13 @@ describe("failStep — identity enforcement", () => {
     }) as unknown as McpContext["supabase"]["from"]);
 
     await expect(
-      failStep(ctx, { step_id: STEP_ID, output: "Failed" })
+      failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "Failed" })
     ).rejects.toThrow(/You're acting as .* but this step belongs to/);
   });
 
   it("succeeds when step.bot_id is null", async () => {
     const stepFetched = {
+      claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       step_order: 3,
@@ -1995,7 +2018,7 @@ describe("failStep — identity enforcement", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    const result = await failStep(ctx, { step_id: STEP_ID, output: "Failed" });
+    const result = await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "Failed" });
     expect(result.step.status).toBe("failed");
   });
 });
@@ -2073,12 +2096,6 @@ describe("claimNextStep — claimed_by", () => {
 // ---------------------------------------------------------------------------
 
 describe("claim-token protocol", () => {
-  const originalGrace = process.env.WORKFLOW_CLAIM_TOKEN_GRACE;
-  afterEach(() => {
-    if (originalGrace === undefined) delete process.env.WORKFLOW_CLAIM_TOKEN_GRACE;
-    else process.env.WORKFLOW_CLAIM_TOKEN_GRACE = originalGrace;
-  });
-
   /** Claim-flow context: returns [step] for the list query, captures the claim update. */
   function makeClaimCtx(step: Record<string, unknown>, onUpdate: (data: unknown) => void) {
     const tableCounts: Record<string, number> = {};
@@ -2243,8 +2260,7 @@ describe("claim-token protocol", () => {
     expect(updates).toBe(0); // an error is never a state change
   });
 
-  it("completeStep requires the token once the grace window is off (cutover)", async () => {
-    process.env.WORKFLOW_CLAIM_TOKEN_GRACE = "false";
+  it("completeStep rejects a missing token (post-cutover: always required)", async () => {
     const { hash } = mintClaimToken();
     const ctx = makeCompleteCtx(
       { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null, claim_token_hash: hash }
@@ -2255,16 +2271,6 @@ describe("claim-token protocol", () => {
     ).rejects.toThrow("This step isn't claimed by you");
   });
 
-  it("completeStep without a token passes during the grace window (E4 legacy path)", async () => {
-    delete process.env.WORKFLOW_CLAIM_TOKEN_GRACE;
-    const { hash } = mintClaimToken();
-    const ctx = makeCompleteCtx(
-      { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null, claim_token_hash: hash }
-    );
-
-    const result = await completeStep(ctx, { step_id: STEP_ID, output: "Done" });
-    expect(result.status).toBe("completed");
-  });
 
   it("persona mismatch (E3) no longer resets the step — non-destructive", async () => {
     const { token, hash } = mintClaimToken();
@@ -2312,7 +2318,7 @@ describe("workflow step mutations touch board_tasks for realtime", () => {
         const chain = createChain(null);
         chain.chain.single = vi.fn(() =>
           Promise.resolve({
-            data: { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null },
+            data: { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null, claim_token_hash: TCT.hash },
             error: null,
           })
         );
@@ -2340,7 +2346,7 @@ describe("workflow step mutations touch board_tasks for realtime", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await completeStep(ctx, { step_id: STEP_ID, output: "done" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done" });
     expect(boardTaskTouched).toBe(true);
   });
 
@@ -2395,7 +2401,7 @@ describe("workflow step mutations touch board_tasks for realtime", () => {
         const chain = createChain(null);
         chain.chain.single = vi.fn(() =>
           Promise.resolve({
-            data: { id: STEP_ID, run_id: RUN_ID, step_order: 1, idea_id: IDEA_ID, bot_id: null, agent_role: "dev", status: "in_progress" },
+            data: { id: STEP_ID, run_id: RUN_ID, step_order: 1, idea_id: IDEA_ID, bot_id: null, agent_role: "dev", status: "in_progress", claim_token_hash: TCT.hash },
             error: null,
           })
         );
@@ -2416,7 +2422,7 @@ describe("workflow step mutations touch board_tasks for realtime", () => {
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await failStep(ctx, { step_id: STEP_ID, output: "error" });
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "error" });
     expect(boardTaskTouched).toBe(true);
   });
 });
