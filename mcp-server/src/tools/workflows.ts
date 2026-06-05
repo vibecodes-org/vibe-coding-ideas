@@ -772,36 +772,32 @@ export async function completeStep(
     );
   }
 
-  // Layer 2 — persona consistency (KEPT per Design Review): the right agent
-  // must be at the wheel; catches "claimed but never adopted the persona" (E3).
+  // Layer 2 — persona consistency (KEPT per Design Review, but NON-DESTRUCTIVE).
+  // The claim token (Layer 1) already proves capability AND was minted FOR
+  // step.bot_id, so possessing it binds this completion to that persona by
+  // construction — independent of the connection's ambient identity slot
+  // (ctx.userId). That slot can lag behind set_agent_identity under concurrent
+  // sessions sharing one account; rejecting on the lag livelocked the
+  // claim → complete → reject → re-claim loop. So we keep the check for drift
+  // VISIBILITY (logged) but DO NOT reject — and we attribute the work to the
+  // persona the token belongs to, not the possibly-stale ambient identity.
   if (step.bot_id && ctx.userId !== step.bot_id) {
-    logger.warn("complete_step persona mismatch", {
+    logger.warn("complete_step persona mismatch (token valid — attributing to claimed persona)", {
       stepId: params.step_id,
       stepBotId: step.bot_id,
       callerUserId: ctx.userId,
       ownerUserId: ctx.ownerUserId,
     });
-
-    const [{ data: agent }, { data: caller }] = await Promise.all([
-      ctx.supabase.from("bot_profiles").select("name, role").eq("id", step.bot_id).maybeSingle(),
-      ctx.supabase.from("bot_profiles").select("name").eq("id", ctx.userId).maybeSingle(),
-    ]);
-
-    const agentName = agent?.name ?? "unknown";
-    const agentRole = agent?.role ?? step.agent_role ?? "unknown";
-    const callerName = caller?.name ?? "the owner identity";
-
-    throw new Error(
-      `You're acting as ${callerName} but this step belongs to ${agentName} (${agentRole}). ` +
-      `Call set_agent_identity("${step.bot_id}"), then complete_step again with the same claim_token.`
-    );
   }
+
+  // Attribute the completion to the persona the claim token was minted for.
+  const attributedTo = step.bot_id ?? ctx.userId;
 
   // Determine new status: awaiting_approval if human check required, else completed
   const newStatus = step.human_check_required ? "awaiting_approval" : "completed";
 
   // Token is single-use: clear the hash as part of completion.
-  const updateFields: Record<string, unknown> = { status: newStatus, claimed_by: ctx.userId, claim_token_hash: null };
+  const updateFields: Record<string, unknown> = { status: newStatus, claimed_by: attributedTo, claim_token_hash: null };
   if (params.output !== undefined) updateFields.output = params.output;
   if (newStatus === "completed") updateFields.completed_at = new Date().toISOString();
 
@@ -883,30 +879,24 @@ export async function failStep(
       );
     }
 
-    // Layer 2 — persona consistency (KEPT, non-destructive — E3)
+    // Layer 2 — persona consistency (KEPT, NON-DESTRUCTIVE — mirrors
+    // complete_step). Token possession already binds this action to step.bot_id;
+    // log drift for visibility but do not reject (rejecting on a stale ambient
+    // identity slot livelocked concurrent sessions).
     if (step.bot_id && ctx.userId !== step.bot_id) {
-      logger.warn("fail_step persona mismatch", {
+      logger.warn("fail_step persona mismatch (token valid — attributing to claimed persona)", {
         stepId: params.step_id,
         stepBotId: step.bot_id,
         callerUserId: ctx.userId,
         ownerUserId: ctx.ownerUserId,
       });
-
-      const [{ data: agent }, { data: caller }] = await Promise.all([
-        ctx.supabase.from("bot_profiles").select("name, role").eq("id", step.bot_id).maybeSingle(),
-        ctx.supabase.from("bot_profiles").select("name").eq("id", ctx.userId).maybeSingle(),
-      ]);
-
-      const agentName = agent?.name ?? "unknown";
-      const agentRole = agent?.role ?? step.agent_role ?? "unknown";
-      const callerName = caller?.name ?? "the owner identity";
-
-      throw new Error(
-        `You're acting as ${callerName} but this step belongs to ${agentName} (${agentRole}). ` +
-        `Call set_agent_identity("${step.bot_id}"), then fail_step again with the same claim_token.`
-      );
     }
   }
+
+  // Attribute this failure to the persona the claim token was minted for
+  // (falls back to the caller for awaiting_approval rejections, where bot_id
+  // may still be set but the human gate owns the decision).
+  const attributedTo = step.status !== "awaiting_approval" && step.bot_id ? step.bot_id : ctx.userId;
 
   const updateFields: Record<string, unknown> = {
     status: "failed",
@@ -935,7 +925,7 @@ export async function failStep(
     await ctx.supabase.from("workflow_step_comments").insert({
       step_id: params.step_id,
       idea_id: step.idea_id,
-      author_id: ctx.userId,
+      author_id: attributedTo,
       type: "failure",
       content: params.output,
     });
@@ -994,7 +984,7 @@ export async function failStep(
         await ctx.supabase.from("workflow_step_comments").insert({
           step_id: params.reset_to_step_id,
           idea_id: step.idea_id,
-          author_id: ctx.userId,
+          author_id: attributedTo,
           type: "changes_requested",
           content: params.output || "Rework required — step was rejected and sent back for revision.",
         });

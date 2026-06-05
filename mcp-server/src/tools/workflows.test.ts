@@ -1827,7 +1827,7 @@ describe("completeStep — identity enforcement", () => {
     }) as unknown as McpContext["supabase"]["from"]);
   }
 
-  it("rejects when ctx.userId does not match step.bot_id", async () => {
+  it("completes (does not reject) when ctx.userId differs from step.bot_id — token is the capability (Fix 1)", async () => {
     const stepData = {
       claim_token_hash: TCT.hash,
       id: STEP_ID,
@@ -1835,42 +1835,28 @@ describe("completeStep — identity enforcement", () => {
       idea_id: IDEA_ID,
       human_check_required: false,
       status: "in_progress",
-      bot_id: BOT_ID,
+      bot_id: BOT_ID, // differs from ctx.userId (USER_ID) — the stale-slot case
       agent_role: "Developer",
     };
-
-    const ctx = makeCompleteContext({
-      stepData,
-      updatedStep: {},
-      agentProfile: { name: "Atlas", role: "Full Stack Engineer" },
-    });
-
-    await expect(
-      completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "Done" })
-    ).rejects.toThrow(/You're acting as .* but this step belongs to/);
-  });
-
-  it("includes agent name and bot_id in error message", async () => {
-    const stepData = {
-      claim_token_hash: TCT.hash,
+    const updatedStep = {
       id: STEP_ID,
+      task_id: TASK_ID,
       run_id: RUN_ID,
-      idea_id: IDEA_ID,
-      human_check_required: false,
-      status: "in_progress",
-      bot_id: BOT_ID,
+      title: "Test Step",
       agent_role: "Developer",
+      status: "completed",
+      output: "Done",
+      completed_at: "2026-01-01T00:00:00Z",
     };
 
     const ctx = makeCompleteContext({
       stepData,
-      updatedStep: {},
+      updatedStep,
       agentProfile: { name: "Atlas", role: "Full Stack Engineer" },
     });
 
-    await expect(
-      completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID })
-    ).rejects.toThrow(/Atlas.*Full Stack Engineer.*set_agent_identity/);
+    const result = await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "Done" });
+    expect(result.status).toBe("completed");
   });
 
   it("succeeds when ctx.userId matches step.bot_id", async () => {
@@ -1935,37 +1921,47 @@ describe("completeStep — identity enforcement", () => {
 // ---------------------------------------------------------------------------
 
 describe("failStep — identity enforcement", () => {
-  it("rejects when ctx.userId does not match step.bot_id", async () => {
+  it("fails (does not reject) when ctx.userId differs from step.bot_id — token is the capability (Fix 1)", async () => {
     const stepFetched = {
       claim_token_hash: TCT.hash,
       id: STEP_ID,
       run_id: RUN_ID,
       step_order: 3,
       idea_id: IDEA_ID,
-      bot_id: BOT_ID,
+      bot_id: BOT_ID, // differs from ctx.userId (USER_ID)
       agent_role: "Developer",
     };
+    const updatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: RUN_ID,
+      title: "Test Step",
+      agent_role: "Developer",
+      status: "failed",
+      output: "Failed",
+    };
 
+    const tableCounts: Record<string, number> = {};
     const ctx = makeContext(((table: string) => {
-      if (table === "task_workflow_steps") {
-        const chain = createChain(stepFetched);
-        return chain.chain;
-      }
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      const callNum = tableCounts[table];
 
-      if (table === "bot_profiles") {
+      if (table === "task_workflow_steps") {
+        if (callNum === 1) return createChain(stepFetched).chain;
         const chain = createChain(null);
         chain.chain.maybeSingle = vi.fn(() =>
-          Promise.resolve({ data: { name: "Atlas", role: "Developer" }, error: null })
+          Promise.resolve({ data: updatedStep, error: null })
         );
         return chain.chain;
       }
 
+      if (table === "workflow_step_comments") return createChain(null).chain;
+      if (table === "workflow_runs") return createChain(null).chain;
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await expect(
-      failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "Failed" })
-    ).rejects.toThrow(/You're acting as .* but this step belongs to/);
+    const result = await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "Failed" });
+    expect(result.step.status).toBe("failed");
   });
 
   it("succeeds when step.bot_id is null", async () => {
@@ -2272,19 +2268,23 @@ describe("claim-token protocol", () => {
   });
 
 
-  it("persona mismatch (E3) no longer resets the step — non-destructive", async () => {
+  it("persona mismatch (E3) does NOT block completion — token is the capability (Fix 1)", async () => {
+    // A valid token whose step is assigned to BOT_ID, but the caller's ambient
+    // identity is USER_ID (the stale-slot scenario that livelocked sessions).
     const { token, hash } = mintClaimToken();
-    let updates = 0;
+    let updateData: Record<string, unknown> | null = null;
     const ctx = makeCompleteCtx(
       { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: BOT_ID, claim_token_hash: hash },
-      () => updates++
+      (d) => (updateData = d as Record<string, unknown>)
     );
 
-    await expect(
-      completeStep(ctx, { step_id: STEP_ID, claim_token: token, output: "Done" })
-    ).rejects.toThrow(/belongs to .*set_agent_identity/);
-    // The destructive reset-to-pending is gone: no DB write of any kind.
-    expect(updates).toBe(0);
+    const result = await completeStep(ctx, { step_id: STEP_ID, claim_token: token, output: "Done" });
+
+    // Completion succeeds (no livelock) and is attributed to the claimed persona,
+    // not the stale ambient identity.
+    expect(result.status).toBe("completed");
+    expect(updateData!.claimed_by).toBe(BOT_ID);
+    expect(updateData!.claim_token_hash).toBeNull();
   });
 
   it("failStep on an awaiting_approval step needs no token (human gate)", async () => {

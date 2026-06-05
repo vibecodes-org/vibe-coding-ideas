@@ -39,6 +39,9 @@ const EXPECTED_TOOL_NAMES = [
   "list_attachments",
   "upload_attachment",
   "delete_attachment",
+  "request_upload_url",
+  "confirm_upload",
+  "download_attachment",
   "list_notifications",
   "mark_notification_read",
   "mark_all_notifications_read",
@@ -80,6 +83,8 @@ const EXPECTED_TOOL_NAMES = [
   "list_kits",
   "apply_kit",
   "apply_auto_rule_retroactively",
+  "import_agent_skill",
+  "get_agent_skill_content",
 ];
 
 function createMockServer() {
@@ -87,13 +92,13 @@ function createMockServer() {
 }
 
 describe("registerTools", () => {
-  it("registers exactly 75 tools", () => {
+  it("registers exactly 82 tools", () => {
     const server = createMockServer();
     const getContext = vi.fn();
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(77);
+    expect(server.tool).toHaveBeenCalledTimes(82);
   });
 
   it("registers all expected tool names", () => {
