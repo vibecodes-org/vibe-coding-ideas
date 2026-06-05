@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "../../src/types/database";
+import { logger } from "../../src/lib/logger";
 
 /**
  * Resolve the caller's active agent identity — the bot they are currently
@@ -52,7 +53,12 @@ export type OrchestrationMode = "legacy" | "subagent";
  * Per-session, like the active identity: stored on mcp_agent_sessions keyed by
  * (user_id, session_id), so flipping it in one connection never affects another.
  * Read fresh on every call (no instance cache). Fails SAFE: a missing row, NULL,
- * or any unrecognised value resolves to "legacy" (current production behaviour).
+ * an unrecognised value, OR a query error all resolve to "legacy" (current
+ * production behaviour).
+ *
+ * IMPORTANT: `userId` MUST be the OWNER id (`ctx.ownerUserId ?? ctx.userId`),
+ * matching the write key in setOrchestrationMode. Passing the active bot's id
+ * would read the wrong row and silently fall back to legacy.
  */
 export async function resolveOrchestrationMode(
   client: SupabaseClient<Database>,
@@ -61,12 +67,21 @@ export async function resolveOrchestrationMode(
 ): Promise<OrchestrationMode> {
   if (!sessionId) return "legacy";
 
-  const { data } = await client
+  const { data, error } = await client
     .from("mcp_agent_sessions")
     .select("orchestration_mode")
     .eq("user_id", userId)
     .eq("session_id", sessionId)
     .maybeSingle();
+
+  if (error) {
+    // Fail safe to legacy, but don't do it silently — a DB blip dropping a
+    // subagent-mode session back to legacy should be diagnosable.
+    logger.warn("resolveOrchestrationMode query failed — defaulting to legacy", {
+      error: error.message,
+    });
+    return "legacy";
+  }
 
   return data?.orchestration_mode === "subagent" ? "subagent" : "legacy";
 }

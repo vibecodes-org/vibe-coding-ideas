@@ -340,6 +340,45 @@ describe("registerTools", () => {
     expect(result.content[0].text).toContain("Error:");
   });
 
+  it("set_orchestration_mode errors when the session has no id", async () => {
+    const server = createMockServer();
+    const getContext = vi.fn(() => ({
+      supabase: { from: vi.fn() } as unknown as McpContext["supabase"],
+      userId: "test-user",
+      // no sessionId
+    }));
+
+    registerTools(server, getContext);
+
+    const call = server.tool.mock.calls.find(
+      (c: unknown[]) => c[0] === "set_orchestration_mode"
+    );
+    const result = await call![3]({ mode: "subagent" }, {});
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("session id");
+  });
+
+  it("set_orchestration_mode surfaces an upsert error", async () => {
+    const server = createMockServer();
+    const mockUpsert = vi.fn().mockResolvedValue({ error: { message: "rls denied" } });
+    const getContext = vi.fn(() => ({
+      supabase: { from: vi.fn().mockReturnValue({ upsert: mockUpsert }) } as unknown as McpContext["supabase"],
+      userId: "test-user",
+      sessionId: "test-session",
+    }));
+
+    registerTools(server, getContext);
+
+    const call = server.tool.mock.calls.find(
+      (c: unknown[]) => c[0] === "set_orchestration_mode"
+    );
+    const result = await call![3]({ mode: "subagent" }, {});
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("rls denied");
+  });
+
   it("list_agents returns error with non-functional supabase", async () => {
     const server = createMockServer();
     const mockContext: McpContext = {

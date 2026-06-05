@@ -527,4 +527,20 @@ describe("resolveOrchestrationMode", () => {
     expect(await resolveOrchestrationMode(modeClient({ orchestration_mode: "subagent" }).client, HUMAN_ID, "sess-A")).toBe("subagent");
     expect(await resolveOrchestrationMode(modeClient(null).client, HUMAN_ID, "sess-B")).toBe("legacy");
   });
+
+  it("fails safe to 'legacy' on a DB error (not just a missing row)", async () => {
+    const client = {
+      from: () => {
+        const chain: Record<string, unknown> = {};
+        chain.select = vi.fn(() => chain);
+        chain.eq = vi.fn(() => chain);
+        chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: null, error: { message: "connection reset" } })
+        );
+        return chain;
+      },
+    } as unknown as SupabaseClient<Database>;
+
+    expect(await resolveOrchestrationMode(client, HUMAN_ID, SESSION_ID)).toBe("legacy");
+  });
 });
