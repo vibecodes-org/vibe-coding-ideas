@@ -11,14 +11,26 @@ interface Subscription {
 }
 
 const subscriptions: Subscription[] = [];
+// Non-postgres_changes .on() registrations (e.g. the "system" channel-error
+// handler board-realtime wires up). Tracked separately so they don't
+// masquerade as table subscriptions.
+const systemEvents: string[] = [];
 const mockRefresh = vi.fn();
 const mockUnsubscribe = vi.fn();
 
-// Build a chainable channel mock that records subscriptions
+// Build a chainable channel mock that records subscriptions. Only
+// `postgres_changes` registrations are real table subscriptions; other events
+// (e.g. "system") are recorded separately — board-realtime registers a
+// channel-error logger via `.on("system", …)` that is NOT a table subscription
+// and legitimately carries no table/filter.
 function createChannelMock() {
   const channelObj = {
-    on: vi.fn((_event: string, opts: { table: string; filter?: string }, handler: Handler) => {
-      subscriptions.push({ table: opts.table, filter: opts.filter, handler });
+    on: vi.fn((event: string, opts: { table?: string; filter?: string }, handler: Handler) => {
+      if (event === "postgres_changes") {
+        subscriptions.push({ table: opts.table!, filter: opts.filter, handler });
+      } else {
+        systemEvents.push(event);
+      }
       return channelObj;
     }),
     subscribe: vi.fn(() => channelObj),
@@ -45,6 +57,7 @@ describe("BoardRealtime", () => {
     vi.clearAllMocks();
     vi.useFakeTimers();
     subscriptions.length = 0;
+    systemEvents.length = 0;
   });
 
   afterEach(() => {
@@ -64,6 +77,18 @@ describe("BoardRealtime", () => {
     expect(tables).not.toContain("board_task_comments");
     expect(tables).not.toContain("board_task_attachments");
     expect(tables).toHaveLength(5);
+  });
+
+  it("does not count the non-postgres 'system' channel-error handler as a table subscription", () => {
+    render(<BoardRealtime ideaId="idea-1" taskIds={[]} />);
+
+    // board-realtime also registers a `.on("system", …)` channel-error logger.
+    // It must NOT be treated as a table subscription (it has no table/filter).
+    // Regression guard for the prior failures where it inflated the count to 6
+    // and tripped the "filtered by idea_id" assertion with filter: undefined.
+    expect(systemEvents).toContain("system");
+    expect(subscriptions).toHaveLength(5);
+    expect(subscriptions.every((s) => typeof s.table === "string" && s.table.length > 0)).toBe(true);
   });
 
   it("filters board_task_labels by task_id — ignores events from other boards", () => {
