@@ -18,8 +18,10 @@ test.describe("Admin", () => {
   test("should show admin tabs", async ({ adminPage: page }) => {
     await page.goto("/admin");
     await expect(page.getByRole("heading", { name: "Admin" })).toBeVisible({ timeout: EXPECT_TIMEOUT });
-    await expect(page.getByText("AI Usage")).toBeVisible();
-    await expect(page.getByText("Feedback")).toBeVisible();
-    await expect(page.getByText("Agents")).toBeVisible();
+    // Scope to the tab role — "Agents" also appears as a global navbar link, so a
+    // bare getByText is ambiguous (strict-mode violation).
+    await expect(page.getByRole("tab", { name: /AI Usage/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Feedback/ })).toBeVisible();
+    await expect(page.getByRole("tab", { name: /Agents/ })).toBeVisible();
   });
 });
