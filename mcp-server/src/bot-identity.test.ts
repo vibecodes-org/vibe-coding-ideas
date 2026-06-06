@@ -12,7 +12,7 @@ import { describe, it, expect, vi } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { McpContext } from "./context";
 import type { Database } from "../../src/types/database";
-import { resolveActiveBotId, resolveOrchestrationMode } from "./bot-identity";
+import { resolveActiveBotId } from "./bot-identity";
 
 import { listBots, createBot } from "./tools/bots";
 import {
@@ -464,83 +464,5 @@ describe("resolveActiveBotId", () => {
 
     const cleared = resolveClient({ sessionRow: { active_bot_id: null } });
     expect(await resolveActiveBotId(cleared.client, HUMAN_ID, SESSION_ID)).toBeNull();
-  });
-});
-
-// ---------------------------------------------------------------------------
-// resolveOrchestrationMode — per-session Phase II toggle (fail-safe to legacy)
-// ---------------------------------------------------------------------------
-
-/** Minimal client returning a configured mcp_agent_sessions row, recording filters. */
-function modeClient(sessionRow: { orchestration_mode?: string | null } | null) {
-  const queried: { table: string; eqs: [string, unknown][] }[] = [];
-  const client = {
-    from: (table: string) => {
-      const record = { table, eqs: [] as [string, unknown][] };
-      queried.push(record);
-      const chain: Record<string, unknown> = {};
-      chain.select = vi.fn(() => chain);
-      chain.eq = vi.fn((col: string, val: unknown) => {
-        record.eqs.push([col, val]);
-        return chain;
-      });
-      chain.maybeSingle = vi.fn(() => Promise.resolve({ data: sessionRow, error: null }));
-      return chain;
-    },
-  } as unknown as SupabaseClient<Database>;
-  return { client, queried };
-}
-
-describe("resolveOrchestrationMode", () => {
-  it("returns 'subagent' when the session's mode is subagent", async () => {
-    const { client, queried } = modeClient({ orchestration_mode: "subagent" });
-    expect(await resolveOrchestrationMode(client, HUMAN_ID, SESSION_ID)).toBe("subagent");
-    const q = queried.find((q) => q.table === "mcp_agent_sessions");
-    expect(q!.eqs).toContainEqual(["user_id", HUMAN_ID]);
-    expect(q!.eqs).toContainEqual(["session_id", SESSION_ID]);
-  });
-
-  it("defaults to 'legacy' when the mode is explicitly legacy", async () => {
-    const { client } = modeClient({ orchestration_mode: "legacy" });
-    expect(await resolveOrchestrationMode(client, HUMAN_ID, SESSION_ID)).toBe("legacy");
-  });
-
-  it("fails safe to 'legacy' when no row exists for this session", async () => {
-    const { client } = modeClient(null);
-    expect(await resolveOrchestrationMode(client, HUMAN_ID, SESSION_ID)).toBe("legacy");
-  });
-
-  it("fails safe to 'legacy' on NULL / unrecognised values", async () => {
-    expect(await resolveOrchestrationMode(modeClient({ orchestration_mode: null }).client, HUMAN_ID, SESSION_ID)).toBe("legacy");
-    expect(await resolveOrchestrationMode(modeClient({ orchestration_mode: "garbage" }).client, HUMAN_ID, SESSION_ID)).toBe("legacy");
-  });
-
-  it("fails safe to 'legacy' when there is no session id (e.g. unset)", async () => {
-    // Should not even query; resolves legacy immediately.
-    const { client, queried } = modeClient({ orchestration_mode: "subagent" });
-    expect(await resolveOrchestrationMode(client, HUMAN_ID, undefined)).toBe("legacy");
-    expect(queried.length).toBe(0);
-  });
-
-  it("isolates sessions: a different session_id resolves independently", async () => {
-    // Session A is subagent; a lookup for Session B (its own row missing) is legacy.
-    expect(await resolveOrchestrationMode(modeClient({ orchestration_mode: "subagent" }).client, HUMAN_ID, "sess-A")).toBe("subagent");
-    expect(await resolveOrchestrationMode(modeClient(null).client, HUMAN_ID, "sess-B")).toBe("legacy");
-  });
-
-  it("fails safe to 'legacy' on a DB error (not just a missing row)", async () => {
-    const client = {
-      from: () => {
-        const chain: Record<string, unknown> = {};
-        chain.select = vi.fn(() => chain);
-        chain.eq = vi.fn(() => chain);
-        chain.maybeSingle = vi.fn(() =>
-          Promise.resolve({ data: null, error: { message: "connection reset" } })
-        );
-        return chain;
-      },
-    } as unknown as SupabaseClient<Database>;
-
-    expect(await resolveOrchestrationMode(client, HUMAN_ID, SESSION_ID)).toBe("legacy");
   });
 });

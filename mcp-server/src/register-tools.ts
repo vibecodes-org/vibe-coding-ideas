@@ -128,8 +128,6 @@ import {
   getBotPromptSchema,
   setBotIdentity,
   setBotIdentitySchema,
-  setOrchestrationMode,
-  setOrchestrationModeSchema,
   createBot,
   createBotSchema,
   toggleAgentVote,
@@ -917,22 +915,6 @@ export function registerTools(
         const changeHandler = onIdentityChange ?? (() => {});
         return jsonResult(
           await setBotIdentity(ctx, setBotIdentitySchema.parse(args), changeHandler)
-        );
-      } catch (e) {
-        return errorResult(e);
-      }
-    }
-  );
-
-  server.tool(
-    "set_orchestration_mode",
-    "Set how THIS session runs workflow steps (Phase II). mode='subagent' makes claim_next_step instruct you to spawn a fresh subagent per step (persona as its system prompt) instead of role-playing via set_agent_identity; mode='legacy' (default) keeps current behaviour. Scoped to this session only — other sessions are unaffected. Anything unset resolves to 'legacy'.",
-    setOrchestrationModeSchema.shape,
-    async (args: Record<string, unknown>, extra: ServerExtra) => {
-      try {
-        const ctx = await getContext(extra);
-        return jsonResult(
-          await setOrchestrationMode(ctx, setOrchestrationModeSchema.parse(args))
         );
       } catch (e) {
         return errorResult(e);

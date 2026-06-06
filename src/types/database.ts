@@ -1312,21 +1312,18 @@ export type Database = {
           user_id: string;
           session_id: string;
           active_bot_id: string | null;
-          orchestration_mode: string;
           updated_at: string;
         };
         Insert: {
           user_id: string;
           session_id: string;
           active_bot_id?: string | null;
-          orchestration_mode?: string;
           updated_at?: string;
         };
         Update: {
           user_id?: string;
           session_id?: string;
           active_bot_id?: string | null;
-          orchestration_mode?: string;
           updated_at?: string;
         };
         Relationships: [

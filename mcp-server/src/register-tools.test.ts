@@ -50,7 +50,6 @@ const EXPECTED_TOOL_NAMES = [
   "list_agents",
   "get_agent_prompt",
   "set_agent_identity",
-  "set_orchestration_mode",
   "create_agent",
   "toggle_agent_vote",
   "clone_agent",
@@ -93,13 +92,13 @@ function createMockServer() {
 }
 
 describe("registerTools", () => {
-  it("registers exactly 83 tools", () => {
+  it("registers exactly 82 tools", () => {
     const server = createMockServer();
     const getContext = vi.fn();
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(83);
+    expect(server.tool).toHaveBeenCalledTimes(82);
   });
 
   it("registers all expected tool names", () => {
@@ -283,100 +282,6 @@ describe("registerTools", () => {
     // Should not throw when onIdentityChange is undefined
     const result = await callback({}, {});
     expect(result.isError).toBeUndefined();
-  });
-
-  it("set_orchestration_mode upserts the mode for the current session only", async () => {
-    const server = createMockServer();
-    const mockUpsert = vi.fn().mockResolvedValue({ error: null });
-    const mockFrom = vi.fn().mockReturnValue({ upsert: mockUpsert });
-    const mockContext: McpContext = {
-      supabase: { from: mockFrom } as unknown as McpContext["supabase"],
-      userId: "test-user",
-      sessionId: "test-session",
-    };
-    const getContext = vi.fn(() => mockContext);
-
-    registerTools(server, getContext);
-
-    const call = server.tool.mock.calls.find(
-      (c: unknown[]) => c[0] === "set_orchestration_mode"
-    );
-    expect(call).toBeDefined();
-
-    const callback = call![3];
-    const result = await callback({ mode: "subagent" }, {});
-
-    expect(result.isError).toBeUndefined();
-    expect(mockFrom).toHaveBeenCalledWith("mcp_agent_sessions");
-    expect(mockUpsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_id: "test-user",
-        session_id: "test-session",
-        orchestration_mode: "subagent",
-      }),
-      { onConflict: "user_id,session_id" }
-    );
-    // Must NOT clobber the active identity.
-    expect(mockUpsert.mock.calls[0][0]).not.toHaveProperty("active_bot_id");
-  });
-
-  it("set_orchestration_mode rejects an invalid mode", async () => {
-    const server = createMockServer();
-    const getContext = vi.fn(() => ({
-      supabase: {} as McpContext["supabase"],
-      userId: "test-user",
-      sessionId: "test-session",
-    }));
-
-    registerTools(server, getContext);
-
-    const call = server.tool.mock.calls.find(
-      (c: unknown[]) => c[0] === "set_orchestration_mode"
-    );
-    const callback = call![3];
-    const result = await callback({ mode: "nonsense" }, {});
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("Error:");
-  });
-
-  it("set_orchestration_mode errors when the session has no id", async () => {
-    const server = createMockServer();
-    const getContext = vi.fn(() => ({
-      supabase: { from: vi.fn() } as unknown as McpContext["supabase"],
-      userId: "test-user",
-      // no sessionId
-    }));
-
-    registerTools(server, getContext);
-
-    const call = server.tool.mock.calls.find(
-      (c: unknown[]) => c[0] === "set_orchestration_mode"
-    );
-    const result = await call![3]({ mode: "subagent" }, {});
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("session id");
-  });
-
-  it("set_orchestration_mode surfaces an upsert error", async () => {
-    const server = createMockServer();
-    const mockUpsert = vi.fn().mockResolvedValue({ error: { message: "rls denied" } });
-    const getContext = vi.fn(() => ({
-      supabase: { from: vi.fn().mockReturnValue({ upsert: mockUpsert }) } as unknown as McpContext["supabase"],
-      userId: "test-user",
-      sessionId: "test-session",
-    }));
-
-    registerTools(server, getContext);
-
-    const call = server.tool.mock.calls.find(
-      (c: unknown[]) => c[0] === "set_orchestration_mode"
-    );
-    const result = await call![3]({ mode: "subagent" }, {});
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain("rls denied");
   });
 
   it("list_agents returns error with non-functional supabase", async () => {

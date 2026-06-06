@@ -2428,15 +2428,12 @@ describe("workflow step mutations touch board_tasks for realtime", () => {
 });
 
 // ---------------------------------------------------------------------------
-// claimNextStep — orchestration mode branch (Phase II Slice 1)
+// claimNextStep — always returns the subagent instruction (toggle retired, bd13ee8f)
 // ---------------------------------------------------------------------------
 
-describe("claimNextStep — orchestration mode instruction branch", () => {
-  /**
-   * Claim context with a per-session orchestration_mode. Serves the step list,
-   * the claim update, and an mcp_agent_sessions row carrying the mode.
-   */
-  function makeModeCtx(mode: string | null) {
+describe("claimNextStep — subagent instruction (only mode)", () => {
+  /** Claim context that serves the step list + the claim update. No mode lookup. */
+  function makeCtx() {
     const step = makeStepRow({ step_order: 1, bot_id: null });
     const counts: Record<string, number> = {};
     return {
@@ -2445,10 +2442,6 @@ describe("claimNextStep — orchestration mode instruction branch", () => {
           counts[table] = (counts[table] ?? 0) + 1;
           const n = counts[table];
 
-          if (table === "mcp_agent_sessions") {
-            const c = createChain(mode === null ? null : { orchestration_mode: mode });
-            return c.chain;
-          }
           if (table === "task_workflow_steps") {
             const c = createChain(null);
             if (n === 1) {
@@ -2466,8 +2459,7 @@ describe("claimNextStep — orchestration mode instruction branch", () => {
           }
           if (table === "workflow_runs") {
             // status check returns 'running' so the auto-move path is skipped
-            const c = createChain({ status: "running" });
-            return c.chain;
+            return createChain({ status: "running" }).chain;
           }
           if (table === "idea_agents") return createChain([]).chain;
           if (table === "workflow_step_comments") return createChain([]).chain;
@@ -2475,36 +2467,31 @@ describe("claimNextStep — orchestration mode instruction branch", () => {
         },
       } as unknown as McpContext["supabase"],
       userId: USER_ID,
-      sessionId: "sess-mode-test",
+      sessionId: "sess-test",
     } as McpContext;
   }
 
-  it("subagent mode → instruction tells the orchestrator to spawn a subagent, not set identity", async () => {
-    const ctx = makeModeCtx("subagent");
-    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+  it("always instructs the orchestrator to spawn a fresh subagent (no toggle)", async () => {
+    const result = await claimNextStep(makeCtx(), { task_id: TASK_ID });
     const instruction = (result as { instruction: string }).instruction;
 
-    expect(instruction).toContain("SUBAGENT orchestration mode");
-    expect(instruction).toContain("Do NOT call set_agent_identity");
+    expect(instruction).toContain("FRESH SUBAGENT");
+    expect(instruction).toContain("do NOT call set_agent_identity");
     expect(instruction).toContain("get_agent_prompt");
-    expect(instruction).toContain("Spawn a FRESH subagent");
   });
 
-  it("legacy mode → instruction is the current set_agent_identity guidance", async () => {
-    const ctx = makeModeCtx("legacy");
-    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+  it("includes a GATED fallback for clients that cannot spawn subagents", async () => {
+    const result = await claimNextStep(makeCtx(), { task_id: TASK_ID });
     const instruction = (result as { instruction: string }).instruction;
 
-    expect(instruction).toContain("call the set_agent_identity tool");
-    expect(instruction).not.toContain("SUBAGENT orchestration mode");
+    // Fallback exists but is explicitly conditional, so a capable client prefers spawning.
+    expect(instruction).toContain("only if your client cannot spawn subagents");
   });
 
-  it("no mode set (no row) → fails safe to the legacy instruction", async () => {
-    const ctx = makeModeCtx(null);
-    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+  it("includes reliability guidance (retry/resume rather than finishing inline)", async () => {
+    const result = await claimNextStep(makeCtx(), { task_id: TASK_ID });
     const instruction = (result as { instruction: string }).instruction;
 
-    expect(instruction).toContain("call the set_agent_identity tool");
-    expect(instruction).not.toContain("SUBAGENT orchestration mode");
+    expect(instruction).toContain("RETRY or RESUME");
   });
 });
