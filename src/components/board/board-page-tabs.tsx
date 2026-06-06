@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { useSearchParams, usePathname } from "next/navigation";
 import { LayoutDashboard, Workflow, Bot } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
@@ -52,12 +52,20 @@ export function BoardPageTabs({
         : "board";
   const [activeTab, setActiveTabState] = useState<string>(initialTab);
 
+  // Once a tab has been opened we keep it MOUNTED (rendered but hidden when
+  // inactive) so its data fetch runs once, not on every reopen. The Workflows /
+  // Agents tabs each fetch templates+steps, auto-rules, role coverage and role
+  // suggestions on mount, so re-mounting on every switch was the remaining cost.
+  const [openedTabs, setOpenedTabs] = useState<Set<string>>(() => new Set([initialTab]));
+
   // Stay in sync with back/forward and with the programmatic popstate events the
   // Workflows/Agents tabs dispatch when they cross-link to each other.
   useEffect(() => {
     const syncFromUrl = () => {
       const t = new URLSearchParams(window.location.search).get("tab");
-      setActiveTabState(t === "workflows" ? "workflows" : t === "agents" ? "agents" : "board");
+      const next = t === "workflows" ? "workflows" : t === "agents" ? "agents" : "board";
+      setActiveTabState(next);
+      setOpenedTabs((prev) => (prev.has(next) ? prev : new Set(prev).add(next)));
     };
     window.addEventListener("popstate", syncFromUrl);
     return () => window.removeEventListener("popstate", syncFromUrl);
@@ -66,6 +74,7 @@ export function BoardPageTabs({
   const setActiveTab = useCallback(
     (tab: string) => {
       setActiveTabState(tab);
+      setOpenedTabs((prev) => (prev.has(tab) ? prev : new Set(prev).add(tab)));
       const params = new URLSearchParams(window.location.search);
       if (tab === "board") params.delete("tab");
       else params.set("tab", tab);
@@ -73,6 +82,13 @@ export function BoardPageTabs({
       window.history.replaceState(null, "", `${pathname}${qs ? `?${qs}` : ""}`);
     },
     [pathname]
+  );
+
+  // Stable reference so the kept-mounted WorkflowsTab doesn't re-run its
+  // role-coverage effect on every parent re-render.
+  const agentCandidates = useMemo(
+    () => ideaAgentDetails.map((a) => ({ botId: a.bot.id, name: a.bot.name ?? "", role: a.bot.role ?? "" })),
+    [ideaAgentDetails]
   );
 
   return (
@@ -114,25 +130,37 @@ export function BoardPageTabs({
         />
       </div>
 
-      <TabsContent value="board" className="min-h-0 flex-1">
+      <TabsContent
+        value="board"
+        forceMount
+        className={`min-h-0 flex-1 ${activeTab === "board" ? "" : "hidden"}`}
+      >
         {children}
       </TabsContent>
 
-      <TabsContent value="workflows" className="min-h-0 flex-1">
-        {activeTab === "workflows" && (
+      <TabsContent
+        value="workflows"
+        forceMount
+        className={`min-h-0 flex-1 ${activeTab === "workflows" ? "" : "hidden"}`}
+      >
+        {openedTabs.has("workflows") && (
           <WorkflowsTab
             ideaId={ideaId}
             boardLabels={boardLabels}
             isReadOnly={isReadOnly}
             hasAgents={ideaAgentDetails.length > 0}
             kitName={kitName}
-            agentCandidates={ideaAgentDetails.map((a) => ({ botId: a.bot.id, name: a.bot.name ?? "", role: a.bot.role ?? "" }))}
+            agentCandidates={agentCandidates}
           />
         )}
       </TabsContent>
 
-      <TabsContent value="agents" className="min-h-0 flex-1">
-        {activeTab === "agents" && (
+      <TabsContent
+        value="agents"
+        forceMount
+        className={`min-h-0 flex-1 ${activeTab === "agents" ? "" : "hidden"}`}
+      >
+        {openedTabs.has("agents") && (
           <AgentsTab
             ideaId={ideaId}
             ideaAgentDetails={ideaAgentDetails}
