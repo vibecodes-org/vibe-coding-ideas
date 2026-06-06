@@ -5,11 +5,11 @@ import { revalidatePath } from "next/cache";
 import { createClient as createServerClient } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/server";
 import { validateUuid } from "@/lib/validation";
-import { matchRolesWithAiOrFuzzy, type AiRoleMatchAgent } from "@/lib/ai-role-matching";
+import { matchRolesWithAiOrFuzzy, roleMatchSignature, type AiRoleMatchAgent, type RoleMatchWithTier } from "@/lib/ai-role-matching";
 import { tierRank } from "@/lib/role-matching";
 import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import type { Database } from "@/types/database";
+import type { Database, Json } from "@/types/database";
 
 /**
  * Create a service-role Supabase client for background tasks.
@@ -297,10 +297,42 @@ export async function getRoleCoverage(
     }
   }
 
-  // Use the same matching algorithm as workflow step assignment
+  // Use the same matching algorithm as workflow step assignment.
+  // Matching can require an AI call for non-exact roles (slow), so cache the
+  // result per idea keyed by a signature of (roles + agent pool). The signature
+  // self-invalidates when either changes. Cache is best-effort: any read/write
+  // failure falls back to computing fresh, so it never breaks the tab.
   const candidates: AiRoleMatchAgent[] = agentPool.filter((a) => a.role);
   const stepRoles = Array.from(templateRoles);
-  const matches = await matchRolesWithAiOrFuzzy(supabase, user.id, stepRoles, candidates);
+  const signature = roleMatchSignature(stepRoles, candidates);
+
+  let matches: Record<string, RoleMatchWithTier> | null = null;
+  try {
+    const { data: cached } = await supabase
+      .from("idea_role_match_cache")
+      .select("signature, matches")
+      .eq("idea_id", validIdeaId)
+      .maybeSingle();
+    if (cached?.signature === signature) {
+      matches = cached.matches as unknown as Record<string, RoleMatchWithTier>;
+    }
+  } catch {
+    /* cache unavailable — fall through to compute fresh */
+  }
+
+  if (!matches) {
+    matches = await matchRolesWithAiOrFuzzy(supabase, user.id, stepRoles, candidates);
+    try {
+      await supabase.from("idea_role_match_cache").upsert(
+        { idea_id: validIdeaId, signature, matches: matches as unknown as Json, updated_at: new Date().toISOString() },
+        { onConflict: "idea_id" }
+      );
+    } catch (e) {
+      logger.warn("role-match cache write failed", {
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
 
   // Build botId → agent details lookup
   const agentLookup = new Map(

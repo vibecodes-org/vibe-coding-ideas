@@ -1053,6 +1053,35 @@ export type Database = {
           },
         ];
       };
+      idea_role_match_cache: {
+        Row: {
+          idea_id: string;
+          signature: string;
+          matches: Json;
+          updated_at: string;
+        };
+        Insert: {
+          idea_id: string;
+          signature: string;
+          matches: Json;
+          updated_at?: string;
+        };
+        Update: {
+          idea_id?: string;
+          signature?: string;
+          matches?: Json;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "idea_role_match_cache_idea_id_fkey";
+            columns: ["idea_id"];
+            isOneToOne: true;
+            referencedRelation: "ideas";
+            referencedColumns: ["id"];
+          }
+        ];
+      };
       idea_attachments: {
         Row: {
           id: string;

@@ -5,6 +5,7 @@
  * falling back to the existing `buildRoleMatcher()` when AI is unavailable.
  */
 
+import { createHash } from "crypto";
 import { generateObject } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -33,6 +34,25 @@ export interface AiRoleMatchAgent {
   botId: string;
   name: string;
   role: string;
+}
+
+/**
+ * Deterministic, order-independent signature of the inputs that a role-match
+ * result depends on (the set of step roles + the agent pool). Used as a cache
+ * key so a cached match self-invalidates when roles or agents change — no
+ * explicit invalidation triggers needed.
+ */
+export function roleMatchSignature(
+  stepRoles: string[],
+  agents: AiRoleMatchAgent[]
+): string {
+  const roles = [...new Set(stepRoles.map((r) => r.trim()))].sort();
+  const pool = agents
+    .map((a) => `${a.botId}:${(a.role ?? "").trim()}:${(a.name ?? "").trim()}`)
+    .sort();
+  return createHash("sha256")
+    .update(JSON.stringify({ roles, pool }))
+    .digest("hex");
 }
 
 /**

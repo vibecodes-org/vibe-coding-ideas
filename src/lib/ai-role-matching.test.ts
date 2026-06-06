@@ -16,7 +16,7 @@ vi.mock("@/lib/logger", () => ({
   logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
 }));
 
-import { matchRolesWithAi, matchRolesWithAiOrFuzzy } from "./ai-role-matching";
+import { matchRolesWithAi, matchRolesWithAiOrFuzzy, roleMatchSignature } from "./ai-role-matching";
 import { generateObject } from "ai";
 import { resolveAiProvider, logAiUsage, decrementStarterCredit } from "@/lib/ai-helpers";
 
@@ -291,5 +291,55 @@ describe("matchRolesWithAiOrFuzzy", () => {
 
     // Fuzzy should match "Backend Engineer" exactly — now returns tier info
     expect(result["Backend Engineer"]).toEqual({ botId: "bot-2", tier: "exact" });
+  });
+});
+
+describe("roleMatchSignature", () => {
+  const agents = [
+    { botId: "b1", name: "Atlas", role: "Full Stack Engineer" },
+    { botId: "b2", name: "Sentinel", role: "QA Engineer" },
+  ];
+
+  it("is stable regardless of input order (roles + agents)", () => {
+    const a = roleMatchSignature(["QA Engineer", "Full Stack Engineer"], agents);
+    const b = roleMatchSignature(
+      ["Full Stack Engineer", "QA Engineer"],
+      [agents[1], agents[0]]
+    );
+    expect(a).toBe(b);
+  });
+
+  it("ignores duplicate roles and surrounding whitespace", () => {
+    const a = roleMatchSignature(["QA Engineer"], agents);
+    const b = roleMatchSignature(["QA Engineer", " QA Engineer ", "QA Engineer"], agents);
+    expect(a).toBe(b);
+  });
+
+  it("changes when a step role changes", () => {
+    const a = roleMatchSignature(["QA Engineer"], agents);
+    const b = roleMatchSignature(["QA Lead"], agents);
+    expect(a).not.toBe(b);
+  });
+
+  it("changes when an agent's role changes", () => {
+    const a = roleMatchSignature(["QA Engineer"], agents);
+    const b = roleMatchSignature(["QA Engineer"], [
+      { botId: "b1", name: "Atlas", role: "Backend Engineer" },
+      agents[1],
+    ]);
+    expect(a).not.toBe(b);
+  });
+
+  it("changes when the agent pool gains or loses an agent", () => {
+    const a = roleMatchSignature(["QA Engineer"], agents);
+    const b = roleMatchSignature(["QA Engineer"], [
+      ...agents,
+      { botId: "b3", name: "Compass", role: "UX Designer" },
+    ]);
+    expect(a).not.toBe(b);
+  });
+
+  it("returns a hex sha256 string", () => {
+    expect(roleMatchSignature(["QA Engineer"], agents)).toMatch(/^[0-9a-f]{64}$/);
   });
 });
