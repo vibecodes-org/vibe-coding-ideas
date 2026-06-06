@@ -97,6 +97,11 @@ export const BoardColumn = memo(function BoardColumn({
     : undefined;
 
   const taskIds = useMemo(() => column.tasks.map((t) => t.id), [column.tasks]);
+  // Lightweight sibling list (id + position) for each card's ⋯ move actions.
+  const columnTaskPositions = useMemo(
+    () => column.tasks.map((t) => ({ id: t.id, position: t.position })),
+    [column.tasks]
+  );
 
   function handleDelete() {
     const rollback = ops.deleteColumn(column.id);
@@ -214,6 +219,7 @@ export const BoardColumn = memo(function BoardColumn({
                 task={task}
                 ideaId={ideaId}
                 columnId={column.id}
+                columnTasks={columnTaskPositions}
                 teamMembers={teamMembers}
                 boardLabels={boardLabels}
                 highlightQuery={highlightQuery}

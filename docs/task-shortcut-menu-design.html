@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Task Shortcut Menu — UX Design</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --panel: #18181b;
+    --panel-2: #1f1f23;
+    --border: #27272a;
+    --border-2: #3f3f46;
+    --fg: #fafafa;
+    --muted: #a1a1aa;
+    --muted-2: #71717a;
+    --primary: #a78bfa;
+    --red: #f87171;
+    --red-bg: rgba(248, 113, 113, 0.12);
+    --amber: #fbbf24;
+    --blue: #60a5fa;
+    --emerald: #34d399;
+    --radius: 8px;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+    --sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Inter, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(900px 500px at 75% -10%, rgba(167,139,250,0.10), transparent 60%), var(--bg);
+    color: var(--fg);
+    font-family: var(--sans);
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 56px 28px 120px; }
+  header.doc {
+    border-bottom: 1px solid var(--border);
+    padding-bottom: 28px;
+    margin-bottom: 44px;
+  }
+  .eyebrow {
+    font-size: 12px; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--primary); font-weight: 600; margin: 0 0 10px;
+  }
+  h1 { font-size: 34px; line-height: 1.15; margin: 0 0 14px; letter-spacing: -0.02em; }
+  .sub { color: var(--muted); max-width: 680px; margin: 0; }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .pill {
+    font-size: 12px; padding: 4px 11px; border-radius: 999px;
+    border: 1px solid var(--border-2); color: var(--muted); background: var(--panel);
+  }
+  h2 {
+    font-size: 22px; margin: 56px 0 8px; letter-spacing: -0.01em;
+    display: flex; align-items: center; gap: 12px;
+  }
+  h2 .num {
+    font-family: var(--mono); font-size: 13px; color: var(--primary);
+    border: 1px solid var(--border-2); border-radius: 6px; padding: 2px 8px;
+    background: rgba(167,139,250,0.08);
+  }
+  h3 { font-size: 16px; margin: 32px 0 6px; color: var(--fg); }
+  p { margin: 10px 0; color: #d4d4d8; }
+  .lead { color: var(--muted); margin-top: 4px; }
+  a { color: var(--primary); }
+  code {
+    font-family: var(--mono); font-size: 0.86em; background: var(--panel-2);
+    border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; color: #e4e4e7;
+  }
+  ul, ol { color: #d4d4d8; padding-left: 22px; }
+  li { margin: 6px 0; }
+  .grid { display: grid; gap: 18px; }
+  @media (min-width: 720px) { .grid.two { grid-template-columns: 1fr 1fr; } }
+
+  .card {
+    background: var(--panel); border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 20px 22px;
+  }
+  .card.tint-red { border-color: rgba(248,113,113,0.3); background: linear-gradient(0deg, rgba(248,113,113,0.05), var(--panel)); }
+  .card.tint-amber { border-color: rgba(251,191,36,0.25); }
+  .card h3 { margin-top: 0; }
+
+  /* ASCII / wireframe block */
+  pre.wire {
+    font-family: var(--mono); font-size: 12.5px; line-height: 1.55;
+    background: #0c0c0e; border: 1px solid var(--border);
+    border-radius: var(--radius); padding: 18px 20px; overflow-x: auto;
+    color: #cbd5e1; margin: 14px 0;
+  }
+  pre.wire .hl { color: var(--primary); }
+  pre.wire .dim { color: var(--muted-2); }
+  pre.wire .red { color: var(--red); }
+
+  /* live-ish mock components */
+  .mockstage {
+    background: #0c0c0e; border: 1px solid var(--border); border-radius: var(--radius);
+    padding: 28px; display: flex; gap: 26px; flex-wrap: wrap; align-items: flex-start;
+  }
+  .mock-col-label { font-size: 11px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted-2); margin-bottom: 10px; }
+
+  .tcard {
+    width: 248px; background: var(--bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 11px 12px; position: relative;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.4);
+  }
+  .tcard .row { display: flex; align-items: flex-start; gap: 8px; }
+  .tcard .grip { color: var(--muted-2); font-family: var(--mono); cursor: grab; padding-top: 1px; }
+  .tcard .grip.ghost { opacity: 0.25; }
+  .tcard .title { font-size: 13px; font-weight: 500; }
+  .tcard .desc { font-size: 11.5px; color: var(--muted); margin-top: 3px; }
+  .tcard .metarow { display: flex; align-items: center; gap: 8px; margin-top: 10px; }
+  .tcard .badge {
+    font-size: 10px; padding: 2px 7px; border-radius: 999px;
+    border: 1px solid var(--border-2); color: var(--muted); font-weight: 500;
+  }
+  .tcard .av {
+    width: 18px; height: 18px; border-radius: 999px; background: #3730a3; color: #c7d2fe;
+    font-size: 9px; display: inline-flex; align-items: center; justify-content: center; margin-left: auto;
+  }
+  .kebab {
+    position: absolute; top: 7px; right: 7px; width: 26px; height: 26px;
+    display: inline-flex; align-items: center; justify-content: center;
+    border-radius: 6px; color: var(--muted-2); border: 1px solid transparent;
+    font-family: var(--mono); font-size: 15px; letter-spacing: 1px;
+  }
+  .kebab.revealed { color: var(--fg); background: var(--panel-2); border-color: var(--border); }
+  .kebab.focus { color: var(--fg); background: var(--panel-2); border-color: var(--primary); box-shadow: 0 0 0 2px rgba(167,139,250,0.35); }
+
+  /* dropdown menu mock */
+  .menu {
+    width: 210px; background: var(--panel); border: 1px solid var(--border-2);
+    border-radius: 8px; padding: 5px; box-shadow: 0 16px 40px rgba(0,0,0,0.55);
+  }
+  .menu .mi {
+    display: flex; align-items: center; gap: 10px; padding: 8px 10px;
+    border-radius: 6px; font-size: 13px; color: #e4e4e7; cursor: default;
+  }
+  .menu .mi .ic { width: 16px; text-align: center; color: var(--muted); font-family: var(--mono); font-size: 13px; }
+  .menu .mi .kbd { margin-left: auto; font-family: var(--mono); font-size: 10px; color: var(--muted-2); }
+  .menu .mi.hover { background: var(--panel-2); }
+  .menu .mi.disabled { color: var(--muted-2); opacity: 0.5; }
+  .menu .mi.disabled .ic { color: var(--muted-2); }
+  .menu .mi.danger { color: var(--red); }
+  .menu .mi.danger .ic { color: var(--red); }
+  .menu .mi.danger.hover { background: var(--red-bg); }
+  .menu .sep { height: 1px; background: var(--border); margin: 5px 4px; }
+
+  /* alert dialog mock */
+  .alertd {
+    width: 340px; background: var(--panel); border: 1px solid var(--border-2);
+    border-radius: 10px; padding: 20px; box-shadow: 0 24px 60px rgba(0,0,0,0.6);
+  }
+  .alertd h4 { margin: 0 0 6px; font-size: 16px; }
+  .alertd p { margin: 0; font-size: 13px; color: var(--muted); }
+  .alertd .actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 20px; }
+  .btn {
+    font-size: 13px; padding: 7px 14px; border-radius: 6px; border: 1px solid var(--border-2);
+    background: transparent; color: var(--fg); cursor: pointer;
+  }
+  .btn.ghost { color: var(--muted); }
+  .btn.danger { background: var(--red); border-color: var(--red); color: #1a0606; font-weight: 600; }
+
+  /* toast mock */
+  .toast {
+    width: 320px; background: #1c1010; border: 1px solid rgba(248,113,113,0.4);
+    border-radius: 8px; padding: 12px 14px; display: flex; gap: 10px; align-items: flex-start;
+    box-shadow: 0 12px 30px rgba(0,0,0,0.5);
+  }
+  .toast .ic { color: var(--red); font-family: var(--mono); }
+  .toast .t { font-size: 13px; }
+  .toast .t small { display: block; color: var(--muted); font-size: 11.5px; margin-top: 2px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.05em; }
+  td code { font-size: 12px; }
+
+  .callout {
+    border-left: 3px solid var(--primary); background: rgba(167,139,250,0.06);
+    padding: 12px 16px; border-radius: 0 6px 6px 0; margin: 16px 0; font-size: 14px; color: #ddd6fe;
+  }
+  .callout.ac { border-color: var(--emerald); background: rgba(52,211,153,0.06); color: #bbf7d0; }
+  .tag { font-family: var(--mono); font-size: 11px; padding: 2px 7px; border-radius: 4px; background: var(--panel-2); border: 1px solid var(--border); color: var(--muted); }
+  .ok { color: var(--emerald); }
+  .no { color: var(--red); }
+  .flowstep { display: flex; gap: 12px; margin: 8px 0; }
+  .flowstep .n { flex: 0 0 22px; height: 22px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--border-2); color: var(--primary); font-family: var(--mono); font-size: 11px; display: flex; align-items: center; justify-content: center; }
+  footer.doc { margin-top: 80px; padding-top: 24px; border-top: 1px solid var(--border); color: var(--muted-2); font-size: 13px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <p class="eyebrow">Step 2 — UX Design</p>
+  <h1>Task Card Shortcut Menu</h1>
+  <p class="sub">A per-card overflow (<code>⋯</code>) menu giving fast access to Move to top, Move to bottom, Archive, and Delete — built on existing board ops. Design grounded in the live <code>board-task-card.tsx</code> and the shadcn <code>DropdownMenu</code> primitive.</p>
+  <div class="meta">
+    <span class="pill">Component: src/components/board/board-task-card.tsx</span>
+    <span class="pill">Primitive: ui/dropdown-menu.tsx</span>
+    <span class="pill">Confirm: ui/alert-dialog.tsx</span>
+    <span class="pill">~80% UI over existing ops</span>
+  </div>
+</header>
+
+<!-- ============================================================ -->
+<h2><span class="num">1</span> Trigger placement</h2>
+<p class="lead">Resolves Open Question 1 → use a <strong>⋯ kebab button</strong>, not right-click (rationale in §7).</p>
+
+<p>The trigger mirrors the existing drag handle's reveal logic exactly (<code>board-task-card.tsx</code> lines 411–421): <strong>desktop = hover-revealed</strong>, <strong>mobile = always visible</strong>. This keeps the card calm on a dense desktop board while honoring our constraint that primary actions must never be hover-only on touch (mobile has no hover).</p>
+
+<div class="grid two">
+  <div class="card">
+    <h3>Reveal pattern (copy the grip)</h3>
+    <p class="lead">Reuse the drag-handle Tailwind recipe so the two affordances feel like siblings:</p>
+    <pre class="wire">opacity-100              <span class="dim">// mobile: always shown</span>
+sm:opacity-0            <span class="dim">// desktop: hidden at rest</span>
+sm:group-hover:opacity-100
+focus-visible:opacity-100 <span class="dim">// a11y: keyboard reveal</span></pre>
+    <p class="lead"><strong>Add</strong> <code>focus-visible:opacity-100</code> (the grip lacks it) so keyboard users can Tab to the trigger and see it. Also keep it visible while its own menu is open via <code>data-[state=open]:opacity-100</code>.</p>
+  </div>
+  <div class="card">
+    <h3>Position &amp; geometry</h3>
+    <ul>
+      <li><strong>Top-right corner</strong> of the card body, balancing the grip on the left — predictable per Jakob's Law (Linear / Notion / Trello all top-right).</li>
+      <li><strong>Hit area ≥ 44×44px on mobile.</strong> The glyph is ~16px; pad the button to meet Fitts/WCAG. On desktop a 26px visual box is fine since it's pointer-driven.</li>
+      <li>Renders inside the card's <code>relative</code> wrapper, absolutely positioned so it overlays the metadata without reflowing layout.</li>
+    </ul>
+  </div>
+</div>
+
+<h3>Wireframe — task card with both affordances</h3>
+<pre class="wire">DESKTOP (rest)                          DESKTOP (hover / focus)
+┌────────────────────────────┐         ┌────────────────────────────┐
+│  <span class="dim">⋮</span>  Design the empty state │         │ <span class="hl">⋮</span>  Design the empty state <span class="hl">[⋯]</span>│  <span class="dim">← grip + kebab revealed</span>
+│     Cover all 4 board …     │         │     Cover all 4 board …     │
+│     ◷ Jun 8   ☑ 2/5     ◍A  │         │     ◷ Jun 8   ☑ 2/5     ◍A  │
+└────────────────────────────┘         └────────────────────────────┘
+   <span class="dim">grip + kebab at opacity-0</span>
+
+MOBILE (375px — always visible)
+┌────────────────────────────┐
+│ ⋮  Design the empty state <span class="hl">[⋯]</span>│   <span class="dim">grip AND kebab persistently shown;</span>
+│    Cover all 4 board …      │   <span class="dim">each ≥44px tap target</span>
+│    ◷ Jun 8   ☑ 2/5      ◍A  │
+└────────────────────────────┘</pre>
+
+<div class="callout">
+  <strong>stopPropagation is load-bearing.</strong> The card root has <code>onClick</code> → opens <code>TaskDetailDialog</code> (line 394). The kebab button must call <code>e.stopPropagation()</code> on click — exactly as the grip does on line 417 — so opening the menu never opens the detail dialog. <span class="tag">AC: ⋯ doesn't open detail</span>
+</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">2</span> The open menu</h2>
+<p class="lead">Built with <code>DropdownMenu</code> / <code>DropdownMenuContent</code> / <code>DropdownMenuItem</code> from <code>ui/dropdown-menu.tsx</code> (already in repo). Align <code>end</code> to the trigger.</p>
+
+<h3>Item order — least → most destructive (Fitts's Law)</h3>
+<p>Ordering by escalating consequence puts the dangerous action farthest from the cursor's entry point and last in tab order, so it's hardest to hit by accident. A separator isolates Delete.</p>
+
+<div class="mockstage">
+  <div>
+    <div class="mock-col-label">Default open</div>
+    <div class="menu" role="menu" aria-label="Task actions">
+      <div class="mi"><span class="ic">↑</span> Move to top</div>
+      <div class="mi"><span class="ic">↓</span> Move to bottom</div>
+      <div class="sep"></div>
+      <div class="mi"><span class="ic">⊟</span> Archive</div>
+      <div class="sep"></div>
+      <div class="mi danger"><span class="ic">🗑</span> Delete</div>
+    </div>
+  </div>
+  <div>
+    <div class="mock-col-label">Hover / keyboard focus on item</div>
+    <div class="menu" role="menu">
+      <div class="mi hover"><span class="ic">↑</span> Move to top</div>
+      <div class="mi"><span class="ic">↓</span> Move to bottom</div>
+      <div class="sep"></div>
+      <div class="mi"><span class="ic">⊟</span> Archive</div>
+      <div class="sep"></div>
+      <div class="mi danger"><span class="ic">🗑</span> Delete</div>
+    </div>
+  </div>
+  <div>
+    <div class="mock-col-label">Disabled edges + danger hover</div>
+    <div class="menu" role="menu">
+      <div class="mi disabled"><span class="ic">↑</span> Move to top</div>
+      <div class="mi disabled"><span class="ic">↓</span> Move to bottom</div>
+      <div class="sep"></div>
+      <div class="mi"><span class="ic">⊟</span> Archive</div>
+      <div class="sep"></div>
+      <div class="mi danger hover"><span class="ic">🗑</span> Delete</div>
+    </div>
+  </div>
+</div>
+
+<table>
+  <thead><tr><th>Item</th><th>lucide icon</th><th>Styling</th><th>Disabled when</th></tr></thead>
+  <tbody>
+    <tr><td>Move to top</td><td><code>ArrowUpToLine</code></td><td>default</td><td>task is first in its column</td></tr>
+    <tr><td>Move to bottom</td><td><code>ArrowDownToLine</code></td><td>default</td><td>task is last in its column</td></tr>
+    <tr><td>Archive</td><td><code>Archive</code></td><td>default</td><td>hidden entirely if already archived</td></tr>
+    <tr><td><strong>Delete</strong></td><td><code>Trash2</code></td><td><code>text-destructive</code> + <code>focus:bg-destructive/10</code></td><td>never (always available)</td></tr>
+  </tbody>
+</table>
+
+<div class="card tint-red">
+  <h3>Destructive styling — colour is never the only signal</h3>
+  <p class="lead">Per our constraint, Delete is distinguished by <strong>icon + label + position + separator</strong>, not just red text. shadcn's <code>DropdownMenuItem variant="destructive"</code> already wires the red foreground and a red-tinted focus/hover background; the <code>Trash2</code> icon and post-separator placement carry the meaning for anyone who can't perceive the red.</p>
+</div>
+
+<div class="callout">Reasonable to skip a separate "Archive vs Delete" separator if it feels heavy — but always keep one <em>directly above Delete</em>. The visual break is a guardrail that reduces mis-clicks on the irreversible action (Hick's Law: it makes Delete feel like a distinct decision, not item #5 in a list).</div>
+
+<!-- ============================================================ -->
+<h2><span class="num">3</span> All states</h2>
+
+<div class="grid two">
+  <div class="card">
+    <h3>Trigger states</h3>
+    <div style="display:flex; gap:16px; align-items:center; margin-top:14px; flex-wrap:wrap;">
+      <div style="text-align:center;">
+        <div class="tcard" style="width:120px; padding-bottom:18px;"><span class="kebab ghost" style="position:static; display:inline-flex;">⋯</span></div>
+        <small style="color:var(--muted-2)">rest (desktop)</small>
+      </div>
+      <div style="text-align:center;">
+        <div class="tcard" style="width:120px; padding-bottom:18px;"><span class="kebab revealed" style="position:static; display:inline-flex;">⋯</span></div>
+        <small style="color:var(--muted-2)">hover</small>
+      </div>
+      <div style="text-align:center;">
+        <div class="tcard" style="width:120px; padding-bottom:18px;"><span class="kebab focus" style="position:static; display:inline-flex;">⋯</span></div>
+        <small style="color:var(--muted-2)">focus-visible</small>
+      </div>
+    </div>
+    <p class="lead" style="margin-top:14px;">Focus ring = <code>ring-2 ring-primary</code> via shadcn's <code>focus-visible</code> defaults. Open state keeps the trigger at full opacity (<code>data-[state=open]</code>).</p>
+  </div>
+
+  <div class="card">
+    <h3>Read-only — no menu at all</h3>
+    <div class="tcard" style="margin-top:14px;">
+      <div class="row"><span class="grip ghost">⋮</span><div><div class="title">Guest-viewable task</div><div class="desc">No grip · no kebab · whole card still opens detail (read-only)</div></div></div>
+    </div>
+    <p class="lead" style="margin-top:12px;">When <code>isReadOnly</code> is true the entire <code>DropdownMenu</code> subtree is not rendered — same gate the grip uses (<code>!isArchived &amp;&amp; !isReadOnly</code>). No disabled-but-present trigger; that would be a dead affordance. <span class="tag">AC: no menu if readonly</span></p>
+  </div>
+</div>
+
+<h3>Delete confirmation — AlertDialog</h3>
+<p class="lead">Resolves Open Question 3 → <strong>confirm dialog</strong> (rationale §7). Uses <code>ui/alert-dialog.tsx</code>.</p>
+<div class="mockstage">
+  <div class="alertd" role="alertdialog" aria-labelledby="adt" aria-describedby="add">
+    <h4 id="adt">Delete this task?</h4>
+    <p id="add">“Design the empty state” will be permanently removed, along with its comments, checklist, and attachments. This can't be undone.</p>
+    <div class="actions">
+      <button class="btn ghost">Cancel</button>
+      <button class="btn danger">Delete task</button>
+    </div>
+  </div>
+</div>
+<ul>
+  <li><strong>Title names the consequence</strong>, body names the task by title (information scent — the user confirms <em>which</em> task).</li>
+  <li>Default focus lands on <strong>Cancel</strong>, not Delete — destructive action is harder to reach, and <code>Esc</code> / click-outside both cancel.</li>
+  <li>The destructive button mirrors the menu item: red fill + the word "Delete" (icon optional). <span class="tag">AC: Delete → confirm dialog</span></li>
+</ul>
+
+<h3>Error toast on failure</h3>
+<div class="mockstage">
+  <div class="toast" role="alert">
+    <span class="ic">⚠</span>
+    <div class="t">Couldn't move task<small>Something went wrong. The card has been restored — try again.</small></div>
+  </div>
+</div>
+<p class="lead">Every action's catch block calls <code>toast.error()</code> (per CLAUDE.md: never fail silently) and the optimistic change rolls back. Messages are action-specific: "Couldn't move task" / "Couldn't archive task" / "Couldn't delete task".</p>
+
+<!-- ============================================================ -->
+<h2><span class="num">4</span> Interaction &amp; flow per action</h2>
+<p class="lead">All four are ~80% reuse. Optimistic-first: mutate local state, fire the server action, roll back on error. This matches <code>BoardOpsContext</code>, which already returns rollback functions (e.g. <code>deleteTask(taskId, columnId)</code> returns a restore fn).</p>
+
+<div class="card tint-amber" style="margin-top:18px;">
+  <h3>Move to top / Move to bottom</h3>
+  <div class="flowstep"><span class="n">1</span><div>User opens ⋯ → clicks Move to top. (Disabled if already at the edge — see §2.)</div></div>
+  <div class="flowstep"><span class="n">2</span><div><strong>Optimistic:</strong> new helper <code>moveTaskWithinColumn(taskId, columnId, "top"|"bottom")</code> reorders the local column array. Card animates to the new position using the card's existing 120ms dnd-kit transition feel.</div></div>
+  <div class="flowstep"><span class="n">3</span><div><strong>Persist:</strong> <code>moveBoardTask</code> with <code>position = firstPos − POSITION_GAP</code> (top) or <code>lastPos + POSITION_GAP</code> (bottom). <code>POSITION_GAP</code> is the existing constant from <code>@/lib/constants</code> — do not invent a new gap.</div></div>
+  <div class="flowstep"><span class="n">4</span><div><strong>On error:</strong> roll back to prior order, <code>toast.error("Couldn't move task")</code>.</div></div>
+  <p class="lead"><strong>Scope:</strong> within the task's <em>current</em> column only (resolves Open Question 2). No cross-column movement — that's what drag-and-drop is for.</p>
+</div>
+
+<div class="card" style="margin-top:14px;">
+  <h3>Archive</h3>
+  <div class="flowstep"><span class="n">1</span><div>Item hidden if <code>task.archived</code> already true.</div></div>
+  <div class="flowstep"><span class="n">2</span><div><strong>Optimistic:</strong> new <code>archiveTask(taskId, columnId)</code> sets <code>archived: true</code> locally → card immediately drops to <code>opacity-50</code> and shows the "Archived" badge (line 457–462 already renders this). Dashboard/active counts exclude it.</div></div>
+  <div class="flowstep"><span class="n">3</span><div><strong>Persist:</strong> <code>updateBoardTask(taskId, ideaId, { archived: true })</code>. No confirm — archive is reversible, so an extra step would violate "don't gate reversible actions." <span class="tag">AC: archive optimistic</span></div></div>
+  <div class="flowstep"><span class="n">4</span><div><strong>On error:</strong> restore <code>archived: false</code>, <code>toast.error</code>.</div></div>
+</div>
+
+<div class="card tint-red" style="margin-top:14px;">
+  <h3>Delete</h3>
+  <div class="flowstep"><span class="n">1</span><div>Click Delete → close dropdown, open the AlertDialog (§3). Nothing has changed yet.</div></div>
+  <div class="flowstep"><span class="n">2</span><div>Confirm → <strong>optimistic</strong> <code>deleteTask(taskId, columnId)</code> (existing context fn) removes the card and returns a rollback fn.</div></div>
+  <div class="flowstep"><span class="n">3</span><div><strong>Persist:</strong> <code>deleteBoardTask(taskId, ideaId)</code>. On error: call the returned rollback fn to re-insert the card, <code>toast.error("Couldn't delete task")</code>.</div></div>
+</div>
+
+<h3>Keyboard &amp; accessibility (Radix gives most of this free)</h3>
+<ul>
+  <li>Trigger is a real <code>&lt;button&gt;</code> with <code>aria-label="Task actions"</code> — reachable by Tab, opens on <kbd>Enter</kbd>/<kbd>Space</kbd>.</li>
+  <li>Inside the menu: <kbd>↑</kbd>/<kbd>↓</kbd> roam items (skipping disabled ones), <kbd>Enter</kbd> activates, <kbd>Esc</kbd> closes and returns focus to the trigger. Radix <code>DropdownMenu</code> handles this; don't re-implement.</li>
+  <li>Disabled items use <code>disabled</code> prop → <code>aria-disabled</code>, removed from arrow-key traversal. <span class="tag">AC: top/bottom disabled at edges</span></li>
+  <li>AlertDialog traps focus, defaults to Cancel, closes on <kbd>Esc</kbd>; focus returns to the kebab after close.</li>
+  <li><strong>Touch targets ≥44px</strong> on mobile for the trigger and each menu row (menu items get generous vertical padding on small screens). <span class="tag">AC: ≥44px mobile + keyboard a11y</span></li>
+</ul>
+
+<!-- ============================================================ -->
+<h2><span class="num">5</span> Realtime: don't let the card revert</h2>
+<p>Board realtime can re-broadcast a task and overwrite optimistic local state. The existing trusted-local-move mechanism (<code>trusted-state.ts</code>, see commit <code>6e85044</code> "stop drag-drop bounce-back via trusted local move state") already solves this for drag-drop.</p>
+<div class="callout ac"><strong>Reuse it for menu moves.</strong> Move-to-top/bottom and archive must register the same trusted-local-move marker so an inbound realtime echo of the old position/state is ignored until the server write confirms. This is the same guard drag-drop uses — no new mechanism needed. <span class="tag">AC: realtime doesn't revert</span></div>
+
+<!-- ============================================================ -->
+<h2><span class="num">6</span> Acceptance-criteria coverage</h2>
+<table>
+  <thead><tr><th>AC from requirements</th><th>Where addressed</th></tr></thead>
+  <tbody>
+    <tr><td>⋯ trigger doesn't open detail dialog</td><td>§1 — <code>stopPropagation</code> on kebab click</td></tr>
+    <tr><td>Items: Move to top / bottom / Archive / Delete (Delete red)</td><td>§2 — order + destructive styling</td></tr>
+    <tr><td>Delete → confirm dialog</td><td>§3, §4 — AlertDialog</td></tr>
+    <tr><td>Archive optimistic</td><td>§4 — <code>archiveTask</code> + <code>updateBoardTask</code></td></tr>
+    <tr><td>Top/bottom disabled at edges</td><td>§2 table, §4 keyboard notes</td></tr>
+    <tr><td>No menu if read-only</td><td>§3 — subtree not rendered</td></tr>
+    <tr><td>≥44px mobile targets + keyboard a11y</td><td>§1, §4</td></tr>
+    <tr><td>Realtime doesn't revert</td><td>§5 — trusted-local-move reuse</td></tr>
+  </tbody>
+</table>
+
+<!-- ============================================================ -->
+<h2><span class="num">7</span> Open questions — resolved / for review</h2>
+
+<div class="grid">
+  <div class="card">
+    <h3>Q1 — ⋯ button vs right-click <span class="ok">→ resolved: ⋯ button</span></h3>
+    <p class="lead"><strong>Recommend the kebab button</strong> (matches the requirements' recommendation). Right-click context menus are undiscoverable, have no mobile equivalent (long-press conflicts with scroll/drag and our cards are already drag sources), and we have no <code>ContextMenu</code> primitive — only <code>DropdownMenu</code>. A visible ⋯ is discoverable, touch-native, and consistent with Linear/Notion (Jakob's Law). <em>Optional later:</em> right-click could be an additive accelerator that opens the same menu — but not for v1.</p>
+  </div>
+  <div class="card">
+    <h3>Q2 — top/bottom scope <span class="ok">→ resolved: current column</span></h3>
+    <p class="lead">Confirm the assumption: Move to top/bottom operates <strong>within the task's current column</strong>. Cross-column reordering isn't a meaningful "top/bottom" concept and is fully served by drag-and-drop. Keeps the action predictable (recognition over recall).</p>
+  </div>
+  <div class="card tint-red">
+    <h3>Q3 — confirm dialog vs undo toast <span class="ok">→ resolved: confirm dialog</span></h3>
+    <p class="lead"><strong>Confirm dialog</strong> for v1. Delete is irreversible and cascades (comments, checklist, attachments). An undo toast is friendlier for reversible/low-stakes actions but risks silent data loss if the user misses the 5s window or it's dismissed by a navigation. We reserve the undo pattern for <strong>Archive</strong> instead — Archive is reversible, so it deliberately gets <em>no</em> confirm. <span style="color:var(--muted)">For review: if the team prefers undo-on-delete later, the optimistic <code>deleteTask</code> rollback fn already makes it cheap to add.</span></p>
+  </div>
+</div>
+
+<footer class="doc">
+  Implementation surface: <code>src/components/board/board-task-card.tsx</code> (trigger + menu + dialogs) · <code>src/components/board/board-context.tsx</code> (<code>archiveTask</code>, <code>moveTaskWithinColumn</code> optimistic helpers) · existing actions <code>deleteBoardTask</code> / <code>updateBoardTask</code> / <code>moveBoardTask</code> in <code>src/actions/board.ts</code> · <code>POSITION_GAP</code> from <code>@/lib/constants</code> · trusted-move guard in <code>trusted-state.ts</code>.
+</footer>
+
+</div>
+</body>
+</html>

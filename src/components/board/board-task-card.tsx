@@ -29,6 +29,7 @@ import { LabelPicker } from "./label-picker";
 import { DueDateBadge } from "./due-date-badge";
 import { createClient } from "@/lib/supabase/client";
 import { TaskAutoOpenContext } from "./kanban-board";
+import { TaskCardMenu } from "./task-card-menu";
 import type { BoardTaskWithAssignee, BoardLabel, User } from "@/types";
 
 const TaskDetailDialog = dynamic(() => import("./task-detail-dialog").then((m) => m.TaskDetailDialog), { ssr: false });
@@ -37,6 +38,8 @@ interface BoardTaskCardProps {
   task: BoardTaskWithAssignee;
   ideaId: string;
   columnId: string;
+  /** Sibling tasks in this column (id + position) — for the ⋯ menu's move actions. */
+  columnTasks: { id: string; position: number }[];
   teamMembers: User[];
   boardLabels: BoardLabel[];
   highlightQuery?: string;
@@ -215,6 +218,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   task,
   ideaId,
   columnId,
+  columnTasks,
   teamMembers,
   boardLabels,
   highlightQuery,
@@ -374,7 +378,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
         }}
         style={style}
         data-testid={`task-card-${task.id}`}
-        className={`group cursor-pointer overflow-hidden rounded-md border bg-background shadow-sm transition-all duration-500 ${
+        className={`group relative cursor-pointer overflow-hidden rounded-md border bg-background shadow-sm transition-all duration-500 ${
           highlighted
             ? "border-primary ring-2 ring-primary/50"
             : task.workflow_step_awaiting_approval > 0
@@ -396,6 +400,15 @@ export const BoardTaskCard = memo(function BoardTaskCard({
           handleOpenChange(true);
         }}
       >
+        {!isReadOnly && (
+          <TaskCardMenu
+            task={task}
+            ideaId={ideaId}
+            columnId={columnId}
+            currentUserId={currentUserId}
+            columnTasks={columnTasks}
+          />
+        )}
         {coverUrl && (
           <div
             className="h-32 w-full cursor-zoom-in"

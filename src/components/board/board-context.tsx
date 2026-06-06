@@ -8,6 +8,18 @@ export interface BoardOptimisticOps {
   createTask: (columnId: string, tempTask: BoardTaskWithAssignee) => () => void;
   /** Remove a task from a column. Returns rollback function. */
   deleteTask: (taskId: string, columnId: string) => () => void;
+  /** Mark a single task as archived. Returns rollback function. */
+  archiveTask: (taskId: string, columnId: string) => () => void;
+  /**
+   * Reorder a task to the top/bottom of its current column, assigning it
+   * `newPosition`. Returns rollback function.
+   */
+  moveTaskWithinColumn: (
+    taskId: string,
+    columnId: string,
+    end: "top" | "bottom",
+    newPosition: number
+  ) => () => void;
   /** Append a temp column. Returns rollback function. */
   createColumn: (tempColumn: BoardColumnWithTasks) => () => void;
   /** Remove a column. Returns rollback function. */
@@ -16,6 +28,12 @@ export interface BoardOptimisticOps {
   updateColumn: (columnId: string, updates: Partial<BoardColumn>) => () => void;
   /** Mark all non-archived tasks in a column as archived. Returns rollback function. */
   archiveColumnTasks: (columnId: string) => () => void;
+  /**
+   * Trust a local move (column + position) over lagging Realtime snapshots for
+   * the standard trust window — same guard drag-drop uses to avoid bounce-back.
+   * Pass `null` to drop the entry (e.g. a rejected move).
+   */
+  trustMove: (taskId: string, columnId: string, position: number | null) => void;
   /** Increment pending ops counter (prevents Realtime from overwriting state). */
   incrementPendingOps: () => void;
   /** Decrement pending ops counter and mark last op time. */

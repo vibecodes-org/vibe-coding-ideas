@@ -472,6 +472,52 @@ export function KanbanBoard({
     };
   }, []);
 
+  const optimisticArchiveTask = useCallback((taskId: string, columnId: string) => {
+    const prev = columnsRef.current;
+    setColumns((cols) => {
+      const next = cols.map((col) =>
+        col.id === columnId
+          ? {
+              ...col,
+              tasks: col.tasks.map((t) =>
+                t.id === taskId && !t.archived ? { ...t, archived: true } : t
+              ),
+            }
+          : col
+      );
+      columnsRef.current = next;
+      return next;
+    });
+    return () => {
+      setColumns(prev);
+      columnsRef.current = prev;
+    };
+  }, []);
+
+  const optimisticMoveTaskWithinColumn = useCallback(
+    (taskId: string, columnId: string, end: "top" | "bottom", newPosition: number) => {
+      const prev = columnsRef.current;
+      setColumns((cols) => {
+        const next = cols.map((col) => {
+          if (col.id !== columnId) return col;
+          const task = col.tasks.find((t) => t.id === taskId);
+          if (!task) return col;
+          const rest = col.tasks.filter((t) => t.id !== taskId);
+          const moved = { ...task, position: newPosition };
+          const tasks = end === "top" ? [moved, ...rest] : [...rest, moved];
+          return { ...col, tasks };
+        });
+        columnsRef.current = next;
+        return next;
+      });
+      return () => {
+        setColumns(prev);
+        columnsRef.current = prev;
+      };
+    },
+    []
+  );
+
   const optimisticCreateColumn = useCallback((tempColumn: BoardColumnWithTasks) => {
     const prev = columnsRef.current;
     setColumns((cols) => {
@@ -531,6 +577,21 @@ export function KanbanBoard({
     };
   }, []);
 
+  const trustMove = useCallback(
+    (taskId: string, columnId: string, position: number | null) => {
+      if (position === null) {
+        trustedTasksRef.current.delete(taskId);
+        return;
+      }
+      trustedTasksRef.current.set(taskId, {
+        columnId,
+        position,
+        trustedUntil: Date.now() + TRUST_WINDOW_MS,
+      });
+    },
+    []
+  );
+
   const incrementPendingOps = useCallback(() => {
     setPendingOps((n) => n + 1);
   }, []);
@@ -544,20 +605,26 @@ export function KanbanBoard({
     () => ({
       createTask: optimisticCreateTask,
       deleteTask: optimisticDeleteTask,
+      archiveTask: optimisticArchiveTask,
+      moveTaskWithinColumn: optimisticMoveTaskWithinColumn,
       createColumn: optimisticCreateColumn,
       deleteColumn: optimisticDeleteColumn,
       updateColumn: optimisticUpdateColumn,
       archiveColumnTasks: optimisticArchiveColumnTasks,
+      trustMove,
       incrementPendingOps,
       decrementPendingOps,
     }),
     [
       optimisticCreateTask,
       optimisticDeleteTask,
+      optimisticArchiveTask,
+      optimisticMoveTaskWithinColumn,
       optimisticCreateColumn,
       optimisticDeleteColumn,
       optimisticUpdateColumn,
       optimisticArchiveColumnTasks,
+      trustMove,
       incrementPendingOps,
       decrementPendingOps,
     ]
