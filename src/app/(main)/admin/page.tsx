@@ -38,7 +38,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
 
   const isSuperAdmin = currentUser?.is_super_admin ?? false;
 
-  // Fetch usage logs with filters
+  // Build the two filtered query builders (not awaited yet).
   let usageQuery = supabase
     .from("ai_usage_log")
     .select("*, user:users!ai_usage_log_user_id_fkey(id, full_name, email, avatar_url)")
@@ -57,9 +57,6 @@ export default async function AdminPage({ searchParams }: PageProps) {
     usageQuery = usageQuery.eq("key_type", source as "platform" | "byok");
   }
 
-  const { data: usageLogs } = await usageQuery;
-
-  // Fetch feedback with filters
   let feedbackQuery = supabase
     .from("feedback")
     .select("*, user:users!feedback_user_id_fkey(id, full_name, email, avatar_url)")
@@ -73,83 +70,84 @@ export default async function AdminPage({ searchParams }: PageProps) {
     feedbackQuery = feedbackQuery.eq("status", status as "new" | "reviewed" | "archived");
   }
 
-  const { data: feedback } = await feedbackQuery;
+  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
-  // Count unreviewed feedback for badge
-  const { count: newFeedbackCount } = await supabase
-    .from("feedback")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "new");
-
-  // Fetch VibeCodes admin agents (exclude the system user itself)
-  const { data: adminAgentsData } = await supabase
-    .from("bot_profiles")
-    .select("*")
-    .eq("owner_id", VIBECODES_USER_ID)
-    .neq("id", VIBECODES_USER_ID)
-    .order("created_at", { ascending: true });
+  // All admin dashboard queries are independent of one another (only the
+  // auth/admin check above is sequential), so run them in ONE parallel batch
+  // instead of ~11 serial round-trips. This is the bulk of the page's load time,
+  // and it's paid again on every sub-tab switch (which re-renders this page).
+  const [
+    { data: usageLogs },
+    { data: feedback },
+    { count: newFeedbackCount },
+    { data: adminAgentsData },
+    { data: teamsData },
+    { data: communityData },
+    { data: libraryTemplatesData },
+    { data: allPlatformLogs },
+    { data: userCreditsData },
+    { data: mcpToolLogs },
+    { data: mcpToolStats },
+  ] = await Promise.all([
+    usageQuery,
+    feedbackQuery,
+    // Count unreviewed feedback for badge
+    supabase.from("feedback").select("id", { count: "exact", head: true }).eq("status", "new"),
+    // VibeCodes admin agents (exclude the system user itself)
+    supabase
+      .from("bot_profiles")
+      .select("*")
+      .eq("owner_id", VIBECODES_USER_ID)
+      .neq("id", VIBECODES_USER_ID)
+      .order("created_at", { ascending: true }),
+    // Featured teams with agents
+    supabase
+      .from("featured_teams")
+      .select("*, agents:featured_team_agents(*, bot:bot_profiles(id, name, role, avatar_url, bio, is_published))")
+      .order("display_order", { ascending: true }),
+    // Published community agents for the team bundling picker
+    supabase
+      .from("bot_profiles")
+      .select("*")
+      .eq("is_published", true)
+      .neq("owner_id", VIBECODES_USER_ID)
+      .order("community_upvotes", { ascending: false })
+      .limit(100),
+    // Workflow library templates
+    supabase.from("workflow_library_templates").select("*").order("display_order", { ascending: true }),
+    // ALL platform usage logs (unfiltered) for the credits table
+    supabase
+      .from("ai_usage_log")
+      .select("user_id, input_tokens, output_tokens, key_type")
+      .eq("key_type", "platform")
+      .order("created_at", { ascending: false })
+      .limit(5000),
+    // Non-bot users with credit + key info for the admin credits table
+    supabase
+      .from("users")
+      .select("id, full_name, email, avatar_url, ai_starter_credits, encrypted_anthropic_key")
+      .eq("is_bot", false)
+      .order("full_name", { ascending: true }),
+    // MCP tool logs (last 30 days)
+    supabase
+      .from("mcp_tool_log")
+      .select("*, user:users!mcp_tool_log_user_id_fkey(full_name, avatar_url, is_bot)")
+      .gte("created_at", thirtyDaysAgo)
+      .order("created_at", { ascending: false })
+      .limit(500),
+    // MCP tool stats (all time, aggregated)
+    supabase
+      .from("mcp_tool_stats")
+      .select("tool_name, user_id, call_count, error_count, avg_duration_ms, max_duration_ms, user:users!mcp_tool_stats_user_id_fkey(full_name, avatar_url, is_bot)")
+      .order("call_count", { ascending: false })
+      .limit(1000),
+  ]);
 
   const adminAgents = (adminAgentsData ?? []) as BotProfile[];
-
-  // Fetch featured teams with agents
-  const { data: teamsData } = await supabase
-    .from("featured_teams")
-    .select("*, agents:featured_team_agents(*, bot:bot_profiles(id, name, role, avatar_url, bio, is_published))")
-    .order("display_order", { ascending: true });
-
   const featuredTeams = (teamsData ?? []) as unknown as FeaturedTeamWithAgents[];
-
-  // Fetch published community agents for team bundling picker
-  const { data: communityData } = await supabase
-    .from("bot_profiles")
-    .select("*")
-    .eq("is_published", true)
-    .neq("owner_id", VIBECODES_USER_ID)
-    .order("community_upvotes", { ascending: false })
-    .limit(100);
-
   const communityAgents = (communityData ?? []) as BotProfile[];
-
-  // Fetch workflow library templates
-  const { data: libraryTemplatesData } = await supabase
-    .from("workflow_library_templates")
-    .select("*")
-    .order("display_order", { ascending: true });
-
   const libraryTemplates = (libraryTemplatesData ?? []) as WorkflowLibraryTemplate[];
-
-  // Fetch ALL platform usage logs (unfiltered) for credits table — must be independent of filters
-  const { data: allPlatformLogs } = await supabase
-    .from("ai_usage_log")
-    .select("user_id, input_tokens, output_tokens, key_type")
-    .eq("key_type", "platform")
-    .order("created_at", { ascending: false })
-    .limit(5000);
-
-  // Fetch non-bot users with credit and key info for admin credits table
-  const { data: userCreditsData } = await supabase
-    .from("users")
-    .select("id, full_name, email, avatar_url, ai_starter_credits, encrypted_anthropic_key")
-    .eq("is_bot", false)
-    .order("full_name", { ascending: true });
-
   const userCredits = (userCreditsData ?? []) as UserCreditInfo[];
-
-  // Fetch MCP tool logs (last 30 days)
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
-  const { data: mcpToolLogs } = await supabase
-    .from("mcp_tool_log")
-    .select("*, user:users!mcp_tool_log_user_id_fkey(full_name, avatar_url, is_bot)")
-    .gte("created_at", thirtyDaysAgo)
-    .order("created_at", { ascending: false })
-    .limit(500);
-
-  // Fetch MCP tool stats (all time, aggregated)
-  const { data: mcpToolStats } = await supabase
-    .from("mcp_tool_stats")
-    .select("tool_name, user_id, call_count, error_count, avg_duration_ms, max_duration_ms, user:users!mcp_tool_stats_user_id_fkey(full_name, avatar_url, is_bot)")
-    .order("call_count", { ascending: false })
-    .limit(1000);
 
   return (
     <div className="mx-auto max-w-6xl px-4 py-8">
