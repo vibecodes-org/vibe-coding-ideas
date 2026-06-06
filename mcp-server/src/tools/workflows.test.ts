@@ -2471,21 +2471,24 @@ describe("claimNextStep — subagent instruction (only mode)", () => {
     } as McpContext;
   }
 
-  it("always instructs the orchestrator to spawn a fresh subagent (no toggle)", async () => {
+  it("mandates spawning a fresh subagent", async () => {
     const result = await claimNextStep(makeCtx(), { task_id: TASK_ID });
     const instruction = (result as { instruction: string }).instruction;
 
+    expect(instruction).toContain("MANDATORY");
     expect(instruction).toContain("FRESH SUBAGENT");
-    expect(instruction).toContain("do NOT call set_agent_identity");
     expect(instruction).toContain("get_agent_prompt");
   });
 
-  it("includes a GATED fallback for clients that cannot spawn subagents", async () => {
+  it("forbids inlining for convenience and narrowly gates the exception", async () => {
     const result = await claimNextStep(makeCtx(), { task_id: TASK_ID });
     const instruction = (result as { instruction: string }).instruction;
 
-    // Fallback exists but is explicitly conditional, so a capable client prefers spawning.
-    expect(instruction).toContain("only if your client cannot spawn subagents");
+    // No convenience escape hatch — the only exception is a genuine capability gap.
+    expect(instruction).toContain("DO NOT INLINE");
+    expect(instruction).toContain("NOT permitted");
+    expect(instruction).toContain("EXCEPTION (the ONLY one)");
+    expect(instruction).toContain("no subagent/Agent tool");
   });
 
   it("includes reliability guidance (retry/resume rather than finishing inline)", async () => {

@@ -648,14 +648,15 @@ export async function claimNextStep(
     : `0. Review the available_agents list and pick the best match for the "${updated.agent_role}" role.\n`;
 
   const identityInstruction =
-    `IMPORTANT — run this step with a FRESH SUBAGENT (do NOT call set_agent_identity):\n` +
+    `MANDATORY: this step MUST be executed by a FRESH SUBAGENT that you spawn with your Agent/Task tool. Do NOT do this step's work yourself in this conversation.\n` +
     pickStep +
     `1. Keep the claim_token from this response — do NOT pass it to the subagent.\n` +
     `2. Call get_agent_prompt with agent_id ${agentIdArg} to fetch ${personaRef}'s full system prompt.\n` +
-    `3. Spawn a FRESH subagent whose system prompt IS that persona prompt, with this step's description plus the prior-step deliverables in the "context" array. Let it do the work in its own isolated context and return the deliverable.\n` +
+    `3. SPAWN a fresh subagent whose system prompt IS that persona prompt, with this step's description plus the prior-step deliverables in the "context" array. It does the work in its own isolated context and returns the deliverable.\n` +
     `4. When it returns, YOU (the orchestrator) call complete_step with this step's id, the claim_token, and the subagent's deliverable as the output.\n` +
-    `RELIABILITY: if the subagent errors or its connection drops before returning, RETRY or RESUME it — do NOT silently finish the step yourself. If you must complete inline as a last resort, say so explicitly in the output so the record stays accurate.\n` +
-    `FALLBACK: only if your client cannot spawn subagents, call set_agent_identity with agent_id ${agentIdArg} to adopt ${personaRef} and do the step yourself.`;
+    `DO NOT INLINE: doing the work yourself because it seems simpler, faster, cheaper, or "more convenient" is NOT permitted — a fresh isolated context per persona is the entire point and is lost if you inline it. "It's only a small step" is not a reason. If you catch yourself about to do the work directly, STOP and spawn the subagent instead.\n` +
+    `RELIABILITY: if the subagent errors or its connection drops before returning, RETRY or RESUME it (you have its agent id) — do NOT quietly finish the step yourself.\n` +
+    `EXCEPTION (the ONLY one): if your client genuinely has no subagent/Agent tool at all, then call set_agent_identity with agent_id ${agentIdArg} to adopt ${personaRef}, do the step, and state verbatim in your complete_step output: "Completed inline — no subagent capability." If you DO have an Agent/Task tool, this exception does not apply to you.`;
 
   const contextParts: string[] = [];
 
