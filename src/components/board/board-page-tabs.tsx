@@ -1,6 +1,7 @@
 "use client";
 
-import { useSearchParams, useRouter, usePathname } from "next/navigation";
+import { useState, useEffect, useCallback } from "react";
+import { useSearchParams, usePathname } from "next/navigation";
 import { LayoutDashboard, Workflow, Bot } from "lucide-react";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { WorkflowsTab } from "./workflows-tab";
@@ -35,27 +36,44 @@ export function BoardPageTabs({
   children,
 }: BoardPageTabsProps) {
   const searchParams = useSearchParams();
-  const router = useRouter();
   const pathname = usePathname();
 
-  const tabParam = searchParams.get("tab");
-  const activeTab =
-    tabParam === "workflows"
+  // Tab state is purely CLIENT-SIDE. The board page is `force-dynamic`, so using
+  // router.replace(?tab=…) re-ran the entire server component on every tab click
+  // (re-fetching all board data + regenerating cover-image signed URLs) — a
+  // multi-second cost for a view the server doesn't even branch on. We keep the
+  // active tab in local state and sync the URL via the History API (no RSC
+  // refetch). The board data is already loaded as props.
+  const initialTab =
+    searchParams.get("tab") === "workflows"
       ? "workflows"
-      : tabParam === "agents"
+      : searchParams.get("tab") === "agents"
         ? "agents"
         : "board";
+  const [activeTab, setActiveTabState] = useState<string>(initialTab);
 
-  function setActiveTab(tab: string) {
-    const params = new URLSearchParams(searchParams.toString());
-    if (tab === "board") {
-      params.delete("tab");
-    } else {
-      params.set("tab", tab);
-    }
-    const qs = params.toString();
-    router.replace(`${pathname}${qs ? `?${qs}` : ""}`, { scroll: false });
-  }
+  // Stay in sync with back/forward and with the programmatic popstate events the
+  // Workflows/Agents tabs dispatch when they cross-link to each other.
+  useEffect(() => {
+    const syncFromUrl = () => {
+      const t = new URLSearchParams(window.location.search).get("tab");
+      setActiveTabState(t === "workflows" ? "workflows" : t === "agents" ? "agents" : "board");
+    };
+    window.addEventListener("popstate", syncFromUrl);
+    return () => window.removeEventListener("popstate", syncFromUrl);
+  }, []);
+
+  const setActiveTab = useCallback(
+    (tab: string) => {
+      setActiveTabState(tab);
+      const params = new URLSearchParams(window.location.search);
+      if (tab === "board") params.delete("tab");
+      else params.set("tab", tab);
+      const qs = params.toString();
+      window.history.replaceState(null, "", `${pathname}${qs ? `?${qs}` : ""}`);
+    },
+    [pathname]
+  );
 
   return (
     <Tabs
