@@ -33,6 +33,7 @@ import {
   readLaunchPath,
   writeLaunchPath,
   launchPathKey,
+  folderNameFromRelativePath,
 } from "./launch-claude-code";
 
 const APP_URL = "https://staging.vibecodes.co.uk";
@@ -403,5 +404,21 @@ describe("localStorage persistence", () => {
   it("normalises a missing mode to existing", () => {
     window.localStorage.setItem(launchPathKey("idea-1"), JSON.stringify({ path: "/x" }));
     expect(readLaunchPath("idea-1")?.mode).toBe("existing");
+  });
+});
+
+describe("folderNameFromRelativePath", () => {
+  it("returns the first path segment (the picked folder name)", () => {
+    expect(folderNameFromRelativePath("my-project/src/index.ts")).toBe("my-project");
+  });
+
+  it("returns the whole value when there is no slash", () => {
+    expect(folderNameFromRelativePath("my-project")).toBe("my-project");
+  });
+
+  it("returns '' for empty/nullish input", () => {
+    expect(folderNameFromRelativePath("")).toBe("");
+    expect(folderNameFromRelativePath(undefined)).toBe("");
+    expect(folderNameFromRelativePath(null)).toBe("");
   });
 });
