@@ -382,21 +382,3 @@ export function writeLaunchPath(ideaId: string, state: LaunchPathState): void {
     // Storage full / disabled — caller surfaces failure via the launch flow.
   }
 }
-
-// ────────────────────────────────────────────────────────────────────────────
-// Folder picker helpers
-// ────────────────────────────────────────────────────────────────────────────
-
-/**
- * Extract the selected folder's name from an `<input webkitdirectory>` file's
- * `webkitRelativePath`. The path looks like `my-project/src/index.ts` — the first
- * segment is the picked folder. Used as the cross-browser Browse fallback when the
- * File System Access API (`showDirectoryPicker`) is unavailable (Brave disables it;
- * Safari/Firefox don't implement it). Like the picker, this yields only the folder
- * NAME — never the absolute path (browser security) — so the user still confirms the
- * prefix. Returns "" when no name can be derived.
- */
-export function folderNameFromRelativePath(relativePath: string | undefined | null): string {
-  if (!relativePath) return "";
-  return relativePath.split("/")[0] ?? "";
-}

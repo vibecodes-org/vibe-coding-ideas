@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { FolderOpen, FolderPlus, Lock, GitBranch, AlertTriangle } from "lucide-react";
 import {
   Dialog,
@@ -22,13 +22,9 @@ import {
   looksAbsolutePath,
   parseRepoFromGithubUrl,
   writeLaunchPath,
-  folderNameFromRelativePath,
 } from "@/lib/launch-claude-code";
 
 // File System Access API — only the folder NAME is exposed, never the absolute path.
-// Preferred when available (Chrome/Edge), but Brave disables it and Safari/Firefox
-// don't implement it — so we fall back to a hidden <input webkitdirectory> (below),
-// which is supported everywhere and also yields just the folder name.
 interface DirectoryHandle {
   name: string;
 }
@@ -74,19 +70,6 @@ export function LaunchPathDialog({
   const parentRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
-  // Hidden <input webkitdirectory> fallback (Brave/Safari/Firefox where the File
-  // System Access API is unavailable). browseTargetRef remembers which field to fill.
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const browseTargetRef = useRef<"existing" | "parent" | null>(null);
-  const setFileInput = useCallback((el: HTMLInputElement | null) => {
-    fileInputRef.current = el;
-    if (el) {
-      // Non-standard attributes; set imperatively to avoid React typing friction.
-      el.setAttribute("webkitdirectory", "");
-      el.setAttribute("directory", "");
-    }
-  }, []);
-
   const picker = getDirectoryPicker();
   const repo = parseRepoFromGithubUrl(ideaGithubUrl);
 
@@ -105,45 +88,25 @@ export function LaunchPathDialog({
 
   const willCreate = parent.trim() && name.trim() ? composeNewProjectPath(parent, name) : "";
 
-  // The browser only ever gives us the folder NAME (security), never the absolute
-  // path. Pre-fill the name and put the caret at the start so the user types the prefix.
-  function applyFolderName(target: "existing" | "parent", folderName: string) {
-    if (!folderName) return;
-    const input = target === "existing" ? pathRef.current : parentRef.current;
-    if (target === "existing") {
-      setPath((prev) => (prev.trim() ? prev : folderName));
-    } else {
-      setParent((prev) => (prev.trim() ? prev : folderName));
-    }
-    setError(null);
-    requestAnimationFrame(() => {
-      input?.focus();
-      input?.setSelectionRange(0, 0);
-    });
-  }
-
   async function handleBrowse(target: "existing" | "parent") {
-    if (picker) {
-      try {
-        const handle = await picker();
-        applyFolderName(target, handle.name);
-      } catch {
-        // User dismissed the native picker — no-op (the text field stays the source of truth).
+    if (!picker) return;
+    try {
+      const handle = await picker();
+      // The browser only gives us the folder NAME (security). Pre-fill the name,
+      // place the caret at the start so the user can type the absolute prefix.
+      const input = target === "existing" ? pathRef.current : parentRef.current;
+      if (target === "existing") {
+        setPath((prev) => (prev.trim() ? prev : handle.name));
+      } else {
+        setParent((prev) => (prev.trim() ? prev : handle.name));
       }
-      return;
+      requestAnimationFrame(() => {
+        input?.focus();
+        input?.setSelectionRange(0, 0);
+      });
+    } catch {
+      // User dismissed the native picker — no-op (the text field stays the source of truth).
     }
-    // Fallback: drive the hidden <input webkitdirectory> (Brave/Safari/Firefox).
-    browseTargetRef.current = target;
-    fileInputRef.current?.click();
-  }
-
-  function handleFilePicked(e: React.ChangeEvent<HTMLInputElement>) {
-    const files = e.target.files;
-    const target = browseTargetRef.current;
-    e.target.value = ""; // reset so picking the same folder again re-fires change
-    browseTargetRef.current = null;
-    if (!files || files.length === 0 || !target) return;
-    applyFolderName(target, folderNameFromRelativePath(files[0].webkitRelativePath));
   }
 
   function handleSwitchToExisting() {
@@ -220,15 +183,6 @@ export function LaunchPathDialog({
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
-        {/* Hidden cross-browser folder picker (used when showDirectoryPicker is unavailable) */}
-        <input
-          ref={setFileInput}
-          type="file"
-          className="hidden"
-          tabIndex={-1}
-          aria-hidden="true"
-          onChange={handleFilePicked}
-        />
         <DialogHeader>
           <DialogTitle>{mode === "new" ? "Start a new project" : "Local project folder"}</DialogTitle>
           <DialogDescription>
@@ -285,13 +239,17 @@ export function LaunchPathDialog({
                 aria-describedby="launch-path-help"
                 aria-invalid={existingNotAbsolute || undefined}
               />
-              <Button type="button" variant="outline" onClick={() => handleBrowse("existing")}>
-                <FolderOpen className="h-4 w-4" />
-                Browse…
-              </Button>
+              {picker && (
+                <Button type="button" variant="outline" onClick={() => handleBrowse("existing")}>
+                  <FolderOpen className="h-4 w-4" />
+                  Browse…
+                </Button>
+              )}
             </div>
             <p id="launch-path-help" className="text-xs text-muted-foreground">
-              Pick your folder, then confirm the full path — your browser can&apos;t read the full path for security.
+              {picker
+                ? "Pick your folder, then confirm the full path — your browser can't read the full path for security."
+                : "Type or paste the absolute path (run pwd in your terminal to copy it)."}
             </p>
             {existingNotAbsolute && (
               <p className="flex items-start gap-1.5 text-xs text-amber-400">
@@ -318,13 +276,17 @@ export function LaunchPathDialog({
                   aria-describedby="launch-parent-help"
                   aria-invalid={parentNotAbsolute || undefined}
                 />
-                <Button type="button" variant="outline" onClick={() => handleBrowse("parent")}>
-                  <FolderOpen className="h-4 w-4" />
-                  Browse…
-                </Button>
+                {picker && (
+                  <Button type="button" variant="outline" onClick={() => handleBrowse("parent")}>
+                    <FolderOpen className="h-4 w-4" />
+                    Browse…
+                  </Button>
+                )}
               </div>
               <p id="launch-parent-help" className="text-xs text-muted-foreground">
-                Pick the folder it goes inside, then confirm the full path — your browser can&apos;t read the full path for security.
+                {picker
+                  ? "Pick the folder it goes inside, then confirm the full path — your browser can't read the full path for security."
+                  : "Type or paste the absolute parent path."}
               </p>
               {parentNotAbsolute && (
                 <p className="flex items-start gap-1.5 text-xs text-amber-400">
