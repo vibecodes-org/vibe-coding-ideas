@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useRef, useState } from "react";
+import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
 import { Terminal, ChevronDown, Copy, FolderCog, FolderPlus, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -20,6 +20,9 @@ import {
   buildBoardBootstrapPrompt,
   buildTaskBootstrapPrompt,
   readLaunchPath,
+  slugifyIdeaTitle,
+  composeNewProjectPath,
+  DEFAULT_NEW_PROJECT_PARENT,
 } from "@/lib/launch-claude-code";
 import { LaunchPathDialog } from "./launch-path-dialog";
 
@@ -61,6 +64,24 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
 
   // Read fresh on each interaction (localStorage may change in another tab/window).
   const getSaved = useCallback(() => readLaunchPath(ideaId), [ideaId]);
+
+  const defaultSlug = useMemo(() => slugifyIdeaTitle(ideaTitle), [ideaTitle]);
+
+  // The launch state used when the user hasn't pinned one. No browser path needed:
+  //  - idea has a GitHub repo → existing mode, empty path; the deep link's `repo`
+  //    param makes Claude Code open (or clone) the repo locally.
+  //  - no repo → a brand-new project under ~/projects/<slug>; the agent mkdir's it.
+  const resolveState = useCallback((): LaunchPathState => {
+    const saved = getSaved();
+    if (saved) return saved;
+    if (ideaGithubUrl) return { mode: "existing", path: "" };
+    return {
+      mode: "new",
+      path: composeNewProjectPath(DEFAULT_NEW_PROJECT_PARENT, defaultSlug),
+      parent: DEFAULT_NEW_PROJECT_PARENT,
+      name: defaultSlug,
+    };
+  }, [getSaved, ideaGithubUrl, defaultSlug]);
 
   const buildPrompt = useCallback(
     (state: LaunchPathState): string => {
@@ -117,8 +138,12 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       launchingRef.current = true;
 
       const prompt = buildPrompt(state);
-      // cwd: existing → the project path; new → the parent (mkdir/cd is relative to it).
-      const cwd = state.mode === "new" ? state.parent ?? undefined : state.path;
+      // cwd is ONLY passed for existing mode with a real absolute path the user
+      // pinned. New mode: the agent mkdir's the dir (it may not exist yet, and
+      // `~`-relative paths don't expand in the cwd param). Repo default: empty
+      // path → no cwd → the `repo` param resolves the working copy.
+      const cwd =
+        state.mode === "existing" && state.path.trim() ? state.path.trim() : undefined;
       const link = buildClaudeDeepLink({
         prompt,
         cwd,
@@ -167,28 +192,15 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     [buildPrompt, ideaGithubUrl, copyCommand]
   );
 
-  // Primary action: launch now if a path is saved, else open the dialog first.
+  // Primary action: always launch. No path needed — repo-backed ideas resolve via
+  // the `repo` param; repo-less ideas default to a new ~/projects/<slug> the agent creates.
   const handleLaunch = useCallback(() => {
-    const saved = getSaved();
-    if (saved) {
-      openInClaudeCode(saved);
-    } else {
-      setPendingLaunch(true);
-      setDialogMode("existing");
-      setDialogOpen(true);
-    }
-  }, [getSaved, openInClaudeCode]);
+    openInClaudeCode(resolveState());
+  }, [resolveState, openInClaudeCode]);
 
   const handleCopy = useCallback(() => {
-    const saved = getSaved();
-    if (saved) {
-      void copyCommand(saved);
-    } else {
-      setPendingLaunch(false);
-      setDialogMode("existing");
-      setDialogOpen(true);
-    }
-  }, [getSaved, copyCommand]);
+    void copyCommand(resolveState());
+  }, [resolveState, copyCommand]);
 
   const openDialog = useCallback((mode: LaunchMode, launch: boolean) => {
     setPendingLaunch(launch);
@@ -263,7 +275,6 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // ── Board toolbar: labelled split-button ──────────────────────────────────
   // Desktop-only — hidden below md (matches the existing action cluster recipe).
   if (!isDesktop) return null;
-  const hasPath = !!getSaved();
 
   return (
     <>
@@ -288,47 +299,24 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
               <ChevronDown className="h-3.5 w-3.5" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-64">
-            {hasPath ? (
-              <>
-                <DropdownMenuItem onSelect={handleLaunch}>
-                  <Terminal className="mr-2 h-4 w-4" />
-                  Open in Claude Code
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={handleCopy}>
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copy launch command
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={() => openDialog("existing", false)}>
-                  <FolderCog className="mr-2 h-4 w-4" />
-                  Change project folder…
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => openDialog("new", true)}>
-                  <FolderPlus className="mr-2 h-4 w-4" />
-                  Start a new project…
-                </DropdownMenuItem>
-              </>
-            ) : (
-              <>
-                <div className="px-2 py-2 text-xs text-muted-foreground">
-                  Set your local project folder for this idea to launch Claude Code here.
-                </div>
-                <DropdownMenuItem onSelect={() => openDialog("existing", true)}>
-                  <FolderCog className="mr-2 h-4 w-4" />
-                  Set project folder…
-                </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => openDialog("new", true)}>
-                  <FolderPlus className="mr-2 h-4 w-4" />
-                  Start a new project…
-                </DropdownMenuItem>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem onSelect={handleCopy}>
-                  <Copy className="mr-2 h-4 w-4" />
-                  Copy launch command
-                </DropdownMenuItem>
-              </>
-            )}
+          <DropdownMenuContent align="end" className="w-72">
+            <DropdownMenuItem onSelect={handleLaunch}>
+              <Terminal className="mr-2 h-4 w-4" />
+              Open in Claude Code
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => openDialog("new", true)}>
+              <FolderPlus className="mr-2 h-4 w-4" />
+              Start a new project…
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={handleCopy}>
+              <Copy className="mr-2 h-4 w-4" />
+              Copy launch command
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem onSelect={() => openDialog("existing", false)}>
+              <FolderCog className="mr-2 h-4 w-4" />
+              Set exact folder (advanced)…
+            </DropdownMenuItem>
             <DropdownMenuSeparator />
             <DropdownMenuItem asChild>
               <a href={INSTALL_GUIDE_URL} target="_blank" rel="noopener noreferrer">

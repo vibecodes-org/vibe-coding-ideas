@@ -33,6 +33,8 @@ import {
   readLaunchPath,
   writeLaunchPath,
   launchPathKey,
+  slugifyIdeaTitle,
+  DEFAULT_NEW_PROJECT_PARENT,
 } from "./launch-claude-code";
 
 const APP_URL = "https://staging.vibecodes.co.uk";
@@ -403,5 +405,51 @@ describe("localStorage persistence", () => {
   it("normalises a missing mode to existing", () => {
     window.localStorage.setItem(launchPathKey("idea-1"), JSON.stringify({ path: "/x" }));
     expect(readLaunchPath("idea-1")?.mode).toBe("existing");
+  });
+});
+
+describe("slugifyIdeaTitle", () => {
+  it("lowercases and dashes a title into a safe folder name", () => {
+    expect(slugifyIdeaTitle("My Great Idea!")).toBe("my-great-idea");
+  });
+
+  it("collapses runs and trims leading/trailing separators", () => {
+    expect(slugifyIdeaTitle("  Foo --- Bar  ")).toBe("foo-bar");
+  });
+
+  it("falls back to 'project' when nothing usable remains", () => {
+    expect(slugifyIdeaTitle("!!!")).toBe("project");
+    expect(slugifyIdeaTitle("")).toBe("project");
+  });
+});
+
+describe("existing-mode directory guidance (repo-first)", () => {
+  it("tells the agent to open/clone the repo when a github_url is present (no mkdir)", () => {
+    const p = buildBoardBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: "https://github.com/acme/widget",
+    });
+    expect(p).toContain("git clone https://github.com/acme/widget.git");
+    expect(p).toContain(`${DEFAULT_NEW_PROJECT_PARENT}/widget`);
+    expect(p).not.toContain("mkdir -p"); // existing mode never mkdirs a named project
+    // MCP head still first + intact.
+    expect(p.indexOf("claude mcp add")).toBeLessThan(p.indexOf("git clone"));
+  });
+
+  it("adds no directory block in existing mode when there is no repo", () => {
+    const p = buildTaskBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      taskId: "task-9",
+      taskTitle: "Do the thing",
+      mode: "existing",
+      repoUrl: null,
+    });
+    expect(p).not.toContain("git clone");
+    expect(p).not.toContain("mkdir -p");
+    expect(p).toContain("task_id: task-9");
   });
 });

@@ -22,18 +22,8 @@ import {
   looksAbsolutePath,
   parseRepoFromGithubUrl,
   writeLaunchPath,
+  DEFAULT_NEW_PROJECT_PARENT,
 } from "@/lib/launch-claude-code";
-
-// File System Access API — only the folder NAME is exposed, never the absolute path.
-interface DirectoryHandle {
-  name: string;
-}
-type ShowDirectoryPicker = () => Promise<DirectoryHandle>;
-function getDirectoryPicker(): ShowDirectoryPicker | null {
-  if (typeof window === "undefined") return null;
-  const fn = (window as unknown as { showDirectoryPicker?: unknown }).showDirectoryPicker;
-  return typeof fn === "function" ? (fn as ShowDirectoryPicker) : null;
-}
 
 interface LaunchPathDialogProps {
   open: boolean;
@@ -62,7 +52,7 @@ export function LaunchPathDialog({
 }: LaunchPathDialogProps) {
   const [mode, setMode] = useState<LaunchMode>(initialMode ?? initial?.mode ?? "existing");
   const [path, setPath] = useState(initial?.mode === "existing" ? (initial?.path ?? "") : "");
-  const [parent, setParent] = useState(initial?.parent ?? "");
+  const [parent, setParent] = useState(initial?.parent ?? DEFAULT_NEW_PROJECT_PARENT);
   const [name, setName] = useState(initial?.name ?? "");
   const [error, setError] = useState<string | null>(null);
 
@@ -70,7 +60,6 @@ export function LaunchPathDialog({
   const parentRef = useRef<HTMLInputElement>(null);
   const nameRef = useRef<HTMLInputElement>(null);
 
-  const picker = getDirectoryPicker();
   const repo = parseRepoFromGithubUrl(ideaGithubUrl);
 
   // Reset fields each time the dialog opens (pick up the latest saved state + mode).
@@ -80,7 +69,7 @@ export function LaunchPathDialog({
     if (open) {
       setMode(initialMode ?? initial?.mode ?? "existing");
       setPath(initial?.mode === "existing" ? (initial?.path ?? "") : "");
-      setParent(initial?.parent ?? "");
+      setParent(initial?.parent ?? DEFAULT_NEW_PROJECT_PARENT);
       setName(initial?.name ?? "");
       setError(null);
     }
@@ -88,29 +77,7 @@ export function LaunchPathDialog({
 
   const willCreate = parent.trim() && name.trim() ? composeNewProjectPath(parent, name) : "";
 
-  async function handleBrowse(target: "existing" | "parent") {
-    if (!picker) return;
-    try {
-      const handle = await picker();
-      // The browser only gives us the folder NAME (security). Pre-fill the name,
-      // place the caret at the start so the user can type the absolute prefix.
-      const input = target === "existing" ? pathRef.current : parentRef.current;
-      if (target === "existing") {
-        setPath((prev) => (prev.trim() ? prev : handle.name));
-      } else {
-        setParent((prev) => (prev.trim() ? prev : handle.name));
-      }
-      requestAnimationFrame(() => {
-        input?.focus();
-        input?.setSelectionRange(0, 0);
-      });
-    } catch {
-      // User dismissed the native picker — no-op (the text field stays the source of truth).
-    }
-  }
-
   function handleSwitchToExisting() {
-    // Pre-fill existing mode with the composed path the user was about to create.
     if (willCreate) setPath(willCreate);
     setMode("existing");
     setError(null);
@@ -133,7 +100,7 @@ export function LaunchPathDialog({
     // Create-new mode
     const parentTrimmed = parent.trim();
     if (!parentTrimmed) {
-      setError("Enter the parent folder (absolute path).");
+      setError("Enter where to create the project (a parent folder).");
       parentRef.current?.focus();
       return;
     }
@@ -159,7 +126,7 @@ export function LaunchPathDialog({
     onOpenChange(false);
   }
 
-  // Light-touch absolute-path warnings (warn, don't block).
+  // Light-touch absolute-path warnings (warn, don't block). `~/…` counts as absolute.
   const existingNotAbsolute = mode === "existing" && path.trim() !== "" && !looksAbsolutePath(path);
   const parentNotAbsolute = mode === "new" && parent.trim() !== "" && !looksAbsolutePath(parent);
 
@@ -172,11 +139,11 @@ export function LaunchPathDialog({
         ? "Save & launch"
         : "Save";
 
-  // Auto-focus the first field on open.
+  // Auto-focus the most relevant field on open (the name for new projects).
   useEffect(() => {
     if (!open) return;
     requestAnimationFrame(() => {
-      (mode === "new" ? parentRef.current : pathRef.current)?.focus();
+      (mode === "new" ? nameRef.current : pathRef.current)?.focus();
     });
   }, [open, mode]);
 
@@ -184,11 +151,11 @@ export function LaunchPathDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>{mode === "new" ? "Start a new project" : "Local project folder"}</DialogTitle>
+          <DialogTitle>{mode === "new" ? "Start a new project" : "Set the project folder"}</DialogTitle>
           <DialogDescription>
             {mode === "new"
-              ? "Claude Code will create the folder on this machine when it launches."
-              : "Where this idea's code lives on this machine."}
+              ? "Claude Code creates the folder on this machine when it launches."
+              : "Point Claude Code at an existing folder on this machine. Only needed when this idea has no GitHub repo to open automatically."}
           </DialogDescription>
         </DialogHeader>
 
@@ -225,31 +192,22 @@ export function LaunchPathDialog({
         {mode === "existing" ? (
           <div className="space-y-2">
             <Label htmlFor="launch-path">Absolute path on your computer</Label>
-            <div className="flex items-stretch gap-2">
-              <Input
-                id="launch-path"
-                ref={pathRef}
-                value={path}
-                onChange={(e) => {
-                  setPath(e.target.value);
-                  setError(null);
-                }}
-                placeholder="/Users/you/projects/my-idea"
-                className="font-mono text-sm"
-                aria-describedby="launch-path-help"
-                aria-invalid={existingNotAbsolute || undefined}
-              />
-              {picker && (
-                <Button type="button" variant="outline" onClick={() => handleBrowse("existing")}>
-                  <FolderOpen className="h-4 w-4" />
-                  Browse…
-                </Button>
-              )}
-            </div>
+            <Input
+              id="launch-path"
+              ref={pathRef}
+              value={path}
+              onChange={(e) => {
+                setPath(e.target.value);
+                setError(null);
+              }}
+              placeholder="/Users/you/projects/my-idea"
+              className="font-mono text-sm"
+              aria-describedby="launch-path-help"
+              aria-invalid={existingNotAbsolute || undefined}
+            />
             <p id="launch-path-help" className="text-xs text-muted-foreground">
-              {picker
-                ? "Pick your folder, then confirm the full path — your browser can't read the full path for security."
-                : "Type or paste the absolute path (run pwd in your terminal to copy it)."}
+              Tip: in your terminal, <code className="font-mono">cd</code> to the folder and run{" "}
+              <code className="font-mono">pwd</code> — that prints the exact path to paste here.
             </p>
             {existingNotAbsolute && (
               <p className="flex items-start gap-1.5 text-xs text-amber-400">
@@ -260,42 +218,6 @@ export function LaunchPathDialog({
           </div>
         ) : (
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="launch-parent">Parent folder (absolute path)</Label>
-              <div className="flex items-stretch gap-2">
-                <Input
-                  id="launch-parent"
-                  ref={parentRef}
-                  value={parent}
-                  onChange={(e) => {
-                    setParent(e.target.value);
-                    setError(null);
-                  }}
-                  placeholder="/Users/you/projects"
-                  className="font-mono text-sm"
-                  aria-describedby="launch-parent-help"
-                  aria-invalid={parentNotAbsolute || undefined}
-                />
-                {picker && (
-                  <Button type="button" variant="outline" onClick={() => handleBrowse("parent")}>
-                    <FolderOpen className="h-4 w-4" />
-                    Browse…
-                  </Button>
-                )}
-              </div>
-              <p id="launch-parent-help" className="text-xs text-muted-foreground">
-                {picker
-                  ? "Pick the folder it goes inside, then confirm the full path — your browser can't read the full path for security."
-                  : "Type or paste the absolute parent path."}
-              </p>
-              {parentNotAbsolute && (
-                <p className="flex items-start gap-1.5 text-xs text-amber-400">
-                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                  That doesn&apos;t look like an absolute path. Paths usually start with /, ~ or a drive letter.
-                </p>
-              )}
-            </div>
-
             <div className="space-y-2">
               <Label htmlFor="launch-name">New folder name</Label>
               <Input
@@ -313,6 +235,33 @@ export function LaunchPathDialog({
               <p id="launch-name-help" className="text-xs text-muted-foreground">
                 Letters, numbers, - and _. No slashes or spaces.
               </p>
+            </div>
+
+            <div className="space-y-2">
+              <Label htmlFor="launch-parent">Create it inside</Label>
+              <Input
+                id="launch-parent"
+                ref={parentRef}
+                value={parent}
+                onChange={(e) => {
+                  setParent(e.target.value);
+                  setError(null);
+                }}
+                placeholder={DEFAULT_NEW_PROJECT_PARENT}
+                className="font-mono text-sm"
+                aria-describedby="launch-parent-help"
+                aria-invalid={parentNotAbsolute || undefined}
+              />
+              <p id="launch-parent-help" className="text-xs text-muted-foreground">
+                Where to create it — <code className="font-mono">~</code> is your home folder. The default works for
+                most people.
+              </p>
+              {parentNotAbsolute && (
+                <p className="flex items-start gap-1.5 text-xs text-amber-400">
+                  <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                  That doesn&apos;t look like an absolute path. Paths usually start with /, ~ or a drive letter.
+                </p>
+              )}
             </div>
 
             {/* Live "Will create" preview */}
@@ -347,7 +296,7 @@ export function LaunchPathDialog({
               onClick={handleSwitchToExisting}
               className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
             >
-              Looks like this may already exist? Use existing instead →
+              Already have a folder for this? Use existing instead →
             </button>
           </div>
         )}

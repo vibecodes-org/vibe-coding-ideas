@@ -229,6 +229,47 @@ function newProjectSteps(newProjectPath: string, repoUrl?: string | null): strin
 ${repoStep}`;
 }
 
+/** Default parent for a brand-new project — home-relative so it needs no absolute path. */
+export const DEFAULT_NEW_PROJECT_PARENT = "~/projects";
+
+/** Slugify an idea title into a safe default folder name (letters/numbers/dashes). */
+export function slugifyIdeaTitle(title: string): string {
+  const slug = title
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 40)
+    .replace(/-+$/g, "");
+  return slug || "project";
+}
+
+/**
+ * The directory-resolution block. The browser never supplies an absolute path;
+ * the launched (local) Claude Code resolves WHERE to work:
+ *  - new mode → mkdir the suggested folder, then clone/init (handled by the agent);
+ *  - existing mode WITH a repo → open the local clone, or clone it if missing;
+ *  - existing mode WITHOUT a repo → nothing here (rely on the deep link's cwd, if any).
+ * Home-relative (`~/…`) suggestions are fine — the agent expands them in the shell.
+ */
+function directoryBlock({
+  mode,
+  repoUrl,
+  newProject,
+}: Pick<CommonPromptArgs, "mode" | "repoUrl" | "newProject">): string {
+  if (mode === "new" && newProject) {
+    return newProjectSteps(newProject.newProjectPath, repoUrl);
+  }
+  const repo = parseRepoFromGithubUrl(repoUrl);
+  if (repo) {
+    return `Work in this idea's repository (${repo}):
+  • If you already have it cloned locally, cd into that working copy.
+  • If not, clone it first (suggested location ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}):
+     git clone https://github.com/${repo}.git ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}`;
+  }
+  return "";
+}
+
 export interface BoardBootstrapArgs extends CommonPromptArgs {
   ideaTitle: string;
 }
@@ -252,15 +293,10 @@ export function buildBoardBootstrapPrompt({
 
 Use the MCP tools (get_task / claim_next_step / set_agent_identity / move_task / …) to do the work. Move the task to In Progress and comment as you go.`;
 
-  // Head is ALWAYS first so the length guard protects the MCP-setup block in
-  // both modes. The variable tail (create-new path steps + work) is trimmed.
-  let tail: string;
-  if (mode === "new" && newProject) {
-    const steps = newProjectSteps(newProject.newProjectPath, repoUrl);
-    tail = `\n\n${steps}\n\nNow ${lowerFirst(work)}`;
-  } else {
-    tail = `\n\n${work}`;
-  }
+  // Head (MCP setup) is ALWAYS first so the length guard never trims it. The
+  // directory block + work form the trimmable tail.
+  const dir = directoryBlock({ mode, repoUrl, newProject });
+  const tail = dir ? `\n\n${dir}\n\nThen ${lowerFirst(work)}` : `\n\n${work}`;
   return enforcePromptLength(head, tail);
 }
 
@@ -288,15 +324,10 @@ export function buildTaskBootstrapPrompt({
 
 Use the MCP tools (get_task / set_agent_identity / move_task / …) to do the work. Move the task to In Progress and comment as you go.`;
 
-  // Head is ALWAYS first so the length guard protects the MCP-setup block in
-  // both modes. The variable tail (create-new path steps + work) is trimmed.
-  let tail: string;
-  if (mode === "new" && newProject) {
-    const steps = newProjectSteps(newProject.newProjectPath, repoUrl);
-    tail = `\n\n${steps}\n\nNow ${lowerFirst(work)}`;
-  } else {
-    tail = `\n\n${work}`;
-  }
+  // Head (MCP setup) is ALWAYS first so the length guard never trims it. The
+  // directory block + work form the trimmable tail.
+  const dir = directoryBlock({ mode, repoUrl, newProject });
+  const tail = dir ? `\n\n${dir}\n\nThen ${lowerFirst(work)}` : `\n\n${work}`;
   return enforcePromptLength(head, tail);
 }
 
