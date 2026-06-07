@@ -26,6 +26,8 @@ import { shouldSyncFieldFromProp, shouldPersistFieldEdit } from "./task-sync";
 import { updateBoardTask, deleteBoardTask } from "@/actions/board";
 import { enhanceTaskDescription } from "@/actions/ai";
 import { useBoardOps } from "./board-context";
+import { useBoardLaunch } from "./board-launch-context";
+import { LaunchClaudeCodeButton } from "./launch-claude-code-button";
 import { createClient } from "@/lib/supabase/client";
 import { logger } from "@/lib/logger";
 import { logTaskActivity } from "@/lib/activity";
@@ -68,6 +70,18 @@ export function TaskDetailDialog({
 }: TaskDetailDialogProps) {
   const botRoles = useBotRoles();
   const ops = useBoardOps();
+  const launch = useBoardLaunch();
+
+  const launchButton = launch ? (
+    <LaunchClaudeCodeButton
+      variant="task-icon"
+      ideaId={launch.ideaId}
+      ideaTitle={launch.ideaTitle}
+      ideaGithubUrl={launch.ideaGithubUrl}
+      taskId={task.id}
+      taskTitle={task.title}
+    />
+  ) : null;
 
   // Combine humans + pooled agents for @mention autocomplete
   const allMentionable = useMemo(() => {
@@ -549,6 +563,7 @@ export function TaskDetailDialog({
           {isReadOnly ? (
             <div className="flex items-start gap-2">
               <p className="min-w-0 flex-1 text-lg font-semibold">{task.title}</p>
+              {launchButton}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button
@@ -582,6 +597,7 @@ export function TaskDetailDialog({
                   Saving…
                 </span>
               )}
+              {launchButton}
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button

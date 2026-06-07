@@ -1,0 +1,654 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Launch Claude Code — UX Design (Step 2 of 6, rework)</title>
+<style>
+  :root {
+    /* Mirror app dark theme (Zinc / "New York") — values approximated from globals.css */
+    --bg: #09090b;          /* background */
+    --fg: #fafafa;          /* foreground */
+    --card: #18181b;        /* card */
+    --card-fg: #fafafa;
+    --popover: #18181b;
+    --muted: #27272a;       /* muted */
+    --muted-fg: #a1a1aa;    /* muted-foreground (~4.6:1 on bg) */
+    --accent: #27272a;
+    --border: #27272a;      /* border */
+    --primary: #e4e4e7;     /* primary (light in dark mode) */
+    --primary-fg: #18181b;
+    --ring: #d4d4d8;
+    --destructive: #ef4444;
+    --violet-bg: rgba(139,92,246,0.10);
+    --violet-bd: rgba(139,92,246,0.15);
+    --violet-fg: #a78bfa;
+    --emerald-bg: rgba(16,185,129,0.10);
+    --emerald-bd: rgba(16,185,129,0.25);
+    --emerald-fg: #34d399;
+    --amber-fg: #fbbf24;
+    --amber-bg: rgba(251,191,36,0.10);
+    --amber-bd: rgba(251,191,36,0.25);
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .wrap { max-width: 940px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
+  h2 { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; margin: 56px 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 16px; font-weight: 600; margin: 32px 0 8px; }
+  h4 { font-size: 14px; font-weight: 600; margin: 20px 0 6px; color: var(--fg); }
+  p { margin: 8px 0; color: #d4d4d8; }
+  a { color: var(--violet-fg); }
+  code, kbd { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86em; }
+  code { background: var(--muted); padding: 1px 5px; border-radius: 4px; color: #e4e4e7; }
+  kbd { background: var(--muted); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: #fafafa; }
+  .lead { color: var(--muted-fg); font-size: 16px; }
+  .meta { color: var(--muted-fg); font-size: 13px; margin-top: 4px; }
+  ul, ol { color: #d4d4d8; padding-left: 22px; }
+  li { margin: 4px 0; }
+  strong { color: #fafafa; }
+
+  .callout { border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius); padding: 14px 16px; margin: 16px 0; background: var(--card); }
+  .callout.flag { border-left-color: var(--amber-fg); }
+  .callout.cite { border-left-color: var(--violet-fg); }
+  .callout.a11y { border-left-color: var(--emerald-fg); }
+  .callout.rework { border-left-color: var(--emerald-fg); background: var(--emerald-bg); }
+  .callout h4 { margin-top: 0; }
+  .callout.flag h4 { color: var(--amber-fg); }
+  .callout.cite h4 { color: var(--violet-fg); }
+  .callout.a11y h4 { color: var(--emerald-fg); }
+  .callout.rework h4 { color: var(--emerald-fg); }
+
+  /* Mockup canvas */
+  .mock { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin: 14px 0; position: relative; }
+  .mock-label { position: absolute; top: -10px; left: 14px; background: var(--bg); padding: 0 8px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-fg); }
+
+  /* Buttons replicating shadcn New York */
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 6px; font-size: 12px; font-weight: 500; border: 1px solid transparent; cursor: default; white-space: nowrap; }
+  .btn .ico { width: 14px; height: 14px; display: inline-block; }
+  .btn-outline { background: transparent; border-color: var(--border); color: var(--fg); }
+  .btn-ghost { background: transparent; color: var(--fg); }
+  .btn-violet { background: var(--violet-bg); border-color: var(--violet-bd); color: var(--violet-fg); }
+  .btn-emerald { background: var(--emerald-bg); border-color: var(--emerald-bd); color: var(--emerald-fg); }
+  .btn-primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+  .btn-icon { width: 32px; height: 32px; padding: 0; justify-content: center; color: var(--muted-fg); background: transparent; }
+  .btn-disabled { opacity: 0.5; }
+  .btn-sm { height: 28px; padding: 0 10px; }
+
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .toolbar .spacer { margin-left: auto; }
+  .input { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid var(--border); background: var(--card); color: var(--muted-fg); font-size: 12px; }
+
+  /* Dropdown / popover */
+  .menu { background: var(--popover); border: 1px solid var(--border); border-radius: 8px; padding: 4px; width: 280px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  .menu-item { display: flex; align-items: center; gap: 8px; padding: 8px 8px; border-radius: 6px; font-size: 13px; color: var(--fg); }
+  .menu-item.hover { background: var(--accent); }
+  .menu-item.muted { color: var(--muted-fg); font-size: 12px; }
+  .menu-item .ico { width: 16px; height: 16px; opacity: .8; }
+  .menu-sep { height: 1px; background: var(--border); margin: 4px -4px; }
+  .menu-hint { padding: 8px 10px; font-size: 12px; color: var(--muted-fg); line-height: 1.5; }
+  .menu-hint a { font-weight: 500; }
+
+  /* Card mock */
+  .card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .field-label { font-size: 13px; font-weight: 500; color: var(--fg); display:block; margin-bottom: 6px; }
+  .field-input { width: 100%; height: 36px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--fg); padding: 0 10px; font-size: 13px; font-family: ui-monospace, Menlo, monospace; display: flex; align-items: center; }
+  .field-input.placeholder { color: var(--muted-fg); }
+  .field-input .caret { display:inline-block; width:1px; height:16px; background: var(--ring); margin-left:1px; animation: blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .helper { font-size: 12px; color: var(--muted-fg); margin-top: 6px; }
+  .badge-private { display:inline-flex; align-items:center; gap:4px; font-size: 11px; color: var(--muted-fg); border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; }
+  .input-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: stretch; }
+  .input-row .field-input { width: 100%; }
+
+  /* Segmented / tab toggle (radiogroup) */
+  .seg { display: inline-grid; grid-auto-flow: column; gap: 2px; background: var(--muted); border: 1px solid var(--border); border-radius: 8px; padding: 3px; }
+  .seg-item { display:flex; align-items:center; gap:6px; padding: 6px 12px; border-radius: 6px; font-size: 12.5px; font-weight: 500; color: var(--muted-fg); }
+  .seg-item.active { background: var(--bg); color: var(--fg); box-shadow: 0 1px 2px rgba(0,0,0,.4); }
+  .seg-item .ico { width: 14px; height: 14px; }
+
+  /* Inline warning row */
+  .warn-row { display:flex; gap:8px; align-items:flex-start; font-size: 12px; color: var(--amber-fg); background: var(--amber-bg); border: 1px solid var(--amber-bd); border-radius: 6px; padding: 8px 10px; margin-top: 8px; }
+  .warn-row .ico { flex: 0 0 auto; margin-top: 1px; }
+  .warn-row .actbtn { color: var(--amber-fg); text-decoration: underline; cursor: default; font-weight: 500; }
+
+  /* Toast */
+  .toast { display: flex; gap: 10px; align-items: flex-start; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; max-width: 420px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  .toast .dot { width: 8px; height: 8px; border-radius: 999px; margin-top: 6px; flex: 0 0 auto; }
+  .toast .dot.err { background: var(--destructive); }
+  .toast .dot.ok { background: var(--emerald-fg); }
+  .toast .ttl { font-size: 13px; font-weight: 600; }
+  .toast .desc { font-size: 12px; color: var(--muted-fg); margin-top: 2px; }
+  .toast .act { margin-top: 8px; }
+
+  /* Flow steps */
+  .flow { counter-reset: step; margin: 16px 0; }
+  .flow-step { display: grid; grid-template-columns: 32px 1fr; gap: 14px; padding: 12px 0; border-bottom: 1px dashed var(--border); }
+  .flow-step:last-child { border-bottom: none; }
+  .flow-num { width: 28px; height: 28px; border-radius: 999px; background: var(--muted); color: var(--fg); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; }
+  .flow-num.new { background: var(--emerald-bg); color: var(--emerald-fg); border: 1px solid var(--emerald-bd); }
+  .flow-step .err { color: var(--amber-fg); font-size: 12.5px; margin-top: 4px; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted-fg); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: 0.03em; }
+  td code { white-space: nowrap; }
+
+  .prompt-box { background: #0d0d0f; border: 1px solid var(--border); border-radius: 10px; padding: 16px; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; color: #d4d4d8; white-space: pre-wrap; line-height: 1.65; overflow-x: auto; }
+  .prompt-box .cmd { color: var(--emerald-fg); }
+  .prompt-box .hl { color: var(--violet-fg); }
+
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px) { .grid2 { grid-template-columns: 1fr; } }
+  .pill { display:inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted-fg); }
+  .pill.new { color: var(--emerald-fg); border-color: var(--emerald-bd); background: var(--emerald-bg); }
+  .note { font-size: 12.5px; color: var(--muted-fg); }
+  .annot { font-size: 12px; color: var(--violet-fg); margin: 8px 0 0; }
+  .annot::before { content: "↳ "; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Launch Claude Code — UX Design</h1>
+  <p class="lead">Feature Development workflow · Step 2 of 6 (UX Design) · Target stack: Next.js 16, Tailwind v4, shadcn/ui "New York" / Zinc, dark theme default.</p>
+  <p class="meta">Deliverable for the Implementation (step 4) and QA (step 5) steps to build/verify against.</p>
+
+  <!-- ============================================================ -->
+  <div class="callout rework">
+    <h4>Design Review rework — what changed in this revision</h4>
+    <p>This document is a <strong>revision of a previously rejected design</strong>. It re-submits the same approved structure (toolbar split-button, per-task surfaces, inline path dialog, fallback matrix, WCAG notes) and addresses two Design Review change requests:</p>
+    <ol style="margin-bottom:0">
+      <li><strong>Add a “Browse…” button</strong> to the path field as a best-effort folder picker (File System Access API), designed around the hard browser limit that a web page cannot read a folder’s absolute path. See §2.3a and the updated dialog mockup in §2.3.</li>
+      <li><strong>Create a brand-new project</strong> (new directory) from the dialog — stakeholder request from Nick. Adds an “Existing folder / Create new project” mode toggle and delegates directory creation + clone to the launched local Claude Code. See §2.3b, the new flow in §4b, and the conditional bootstrap prompt in §3.</li>
+    </ol>
+    <p style="margin-bottom:0">Approved decisions are preserved unchanged: path stored <strong>per-user-per-idea via localStorage</strong> (machine-specific; no DB column/table), inline path dialog (not idea settings), env-derived MCP URL, <code>q</code> ≤ 5000 guard, copy-command fallback, full fallback matrix, WCAG AA.</p>
+  </div>
+
+  <h2>1. Intro &amp; context</h2>
+
+  <div class="callout cite">
+    <h4>Citing the Requirements step (step 1)</h4>
+    <p style="margin-bottom:0">The Requirements step defined a <strong>“Launch Claude Code” action</strong> on the board (toolbar-level and per-task) that opens the user’s <strong>local, subscription-authed Claude Code</strong> via a <code>claude-cli://open?q=…&amp;cwd=…&amp;repo=…</code> deep link. The link pre-fills a prompt that (a) auto-installs the <code>vibecodes-remote</code> MCP connector if it is missing and (b) tells the agent to pick up work via MCP. The deep link only <strong>pre-fills</strong> the prompt — the human presses <kbd>Enter</kbd> to start (human-in-the-loop). Runs on the user’s own subscription; no credentials in the link; desktop-only.</p>
+  </div>
+
+  <div class="callout flag">
+    <h4>Key design flag — per-user-per-idea path (stored in localStorage)</h4>
+    <p>The local project path (which becomes <code>cwd</code>) is a <strong>machine-specific absolute path</strong> and is stored <strong>per-user-per-idea in <code>localStorage</code></strong> — <em>not</em> as a shared idea field and <em>not</em> in a DB table. Two collaborators on the same idea each have their own checkout in a different folder, often on different machines, so the value is inherently local-only. The UX treats the path as <strong>“your path on this machine,” private to you</strong>, and never displays one user’s path to another. This contrasts with the shared <code>github_url</code> field that lives on the idea itself (<code>src/components/ideas/idea-edit-form.tsx</code>).</p>
+    <p style="margin-bottom:0">Storage key: <code>vibecodes:launch-path:&lt;ideaId&gt;</code>. No migration, no RLS surface, no leakage between collaborators by construction.</p>
+  </div>
+
+  <h4>Firm requirements honoured</h4>
+  <ol>
+    <li><strong>Per-idea launch path config</strong> (localStorage) → becomes the deep-link <code>cwd</code> (see §2.3).</li>
+    <li><strong>Launch from the board</strong> (toolbar + per-task) with <strong>auto-MCP-setup baked into the prompt</strong> (see §2.1, §2.2, §3).</li>
+    <li><strong>Best-effort Browse picker</strong> on the path field (see §2.3a). <span class="pill new">rework</span></li>
+    <li><strong>Create a brand-new project / directory</strong> from the dialog (see §2.3b, §4b). <span class="pill new">rework</span></li>
+  </ol>
+
+  <!-- ============================================================ -->
+  <h2>2. Annotated wireframes</h2>
+
+  <!-- 2.1 Toolbar -->
+  <h3>2.1 — Board toolbar: “Launch Claude Code” button + dropdown</h3>
+  <p>Placement matches the existing right-aligned action cluster in <code>src/components/board/board-toolbar.tsx</code> (the <code>ml-auto</code> group holding “AI Generate” and “Import”). Same metrics: <code>size="sm"</code>, <code>h-8</code>, <code>gap-1.5</code>, <code>text-xs</code>. It sits <strong>left of</strong> “AI Generate” so the primary developer action reads first.</p>
+
+  <div class="mock">
+    <span class="mock-label">Board toolbar — default (path is set)</span>
+    <div class="toolbar">
+      <span class="input">🔍 Search tasks…</span>
+      <span class="input">Assignee ▾</span>
+      <span class="input">Labels</span>
+      <span class="spacer"></span>
+      <span class="btn btn-emerald"><span class="ico">▣</span> Launch Claude Code <span style="opacity:.6">▾</span></span>
+      <span class="btn btn-violet"><span class="ico">✦</span> AI Generate</span>
+      <span class="btn btn-outline"><span class="ico">⤓</span> Import</span>
+    </div>
+    <p class="annot">Emerald accent (matches the “Saved to My Templates” system colour) distinguishes the local-launch action from the violet AI-credits action. Icon: lucide <code>Terminal</code>. Label is the full information-scent text “Launch Claude Code,” collapsing to icon-only below <code>sm</code> (same <code>hidden sm:inline</code> recipe as the existing buttons).</p>
+  </div>
+
+  <p>A single click on the button body performs the <strong>default action (Open in Claude Code)</strong> when a path is set — fastest path for the common case. The <strong>▾ caret</strong> opens a DropdownMenu with the secondary options. (Split-button: the caret is a separate hit target so the primary action stays a one-click affordance.)</p>
+
+  <div class="grid2">
+    <div class="mock">
+      <span class="mock-label">Dropdown — path is set</span>
+      <div class="menu">
+        <div class="menu-item hover"><span class="ico">▣</span> Open in Claude Code</div>
+        <div class="menu-item"><span class="ico">⧉</span> Copy launch command</div>
+        <div class="menu-sep"></div>
+        <div class="menu-item muted"><span class="ico">📁</span> Change project folder…</div>
+        <div class="menu-item muted"><span class="ico">✚</span> Start a new project…</div>
+      </div>
+      <p class="annot">“Open in Claude Code” = primary, “Copy launch command” = scheme-blocked fallback (§2.4c), “Change project folder…” opens the dialog in <em>existing</em> mode, and the new <span class="pill new">rework</span> “Start a new project…” opens the same dialog pre-switched to <em>create-new</em> mode (§2.3b).</p>
+    </div>
+    <div class="mock">
+      <span class="mock-label">Dropdown — no path set (hint state)</span>
+      <div class="menu">
+        <div class="menu-hint">
+          Set your local project folder for this idea to launch Claude Code here.
+          <br><br>
+          <a>Set project folder →</a>
+          &nbsp;·&nbsp;
+          <a>Start a new project →</a>
+        </div>
+        <div class="menu-sep"></div>
+        <div class="menu-item"><span class="ico">⧉</span> Copy launch command</div>
+      </div>
+      <p class="annot">No disabled dead-ends: the menu explains <em>why</em> and offers both fixes inline (recognition over recall). “Copy launch command” still works using a placeholder <code>cwd</code> the user edits.</p>
+    </div>
+  </div>
+
+  <!-- 2.2 Per-task -->
+  <h3>2.2 — Per-task launch</h3>
+  <p>Two surfaces, mirroring how share/Link2 already appears in both the card menu and the detail header.</p>
+
+  <div class="grid2">
+    <div class="mock">
+      <span class="mock-label">Card ⋯ menu (task-card-menu.tsx)</span>
+      <div class="menu" style="width:240px">
+        <div class="menu-item"><span class="ico">↥</span> Move to top</div>
+        <div class="menu-item"><span class="ico">↧</span> Move to bottom</div>
+        <div class="menu-sep"></div>
+        <div class="menu-item hover"><span class="ico">▣</span> Launch in Claude Code</div>
+        <div class="menu-sep"></div>
+        <div class="menu-item"><span class="ico">🗄</span> Archive</div>
+        <div class="menu-item" style="color:var(--destructive)"><span class="ico">🗑</span> Delete</div>
+      </div>
+      <p class="annot">New <code>DropdownMenuItem</code> added above Archive. Row height follows the existing <code>py-2.5 sm:py-1.5</code> (mobile-comfortable ≥44px tap targets). Passes the task’s id/title into <code>q=</code> so the prompt references this specific task.</p>
+    </div>
+    <div class="mock">
+      <span class="mock-label">Task detail header (task-detail-dialog.tsx)</span>
+      <div class="card">
+        <div style="display:flex; align-items:flex-start; gap:8px;">
+          <div style="flex:1; font-size:17px; font-weight:600;">Add OAuth refresh-token rotation</div>
+          <span class="btn btn-icon" title="Launch in Claude Code"><span class="ico">▣</span></span>
+          <span class="btn btn-icon" title="Copy link"><span class="ico">🔗</span></span>
+        </div>
+      </div>
+      <p class="annot">A <code>Terminal</code> icon button (h-8 w-8, <code>variant="ghost"</code>, <code>size="icon"</code>) placed immediately left of the existing Link2 “Copy link” button — same Tooltip wrapper. Tooltip label: “Launch in Claude Code”.</p>
+    </div>
+  </div>
+
+  <p class="note">When no path is set, the per-task entry points still appear but route to the same path-entry dialog first (the action becomes “Set folder &amp; launch”) rather than failing silently.</p>
+
+  <!-- 2.3 Path entry -->
+  <h3>2.3 — Per-idea “Local project path” dialog</h3>
+  <p><strong>Where it lives.</strong> Because the path is per-user and stored in <code>localStorage</code> (not an idea property), it does <em>not</em> belong in the shared <code>idea-edit-form.tsx</code>. It is reached two ways:</p>
+  <ul>
+    <li><strong>Inline dialog</strong> triggered from “Change project folder…” / “Start a new project…” in the launch dropdown, and from the first launch attempt with no path. This keeps the config adjacent to the action that needs it.</li>
+    <li>Persisted to <code>localStorage</code> per idea — the dialog pre-fills the saved value (and last-used mode) on return visits.</li>
+  </ul>
+
+  <p>The dialog now carries a <strong>mode toggle</strong> at the top — <em>Use existing folder</em> vs <em>Create new project</em> — followed by the relevant fields. Both modes share the same <strong>Browse…</strong> affordance and the same per-user privacy badge.</p>
+
+  <div class="mock">
+    <span class="mock-label">Dialog — mode: Use existing folder (default)</span>
+    <div class="card" style="max-width:560px">
+      <div style="font-size:16px; font-weight:600; margin-bottom:2px;">Local project folder</div>
+      <div class="helper" style="margin-top:0; margin-bottom:14px;">Where this idea’s code lives <strong>on this machine</strong>.</div>
+
+      <div role="radiogroup" aria-label="Project mode" class="seg" style="margin-bottom:16px;">
+        <span class="seg-item active" role="radio" aria-checked="true"><span class="ico">📁</span> Use existing folder</span>
+        <span class="seg-item" role="radio" aria-checked="false"><span class="ico">✚</span> Create new project</span>
+      </div>
+
+      <label class="field-label" for="cwd">Absolute path on your computer</label>
+      <div class="input-row">
+        <div class="field-input placeholder" id="cwd">/Users/you/projects/my-idea</div>
+        <span class="btn btn-outline" style="height:36px"><span class="ico">📁</span> Browse…</span>
+      </div>
+      <p class="helper">Pick your folder, then confirm the full path — your browser can’t read the full path for security.</p>
+      <p class="helper">
+        <span class="badge-private">🔒 Private to you</span>
+        &nbsp; This path is stored on this device only and is never shown to other collaborators. Each contributor sets their own folder.
+      </p>
+      <p class="helper">Tip: in your terminal, <code>cd</code> into the project and run <code>pwd</code> to copy the exact path.</p>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:18px;">
+        <span class="btn btn-outline">Cancel</span>
+        <span class="btn btn-primary">Save &amp; launch</span>
+      </div>
+    </div>
+    <p class="annot">Visible <code>&lt;label&gt;</code> (not placeholder-as-label — WCAG). Placeholder shows a realistic example, not the value. The <strong>🔒 Private to you</strong> badge is the load-bearing signal for the per-user localStorage decision; icon + text means it is not colour-only. <strong>Browse…</strong> is a same-height sibling of the input (Fitts: 36px tall, adjacent to the field it fills). Primary CTA is “Save &amp; launch” when opened from a launch attempt, “Save” when opened from “Change project folder…”.</p>
+  </div>
+
+  <p class="note">Validation is light-touch: warn (don’t block) if the string isn’t an absolute path (doesn’t start with <code>/</code>, <code>~</code>, or a drive letter), since we can’t verify the filesystem from the browser. Helper text turns into an inline warning row with a ⚠ icon — never a bare disabled Save button.</p>
+
+  <!-- 2.3a Browse -->
+  <h3>2.3a — “Browse…” button (best-effort picker) <span class="pill new">rework</span></h3>
+
+  <div class="callout flag">
+    <h4>Hard browser constraint we design around</h4>
+    <p style="margin-bottom:0">A web page <strong>cannot read a folder’s absolute path</strong> from any picker. Both <code>window.showDirectoryPicker()</code> (File System Access API) and <code>&lt;input type="file" webkitdirectory&gt;</code> expose only the folder <strong>name</strong> (plus an opaque handle / relative entries) — <em>never</em> <code>/Users/you/projects/my-idea</code>. So Browse cannot fill the field by itself. It is a <strong>convenience that pre-fills the folder name and positions the caret</strong>; the text field stays the editable source of truth.</p>
+  </div>
+
+  <h4>Behaviour</h4>
+  <ul>
+    <li><strong>Click Browse…</strong> → call <code>window.showDirectoryPicker()</code>. The user selects a folder in the native OS picker.</li>
+    <li><strong>On pick</strong> → take <code>handle.name</code> (e.g. <code>my-project</code>) and pre-fill the field as <code>/Users/you/projects/<strong>my-project</strong></code> using the user’s last-known parent prefix when available, otherwise just the bare name with the caret placed at the <em>start</em> so the user types the absolute prefix. The folder name is selected/emphasised so it’s obvious what was filled in.</li>
+    <li><strong>The user completes the absolute path</strong> and the existing light-touch validation runs (warn if not absolute).</li>
+    <li><strong>Unsupported browsers</strong> (Firefox, Safari, and any context without the File System Access API): the Browse button is <strong>hidden</strong> (preferred — avoids a dead control) with an adjacent one-liner; where layout needs it kept, it is rendered <strong>disabled with an always-visible explanation beside it</strong> (never a bare disabled button). Feature-detect via <code>typeof window.showDirectoryPicker === "function"</code>.</li>
+  </ul>
+
+  <div class="grid2">
+    <div class="mock">
+      <span class="mock-label">After Browse pick — name filled, caret at start</span>
+      <label class="field-label" for="cwd2">Absolute path on your computer</label>
+      <div class="input-row">
+        <div class="field-input" id="cwd2"><span class="caret"></span><span style="background:var(--violet-bg);border-radius:3px;padding:0 1px;">my-project</span></div>
+        <span class="btn btn-outline" style="height:36px"><span class="ico">📁</span> Browse…</span>
+      </div>
+      <p class="helper">Pick your folder, then confirm the full path — your browser can’t read the full path for security.</p>
+      <p class="annot">Picked folder name <code>my-project</code> is inserted and highlighted; caret sits at the start so the user types <code>/Users/you/projects/</code> in front. The browser literally cannot supply that prefix.</p>
+    </div>
+    <div class="mock">
+      <span class="mock-label">Unsupported browser (Firefox / Safari)</span>
+      <label class="field-label" for="cwd3">Absolute path on your computer</label>
+      <div class="input-row">
+        <div class="field-input placeholder" id="cwd3">/Users/you/projects/my-idea</div>
+        <span class="btn btn-outline btn-disabled" style="height:36px" aria-disabled="true"><span class="ico">📁</span> Browse…</span>
+      </div>
+      <p class="helper">Folder picker isn’t available in this browser — type or paste the absolute path (run <code>pwd</code> in your terminal to copy it).</p>
+      <p class="annot">Preferred treatment is to hide Browse entirely; shown here disabled <em>with</em> the adjacent explanation to illustrate the “no disabled control without explanation” rule. The text field always works.</p>
+    </div>
+  </div>
+
+  <!-- 2.3b Create new -->
+  <h3>2.3b — “Create new project” mode <span class="pill new">rework</span></h3>
+  <p><strong>Stakeholder request (Nick):</strong> start a fresh project — a new directory — straight from this UI, not only point at an existing folder.</p>
+
+  <div class="callout cite">
+    <h4>Design decision &amp; justification — who creates the directory</h4>
+    <p>The same browser constraint applies: the page cannot create a directory at an arbitrary absolute path, and even the File System Access <code>getDirectoryHandle(name, {create:true})</code> can only create <em>inside</em> a handle the user already granted, and still can’t yield an absolute path. So the browser is the wrong place to create the project.</p>
+    <p style="margin-bottom:0"><strong>Decision:</strong> delegate directory creation to the <strong>launched local Claude Code</strong>. It runs on the user’s machine with filesystem + git access, so the bootstrap prompt (§3) instructs it to <code>mkdir -p &lt;path&gt;</code> if missing, then — if the idea has a GitHub repo — <code>git clone</code> into that path, else <code>git init</code>, and only then proceed with MCP setup and work. This is more robust and portable than the File System Access route (which is also unsupported in Firefox/Safari). We <em>may</em> additionally use <code>getDirectoryHandle({create:true})</code> as an optional nicety where supported, but it is not required and is not the source of truth.</p>
+  </div>
+
+  <p>In <em>Create new project</em> mode the single path field becomes <strong>two fields</strong>: the absolute <strong>parent</strong> path (where the new folder will live — Browse can pick this) and the <strong>new folder name</strong> (typed). The full intended path is previewed read-only beneath them so the user sees exactly what Claude Code will create.</p>
+
+  <div class="mock">
+    <span class="mock-label">Dialog — mode: Create new project</span>
+    <div class="card" style="max-width:560px">
+      <div style="font-size:16px; font-weight:600; margin-bottom:2px;">Start a new project</div>
+      <div class="helper" style="margin-top:0; margin-bottom:14px;">Claude Code will create the folder on this machine when it launches.</div>
+
+      <div role="radiogroup" aria-label="Project mode" class="seg" style="margin-bottom:16px;">
+        <span class="seg-item" role="radio" aria-checked="false"><span class="ico">📁</span> Use existing folder</span>
+        <span class="seg-item active" role="radio" aria-checked="true"><span class="ico">✚</span> Create new project</span>
+      </div>
+
+      <label class="field-label" for="parent">Parent folder (absolute path)</label>
+      <div class="input-row">
+        <div class="field-input placeholder" id="parent">/Users/you/projects</div>
+        <span class="btn btn-outline" style="height:36px"><span class="ico">📁</span> Browse…</span>
+      </div>
+      <p class="helper">Pick the folder it goes inside, then confirm the full path — your browser can’t read the full path for security.</p>
+
+      <label class="field-label" for="name" style="margin-top:14px;">New folder name</label>
+      <div class="field-input placeholder" id="name">my-idea</div>
+      <p class="helper">Letters, numbers, <code>-</code> and <code>_</code>. No slashes or spaces.</p>
+
+      <div style="margin-top:14px; padding:10px 12px; border:1px dashed var(--border); border-radius:8px;">
+        <div class="helper" style="margin:0 0 4px; text-transform:uppercase; letter-spacing:.04em;">Will create</div>
+        <code style="white-space:nowrap;">/Users/you/projects/my-idea</code>
+      </div>
+
+      <div style="margin-top:12px; display:flex; align-items:center; gap:8px;">
+        <span class="badge-private">🔒 Private to you</span>
+        <span class="helper" style="margin:0;">Saved on this device only.</span>
+      </div>
+      <div style="margin-top:8px; display:flex; align-items:center; gap:8px;">
+        <span class="badge-private" style="border-color:var(--emerald-bd); color:var(--emerald-fg);">⎇ Repo detected</span>
+        <span class="helper" style="margin:0;">Claude Code will <code>git clone</code> the idea’s repo into the new folder.</span>
+      </div>
+
+      <div style="display:flex; gap:8px; justify-content:flex-end; margin-top:18px;">
+        <span class="btn btn-outline">Cancel</span>
+        <span class="btn btn-primary">Create &amp; launch</span>
+      </div>
+    </div>
+    <p class="annot">Two labelled fields + a live read-only “Will create” preview (recognition over recall — the user confirms the exact path before anything happens). When the idea has a <code>github_url</code>, the emerald “Repo detected” row promises a clone; with no repo it reads “No repo on this idea — Claude Code will run <code>git init</code> instead.” Primary CTA is “Create &amp; launch”. The chosen path+name persist to localStorage so a re-launch reuses the now-existing folder via existing mode.</p>
+  </div>
+
+  <h4>Create-new states</h4>
+  <table>
+    <thead><tr><th>State</th><th>Detection</th><th>Treatment</th></tr></thead>
+    <tbody>
+      <tr><td>Parent path empty</td><td>Field blank</td><td>Inline ⚠ helper “Enter the parent folder”; primary CTA stays enabled but on click focuses the field with the message (no silent no-op, no bare disabled button).</td></tr>
+      <tr><td>Name empty</td><td>Field blank</td><td>Inline ⚠ “Name the new folder”; focuses the name field on submit.</td></tr>
+      <tr><td>Name invalid</td><td>Regex <code>[^A-Za-z0-9._-]</code> or contains <code>/</code> / spaces</td><td>Inline ⚠ “Use letters, numbers, - or _ (no slashes or spaces)” — warn, with the offending chars named.</td></tr>
+      <tr><td>Directory already exists</td><td>Browser can’t check the FS — so handled at <em>launch</em> time by Claude Code (idempotent <code>mkdir -p</code>). UI offers a pre-emptive nudge: a “Looks like this may already exist? Use existing instead” link that flips to existing mode pre-filled with the composed path.</td><td>Warn, don’t block; offer the one-click switch to <em>Use existing folder</em>. Claude Code’s <code>mkdir -p</code> + “clone only into an empty dir, else pull/skip” logic prevents clobbering.</td></tr>
+      <tr><td>No repo on the idea</td><td><code>github_url</code> absent</td><td>Row reads “No repo on this idea — Claude Code will <code>git init</code> instead.” Prompt omits the clone and runs <code>git init</code> (§3).</td></tr>
+    </tbody>
+  </table>
+
+  <!-- 2.4 Fallback states -->
+  <h3>2.4 — Fallback states</h3>
+
+  <h4>(a) No path set</h4>
+  <p>Covered above: dropdown shows the hint state (§2.1) and per-task launch opens the path dialog (§2.3). The button is <strong>never disabled without explanation</strong>.</p>
+
+  <h4>(b) Claude Code not installed (deep link doesn’t resolve)</h4>
+  <p>The browser can’t confirm whether a custom scheme handler exists. We launch optimistically, then run a short timeout race: if the page never loses focus / visibility within ~1.2s, we assume nothing handled the link and surface a recovery toast.</p>
+  <div class="mock">
+    <span class="mock-label">Recovery toast — nothing opened</span>
+    <div class="toast">
+      <span class="dot err"></span>
+      <div>
+        <div class="ttl">Couldn’t open Claude Code</div>
+        <div class="desc">If Claude Code isn’t installed yet, install it and try again — or copy the command to run it manually.</div>
+        <div class="act"><span class="btn btn-outline" style="height:28px"><span class="ico">⧉</span> Copy launch command</span> &nbsp; <span class="btn btn-ghost" style="height:28px">Install guide ↗</span></div>
+      </div>
+    </div>
+    <p class="annot">sonner toast (already in stack). Two recovery routes: copy-command fallback and a link to the install docs. Never a silent failure (per CLAUDE.md “all client catch blocks toast.error”).</p>
+  </div>
+
+  <h4>(c) Browser blocks the <code>claude-cli://</code> scheme</h4>
+  <p>Some browsers/policies block custom-scheme navigation or throw on it. We catch the navigation error and immediately show the <strong>copy-command</strong> fallback inline rather than relying on the timeout.</p>
+  <div class="mock">
+    <span class="mock-label">Copy-command fallback popover</span>
+    <div class="menu" style="width:460px">
+      <div class="menu-hint" style="color:var(--fg)">Your browser blocked the automatic launch. Paste this in your terminal to start Claude Code with this work loaded:</div>
+      <div class="prompt-box" style="margin:6px 8px 8px;"><span class="cmd">cd</span> /Users/you/projects/my-idea && claude "<span class="hl">&lt;pre-filled prompt&gt;</span>"</div>
+      <div class="menu-item hover"><span class="ico">⧉</span> Copy command</div>
+    </div>
+    <p class="annot">The copy-command fallback is the same content the deep link would have delivered, reframed as a shell command. For <em>create-new</em> mode the command is prefixed with <code>mkdir -p &lt;path&gt; && cd &lt;path&gt; && (git clone &lt;repo&gt; . || git init) && claude "…"</code> so the manual path matches the delegated bootstrap. Universal escape hatch reachable from every surface.</p>
+  </div>
+
+  <h4>(d) Mobile viewport — desktop-only feature</h4>
+  <p>Claude Code runs on a desktop/laptop; launching from a phone is meaningless. Below <code>md</code> we <strong>hide the launch button entirely</strong> from the toolbar action cluster (matching how the existing buttons collapse), and in the per-task surfaces we replace the action with a short explanatory state so a tapping user isn’t left confused.</p>
+  <div class="grid2">
+    <div class="mock">
+      <span class="mock-label">Mobile — toolbar (button hidden)</span>
+      <div class="toolbar">
+        <span class="input" style="flex:1">🔍 Search tasks…</span>
+        <span class="btn btn-outline"><span class="ico">⚙</span> Filters</span>
+        <span class="spacer"></span>
+        <span class="btn btn-violet"><span class="ico">✦</span></span>
+      </div>
+      <p class="annot">Launch button uses <code>hidden md:inline-flex</code>. No empty slot, no broken layout.</p>
+    </div>
+    <div class="mock">
+      <span class="mock-label">Mobile — per-task menu item (explanatory)</span>
+      <div class="menu" style="width:260px">
+        <div class="menu-item muted" style="cursor:default"><span class="ico">▣</span> Open on desktop to launch Claude Code</div>
+      </div>
+      <p class="annot">Replaces the actionable item with a clearly non-interactive, explained row — recognition over recall, no dead disabled button.</p>
+    </div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>3. The pre-filled prompt &amp; deep link</h2>
+  <p>The deep link is <code>claude-cli://open?q=&lt;prompt&gt;&amp;cwd=&lt;path&gt;&amp;repo=&lt;github_url&gt;</code> (all params URL-encoded). The MCP URL embedded in the prompt is <strong>env-derived</strong> from <code>NEXT_PUBLIC_APP_URL</code> (so staging vs production resolve correctly), not hard-coded. The <code>q</code> prompt is what the human reviews and submits, and is guarded to <strong>≤ 5000 chars</strong> (truncate the work-context tail, never the MCP-setup head). It instructs the agent to <strong>self-install the MCP connector if missing</strong>, then pick up work.</p>
+
+  <h4>(a) Existing-folder prompt</h4>
+  <div class="prompt-box">First, ensure the VibeCodes MCP connector is available. If "vibecodes-remote" is not
+already configured, run:
+
+  <span class="cmd">claude mcp add -s user --transport http vibecodes-remote <span class="hl">{NEXT_PUBLIC_APP_URL}</span>/api/mcp</span>
+
+Then connect (you'll be prompted to authorise via your browser the first time).
+
+Once connected, pick up my work on the VibeCodes board for this idea:
+  • Idea: "<span class="hl">{ideaTitle}</span>"  (idea_id: <span class="hl">{ideaId}</span>)
+  • <span class="hl">{taskScope}</span>   ← e.g. "Start on task: Add OAuth refresh-token rotation (task_id: …)"
+                       or, from the toolbar: "Call get_my_tasks and start the top item."
+
+Use the MCP tools (get_task / claim_next_step / set_agent_identity / move_task / …)
+to do the work. Move the task to In Progress and comment as you go.</div>
+
+  <h4>(b) Create-new-project prompt <span class="pill new">rework</span></h4>
+  <p>When the dialog is in <em>Create new project</em> mode, the prompt gains a <strong>bootstrap preamble</strong> (added by the prompt builder) before the MCP block. <code>cwd</code> is set to the parent so the relative <code>mkdir</code>/<code>cd</code> is unambiguous; the new absolute path is the composed <code>parent/name</code>.</p>
+  <div class="prompt-box">Set up a new local project for this idea, then pick up work.
+
+1. Create the project directory if it doesn't exist:
+     <span class="cmd">mkdir -p <span class="hl">{newProjectPath}</span> && cd <span class="hl">{newProjectPath}</span></span>
+2. <span class="hl">{repoStep}</span>
+     • If the idea has a repo: <span class="cmd">git clone <span class="hl">{github_url}</span> .</span>   (only into an empty dir; else pull/skip)
+     • If no repo: <span class="cmd">git init</span>
+3. Ensure the VibeCodes MCP connector is available. If "vibecodes-remote" is not
+   configured, run:
+     <span class="cmd">claude mcp add -s user --transport http vibecodes-remote <span class="hl">{NEXT_PUBLIC_APP_URL}</span>/api/mcp</span>
+   then connect (browser auth the first time).
+
+Now pick up my work on the VibeCodes board for this idea:
+  • Idea: "<span class="hl">{ideaTitle}</span>"  (idea_id: <span class="hl">{ideaId}</span>)
+  • <span class="hl">{taskScope}</span>
+
+Use the MCP tools to do the work. Move the task to In Progress and comment as you go.</div>
+  <p class="note"><strong>{repoStep}</strong> is resolved by the builder at compose time: if <code>github_url</code> is present it emits the <code>git clone</code> line, otherwise the <code>git init</code> line — so the prompt is unambiguous and the agent doesn’t guess. The <code>mkdir -p</code> is idempotent (handles the “already exists” case safely); cloning is gated to an empty directory to avoid clobbering existing work. Toolbar launch → <code>{taskScope}</code> = “run <code>get_my_tasks</code> and begin”. Per-task launch → names the specific task id/title.</p>
+
+  <!-- ============================================================ -->
+  <h2>4. User flows (trigger → completion + error recovery)</h2>
+
+  <h3>4a — Existing folder (default)</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-num">1</div><div><strong>Trigger.</strong> User clicks “Launch Claude Code” (toolbar) or “Launch in Claude Code” (card menu / task header).<div class="err">↳ No path set → open the path dialog in <em>Use existing folder</em> mode (§2.3), then continue.</div></div></div>
+    <div class="flow-step"><div class="flow-num">2</div><div><strong>(Optional) Browse.</strong> User clicks Browse…, picks a folder; the folder <em>name</em> pre-fills and the user completes the absolute prefix. Text field remains the source of truth (§2.3a).</div></div>
+    <div class="flow-step"><div class="flow-num">3</div><div><strong>Build link.</strong> Compose <code>claude-cli://open?q=…&amp;cwd=…&amp;repo=…</code> from the saved path + task scope + idea’s github_url (existing-folder prompt, §3a).</div></div>
+    <div class="flow-step"><div class="flow-num">4</div><div><strong>Launch.</strong> Navigate to the scheme; start a ~1.2s visibility-loss race.<div class="err">↳ Scheme throws → copy-command fallback popover (§2.4c).<br>↳ Race times out (no handler) → “Couldn’t open Claude Code” recovery toast (§2.4b).</div></div></div>
+    <div class="flow-step"><div class="flow-num">5</div><div><strong>Claude Code opens</strong> in the project folder with the prompt <em>pre-filled but not sent</em>. (Human-in-the-loop.)</div></div>
+    <div class="flow-step"><div class="flow-num">6</div><div><strong>First-run MCP setup &amp; OAuth consent.</strong> On first use the agent runs <code>claude mcp add … vibecodes-remote …</code>; the OAuth 2.1 + PKCE flow opens the browser to authorise. Subsequent launches skip this.</div></div>
+    <div class="flow-step"><div class="flow-num">7</div><div><strong>User presses <kbd>Enter</kbd></strong> to submit the reviewed prompt.</div></div>
+    <div class="flow-step"><div class="flow-num">8</div><div><strong>Agent works.</strong> Calls <code>set_agent_identity</code>, claims/moves the task, comments, proceeds via MCP — visible back on the board in real time.</div></div>
+  </div>
+
+  <h3>4b — Create new project <span class="pill new">rework</span></h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-num new">1</div><div><strong>Trigger.</strong> User picks “Start a new project…” from the launch dropdown (toolbar) or the no-path hint. Dialog opens pre-switched to <em>Create new project</em> mode (§2.3b).</div></div>
+    <div class="flow-step"><div class="flow-num new">2</div><div><strong>Enter parent + name.</strong> User Browses for / types the absolute parent path and types a new folder name; the “Will create” preview shows the composed absolute path.<div class="err">↳ Parent/name empty or name invalid → inline ⚠ on submit, focus the offending field.<br>↳ User suspects it exists → “Use existing instead” link flips to existing mode pre-filled.</div></div></div>
+    <div class="flow-step"><div class="flow-num new">3</div><div><strong>Repo resolution (display only).</strong> If the idea has <code>github_url</code> → “Repo detected, will clone”; else “No repo — will git init”. No action needed from the user.</div></div>
+    <div class="flow-step"><div class="flow-num new">4</div><div><strong>Create &amp; launch.</strong> Persist parent+name to localStorage. Compose the link with <code>cwd</code>=parent and the <em>create-new prompt</em> (§3b) carrying the conditional <code>mkdir -p</code> + clone/init steps.<div class="err">↳ Scheme throws / no handler → same fallbacks as 4a; the copy-command variant includes the <code>mkdir -p … && (git clone … || git init)</code> prefix (§2.4c).</div></div></div>
+    <div class="flow-step"><div class="flow-num new">5</div><div><strong>Claude Code creates/clones.</strong> Running locally, it executes <code>mkdir -p</code> (idempotent — safe if the dir already exists), then <code>git clone</code> into the empty dir or <code>git init</code>, all from the pre-filled prompt. Human-in-the-loop: nothing runs until the user presses <kbd>Enter</kbd>.</div></div>
+    <div class="flow-step"><div class="flow-num new">6</div><div><strong>MCP setup &amp; OAuth</strong> (same as 4a step 6) → user reviews → <kbd>Enter</kbd> → agent works. Next time, the folder exists, so the user launches via <em>existing</em> mode.</div></div>
+  </div>
+
+  <div class="callout">
+    <h4 style="margin-top:0">Error-recovery summary</h4>
+    <table>
+      <thead><tr><th>Failure</th><th>Detection</th><th>Recovery shown</th></tr></thead>
+      <tbody>
+        <tr><td>No path set</td><td>Missing localStorage key</td><td>Path dialog (§2.3) inline; hint in dropdown (§2.1)</td></tr>
+        <tr><td>Browse unsupported</td><td><code>showDirectoryPicker</code> absent</td><td>Browse hidden (or disabled + explanation); text field always works (§2.3a)</td></tr>
+        <tr><td>Browse can’t give full path</td><td>API limitation (always)</td><td>Name pre-filled, caret positioned, helper line explains why (§2.3a)</td></tr>
+        <tr><td>Parent/name empty or invalid</td><td>Field validation</td><td>Inline ⚠ helper, focus field; never a bare disabled CTA (§2.3b)</td></tr>
+        <tr><td>New dir already exists</td><td>Cannot check in browser; handled at launch</td><td>Pre-emptive “Use existing instead” link; <code>mkdir -p</code> is idempotent, clone gated to empty dir (§2.3b/§3b)</td></tr>
+        <tr><td>No repo on idea</td><td><code>github_url</code> absent</td><td>UI says “will git init”; prompt emits <code>git init</code> (§3b)</td></tr>
+        <tr><td>Not installed</td><td>Visibility-race timeout</td><td>Toast + Copy command + Install guide (§2.4b)</td></tr>
+        <tr><td>Scheme blocked</td><td>Navigation throws</td><td>Copy-command popover (§2.4c)</td></tr>
+        <tr><td>Mobile</td><td><code>md</code> breakpoint</td><td>Button hidden / explanatory row (§2.4d)</td></tr>
+        <tr><td>OAuth declined</td><td>Agent reports connector unauth</td><td>Re-run handled inside Claude Code; prompt instructs re-auth</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>5. Interaction &amp; accessibility notes</h2>
+  <div class="callout a11y">
+    <h4>WCAG 2.1 AA</h4>
+    <ul>
+      <li><strong>Contrast.</strong> Emerald button text on its tint and all helper/muted text meet ≥4.5:1 for text and ≥3:1 for UI borders (Zinc dark tokens). The 🔒 “Private to you” and ⎇ “Repo detected” badges convey meaning by icon + text, <strong>not colour alone</strong>. The amber inline-warning rows pair the ⚠ icon and text with their tint.</li>
+      <li><strong>Mode toggle (rework).</strong> Implemented as a Radix-backed <code>role="radiogroup"</code> (segmented control) with two <code>role="radio"</code> options carrying <code>aria-checked</code>; arrow keys move between modes, <kbd>Space</kbd>/<kbd>Enter</kbd> selects. The selected mode is shown by background + position, not colour alone. Switching mode re-labels fields and primary CTA and announces via the dialog’s live region.</li>
+      <li><strong>Browse… (rework).</strong> A real <code>&lt;button type="button"&gt;</code> ≥36px tall adjacent to the field (Fitts). Has an accessible name “Browse for folder”. When unsupported it is removed from the tab order (hidden) or, if shown, <code>aria-disabled</code> with the explanation programmatically associated via <code>aria-describedby</code> — no disabled control without an adjacent reason. The post-pick name insertion moves focus back to the text input with the prefix region selected so a keyboard user lands ready to type.</li>
+      <li><strong>Create-new fields (rework).</strong> Parent path and folder name each have a visible <code>&lt;label&gt;</code>; the “Will create” preview is exposed as <code>aria-live="polite"</code> so it’s announced as the user types. Validation messages use <code>aria-describedby</code> + <code>aria-invalid</code>, never colour-only.</li>
+      <li><strong>Targets (Fitts).</strong> Toolbar button <code>h-8</code> with full label; mobile menu rows <code>py-2.5</code> giving ≥44px. The split-button caret keeps its own ≥24px hit area. Browse and the new-project fields are ≥36px tall.</li>
+      <li><strong>Keyboard.</strong> Button and caret focusable; DropdownMenu/Popover are shadcn (Radix) primitives — arrow-key nav, <kbd>Esc</kbd> to close, focus trap + restore. Dialog traps focus, <kbd>Esc</kbd> cancels, the first field is auto-focused on open.</li>
+      <li><strong>Labels.</strong> Icon-only surfaces carry <code>aria-label</code> + visible Tooltip (“Launch in Claude Code”). All path fields use real visible <code>&lt;label&gt;</code>s, not placeholders-as-labels.</li>
+      <li><strong>No hover-only primary actions.</strong> The launch button is always visible. Menu items are keyboard- and tap-reachable like the existing share action.</li>
+      <li><strong>No unexplained disabled states.</strong> “No path”, unsupported Browse, and empty/invalid create-new fields all show an inline explanation + fix, not a greyed dead control.</li>
+      <li><strong>Feedback.</strong> Successful copy → success toast “Command copied”. Every failure path → a <code>toast.error</code> with a recovery action.</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>6. Component / placement spec (for Implementation, step 4)</h2>
+  <table>
+    <thead><tr><th>Surface</th><th>File</th><th>Change</th></tr></thead>
+    <tbody>
+      <tr>
+        <td>Toolbar launch button + dropdown</td>
+        <td><code>src/components/board/board-toolbar.tsx</code></td>
+        <td>Add a split <code>Button</code> (emerald classes, <code>size="sm"</code>, <code>h-8 gap-1.5 text-xs</code>, lucide <code>Terminal</code>, label <code>hidden sm:inline</code>, wrapper <code>hidden md:inline-flex</code>) as the <em>first</em> child of the existing <code>ml-auto</code> group. Caret opens a <code>DropdownMenu</code>: Open / Copy launch command / Change project folder / <strong>Start a new project</strong>. Default (no path) → hint state with both “Set folder” and “Start new project” links.</td>
+      </tr>
+      <tr>
+        <td>Per-task card item</td>
+        <td><code>src/components/board/task-card-menu.tsx</code></td>
+        <td>New <code>DropdownMenuItem</code> (“Launch in Claude Code”, <code>Terminal</code> icon, <code>py-2.5 sm:py-1.5</code>) above the Archive separator. Hidden / explanatory below <code>md</code>.</td>
+      </tr>
+      <tr>
+        <td>Task-detail header icon</td>
+        <td><code>src/components/board/task-detail-dialog.tsx</code></td>
+        <td>Add a <code>Button variant="ghost" size="icon" className="h-8 w-8"</code> with <code>Terminal</code> icon + Tooltip “Launch in Claude Code”, immediately left of the existing Link2 button (both read-only + editable branches).</td>
+      </tr>
+      <tr>
+        <td>Path-entry dialog <span class="pill new">rework</span></td>
+        <td>New: <code>src/components/board/launch-path-dialog.tsx</code></td>
+        <td><code>Dialog</code> with: a <strong>mode toggle</strong> (Radix <code>RadioGroup</code> styled as a segmented control — “Use existing folder” / “Create new project”); <em>existing</em> mode = one visible-label <code>Input</code> + <strong>Browse… button</strong>; <em>create-new</em> mode = parent-path <code>Input</code> + Browse… + folder-name <code>Input</code> + live “Will create” preview + repo-status row. Browse calls <code>window.showDirectoryPicker()</code>, feature-detected; on success inserts <code>handle.name</code> and positions the caret; hidden/disabled-with-explanation where unsupported. Save persists to <code>localStorage</code> (<code>vibecodes:launch-path:&lt;ideaId&gt;</code> incl. last mode); “Save/Create &amp; launch” variant continues the launch. Light-touch validation; inline ⚠ rows, no bare disabled CTA.</td>
+      </tr>
+      <tr>
+        <td>Launch logic + prompt builder <span class="pill new">rework</span></td>
+        <td>New: <code>src/lib/launch-claude-code.ts</code></td>
+        <td>Pure helpers: build the <code>claude-cli://</code> URL; build the <code>cd … && claude "…"</code> fallback (and the <code>mkdir -p … && (git clone … || git init) && …</code> variant for new projects); build the prompt with <strong>two branches</strong> — existing vs create-new — where create-new injects the conditional <code>mkdir -p</code> and <code>{repoStep}</code> (clone if <code>github_url</code>, else <code>git init</code>); env-derive the MCP URL from <code>NEXT_PUBLIC_APP_URL</code>; enforce the <code>q</code> ≤ 5000 guard (truncate work-context tail, keep setup head); compose/validate the new project path (parent + name, name regex); and the visibility-race detector. Unit-tested per CLAUDE.md (new pure logic — URL build, both prompt branches, repo/no-repo, name validation, q-truncation, path compose).</td>
+      </tr>
+      <tr>
+        <td>Persistence <span class="pill new">rework</span></td>
+        <td>None (localStorage)</td>
+        <td><strong>No migration, no DB table, no server action.</strong> Per-user-per-idea value (path or {mode, parent, name, path}) lives in <code>localStorage</code> under <code>vibecodes:launch-path:&lt;ideaId&gt;</code>. Machine-specific by nature; nothing to leak across collaborators.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h4>Shared primitives reused (no new dependencies)</h4>
+  <p class="note">Button, DropdownMenu, Dialog, Input, Label, RadioGroup, Popover, Tooltip, sonner toast — all already in the stack. Icons from lucide-react: <code>Terminal</code> (launch), <code>FolderOpen</code> (browse / existing mode), <code>FolderPlus</code> (create-new mode), <code>ExternalLink</code> (install guide), <code>Copy</code> (copy command), <code>GitBranch</code> (repo-detected badge).</p>
+
+  <h4>Acceptance criteria for QA (step 5)</h4>
+  <ul>
+    <li><strong>Existing-folder launch:</strong> path set → one-click Open works; dropdown shows Open / Copy / Change / Start new.</li>
+    <li><strong>No path:</strong> toolbar dropdown hint with both “Set folder” and “Start new project” links + working Copy; per-task opens path dialog.</li>
+    <li><strong>Browse (supported):</strong> clicking Browse opens the native picker; on pick the folder <em>name</em> is inserted and the caret/selection lets the user type the absolute prefix; the helper line “…your browser can’t read the full path…” is present.</li>
+    <li><strong>Browse (unsupported — Firefox/Safari):</strong> Browse is hidden, or disabled with an adjacent explanation; the text field still accepts a typed/pasted path; no dead control in the tab order.</li>
+    <li><strong>Create-new happy path:</strong> choose Create new → enter parent + valid name → “Will create” preview matches → Create &amp; launch composes the deep link with the create-new prompt (mkdir + clone/init); value persists to localStorage.</li>
+    <li><strong>Create-new — dir exists:</strong> the “Use existing instead” switch flips to existing mode pre-filled with the composed path; relaunching is safe (idempotent <code>mkdir -p</code>; clone only into empty dir).</li>
+    <li><strong>Create-new — no repo:</strong> repo row reads “will git init”; the generated prompt contains <code>git init</code> and no <code>git clone</code>.</li>
+    <li><strong>Create-new — empty/invalid fields:</strong> inline ⚠ messages appear and focus the field on submit; CTA is never a bare disabled button.</li>
+    <li><strong>Mode toggle a11y:</strong> radiogroup is keyboard operable (arrows + Space/Enter); fields and CTA re-label on switch; selection not conveyed by colour alone.</li>
+    <li><strong>Env-derived MCP URL:</strong> the prompt’s <code>claude mcp add</code> URL matches <code>NEXT_PUBLIC_APP_URL</code> (staging vs prod), not a hard-coded host.</li>
+    <li><strong>q ≤ 5000 guard:</strong> with a very long idea title / task scope the prompt is truncated from the work-context tail while the MCP-setup head is preserved.</li>
+    <li><strong>Not installed:</strong> recovery toast with Copy + Install guide. <strong>Scheme blocked:</strong> copy-command popover (with the mkdir/clone prefix in create-new mode).</li>
+    <li><strong>Mobile (&lt;md):</strong> toolbar button hidden; per-task shows explanatory row.</li>
+    <li><strong>Realistic data:</strong> long path / long idea title / long folder name → truncation, no layout break.</li>
+    <li><strong>Keyboard-only</strong> walk-through of every surface incl. mode toggle and Browse; focus visible; <kbd>Esc</kbd> closes overlays.</li>
+    <li><strong>Privacy:</strong> the path is in localStorage only — never sent to the server, never visible to a second collaborator on the same idea.</li>
+  </ul>
+
+</div>
+</body>
+</html>

@@ -24,6 +24,7 @@ import {
 } from "@dnd-kit/sortable";
 import { useSearchParams } from "next/navigation";
 import { BotRolesProvider } from "@/components/bot-roles-context";
+import { BoardLaunchProvider } from "./board-launch-context";
 import { BoardColumn } from "./board-column";
 import { AddColumnButton } from "./add-column-button";
 import { BoardToolbar } from "./board-toolbar";
@@ -126,6 +127,8 @@ function OverlayContent({
 interface KanbanBoardProps {
   columns: BoardColumnWithTasks[];
   ideaId: string;
+  ideaTitle: string;
+  ideaGithubUrl?: string | null;
   ideaDescription?: string;
   teamMembers: User[];
   boardLabels: BoardLabel[];
@@ -238,6 +241,8 @@ function useEdgeScroll(
 export function KanbanBoard({
   columns: initialColumns,
   ideaId,
+  ideaTitle,
+  ideaGithubUrl = null,
   ideaDescription = "",
   teamMembers,
   boardLabels,
@@ -986,6 +991,7 @@ export function KanbanBoard({
     <BoardOpsContext.Provider value={boardOps}>
     <TaskAutoOpenContext.Provider value={autoOpenCtx}>
     <BotRolesProvider botRoles={botRoles}>
+    <BoardLaunchProvider value={{ ideaId, ideaTitle, ideaGithubUrl }}>
     <div className="flex min-h-0 flex-1 flex-col">
       <BoardToolbar
         searchQuery={searchQuery}
@@ -1003,6 +1009,8 @@ export function KanbanBoard({
         archivedCount={archivedCount}
         columns={columns}
         ideaId={ideaId}
+        ideaTitle={ideaTitle}
+        ideaGithubUrl={ideaGithubUrl}
         ideaDescription={ideaDescription}
         currentUserId={currentUserId}
         canUseAi={canUseAi}
@@ -1120,6 +1128,7 @@ export function KanbanBoard({
         </Dialog>
       )}
     </div>
+    </BoardLaunchProvider>
     </BotRolesProvider>
     </TaskAutoOpenContext.Provider>
     </BoardOpsContext.Provider>

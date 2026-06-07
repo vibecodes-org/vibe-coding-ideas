@@ -78,7 +78,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
   // Fetch idea (include visibility for access control)
   const { data: idea } = await supabase
     .from("ideas")
-    .select("id, title, description, author_id, visibility, project_kit:project_kits!ideas_project_kit_id_fkey(name, icon)")
+    .select("id, title, description, github_url, author_id, visibility, project_kit:project_kits!ideas_project_kit_id_fkey(name, icon)")
     .eq("id", id)
     .single();
 
@@ -290,6 +290,8 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
         <KanbanBoard
           columns={columns}
           ideaId={id}
+          ideaTitle={idea.title}
+          ideaGithubUrl={idea.github_url}
           ideaDescription={idea.description}
           teamMembers={teamMembers}
           boardLabels={(boardLabels ?? []) as BoardLabel[]}

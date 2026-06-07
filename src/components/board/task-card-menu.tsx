@@ -27,6 +27,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useBoardOps } from "./board-context";
+import { useBoardLaunch } from "./board-launch-context";
+import { LaunchClaudeCodeButton } from "./launch-claude-code-button";
 import { computeWithinColumnMove } from "./move-position";
 import type { MoveEnd } from "./move-position";
 import { deleteBoardTask, updateBoardTask, moveBoardTask } from "@/actions/board";
@@ -59,6 +61,7 @@ export function TaskCardMenu({
   columnTasks,
 }: TaskCardMenuProps) {
   const ops = useBoardOps();
+  const launch = useBoardLaunch();
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
 
   const canTop = computeWithinColumnMove(columnTasks, task.id, "top") !== null;
@@ -158,6 +161,19 @@ export function TaskCardMenu({
             <ArrowDownToLine className="mr-2 h-4 w-4" />
             Move to bottom
           </DropdownMenuItem>
+          {launch && (
+            <>
+              <DropdownMenuSeparator />
+              <LaunchClaudeCodeButton
+                variant="task-menu-item"
+                ideaId={launch.ideaId}
+                ideaTitle={launch.ideaTitle}
+                ideaGithubUrl={launch.ideaGithubUrl}
+                taskId={task.id}
+                taskTitle={task.title}
+              />
+            </>
+          )}
           {!task.archived && (
             <>
               <DropdownMenuSeparator />

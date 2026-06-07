@@ -16,6 +16,10 @@ import type { BoardColumnWithTasks, BoardLabel, User, BotProfile } from "@/types
 
 const ImportDialog = dynamic(() => import("./import-dialog").then((m) => m.ImportDialog), { ssr: false });
 const AiGenerateDialog = dynamic(() => import("./ai-generate-dialog").then((m) => m.AiGenerateDialog), { ssr: false });
+const LaunchClaudeCodeButton = dynamic(
+  () => import("./launch-claude-code-button").then((m) => m.LaunchClaudeCodeButton),
+  { ssr: false }
+);
 
 function LabelFilterPopover({
   boardLabels,
@@ -131,6 +135,8 @@ interface BoardToolbarProps {
   archivedCount: number;
   columns: BoardColumnWithTasks[];
   ideaId: string;
+  ideaTitle: string;
+  ideaGithubUrl?: string | null;
   ideaDescription?: string;
   currentUserId: string;
   canUseAi?: boolean;
@@ -159,6 +165,8 @@ export function BoardToolbar({
   archivedCount,
   columns,
   ideaId,
+  ideaTitle,
+  ideaGithubUrl = null,
   ideaDescription = "",
   currentUserId,
   canUseAi = false,
@@ -302,6 +310,12 @@ export function BoardToolbar({
 
       {!isReadOnly && (
         <div className="ml-auto flex gap-2">
+          <LaunchClaudeCodeButton
+            variant="board"
+            ideaId={ideaId}
+            ideaTitle={ideaTitle}
+            ideaGithubUrl={ideaGithubUrl}
+          />
           <TooltipProvider>
             <Tooltip>
               <TooltipTrigger asChild>
