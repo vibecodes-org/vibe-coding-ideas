@@ -9,6 +9,7 @@ import {
   parseBulkText,
   autoMapColumns,
   getUniqueColumnNames,
+  partitionNewColumns,
   type ImportTask,
   type CsvFieldMapping,
   type SequentialInsertCallbacks,
@@ -622,5 +623,48 @@ describe("SequentialInsertCallbacks", () => {
 
     callbacks.onAutoRulesStart?.(0);
     expect(receivedTotal).toBe(0);
+  });
+});
+
+describe("partitionNewColumns (duplicate-columns guard)", () => {
+  const existing = [
+    { id: "c1", title: "To Do" },
+    { id: "c2", title: "In Progress" },
+    { id: "c3", title: "Done" },
+  ];
+
+  it("creates all when none match existing", () => {
+    const { toCreate, remap } = partitionNewColumns(["Backlog", "Review"], existing);
+    expect(toCreate).toEqual(["Backlog", "Review"]);
+    expect(remap).toEqual({});
+  });
+
+  it("remaps an exact existing name instead of creating a duplicate", () => {
+    const { toCreate, remap } = partitionNewColumns(["To Do"], existing);
+    expect(toCreate).toEqual([]);
+    expect(remap).toEqual({ "To Do": "c1" });
+  });
+
+  it("matches case- and whitespace-insensitively", () => {
+    const { toCreate, remap } = partitionNewColumns(["  in progress ", "DONE"], existing);
+    expect(toCreate).toEqual([]);
+    expect(remap).toEqual({ "  in progress ": "c2", DONE: "c3" });
+  });
+
+  it("splits a mixed request into remap + toCreate", () => {
+    const { toCreate, remap } = partitionNewColumns(["To Do", "Backlog"], existing);
+    expect(toCreate).toEqual(["Backlog"]);
+    expect(remap).toEqual({ "To Do": "c1" });
+  });
+
+  it("collapses duplicate new names within the request (create once)", () => {
+    const { toCreate, remap } = partitionNewColumns(["Backlog", "backlog", " Backlog "], existing);
+    expect(toCreate).toEqual(["Backlog"]);
+    expect(remap).toEqual({});
+  });
+
+  it("handles an empty request and an empty board", () => {
+    expect(partitionNewColumns([], existing)).toEqual({ toCreate: [], remap: {} });
+    expect(partitionNewColumns(["To Do"], [])).toEqual({ toCreate: ["To Do"], remap: {} });
   });
 });

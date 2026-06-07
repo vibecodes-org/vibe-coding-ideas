@@ -340,6 +340,38 @@ export function getUniqueColumnNames(tasks: ImportTask[]): string[] {
   return Array.from(names);
 }
 
+/**
+ * Idempotency guard for column creation: decide which "__new__" column names
+ * actually need creating vs. already exist on the board. Matching is
+ * case/whitespace-insensitive, and duplicate names within the request are
+ * collapsed. Prevents the AI-generate / import flow from duplicating a column
+ * whose name already exists (the duplicate-columns bug) — callers remap the
+ * already-existing names to their column id instead of inserting a copy.
+ */
+export function partitionNewColumns(
+  requestedNewNames: string[],
+  existingColumns: { id: string; title: string }[]
+): { toCreate: string[]; remap: Record<string, string> } {
+  const byName = new Map(
+    existingColumns.map((c) => [c.title.toLowerCase().trim(), c.id])
+  );
+  const toCreate: string[] = [];
+  const remap: Record<string, string> = {};
+  const seen = new Set<string>();
+  for (const name of requestedNewNames) {
+    const key = name.toLowerCase().trim();
+    const existingId = byName.get(key);
+    if (existingId) {
+      remap[name] = existingId; // reuse existing column — don't duplicate
+    } else if (!seen.has(key)) {
+      seen.add(key);
+      toCreate.push(name);
+    }
+    // duplicate name within the same request → skip (create once)
+  }
+  return { toCreate, remap };
+}
+
 // ── Bulk Import ────────────────────────────────────────────────────────
 
 const BATCH_SIZE = 50;
@@ -370,7 +402,7 @@ export async function executeBulkImport(
   // Phase 1: Create new columns
   onProgress?.({ phase: "Creating columns...", current: 0, total });
 
-  const newColumnNames = Object.entries(columnMapping)
+  const requestedNewNames = Object.entries(columnMapping)
     .filter(([, v]) => v === "__new__")
     .map(([k]) => k);
 
@@ -379,32 +411,35 @@ export async function executeBulkImport(
       ? Math.max(...columns.map((c) => c.position))
       : -POSITION_GAP;
 
-  const createdColumnMap = new Map<string, string>(); // name -> id
-
-  if (newColumnNames.length > 0) {
-    const inserts = newColumnNames.map((name) => {
-      maxColPosition += POSITION_GAP;
-      return { idea_id: ideaId, title: name, position: maxColPosition };
-    });
-
-    const { data: newCols, error } = await supabase
+  if (requestedNewNames.length > 0) {
+    // Idempotency guard against duplicate columns: re-check live columns and
+    // remap already-existing names to their column instead of inserting a copy.
+    const { data: liveColumns } = await supabase
       .from("board_columns")
-      .insert(inserts)
-      .select("id, title");
+      .select("id, title")
+      .eq("idea_id", ideaId);
+    const { toCreate, remap } = partitionNewColumns(requestedNewNames, liveColumns ?? []);
+    for (const [name, id] of Object.entries(remap)) columnMapping[name] = id;
 
-    if (error) {
-      errors.push(`Failed to create columns: ${error.message}`);
-      return { created: 0, errors };
-    }
+    if (toCreate.length > 0) {
+      const inserts = toCreate.map((name) => {
+        maxColPosition += POSITION_GAP;
+        return { idea_id: ideaId, title: name, position: maxColPosition };
+      });
 
-    for (const col of newCols ?? []) {
-      createdColumnMap.set(col.title, col.id);
-    }
+      const { data: newCols, error } = await supabase
+        .from("board_columns")
+        .insert(inserts)
+        .select("id, title");
 
-    // Update the mapping to use real IDs
-    for (const name of newColumnNames) {
-      const id = createdColumnMap.get(name);
-      if (id) columnMapping[name] = id;
+      if (error) {
+        errors.push(`Failed to create columns: ${error.message}`);
+        return { created: 0, errors };
+      }
+
+      for (const col of newCols ?? []) {
+        columnMapping[col.title] = col.id;
+      }
     }
   }
 
@@ -686,7 +721,7 @@ export async function insertTasksSequentially(
 
   // ── Setup: Create columns ──────────────────────────────────────────
 
-  const newColumnNames = Object.entries(columnMapping)
+  const requestedNewNames = Object.entries(columnMapping)
     .filter(([, v]) => v === "__new__")
     .map(([k]) => k);
 
@@ -697,63 +732,76 @@ export async function insertTasksSequentially(
 
   let columnsCreated = 0;
 
-  if (newColumnNames.length > 0) {
-    const inserts = newColumnNames.map((name) => {
-      maxColPosition += POSITION_GAP;
-      return { idea_id: ideaId, title: name, position: maxColPosition };
-    });
+  if (requestedNewNames.length > 0) {
+    // Idempotency guard against duplicate columns: re-check the LIVE board
+    // columns (the passed-in `columns` snapshot can be stale, and AI/import
+    // names may already exist), and remap already-existing names to their
+    // column instead of creating a duplicate.
+    const { data: liveColumns } = await supabase
+      .from("board_columns")
+      .select("id, title")
+      .eq("idea_id", ideaId);
+    const { toCreate, remap } = partitionNewColumns(requestedNewNames, liveColumns ?? []);
+    for (const [name, id] of Object.entries(remap)) columnMapping[name] = id;
 
-    let newCols: { id: string; title: string }[] | null = null;
-    for (let attempt = 0; attempt < 2; attempt++) {
-      if (attempt === 1) {
-        // Before retrying, check which columns were already created
-        const { data: existing } = await supabase
-          .from("board_columns")
-          .select("id, title")
-          .eq("idea_id", ideaId)
-          .in("title", newColumnNames);
+    if (toCreate.length > 0) {
+      const inserts = toCreate.map((name) => {
+        maxColPosition += POSITION_GAP;
+        return { idea_id: ideaId, title: name, position: maxColPosition };
+      });
 
-        if (existing && existing.length > 0) {
-          const existingNames = new Set(existing.map((c) => c.title));
-          const remaining = inserts.filter((i) => !existingNames.has(i.title));
-          if (remaining.length === 0) {
-            newCols = existing;
+      let newCols: { id: string; title: string }[] | null = null;
+      for (let attempt = 0; attempt < 2; attempt++) {
+        if (attempt === 1) {
+          // Before retrying, check which columns were already created
+          const { data: existing } = await supabase
+            .from("board_columns")
+            .select("id, title")
+            .eq("idea_id", ideaId)
+            .in("title", toCreate);
+
+          if (existing && existing.length > 0) {
+            const existingNames = new Set(existing.map((c) => c.title));
+            const remaining = inserts.filter((i) => !existingNames.has(i.title));
+            if (remaining.length === 0) {
+              newCols = existing;
+              break;
+            }
+            // Insert only the missing columns
+            const { data, error } = await supabase
+              .from("board_columns")
+              .insert(remaining)
+              .select("id, title");
+
+            if (error) {
+              throw new Error(`Failed to create columns: ${error.message}`);
+            }
+            newCols = [...existing, ...(data ?? [])];
             break;
           }
-          // Insert only the missing columns
-          const { data, error } = await supabase
-            .from("board_columns")
-            .insert(remaining)
-            .select("id, title");
+        }
 
-          if (error) {
-            throw new Error(`Failed to create columns: ${error.message}`);
-          }
-          newCols = [...existing, ...(data ?? [])];
+        const { data, error } = await supabase
+          .from("board_columns")
+          .insert(inserts)
+          .select("id, title");
+
+        if (!error && data) {
+          newCols = data;
           break;
+        }
+        if (attempt === 0) {
+          await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
+        } else {
+          throw new Error(`Failed to create columns: ${error?.message}`);
         }
       }
 
-      const { data, error } = await supabase
-        .from("board_columns")
-        .insert(inserts)
-        .select("id, title");
-
-      if (!error && data) {
-        newCols = data;
-        break;
+      for (const col of newCols ?? []) {
+        columnMapping[col.title] = col.id;
       }
-      if (attempt === 0) {
-        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
-      } else {
-        throw new Error(`Failed to create columns: ${error?.message}`);
-      }
+      columnsCreated = newCols?.length ?? 0;
     }
-
-    for (const col of newCols ?? []) {
-      columnMapping[col.title] = col.id;
-    }
-    columnsCreated = newCols?.length ?? 0;
   }
 
   // ── Setup: Create/match labels ─────────────────────────────────────
@@ -990,7 +1038,7 @@ export async function insertTasksSequentially(
   // the board. Phase 2 parallelisation (batches of 5 + role match cache)
   // keeps this fast. Fire-and-forget was removed because server actions
   // get aborted when the client navigates away.
-  let autoRulesApplied = 0;
+  const autoRulesApplied = 0;
   if (autoRulePairs.length > 0) {
     callbacks.onAutoRulesStart?.(autoRulePairs.length);
     try {
