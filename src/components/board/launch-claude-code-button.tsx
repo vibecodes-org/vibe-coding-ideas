@@ -12,7 +12,6 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { logger } from "@/lib/logger";
 import {
   type LaunchMode,
   type LaunchPathState,
@@ -151,25 +150,6 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         repo: ideaGithubUrl ?? undefined,
       });
 
-      // Diagnostic (temporary): logged at warn so it survives the prod log level.
-      // Captures the EXACT URL + lengths so we can reproduce a failing launch.
-      logger.warn("launch-claude-code: opening deep link", {
-        mode: state.mode,
-        cwd: cwd ?? null,
-        repo: ideaGithubUrl ?? null,
-        promptChars: prompt.length,
-        encodedQChars: encodeURIComponent(prompt).length,
-        urlChars: link.length,
-        url: link,
-      });
-
-      const copyLink = () => {
-        navigator.clipboard.writeText(link).then(
-          () => toast.success("Launch link copied — paste it here for debugging"),
-          () => toast.error("Couldn't copy the link")
-        );
-      };
-
       let handled = false;
       const onVisibility = () => {
         if (document.visibilityState === "hidden") handled = true;
@@ -187,8 +167,8 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         cleanup();
         launchingRef.current = false;
         toast.error("Your browser blocked the launch", {
-          description: "Copy the launch link and share it for debugging.",
-          action: { label: "Copy launch link", onClick: copyLink },
+          description: "Copy the command and run it in your terminal instead.",
+          action: { label: "Copy command", onClick: () => void copyCommand(state) },
         });
         return;
       }
@@ -202,15 +182,15 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         cleanup();
         launchingRef.current = false;
         if (handled) return;
-        // Nothing visibly handled the scheme. (Detection is heuristic — it may
-        // have opened anyway.) Offer the exact link so we can reproduce.
+        // Detection is heuristic — Claude Code may have opened anyway — so keep
+        // this soft and always offer the manual fallback.
         toast.error("Couldn't confirm Claude Code opened", {
-          description: "If nothing happened, copy the launch link and share it for debugging.",
-          action: { label: "Copy launch link", onClick: copyLink },
+          description: "If nothing happened, copy the command and run it in your terminal.",
+          action: { label: "Copy command", onClick: () => void copyCommand(state) },
         });
       }, SCHEME_RACE_MS);
     },
-    [buildPrompt, ideaGithubUrl]
+    [buildPrompt, ideaGithubUrl, copyCommand]
   );
 
   // Primary action: always launch. No path needed — repo-backed ideas resolve via

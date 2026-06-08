@@ -211,7 +211,7 @@ interface CommonPromptArgs {
  * numbered setup sequence (steps 2/3 = mkdir + clone/init).
  */
 function mcpSetupHead(appUrl: string): string {
-  return `First, make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are ALREADY available, skip this section and start working.
+  return `Make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are ALREADY available, skip this section.
 
 If they are NOT available, set up the hosted connector — this is one step, then a restart:
 1. Add it at local scope (local scope intentionally overrides any existing project "vibecodes-remote", e.g. a local stdio server, so there is no conflict):
@@ -228,19 +228,17 @@ Do NOT debug, reconfigure, or work around other MCP servers, and do NOT spend mo
 function newProjectSteps(newProjectPath: string, repoUrl?: string | null): string {
   const repo = parseRepoFromGithubUrl(repoUrl);
   const setupStep = repo
-    ? `3. Then set up its contents based on what you find — do NOT overwrite existing work:
+    ? `Then set up its contents based on what you find — do NOT overwrite existing work:
      • Empty / just-created → clone the repo: git clone https://github.com/${repo}.git .
      • Already a git checkout → leave it; optionally fast-forward: git pull --ff-only || true
      • Has files but no git → use them as-is; do NOT clone over them.`
-    : `3. Then set up git based on what you find — do NOT overwrite existing work:
+    : `Then set up git based on what you find — do NOT overwrite existing work:
      • Empty / just-created → initialise: git init
      • Already a git repo, or already has files → leave it as-is.`;
 
-  return `Set up the local project directory for this idea at ${newProjectPath}:
-
-2. Check whether ${newProjectPath} already exists.
-     • If it EXISTS, cd into it and reuse it as-is — do NOT re-clone, re-init, or overwrite existing files.
-     • If it does NOT exist, create it: mkdir -p ${newProjectPath} && cd ${newProjectPath}
+  return `First, get into this idea's project directory — do this before anything else so you're working in the right place:
+  • If ${newProjectPath} ALREADY EXISTS, cd into it and reuse it as-is — do NOT re-clone, re-init, or overwrite existing files.
+  • If it does NOT exist, create it: mkdir -p ${newProjectPath} && cd ${newProjectPath}
 ${setupStep}`;
 }
 
@@ -277,7 +275,7 @@ function directoryBlock({
   }
   const repo = parseRepoFromGithubUrl(repoUrl);
   if (repo) {
-    return `Work in this idea's repository (${repo}):
+    return `First, get into this idea's repository (${repo}) — do this before anything else:
   • If you already have it cloned locally, cd into that working copy.
   • If not, clone it first (suggested location ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}):
      git clone https://github.com/${repo}.git ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}`;
@@ -301,18 +299,18 @@ export function buildBoardBootstrapPrompt({
   repoUrl,
   newProject,
 }: BoardBootstrapArgs): string {
-  const head = mcpSetupHead(appUrl);
-  const work = `Once connected, pick up my work on the VibeCodes board for this idea:
+  const dir = directoryBlock({ mode, repoUrl, newProject });
+  const mcp = mcpSetupHead(appUrl);
+  const work = `Then, pick up my work on the VibeCodes board for this idea:
   • Idea: "${ideaTitle}"  (idea_id: ${ideaId})
   • Call get_my_tasks (or claim_next_step) and start the top item.
 
 Use the MCP tools (get_task / claim_next_step / set_agent_identity / move_task / …) to do the work. Move the task to In Progress and comment as you go.`;
 
-  // Head (MCP setup) is ALWAYS first so the length guard never trims it. The
-  // directory block + work form the trimmable tail.
-  const dir = directoryBlock({ mode, repoUrl, newProject });
-  const tail = dir ? `\n\n${dir}\n\nThen ${lowerFirst(work)}` : `\n\n${work}`;
-  return enforcePromptLength(head, tail);
+  // Directory step FIRST so the session is in the right folder before anything
+  // else, then MCP setup — both protected from truncation; work is the trimmable tail.
+  const head = dir ? `${dir}\n\n${mcp}` : mcp;
+  return enforcePromptLength(head, `\n\n${work}`);
 }
 
 export interface TaskBootstrapArgs extends CommonPromptArgs {
@@ -333,21 +331,17 @@ export function buildTaskBootstrapPrompt({
   repoUrl,
   newProject,
 }: TaskBootstrapArgs): string {
-  const head = mcpSetupHead(appUrl);
-  const work = `Once connected, pick up this specific task on the VibeCodes board:
+  const dir = directoryBlock({ mode, repoUrl, newProject });
+  const mcp = mcpSetupHead(appUrl);
+  const work = `Then, pick up this specific task on the VibeCodes board:
   • Task: "${taskTitle}"  (task_id: ${taskId}, idea_id: ${ideaId})
 
 Use the MCP tools (get_task / set_agent_identity / move_task / …) to do the work. Move the task to In Progress and comment as you go.`;
 
-  // Head (MCP setup) is ALWAYS first so the length guard never trims it. The
-  // directory block + work form the trimmable tail.
-  const dir = directoryBlock({ mode, repoUrl, newProject });
-  const tail = dir ? `\n\n${dir}\n\nThen ${lowerFirst(work)}` : `\n\n${work}`;
-  return enforcePromptLength(head, tail);
-}
-
-function lowerFirst(s: string): string {
-  return s.length === 0 ? s : s[0].toLowerCase() + s.slice(1);
+  // Directory step FIRST so the session is in the right folder before anything
+  // else, then MCP setup — both protected from truncation; work is the trimmable tail.
+  const head = dir ? `${dir}\n\n${mcp}` : mcp;
+  return enforcePromptLength(head, `\n\n${work}`);
 }
 
 // ────────────────────────────────────────────────────────────────────────────

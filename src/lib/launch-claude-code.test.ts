@@ -285,15 +285,18 @@ describe("buildBoardBootstrapPrompt", () => {
   });
 
   // Bug 2: the MCP-setup head must survive even when the create-new path is huge.
-  it("create-new mode keeps `claude mcp add` even with a ~6000-char path", () => {
+  it("create-new mode keeps both the directory step and `claude mcp add`", () => {
     const p = buildBoardBootstrapPrompt({
       appUrl: APP_URL,
       ideaId: "idea-1",
       ideaTitle: "My Idea",
       mode: "new",
-      newProject: { newProjectPath: "/Users/me/" + "x".repeat(6000) },
+      newProject: { newProjectPath: "/Users/me/projects/my-idea" },
     });
+    // Directory step (cd-first) comes before MCP setup; both survive.
+    expect(p).toContain("mkdir -p /Users/me/projects/my-idea");
     expect(p).toContain("claude mcp add");
+    expect(p.indexOf("mkdir -p")).toBeLessThan(p.indexOf("claude mcp add"));
     expect(encodeURIComponent(p).length).toBeLessThanOrEqual(MAX_DEEP_LINK_PROMPT_LENGTH);
   });
 });
@@ -327,16 +330,18 @@ describe("buildTaskBootstrapPrompt", () => {
   });
 
   // Bug 2: head survives a huge create-new path in the task builder too.
-  it("create-new mode keeps `claude mcp add` even with a ~6000-char path", () => {
+  it("create-new mode keeps both the directory step and `claude mcp add`", () => {
     const p = buildTaskBootstrapPrompt({
       appUrl: APP_URL,
       ideaId: "idea-1",
       taskId: "task-9",
       taskTitle: "Add OAuth rotation",
       mode: "new",
-      newProject: { newProjectPath: "/Users/me/" + "x".repeat(6000) },
+      newProject: { newProjectPath: "/Users/me/projects/my-idea" },
     });
+    expect(p).toContain("mkdir -p /Users/me/projects/my-idea");
     expect(p).toContain("claude mcp add");
+    expect(p.indexOf("mkdir -p")).toBeLessThan(p.indexOf("claude mcp add"));
     expect(encodeURIComponent(p).length).toBeLessThanOrEqual(MAX_DEEP_LINK_PROMPT_LENGTH);
   });
 });
@@ -462,8 +467,9 @@ describe("existing-mode directory guidance (repo-first)", () => {
     expect(p).toContain("git clone https://github.com/acme/widget.git");
     expect(p).toContain(`${DEFAULT_NEW_PROJECT_PARENT}/widget`);
     expect(p).not.toContain("mkdir -p"); // existing mode never mkdirs a named project
-    // MCP head still first + intact.
-    expect(p.indexOf("claude mcp add")).toBeLessThan(p.indexOf("git clone"));
+    // Directory step comes FIRST (so the session lands in the right folder), then MCP.
+    expect(p.indexOf("git clone")).toBeLessThan(p.indexOf("claude mcp add"));
+    expect(p).toContain("claude mcp add");
   });
 
   it("adds no directory block in existing mode when there is no repo", () => {
