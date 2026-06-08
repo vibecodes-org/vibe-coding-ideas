@@ -211,11 +211,14 @@ interface CommonPromptArgs {
  * numbered setup sequence (steps 2/3 = mkdir + clone/init).
  */
 function mcpSetupHead(appUrl: string): string {
-  return `First, ensure the VibeCodes MCP connector is available.
+  return `First, make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are ALREADY available, skip this section and start working.
 
-1. Run \`claude mcp list\`; if "vibecodes-remote" is not listed, add it:
-     claude mcp add -s user --transport http vibecodes-remote ${mcpEndpoint(appUrl)}
-   Then connect (you'll be prompted to authorise via your browser the first time) and reconnect if needed.`;
+If they are NOT available, set up the hosted connector — this is one step, then a restart:
+1. Add it at local scope (local scope intentionally overrides any existing project "vibecodes-remote", e.g. a local stdio server, so there is no conflict):
+     claude mcp add -s local --transport http vibecodes-remote ${mcpEndpoint(appUrl)}
+2. Authorise in the browser if prompted, then RESTART Claude Code in this folder (run \`claude\` again) so the new connector's tools load.
+
+Do NOT debug, reconfigure, or work around other MCP servers, and do NOT spend more than one step on this. If the board tools still aren't available after one restart, stop and tell me rather than improvising.`;
 }
 
 /**
