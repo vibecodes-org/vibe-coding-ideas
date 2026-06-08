@@ -232,6 +232,21 @@ describe("buildBoardBootstrapPrompt", () => {
     expect(p).not.toContain("git clone");
   });
 
+  it("create-new mode is existence-aware: reuse the dir if it already exists, don't overwrite", () => {
+    const p = buildBoardBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "new",
+      repoUrl: "https://github.com/acme/widget",
+      newProject: { newProjectPath: "/Users/me/projects/my-idea" },
+    });
+    // Tells the agent to check existence and reuse rather than blindly create.
+    expect(p).toMatch(/already exists/i);
+    expect(p).toMatch(/reuse it as-is|use them as-is|leave it/i);
+    expect(p).toMatch(/do NOT (re-clone|overwrite|clone over)/i);
+  });
+
   it("guards ENCODED length to <= 5000 keeping the MCP head", () => {
     const p = buildBoardBootstrapPrompt({
       appUrl: APP_URL,

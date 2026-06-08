@@ -216,17 +216,21 @@ function mcpSetupHead(appUrl: string): string {
  */
 function newProjectSteps(newProjectPath: string, repoUrl?: string | null): string {
   const repo = parseRepoFromGithubUrl(repoUrl);
-  const repoStep = repo
-    ? `3. Clone the idea's repo into it (only if the directory is empty; otherwise pull or skip):
-     git clone https://github.com/${repo}.git .`
-    : `3. Initialise a fresh git repo (no repo is set on this idea):
-     git init`;
+  const setupStep = repo
+    ? `3. Then set up its contents based on what you find — do NOT overwrite existing work:
+     • Empty / just-created → clone the repo: git clone https://github.com/${repo}.git .
+     • Already a git checkout → leave it; optionally fast-forward: git pull --ff-only || true
+     • Has files but no git → use them as-is; do NOT clone over them.`
+    : `3. Then set up git based on what you find — do NOT overwrite existing work:
+     • Empty / just-created → initialise: git init
+     • Already a git repo, or already has files → leave it as-is.`;
 
-  return `Then set up a new local project for this idea:
+  return `Set up the local project directory for this idea at ${newProjectPath}:
 
-2. Create the project directory if it doesn't exist (safe if it already exists):
-     mkdir -p ${newProjectPath} && cd ${newProjectPath}
-${repoStep}`;
+2. Check whether ${newProjectPath} already exists.
+     • If it EXISTS, cd into it and reuse it as-is — do NOT re-clone, re-init, or overwrite existing files.
+     • If it does NOT exist, create it: mkdir -p ${newProjectPath} && cd ${newProjectPath}
+${setupStep}`;
 }
 
 /** Default parent for a brand-new project — home-relative so it needs no absolute path. */
