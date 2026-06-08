@@ -25,6 +25,7 @@ import {
 import { useSearchParams } from "next/navigation";
 import { BotRolesProvider } from "@/components/bot-roles-context";
 import { BoardLaunchProvider } from "./board-launch-context";
+import type { RecordedProjectPath } from "@/lib/launch-claude-code";
 import { BoardColumn } from "./board-column";
 import { AddColumnButton } from "./add-column-button";
 import { BoardToolbar } from "./board-toolbar";
@@ -129,6 +130,7 @@ interface KanbanBoardProps {
   ideaId: string;
   ideaTitle: string;
   ideaGithubUrl?: string | null;
+  recordedProjectPaths?: RecordedProjectPath[];
   ideaDescription?: string;
   teamMembers: User[];
   boardLabels: BoardLabel[];
@@ -243,6 +245,7 @@ export function KanbanBoard({
   ideaId,
   ideaTitle,
   ideaGithubUrl = null,
+  recordedProjectPaths = [],
   ideaDescription = "",
   teamMembers,
   boardLabels,
@@ -991,7 +994,7 @@ export function KanbanBoard({
     <BoardOpsContext.Provider value={boardOps}>
     <TaskAutoOpenContext.Provider value={autoOpenCtx}>
     <BotRolesProvider botRoles={botRoles}>
-    <BoardLaunchProvider value={{ ideaId, ideaTitle, ideaGithubUrl }}>
+    <BoardLaunchProvider value={{ ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths }}>
     <div className="flex min-h-0 flex-1 flex-col">
       <BoardToolbar
         searchQuery={searchQuery}
@@ -1011,6 +1014,7 @@ export function KanbanBoard({
         ideaId={ideaId}
         ideaTitle={ideaTitle}
         ideaGithubUrl={ideaGithubUrl}
+        recordedProjectPaths={recordedProjectPaths}
         ideaDescription={ideaDescription}
         currentUserId={currentUserId}
         canUseAi={canUseAi}

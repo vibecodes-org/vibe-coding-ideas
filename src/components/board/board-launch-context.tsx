@@ -1,6 +1,7 @@
 "use client";
 
 import { createContext, useContext } from "react";
+import type { RecordedProjectPath } from "@/lib/launch-claude-code";
 
 /**
  * Idea-level context for the "Launch Claude Code" feature so per-task surfaces
@@ -12,6 +13,13 @@ export interface BoardLaunchContextValue {
   ideaTitle: string;
   /** Idea's shared github_url (raw), used for the create-new clone step. */
   ideaGithubUrl: string | null;
+  /**
+   * Absolute paths recorded by the agent for THIS user + idea, one per machine
+   * (hostname). Read server-side from idea_project_paths (RLS-scoped to the
+   * human). The launch button runs chooseLaunchCwd over these to decide whether
+   * to inject a cwd for no-repo launches. Undefined when none recorded.
+   */
+  recordedProjectPaths?: RecordedProjectPath[];
 }
 
 const BoardLaunchContext = createContext<BoardLaunchContextValue | null>(null);

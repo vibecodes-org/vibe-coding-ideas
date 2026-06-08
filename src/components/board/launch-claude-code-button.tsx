@@ -15,10 +15,12 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import {
   type LaunchMode,
   type LaunchPathState,
+  type RecordedProjectPath,
   buildClaudeDeepLink,
   buildLaunchCommand,
   buildBoardBootstrapPrompt,
   buildTaskBootstrapPrompt,
+  chooseLaunchCwd,
   readLaunchPath,
   slugifyIdeaTitle,
   composeNewProjectPath,
@@ -36,6 +38,12 @@ interface BaseProps {
   ideaId: string;
   ideaTitle: string;
   ideaGithubUrl: string | null;
+  /**
+   * Absolute paths the agent recorded for this user + idea (one per machine).
+   * No-repo launches inject one as cwd via chooseLaunchCwd (option (a): only
+   * when exactly one is recorded). Empty/omitted → first-launch flow.
+   */
+  recordedProjectPaths?: RecordedProjectPath[];
 }
 
 interface BoardLaunchProps extends BaseProps {
@@ -51,8 +59,23 @@ interface TaskLaunchProps extends BaseProps {
 type LaunchClaudeCodeButtonProps = BoardLaunchProps | TaskLaunchProps;
 
 export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
-  const { ideaId, ideaTitle, ideaGithubUrl } = props;
+  const { ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths } = props;
   const isDesktop = useMediaQuery("(min-width: 768px)");
+
+  // Choose the cwd to inject into a no-repo launch (Design Review option (a):
+  // exactly one recorded path → use it; 0 or >1 → undefined / first-launch flow).
+  // Repo-backed ideas never use this — the `repo` slug resolves the folder.
+  const recordedCwd = useMemo(
+    () => (ideaGithubUrl ? undefined : chooseLaunchCwd(recordedProjectPaths)),
+    [ideaGithubUrl, recordedProjectPaths]
+  );
+  // The single record (if any) backing recordedCwd — for the "This machine" line.
+  const recordedHost = useMemo(() => {
+    if (!recordedCwd) return undefined;
+    return (recordedProjectPaths ?? []).find(
+      (r) => r.absolute_path.trim() === recordedCwd
+    );
+  }, [recordedCwd, recordedProjectPaths]);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<LaunchMode | undefined>(undefined);
@@ -138,12 +161,21 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       launchingRef.current = true;
 
       const prompt = buildPrompt(state);
-      // cwd is ONLY passed for existing mode with a real absolute path the user
-      // pinned. New mode: the agent mkdir's the dir (it may not exist yet, and
-      // `~`-relative paths don't expand in the cwd param). Repo default: empty
-      // path → no cwd → the `repo` param resolves the working copy.
+      // cwd resolution:
+      //  - existing mode with a user-pinned absolute path → use it.
+      //  - new (no-repo) mode → use the agent-recorded path for THIS machine if
+      //    chooseLaunchCwd resolved one (exactly one record); otherwise none, and
+      //    the bootstrap prompt's directory block creates ~/projects/<slug>. We
+      //    never inject for new mode without a recorded absolute path (`~`-paths
+      //    don't expand in the cwd param).
+      //  - repo-backed → no cwd; the `repo` slug resolves the working copy
+      //    (recordedCwd is forced undefined for repo ideas).
       const cwd =
-        state.mode === "existing" && state.path.trim() ? state.path.trim() : undefined;
+        state.mode === "existing" && state.path.trim()
+          ? state.path.trim()
+          : state.mode === "new"
+            ? recordedCwd
+            : undefined;
       const link = buildClaudeDeepLink({
         prompt,
         cwd,
@@ -190,7 +222,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         });
       }, SCHEME_RACE_MS);
     },
-    [buildPrompt, ideaGithubUrl, copyCommand]
+    [buildPrompt, ideaGithubUrl, recordedCwd, copyCommand]
   );
 
   // Primary action: always launch. No path needed — repo-backed ideas resolve via
@@ -305,6 +337,19 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
               <Terminal className="mr-2 h-4 w-4" />
               Open in Claude Code
             </DropdownMenuItem>
+            {recordedHost && (
+              <>
+                <DropdownMenuSeparator />
+                <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                  <div className="font-medium text-foreground/80">
+                    This machine — {recordedHost.hostname}
+                  </div>
+                  <code className="mt-0.5 block break-all font-mono text-[11px]">
+                    {recordedHost.absolute_path}
+                  </code>
+                </div>
+              </>
+            )}
             <DropdownMenuItem onSelect={() => openDialog("new", true)}>
               <FolderPlus className="mr-2 h-4 w-4" />
               Start a new project…

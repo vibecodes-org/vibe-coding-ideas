@@ -169,6 +169,7 @@ export function TaskCardMenu({
                 ideaId={launch.ideaId}
                 ideaTitle={launch.ideaTitle}
                 ideaGithubUrl={launch.ideaGithubUrl}
+                recordedProjectPaths={launch.recordedProjectPaths}
                 taskId={task.id}
                 taskTitle={task.title}
               />

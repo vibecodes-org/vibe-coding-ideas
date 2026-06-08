@@ -180,10 +180,62 @@ export function looksAbsolutePath(path: string): boolean {
   return /^\//.test(p) || /^~(\/|$)/.test(p) || /^[A-Za-z]:[\\/]/.test(p);
 }
 
+/**
+ * STRICT absolute-path validation for `record_project_path` (the value the agent
+ * reports from an EXPANDED `pwd`). Unlike `looksAbsolutePath`, this REJECTS:
+ *  - empty / whitespace-only
+ *  - relative paths (no leading `/`, drive, or UNC)
+ *  - home-relative `~` / `~/…` (must already be the expanded pwd, never a tilde)
+ *  - `$VAR` / `$HOME`-style unexpanded values
+ *
+ * Accepts: POSIX absolute (`/Users/nick/projects/x`), Windows drive
+ * (`C:\Users\nick\x` or `C:/…`), and UNC (`\\server\share\x`).
+ */
+export function isValidAbsolutePath(path: string): boolean {
+  if (typeof path !== "string") return false;
+  const p = path.trim();
+  if (!p) return false;
+  // Reject any tilde-home or shell variable — those aren't an expanded pwd.
+  if (p.startsWith("~")) return false;
+  if (p.includes("$")) return false;
+
+  const isPosix = p.startsWith("/");
+  const isWinDrive = /^[A-Za-z]:[\\/]/.test(p);
+  const isUnc = /^\\\\[^\\]+\\[^\\]+/.test(p);
+  return isPosix || isWinDrive || isUnc;
+}
+
 /** Compose `parent/name` into a single path, normalising the joining slash. */
 export function composeNewProjectPath(parent: string, name: string): string {
   const base = parent.trim().replace(/\/+$/, "");
   return `${base}/${name.trim()}`;
+}
+
+/** A recorded project path row (subset the launch UI needs). */
+export interface RecordedProjectPath {
+  absolute_path: string;
+  hostname: string;
+}
+
+/**
+ * Choose the cwd to inject into a no-repo launch deep link from the paths
+ * recorded for (this user, this idea) — Design Review hostname rule, option (a):
+ *
+ *  - 0 records  → undefined (first-launch / home flow; the agent creates + records)
+ *  - exactly 1  → that record's absolute_path
+ *  - >1 records → undefined (ambiguous across machines; the browser can't know
+ *                 which host it's on, so never inject a path we can't attribute
+ *                 to THIS machine — fall back to the safe first-launch flow)
+ *
+ * A record is only usable if its absolute_path passes strict validation; bad
+ * rows are ignored so a single corrupt record can't poison the choice.
+ */
+export function chooseLaunchCwd(
+  records: ReadonlyArray<RecordedProjectPath> | null | undefined
+): string | undefined {
+  const usable = (records ?? []).filter((r) => isValidAbsolutePath(r.absolute_path));
+  if (usable.length === 1) return usable[0].absolute_path.trim();
+  return undefined;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -222,10 +274,20 @@ Do NOT debug, reconfigure, or work around other MCP servers, and do NOT spend mo
 }
 
 /**
- * The create-new bootstrap steps (mkdir + clone/init). Idempotent intent.
- * Numbered to follow the MCP-setup head (step 1), so it reads as one sequence.
+ * The create-new (no-repo / repo-into-new-folder) bootstrap steps. Idempotent
+ * intent. Numbered to follow the MCP-setup head (step 1), so it reads as one
+ * sequence. Order is load-bearing: cd/create FIRST → pwd → record_project_path
+ * (only after the connector is confirmed) → THEN write project files. This keeps
+ * CLAUDE.md and all scaffolding in the project folder, never in home, and
+ * persists the resolved path so future launches open straight in the folder.
+ *
+ * @param ideaId  the idea_id to record the path against
  */
-function newProjectSteps(newProjectPath: string, repoUrl?: string | null): string {
+function newProjectSteps(
+  newProjectPath: string,
+  ideaId: string,
+  repoUrl?: string | null
+): string {
   const repo = parseRepoFromGithubUrl(repoUrl);
   const setupStep = repo
     ? `Then set up its contents based on what you find — do NOT overwrite existing work:
@@ -239,7 +301,13 @@ function newProjectSteps(newProjectPath: string, repoUrl?: string | null): strin
   return `First, get into this idea's project directory — do this before anything else so you're working in the right place:
   • If ${newProjectPath} ALREADY EXISTS, cd into it and reuse it as-is — do NOT re-clone, re-init, or overwrite existing files.
   • If it does NOT exist, create it: mkdir -p ${newProjectPath} && cd ${newProjectPath}
-${setupStep}`;
+Then confirm and record exactly where you are (this lets future launches open straight in this folder):
+  • Run \`pwd\` and capture the absolute path it prints — this is the authoritative location on this machine, not a guess.
+  • ⚠️ If \`pwd\` still shows your home directory, do NOT create CLAUDE.md or any project files — cd into the project folder first.
+  • Get the machine name: run \`hostname\` (or \`uname -n\`).
+  • ONCE the vibecodes-remote board tools are available (set up above), call record_project_path with idea_id "${ideaId}", that hostname, and the \`pwd\` output. Do this on EVERY launch (self-heal) so a moved or renamed folder updates the stored path.
+${setupStep}
+Only AFTER you are confirmed inside the project folder (pwd is NOT home) should you write any files — CLAUDE.md, .vibecodes/, scaffolding — so everything lands in the project, never in your home directory.`;
 }
 
 /** Default parent for a brand-new project — home-relative so it needs no absolute path. */
@@ -266,12 +334,13 @@ export function slugifyIdeaTitle(title: string): string {
  * Home-relative (`~/…`) suggestions are fine — the agent expands them in the shell.
  */
 function directoryBlock({
+  ideaId,
   mode,
   repoUrl,
   newProject,
-}: Pick<CommonPromptArgs, "mode" | "repoUrl" | "newProject">): string {
+}: Pick<CommonPromptArgs, "ideaId" | "mode" | "repoUrl" | "newProject">): string {
   if (mode === "new" && newProject) {
-    return newProjectSteps(newProject.newProjectPath, repoUrl);
+    return newProjectSteps(newProject.newProjectPath, ideaId, repoUrl);
   }
   const repo = parseRepoFromGithubUrl(repoUrl);
   if (repo) {
@@ -299,7 +368,7 @@ export function buildBoardBootstrapPrompt({
   repoUrl,
   newProject,
 }: BoardBootstrapArgs): string {
-  const dir = directoryBlock({ mode, repoUrl, newProject });
+  const dir = directoryBlock({ ideaId, mode, repoUrl, newProject });
   const mcp = mcpSetupHead(appUrl);
   const work = `Then, pick up my work on the VibeCodes board for this idea:
   • Idea: "${ideaTitle}"  (idea_id: ${ideaId})
@@ -331,7 +400,7 @@ export function buildTaskBootstrapPrompt({
   repoUrl,
   newProject,
 }: TaskBootstrapArgs): string {
-  const dir = directoryBlock({ mode, repoUrl, newProject });
+  const dir = directoryBlock({ ideaId, mode, repoUrl, newProject });
   const mcp = mcpSetupHead(appUrl);
   const work = `Then, pick up this specific task on the VibeCodes board:
   • Task: "${taskTitle}"  (task_id: ${taskId}, idea_id: ${ideaId})

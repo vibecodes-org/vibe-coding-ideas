@@ -207,6 +207,10 @@ import {
   getAgentSkillContent,
   getAgentSkillContentSchema,
 } from "./tools/agent-skill";
+import {
+  recordProjectPath,
+  recordProjectPathSchema,
+} from "./tools/project-paths";
 
 function jsonResult(data: unknown) {
   return {
@@ -1411,6 +1415,22 @@ export function registerTools(
       try {
         const ctx = await getContext(extra);
         return jsonResult(await importAgentSkill(ctx, importAgentSkillSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  // --- Project Path (no-repo launch folder) ---
+
+  server.tool(
+    "record_project_path",
+    "Record the absolute path of this idea's local project folder on this machine, so future launches of Claude Code open straight in it. Call AFTER you have cd'd into the project directory and confirmed it with `pwd` (pass the exact `pwd` output as absolute_path — never `~` or a relative path), and only once the vibecodes-remote board tools are available. Pass idea_id, the machine hostname (`hostname`/`uname -n`), and the absolute path. Upserts per idea + machine; call on every launch to self-heal a moved/renamed folder.",
+    recordProjectPathSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(await recordProjectPath(ctx, recordProjectPathSchema.parse(args)));
       } catch (e) {
         return errorResult(e);
       }

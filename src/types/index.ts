@@ -60,6 +60,7 @@ export type BoardTaskActivity = Database["public"]["Tables"]["board_task_activit
 export type BoardTaskComment = Database["public"]["Tables"]["board_task_comments"]["Row"];
 export type BoardTaskAttachment = Database["public"]["Tables"]["board_task_attachments"]["Row"];
 export type IdeaAttachment = Database["public"]["Tables"]["idea_attachments"]["Row"];
+export type IdeaProjectPath = Database["public"]["Tables"]["idea_project_paths"]["Row"];
 export type DiscussionAttachment = Database["public"]["Tables"]["discussion_attachments"]["Row"];
 export type BotProfile = Database["public"]["Tables"]["bot_profiles"]["Row"];
 export type AgentVote = Database["public"]["Tables"]["agent_votes"]["Row"];

@@ -1,0 +1,429 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>No-repo launch folder — UX Design (Step 2 of 6)</title>
+<style>
+  :root {
+    --bg: #09090b;
+    --fg: #fafafa;
+    --card: #18181b;
+    --card-fg: #fafafa;
+    --popover: #18181b;
+    --muted: #27272a;
+    --muted-fg: #a1a1aa;     /* ~4.6:1 on bg */
+    --accent: #27272a;
+    --border: #27272a;
+    --primary: #e4e4e7;
+    --primary-fg: #18181b;
+    --ring: #d4d4d8;
+    --destructive: #ef4444;
+    --violet-bg: rgba(139,92,246,0.10);
+    --violet-bd: rgba(139,92,246,0.30);
+    --violet-fg: #a78bfa;
+    --emerald-bg: rgba(16,185,129,0.10);
+    --emerald-bd: rgba(16,185,129,0.30);
+    --emerald-fg: #34d399;
+    --amber-fg: #fbbf24;
+    --amber-bg: rgba(251,191,36,0.10);
+    --amber-bd: rgba(251,191,36,0.30);
+    --sky-fg: #38bdf8;
+    --sky-bg: rgba(56,189,248,0.10);
+    --sky-bd: rgba(56,189,248,0.30);
+    --radius: 8px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    line-height: 1.6;
+    font-size: 15px;
+  }
+  .wrap { max-width: 960px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
+  h2 { font-size: 21px; font-weight: 650; letter-spacing: -0.01em; margin: 56px 0 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+  h3 { font-size: 16px; font-weight: 600; margin: 32px 0 8px; }
+  h4 { font-size: 14px; font-weight: 600; margin: 20px 0 6px; color: var(--fg); }
+  p { margin: 8px 0; color: #d4d4d8; }
+  a { color: var(--violet-fg); }
+  code, kbd { font-family: ui-monospace, "SF Mono", Menlo, Consolas, monospace; font-size: 0.86em; }
+  code { background: var(--muted); padding: 1px 5px; border-radius: 4px; color: #e4e4e7; }
+  .lead { color: var(--muted-fg); font-size: 16px; }
+  .meta { color: var(--muted-fg); font-size: 13px; margin-top: 4px; }
+  ul, ol { color: #d4d4d8; padding-left: 22px; }
+  li { margin: 5px 0; }
+  strong { color: #fafafa; }
+
+  .callout { border: 1px solid var(--border); border-left-width: 3px; border-radius: var(--radius); padding: 14px 16px; margin: 16px 0; background: var(--card); }
+  .callout.flag { border-left-color: var(--amber-fg); }
+  .callout.cite { border-left-color: var(--violet-fg); }
+  .callout.a11y { border-left-color: var(--emerald-fg); }
+  .callout.key  { border-left-color: var(--sky-fg); background: var(--sky-bg); }
+  .callout h4 { margin-top: 0; }
+  .callout.flag h4 { color: var(--amber-fg); }
+  .callout.cite h4 { color: var(--violet-fg); }
+  .callout.a11y h4 { color: var(--emerald-fg); }
+  .callout.key  h4 { color: var(--sky-fg); }
+
+  /* Mockup canvas */
+  .mock { background: var(--bg); border: 1px solid var(--border); border-radius: 12px; padding: 22px 20px; margin: 14px 0; position: relative; }
+  .mock-label { position: absolute; top: -10px; left: 14px; background: var(--bg); padding: 0 8px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-fg); }
+
+  /* Buttons replicating shadcn New York */
+  .btn { display: inline-flex; align-items: center; gap: 6px; height: 32px; padding: 0 12px; border-radius: 6px; font-size: 12px; font-weight: 500; border: 1px solid transparent; cursor: default; white-space: nowrap; }
+  .btn .ico { width: 14px; height: 14px; display: inline-block; vertical-align: -2px; }
+  .btn-outline { background: transparent; border-color: var(--border); color: var(--fg); }
+  .btn-ghost { background: transparent; color: var(--fg); }
+  .btn-emerald { background: var(--emerald-bg); border-color: var(--emerald-bd); color: var(--emerald-fg); }
+  .btn-split-l { border-top-right-radius: 0; border-bottom-right-radius: 0; }
+  .btn-split-r { width: 28px; padding: 0; justify-content: center; border-top-left-radius: 0; border-bottom-left-radius: 0; border-left: 0; }
+  .btn-icon { width: 32px; height: 32px; padding: 0; justify-content: center; color: var(--muted-fg); background: transparent; }
+  .btn-sm { height: 28px; padding: 0 10px; }
+
+  .toolbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .split { display: inline-flex; align-items: center; }
+
+  /* Dropdown / popover */
+  .menu { width: 296px; background: var(--popover); border: 1px solid var(--border); border-radius: 8px; padding: 4px; box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
+  .menu-item { display: flex; align-items: center; gap: 8px; padding: 7px 8px; border-radius: 6px; font-size: 13px; color: var(--fg); }
+  .menu-item .ico { width: 15px; height: 15px; color: var(--muted-fg); }
+  .menu-item.hover { background: var(--accent); }
+  .menu-sep { height: 1px; background: var(--border); margin: 4px 0; }
+  .menu-label { padding: 6px 8px 2px; font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted-fg); }
+  .menu-info { padding: 6px 8px; font-size: 12px; color: var(--muted-fg); line-height: 1.45; }
+  .menu-info code { font-size: 11px; }
+  .menu-item.danger { color: #fca5a5; }
+  .menu-item.danger .ico { color: #fca5a5; }
+
+  /* Tooltip */
+  .tip { display: inline-block; max-width: 280px; background: var(--popover); border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; font-size: 12px; color: #d4d4d8; box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+  .tip strong { display: block; margin-bottom: 2px; }
+
+  /* Toast (sonner) */
+  .toast { display: flex; gap: 10px; align-items: flex-start; width: 360px; background: var(--popover); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; box-shadow: 0 12px 32px rgba(0,0,0,0.5); }
+  .toast .ico { width: 16px; height: 16px; flex: 0 0 16px; margin-top: 2px; }
+  .toast-title { font-size: 13px; font-weight: 600; color: var(--fg); }
+  .toast-desc { font-size: 12px; color: var(--muted-fg); margin-top: 2px; }
+  .toast-actions { margin-top: 8px; display: flex; gap: 8px; }
+  .toast.ok .ico { color: var(--emerald-fg); }
+  .toast.warn .ico { color: var(--amber-fg); }
+  .toast.err .ico { color: var(--destructive); }
+
+  /* badges */
+  .badge { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted-fg); }
+  .badge.first { color: var(--amber-fg); border-color: var(--amber-bd); background: var(--amber-bg); }
+  .badge.known { color: var(--emerald-fg); border-color: var(--emerald-bd); background: var(--emerald-bg); }
+  .badge.dot::before { content:""; width:6px; height:6px; border-radius:999px; background: currentColor; display:inline-block; }
+
+  /* flow diagram */
+  .flow { display: grid; gap: 10px; margin: 14px 0; }
+  .flow-step { display: flex; gap: 12px; align-items: flex-start; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; }
+  .flow-num { flex: 0 0 26px; height: 26px; border-radius: 999px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--sky-fg); border: 1px solid var(--sky-bd); background: var(--sky-bg); }
+  .flow-num.rec { color: var(--emerald-fg); border-color: var(--emerald-bd); background: var(--emerald-bg); }
+  .flow-step .body { flex: 1; }
+  .flow-step .body strong { font-size: 14px; }
+  .flow-step .meta-line { font-size: 12px; color: var(--muted-fg); margin-top: 2px; }
+  .flow-step .err { font-size: 12px; color: #fca5a5; margin-top: 6px; }
+  .arrow { text-align: center; color: var(--muted-fg); font-size: 14px; line-height: 1; margin: -3px 0; }
+
+  /* terminal */
+  .term { background: #0c0c0e; border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; font-family: ui-monospace, Menlo, monospace; font-size: 12.5px; line-height: 1.7; color: #d4d4d8; overflow-x: auto; }
+  .term .pr { color: var(--emerald-fg); }
+  .term .cm { color: #d4d4d8; }
+  .term .out { color: var(--muted-fg); }
+  .term .hl { color: var(--sky-fg); }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13px; }
+  th, td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--muted-fg); font-weight: 600; font-size: 12px; letter-spacing: 0.02em; text-transform: uppercase; }
+  td code { font-size: 11.5px; }
+
+  .pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--border); color: var(--muted-fg); }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 720px){ .grid2 { grid-template-columns: 1fr; } }
+  .note { color: var(--muted-fg); font-size: 13px; }
+  .ck { color: var(--emerald-fg); } .x { color: var(--destructive); } .wn { color: var(--amber-fg); }
+  hr.soft { border: 0; border-top: 1px solid var(--border); margin: 28px 0; }
+  ol.ordered { counter-reset: item; list-style: none; padding-left: 0; }
+  ol.ordered > li { counter-increment: item; padding-left: 34px; position: relative; margin: 10px 0; }
+  ol.ordered > li::before { content: counter(item); position: absolute; left: 0; top: 1px; width: 24px; height: 24px; border-radius: 999px; display: grid; place-items: center; font-size: 12px; font-weight: 700; color: var(--emerald-fg); border: 1px solid var(--emerald-bd); background: var(--emerald-bg); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>No-repo launch folder — UX Design</h1>
+  <p class="lead">Make a deep-link-launched local Claude Code session start in the correct project folder for no-repo projects, using an agent-self-reported absolute path.</p>
+  <p class="meta">Feature Development workflow · Step 2 of 6 (UX Design) · Dark Zinc / shadcn New York · WCAG 2.1 AA</p>
+
+  <div class="callout cite">
+    <h4>Building on Step 1 (Requirements)</h4>
+    <p style="margin:0">The requirements / prior launch work lives in <code>docs/launch-claude-code-design.html</code> and <code>src/lib/launch-claude-code.ts</code>. Two facts from that step are load-bearing here:</p>
+    <ul style="margin:8px 0 0">
+      <li><strong>A web page can never read a folder's absolute path.</strong> Neither a file picker nor any browser API yields <code>/Users/you/projects/my-idea</code>. The browser is structurally the wrong place to learn or create the path.</li>
+      <li><strong>Today, no-repo ideas launch in "new" mode</strong>: the deep link carries <em>no</em> <code>cwd</code>; the bootstrap prompt tells the agent to <code>mkdir -p ~/projects/&lt;slug&gt; &amp;&amp; cd</code>. This works on first run but <strong>does not persist the resolved path</strong>, so VibeCodes can never pre-set <code>cwd</code> on later launches, and the old per-idea <code>localStorage</code> path is browser-local and unreliable.</li>
+    </ul>
+    <p style="margin:8px 0 0">This step closes that gap: <strong>the agent reports its own absolute path back to VibeCodes via MCP</strong>, so subsequent launches can inject it as <code>cwd</code>.</p>
+  </div>
+
+  <div class="callout key">
+    <h4>Design thesis — most of this feature is invisible</h4>
+    <p style="margin:0">The substance is backend: a new MCP tool <code>record_project_path(idea_id, hostname, absolute_path)</code>, a per-user / per-hostname path table, deep-link <code>cwd</code> injection, and bootstrap-prompt wording. The only <strong>pixels</strong> are a light status line on the existing launch control in <code>src/components/board/launch-claude-code-button.tsx</code>. We deliberately add <strong>no dialog, no blocking step, no new screen</strong> — the agent does the work; the UI just sets expectations and reflects what was recorded.</p>
+  </div>
+
+  <h2>1 · What the user actually sees</h2>
+  <p>Four small, additive surfaces. Everything else (the path table, the <code>cwd</code> param, the MCP tool) is invisible.</p>
+  <table>
+    <tr><th>Surface</th><th>Where</th><th>When</th><th>Weight</th></tr>
+    <tr><td>Launch button helper / tooltip</td><td><code>launch-claude-code-button.tsx</code> (board split-button + task icon)</td><td>Always, but copy differs by state</td><td>Tooltip + one helper line</td></tr>
+    <tr><td>"This machine" line in launch dropdown</td><td>Same component, dropdown menu</td><td>Only once a path is recorded for this idea + hostname</td><td>Read-only menu info row + Forget action</td></tr>
+    <tr><td>Confirmation toast after first record</td><td>sonner, fired by realtime / refetch</td><td>Just after the agent calls <code>record_project_path</code></td><td>One success toast (optional, see §6)</td></tr>
+    <tr><td>Bootstrap-prompt wording</td><td>Generated text the agent reads</td><td>Every launch (it's the contract)</td><td>Prose — the real "interface" (§7)</td></tr>
+  </table>
+
+  <h2>2 · Launch button states</h2>
+  <p>The existing control is a ghost emerald split-button (label + chevron) on the board, plus a terminal-icon variant on task cards. We layer <strong>three states</strong> over it for no-repo ideas. Repo-backed ideas are visually unchanged (§5). The button label and primary action never move — Jakob's Law: people already know this button.</p>
+
+  <h3>State A — First launch on this machine (no recorded path)</h3>
+  <div class="mock">
+    <span class="mock-label">Board toolbar · hover state</span>
+    <div class="toolbar">
+      <span class="split">
+        <span class="btn btn-emerald btn-split-l"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> Launch Claude Code</span>
+        <span class="btn btn-emerald btn-split-r"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></span>
+      </span>
+      <span class="badge first dot">First time here</span>
+    </div>
+    <div style="margin-top:14px; max-width:300px;">
+      <div class="tip">
+        <strong>First launch on this machine</strong>
+        Claude Code opens in your home folder, sets up <code>~/projects/vibecodes</code>, and remembers it. Next time it'll open straight in that folder.
+      </div>
+    </div>
+  </div>
+  <ul>
+    <li><strong>Information scent.</strong> The <span class="badge first dot" style="font-size:10px;padding:1px 6px;">First time here</span> chip is a non-colour-only signal: it pairs an amber tint with a literal text label and a dot glyph, so it reads in greyscale and to screen readers. It only renders on desktop where launch is available.</li>
+    <li><strong>Why no dialog.</strong> Hick's Law / progressive disclosure — there is nothing for the user to decide. The agent picks the folder. A modal here would be friction with no payload.</li>
+    <li><strong>Tooltip, not a wall of text.</strong> The reassurance ("opens in home first, then remembers") lives in the tooltip on hover/focus, plus a short helper line in the dropdown (State A dropdown below). The button itself stays one short label.</li>
+  </ul>
+
+  <div class="mock">
+    <span class="mock-label">Launch dropdown · State A (no path yet)</span>
+    <div class="menu">
+      <div class="menu-item hover"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> Open in Claude Code</div>
+      <div class="menu-info" style="color:#d4d4d8;">
+        <span class="wn">●</span> First launch on this machine. Claude Code will create <code>~/projects/vibecodes</code>, then remember the exact path for next time.
+      </div>
+      <div class="menu-sep"></div>
+      <div class="menu-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 8h20"/></svg> Copy launch command</div>
+      <div class="menu-sep"></div>
+      <div class="menu-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14M12 5l7 7-7 7"/></svg> Install guide</div>
+    </div>
+  </div>
+  <p class="note">The <span class="wn">●</span> marker + the word "First launch" carry the meaning; amber is decorative only. The advanced "Set exact folder" item from the prior design is retained but unchanged and omitted here for brevity.</p>
+
+  <h3>State B — Subsequent launch (path recorded for this hostname)</h3>
+  <div class="mock">
+    <span class="mock-label">Board toolbar · path known</span>
+    <div class="toolbar">
+      <span class="split">
+        <span class="btn btn-emerald btn-split-l"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> Launch Claude Code</span>
+        <span class="btn btn-emerald btn-split-r"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg></span>
+      </span>
+    </div>
+    <div style="margin-top:14px; max-width:300px;">
+      <div class="tip">
+        <strong>Opens in your project folder</strong>
+        <code>~/projects/vibecodes</code><br>
+        <span style="color:var(--muted-fg)">recorded on <strong style="color:#d4d4d8">Nicks-MacBook</strong></span>
+      </div>
+    </div>
+  </div>
+  <p>No chip in this state — the happy path should be quiet. The tooltip confirms <em>where</em> it will open and <em>which machine</em> recorded it (the path is per-hostname). The dropdown surfaces the same fact as a read-only row, which is also where the optional Forget action lives.</p>
+
+  <div class="mock">
+    <span class="mock-label">Launch dropdown · State B (path known) — incl. optional "recorded locations" affordance (§4)</span>
+    <div class="menu">
+      <div class="menu-item hover"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg> Open in Claude Code</div>
+      <div class="menu-sep"></div>
+      <div class="menu-label">This machine — Nicks-MacBook</div>
+      <div class="menu-info"><code>~/projects/vibecodes</code><br><span style="color:var(--muted-fg)">recorded 3 Jun · self-verified each launch</span></div>
+      <div class="menu-item danger" title="Clears the recorded folder. Next launch starts fresh in home and re-records.">
+        <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg> Forget this folder
+      </div>
+      <div class="menu-sep"></div>
+      <div class="menu-item"><svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"/><path d="M2 8h20"/></svg> Copy launch command</div>
+    </div>
+  </div>
+
+  <h3>State C — Recorded path, but folder is gone / unverifiable (edge)</h3>
+  <p>VibeCodes cannot test the filesystem from the browser, so this state is <strong>not</strong> detected up front — the deep link still fires with the stored <code>cwd</code>. Two things make it safe:</p>
+  <ul>
+    <li><strong>Self-heal in the prompt (§7).</strong> Every launch re-runs <code>pwd</code> and re-records. If the folder moved or the <code>cwd</code> was stale, the agent lands wherever it can, re-creates / re-locates the project dir, and overwrites the record. The user usually never notices.</li>
+    <li><strong>If the OS rejects the <code>cwd</code></strong> (deep link opens but the directory no longer exists), the agent falls back to the same first-launch recovery: <code>cd ~/projects/&lt;slug&gt;</code> (create if missing) → <code>pwd</code> → re-record. The dropdown's "Forget this folder" is the manual escape hatch.</li>
+  </ul>
+  <div class="mock">
+    <span class="mock-label">Optional toast — only if the agent reports it re-located the folder</span>
+    <div class="toast warn">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 9v4M12 17h.01"/><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+      <div>
+        <div class="toast-title">Project folder was re-located</div>
+        <div class="toast-desc">The old path wasn't found, so Claude Code set up <code>~/projects/vibecodes</code> again and updated the record for Nicks-MacBook.</div>
+      </div>
+    </div>
+  </div>
+  <p class="note">This toast is informational, not an error — the recovery already happened. It only fires if the agent's <code>record_project_path</code> call indicates the path changed from the stored value. No action button needed; recovery is automatic.</p>
+
+  <h2>3 · End-to-end flows</h2>
+
+  <h3>3.1 First launch (no path → home → record)</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-num">1</div><div class="body"><strong>User clicks Launch (no recorded path).</strong><div class="meta-line">Deep link fires with <em>no</em> <code>cwd</code>. Tooltip + chip already told them "first time here". Claude Code opens in <code>~</code> (home).</div></div></div>
+    <div class="arrow">↓</div>
+    <div class="flow-step"><div class="flow-num">2</div><div class="body"><strong>Agent reads bootstrap prompt, gets into the project dir FIRST.</strong><div class="meta-line"><code>cd ~/projects/vibecodes</code> (or <code>mkdir -p</code> then <code>cd</code> if missing). Nothing is written until the working dir is the project dir.</div></div></div>
+    <div class="arrow">↓</div>
+    <div class="flow-step"><div class="flow-num">3</div><div class="body"><strong>Agent runs <code>pwd</code> to get the real absolute path.</strong><div class="meta-line">e.g. <code>/Users/nick/projects/vibecodes</code> — the value the browser could never know.</div></div></div>
+    <div class="arrow">↓</div>
+    <div class="flow-step"><div class="flow-num rec">4</div><div class="body"><strong>Agent calls <code>record_project_path(idea_id, hostname, absolute_path)</code>.</strong><div class="meta-line">VibeCodes stores it keyed by user + idea + hostname. Board UI refreshes (realtime / refetch) → button flips to State B.</div></div></div>
+    <div class="arrow">↓</div>
+    <div class="flow-step"><div class="flow-num rec">5</div><div class="body"><strong>Only now does the agent write project files.</strong><div class="meta-line">CLAUDE.md and everything else land in the project folder — never in home (§7 contract).</div></div></div>
+  </div>
+
+  <h3>3.2 Subsequent launch (cwd set → opens in folder)</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-num">1</div><div class="body"><strong>User clicks Launch.</strong> VibeCodes looks up the stored path for <em>this hostname</em> and injects it as the deep link's <code>cwd</code>.<div class="meta-line">Tooltip shows "Opens in <code>~/projects/vibecodes</code> · recorded on Nicks-MacBook".</div></div></div>
+    <div class="arrow">↓</div>
+    <div class="flow-step"><div class="flow-num">2</div><div class="body"><strong>Claude Code starts <em>inside</em> the project folder.</strong> No home-then-cd hop.</div></div>
+    <div class="arrow">↓</div>
+    <div class="flow-step"><div class="flow-num rec">3</div><div class="body"><strong>Agent still re-<code>pwd</code>s and re-records (self-heal).</strong><div class="meta-line">If the path matches, the record is a no-op confirm. If it differs, the record is updated silently. Belt-and-braces — keeps the stored path honest.</div></div></div>
+  </div>
+
+  <h3>3.3 Self-heal (folder moved or deleted)</h3>
+  <div class="flow">
+    <div class="flow-step"><div class="flow-num">1</div><div class="body"><strong>Stored <code>cwd</code> no longer exists.</strong> Either the OS opens Claude Code in a fallback dir, or the agent detects it isn't where expected.</div></div>
+    <div class="arrow">↓</div>
+    <div class="flow-step"><div class="flow-num">2</div><div class="body"><strong>Agent re-runs the first-launch recovery</strong> — <code>cd ~/projects/&lt;slug&gt;</code> (create if missing) → <code>pwd</code>.</div></div>
+    <div class="arrow">↓</div>
+    <div class="flow-step"><div class="flow-num rec">3</div><div class="body"><strong>Re-records the corrected path</strong> → optional "re-located" toast (State C). User keeps working; no manual fix needed.</div></div>
+  </div>
+
+  <h3>3.4 Multi-machine (per-hostname)</h3>
+  <p>Path is keyed by <code>hostname</code>. The same idea can have a different recorded path per machine — laptop vs desktop, macOS vs Linux. The launch button only ever shows / injects the path for the machine you're currently on. There is no cross-machine path leakage and no "which machine?" picker — the agent reports its own hostname; VibeCodes matches on it.</p>
+  <div class="grid2">
+    <div class="mock"><span class="mock-label">On Nicks-MacBook</span>
+      <div class="tip"><strong>Opens in your project folder</strong><code>~/projects/vibecodes</code><br><span style="color:var(--muted-fg)">recorded on <strong style="color:#d4d4d8">Nicks-MacBook</strong></span></div>
+    </div>
+    <div class="mock"><span class="mock-label">On nick-linux-desktop (first time)</span>
+      <div class="toolbar"><span class="badge first dot">First time here</span></div>
+      <div class="tip" style="margin-top:10px;"><strong>First launch on this machine</strong>This machine has no recorded folder yet — Claude Code will set one up and remember it for nick-linux-desktop.</div>
+    </div>
+  </div>
+
+  <h3>3.5 Repo-backed projects — unchanged</h3>
+  <p>An idea with a <code>github_url</code> already launches in "existing" mode: the deep link's <code>repo</code> param resolves the local clone (or clones it). <strong>No path recording, no first-time chip, no dropdown "This machine" row.</strong> The button looks and behaves exactly as today. <code>record_project_path</code> simply isn't invoked, and the prompt's repo directory block is untouched.</p>
+
+  <h2>4 · Optional "recorded locations" affordance — recommended (light)</h2>
+  <div class="callout a11y">
+    <h4>Recommendation: ship the read-only line + Forget, defer anything bigger</h4>
+    <p style="margin:0">The single <strong>"This machine: <code>~/projects/&lt;slug&gt;</code>"</strong> row in the State B dropdown (shown in §2) is worth shipping: it gives recognition-over-recall ("where will this open?") and a clean recovery path ("Forget this folder") for when someone reorganises their drive. It is one read-only menu row plus one destructive item — near-zero surface area.</p>
+  </div>
+  <ul>
+    <li><strong>Forget = clear the record for this idea + hostname.</strong> Next launch reverts to State A (first-launch flow re-records). Confirmation is a sonner toast with an Undo action (no modal), since the action is cheap and reversible by re-launching.</li>
+    <li><strong>Deferred (explicitly out of scope for this step):</strong> a full multi-machine "manage all recorded locations" table (every hostname for an idea, edit/delete each). It adds a screen for a rare need; revisit only if users actually juggle 3+ machines per idea. Multi-machine <em>functionality</em> works regardless — this is only about a management UI.</li>
+  </ul>
+  <div class="mock">
+    <span class="mock-label">Forget — confirmation toast (no modal)</span>
+    <div class="toast ok">
+      <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+      <div>
+        <div class="toast-title">Forgot the folder for this machine</div>
+        <div class="toast-desc">Next launch will set it up again and re-record.</div>
+        <div class="toast-actions"><span class="btn btn-outline btn-sm">Undo</span></div>
+      </div>
+    </div>
+  </div>
+
+  <h2>5 · State matrix</h2>
+  <table>
+    <tr><th>Condition</th><th>Button chip</th><th>Tooltip</th><th>Deep link <code>cwd</code></th><th>Dropdown extras</th></tr>
+    <tr><td>No-repo · no path (this host)</td><td><span class="badge first dot" style="font-size:10px;padding:1px 6px;">First time here</span></td><td>"First launch — sets up &amp; remembers"</td><td>— (none)</td><td>First-launch info row</td></tr>
+    <tr><td>No-repo · path recorded (this host)</td><td>none</td><td>"Opens in &lt;path&gt; · recorded on &lt;host&gt;"</td><td>stored absolute path</td><td>This-machine row + Forget</td></tr>
+    <tr><td>No-repo · path recorded for <em>another</em> host only</td><td><span class="badge first dot" style="font-size:10px;padding:1px 6px;">First time here</span></td><td>"First launch on this machine"</td><td>— (none)</td><td>First-launch info row</td></tr>
+    <tr><td>No-repo · path stale / folder gone</td><td>none (not pre-detected)</td><td>State B tooltip</td><td>stored path (agent self-heals)</td><td>This-machine row + Forget; "re-located" toast after</td></tr>
+    <tr><td>Repo-backed (github_url)</td><td>none</td><td>"Opens your repo"</td><td>— (<code>repo</code> param)</td><td>unchanged</td></tr>
+    <tr><td>Mobile / no desktop</td><td colspan="4">Launch control is desktop-only (existing behaviour) — disabled menu item explains "Open on desktop to launch Claude Code".</td></tr>
+  </table>
+
+  <h2>6 · States &amp; recovery (the full set)</h2>
+  <p>Every state is explicit — no silent failures, no colour-only signals, no disabled control without an adjacent reason.</p>
+  <table>
+    <tr><th>State</th><th>Handling</th></tr>
+    <tr><td><strong>Loading</strong> — fetching whether a path exists for this host</td><td>Button renders immediately in its default emerald style with <em>no</em> chip and a generic tooltip ("Launch Claude Code"); the chip/path tooltip resolve in when the lookup returns. Never block the primary action on the lookup.</td></tr>
+    <tr><td><strong>Empty</strong> — no path on any machine</td><td>State A (first-launch). This is the expected first experience, framed positively, not as a missing-data error.</td></tr>
+    <tr><td><strong>Partial</strong> — path on another host, not this one</td><td>Treated as State A for the current host; tooltip says "on this machine" so the user isn't confused into thinking it's broken.</td></tr>
+    <tr><td><strong>Success</strong> — record written</td><td>Button flips to State B on next refresh. Optional one-time success toast on the very first record ("Claude Code remembered your project folder") — quiet, no action.</td></tr>
+    <tr><td><strong>Error</strong> — deep link blocked by browser</td><td>Existing fallback retained: sonner error toast with a <strong>Copy command</strong> action (the copy command already includes <code>mkdir -p &amp;&amp; cd</code> for no-repo, so the manual path still records correctly).</td></tr>
+    <tr><td><strong>Error</strong> — <code>record_project_path</code> MCP call fails</td><td>Non-fatal: the launch still worked, the agent is in the right folder. The agent reports it in chat and may retry. UI just stays in State A (no false "recorded"). No browser-side error toast for a backend call the browser didn't make.</td></tr>
+    <tr><td><strong>Edge</strong> — stored path gone</td><td>State C self-heal (§3.3) — automatic recovery + informational toast.</td></tr>
+  </table>
+
+  <h2>7 · Bootstrap-prompt UX contract</h2>
+  <p>For this feature the <strong>prompt is the primary interface</strong> — it's what the agent reads and obeys. It lives in <code>buildBoardBootstrapPrompt</code> / <code>buildTaskBootstrapPrompt</code> via the <code>directoryBlock</code> / <code>newProjectSteps</code> helpers (<code>src/lib/launch-claude-code.ts</code>). The no-repo directory block must instruct the agent, in this exact order:</p>
+  <ol class="ordered">
+    <li><strong>Get into the project dir FIRST.</strong> If <code>~/projects/&lt;slug&gt;</code> exists, <code>cd</code> into it and reuse as-is (don't overwrite). If not, <code>mkdir -p ~/projects/&lt;slug&gt; &amp;&amp; cd</code>. <em>Do this before writing anything.</em></li>
+    <li><strong>Confirm where you are.</strong> Run <code>pwd</code> and capture the absolute path it prints. This is the authoritative path — not a guess from the prompt.</li>
+    <li><strong>Record it.</strong> Call <code>record_project_path</code> with <code>idea_id</code>, the machine <code>hostname</code>, and the <code>pwd</code> result. Do this on <em>every</em> launch (self-heal), not just the first.</li>
+    <li><strong>Now, and only now, write project files.</strong> CLAUDE.md, <code>.vibecodes/</code>, scaffolding — all of it must land in the project folder. Never write project files while the working dir is home.</li>
+  </ol>
+
+  <div class="callout flag">
+    <h4>⭐ The ordering constraint is the whole point</h4>
+    <p style="margin:0">If the agent writes CLAUDE.md <em>before</em> the <code>cd</code>, the file lands in <code>~</code> — exactly the bug this feature exists to prevent. The prompt must make "cd / create → pwd → record → THEN write" feel like one indivisible opening sequence. It's already structured this way (directory block is placed first and protected from length-truncation); we are adding the <code>pwd</code> + <code>record_project_path</code> steps between "cd" and "write files".</p>
+  </div>
+
+  <div class="mock">
+    <span class="mock-label">What the agent does, first launch (illustrative terminal)</span>
+    <div class="term">
+<span class="pr">~ $</span> <span class="cm">mkdir -p ~/projects/vibecodes &amp;&amp; cd ~/projects/vibecodes</span>
+<span class="pr">vibecodes $</span> <span class="cm">pwd</span>
+<span class="out">/Users/nick/projects/vibecodes</span>
+<span class="out"># → record_project_path(</span>
+<span class="out">#     idea_id="62e5…e6dd",</span>
+<span class="out">#     hostname=</span><span class="hl">"Nicks-MacBook"</span><span class="out">,</span>
+<span class="out">#     absolute_path=</span><span class="hl">"/Users/nick/projects/vibecodes"</span><span class="out"> )  ✓ recorded</span>
+<span class="pr">vibecodes $</span> <span class="cm"># only now: write CLAUDE.md, git init, scaffold…</span>
+    </div>
+  </div>
+
+  <h4>Plain-language summary of the contract</h4>
+  <p>"Before you do anything else: get into this idea's folder (create it under <code>~/projects/&lt;slug&gt;</code> if it's not there), run <code>pwd</code> so we know exactly where that is on this machine, tell VibeCodes the path with <code>record_project_path</code>, and only then start creating files — so everything you write lands in the project, not in your home directory."</p>
+
+  <h2>8 · Accessibility &amp; reuse checklist</h2>
+  <ul>
+    <li><span class="ck">✓</span> <strong>No colour-only signals.</strong> "First time here" chip = amber tint + literal text + dot glyph; toasts pair colour with an icon and a text title; dropdown markers use a glyph + word.</li>
+    <li><span class="ck">✓</span> <strong>Contrast.</strong> Body text on <code>--bg</code> uses <code>#d4d4d8</code>/<code>--muted-fg</code> (≥4.6:1); emerald/amber/sky accents are used on text ≥14px or as ≥3:1 UI borders, not as the sole carrier of meaning.</li>
+    <li><span class="ck">✓</span> <strong>Targets ≥ usable size.</strong> Split-button halves are 32px tall (matches existing toolbar density); dropdown items have generous hit areas; mobile menu items already use <code>py-2.5</code>.</li>
+    <li><span class="ck">✓</span> <strong>Visible labels, not placeholder-only.</strong> Tooltip + helper rows are real text; the path is shown, not implied.</li>
+    <li><span class="ck">✓</span> <strong>No content trapped behind hover only.</strong> Tooltip content is reachable on keyboard focus (Radix Tooltip); the same facts are duplicated in the dropdown, which is fully keyboard navigable.</li>
+    <li><span class="ck">✓</span> <strong>No disabled button without a reason.</strong> Mobile shows a disabled menu item <em>with</em> the explanation "Open on desktop…". The primary launch is never disabled while loading — it just lacks the path chip until the lookup resolves.</li>
+    <li><span class="ck">✓</span> <strong>No modal for this.</strong> Everything is inline (tooltip, dropdown, toast). The only existing dialog (advanced "Set exact folder") is untouched and stays opt-in.</li>
+    <li><span class="ck">✓</span> <strong>Reuses design-system components:</strong> <code>Button</code>, <code>DropdownMenu*</code>, Radix <code>Tooltip</code>, <code>sonner</code> toasts, lucide icons (<code>Terminal</code>, <code>ChevronDown</code>, <code>Trash</code>). No new primitives.</li>
+  </ul>
+
+  <h2>9 · Handoff notes for the next steps</h2>
+  <ul>
+    <li><strong>Data the UI needs:</strong> a lookup "does a recorded path exist for (current user, idea_id, hostname)?" returning <code>{ absolute_path, hostname, recorded_at }</code> or null. The browser doesn't know its own hostname reliably, so the button shows the path <em>recorded for whatever host last reported</em>, labelled by that host — and only injects <code>cwd</code> when the agent's most recent host matches what we'd launch on. (Architecture step to confirm the matching rule; UI degrades gracefully to State A when unsure.)</li>
+    <li><strong>Refresh trigger:</strong> the State A→B flip should ride existing board realtime / refetch so it updates without a manual reload after the agent records. A one-time success toast can fire off that same signal.</li>
+    <li><strong>Copy strings to finalise:</strong> chip ("First time here"), tooltips (A/B), dropdown rows, Forget confirm + Undo, "re-located" toast. All drafted above.</li>
+    <li><strong>Unchanged:</strong> repo-backed launch, the advanced folder dialog, the copy-command fallback, the visibility-race detection. This step only adds states on top.</li>
+  </ul>
+
+  <hr class="soft" />
+  <p class="meta">Deliverable for Step 2 (UX Design). Cites Step 1 requirements (<code>docs/launch-claude-code-design.html</code>). Self-contained, inline CSS, dark Zinc theme, no external dependencies.</p>
+
+</div>
+</body>
+</html>

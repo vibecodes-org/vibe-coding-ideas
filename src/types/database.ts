@@ -1082,6 +1082,51 @@ export type Database = {
           }
         ];
       };
+      idea_project_paths: {
+        Row: {
+          id: string;
+          idea_id: string;
+          owner_user_id: string;
+          hostname: string;
+          absolute_path: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          idea_id: string;
+          owner_user_id: string;
+          hostname: string;
+          absolute_path: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          idea_id?: string;
+          owner_user_id?: string;
+          hostname?: string;
+          absolute_path?: string;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "idea_project_paths_idea_id_fkey";
+            columns: ["idea_id"];
+            isOneToOne: false;
+            referencedRelation: "ideas";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "idea_project_paths_owner_user_id_fkey";
+            columns: ["owner_user_id"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       idea_attachments: {
         Row: {
           id: string;

@@ -133,6 +133,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     { data: userBotProfiles },
     { count: workflowTemplateCount },
     { count: autoRuleCount },
+    { data: recordedProjectPaths },
   ] = await Promise.all([
     supabase.from("board_columns").select("*").eq("idea_id", id).order("position", { ascending: true }),
     supabase
@@ -170,6 +171,16 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       .from("workflow_auto_rules")
       .select("*", { head: true, count: "exact" })
       .eq("idea_id", id),
+    // No-repo launch folder: paths the agent recorded for this user + idea, one
+    // per machine. RLS scopes idea_project_paths to the human (owner_user_id),
+    // so this only returns the current user's rows. Drives the launch cwd choice.
+    isTeamMember
+      ? supabase
+          .from("idea_project_paths")
+          .select("absolute_path, hostname")
+          .eq("idea_id", id)
+          .eq("owner_user_id", user.id)
+      : Promise.resolve({ data: null }),
   ]);
 
   const hasWorkflowTemplates = (workflowTemplateCount ?? 0) > 0;
@@ -292,6 +303,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           ideaId={id}
           ideaTitle={idea.title}
           ideaGithubUrl={idea.github_url}
+          recordedProjectPaths={recordedProjectPaths ?? []}
           ideaDescription={idea.description}
           teamMembers={teamMembers}
           boardLabels={(boardLabels ?? []) as BoardLabel[]}

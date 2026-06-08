@@ -12,6 +12,7 @@ import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/co
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import dynamic from "next/dynamic";
 import { getLabelColorConfig } from "@/lib/utils";
+import type { RecordedProjectPath } from "@/lib/launch-claude-code";
 import type { BoardColumnWithTasks, BoardLabel, User, BotProfile } from "@/types";
 
 const ImportDialog = dynamic(() => import("./import-dialog").then((m) => m.ImportDialog), { ssr: false });
@@ -137,6 +138,7 @@ interface BoardToolbarProps {
   ideaId: string;
   ideaTitle: string;
   ideaGithubUrl?: string | null;
+  recordedProjectPaths?: RecordedProjectPath[];
   ideaDescription?: string;
   currentUserId: string;
   canUseAi?: boolean;
@@ -167,6 +169,7 @@ export function BoardToolbar({
   ideaId,
   ideaTitle,
   ideaGithubUrl = null,
+  recordedProjectPaths = [],
   ideaDescription = "",
   currentUserId,
   canUseAi = false,
@@ -315,6 +318,7 @@ export function BoardToolbar({
             ideaId={ideaId}
             ideaTitle={ideaTitle}
             ideaGithubUrl={ideaGithubUrl}
+            recordedProjectPaths={recordedProjectPaths}
           />
           <TooltipProvider>
             <Tooltip>

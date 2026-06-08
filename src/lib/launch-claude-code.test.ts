@@ -26,6 +26,8 @@ import {
   parseRepoFromGithubUrl,
   validateFolderName,
   looksAbsolutePath,
+  isValidAbsolutePath,
+  chooseLaunchCwd,
   composeNewProjectPath,
   buildBoardBootstrapPrompt,
   buildTaskBootstrapPrompt,
@@ -484,5 +486,172 @@ describe("existing-mode directory guidance (repo-first)", () => {
     expect(p).not.toContain("git clone");
     expect(p).not.toContain("mkdir -p");
     expect(p).toContain("task_id: task-9");
+  });
+});
+
+describe("isValidAbsolutePath", () => {
+  it("accepts a POSIX absolute path (expanded pwd)", () => {
+    expect(isValidAbsolutePath("/Users/nick/projects/vibecodes")).toBe(true);
+    expect(isValidAbsolutePath("/")).toBe(true);
+  });
+
+  it("accepts Windows drive and UNC paths", () => {
+    expect(isValidAbsolutePath("C:\\Users\\nick\\x")).toBe(true);
+    expect(isValidAbsolutePath("C:/Users/nick/x")).toBe(true);
+    expect(isValidAbsolutePath("\\\\server\\share\\proj")).toBe(true);
+  });
+
+  it("trims surrounding whitespace before validating", () => {
+    expect(isValidAbsolutePath("  /Users/nick/x  ")).toBe(true);
+  });
+
+  it("rejects empty / whitespace-only", () => {
+    expect(isValidAbsolutePath("")).toBe(false);
+    expect(isValidAbsolutePath("   ")).toBe(false);
+  });
+
+  it("rejects relative paths", () => {
+    expect(isValidAbsolutePath("projects/vibecodes")).toBe(false);
+    expect(isValidAbsolutePath("./x")).toBe(false);
+    expect(isValidAbsolutePath("../x")).toBe(false);
+  });
+
+  it("rejects tilde-home (must be the expanded pwd, never `~`)", () => {
+    expect(isValidAbsolutePath("~")).toBe(false);
+    expect(isValidAbsolutePath("~/projects/vibecodes")).toBe(false);
+  });
+
+  it("rejects unexpanded shell variables", () => {
+    expect(isValidAbsolutePath("$HOME/projects/x")).toBe(false);
+    expect(isValidAbsolutePath("/Users/$USER/x")).toBe(false);
+  });
+
+  // Guards the contract with record_project_path's own non-string defenses.
+  it("rejects non-string input", () => {
+    // @ts-expect-error testing runtime guard for non-string callers
+    expect(isValidAbsolutePath(null)).toBe(false);
+    // @ts-expect-error testing runtime guard for non-string callers
+    expect(isValidAbsolutePath(undefined)).toBe(false);
+  });
+});
+
+describe("chooseLaunchCwd (hostname rule — Design Review option (a))", () => {
+  it("returns undefined for 0 records (first-launch / home flow)", () => {
+    expect(chooseLaunchCwd([])).toBeUndefined();
+    expect(chooseLaunchCwd(null)).toBeUndefined();
+    expect(chooseLaunchCwd(undefined)).toBeUndefined();
+  });
+
+  it("returns the single record's absolute_path for exactly 1 record", () => {
+    expect(
+      chooseLaunchCwd([
+        { absolute_path: "/Users/nick/projects/vibecodes", hostname: "Nicks-MacBook" },
+      ])
+    ).toBe("/Users/nick/projects/vibecodes");
+  });
+
+  it("trims the single record's path", () => {
+    expect(
+      chooseLaunchCwd([{ absolute_path: "  /Users/nick/x  ", hostname: "host" }])
+    ).toBe("/Users/nick/x");
+  });
+
+  it("returns undefined for >1 records (ambiguous across machines — safe fallback)", () => {
+    expect(
+      chooseLaunchCwd([
+        { absolute_path: "/Users/nick/projects/x", hostname: "mac" },
+        { absolute_path: "/home/nick/projects/x", hostname: "linux" },
+      ])
+    ).toBeUndefined();
+  });
+
+  it("ignores invalid rows; a single VALID row still resolves", () => {
+    expect(
+      chooseLaunchCwd([
+        { absolute_path: "~/projects/x", hostname: "bad" },
+        { absolute_path: "/Users/nick/projects/x", hostname: "good" },
+      ])
+    ).toBe("/Users/nick/projects/x");
+  });
+
+  it("returns undefined when the only row is invalid", () => {
+    expect(
+      chooseLaunchCwd([{ absolute_path: "relative/path", hostname: "bad" }])
+    ).toBeUndefined();
+  });
+});
+
+describe("no-repo bootstrap prompt — pwd + record_project_path + cd guard", () => {
+  const base = {
+    appUrl: APP_URL,
+    ideaId: "idea-abc",
+    ideaTitle: "My Idea",
+    mode: "new" as const,
+    newProject: { newProjectPath: "/Users/me/projects/my-idea" },
+  };
+
+  it("instructs pwd, record_project_path with the idea_id, hostname, and self-heal", () => {
+    const p = buildBoardBootstrapPrompt(base);
+    expect(p).toContain("pwd");
+    expect(p).toContain("record_project_path");
+    expect(p).toContain('idea_id "idea-abc"');
+    expect(p).toMatch(/hostname/i);
+    expect(p).toMatch(/every launch/i); // self-heal: re-record each launch
+  });
+
+  it("records only AFTER the vibecodes-remote connector is available (Change #2)", () => {
+    const p = buildBoardBootstrapPrompt(base);
+    // The record instruction is gated on the board tools being available.
+    expect(p).toMatch(/ONCE the vibecodes-remote board tools are available/i);
+  });
+
+  it("includes the defensive cd guard (Change #3): no files if pwd is home", () => {
+    const p = buildBoardBootstrapPrompt(base);
+    expect(p).toMatch(
+      /if `?pwd`? still shows your home directory, do NOT create CLAUDE\.md/i
+    );
+  });
+
+  it("orders the sequence cd → pwd → record → write files", () => {
+    const p = buildBoardBootstrapPrompt(base);
+    const cd = p.indexOf("mkdir -p");
+    const pwd = p.indexOf("Run `pwd`");
+    const record = p.indexOf("record_project_path");
+    const writeGuard = p.indexOf("Only AFTER you are confirmed inside the project folder");
+    expect(cd).toBeGreaterThanOrEqual(0);
+    expect(pwd).toBeGreaterThan(cd);
+    expect(record).toBeGreaterThan(pwd);
+    expect(writeGuard).toBeGreaterThan(record);
+  });
+
+  it("keeps the record/pwd contract in the truncation-protected head for a huge title", () => {
+    const p = buildBoardBootstrapPrompt({ ...base, ideaTitle: "T".repeat(8000) });
+    expect(encodeURIComponent(p).length).toBeLessThanOrEqual(MAX_DEEP_LINK_PROMPT_LENGTH);
+    expect(p).toContain("record_project_path");
+    expect(p).toContain("claude mcp add");
+  });
+
+  it("task builder also emits the pwd + record contract for no-repo", () => {
+    const p = buildTaskBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-abc",
+      taskId: "task-1",
+      taskTitle: "Do thing",
+      mode: "new",
+      newProject: { newProjectPath: "/Users/me/projects/my-idea" },
+    });
+    expect(p).toContain("record_project_path");
+    expect(p).toContain('idea_id "idea-abc"');
+  });
+
+  it("repo-backed (existing) launch does NOT mention record_project_path or pwd contract", () => {
+    const p = buildBoardBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-abc",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: "https://github.com/acme/widget",
+    });
+    expect(p).not.toContain("record_project_path");
   });
 });
