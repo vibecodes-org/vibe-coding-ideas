@@ -46,14 +46,26 @@ describe("buildClaudeDeepLink", () => {
     expect(link).not.toContain("+");
   });
 
-  it("includes cwd and repo when present, URL-encoded", () => {
+  it("includes cwd and normalises a full github URL repo to an owner/name slug", () => {
     const link = buildClaudeDeepLink({
       prompt: "p",
       cwd: "/Users/me/my project",
       repo: "https://github.com/o/n",
     });
     expect(link).toContain("cwd=%2FUsers%2Fme%2Fmy%20project");
-    expect(link).toContain("repo=https%3A%2F%2Fgithub.com%2Fo%2Fn");
+    // The handler wants the slug, NOT the full URL (this was the balla-bot bug).
+    expect(link).toContain("repo=o%2Fn");
+    expect(link).not.toContain("github.com");
+  });
+
+  it("leaves an owner/name slug repo as-is", () => {
+    const link = buildClaudeDeepLink({ prompt: "p", repo: "nicholasmball/balla-bot" });
+    expect(link).toContain("repo=nicholasmball%2Fballa-bot");
+  });
+
+  it("drops a repo value that can't be reduced to a slug (e.g. non-github URL)", () => {
+    const link = buildClaudeDeepLink({ prompt: "p", repo: "https://gitlab.com/o/n/extra" });
+    expect(link).not.toContain("repo=");
   });
 
   it("omits cwd and repo entirely when absent", () => {

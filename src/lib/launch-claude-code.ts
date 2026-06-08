@@ -51,7 +51,15 @@ interface DeepLinkParams {
 export function buildClaudeDeepLink({ prompt, cwd, repo }: DeepLinkParams): string {
   const parts = [`q=${encodeURIComponent(prompt)}`];
   if (cwd) parts.push(`cwd=${encodeURIComponent(cwd)}`);
-  if (repo) parts.push(`repo=${encodeURIComponent(repo)}`);
+  if (repo) {
+    // The handler expects an `owner/name` SLUG, not a full URL. Normalise so a
+    // raw github_url (https://github.com/owner/name) becomes owner/name, and a
+    // value we can't reduce to a slug is dropped rather than sent broken.
+    const slug =
+      parseRepoFromGithubUrl(repo) ??
+      (/^[\w.-]+\/[\w.-]+$/.test(repo.trim()) ? repo.trim() : null);
+    if (slug) parts.push(`repo=${encodeURIComponent(slug)}`);
+  }
   return `claude-cli://open?${parts.join("&")}`;
 }
 
