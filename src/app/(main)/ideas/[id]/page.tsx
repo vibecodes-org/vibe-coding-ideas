@@ -98,7 +98,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
   // Fetch idea with author
   const { data: idea } = await supabase
     .from("ideas")
-    .select("*, author:users!ideas_author_id_fkey(*)")
+    .select("*, author:users!ideas_author_id_fkey(*), project_kit:project_kits!ideas_project_kit_id_fkey(name)")
     .eq("id", id)
     .single();
 
@@ -173,6 +173,10 @@ export default async function IdeaDetailPage({ params }: PageProps) {
   const userCanUseAi = userHasByokKey || userStarterCredits > 0;
   const userBots = (bots ?? []) as BotProfile[];
   const ideaAgents = ideaTeam.ideaAgentDetails;
+  // Applied kit name (bare, matches create-flow) — drives the Enhance "Tailoring
+  // for X" chip. Null when no kit has been applied.
+  const kitName =
+    (idea as unknown as { project_kit: { name: string } | null }).project_kit?.name ?? null;
 
   // Build threaded comments
   const commentMap = new Map<string, CommentWithAuthor>();
@@ -315,6 +319,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
                     hasByokKey={userHasByokKey}
                     starterCredits={userStarterCredits}
                     bots={userBots}
+                    kitName={kitName}
                   />
                 )}
               </div>
@@ -450,6 +455,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
           hasByokKey={userHasByokKey}
           starterCredits={userStarterCredits}
           bots={userBots}
+          kitName={kitName}
         />
       )}
 

@@ -20,6 +20,7 @@ interface EnhanceIdeaButtonProps {
   ideaTitle: string;
   currentDescription: string;
   bots: BotProfile[];
+  kitName?: string | null;
   variant?: "button" | "dropdown";
   disabled?: boolean;
   hasByokKey?: boolean;
@@ -31,6 +32,7 @@ export function EnhanceIdeaButton({
   ideaTitle,
   currentDescription,
   bots,
+  kitName,
   variant = "button",
   disabled = false,
   hasByokKey = false,
@@ -80,6 +82,7 @@ export function EnhanceIdeaButton({
           ideaTitle={ideaTitle}
           currentDescription={currentDescription}
           bots={bots}
+          kitName={kitName}
           onCreditUsed={handleCreditUsed}
         />
       </>
@@ -120,6 +123,7 @@ export function EnhanceIdeaButton({
         ideaTitle={ideaTitle}
         currentDescription={currentDescription}
         bots={bots}
+        kitName={kitName}
         onCreditUsed={handleCreditUsed}
       />
     </>

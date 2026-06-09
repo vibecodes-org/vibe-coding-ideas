@@ -24,6 +24,7 @@ interface IdeaActionCardsProps {
   hasByokKey: boolean;
   starterCredits: number;
   bots: BotProfile[];
+  kitName?: string | null;
 }
 
 export function IdeaActionCards({
@@ -38,6 +39,7 @@ export function IdeaActionCards({
   hasByokKey,
   starterCredits,
   bots,
+  kitName,
 }: IdeaActionCardsProps) {
   const router = useRouter();
   const [enhanceOpen, setEnhanceOpen] = useState(false);
@@ -112,6 +114,7 @@ export function IdeaActionCards({
             ideaTitle={ideaTitle}
             currentDescription={currentDescription}
             bots={bots}
+            kitName={kitName}
             onCreditUsed={handleCreditUsed}
           />
         )}
@@ -221,6 +224,7 @@ export function IdeaActionCards({
           ideaTitle={ideaTitle}
           currentDescription={currentDescription}
           bots={bots}
+          kitName={kitName}
           onCreditUsed={handleCreditUsed}
         />
       )}

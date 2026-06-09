@@ -1,8 +1,9 @@
 "use client";
 
-import { Sparkles, LayoutList, Bot, Workflow, ArrowRight } from "lucide-react";
+import { Sparkles, LayoutList, Bot, Workflow, Package, ArrowRight } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
+import { switchBoardTab } from "@/lib/board-tab-nav";
 
 interface BoardEmptyStateContentProps {
   canUseAi: boolean;
@@ -11,8 +12,10 @@ interface BoardEmptyStateContentProps {
   onAiGenerate: () => void;
   onDismiss: () => void;
   onImport?: () => void;
+  onApplyKit?: () => void;
   hasAgents?: boolean;
   hasWorkflows?: boolean;
+  hasKit?: boolean;
 }
 
 /**
@@ -27,9 +30,16 @@ export function BoardEmptyStateContent({
   onAiGenerate,
   onDismiss,
   onImport,
+  onApplyKit,
   hasAgents = false,
   hasWorkflows = false,
+  hasKit = false,
 }: BoardEmptyStateContentProps) {
+  // AC-1 / AC-6: the "Apply a Kit" tile is a one-step bundle that only makes
+  // sense before any setup exists. Hide it once the idea has any agents, any
+  // workflows, or an applied kit.
+  const showKitTile = !!onApplyKit && !hasAgents && !hasWorkflows && !hasKit;
+
   return (
     <div className="text-center">
       <div className="mx-auto flex h-[72px] w-[72px] items-center justify-center rounded-full border-2 border-dashed border-violet-500/25 bg-violet-500/[0.06]">
@@ -69,8 +79,9 @@ export function BoardEmptyStateContent({
       )}
 
       <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:max-w-sm sm:mx-auto">
-        <Link
-          href="?tab=agents"
+        <button
+          type="button"
+          onClick={() => switchBoardTab("agents")}
           className="group rounded-lg border border-emerald-500/20 bg-emerald-500/[0.05] p-4 text-left transition-all hover:border-emerald-500/35 hover:bg-emerald-500/[0.1]"
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15">
@@ -79,9 +90,10 @@ export function BoardEmptyStateContent({
           <p className="mt-2.5 text-[13px] font-semibold text-emerald-400">{hasAgents ? "Manage Agents" : "Add AI Agents"}</p>
           <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">{hasAgents ? "View and configure your agent team" : "Build your team to automate workflow steps"}</p>
           <ArrowRight className="mt-2 h-3.5 w-3.5 text-emerald-400/40 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-400/70" />
-        </Link>
-        <Link
-          href="?tab=workflows"
+        </button>
+        <button
+          type="button"
+          onClick={() => switchBoardTab("workflows")}
           className="group rounded-lg border border-amber-500/20 bg-amber-500/[0.05] p-4 text-left transition-all hover:border-amber-500/35 hover:bg-amber-500/[0.1]"
         >
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15">
@@ -90,7 +102,22 @@ export function BoardEmptyStateContent({
           <p className="mt-2.5 text-[13px] font-semibold text-amber-400">{hasWorkflows ? "Manage Workflows" : "Set Up Workflows"}</p>
           <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">{hasWorkflows ? "View and configure your workflow templates" : "Define step-by-step processes for tasks"}</p>
           <ArrowRight className="mt-2 h-3.5 w-3.5 text-amber-400/40 transition-transform group-hover:translate-x-0.5 group-hover:text-amber-400/70" />
-        </Link>
+        </button>
+        {showKitTile && (
+          <button
+            type="button"
+            onClick={onApplyKit}
+            aria-label="Apply a Kit — set up agents, workflows, labels and triggers"
+            className="group rounded-lg border border-blue-500/20 bg-blue-500/[0.05] p-4 text-left transition-all hover:border-blue-500/35 hover:bg-blue-500/[0.1] sm:col-span-2"
+          >
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-blue-500/15">
+              <Package className="h-4 w-4 text-blue-400" />
+            </div>
+            <p className="mt-2.5 text-[13px] font-semibold text-blue-400">Apply a Kit</p>
+            <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">Set up agents, workflows, labels &amp; triggers in one step &mdash; no tasks added</p>
+            <ArrowRight className="mt-2 h-3.5 w-3.5 text-blue-400/40 transition-transform group-hover:translate-x-0.5 group-hover:text-blue-400/70" />
+          </button>
+        )}
       </div>
 
       <button

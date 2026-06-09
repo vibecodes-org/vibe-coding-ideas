@@ -16,6 +16,8 @@ interface EnhanceIdeaDialogProps {
   ideaTitle: string;
   currentDescription: string;
   bots: BotProfile[];
+  /** Applied kit name — renders the "Tailoring for X" chip when present. */
+  kitName?: string | null;
   onCreditUsed?: () => void;
 }
 
@@ -29,6 +31,7 @@ export function EnhanceIdeaDialog({
   ideaId,
   currentDescription,
   bots,
+  kitName,
   onCreditUsed,
 }: EnhanceIdeaDialogProps) {
   const router = useRouter();
@@ -39,6 +42,7 @@ export function EnhanceIdeaDialog({
       onOpenChange={onOpenChange}
       bots={bots}
       currentDescription={currentDescription}
+      kitContextLabel={kitName ?? undefined}
       onCreditUsed={onCreditUsed}
       generateQuestions={async ({ prompt, personaPrompt }) => {
         const { questions } = await generateClarifyingQuestions(

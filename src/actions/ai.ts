@@ -259,7 +259,7 @@ export async function generateClarifyingQuestions(
 
   const { data: idea } = await supabase
     .from("ideas")
-    .select("id, title, description, author_id")
+    .select("id, title, description, author_id, project_kit:project_kits!ideas_project_kit_id_fkey(name)")
     .eq("id", ideaId)
     .single();
 
@@ -268,9 +268,14 @@ export async function generateClarifyingQuestions(
     throw new Error("Only the idea author can enhance the description");
   }
 
+  const kitType = (idea as unknown as { project_kit: { name: string } | null }).project_kit?.name;
+  const kitContext = kitType
+    ? `\nThis is a **${kitType}** project — ask questions relevant to ${kitType.toLowerCase()} projects (e.g. architecture, deployment, tooling).`
+    : "";
+
   const systemPrompt = personaPrompt
-    ? `${personaPrompt}\n\nYou are helping to enhance an idea description. Before enhancing, you need to ask 2-4 focused clarifying questions to produce a better result.`
-    : "You are an expert product manager helping to enhance an idea description. Before enhancing, you need to ask 2-4 focused clarifying questions to produce a better result.";
+    ? `${personaPrompt}\n\nYou are helping to enhance an idea description. Before enhancing, you need to ask 2-4 focused clarifying questions to produce a better result.${kitContext}`
+    : `You are an expert product manager helping to enhance an idea description. Before enhancing, you need to ask 2-4 focused clarifying questions to produce a better result.${kitContext}`;
 
   let object: z.infer<typeof ClarifyingQuestionsSchema>;
   let usage: { inputTokens?: number; outputTokens?: number };

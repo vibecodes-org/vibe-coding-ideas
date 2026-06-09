@@ -22,7 +22,8 @@ import {
   horizontalListSortingStrategy,
   arrayMove,
 } from "@dnd-kit/sortable";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useRouter } from "next/navigation";
+import { ApplyKitDialog } from "@/components/kits/apply-kit-dialog";
 import { BotRolesProvider } from "@/components/bot-roles-context";
 import { BoardLaunchProvider } from "./board-launch-context";
 import type { RecordedProjectPath } from "@/lib/launch-claude-code";
@@ -145,6 +146,7 @@ interface KanbanBoardProps {
   coverImageUrls?: Record<string, string>;
   isReadOnly?: boolean;
   hasWorkflowTemplates?: boolean;
+  hasKit?: boolean;
   ideaHealth?: IdeaHealth;
 }
 
@@ -260,6 +262,7 @@ export function KanbanBoard({
   coverImageUrls = {},
   isReadOnly = false,
   hasWorkflowTemplates = false,
+  hasKit = false,
   ideaHealth,
 }: KanbanBoardProps) {
   // Build botRoles map from botProfiles for @mention autocomplete
@@ -331,8 +334,14 @@ export function KanbanBoard({
   // server snapshots for a short window. Prevents the drag-drop bounce-back.
   const trustedTasksRef = useRef(new Map<string, TrustedTaskState>());
 
+  const router = useRouter();
+
   // AI Generate dialog state (lifted so both toolbar and empty state can trigger it)
   const [aiGenerateOpen, setAiGenerateOpen] = useState(false);
+
+  // Apply-a-Kit dialog state (lifted so the empty-state tile and the setup
+  // banner can both open it directly — no ?tab=workflows navigation).
+  const [kitDialogOpen, setKitDialogOpen] = useState(false);
 
   // Wiring state is no longer needed — auto-rules are awaited before
   // navigating to the board. Kept as false for prop compatibility.
@@ -1032,6 +1041,7 @@ export function KanbanBoard({
           health={ideaHealth}
           ideaId={ideaId}
           isReadOnly={isReadOnly}
+          onApplyKit={() => setKitDialogOpen(true)}
           className="mb-3"
         />
       )}
@@ -1125,11 +1135,30 @@ export function KanbanBoard({
               onAiGenerate={() => setAiGenerateOpen(true)}
               onDismiss={() => setEmptyStateDismissed(true)}
               onImport={() => setEmptyStateDismissed(true)}
+              onApplyKit={() => {
+                // Per design Flow A: close the empty-state dialog and open the
+                // kit dialog directly (do NOT re-open the empty state on cancel).
+                setEmptyStateDismissed(true);
+                setKitDialogOpen(true);
+              }}
               hasAgents={ideaAgents.length > 0}
               hasWorkflows={hasWorkflowTemplates}
+              hasKit={hasKit}
             />
           </DialogContent>
         </Dialog>
+      )}
+
+      {/* Apply-a-Kit dialog — opened directly from the empty-state tile and the
+          setup banner (AC-2 / AC-8). On apply, refresh so the kit affordances
+          disappear without a hard reload (AC-7). */}
+      {!isReadOnly && (
+        <ApplyKitDialog
+          open={kitDialogOpen}
+          onOpenChange={setKitDialogOpen}
+          ideaId={ideaId}
+          onApplied={() => router.refresh()}
+        />
       )}
     </div>
     </BoardLaunchProvider>

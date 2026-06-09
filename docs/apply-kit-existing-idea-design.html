@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UX Design — Apply a Kit to an Existing Idea</title>
+<style>
+  /* ── Zinc dark theme tokens (mirrors shadcn New York / Zinc) ───────── */
+  :root{
+    --bg:#09090b;            /* zinc-950 background */
+    --card:#18181b;          /* zinc-900 */
+    --muted:#27272a;         /* zinc-800 */
+    --border:#27272a;
+    --border-soft:#3f3f46;   /* zinc-700 */
+    --fg:#fafafa;            /* zinc-50 */
+    --muted-fg:#a1a1aa;      /* zinc-400 */
+    --faint-fg:#71717a;      /* zinc-500 */
+    --violet:#a78bfa;        /* violet-400 */
+    --violet-600:#7c3aed;
+    --emerald:#34d399;
+    --amber:#fbbf24;
+    --blue:#60a5fa;
+    --rose:#fb7185;
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font:14px/1.55 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+    padding:40px 24px 120px;
+  }
+  .wrap{max-width:1040px;margin:0 auto}
+  h1{font-size:26px;font-weight:700;letter-spacing:-.02em;margin:0 0 6px}
+  h2{font-size:19px;font-weight:650;letter-spacing:-.01em;margin:48px 0 8px;padding-top:18px;border-top:1px solid var(--border)}
+  h3{font-size:15px;font-weight:600;margin:26px 0 8px;color:var(--fg)}
+  h4{font-size:13px;font-weight:600;margin:18px 0 6px;color:var(--muted-fg);text-transform:uppercase;letter-spacing:.05em}
+  p{color:var(--muted-fg);margin:8px 0}
+  strong{color:var(--fg);font-weight:600}
+  code{background:var(--muted);border:1px solid var(--border-soft);border-radius:6px;padding:1px 6px;font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#e4e4e7}
+  a{color:var(--violet)}
+  ul,ol{color:var(--muted-fg);margin:8px 0;padding-left:22px}
+  li{margin:4px 0}
+  .lead{color:var(--muted-fg);font-size:15px;max-width:72ch}
+  .meta{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
+  .tag{font-size:11px;font-weight:600;border-radius:999px;padding:3px 10px;border:1px solid var(--border-soft);color:var(--muted-fg)}
+  .tag.ac{border-color:rgba(167,139,250,.35);color:var(--violet);background:rgba(124,58,237,.10)}
+  .callout{border:1px solid var(--border-soft);border-radius:var(--radius);padding:14px 16px;margin:14px 0;background:var(--card)}
+  .callout.info{border-color:rgba(96,165,250,.3);background:rgba(96,165,250,.06)}
+  .callout.warn{border-color:rgba(251,191,36,.3);background:rgba(251,191,36,.06)}
+  .callout.good{border-color:rgba(52,211,153,.3);background:rgba(52,211,153,.06)}
+  table{border-collapse:collapse;width:100%;margin:12px 0;font-size:13px}
+  th,td{border:1px solid var(--border);padding:8px 11px;text-align:left;vertical-align:top}
+  th{background:var(--muted);font-weight:600;color:var(--fg)}
+  td{color:var(--muted-fg)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:720px){.grid2{grid-template-columns:1fr}}
+
+  /* ── Mockup canvas ─────────────────────────────────────────────── */
+  .canvas{background:var(--bg);border:1px dashed var(--border-soft);border-radius:var(--radius);padding:24px;margin:10px 0;display:flex;justify-content:center}
+  .canvas .label{position:relative}
+  .device-tag{font-size:11px;color:var(--faint-fg);margin-bottom:8px;text-align:center}
+
+  /* shadcn Dialog surface */
+  .dialog{background:var(--card);border:1px solid var(--border);border-radius:var(--radius);box-shadow:0 24px 60px rgba(0,0,0,.6);width:448px;max-width:100%;padding:24px;text-align:center}
+  .dialog.wide{width:700px;text-align:left}
+  .dialog.enhance{width:672px;text-align:left;padding:0;overflow:hidden}
+  .icon-ring{margin:0 auto;width:72px;height:72px;border-radius:999px;border:2px dashed rgba(167,139,250,.25);background:rgba(167,139,250,.06);display:flex;align-items:center;justify-content:center;font-size:28px}
+  .d-title{font-size:18px;font-weight:600;margin:18px 0 0}
+  .d-sub{font-size:13px;color:var(--muted-fg);margin:8px auto 0;max-width:42ch}
+
+  .btn{display:inline-flex;align-items:center;gap:8px;border-radius:8px;font-size:14px;font-weight:600;padding:9px 16px;border:1px solid transparent;cursor:default}
+  .btn.lg{padding:11px 20px;font-size:15px}
+  .btn.sm{padding:6px 12px;font-size:13px}
+  .btn.primary{background:linear-gradient(90deg,#7c3aed,#9333ea);color:#fff}
+  .btn.solid{background:#fafafa;color:#18181b}
+  .btn.outline{background:transparent;border-color:var(--border-soft);color:var(--fg)}
+  .btn.ghost{background:transparent;color:var(--muted-fg)}
+  .btn[disabled]{opacity:.5}
+
+  /* tile grid (matches board-empty-state) */
+  .tiles{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin:22px auto 0;max-width:380px}
+  .tiles.three{grid-template-columns:1fr 1fr}
+  .tile{border-radius:10px;border:1px solid;padding:16px;text-align:left;position:relative}
+  .tile .tic{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:16px}
+  .tile .tt{font-size:13px;font-weight:600;margin:10px 0 0}
+  .tile .td{font-size:11px;color:var(--muted-fg);margin:2px 0 0;line-height:1.35}
+  .tile .arr{margin-top:8px;font-size:13px;opacity:.5}
+  .tile.emerald{border-color:rgba(52,211,153,.2);background:rgba(52,211,153,.05)}
+  .tile.emerald .tic{background:rgba(52,211,153,.15)} .tile.emerald .tt{color:var(--emerald)} .tile.emerald .arr{color:var(--emerald)}
+  .tile.amber{border-color:rgba(251,191,36,.2);background:rgba(251,191,36,.05)}
+  .tile.amber .tic{background:rgba(251,191,36,.15)} .tile.amber .tt{color:var(--amber)} .tile.amber .arr{color:var(--amber)}
+  .tile.blue{border-color:rgba(96,165,250,.2);background:rgba(96,165,250,.05)}
+  .tile.blue .tic{background:rgba(96,165,250,.15)} .tile.blue .tt{color:var(--blue)} .tile.blue .arr{color:var(--blue)}
+  .tile.span2{grid-column:span 2}
+  .skip{display:block;margin:20px auto 0;font-size:12px;color:var(--muted-fg)}
+  .skip.s2{margin-top:6px}
+
+  /* project type selector chips (ApplyKitDialog body) */
+  .ptsel{display:flex;flex-wrap:wrap;gap:8px;margin:4px 0}
+  .pt{border:1px solid var(--border-soft);border-radius:8px;padding:8px 12px;font-size:13px;color:var(--muted-fg);background:var(--bg)}
+  .pt.sel{border-color:var(--violet);color:var(--fg);background:rgba(124,58,237,.10)}
+  .kitprev{border:1px solid var(--border);border-radius:10px;padding:14px;margin-top:12px;background:var(--bg)}
+  .kitprev .row{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+  .pill{font-size:11px;border-radius:999px;padding:3px 9px;border:1px solid var(--border-soft);color:var(--muted-fg)}
+  .pill.ag{border-color:rgba(52,211,153,.3);color:var(--emerald);background:rgba(52,211,153,.08)}
+  .pill.wf{border-color:rgba(251,191,36,.3);color:var(--amber);background:rgba(251,191,36,.08)}
+  .pill.lb{border-color:rgba(96,165,250,.3);color:var(--blue);background:rgba(96,165,250,.08)}
+
+  .note{display:flex;gap:8px;align-items:flex-start;border:1px solid rgba(96,165,250,.25);background:rgba(96,165,250,.06);border-radius:8px;padding:10px 12px;margin-top:12px;font-size:12.5px;color:#bfdbfe}
+  .note .ni{flex:0 0 auto}
+
+  .d-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
+
+  /* enhance dialog internal */
+  .e-head{padding:16px 22px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:8px;font-weight:600}
+  .e-body{padding:22px}
+  .e-field{margin-bottom:16px}
+  .e-lab{font-size:13px;font-weight:500;display:block;margin-bottom:6px}
+  .e-input{background:var(--bg);border:1px solid var(--border-soft);border-radius:8px;padding:10px 12px;font-size:13px;color:var(--muted-fg);min-height:74px}
+  .chip-kit{display:inline-flex;align-items:center;gap:0;border:1px solid rgba(167,139,250,.2);background:rgba(124,58,237,.07);border-radius:8px;padding:8px 12px;font-size:12px;color:var(--violet)}
+  .e-btn{width:100%;background:#7c3aed;color:#fff;border:none;border-radius:8px;padding:11px;font-weight:600;font-size:14px}
+
+  /* toast */
+  .toast{display:inline-flex;align-items:center;gap:10px;background:var(--card);border:1px solid var(--border-soft);border-radius:10px;padding:12px 16px;font-size:13px;color:var(--fg);box-shadow:0 12px 30px rgba(0,0,0,.5);max-width:380px}
+  .toast .dot{width:8px;height:8px;border-radius:999px;flex:0 0 auto}
+  .toast.ok .dot{background:var(--emerald)} .toast.err .dot{background:var(--rose)}
+  .toast.err{border-color:rgba(251,113,133,.4)}
+
+  /* state strip */
+  .states{display:grid;grid-template-columns:repeat(2,1fr);gap:16px;margin-top:8px}
+  @media(max-width:720px){.states{grid-template-columns:1fr}}
+  .state{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px}
+  .state h5{margin:0 0 8px;font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint-fg)}
+  .spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--border-soft);border-top-color:var(--violet);border-radius:999px;animation:spin .8s linear infinite;vertical-align:middle}
+  @keyframes spin{to{transform:rotate(360deg)}}
+
+  /* flow diagram */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin:10px 0}
+  .step{background:var(--card);border:1px solid var(--border-soft);border-radius:8px;padding:8px 12px;font-size:12.5px;color:var(--fg)}
+  .step.start{border-color:rgba(96,165,250,.4)} .step.end{border-color:rgba(52,211,153,.4)} .step.err{border-color:rgba(251,113,133,.4)}
+  .arrow{color:var(--faint-fg)}
+
+  /* 375 frame */
+  .phone{width:375px;max-width:100%;border:8px solid #18181b;border-radius:28px;background:var(--bg);overflow:hidden}
+  .phone .bar{height:24px;background:#000;border-radius:0}
+  .phone-inner{padding:16px}
+  .drawer{background:var(--card);border-top:1px solid var(--border-soft);border-radius:16px 16px 0 0;padding:18px;margin-top:60px}
+  .grabber{width:42px;height:4px;border-radius:999px;background:var(--border-soft);margin:0 auto 14px}
+
+  .kbd{font-family:ui-monospace,monospace;font-size:11px;background:var(--muted);border:1px solid var(--border-soft);border-bottom-width:2px;border-radius:5px;padding:1px 6px;color:#e4e4e7}
+  .legend{font-size:11px;color:var(--faint-fg);text-align:center;margin-top:6px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Apply a Kit to an Existing Idea</h1>
+  <p class="lead">UX design for surfacing kit application on boards that have tasks but no agents / workflows / kit yet. Author: <strong>Compass (UX)</strong>. Builds directly on the Requirements step (ProdOwner). Kit application already works via <code>ApplyKitDialog</code>; this step is about <strong>discoverability, dead-link fixes, idempotency, and the post-kit Enhance chip</strong>.</p>
+  <div class="meta">
+    <span class="tag ac">AC-1 tile</span><span class="tag ac">AC-2 direct dialog</span>
+    <span class="tag ac">AC-4 no tasks note</span><span class="tag ac">AC-6 idempotency</span>
+    <span class="tag ac">AC-8/9 dead-link fix</span><span class="tag ac">AC-12 enhance chip</span>
+  </div>
+
+  <div class="callout info">
+    <strong>Ground truth carried from Requirements.</strong> Kit application is already wired (<code>ApplyKitDialog</code> seeds agents + labels + workflows + triggers, <strong>zero tasks</strong>; persists <code>ideas.project_kit_id</code>; no migration). The only confirmed defect is dead <code>&lt;Link href="?tab=workflows"&gt;</code> navigation in three places — Next <code>&lt;Link&gt;</code>/pushState does not fire <code>popstate</code>, which <code>board-page-tabs.tsx</code> listens for. The working pattern is <code>pushState + dispatchEvent(new PopStateEvent("popstate"))</code> (see <code>workflows-tab.tsx:1231-1232</code>). This design avoids that fragility entirely by opening the dialog directly.
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <h2>1. User flows</h2>
+
+  <h3>Flow A — Apply a kit from the empty-state "Get started with AI" dialog</h3>
+  <div class="flow">
+    <span class="step start">Open board (tasks=0, agents=0, workflows=0, kit=null)</span>
+    <span class="arrow">&rarr;</span>
+    <span class="step">"Get started with AI" dialog auto-shows</span>
+    <span class="arrow">&rarr;</span>
+    <span class="step">Click <strong>Apply a Kit</strong> tile (AC-1)</span>
+    <span class="arrow">&rarr;</span>
+    <span class="step">Empty-state dialog closes; <strong>ApplyKitDialog opens directly</strong> (AC-2)</span>
+    <span class="arrow">&rarr;</span>
+    <span class="step">Select project type &rarr; preview &rarr; Apply</span>
+    <span class="arrow">&rarr;</span>
+    <span class="step end">Success toast + board refreshes; tile no longer eligible (AC-6)</span>
+  </div>
+  <p><strong>Back-nav:</strong> ApplyKitDialog <em>Cancel</em> / <kbd class="kbd">Esc</kbd> / overlay-click returns the user to the board (NOT back to the empty-state dialog — re-opening it would be a loop trap). The empty-state dialog is already dismissed at that point; if the board is still empty of agents/workflows, the <strong>setup banner</strong> (Flow B) becomes the persistent re-entry point. This honours recognition-over-recall: the kit affordance is never lost.</p>
+
+  <h3>Flow B — The fixed banner "Apply a Kit" button</h3>
+  <div class="flow">
+    <span class="step start">Board has tasks but ≥2 gaps and no kit (<code>showKitShortcut</code> true)</span>
+    <span class="arrow">&rarr;</span>
+    <span class="step">Blue setup banner: "Apply a project kit…"</span>
+    <span class="arrow">&rarr;</span>
+    <span class="step">Click <strong>Apply a Kit</strong> button</span>
+    <span class="arrow">&rarr;</span>
+    <span class="step end">ApplyKitDialog opens directly (no tab switch) (AC-8/9)</span>
+  </div>
+  <p>Today this button is a dead <code>&lt;Link href="?tab=workflows"&gt;</code> (<code>setup-completeness-banner.tsx:208</code>) — it changes the URL but the board tab does not switch, leaving the user stranded. Same dead pattern in the empty-state tiles (<code>board-empty-state.tsx:73,84</code>) and <code>workflows-tab.tsx:980</code>. <strong>See §6 for the recommendation.</strong></p>
+
+  <h3>Flow C — Enhance-with-AI chip appears after a kit is applied (AC-12)</h3>
+  <div class="flow">
+    <span class="step start">Idea has <code>project_kit_id</code> set</span>
+    <span class="arrow">&rarr;</span>
+    <span class="step">Open <strong>Enhance with AI</strong> on the idea</span>
+    <span class="arrow">&rarr;</span>
+    <span class="step end">Configure phase shows violet "Tailoring for <em>X</em>" chip</span>
+  </div>
+  <p>The shared <code>EnhanceDialogShell</code> already renders the chip when <code>kitContextLabel</code> is passed (<code>enhance-dialog-shell.tsx:454-458</code>). The create-flow passes it; the existing-idea wrapper <code>enhance-idea-dialog.tsx</code> does not. The fix is purely passing the resolved kit name down — <strong>no new component</strong>. The chip is informational only (no extra clicks, no new state machine).</p>
+
+  <h4>Error recovery (all flows)</h4>
+  <ul>
+    <li><strong>Kits fail to load</strong> → existing behaviour: <code>toast.error("Failed to load project kits")</code> and the body shows the empty selector. We add a visible inline retry (see §3 error state) so the user is not stuck on a silent empty list.</li>
+    <li><strong>Apply fails</strong> → existing <code>toast.error</code>; dialog stays open, selection preserved, <em>Apply</em> button re-enabled so the user can immediately retry. No navigation occurs, so no lost context.</li>
+    <li><strong>Enhance fails</strong> → unchanged shell behaviour: toast + revert to configure phase. The kit chip stays visible (it is config metadata, not result state).</li>
+  </ul>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <h2>2. Mockup — empty-state dialog with the new "Apply a Kit" tile (AC-1)</h2>
+  <p>Third tile matches the exact existing tile pattern (icon chip, colour-coded border/bg, title, 11px description, arrow). I use the <strong>blue</strong> accent (reusing the banner's kit/blue variant from <code>setup-completeness-banner.tsx</code>) so the kit action reads as the "do-everything-at-once" option, distinct from the single-purpose emerald/amber tiles. On a 2-column grid the kit tile spans both columns as a full-width "bundle" row — establishing visual hierarchy (Gestalt: it groups the two above it).</p>
+
+  <div class="canvas">
+    <div class="label">
+      <div class="device-tag">Desktop — Dialog sm:max-w-md (448px), dark Zinc</div>
+      <div class="dialog">
+        <div class="icon-ring">&#10024;</div>
+        <div class="d-title">Get started with AI</div>
+        <div class="d-sub">Describe your idea and let AI generate a full task board for you &mdash; columns, tasks, and labels, all in one click.</div>
+        <div style="margin-top:22px"><span class="btn primary lg">&#10024;&nbsp; AI Generate Tasks</span></div>
+        <div style="font-size:11px;color:var(--muted-fg);margin-top:8px">3 free credits available</div>
+
+        <div class="tiles">
+          <div class="tile emerald"><div class="tic">&#129302;</div><div class="tt">Add AI Agents</div><div class="td">Build your team to automate workflow steps</div><div class="arr">&rarr;</div></div>
+          <div class="tile amber"><div class="tic">&#9889;</div><div class="tt">Set Up Workflows</div><div class="td">Define step-by-step processes for tasks</div><div class="arr">&rarr;</div></div>
+          <div class="tile blue span2"><div class="tic">&#128230;</div><div class="tt">Apply a Kit</div><div class="td">Set up agents, workflows, labels &amp; triggers in one step &mdash; no tasks added</div><div class="arr">&rarr;</div></div>
+        </div>
+
+        <span class="skip">Skip &mdash; I'll add tasks manually</span>
+        <span class="skip s2">Or import tasks from another tool (CSV, JSON)</span>
+      </div>
+    </div>
+  </div>
+  <p class="legend">The kit tile uses an <code>onClick</code> handler (<code>onApplyKit</code>), not a <code>&lt;Link&gt;</code> — see §6. AC-4 "no tasks added" is teased in the tile description and stated explicitly in the dialog (§3).</p>
+
+  <h3>Realistic-data variants</h3>
+  <div class="states">
+    <div class="state">
+      <h5>Long kit name in selector</h5>
+      <div class="ptsel">
+        <span class="pt">Web App</span>
+        <span class="pt sel">Mobile-First Progressive Web Application</span>
+        <span class="pt">API</span>
+      </div>
+      <p style="font-size:12px;margin-top:8px">Chips wrap (flex-wrap, existing <code>ProjectTypeSelector compact</code>); long names never truncate the action.</p>
+    </div>
+    <div class="state">
+      <h5>Many kits (8+)</h5>
+      <div class="ptsel">
+        <span class="pt">Web</span><span class="pt sel">SaaS</span><span class="pt">API</span><span class="pt">Mobile</span><span class="pt">CLI</span><span class="pt">Data/ML</span><span class="pt">Game</span><span class="pt">Library</span>
+      </div>
+      <p style="font-size:12px;margin-top:8px">Selector wraps to multiple rows inside the 700px dialog; body scrolls (mobile drawer: <code>max-h-[60vh] overflow-y-auto</code>, existing).</p>
+    </div>
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <h2>3. Mockup — ApplyKitDialog with the "no starter tasks added" note (AC-4)</h2>
+  <p>Reuses the existing <code>ApplyKitDialog</code> verbatim (title <code>&#128230; Apply a Project Kit</code>, <code>ProjectTypeSelector</code>, <code>KitPreview</code>, Cancel / Apply footer). We add <strong>one informational note</strong> above the footer making AC-4 explicit. It is a static text note (info-blue, not colour-only — has icon + text), placed where the user looks right before committing (Fitts: near the Apply button).</p>
+
+  <div class="canvas">
+    <div class="label">
+      <div class="device-tag">Desktop — Dialog max-w-[700px]</div>
+      <div class="dialog wide">
+        <div style="display:flex;align-items:center;gap:8px;font-weight:600;font-size:16px">&#128230; Apply a Project Kit</div>
+        <div class="d-sub" style="margin:6px 0 0 0;text-align:left">Choose a project type to set up agents, workflows, labels, and workflow triggers for this idea.</div>
+
+        <div style="margin-top:16px">
+          <div class="e-lab" style="color:var(--muted-fg)">Project type</div>
+          <div class="ptsel">
+            <span class="pt sel">SaaS Web App</span><span class="pt">API Service</span><span class="pt">Mobile App</span><span class="pt">Data / ML</span>
+          </div>
+
+          <div class="kitprev">
+            <div style="font-weight:600;font-size:13px">SaaS Web App kit</div>
+            <div class="row">
+              <span class="pill ag">&#129302; 5 agents</span>
+              <span class="pill wf">&#9889; 3 workflows</span>
+              <span class="pill lb">&#127991; 4 labels</span>
+              <span class="pill">&#128279; 2 triggers</span>
+            </div>
+          </div>
+
+          <div class="note">
+            <span class="ni">&#8505;&#65039;</span>
+            <span><strong>No tasks are added.</strong> This kit sets up your agents, workflows, labels and triggers only &mdash; your existing board tasks stay exactly as they are.</span>
+          </div>
+        </div>
+
+        <div class="d-foot">
+          <span class="btn outline">Cancel</span>
+          <span class="btn solid">Apply SaaS Web App Kit</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>All states for ApplyKitDialog</h3>
+  <div class="states">
+    <div class="state">
+      <h5>Loading — kits fetching</h5>
+      <div style="text-align:center;padding:24px 0"><span class="spinner"></span></div>
+      <p style="font-size:12px">Existing centred spinner (<code>Loader2</code>). Footer Apply is disabled (no selection). Add <code>aria-busy="true"</code> on the body + visually-hidden "Loading project kits".</p>
+    </div>
+    <div class="state">
+      <h5>Loading — applying</h5>
+      <div style="margin-top:6px"><span class="btn solid"><span class="spinner"></span>&nbsp; Applying SaaS Web App kit…</span></div>
+      <p style="font-size:12px;margin-top:10px">Existing in-button spinner + label. Cancel disabled (<code>disabled={applying}</code>). Overlay close suppressed while applying.</p>
+    </div>
+    <div class="state">
+      <h5>Empty — no kits available</h5>
+      <p style="font-size:12px;color:var(--muted-fg)">No selector chips to show.</p>
+      <div style="border:1px dashed var(--border-soft);border-radius:8px;padding:14px;text-align:center;color:var(--muted-fg);font-size:12.5px;margin-top:6px">No project kits are available yet.<br/>You can still set up agents and workflows manually.</div>
+      <p style="font-size:12px;margin-top:8px"><strong>New:</strong> today an empty list renders blank. This explicit empty state prevents a dead-end (recognition over recall).</p>
+    </div>
+    <div class="state">
+      <h5>Error — load / apply failed</h5>
+      <div class="note" style="border-color:rgba(251,113,133,.35);background:rgba(251,113,133,.07);color:#fecdd3">
+        <span class="ni">&#9888;&#65039;</span>
+        <span>Couldn't load project kits. <a href="#" style="color:#fda4af;text-decoration:underline">Retry</a></span>
+      </div>
+      <div style="margin-top:10px"><span class="toast err"><span class="dot"></span>Failed to apply kit. Try again, or set up agents &amp; workflows from the Workflows tab.</span></div>
+      <p style="font-size:12px;margin-top:8px">Apply error keeps the dialog open with selection intact (Apply re-enabled). Load error shows an inline retry, not just a toast.</p>
+    </div>
+  </div>
+
+  <h3>Success state</h3>
+  <div class="callout good">
+    <div style="margin-bottom:10px"><span class="toast ok"><span class="dot"></span>SaaS Web App kit applied &mdash; 5 agents, 4 labels, 3 workflows, 2 triggers</span></div>
+    Dialog closes &rarr; <code>onApplied</code> fires <code>fetchData()</code> / board refresh &rarr; banner + empty-state kit affordance disappear because <code>project_kit_id</code> is now set and agents/workflows exist (AC-6). The success toast enumerates exactly what was created (already implemented in <code>handleApply</code>) — confirming, per Jakob's Law, the same toast shape as the create-flow.
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <h2>4. Mockup — Enhance dialog with the violet kit chip (AC-12)</h2>
+  <p>Configure phase of <code>EnhanceDialogShell</code> with <code>kitContextLabel="SaaS Web App"</code> passed through the existing-idea wrapper. The chip is the existing markup at <code>enhance-dialog-shell.tsx:454-458</code> — violet border/bg, "Tailoring for <strong>X</strong> project type". No layout change; it sits between the prompt and the clarifying-questions checkbox.</p>
+
+  <div class="canvas">
+    <div class="label">
+      <div class="device-tag">Desktop — Enhance dialog, configure phase (sm:max-w-2xl)</div>
+      <div class="dialog enhance">
+        <div class="e-head">&#10024; Enhance with AI</div>
+        <div class="e-body">
+          <div class="e-field"><span class="e-lab">AI Persona</span><div class="e-input" style="min-height:auto;padding:10px 12px;color:var(--muted-fg)">Default (Product Manager) &nbsp;&#9662;</div></div>
+          <div class="e-field"><span class="e-lab">Prompt</span><div class="e-input">Improve this idea description. Add more detail, user stories, technical scope…</div></div>
+          <div class="chip-kit" style="margin-bottom:16px">Tailoring for <strong>&nbsp;SaaS Web App&nbsp;</strong> project type</div>
+          <div class="e-field" style="display:flex;gap:8px;align-items:center"><span style="width:16px;height:16px;border:1px solid var(--border-soft);border-radius:4px;display:inline-block;background:var(--violet)"></span><span style="font-size:13px">Ask clarifying questions first (recommended)</span></div>
+          <div class="e-field"><span class="e-lab" style="color:var(--muted-fg)">Current Description</span><div class="e-input" style="background:var(--muted);min-height:60px">A tool for tracking team standups…</div></div>
+          <div class="e-btn">&#128172;&nbsp; Next</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="legend">Chip only renders when the idea has an applied kit. If <code>project_kit_id</code> is null, the dialog is identical to today (no chip). Long kit names: chip is inline-block and wraps with the text — no truncation.</p>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <h2>5. Mobile — 375px layouts</h2>
+  <div class="grid2">
+    <div>
+      <div class="device-tag">375px — empty-state dialog (tiles stack to 1 col)</div>
+      <div class="phone">
+        <div class="bar"></div>
+        <div class="phone-inner" style="text-align:center">
+          <div class="icon-ring" style="width:60px;height:60px;font-size:24px">&#10024;</div>
+          <div class="d-title" style="font-size:16px">Get started with AI</div>
+          <div class="d-sub" style="font-size:12px">Describe your idea and let AI generate a full task board for you.</div>
+          <div style="margin-top:16px"><span class="btn primary" style="width:100%;justify-content:center">&#10024; AI Generate Tasks</span></div>
+          <div class="tiles" style="grid-template-columns:1fr;max-width:100%;margin-top:16px">
+            <div class="tile emerald"><div class="tic">&#129302;</div><div class="tt">Add AI Agents</div><div class="td">Automate workflow steps</div><div class="arr">&rarr;</div></div>
+            <div class="tile amber"><div class="tic">&#9889;</div><div class="tt">Set Up Workflows</div><div class="td">Step-by-step processes</div><div class="arr">&rarr;</div></div>
+            <div class="tile blue"><div class="tic">&#128230;</div><div class="tt">Apply a Kit</div><div class="td">Agents, workflows, labels &amp; triggers &mdash; no tasks added</div><div class="arr">&rarr;</div></div>
+          </div>
+          <span class="skip" style="font-size:11px">Skip &mdash; I'll add tasks manually</span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="device-tag">375px — ApplyKitDialog opens as a Drawer (vaul)</div>
+      <div class="phone">
+        <div class="bar"></div>
+        <div class="phone-inner">
+          <div class="drawer">
+            <div class="grabber"></div>
+            <div style="font-weight:600;font-size:15px">&#128230; Apply a Project Kit</div>
+            <div style="font-size:12px;color:var(--muted-fg);margin-top:4px">Choose a project type to set up agents, workflows, labels, and triggers.</div>
+            <div class="ptsel" style="margin-top:12px"><span class="pt sel">SaaS</span><span class="pt">API</span><span class="pt">Mobile</span><span class="pt">Data</span></div>
+            <div class="note" style="margin-top:10px"><span class="ni">&#8505;&#65039;</span><span><strong>No tasks are added.</strong> Your board tasks stay as they are.</span></div>
+            <div style="display:flex;gap:8px;margin-top:16px"><span class="btn outline" style="flex:1;justify-content:center">Cancel</span><span class="btn solid" style="flex:1;justify-content:center">Apply</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="legend">Mobile already uses the <code>Drawer</code> branch in <code>ApplyKitDialog</code> (<code>useMediaQuery("(max-width: 767px)")</code>). The note + empty/error states apply equally inside the drawer. Tiles are full-tap-target rows (Fitts on touch).</p>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <h2>6. Dead-link fix — UX recommendation (AC-8 / AC-9)</h2>
+  <div class="callout good">
+    <strong>Recommendation: open ApplyKitDialog directly via an <code>onClick</code> handler. Do NOT navigate to <code>?tab=workflows</code>.</strong>
+  </div>
+  <table>
+    <tr><th>Criterion</th><th>Direct dialog (recommended)</th><th>Switch to Workflows tab</th></tr>
+    <tr><td><strong>Information scent</strong></td><td>Strong — the label "Apply a Kit" maps 1:1 to the kit dialog. The user gets exactly what the label promised.</td><td>Weak — user lands on a tab and must <em>hunt</em> for the kit affordance among templates/agents. Scent is lost at the tab boundary.</td></tr>
+    <tr><td><strong>Fitts's Law</strong></td><td>1 click → goal. Target is large and immediate.</td><td>1 click → tab → locate "+" / kit button → another click. More distance, more targets.</td></tr>
+    <tr><td><strong>Reliability</strong></td><td>No URL state involved. Cannot regress.</td><td>Relies on <code>pushState + dispatchEvent(PopStateEvent)</code>; the current bug exists precisely because a plain <code>&lt;Link&gt;</code> omits the event. Fragile.</td></tr>
+    <tr><td><strong>Context</strong></td><td>User stays on the board they were reading; success refreshes in place.</td><td>Yanks the user away from their tasks; back-nav ambiguity.</td></tr>
+  </table>
+  <p><strong>Concrete changes (engineering will implement; listed for design completeness):</strong></p>
+  <ul>
+    <li><code>setup-completeness-banner.tsx</code> — replace the dead <code>&lt;Link href="?tab=workflows"&gt;</code> wrapping "Apply a Kit" (line 208) with a <code>&lt;Button onClick={onApplyKit}&gt;</code>; the banner accepts a new <code>onApplyKit</code> callback that the board page wires to <code>setKitDialogOpen(true)</code> (the dialog already lives in the board tree).</li>
+    <li><code>board-empty-state.tsx</code> — the new kit tile (and ideally the agents/workflows tiles) become <code>&lt;button onClick&gt;</code>. The kit tile calls <code>onApplyKit</code>; agents/workflows tiles, if kept as tab links, must use the working <code>pushState + dispatchEvent(new PopStateEvent("popstate"))</code> pattern instead of <code>&lt;Link&gt;</code>.</li>
+    <li><code>workflows-tab.tsx:980</code> — same dead-link pattern; convert to the working pushState+PopStateEvent pattern already used at lines 1231-1232.</li>
+  </ul>
+  <p>For tab-destination tiles that we keep as navigation (agents / workflows), the <strong>nudge link in the expanded banner checklist</strong> (<code>CHECKLIST_ACTION_TEXT</code>, "Workflows tab →") must also use the working pattern, not <code>&lt;Link href={gap.action.href}&gt;</code> — that is the same dead pattern and is part of AC-8/9.</p>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <h2>7. Idempotency &amp; visibility rules (AC-6)</h2>
+  <p>The kit affordance must vanish once setup exists. Signals, in priority order:</p>
+  <table>
+    <tr><th>Signal</th><th>Source</th><th>Effect on kit tile / banner</th></tr>
+    <tr><td><code>ideas.project_kit_id != null</code></td><td>idea row → <code>hasKit</code> in <code>idea-health.ts</code></td><td>Hide. A kit was already applied. (<code>showKitShortcut = !hasKit && …</code>, line 169.)</td></tr>
+    <tr><td>≥1 idea agent</td><td><code>ideaAgents.length &gt; 0</code> (kanban) / <code>allocatedAgentCount</code> (health)</td><td>Hide kit tile.</td></tr>
+    <tr><td>≥1 workflow template</td><td><code>hasWorkflowTemplates</code> (kanban) / <code>workflowTemplateCount</code></td><td>Hide kit tile.</td></tr>
+  </table>
+  <div class="callout">
+    <strong>Tile visibility (AC-1, AC-6):</strong> show the "Apply a Kit" tile only when <code>!hasAgents &amp;&amp; !hasWorkflows &amp;&amp; !hasKit</code>. The empty-state dialog already receives <code>hasAgents</code> / <code>hasWorkflows</code> (<code>kanban-board.tsx:1128-1129</code>); it needs one new prop <code>hasKit</code> (derived from <code>ideas.project_kit_id</code>). When any becomes true the tile is removed and the grid collapses cleanly (2 tiles → row of 2; or the dialog may not auto-open at all if the board already has setup).
+  </div>
+  <div class="callout warn">
+    <strong>Edge case — agents/workflows exist but no kit.</strong> Per AC-6 the kit tile hides if agents OR workflows exist. The banner's <code>showKitShortcut</code> uses <code>missing.length &gt;= 2</code>, so a board with agents-but-no-workflows (1 gap) won't show the kit banner anyway — consistent. No conflict, but worth noting the empty-state tile rule (any one signal hides) is intentionally <em>stricter</em> than the banner's gap-count rule. Both correctly suppress once a kit is applied.
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <h2>8. Exact microcopy</h2>
+  <table>
+    <tr><th>Element</th><th>Copy</th></tr>
+    <tr><td>Tile title</td><td>Apply a Kit</td></tr>
+    <tr><td>Tile description</td><td>Set up agents, workflows, labels &amp; triggers in one step &mdash; no tasks added</td></tr>
+    <tr><td>ApplyKitDialog title</td><td>📦 Apply a Project Kit <em>(unchanged)</em></td></tr>
+    <tr><td>ApplyKitDialog description</td><td>Choose a project type to set up agents, workflows, labels, and workflow triggers for this idea. <em>(unchanged)</em></td></tr>
+    <tr><td><strong>AC-4 note</strong></td><td><strong>No tasks are added.</strong> This kit sets up your agents, workflows, labels and triggers only &mdash; your existing board tasks stay exactly as they are.</td></tr>
+    <tr><td>Empty (no kits)</td><td>No project kits are available yet. You can still set up agents and workflows manually.</td></tr>
+    <tr><td>Apply button (idle)</td><td>Apply {KitName} Kit <em>(unchanged)</em></td></tr>
+    <tr><td>Apply button (busy)</td><td>Applying {KitName} kit… <em>(unchanged)</em></td></tr>
+    <tr><td>Success toast</td><td>{KitName} kit applied &mdash; 5 agents, 4 labels, 3 workflows, 2 triggers <em>(unchanged, dynamic)</em></td></tr>
+    <tr><td>Apply error toast</td><td>Failed to apply kit. Try again, or set up agents &amp; workflows from the Workflows tab. <em>(refined from current wording, which assumed the idea was just created)</em></td></tr>
+    <tr><td>Load error (inline)</td><td>Couldn't load project kits. <u>Retry</u></td></tr>
+    <tr><td>Banner button (AC-8/9)</td><td>Apply a Kit <em>(unchanged label; behaviour fixed)</em></td></tr>
+    <tr><td>Enhance kit chip (AC-12)</td><td>Tailoring for <strong>{KitName}</strong> project type <em>(unchanged shell markup)</em></td></tr>
+  </table>
+  <div class="callout warn">
+    <strong>Copy correction.</strong> The current apply-error toast reads "Your idea was created — you can apply a kit from the Workflows tab." That sentence assumes the create-flow. For the existing-idea flow it is misleading (the idea already existed). Use the existing-idea wording above. Engineering may branch the message by call-site or genericise it as shown.
+  </div>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <h2>9. Accessibility (WCAG 2.1 AA)</h2>
+  <ul>
+    <li><strong>Tile as control.</strong> Convert the kit tile from a coloured <code>&lt;div&gt;</code>/link to a real <code>&lt;button&gt;</code> with an accessible name "Apply a Kit — set up agents, workflows, labels and triggers". Keyboard-focusable, <kbd class="kbd">Enter</kbd>/<kbd class="kbd">Space</kbd> activate.</li>
+    <li><strong>No colour-only meaning.</strong> Every tile and pill pairs colour with an icon + text label. The AC-4 note and the load-error both use an icon (ℹ️ / ⚠️) plus text, never colour alone.</li>
+    <li><strong>Contrast.</strong> Blue tile title <code>#60a5fa</code> on <code>rgba(96,165,250,.05)</code> over <code>#09090b</code> ≈ 6.3:1 (passes AA normal text). The 11px muted description uses <code>var(--muted-fg) #a1a1aa</code> ≈ 6.9:1. Violet chip text <code>#a78bfa</code> on its tinted bg ≈ 5.8:1. All meet 4.5:1; UI borders meet 3:1.</li>
+    <li><strong>Focus management.</strong> On "Apply a Kit" click: close empty-state dialog, then move focus into ApplyKitDialog (Radix Dialog auto-focuses the first focusable — the project-type selector). On ApplyKitDialog close, return focus to the board / the control that opened it (Radix restores trigger focus when a trigger is used; for the programmatic open from the empty-state tile, set focus back to the board region or the setup banner button).</li>
+    <li><strong>Live regions.</strong> Loading body gets <code>aria-busy="true"</code> + visually-hidden "Loading project kits". Sonner toasts already announce via <code>role="status"</code>/<code>alert</code>.</li>
+    <li><strong>Visible labels.</strong> Project-type selector and the prompt use real labels (not placeholder-only). The kit chip is descriptive text, not a tooltip.</li>
+    <li><strong>No hover-only actions.</strong> Tile arrow/hover lift is decorative; activation works on tap/keyboard. Mobile (no hover) reaches every action.</li>
+    <li><strong>Dialog semantics.</strong> Reuse Radix <code>Dialog</code>/<code>Drawer</code> (focus trap, <kbd class="kbd">Esc</kbd> to close, labelled title/description) already in place.</li>
+  </ul>
+
+  <!-- ════════════════════════════════════════════════════════════ -->
+  <h2>10. Design-system reuse</h2>
+  <table>
+    <tr><th>Need</th><th>Reuse (do not build new)</th></tr>
+    <tr><td>Kit selection UI</td><td><code>ApplyKitDialog</code> + <code>ProjectTypeSelector</code> + <code>KitPreview</code> (kits/) — already complete, seeds agents/labels/workflows/triggers, zero tasks.</td></tr>
+    <tr><td>Dialog / drawer surface</td><td><code>components/ui/dialog</code>, <code>components/ui/drawer</code> (responsive via <code>useMediaQuery</code>, already used by ApplyKitDialog).</td></tr>
+    <tr><td>Empty-state tile pattern</td><td><code>board-empty-state.tsx</code> tile markup (icon chip + title + 11px desc + arrow, colour-coded). New tile copies it with the blue variant.</td></tr>
+    <tr><td>Blue / kit accent</td><td><code>setup-completeness-banner.tsx</code> <code>VARIANT_STYLES.blue</code> + kit icon 📦 (<code>GAP_ICONS.kit</code>).</td></tr>
+    <tr><td>Buttons</td><td><code>components/ui/button</code> — <code>variant="outline"</code> (Cancel), default/solid (Apply), gradient primary (AI Generate).</td></tr>
+    <tr><td>Enhance kit chip</td><td><code>enhance-dialog-shell.tsx</code> existing <code>kitContextLabel</code> block — wire it through <code>enhance-idea-dialog.tsx</code>; no new markup.</td></tr>
+    <tr><td>Toasts</td><td><code>sonner</code> — existing success/error patterns in <code>handleApply</code>.</td></tr>
+    <tr><td>Working navigation pattern</td><td><code>pushState + dispatchEvent(new PopStateEvent("popstate"))</code> from <code>workflows-tab.tsx:1231-1232</code> for any tile that genuinely needs a tab switch.</td></tr>
+  </table>
+
+  <div class="callout info" style="margin-top:34px">
+    <strong>Net new UI surface = minimal.</strong> One tile (copied pattern), one info note, one empty/error state in an existing dialog, plus three behavioural fixes (banner button, empty-state tile, expanded-checklist link) and one prop pass-through for the Enhance chip. No new component files are required for the design to hold.
+  </div>
+
+</div>
+</body>
+</html>

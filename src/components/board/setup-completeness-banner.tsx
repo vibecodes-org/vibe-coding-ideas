@@ -5,13 +5,28 @@ import Link from "next/link";
 import { X, ChevronDown, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { switchBoardTab, type BoardTab } from "@/lib/board-tab-nav";
 import type { IdeaHealth, IdeaHealthGap, GapType } from "@/lib/idea-health";
 
 interface SetupCompletenessBannerProps {
   health: IdeaHealth;
   ideaId: string;
   isReadOnly?: boolean;
+  /** Opens the Apply-a-Kit dialog directly (preferred over ?tab navigation). */
+  onApplyKit?: () => void;
   className?: string;
+}
+
+/**
+ * Resolve a gap's `action.href` to a working navigation. Board tab hrefs
+ * (`?tab=agents` / `?tab=workflows`) must use the popstate-dispatching helper
+ * — a plain <Link> updates the URL but never switches the client-side tab.
+ * Non-tab hrefs (e.g. `/agents`) stay as real links.
+ */
+function hrefToTab(href: string): BoardTab | null {
+  if (href === "?tab=agents") return "agents";
+  if (href === "?tab=workflows") return "workflows";
+  return null;
 }
 
 const GAP_ICONS: Record<GapType | "kit", string> = {
@@ -99,6 +114,7 @@ export function SetupCompletenessBanner({
   health,
   ideaId,
   isReadOnly,
+  onApplyKit,
   className,
 }: SetupCompletenessBannerProps) {
   const [dismissed, setDismissed] = useState(false);
@@ -205,14 +221,22 @@ export function SetupCompletenessBanner({
         {/* Actions */}
         <div className="flex shrink-0 items-center gap-2">
           {useKitBanner ? (
-            <Link href="?tab=workflows">
-              <Button
-                size="sm"
-                className={cn("h-7 text-xs", styles.btnClass)}
-              >
-                Apply a Kit
-              </Button>
-            </Link>
+            <Button
+              size="sm"
+              className={cn("h-7 text-xs", styles.btnClass)}
+              onClick={onApplyKit}
+            >
+              Apply a Kit
+            </Button>
+          ) : hrefToTab(topGap.action.href) ? (
+            <Button
+              size="sm"
+              variant="outline"
+              className={cn("h-7 text-xs", styles.btnClass)}
+              onClick={() => switchBoardTab(hrefToTab(topGap.action.href)!)}
+            >
+              {topGap.action.label} &rarr;
+            </Button>
           ) : (
             <Link href={topGap.action.href}>
               <Button
@@ -279,12 +303,22 @@ export function SetupCompletenessBanner({
                 <span className="flex-1 text-muted-foreground">
                   {gap.title}
                 </span>
-                <Link
-                  href={gap.action.href}
-                  className="text-violet-400 hover:text-violet-300 transition-colors"
-                >
-                  {CHECKLIST_ACTION_TEXT[gap.type]}
-                </Link>
+                {hrefToTab(gap.action.href) ? (
+                  <button
+                    type="button"
+                    onClick={() => switchBoardTab(hrefToTab(gap.action.href)!)}
+                    className="text-violet-400 hover:text-violet-300 transition-colors"
+                  >
+                    {CHECKLIST_ACTION_TEXT[gap.type]}
+                  </button>
+                ) : (
+                  <Link
+                    href={gap.action.href}
+                    className="text-violet-400 hover:text-violet-300 transition-colors"
+                  >
+                    {CHECKLIST_ACTION_TEXT[gap.type]}
+                  </Link>
+                )}
               </div>
             ))}
           </div>

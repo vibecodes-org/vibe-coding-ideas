@@ -23,6 +23,7 @@ interface IdeaActionsMenuProps {
   hasByokKey?: boolean;
   starterCredits?: number;
   bots: BotProfile[];
+  kitName?: string | null;
 }
 
 export function IdeaActionsMenu({
@@ -35,6 +36,7 @@ export function IdeaActionsMenu({
   hasByokKey = false,
   starterCredits = 0,
   bots,
+  kitName,
 }: IdeaActionsMenuProps) {
   return (
     <DropdownMenu>
@@ -60,6 +62,7 @@ export function IdeaActionsMenu({
               ideaTitle={ideaTitle}
               currentDescription={currentDescription}
               bots={bots}
+              kitName={kitName}
               variant="dropdown"
               disabled={!canUseAi}
               hasByokKey={hasByokKey}

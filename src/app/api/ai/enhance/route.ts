@@ -43,7 +43,7 @@ export async function POST(req: Request) {
 
     const { data: idea } = await supabase
       .from("ideas")
-      .select("id, title, description, author_id")
+      .select("id, title, description, author_id, project_kit:project_kits!ideas_project_kit_id_fkey(name)")
       .eq("id", ideaId)
       .single();
 
@@ -60,9 +60,14 @@ export async function POST(req: Request) {
     // Build prompts (same logic as enhanceIdeaWithContext server action)
     const isRefinement = previousEnhanced && refinementFeedback;
 
+    const kitType = (idea as unknown as { project_kit: { name: string } | null }).project_kit?.name;
+    const kitContext = kitType
+      ? `\nThis is a **${kitType}** project — tailor the description to concerns specific to ${kitType.toLowerCase()} projects (e.g. architecture, deployment, tooling, and workflows).`
+      : "";
+
     const systemPrompt = personaPrompt
-      ? `${personaPrompt}\n\nYou are helping to enhance an idea description on a project management platform.`
-      : "You are an expert product manager and technical writer helping to enhance idea descriptions on a project management platform.";
+      ? `${personaPrompt}\n\nYou are helping to enhance an idea description on a project management platform.${kitContext}`
+      : `You are an expert product manager and technical writer helping to enhance idea descriptions on a project management platform.${kitContext}`;
 
     let userPrompt: string;
 

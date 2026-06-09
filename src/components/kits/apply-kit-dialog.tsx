@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { toast } from "sonner";
-import { Loader2, Package } from "lucide-react";
+import { Loader2, Package, Info, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -41,19 +41,28 @@ export function ApplyKitDialog({
 }: ApplyKitDialogProps) {
   const [kits, setKits] = useState<KitWithSteps[]>([]);
   const [loading, setLoading] = useState(false);
+  const [loadError, setLoadError] = useState(false);
   const [applying, setApplying] = useState(false);
   const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
   const isMobile = useMediaQuery("(max-width: 767px)");
 
-  useEffect(() => {
-    if (!open) return;
+  const loadKits = useCallback(() => {
     setLoading(true);
+    setLoadError(false);
     setSelectedKitId(null);
     getActiveKitsWithSteps()
       .then(setKits)
-      .catch(() => toast.error("Failed to load project kits"))
+      .catch(() => {
+        setLoadError(true);
+        toast.error("Failed to load project kits");
+      })
       .finally(() => setLoading(false));
-  }, [open]);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+    loadKits();
+  }, [open, loadKits]);
 
   const selectedKit = kits.find((k) => k.id === selectedKitId) ?? null;
   const isCustom = selectedKit?.name === "Custom";
@@ -81,7 +90,7 @@ export function ApplyKitDialog({
       onOpenChange(false);
       onApplied?.(result);
     } catch {
-      toast.error("Failed to apply kit. Your idea was created — you can apply a kit from the Workflows tab.");
+      toast.error("Failed to apply kit. Try again, or set up agents & workflows from the Workflows tab.");
     } finally {
       setApplying(false);
     }
@@ -90,8 +99,29 @@ export function ApplyKitDialog({
   const selectableKits = kits.filter((k) => k.name !== "Custom");
 
   const body = loading ? (
-    <div className="flex items-center justify-center py-8">
+    <div className="flex items-center justify-center py-8" aria-busy="true">
       <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+      <span className="sr-only">Loading project kits</span>
+    </div>
+  ) : loadError ? (
+    <div className="flex items-start gap-2 rounded-md border border-rose-500/35 bg-rose-500/[0.07] px-3 py-2.5 text-xs text-rose-300">
+      <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+      <span>
+        Couldn&apos;t load project kits.{" "}
+        <button
+          type="button"
+          onClick={loadKits}
+          className="font-medium underline hover:text-rose-200"
+        >
+          Retry
+        </button>
+      </span>
+    </div>
+  ) : selectableKits.length === 0 ? (
+    <div className="rounded-md border border-dashed border-border px-4 py-5 text-center text-xs text-muted-foreground">
+      No project kits are available yet.
+      <br />
+      You can still set up agents and workflows manually.
     </div>
   ) : (
     <div className="space-y-3">
@@ -108,6 +138,14 @@ export function ApplyKitDialog({
           columnCount={3}
         />
       )}
+      <div className="flex items-start gap-2 rounded-md border border-blue-500/25 bg-blue-500/[0.06] px-3 py-2.5 text-xs text-blue-200">
+        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-400" />
+        <span>
+          <strong className="font-semibold">No tasks are added.</strong> This kit
+          sets up your agents, workflows, labels and triggers only &mdash; your
+          existing board tasks stay exactly as they are.
+        </span>
+      </div>
     </div>
   );
 

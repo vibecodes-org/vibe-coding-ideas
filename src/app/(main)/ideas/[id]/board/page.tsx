@@ -318,6 +318,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           coverImageUrls={coverImageUrls}
           isReadOnly={isReadOnly}
           hasWorkflowTemplates={hasWorkflowTemplates}
+          hasKit={!!(idea as unknown as { project_kit: { name: string } | null }).project_kit}
           ideaHealth={ideaHealth}
         />
       </BoardPageTabs>

@@ -59,6 +59,7 @@ import {
 import { AddTemplateDialog } from "./add-template-dialog";
 import { SaveTemplateDialog } from "./save-template-dialog";
 import { ApplyKitDialog } from "@/components/kits/apply-kit-dialog";
+import { switchBoardTab } from "@/lib/board-tab-nav";
 import {
   listWorkflowTemplates,
   updateWorkflowTemplate,
@@ -977,9 +978,13 @@ export function WorkflowsTab({
             <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-amber-400 mt-0.5" />
             <p className="text-xs text-amber-400">
               <strong>Agents needed:</strong> Workflow steps are executed by AI agents.{" "}
-              <a href="?tab=agents" className="underline hover:text-amber-300">
+              <button
+                type="button"
+                onClick={() => switchBoardTab("agents")}
+                className="underline hover:text-amber-300"
+              >
                 Add agents to your team
-              </a>{" "}
+              </button>{" "}
               before creating workflow templates.
             </p>
           </div>
@@ -1225,12 +1230,7 @@ export function WorkflowsTab({
                   {selected.steps.length > 0 && roleCoverage.length > 0 && (
                     unmatchedRoles.length > 0 ? (
                       <button
-                        onClick={() => {
-                          const params = new URLSearchParams(window.location.search);
-                          params.set("tab", "agents");
-                          window.history.pushState(null, "", `?${params.toString()}`);
-                          window.dispatchEvent(new PopStateEvent("popstate"));
-                        }}
+                        onClick={() => switchBoardTab("agents")}
                         className="flex items-center gap-1 text-[10px] font-medium text-red-400 hover:underline"
                       >
                         <AlertTriangle className="h-3 w-3" />
@@ -1356,12 +1356,7 @@ export function WorkflowsTab({
                 )}
                 <span className="mx-0.5 h-3 w-px bg-border" />
                 <button
-                  onClick={() => {
-                    const params = new URLSearchParams(window.location.search);
-                    params.set("tab", "agents");
-                    window.history.pushState(null, "", `?${params.toString()}`);
-                    window.dispatchEvent(new PopStateEvent("popstate"));
-                  }}
+                  onClick={() => switchBoardTab("agents")}
                   className="ml-auto font-medium text-violet-400 hover:underline"
                 >
                   Manage in Agents tab &rarr;
@@ -1400,12 +1395,7 @@ export function WorkflowsTab({
                     {unmatchedRoles.length === 1 ? " has " : " have "}
                     no matching agent.{" "}
                     <button
-                      onClick={() => {
-                        const params = new URLSearchParams(window.location.search);
-                        params.set("tab", "agents");
-                        window.history.pushState(null, "", `?${params.toString()}`);
-                        window.dispatchEvent(new PopStateEvent("popstate"));
-                      }}
+                      onClick={() => switchBoardTab("agents")}
                       className="underline hover:text-red-300"
                     >
                       Add one in Agents tab
