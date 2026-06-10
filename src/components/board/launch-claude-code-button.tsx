@@ -20,8 +20,8 @@ import {
   buildLaunchCommand,
   buildBoardBootstrapPrompt,
   buildTaskBootstrapPrompt,
-  chooseLaunchCwd,
   readLaunchPath,
+  resolveEffectiveLaunchTarget,
   slugifyIdeaTitle,
   composeNewProjectPath,
   DEFAULT_NEW_PROJECT_PARENT,
@@ -62,20 +62,32 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   const { ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths } = props;
   const isDesktop = useMediaQuery("(min-width: 768px)");
 
-  // Choose the cwd to inject into a no-repo launch (Design Review option (a):
-  // exactly one recorded path → use it; 0 or >1 → undefined / first-launch flow).
-  // Repo-backed ideas never use this — the `repo` slug resolves the folder.
-  const recordedCwd = useMemo(
-    () => (ideaGithubUrl ? undefined : chooseLaunchCwd(recordedProjectPaths)),
-    [ideaGithubUrl, recordedProjectPaths]
+  // The user's saved localStorage config, mirrored into state so a save in the
+  // dialog (or an open from another tab) re-renders the dropdown immediately.
+  // Lazily initialised — readLaunchPath is SSR-safe (returns null on the server).
+  const [savedState, setSavedState] = useState<LaunchPathState | null>(() =>
+    readLaunchPath(ideaId)
   );
-  // The single record (if any) backing recordedCwd — for the "This machine" line.
-  const recordedHost = useMemo(() => {
-    if (!recordedCwd) return undefined;
-    return (recordedProjectPaths ?? []).find(
-      (r) => r.absolute_path.trim() === recordedCwd
-    );
-  }, [recordedCwd, recordedProjectPaths]);
+
+  // Re-read localStorage (call after a dialog save or when the dropdown opens, so
+  // we never show a stale path).
+  const refreshSaved = useCallback(() => {
+    setSavedState(readLaunchPath(ideaId));
+  }, [ideaId]);
+
+  // Single source of truth for DISPLAY + LAUNCH cwd. The saved existing-mode path
+  // (localStorage — what "Set exact folder" writes) takes precedence over the
+  // agent-recorded DB path, so the dropdown's path line and the launched cwd can
+  // never diverge. Repo-backed ideas resolve via the `repo` slug → no cwd.
+  const effectiveTarget = useMemo(
+    () =>
+      resolveEffectiveLaunchTarget({
+        hasRepo: !!ideaGithubUrl,
+        saved: savedState,
+        recordedPaths: recordedProjectPaths,
+      }),
+    [ideaGithubUrl, savedState, recordedProjectPaths]
+  );
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<LaunchMode | undefined>(undefined);
@@ -163,18 +175,18 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       const prompt = buildPrompt(state);
       // cwd resolution:
       //  - existing mode with a user-pinned absolute path → use it.
-      //  - new (no-repo) mode → use the agent-recorded path for THIS machine if
-      //    chooseLaunchCwd resolved one (exactly one record); otherwise none, and
-      //    the bootstrap prompt's directory block creates ~/projects/<slug>. We
-      //    never inject for new mode without a recorded absolute path (`~`-paths
-      //    don't expand in the cwd param).
+      //  - new (no-repo) mode → use the effective target's cwd (the saved path or,
+      //    falling back, the agent-recorded path for THIS machine). This is the
+      //    SAME value the dropdown displays, so display and launch can't diverge.
+      //    Otherwise none, and the bootstrap prompt's directory block creates
+      //    ~/projects/<slug>. (`~`-paths don't expand in the cwd param.)
       //  - repo-backed → no cwd; the `repo` slug resolves the working copy
-      //    (recordedCwd is forced undefined for repo ideas).
+      //    (effectiveTarget.cwd is undefined for repo ideas).
       const cwd =
         state.mode === "existing" && state.path.trim()
           ? state.path.trim()
           : state.mode === "new"
-            ? recordedCwd
+            ? effectiveTarget.cwd
             : undefined;
       const link = buildClaudeDeepLink({
         prompt,
@@ -222,7 +234,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         });
       }, SCHEME_RACE_MS);
     },
-    [buildPrompt, ideaGithubUrl, recordedCwd, copyCommand]
+    [buildPrompt, ideaGithubUrl, effectiveTarget.cwd, copyCommand]
   );
 
   // Primary action: always launch. No path needed — repo-backed ideas resolve via
@@ -243,6 +255,9 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
 
   const handleSaved = useCallback(
     (state: LaunchPathState) => {
+      // Mirror the freshly-saved state so the dropdown's path line + launch cwd
+      // update immediately (both read from effectiveTarget ← savedState).
+      setSavedState(state);
       if (pendingLaunch) {
         setPendingLaunch(false);
         openInClaudeCode(state);
@@ -257,7 +272,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       onOpenChange={setDialogOpen}
       ideaId={ideaId}
       ideaGithubUrl={ideaGithubUrl}
-      initial={readLaunchPath(ideaId)}
+      initial={savedState}
       initialMode={dialogMode}
       launchOnSave={pendingLaunch}
       onSaved={handleSaved}
@@ -321,7 +336,12 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
           <Terminal className="h-3.5 w-3.5" />
           <span className="hidden sm:inline">Launch Claude Code</span>
         </Button>
-        <DropdownMenu>
+        <DropdownMenu
+          onOpenChange={(o) => {
+            // Re-read localStorage on open so a save from another tab is reflected.
+            if (o) refreshSaved();
+          }}
+        >
           <DropdownMenuTrigger asChild>
             <Button
               variant="ghost"
@@ -337,15 +357,15 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
               <Terminal className="mr-2 h-4 w-4" />
               Open in Claude Code
             </DropdownMenuItem>
-            {recordedHost && (
+            {effectiveTarget.source !== "none" && effectiveTarget.displayPath && (
               <>
                 <DropdownMenuSeparator />
                 <div className="px-2 py-1.5 text-xs text-muted-foreground">
                   <div className="font-medium text-foreground/80">
-                    This machine — {recordedHost.hostname}
+                    {effectiveTarget.displayLabel}
                   </div>
                   <code className="mt-0.5 block break-all font-mono text-[11px]">
-                    {recordedHost.absolute_path}
+                    {effectiveTarget.displayPath}
                   </code>
                 </div>
               </>

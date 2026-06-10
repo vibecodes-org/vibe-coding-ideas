@@ -20,6 +20,7 @@ import {
   composeNewProjectPath,
   validateFolderName,
   looksAbsolutePath,
+  isValidAbsolutePath,
   parseRepoFromGithubUrl,
   writeLaunchPath,
   DEFAULT_NEW_PROJECT_PARENT,
@@ -91,6 +92,15 @@ export function LaunchPathDialog({
         pathRef.current?.focus();
         return;
       }
+      // Block (not just warn) on non-expanded paths: ~, $HOME and relative paths
+      // don't expand in the launch deep link's cwd, so they'd silently fail.
+      if (!isValidAbsolutePath(trimmed)) {
+        setError(
+          "Enter a fully-expanded absolute path — ~ and $HOME aren't supported. Run pwd in the folder to get it.",
+        );
+        pathRef.current?.focus();
+        return;
+      }
       const state: LaunchPathState = { mode: "existing", path: trimmed };
       writeLaunchPath(ideaId, state);
       finish(state);
@@ -126,8 +136,10 @@ export function LaunchPathDialog({
     onOpenChange(false);
   }
 
-  // Light-touch absolute-path warnings (warn, don't block). `~/…` counts as absolute.
-  const existingNotAbsolute = mode === "existing" && path.trim() !== "" && !looksAbsolutePath(path);
+  // Existing-mode path must be a fully-expanded absolute path (Save is blocked
+  // otherwise) — `~`/`$HOME`/relative don't expand in the launch cwd. The parent
+  // folder for a NEW project is only warned on (the agent expands it on create).
+  const existingNotAbsolute = mode === "existing" && path.trim() !== "" && !isValidAbsolutePath(path);
   const parentNotAbsolute = mode === "new" && parent.trim() !== "" && !looksAbsolutePath(parent);
 
   const saveLabel =
@@ -212,7 +224,8 @@ export function LaunchPathDialog({
             {existingNotAbsolute && (
               <p className="flex items-start gap-1.5 text-xs text-amber-400">
                 <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-                That doesn&apos;t look like an absolute path. Paths usually start with /, ~ or a drive letter.
+                Enter a fully-expanded absolute path (starting with / or a drive letter). ~ and $HOME
+                aren&apos;t supported — run <code className="font-mono">pwd</code> in the folder to get it.
               </p>
             )}
           </div>

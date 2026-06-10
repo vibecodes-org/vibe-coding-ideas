@@ -28,6 +28,7 @@ import {
   looksAbsolutePath,
   isValidAbsolutePath,
   chooseLaunchCwd,
+  resolveEffectiveLaunchTarget,
   composeNewProjectPath,
   buildBoardBootstrapPrompt,
   buildTaskBootstrapPrompt,
@@ -578,6 +579,115 @@ describe("chooseLaunchCwd (hostname rule — Design Review option (a))", () => {
     expect(
       chooseLaunchCwd([{ absolute_path: "relative/path", hostname: "bad" }])
     ).toBeUndefined();
+  });
+});
+
+describe("resolveEffectiveLaunchTarget (single source for DISPLAY + LAUNCH)", () => {
+  const recorded = [
+    { absolute_path: "/Users/nick/projects/from-db", hostname: "Nicks-MacBook" },
+  ];
+
+  // ── Happy path: saved existing-mode path wins (THE BUG) ───────────────────
+  it("prefers a saved existing-mode absolute path over the DB recorded path", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: false,
+      saved: { mode: "existing", path: "/Users/nick/projects/from-dialog" },
+      recordedPaths: recorded,
+    });
+    // Same value drives BOTH the cwd (launch) and displayPath (dropdown) — so a
+    // path saved in the dialog is what the dropdown shows AND what launch uses.
+    expect(t.cwd).toBe("/Users/nick/projects/from-dialog");
+    expect(t.displayPath).toBe("/Users/nick/projects/from-dialog");
+    expect(t.source).toBe("saved");
+    expect(t.displayLabel).toBe("This machine (set manually)");
+    expect(t.host).toBeNull();
+  });
+
+  it("regression: cwd and displayPath are ALWAYS the same value", () => {
+    for (const saved of [
+      null,
+      { mode: "existing" as const, path: "/Users/nick/x" },
+      { mode: "new" as const, path: "~/projects/x", parent: "~/projects", name: "x" },
+    ]) {
+      const t = resolveEffectiveLaunchTarget({ hasRepo: false, saved, recordedPaths: recorded });
+      expect(t.displayPath).toBe(t.cwd);
+    }
+  });
+
+  it("trims the saved path before using it", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: false,
+      saved: { mode: "existing", path: "  /Users/nick/x  " },
+      recordedPaths: null,
+    });
+    expect(t.cwd).toBe("/Users/nick/x");
+  });
+
+  // ── Falls back to the DB recorded path ────────────────────────────────────
+  it("falls back to the DB recorded path when no saved path exists", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: false,
+      saved: null,
+      recordedPaths: recorded,
+    });
+    expect(t.cwd).toBe("/Users/nick/projects/from-db");
+    expect(t.source).toBe("recorded");
+    expect(t.displayLabel).toBe("This machine — Nicks-MacBook");
+    expect(t.host).toBe("Nicks-MacBook");
+  });
+
+  it("honours chooseLaunchCwd's >1 → undefined contract (ambiguous machines)", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: false,
+      saved: null,
+      recordedPaths: [
+        { absolute_path: "/Users/nick/x", hostname: "mac" },
+        { absolute_path: "/home/nick/x", hostname: "linux" },
+      ],
+    });
+    expect(t.cwd).toBeUndefined();
+    expect(t.source).toBe("none");
+  });
+
+  // ── Negative paths: bad/irrelevant saved state must NOT surface ────────────
+  it("ignores new-mode saved state (composed ~/projects path is not a valid cwd)", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: false,
+      saved: { mode: "new", path: "~/projects/my-idea", parent: "~/projects", name: "my-idea" },
+      recordedPaths: recorded,
+    });
+    // New-mode path is ignored → falls through to the DB recorded path.
+    expect(t.cwd).toBe("/Users/nick/projects/from-db");
+    expect(t.source).toBe("recorded");
+  });
+
+  it("ignores a saved existing-mode path that fails strict validation (~ / relative)", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: false,
+      saved: { mode: "existing", path: "~/projects/x" },
+      recordedPaths: recorded,
+    });
+    expect(t.cwd).toBe("/Users/nick/projects/from-db"); // falls back, not the ~ path
+    expect(t.source).toBe("recorded");
+  });
+
+  it("repo-backed ideas never inject a cwd or show a path line, even with a saved path", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: true,
+      saved: { mode: "existing", path: "/Users/nick/projects/from-dialog" },
+      recordedPaths: recorded,
+    });
+    expect(t.cwd).toBeUndefined();
+    expect(t.displayPath).toBeUndefined();
+    expect(t.source).toBe("none");
+  });
+
+  it("returns source 'none' when nothing is usable (first-launch flow)", () => {
+    const t = resolveEffectiveLaunchTarget({ hasRepo: false, saved: null, recordedPaths: [] });
+    expect(t.cwd).toBeUndefined();
+    expect(t.displayPath).toBeUndefined();
+    expect(t.displayLabel).toBeUndefined();
+    expect(t.source).toBe("none");
   });
 });
 
