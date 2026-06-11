@@ -193,11 +193,12 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
     // The enhanced text lands below the fold; without this the page stays
     // scrolled at the top and it looks like nothing happened. Scroll all the
     // way down to the action row so the enhanced description and the Create
-    // button are both in view. Wait for the dialog to close + the textarea to
-    // expand (rows 6→10) first.
+    // button are both in view. Must wait until AFTER the dialog has finished
+    // its exit animation and unmounted — Radix locks body scroll (overflow
+    // hidden) until then, and scrollIntoView is a no-op while it's locked.
     setTimeout(() => {
       actionsRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-    }, 150);
+    }, 400);
   }, [hasByokKey]);
 
   const handleUndo = useCallback(() => {

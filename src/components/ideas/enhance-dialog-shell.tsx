@@ -386,6 +386,10 @@ export function EnhanceDialogShell({
         }`}
         onInteractOutside={(e) => busy && e.preventDefault()}
         onEscapeKeyDown={(e) => busy && e.preventDefault()}
+        // Don't return focus to the trigger ("Enhance" button) on close — the
+        // browser scrolls that button back into view, fighting the parent's
+        // post-apply scroll-to-Create. Suppressing it lets that scroll hold.
+        onCloseAutoFocus={(e) => e.preventDefault()}
       >
         <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
           <DialogTitle className="flex items-center gap-2">
