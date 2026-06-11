@@ -712,14 +712,23 @@ describe("no-repo bootstrap prompt — pwd + record_project_path + cd guard", ()
   it("records only AFTER the vibecodes-remote connector is available (Change #2)", () => {
     const p = buildBoardBootstrapPrompt(base);
     // The record instruction is gated on the board tools being available.
-    expect(p).toMatch(/ONCE the vibecodes-remote board tools are available/i);
+    expect(p).toMatch(/as soon as the vibecodes-remote board tools are available/i);
   });
 
-  it("includes the defensive cd guard (Change #3): no files if pwd is home", () => {
+  it("includes the defensive cd guard (Change #3): STOP if pwd is still home", () => {
     const p = buildBoardBootstrapPrompt(base);
     expect(p).toMatch(
-      /if `?pwd`? still shows your home directory, do NOT create CLAUDE\.md/i
+      /if `?pwd`? still shows your home directory, STOP/i
     );
+    // The write-files guard still defends CLAUDE.md against landing in home.
+    expect(p).toMatch(/Only AFTER you are confirmed inside the project folder/i);
+  });
+
+  it("hardens the cd gate against planning/board-only rationalisation (football-predictor bug)", () => {
+    const p = buildBoardBootstrapPrompt(base);
+    // The agent must not stay in home reasoning "no files needed yet".
+    expect(p).toMatch(/even if the first task is planning|board-only/i);
+    expect(p).toMatch(/no files are needed yet|repo will be created later/i);
   });
 
   it("orders the sequence cd → pwd → record → write files", () => {

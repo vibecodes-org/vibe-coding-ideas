@@ -387,14 +387,15 @@ function newProjectSteps(
      • Empty / just-created → initialise: git init
      • Already a git repo, or already has files → leave it as-is.`;
 
-  return `First, get into this idea's project directory — do this before anything else so you're working in the right place:
+  return `STEP 0 — get into this idea's project directory. This is MANDATORY and comes before everything else, including reading the board. This session has started in your home directory, which is the WRONG place to work.
   • If ${newProjectPath} ALREADY EXISTS, cd into it and reuse it as-is — do NOT re-clone, re-init, or overwrite existing files.
   • If it does NOT exist, create it: mkdir -p ${newProjectPath} && cd ${newProjectPath}
+  • ⚠️ This applies EVEN IF the first task is planning, research, design, or "board-only" work with no files yet. Do NOT stay in your home directory on the reasoning that "no files are needed yet" or "the repo will be created later" — that mis-files this idea's history and config under home. EVERY session for this idea runs from its project folder. No exceptions.
 Then confirm and record exactly where you are (this lets future launches open straight in this folder):
   • Run \`pwd\` and capture the absolute path it prints — this is the authoritative location on this machine, not a guess.
-  • ⚠️ If \`pwd\` still shows your home directory, do NOT create CLAUDE.md or any project files — cd into the project folder first.
+  • ⚠️ If \`pwd\` still shows your home directory, STOP — you have not changed into the project folder. cd into it before doing anything else.
   • Get the machine name: run \`hostname\` (or \`uname -n\`).
-  • ONCE the vibecodes-remote board tools are available (set up above), call record_project_path with idea_id "${ideaId}", that hostname, and the \`pwd\` output. Do this on EVERY launch (self-heal) so a moved or renamed folder updates the stored path.
+  • As SOON as the vibecodes-remote board tools are available (you connect them in the MCP step below), call record_project_path with idea_id "${ideaId}", that hostname, and the \`pwd\` output — do this BEFORE picking up any task. Repeat it on EVERY launch (self-heal) so a moved or renamed folder updates the stored path.
 ${setupStep}
 Only AFTER you are confirmed inside the project folder (pwd is NOT home) should you write any files — CLAUDE.md, .vibecodes/, scaffolding — so everything lands in the project, never in your home directory.`;
 }
