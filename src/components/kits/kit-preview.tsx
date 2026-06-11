@@ -25,6 +25,7 @@ const ROLE_META: Record<string, { icon: string; short: string }> = {
   "DevOps Engineer": { icon: "\u{1F680}", short: "DevOps" },
   "Product Owner": { icon: "\u{1F4CB}", short: "PO" },
   "Business Analyst": { icon: "\u{1F4CA}", short: "BA" },
+  "Copywriter / Content": { icon: "✍️", short: "Copy" },
 };
 
 const LABEL_COLOR_MAP: Record<string, { bg: string; text: string }> = {

@@ -112,6 +112,20 @@ describe("KitPreview", () => {
     expect(screen.queryByText("Team")).toBeNull();
   });
 
+  it("renders the Copywriter / Content role with its mapped short label", () => {
+    render(
+      <KitPreview
+        kit={makeKit({
+          agent_roles: [{ role: "Copywriter / Content", name_suggestion: "Quill" }],
+        })}
+      />
+    );
+    // ROLE_META entry maps "Copywriter / Content" -> short "Copy"
+    expect(screen.getByText("Copy")).toBeDefined();
+    // Falls back to the full role string only when unmapped — confirm it does NOT here
+    expect(screen.queryByText("Copywriter / Content")).toBeNull();
+  });
+
   // --- Workflows ---
 
   it("renders workflow tags with names and step counts", () => {

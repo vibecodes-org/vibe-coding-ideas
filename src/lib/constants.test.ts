@@ -184,6 +184,18 @@ describe("BOT_ROLE_TEMPLATES", () => {
     const roles = BOT_ROLE_TEMPLATES.map((t) => t.role);
     expect(new Set(roles).size).toBe(roles.length);
   });
+
+  it("includes a Copywriter / Content template with a valid structured shape", () => {
+    const copywriter = BOT_ROLE_TEMPLATES.find(
+      (t) => t.role === "Copywriter / Content"
+    );
+    expect(copywriter).toBeDefined();
+    expect(typeof copywriter!.prompt).toBe("string");
+    expect(copywriter!.structured.goal).toBeTruthy();
+    expect(copywriter!.structured.expertise).toBeTruthy();
+    expect(copywriter!.structured.constraints).toBeTruthy();
+    expect(copywriter!.structured.approach).toBeTruthy();
+  });
 });
 
 // ── SUGGESTED_TAGS ───────────────────────────────────────────────────

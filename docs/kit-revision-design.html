@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kit Revision — UX Design / Content Spec</title>
+<style>
+  :root {
+    --bg: #09090b; --panel: #18181b; --panel-2: #27272a; --border: #3f3f46;
+    --text: #e4e4e7; --muted: #a1a1aa; --faint: #71717a;
+    --violet: #a78bfa; --emerald: #34d399; --amber: #fbbf24; --rose: #fb7185;
+    --cyan: #22d3ee; --blue: #60a5fa; --pink: #f472b6; --red: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 15px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 2.5rem 1.5rem 6rem;
+  }
+  main { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 1.9rem; margin: 0 0 .25rem; letter-spacing: -.02em; }
+  h2 { font-size: 1.35rem; margin: 2.75rem 0 .75rem; padding-bottom: .4rem;
+       border-bottom: 1px solid var(--border); letter-spacing: -.01em; }
+  h3 { font-size: 1.05rem; margin: 1.5rem 0 .5rem; color: var(--violet); }
+  h4 { font-size: .9rem; margin: 1rem 0 .35rem; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  p { margin: .5rem 0; }
+  .lede { color: var(--muted); font-size: 1.05rem; }
+  a { color: var(--violet); }
+  code, .mono { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .85em; }
+  code { background: var(--panel-2); padding: .1em .4em; border-radius: 4px; color: #f4f4f5; }
+  .card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 1.1rem 1.3rem; margin: 1rem 0; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+  .pill { display: inline-flex; align-items: center; gap: .35rem; border-radius: 999px;
+          padding: .12rem .6rem; font-size: .72rem; font-weight: 600; border: 1px solid transparent; }
+  .pill.violet { background: rgba(167,139,250,.13); color: var(--violet); }
+  .pill.emerald { background: rgba(52,211,153,.13); color: var(--emerald); }
+  .pill.amber { background: rgba(251,191,36,.13); color: var(--amber); }
+  .pill.cyan { background: rgba(34,211,238,.13); color: var(--cyan); }
+  .pill.blue { background: rgba(96,165,250,.13); color: var(--blue); }
+  .pill.pink { background: rgba(244,114,182,.13); color: var(--pink); }
+  .pill.red { background: rgba(248,113,113,.13); color: var(--red); }
+  .pill.rose { background: rgba(251,113,133,.13); color: var(--rose); }
+  table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .88rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+  th { color: var(--faint); font-weight: 600; text-transform: uppercase; font-size: .68rem; letter-spacing: .05em; }
+  td.role { color: var(--violet); white-space: nowrap; }
+  .approve { color: var(--amber); font-weight: 600; }
+  .flow { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: .6rem 0; }
+  .step { background: var(--panel-2); border: 1px solid var(--border); border-radius: 6px; padding: .25rem .55rem; font-size: .8rem; }
+  .step.gate { background: rgba(251,191,36,.1); border-color: rgba(251,191,36,.3); color: var(--amber); }
+  .arrow { color: var(--faint); }
+  pre { background: #0d0d0f; border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto;
+        font-family: ui-monospace, Menlo, monospace; font-size: .78rem; line-height: 1.5; color: #d4d4d8; }
+  .note { border-left: 3px solid var(--blue); background: rgba(96,165,250,.07); padding: .7rem 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+  .warn { border-left: 3px solid var(--amber); background: rgba(251,191,36,.07); padding: .7rem 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+  .decide { border-left: 3px solid var(--emerald); background: rgba(52,211,153,.07); padding: .7rem 1rem; margin: 1rem 0; border-radius: 0 8px 8px 0; }
+  .swatch { display: inline-block; width: .7rem; height: .7rem; border-radius: 3px; vertical-align: middle; margin-right: .3rem; }
+  ul { margin: .4rem 0; padding-left: 1.3rem; }
+  li { margin: .25rem 0; }
+  .meta { color: var(--faint); font-size: .8rem; }
+  .q { font-size: .72rem; font-weight: 700; color: var(--emerald); background: rgba(52,211,153,.12);
+      padding: .1rem .45rem; border-radius: 4px; }
+  /* mock card */
+  .mockcard { width: 150px; border: 2px solid var(--border); background: #18181b; border-radius: 12px;
+              padding: .75rem; text-align: center; }
+  .mockcard.sel { border-color: var(--violet); background: rgba(167,139,250,.12); }
+  .mockcard .ic { font-size: 1.6rem; }
+  .mockcard .nm { font-weight: 700; font-size: .8rem; margin-top: .2rem; }
+  .mockcard .badges { display: flex; flex-wrap: wrap; gap: .3rem; justify-content: center; margin-top: .5rem; }
+  .badges .pill { font-size: .6rem; padding: .08rem .4rem; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Revise Project Kits — UX Design &amp; Content Spec</h1>
+<p class="lede">Compass · UX Design step · Feature Development workflow. Concrete user-facing content + decisions for the kit picker. Builds on the Requirements step's data model. No new UI machinery — picker + preview already exist.</p>
+<p class="meta">Deliverable type: content/data spec. Scope: cut Design System (soft-disable) · rename AI/ML &rarr; "AI App / Agent" · add Marketing/Landing kit (team + workflow + labels + trigger) · new Copywriter/Content platform persona. This document does NOT contain the migration or code.</p>
+
+<div class="note">
+<strong>How the picker actually renders (verified against source).</strong> The card (<code>project-type-selector.tsx</code>) shows <em>only</em> icon + name + count badges (<span class="pill violet">N workflows</span> <span class="pill emerald">N agents</span>). The <code>description</code> and full team/workflow detail appear in the <strong>preview popover</strong> (<code>kit-preview.tsx</code>) after a card is selected. This is the "card-description gap" flagged in the kit-types spike — noted as optional future polish (§5), out of scope here. All content below is written to read well in both surfaces.
+</div>
+
+<!-- ============================================================ -->
+<h2>1 · Marketing / Landing kit — final spec</h2>
+
+<h3>Card identity <span class="q">resolves Q-2 (name/icon), Q-3 (placement), Q-5 (category)</span></h3>
+<table>
+<tr><th>Field</th><th>Value</th><th>Rationale</th></tr>
+<tr><td><code>name</code></td><td><strong>Marketing Site</strong></td><td>Two words, matches "Mobile App" / "Web Application" weight on the card. "Marketing / Landing" is too long for the 150px card and the slash reads as ambiguous. "Marketing Site" covers landing pages, launch pages, and small marketing sites — the actual founder use case.</td></tr>
+<tr><td><code>icon</code></td><td><strong>📣</strong> (megaphone)</td><td>Matches the existing single-glyph emoji set (🌐 📱 ⚙️ 🤖 ✨). Megaphone = marketing/announce; visually distinct from the dev kits and the 🤖 AI kit. (Alternatives considered: 🚀 reads as "launch/DevOps", 📈 reads as analytics.)</td></tr>
+<tr><td><code>description</code></td><td><strong>"Your AI team for shipping a landing page that converts"</strong></td><td>Founder-facing, "your AI team for X" framing (matches the dialog's voice). Concrete outcome ("converts"), not abstract. Renders in the preview header (see §5). Length comparable to existing one-liners.</td></tr>
+<tr><td><code>category</code></td><td><strong>Growth</strong></td><td>Existing categories: Development, Design, AI. Marketing isn't development or design. "Growth" is the house word for marketing/acquisition (see Catalyst's AARRR expertise) and future-proofs for a Sales/Content sibling. <span class="meta">Category is currently a grouping/label field only — not surfaced as a header in the picker today, so this is low-risk.</span></td></tr>
+<tr><td><code>display_order</code></td><td><strong>4</strong></td><td>See ordering below. Sits after the dev/AI kits, before Custom (Custom is always forced last by the selector regardless of value).</td></tr>
+<tr><td><code>auto_rule_label</code></td><td><strong>"Landing Page"</strong></td><td>Primary trigger label (matches the kit's primary workflow mapping below).</td></tr>
+</table>
+
+<h4>Final display order (after Design System is soft-disabled)</h4>
+<table>
+<tr><th>order</th><th>kit</th><th>status</th></tr>
+<tr><td>0</td><td>🌐 Web Application</td><td>unchanged</td></tr>
+<tr><td>1</td><td>📱 Mobile App</td><td>unchanged</td></tr>
+<tr><td>2</td><td>⚙️ API / Backend</td><td>unchanged</td></tr>
+<tr><td>3</td><td>🤖 AI App / Agent</td><td>renamed (§3)</td></tr>
+<tr><td>—</td><td>🎨 Design System</td><td><span class="pill amber">soft-disabled</span> (<code>is_active=false</code>, drops out of the picker; §4)</td></tr>
+<tr><td><strong>4</strong></td><td><strong>📣 Marketing Site</strong></td><td><span class="pill emerald">NEW</span></td></tr>
+<tr><td>5</td><td>✨ Custom</td><td>unchanged (selector forces last)</td></tr>
+</table>
+<p class="meta">Result: 5 selectable kits in a clean grid (Web, Mobile, API, AI, Marketing) + Custom — same count as today, so the 3-col grid still fills evenly (2 rows of 3 incl. Custom).</p>
+
+<h3>Labels — <code>label_presets</code></h3>
+<p>Colours drawn from the existing kit palette (see <code>LABEL_COLOR_MAP</code> in <code>kit-preview.tsx</code>). Reuses the house convention: <code>Bug</code> is always red.</p>
+<table>
+<tr><th>label</th><th>color</th><th>renders</th><th>purpose</th></tr>
+<tr><td>Landing Page</td><td><code>violet</code></td><td><span class="swatch" style="background:var(--violet)"></span><span class="pill violet">Landing Page</span></td><td>Primary work type — mirrors "Feature" as the headline label in dev kits (violet).</td></tr>
+<tr><td>Copy</td><td><code>emerald</code></td><td><span class="swatch" style="background:var(--emerald)"></span><span class="pill emerald">Copy</span></td><td>Copy/messaging-only tasks (headlines, value props).</td></tr>
+<tr><td>SEO</td><td><code>cyan</code></td><td><span class="swatch" style="background:var(--cyan)"></span><span class="pill cyan">SEO</span></td><td>Metadata, structured data, search optimisation.</td></tr>
+<tr><td>Design</td><td><code>pink</code></td><td><span class="swatch" style="background:var(--pink)"></span><span class="pill pink">Design</span></td><td>Visual/layout tasks (pink = UI/UX house convention, reused from Mobile kit).</td></tr>
+<tr><td>Content Update</td><td><code>amber</code></td><td><span class="swatch" style="background:var(--amber)"></span><span class="pill amber">Content Update</span></td><td>Small edits to live copy — routed to a lightweight workflow.</td></tr>
+<tr><td>Bug</td><td><code>red</code></td><td><span class="swatch" style="background:var(--red)"></span><span class="pill red">Bug</span></td><td>Broken links/forms/rendering. Red, per house convention.</td></tr>
+</table>
+
+<h3>Team — <code>agent_roles</code> (5 roles)</h3>
+<div class="warn"><strong>Constraint check.</strong> Every role string must <em>exactly</em> match a platform <code>bot_profiles.role</code> so agents resolve. Four are existing house roles; <code>Copywriter / Content</code> is the NEW persona spec'd in §2. Every workflow step role below is one of these five (verified in §"workflow").</p></div>
+<table>
+<tr><th>role (exact match)</th><th>name_suggestion</th><th>skills[]</th></tr>
+<tr><td class="role">Product Owner</td><td>Horizon</td><td>["Positioning Briefs", "Conversion Goals", "Acceptance Criteria", "Audience Definition"]</td></tr>
+<tr><td class="role">Copywriter / Content</td><td>Quill</td><td>["Landing Copy", "Headlines &amp; Value Props", "CTAs", "Brand Voice", "SEO Copy"]</td></tr>
+<tr><td class="role">UX Designer</td><td>Compass</td><td>["Landing Page Layout", "Visual Hierarchy", "Responsive Design", "Accessibility (WCAG 2.1)", "Conversion UX"]</td></tr>
+<tr><td class="role">Front End Engineer</td><td>Pixel</td><td>["Next.js / React", "Tailwind CSS", "Core Web Vitals", "Responsive Build", "Analytics Wiring"]</td></tr>
+<tr><td class="role">QA Engineer</td><td>Sentinel</td><td>["Cross-browser", "Link/Form Testing", "Accessibility Audit", "Performance Budget", "Copy Proofing"]</td></tr>
+</table>
+<p class="meta">Role-icon coverage: Product Owner 📋, UX Designer 🎨, Front End Engineer 🎨, QA Engineer 🔍 already exist in <code>ROLE_META</code>. <code>Copywriter / Content</code> has no entry, so the preview falls back to the generic 👤 with short = full role string. <strong>Recommendation:</strong> add a <code>ROLE_META</code> entry <code>{ icon: "✍️", short: "Copy" }</code> in the same PR for visual parity (1-line UI change — note for Front End step, flagged so it isn't missed).</p>
+
+<h3>Workflow template — "Landing Page" <span class="q">primary workflow</span></h3>
+<p>New row in <code>workflow_library_templates</code>. Step shape matches existing templates: <code>{title, description, role, requires_approval, deliverables}</code>. Two approval gates (matches the house 5–6 step / 2-gate pattern from the other kit templates). <strong>Every role is one of the 5 team roles above.</strong></p>
+<table>
+<tr><th>#</th><th>title</th><th>role</th><th>approval</th></tr>
+<tr><td>1</td><td>Brief &amp; Goals</td><td class="role">Product Owner</td><td>—</td></tr>
+<tr><td>2</td><td>Write Copy</td><td class="role">Copywriter / Content</td><td>—</td></tr>
+<tr><td>3</td><td>Copy Approval</td><td class="role">Product Owner</td><td class="approve">🔒 yes</td></tr>
+<tr><td>4</td><td>Design Layout</td><td class="role">UX Designer</td><td>—</td></tr>
+<tr><td>5</td><td>Build Page</td><td class="role">Front End Engineer</td><td>—</td></tr>
+<tr><td>6</td><td>QA &amp; Launch Sign-off</td><td class="role">QA Engineer → Product Owner</td><td class="approve">🔒 yes (final)</td></tr>
+</table>
+
+<div class="flow">
+<span class="step">Brief &amp; Goals</span><span class="arrow">→</span>
+<span class="step">Write Copy</span><span class="arrow">→</span>
+<span class="step gate">🔒 Copy Approval</span><span class="arrow">→</span>
+<span class="step">Design Layout</span><span class="arrow">→</span>
+<span class="step">Build Page</span><span class="arrow">→</span>
+<span class="step gate">🔒 QA &amp; Launch Sign-off</span>
+</div>
+
+<div class="note"><strong>Design decision — why a Copy Approval gate (step 3).</strong> The brief mandated "a final approval." I add a <em>second</em> gate after copy because on a marketing page <strong>copy is the product</strong> — getting messaging/positioning wrong is far more expensive to discover at launch than a layout tweak. This mirrors the API kit's "Contract Review" gate (approve the expensive-to-change artifact early). Founders almost always want a say on their own headline. Net: 6 steps, 2 gates — consistent with every other kit template. The QA step is split conceptually (QA Engineer verifies, then Product Owner gives the launch sign-off as the final approval) following the "Release Sign-off → Product Owner, requires_approval=true" pattern used in Web/Mobile/API templates.</div>
+
+<h4>Full step content (copy-paste ready for the migration author)</h4>
+<pre>[
+  {"title":"Brief &amp; Goals","role":"Product Owner",
+   "description":"Define the page's single conversion goal (the one action a visitor should take), the target audience, and the core value proposition. List the must-have sections and any proof points (testimonials, metrics, logos). This brief is the contract for copy and design.",
+   "requires_approval":false,
+   "deliverables":["Conversion goal","Target audience","Value proposition","Section outline","Proof points"]},
+
+  {"title":"Write Copy","role":"Copywriter / Content",
+   "description":"Write the page copy from the brief: headline, subhead, section copy, and CTA labels. Lead with the outcome, match the brand voice, keep claims truthful, and write a clear primary CTA. Provide 2-3 headline options for the approver to choose from.",
+   "requires_approval":false,
+   "deliverables":["Headline (2-3 options)","Subhead","Section copy","CTA copy","Meta title &amp; description"]},
+
+  {"title":"Copy Approval","role":"Product Owner",
+   "description":"Review the copy against the brief: does the headline land, is the value prop clear, are claims accurate, is the CTA compelling? Pick the headline option. Approve or send back with specific feedback before design starts.",
+   "requires_approval":true,
+   "deliverables":["Copy approval or feedback","Chosen headline"]},
+
+  {"title":"Design Layout","role":"UX Designer",
+   "description":"Design the page layout around the approved copy: visual hierarchy that guides toward the CTA, responsive behaviour (mobile-first), and accessibility (contrast, focus order, headings). Specify spacing, sections, and the hero treatment.",
+   "requires_approval":false,
+   "deliverables":["Layout / wireframe (HTML)","Responsive specs","Accessibility notes"]},
+
+  {"title":"Build Page","role":"Front End Engineer",
+   "description":"Build the page to the approved copy and design. Mobile-first, semantic HTML, accessible. Hit Core Web Vitals (LCP < 2.5s, CLS ~0), wire up the primary CTA and any analytics/conversion tracking. Add the meta title/description and Open Graph tags.",
+   "requires_approval":false,
+   "deliverables":["Page implementation","Responsive build","Meta + OG tags","Analytics/CTA wiring"]},
+
+  {"title":"QA &amp; Launch Sign-off","role":"QA Engineer",
+   "description":"Verify every CTA and form works, copy is proofread (no typos), links resolve, the page renders cross-browser and on mobile, contrast/keyboard pass WCAG 2.1 AA, and performance is within budget. Then confirm the page is ready and approve for launch.",
+   "requires_approval":true,
+   "deliverables":["QA report","Cross-browser/mobile check","Accessibility audit","Launch approval"]}
+]</pre>
+<p class="meta">Step count badge on the card preview will read <strong>(6)</strong>, consistent with the Web/Mobile/AI templates.</p>
+
+<h3><code>kit_workflow_mappings</code> matrix <span class="q">label → template</span></h3>
+<p>Reuses existing library templates (<strong>Bug Fix</strong>, <strong>Technical Spike</strong>) for secondaries — no new templates beyond "Landing Page". One primary per kit (the violet-dot row in the preview).</p>
+<table>
+<tr><th>label_name</th><th>workflow template</th><th>is_primary</th></tr>
+<tr><td><span class="pill violet">Landing Page</span></td><td>Landing Page</td><td><strong>✓ primary</strong></td></tr>
+<tr><td><span class="pill emerald">Copy</span></td><td>Landing Page</td><td>—</td></tr>
+<tr><td><span class="pill pink">Design</span></td><td>Landing Page</td><td>—</td></tr>
+<tr><td><span class="pill cyan">SEO</span></td><td>Technical Spike</td><td>—</td></tr>
+<tr><td><span class="pill amber">Content Update</span></td><td>Technical Spike</td><td>—</td></tr>
+<tr><td><span class="pill red">Bug</span></td><td>Bug Fix</td><td>—</td></tr>
+</table>
+<div class="warn"><strong>Requirements flag (verify before migration).</strong> Secondaries map to <code>Technical Spike</code> and <code>Bug Fix</code>, which exist in the library. BUT those templates contain engineering roles (e.g. Full Stack Engineer / DevOps). The Marketing Site team only has <em>Front End Engineer</em> among engineers — so a <code>Technical Spike</code> step assigned to "Full Stack Engineer" would be <strong>unfillable by this kit's team</strong>. The primary "Landing Page" template is fully fillable (verified). <strong>Recommendation:</strong> the migration author should confirm Bug Fix / Technical Spike steps resolve to roles in {Product Owner, UX Designer, Front End Engineer, QA Engineer, Copywriter/Content} OR accept that secondary triggers may need manual agent assignment (acceptable — same caveat already exists for other kits' secondaries, e.g. API kit maps Schema→Technical Spike). Not a blocker; calling it out per the brief.</div>
+
+<!-- ============================================================ -->
+<h2>2 · Copywriter / Content persona — full spec <span class="q">resolves Q-4</span></h2>
+<table>
+<tr><td><code>name</code></td><td><strong>Quill</strong> — fits the playful-but-pro single-word set (Atlas, Compass, Sentinel, Pixel, Catalyst, Scribe). Quill = writing, distinct from Scribe (docs) and Catalyst (marketing strategy).</td></tr>
+<tr><td><code>role</code></td><td><code>Copywriter / Content</code> — <strong>exact</strong> string; must match the kit's <code>agent_roles[].role</code> and the workflow step roles above.</td></tr>
+<tr><td><code>bio</code></td><td>"Marketing copywriter who turns features into outcomes — headlines, value props, and CTAs that convert without overpromising."</td></tr>
+<tr><td><code>skills[]</code></td><td>["Landing Copy", "Headlines &amp; Value Props", "CTAs", "Brand Voice", "SEO Copy", "Conversion Messaging"]</td></tr>
+<tr><td><code>owner_id</code></td><td><code>a0000000-4000-a000-000000000001</code> (platform hub owner) — published platform agent, like Catalyst.</td></tr>
+</table>
+
+<div class="note"><strong>Distinction from existing agents (avoids overlap).</strong> <em>Catalyst (Marketing Strategist)</em> owns strategy/positioning/channels/growth metrics. <em>Scribe (Technical Writer)</em> owns docs/reference/how-tos. <strong>Quill</strong> owns the <em>persuasive prose itself</em> — the words on the page. Three non-overlapping marketing/content roles.</div>
+
+<h4>system_prompt (house style: Goal / Expertise / Constraints / Approach — ~2.6k chars)</h4>
+<pre>## Goal
+Write marketing copy that turns product features into clear, compelling outcomes
+visitors actually care about. Every headline, value proposition, and CTA should be
+truthful, on-brand, and written to move the reader one step closer to acting. Good
+copy earns trust — it never tricks.
+
+## Expertise
+- Lead with the outcome, not the mechanism. Apply Jobs-to-be-Done: people don't want
+  the feature, they want the result. "Go from idea to a working board in 60 seconds,"
+  not "AI-powered task generation."
+- Write headlines that pass the "so what?" test. A headline must state a specific
+  benefit or a specific audience — if it could sit on any competitor's page, rewrite it.
+  Always offer 2-3 options so the approver can choose voice and angle.
+- Structure value props with the feature → benefit → outcome chain, and back claims
+  with proof (a number, a testimonial, a concrete example) wherever one exists.
+- Write CTAs that describe the value of clicking, not the mechanics. "Start building
+  free" beats "Submit." First person ("Start my project") often outperforms second.
+- Apply plain-language principles: short sentences, active voice, concrete nouns,
+  cut filler ("very," "really," "in order to"). Aim for a grade 7-9 reading level for
+  broad audiences; match the audience's vocabulary for technical ones.
+- Know SEO basics: write a unique meta title (~55 chars) and description (~155 chars)
+  that read naturally and include the primary term; use one clear H1; write descriptive
+  link text; never keyword-stuff.
+- Adapt to brand voice. If a voice/tone guide or existing copy exists, mirror it. If not,
+  infer it from the product and confirm the intended tone (e.g. confident vs. friendly)
+  in the brief before writing at length.
+
+## Constraints
+Never make a claim the product cannot currently deliver — roadmap features are not live
+features, and "fastest/best/only" needs evidence or it gets cut. Do not use dark patterns:
+no fake urgency, no manipulative scarcity, no hidden costs in the fine print. Never write
+inaccessible copy — avoid ALL-CAPS for emphasis (screen readers spell it out), don't rely
+on copy that only makes sense alongside an image, and keep link text meaningful out of
+context. Do not bury the primary CTA or write more than one competing primary action per
+section. Never ship copy with unverified stats, typos, or claims you haven't checked
+against the actual product.
+
+## Approach
+When picking up a board task, ALWAYS reassign it to yourself before starting work. Start
+from the brief: who is the audience, what is the single conversion goal, and what is the
+core value proposition? If any of those is missing, ask before writing. Draft the headline
+and CTA first — they anchor everything else — and provide options. Write section copy that
+flows toward the CTA. Read it aloud to catch clunky phrasing. Fact-check every claim against
+the product before handing off. Hand the approver clear choices (headline variants) and a
+one-line note on the tone you aimed for, so review is fast and specific.</pre>
+<p class="meta">Length ~2.6k chars; matches Catalyst (~2.5k) and Compass (~2.9k). Tone and section structure mirror the house style exactly.</p>
+
+<!-- ============================================================ -->
+<h2>3 · AI kit rename</h2>
+<table>
+<tr><th>field</th><th>before</th><th>after</th></tr>
+<tr><td><code>name</code></td><td>AI / ML Project</td><td><strong>AI App / Agent</strong></td></tr>
+<tr><td><code>icon</code></td><td>🤖</td><td>🤖 (unchanged — still fits)</td></tr>
+<tr><td><code>description</code></td><td>"Machine learning, data science, or AI agent system"</td><td><strong>"Your AI team for building an AI-powered app or agent"</strong></td></tr>
+</table>
+<p>Shifts the framing away from data-science/ML-ops toward what vibe-coding founders actually build: AI-powered apps and agents. Keeps <code>display_order</code> at the AI slot (now order 3).</p>
+<div class="note"><strong>Downstream content note (for migration author).</strong> The renamed kit still links to the <code>AI / ML Feature</code> workflow template and uses labels like <code>Model</code>/<code>Experiment</code>, which lean data-science. <strong>Optional follow-up</strong> (out of this content scope, but worth a card): refresh those labels toward <code>Prompt</code>/<code>Eval</code>/<code>Integration</code> to match the new framing. Not required for this revision — the kit remains coherent as-is. Flagging so the rename doesn't feel half-done.</div>
+
+<!-- ============================================================ -->
+<h2>4 · Design System cut + the badge decision <span class="q">resolves Q-1</span></h2>
+<h3>The cut</h3>
+<p>Soft-disable via <code>is_active = false</code> on the Design System row. The RLS policy "Anyone can view active kits" filters it out, so it disappears from the picker with zero code change. The row is retained (not deleted) so the <code>ideas.project_kit_id</code> FK on any existing tagged idea stays valid (<code>ON DELETE SET NULL</code> would otherwise null it).</p>
+
+<h3>Q-1 — the badge decision</h3>
+<div class="decide">
+<strong>Recommendation: accept "no badge for soft-disabled-kit ideas." Do NOT relax RLS.</strong>
+<p style="margin:.5rem 0 0">Some surfaces show a kit badge on an idea by joining to <code>project_kits</code>. Because the SELECT policy hides inactive kits, an idea still pointing at the soft-disabled Design System kit would render with <em>no</em> kit badge. The alternative — relaxing RLS so inactive kits are still readable for display — adds attack surface and complexity to satisfy a cosmetic edge.</p>
+<p style="margin:.5rem 0 0"><strong>UX justification:</strong> <span class="pill emerald">0 ideas currently use the Design System kit</span> (confirmed in Requirements) — so this edge affects <em>nobody</em> today. A missing badge is a graceful, low-harm degradation (the idea still works; only a decorative tag is absent). Relaxing RLS to surface a deliberately-retired kit's name would also be <em>misleading information scent</em> — showing users a kit label they can no longer pick or learn about. Recognition-over-recall favours hiding what's gone over showing a dead-end.</p>
+</div>
+<div class="warn"><strong>Design-Review sign-off item.</strong> Per the brief, Q-1 is an explicit sign-off decision for the Design Review step. Recommended choice above; if a reviewer disagrees, the fallback is a narrow RLS read exception scoped to <code>id</code>/<code>name</code>/<code>icon</code> for badge display only. Flag at review.</div>
+
+<!-- ============================================================ -->
+<h2>5 · Picker impact — confirmation</h2>
+<p>These are pure content/data rows. <strong>No UI component changes are required</strong> for them to render (one optional 1-line polish noted below). Verified against source:</p>
+
+<h4>Card (<code>project-type-selector.tsx</code>) — Marketing Site, selected state</h4>
+<div style="display:flex; gap:1rem; align-items:flex-start; flex-wrap:wrap">
+<div class="mockcard sel">
+  <div class="ic">📣</div>
+  <div class="nm">Marketing Site</div>
+  <div class="badges">
+    <span class="pill violet">1 workflow</span>
+    <span class="pill emerald">5 agents</span>
+  </div>
+</div>
+<ul style="flex:1; min-width:240px">
+<li><strong>Icon + name</strong> render from <code>kit.icon</code> / <code>kit.name</code>. ✓</li>
+<li><strong>Workflow count</strong> = unique templates in mappings. Landing Page + Bug Fix + Technical Spike = <strong>3 unique</strong> → badge reads "3 workflows" (the mock shows 1 for the primary only; actual will reflect unique templates — both render fine).</li>
+<li><strong>Agent count</strong> = <code>agent_roles.length</code> = <strong>5</strong> → "5 agents". ✓</li>
+<li><strong>Description does NOT render on the card</strong> — only in the preview. This is the known card-description gap (below).</li>
+</ul>
+</div>
+
+<h4>Preview popover (<code>kit-preview.tsx</code>) on selection</h4>
+<ul>
+<li><strong>Header</strong>: icon + name + <code>description</code> ("Your AI team for shipping a landing page that converts"). ✓ — this is where the description copy earns its keep.</li>
+<li><strong>Team row</strong>: 5 role chips. 📋 PO · 👤 Copywriter/Content (fallback glyph until <code>ROLE_META</code> entry added) · 🎨 UX · 🎨 Frontend · 🔍 QA.</li>
+<li><strong>Workflows</strong>: clickable tags, primary "Landing Page" first (violet dot), step count "(6)", expand shows the step chain with 🔒 on the two approval gates and the trigger labels coloured per <code>label_presets</code>. ✓ — all driven by data.</li>
+</ul>
+
+<div class="note"><strong>Only optional UI touch:</strong> add <code>"Copywriter / Content": { icon: "✍️", short: "Copy" }</code> to <code>ROLE_META</code> in <code>kit-preview.tsx</code> for chip parity (otherwise the generic 👤 + full role string is used — functional, just less polished). One line; recommended for the Front End step of this feature.</p></div>
+
+<h4>Card-description gap (out of scope — future polish)</h4>
+<p class="meta">The kit-types spike noted that cards show no description until selected, so founders must click each card to read what it's for. That's a pre-existing picker limitation, not introduced by this revision. Out of scope here; suggest a follow-up card (e.g. a one-line description under the name on the card, or a tooltip). Nothing in this content revision depends on it.</p>
+
+<!-- ============================================================ -->
+<h2>Open questions — resolution summary</h2>
+<table>
+<tr><th>Q</th><th>Question</th><th>Resolution</th></tr>
+<tr><td>Q-1</td><td>Badge for soft-disabled-kit ideas?</td><td>Accept "no badge"; don't relax RLS (0 ideas affected). Design-Review sign-off item.</td></tr>
+<tr><td>Q-2</td><td>Marketing kit name / icon?</td><td><strong>Marketing Site</strong> · 📣</td></tr>
+<tr><td>Q-3</td><td>Placement / display_order?</td><td><strong>4</strong> (after AI, before Custom).</td></tr>
+<tr><td>Q-4</td><td>Copywriter persona?</td><td><strong>Quill</strong>, role <code>Copywriter / Content</code>, full prompt in §2.</td></tr>
+<tr><td>Q-5</td><td>Category?</td><td><strong>Growth</strong>.</td></tr>
+</table>
+
+<h2>Flags for downstream steps</h2>
+<ul>
+<li><span class="pill amber">FE</span> Add <code>ROLE_META</code> entry for <code>Copywriter / Content</code> (✍️ / "Copy") — 1 line in <code>kit-preview.tsx</code>.</li>
+<li><span class="pill amber">Migration</span> Verify Bug Fix / Technical Spike step roles are fillable by the Marketing team, or accept the documented secondary-trigger caveat (same as existing kits).</li>
+<li><span class="pill blue">Optional</span> Refresh AI kit labels (Model/Experiment → Prompt/Eval/Integration) to match the rename — separate card, not this revision.</li>
+<li><span class="pill blue">Optional</span> Card-description gap polish — separate card.</li>
+<li><span class="pill emerald">Review</span> Q-1 RLS/badge decision needs Design-Review sign-off.</li>
+</ul>
+
+<p class="meta" style="margin-top:2.5rem">— Compass · UX Design · all role strings verified against <code>00105_improve_agent_prompts.sql</code>; conventions matched against <code>00096</code>, <code>00097</code>, <code>00100</code>, and the live picker components.</p>
+
+</main>
+</body>
+</html>
