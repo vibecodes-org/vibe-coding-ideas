@@ -39,6 +39,13 @@ export function BoardEmptyStateContent({
   // sense before any setup exists. Hide it once the idea has any agents, any
   // workflows, or an applied kit.
   const showKitTile = !!onApplyKit && !hasAgents && !hasWorkflows && !hasKit;
+  // Only show the agents/workflows tiles as SETUP actions (when they don't exist
+  // yet). Once a kit has set them up, "Manage …" is config, not a get-started
+  // step — so we replace those tiles with a single subtle note instead.
+  const showAgentsTile = !hasAgents;
+  const showWorkflowsTile = !hasWorkflows;
+  const showSetupTiles = showAgentsTile || showWorkflowsTile || showKitTile;
+  const showManageNote = hasAgents || hasWorkflows;
 
   return (
     <div className="text-center">
@@ -78,7 +85,9 @@ export function BoardEmptyStateContent({
         </div>
       )}
 
+      {showSetupTiles && (
       <div className="mt-7 grid grid-cols-1 gap-3 sm:grid-cols-2 sm:max-w-sm sm:mx-auto">
+        {showAgentsTile && (
         <button
           type="button"
           onClick={() => switchBoardTab("agents")}
@@ -87,10 +96,12 @@ export function BoardEmptyStateContent({
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/15">
             <Bot className="h-4 w-4 text-emerald-400" />
           </div>
-          <p className="mt-2.5 text-[13px] font-semibold text-emerald-400">{hasAgents ? "Manage Agents" : "Add AI Agents"}</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">{hasAgents ? "View and configure your agent team" : "Build your team to automate workflow steps"}</p>
+          <p className="mt-2.5 text-[13px] font-semibold text-emerald-400">Add AI Agents</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">Build your team to automate workflow steps</p>
           <ArrowRight className="mt-2 h-3.5 w-3.5 text-emerald-400/40 transition-transform group-hover:translate-x-0.5 group-hover:text-emerald-400/70" />
         </button>
+        )}
+        {showWorkflowsTile && (
         <button
           type="button"
           onClick={() => switchBoardTab("workflows")}
@@ -99,10 +110,11 @@ export function BoardEmptyStateContent({
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/15">
             <Workflow className="h-4 w-4 text-amber-400" />
           </div>
-          <p className="mt-2.5 text-[13px] font-semibold text-amber-400">{hasWorkflows ? "Manage Workflows" : "Set Up Workflows"}</p>
-          <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">{hasWorkflows ? "View and configure your workflow templates" : "Define step-by-step processes for tasks"}</p>
+          <p className="mt-2.5 text-[13px] font-semibold text-amber-400">Set Up Workflows</p>
+          <p className="mt-0.5 text-[11px] text-muted-foreground leading-snug">Define step-by-step processes for tasks</p>
           <ArrowRight className="mt-2 h-3.5 w-3.5 text-amber-400/40 transition-transform group-hover:translate-x-0.5 group-hover:text-amber-400/70" />
         </button>
+        )}
         {showKitTile && (
           <button
             type="button"
@@ -119,6 +131,33 @@ export function BoardEmptyStateContent({
           </button>
         )}
       </div>
+      )}
+
+      {showManageNote && (
+        <p className="mt-6 text-xs text-muted-foreground">
+          Your kit already set up your{" "}
+          {hasAgents && (
+            <button
+              type="button"
+              onClick={() => switchBoardTab("agents")}
+              className="font-medium text-foreground underline-offset-2 hover:underline"
+            >
+              AI team
+            </button>
+          )}
+          {hasAgents && hasWorkflows && " and "}
+          {hasWorkflows && (
+            <button
+              type="button"
+              onClick={() => switchBoardTab("workflows")}
+              className="font-medium text-foreground underline-offset-2 hover:underline"
+            >
+              workflow
+            </button>
+          )}
+          {" "}&mdash; manage anytime from the tabs above.
+        </p>
+      )}
 
       <button
         type="button"

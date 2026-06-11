@@ -353,12 +353,13 @@ interface CommonPromptArgs {
 function mcpSetupHead(appUrl: string): string {
   return `Make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are ALREADY available, skip this section.
 
-If they are NOT available, set up the hosted connector — this is one step, then a restart:
+If they are NOT available, add the hosted connector, then hand sign-in back to me. IMPORTANT: do NOT build an OAuth URL or run the authorization yourself — Claude Code's built-in \`/mcp\` flow manages the browser sign-in (and its localhost callback) reliably; a hand-driven flow fails with "localhost refused to connect".
 1. Add it at local scope (local scope intentionally overrides any existing project "vibecodes-remote", e.g. a local stdio server, so there is no conflict):
      claude mcp add -s local --transport http vibecodes-remote ${mcpEndpoint(appUrl)}
-2. Authorise in the browser if prompted, then RESTART Claude Code in this folder (run \`claude\` again) so the new connector's tools load.
+2. Then STOP and tell me to finish sign-in with the built-in flow: run \`/mcp\`, select "vibecodes-remote", choose Authenticate, and approve in the browser. (If the browser ever shows "localhost refused to connect", copy the full URL from the address bar and paste it back into Claude Code — that's the supported fallback.)
+3. Once I confirm it's connected, re-check the board tools and continue.
 
-Do NOT debug, reconfigure, or work around other MCP servers, and do NOT spend more than one step on this. If the board tools still aren't available after one restart, stop and tell me rather than improvising.`;
+Do NOT debug or reconfigure other MCP servers, and do NOT improvise the OAuth flow. If the board tools still aren't available after I authenticate, stop and tell me rather than guessing.`;
 }
 
 /**
