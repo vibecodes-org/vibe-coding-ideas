@@ -47,8 +47,8 @@ export function BoardEmptyStateContent({
       </div>
       <h3 className="mt-5 text-lg font-semibold">Get started with AI</h3>
       <p className="mt-2 text-sm text-muted-foreground">
-        Describe your idea and let AI generate a full task board for you
-        &mdash; columns, tasks, and labels, all in one click.
+        Let AI turn your idea into a full task board &mdash; columns, tasks, and
+        labels, all in one click.
       </p>
       {canUseAi ? (
         <div className="mt-6">

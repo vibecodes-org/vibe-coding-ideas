@@ -82,13 +82,23 @@ describe("SetupChecklist — Connect step is Launch-first (Slice B)", () => {
     expect(screen.getByText(/Desktop only/i)).not.toBeNull();
   });
 
-  it("with no idea yet, points the Connect step at creating an idea", () => {
-    render(<SetupChecklist {...baseProps} firstIdea={null} />);
-    // Launch needs an idea; the Connect step falls back to a create-idea link.
+  it("brand-new user (no idea): Connect + Generate-board steps are gated, so 'Create idea' shows exactly once", () => {
+    render(
+      <SetupChecklist
+        hasIdea={false}
+        hasBoardWithTasks={false}
+        hasMcpConnection={false}
+        hasTaskMoved={false}
+        firstIdea={null}
+      />
+    );
+    // Launch needs an idea, so no Launch button yet.
     expect(
       screen.queryByRole("button", { name: /Launch Claude Code/i })
     ).toBeNull();
-    // (Multiple "Create idea" CTAs may exist — at least one is present.)
-    expect(screen.getAllByText(/Create idea/i).length).toBeGreaterThan(0);
+    // Only the "Create an idea" step shows a CTA — the gated Generate-board and
+    // Connect steps render no button, so "Create idea" appears exactly ONCE
+    // (the bug was three identical "Create idea" buttons).
+    expect(screen.getAllByText(/Create idea/i)).toHaveLength(1);
   });
 });

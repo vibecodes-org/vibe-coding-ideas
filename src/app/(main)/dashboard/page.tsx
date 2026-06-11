@@ -18,7 +18,6 @@ import { getDueDateStatus } from "@/lib/utils";
 import { DEFAULT_PANEL_ORDER } from "@/lib/dashboard-order";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { OnboardingWrapper } from "@/components/onboarding/onboarding-wrapper";
-import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { SetupChecklist } from "@/components/dashboard/setup-checklist";
 import { ActiveBoards } from "@/components/dashboard/active-boards";
 import type { ActiveBoard } from "@/components/dashboard/active-boards";
@@ -777,14 +776,10 @@ export default async function DashboardPage() {
             hasTaskMoved={hasTaskMoved}
             firstIdea={myIdeas[0] ? { id: myIdeas[0].id, title: myIdeas[0].title, github_url: myIdeas[0].github_url } : null}
           />
-          {!hasMcpConnection && (
-            <div className="mb-6">
-              <McpConnectionBanner
-                agentCount={botProfiles.length}
-                taskCount={tasks.length}
-              />
-            </div>
-          )}
+          {/* MCP connection lives in the "Getting set up" checklist's Connect step
+              now (Launch-first), so the standalone dashboard banner is redundant
+              here and showed a nonsensical "0 tasks" message for brand-new users.
+              The contextual banner still appears on the board page. */}
           <StatsCards
             ideasCount={ideasCount}
             collaborationsCount={collaborationsCount}

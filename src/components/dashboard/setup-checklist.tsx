@@ -88,7 +88,7 @@ function ctaForStep(step: SetupStep, firstIdea: FirstIdea | null): StepCta {
             href: `/ideas/${firstIdea.id}/board`,
             icon: Sparkles,
           }
-        : { kind: "link", label: "Create idea", href: "/ideas/new", icon: Plus };
+        : null; // gated — "Create an idea" must come first
     default:
       return null;
   }
@@ -154,16 +154,10 @@ function McpStepCta({ firstIdea }: { firstIdea: FirstIdea | null }) {
     </Popover>
   );
 
-  // No idea yet → can't launch; point at creating one (the MCP step comes after).
+  // No idea yet → gated. "Create an idea" + "Generate a board" come first, so
+  // this step shows no CTA (avoids three identical "Create idea" buttons).
   if (!firstIdea) {
-    return (
-      <Button asChild size="sm" variant="outline" className="h-7 shrink-0 gap-1.5 px-2.5 text-xs">
-        <Link href="/ideas/new">
-          <Plus className="h-3 w-3" />
-          Create idea
-        </Link>
-      </Button>
-    );
+    return null;
   }
 
   // Mobile: no terminal on a phone — note + manual command only.
