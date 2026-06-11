@@ -65,6 +65,7 @@ function DescriptionField({
   creditsRemaining,
   onEnhance,
   onUndo,
+  containerRef,
 }: {
   description: string;
   setDescription: (v: string) => void;
@@ -75,6 +76,7 @@ function DescriptionField({
   creditsRemaining: number;
   onEnhance: () => void;
   onUndo: () => void;
+  containerRef?: React.Ref<HTMLDivElement>;
 }) {
   const [showPulse, setShowPulse] = useState(false);
 
@@ -91,7 +93,7 @@ function DescriptionField({
   }, [showPulse]);
 
   return (
-    <div className="space-y-2">
+    <div ref={containerRef} className="scroll-mt-4 space-y-2">
       <label htmlFor="description" className="text-sm font-medium flex items-center gap-1.5">
         Description
         {enhanced && (
@@ -169,6 +171,7 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
   const [enhanced, setEnhanced] = useState(false);
   const [creditsRemaining, setCreditsRemaining] = useState(starterCredits);
   const originalDescRef = useRef("");
+  const descriptionRef = useRef<HTMLDivElement>(null);
   const [enhanceDialogOpen, setEnhanceDialogOpen] = useState(false);
 
   // isCompactPreview removed — KitPreview no longer has compact mode
@@ -189,6 +192,13 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
     setDescription(text);
     setEnhanced(true);
     if (!hasByokKey) setCreditsRemaining((prev) => Math.max(0, prev - 1));
+    // The enhanced text lands in a textarea below the fold; without this the
+    // page stays scrolled at the top and it looks like nothing happened. Wait
+    // for the dialog to close + the textarea to expand (rows 6→10) before
+    // bringing the description into view.
+    setTimeout(() => {
+      descriptionRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    }, 150);
   }, [hasByokKey]);
 
   const handleUndo = useCallback(() => {
@@ -300,6 +310,7 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
             creditsRemaining={creditsRemaining}
             onEnhance={handleEnhance}
             onUndo={handleUndo}
+            containerRef={descriptionRef}
           />
 
           <div className="space-y-2">
