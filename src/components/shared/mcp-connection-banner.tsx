@@ -2,9 +2,11 @@
 
 import { useState, useEffect } from "react";
 import Link from "next/link";
-import { Cable, X, Copy, Check } from "lucide-react";
+import { Cable, X, Copy, Check, Rocket, Terminal } from "lucide-react";
 import { toast } from "sonner";
 import { MCP_COMMAND, MCP_SUGGESTED_PROMPT } from "@/lib/constants";
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { useLaunchClaudeCode } from "@/lib/use-launch-claude-code";
 import { cn } from "@/lib/utils";
 
 const SESSION_DISMISS_KEY = "mcp-banner-dismissed";
@@ -16,6 +18,14 @@ interface McpConnectionBannerProps {
   className?: string;
   /** Whether the banner can be dismissed. Default true. Set false on first-run dashboard. */
   dismissable?: boolean;
+  /**
+   * The idea this banner is for. When provided (and on desktop), the banner
+   * leads with a "Launch Claude Code" deep link that auto-connects MCP and picks
+   * up the board. Omitted on the dashboard (no single idea) → manual command only.
+   */
+  ideaId?: string;
+  ideaTitle?: string;
+  ideaGithubUrl?: string | null;
 }
 
 export function McpConnectionBanner({
@@ -24,10 +34,22 @@ export function McpConnectionBanner({
   compact = false,
   className,
   dismissable = true,
+  ideaId,
+  ideaTitle,
+  ideaGithubUrl,
 }: McpConnectionBannerProps) {
   const [dismissed, setDismissed] = useState(false);
   const [copied, setCopied] = useState(false);
   const [mounted, setMounted] = useState(false);
+  const isDesktop = useMediaQuery("(min-width: 768px)");
+
+  // Launch is gated on having an idea to build the deep link from + desktop.
+  const canLaunch = isDesktop && !!ideaId;
+  const { launch, copyCommand } = useLaunchClaudeCode({
+    ideaId: ideaId ?? "",
+    ideaTitle: ideaTitle ?? "your project",
+    ideaGithubUrl: ideaGithubUrl ?? null,
+  });
 
   useEffect(() => {
     try {
@@ -77,19 +99,37 @@ export function McpConnectionBanner({
           Your agents need{" "}
           <span className="font-medium text-foreground">Claude Code</span> to
           work on tasks.{" "}
-          <button
-            onClick={handleCopy}
-            className="font-medium text-cyan-400 hover:text-cyan-300"
-          >
-            {copied ? "Copied!" : "Copy MCP command"}
-          </button>
+          {canLaunch ? (
+            <button
+              onClick={launch}
+              className="font-medium text-emerald-400 hover:text-emerald-300"
+            >
+              Launch Claude Code &rarr;
+            </button>
+          ) : (
+            <button
+              onClick={handleCopy}
+              className="font-medium text-cyan-400 hover:text-cyan-300"
+            >
+              {copied ? "Copied!" : "Copy MCP command"}
+            </button>
+          )}
           {" · "}
-          <Link
-            href="/guide/mcp-integration"
-            className="font-medium text-cyan-400 hover:text-cyan-300"
-          >
-            Learn more &rarr;
-          </Link>
+          {canLaunch ? (
+            <button
+              onClick={() => void copyCommand()}
+              className="font-medium text-cyan-400 hover:text-cyan-300"
+            >
+              Copy command
+            </button>
+          ) : (
+            <Link
+              href="/guide/mcp-integration"
+              className="font-medium text-cyan-400 hover:text-cyan-300"
+            >
+              Learn more &rarr;
+            </Link>
+          )}
           {" · "}
           <span className="text-muted-foreground">
             Then try: <em className="text-violet-400">&quot;{MCP_SUGGESTED_PROMPT}&quot;</em>
@@ -146,8 +186,20 @@ export function McpConnectionBanner({
           </div>
           <p className="mt-1 text-sm text-muted-foreground">{description}</p>
 
-          {/* Terminal block */}
-          <div className="mt-3 overflow-x-auto rounded-lg bg-black/80 px-3 py-2 font-mono text-xs leading-relaxed">
+          {/* Manual command — the fallback for non-Claude-Code / web users.
+              Labelled as "manual setup" when Launch is the primary action. */}
+          {canLaunch && (
+            <p className="mt-3 flex items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+              <Terminal className="h-3 w-3" />
+              Manual setup — connects VibeCodes for all your projects:
+            </p>
+          )}
+          <div
+            className={cn(
+              "overflow-x-auto rounded-lg bg-black/80 px-3 py-2 font-mono text-xs leading-relaxed",
+              canLaunch ? "mt-1.5" : "mt-3"
+            )}
+          >
             <span className="text-emerald-400">$</span>{" "}
             <span className="text-foreground">{MCP_COMMAND}</span>
           </div>
@@ -165,16 +217,26 @@ export function McpConnectionBanner({
 
         {/* Actions */}
         <div className="flex shrink-0 flex-row gap-2 sm:flex-col">
+          {canLaunch && (
+            <button
+              onClick={launch}
+              className="inline-flex items-center gap-1.5 rounded-md bg-emerald-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition-colors hover:bg-emerald-400"
+            >
+              <Rocket className="h-3 w-3" />
+              Launch Claude Code
+            </button>
+          )}
           <button
-            onClick={handleCopy}
-            className="inline-flex items-center gap-1.5 rounded-md bg-amber-500 px-3 py-1.5 text-xs font-semibold text-zinc-950 transition-colors hover:bg-amber-400"
-          >
-            {copied ? (
-              <Check className="h-3 w-3" />
-            ) : (
-              <Copy className="h-3 w-3" />
+            onClick={canLaunch ? () => void copyCommand() : handleCopy}
+            className={cn(
+              "inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-semibold transition-colors",
+              canLaunch
+                ? "border border-border text-muted-foreground hover:bg-muted hover:text-foreground"
+                : "bg-amber-500 text-zinc-950 hover:bg-amber-400"
             )}
-            {copied ? "Copied!" : "Copy command"}
+          >
+            {copied ? <Check className="h-3 w-3" /> : <Copy className="h-3 w-3" />}
+            {canLaunch ? "Copy command" : copied ? "Copied!" : "Copy command"}
           </button>
           <Link
             href="/guide/mcp-integration"

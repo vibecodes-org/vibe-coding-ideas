@@ -12,16 +12,15 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Switch } from "@/components/ui/switch";
-import { Github, Lock, Sparkles, Undo2, Check } from "lucide-react";
+import { Github, Sparkles, Undo2, Check } from "lucide-react";
 import Link from "next/link";
 import { toast } from "sonner";
 import { TagInput } from "./tag-input";
 import { CreateEnhanceDialog } from "./create-enhance-dialog";
+import { VisibilitySelector } from "./visibility-selector";
 import { createIdea } from "@/actions/ideas";
 import { ProjectTypeSelector } from "@/components/kits/project-type-selector";
 import { KitPreview } from "@/components/kits/kit-preview";
-import { useMediaQuery } from "@/hooks/use-media-query";
 import type { KitWithSteps } from "@/actions/kits";
 
 interface SimpleBotProfile {
@@ -161,7 +160,7 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [tags, setTags] = useState<string[]>([]);
-  const [isPrivate, setIsPrivate] = useState(false);
+  const [visibility, setVisibility] = useState<"public" | "private">("public");
   const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
 
   // AI Enhance state
@@ -207,7 +206,7 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
           description,
           tags: tags.join(","),
           githubUrl,
-          visibility: isPrivate ? "private" : "public",
+          visibility,
           kitId: hasKit ? selectedKitId : null,
         });
 
@@ -232,7 +231,7 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
         toast.error(err instanceof Error ? err.message : "Failed to create idea");
       }
     });
-  }, [title, description, tags, isPrivate, hasKit, selectedKitId, router, startTransition]);
+  }, [title, description, tags, visibility, hasKit, selectedKitId, router, startTransition]);
 
   return (
     <Card className="mx-auto max-w-2xl">
@@ -329,23 +328,9 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
             )}
           </div>
 
-          <div className="flex items-center justify-between rounded-lg border border-border p-4">
-            <div className="flex items-center gap-3">
-              <Lock className="h-4 w-4 text-muted-foreground" />
-              <div className="space-y-0.5">
-                <label htmlFor="private-toggle" className="text-sm font-medium">
-                  Private idea
-                </label>
-                <p className="text-xs text-muted-foreground">
-                  Only you and collaborators can see this idea
-                </p>
-              </div>
-            </div>
-            <Switch
-              id="private-toggle"
-              checked={isPrivate}
-              onCheckedChange={setIsPrivate}
-            />
+          <div className="space-y-2">
+            <label className="text-sm font-medium">Visibility</label>
+            <VisibilitySelector value={visibility} onChange={setVisibility} />
           </div>
 
           <div className="flex gap-3">

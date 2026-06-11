@@ -281,6 +281,9 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           <McpConnectionBanner
             agentCount={ideaAgents.length}
             taskCount={(rawTasks ?? []).length}
+            ideaId={id}
+            ideaTitle={idea.title}
+            ideaGithubUrl={idea.github_url}
             compact
           />
         </div>

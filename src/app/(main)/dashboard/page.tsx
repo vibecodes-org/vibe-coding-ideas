@@ -19,8 +19,7 @@ import { DEFAULT_PANEL_ORDER } from "@/lib/dashboard-order";
 import { StatsCards } from "@/components/dashboard/stats-cards";
 import { OnboardingWrapper } from "@/components/onboarding/onboarding-wrapper";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
-import { FirstRunDashboard } from "@/components/dashboard/first-run-dashboard";
-import { DashboardModeSwitch } from "@/components/dashboard/dashboard-mode-switch";
+import { SetupChecklist } from "@/components/dashboard/setup-checklist";
 import { ActiveBoards } from "@/components/dashboard/active-boards";
 import type { ActiveBoard } from "@/components/dashboard/active-boards";
 import { computeIdeaHealth } from "@/lib/idea-health";
@@ -33,7 +32,7 @@ import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
 import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
 import { IdeaCard } from "@/components/ideas/idea-card";
 import { getActiveKitsWithSteps } from "@/actions/kits";
-import { computeIsActivated } from "@/lib/dashboard-activation";
+import { getAiAccess } from "@/actions/ai";
 import { getAgentStatus, type AgentWorkflowStep } from "@/lib/agent-status";
 import { Button } from "@/components/ui/button";
 import type {
@@ -69,6 +68,7 @@ export default async function DashboardPage() {
     userProfileResult,
     publicIdeasCountResult,
     onboardingKitsResult,
+    aiAccessResult,
   ] = await Promise.all([
     // My ideas (limit 5)
     supabase
@@ -138,6 +138,8 @@ export default async function DashboardPage() {
       .eq("visibility", "public"),
     // Project kits for onboarding
     getActiveKitsWithSteps(),
+    // AI access (for onboarding enhance dialog)
+    getAiAccess(),
   ]);
 
   const myIdeas = (myIdeasResult.data ?? []) as unknown as IdeaWithAuthor[];
@@ -174,6 +176,7 @@ export default async function DashboardPage() {
   const hasExistingContent = ideasCount > 0 || collaborationsCount > 0;
   const isNewUser = !onboardingCompleted && !hasExistingContent;
   const onboardingKits = onboardingKitsResult;
+  const aiAccess = aiAccessResult;
 
   // All idea IDs the user owns or collaborates on (for board queries)
   const myIdeaIds = (myIdeaIdsResult.data ?? []).map((i) => i.id);
@@ -511,70 +514,25 @@ export default async function DashboardPage() {
   // Sort by most recent activity
   activeBoards.sort((a, b) => b.lastActivity.localeCompare(a.lastActivity));
 
-  // First-run activation check: user needs tasks AND at least one advanced feature
-  const maxBoardTaskCount = activeBoards.reduce((max, b) => Math.max(max, b.totalTasks), 0);
-  const hasTasks = maxBoardTaskCount >= 3;
-  const hasAgents = botProfiles.length > 0;
+  // "Getting set up" checklist signals (one merged dashboard — no first-run fork).
   const hasMcpConnection = !!userProfile?.mcp_connected_at;
+  const hasIdea = ideasCount > 0;
+  // A board "with tasks" = at least one active board surfaced any tasks.
+  const hasBoardWithTasks = activeBoards.some((b) => b.totalTasks > 0);
 
-  // Workflow count across all user ideas (needed for both activation check and first-run display)
-  let totalWorkflowCount = 0;
-  if (allUserIdeaIds.length > 0) {
-    const { count } = await supabase
-      .from("workflow_templates")
-      .select("*", { head: true, count: "exact" })
-      .in("idea_id", allUserIdeaIds);
-    totalWorkflowCount = count ?? 0;
-  }
-  const hasWorkflows = totalWorkflowCount > 0;
-
-  // Check for manual board interaction (beyond auto-generated "created" entries)
-  // This prevents premature graduation after onboarding auto-creates tasks/agents/workflows
-  let hasUserActivity = false;
+  // "First task moved" signal (audit F3.4 fix): based on REAL board progress —
+  // any `moved` activity row on the user's ideas, logged whether the move was
+  // made by a human in the UI or by an agent via MCP `move_task`. Crucially NOT
+  // derived from human-assigned task count, which mis-ticked for AI-created
+  // tasks the user never touched.
+  let hasTaskMoved = false;
   if (allUserIdeaIds.length > 0) {
     const { count } = await supabase
       .from("board_task_activity")
       .select("*", { head: true, count: "exact" })
       .in("idea_id", allUserIdeaIds)
-      .eq("actor_id", user.id)
-      .neq("action", "created");
-    hasUserActivity = (count ?? 0) > 0;
-  }
-
-  const isActivated = computeIsActivated({ hasTasks, hasAgents, hasWorkflows, hasMcpConnection, hasUserActivity });
-
-  // First-run: workflow template count for the first idea (for board preview)
-  let firstIdeaWorkflowCount = 0;
-  if (myIdeas[0] && !isActivated) {
-    if (allUserIdeaIds.length === 1) {
-      firstIdeaWorkflowCount = totalWorkflowCount; // only one idea, reuse the count
-    } else {
-      const { count } = await supabase
-        .from("workflow_templates")
-        .select("*", { head: true, count: "exact" })
-        .eq("idea_id", myIdeas[0].id);
-      firstIdeaWorkflowCount = count ?? 0;
-    }
-  }
-
-  // First-run board preview: task titles grouped by column for the first idea
-  const firstRunBoardPreview: { columnTitle: string; tasks: string[]; count: number }[] = [];
-  if (myIdeas[0] && !isActivated) {
-    const firstIdeaId = myIdeas[0].id;
-    const firstIdeaCols = columnsByIdea.get(firstIdeaId) ?? [];
-    for (const col of firstIdeaCols.slice(0, 2)) {
-      if (col.is_done_column) continue;
-      const colTasks = boardTasks
-        .filter((t) => t.column_id === col.id)
-        .map((t) => t.title);
-      if (colTasks.length > 0 || firstRunBoardPreview.length === 0) {
-        firstRunBoardPreview.push({
-          columnTitle: col.title,
-          tasks: colTasks.slice(0, 2),
-          count: colTasks.length,
-        });
-      }
-    }
+      .eq("action", "moved");
+    hasTaskMoved = (count ?? 0) > 0;
   }
 
   // Build task counts from Phase 2 result (no extra sequential query needed)
@@ -792,49 +750,49 @@ export default async function DashboardPage() {
           userAvatarUrl={userProfile?.avatar_url ?? null}
           userGithubUsername={userProfile?.github_username ?? null}
           kits={onboardingKits}
+          canUseAi={aiAccess.canUseAi}
+          hasByokKey={aiAccess.hasApiKey}
+          starterCredits={aiAccess.starterCredits}
+          bots={botProfiles
+            .filter((b) => b.is_active)
+            .map((b) => ({
+              id: b.id,
+              full_name: b.name,
+              role: b.role,
+              system_prompt: b.system_prompt,
+              is_active: b.is_active,
+            }))}
         />
       )}
 
-      {/* Dashboard mode: first-run OR standard, never both */}
+      {/* One merged dashboard for everyone past onboarding. A self-completing
+          "Getting set up" checklist guides setup and auto-hides on completion;
+          the standard panels render underneath with their own empty states. */}
       {!isNewUser && (
-        <DashboardModeSwitch
-          isActivated={isActivated}
-          firstRunContent={
-            <FirstRunDashboard
-              userName={userProfile?.full_name ?? null}
-              hasMcpConnection={hasMcpConnection}
-              ideasCount={ideasCount}
-              firstIdea={myIdeas[0] ? { id: myIdeas[0].id, title: myIdeas[0].title } : null}
-              activeBoards={activeBoards}
-              maxBoardTaskCount={maxBoardTaskCount}
-              workflowCount={firstIdeaWorkflowCount}
-              boardPreview={firstRunBoardPreview}
-              botProfiles={botProfiles}
-              hasTaskInProgress={tasks.length > 0}
-              agentCount={botProfiles.length}
-              taskCount={tasks.length}
-            />
-          }
-          standardContent={
-            <>
-              {!hasMcpConnection && (
-                <div className="mb-6">
-                  <McpConnectionBanner
-                    agentCount={botProfiles.length}
-                    taskCount={tasks.length}
-                  />
-                </div>
-              )}
-              <StatsCards
-                ideasCount={ideasCount}
-                collaborationsCount={collaborationsCount}
-                upvotesReceived={totalUpvotes}
-                tasksAssigned={tasks.length}
+        <>
+          <SetupChecklist
+            hasIdea={hasIdea}
+            hasBoardWithTasks={hasBoardWithTasks}
+            hasMcpConnection={hasMcpConnection}
+            hasTaskMoved={hasTaskMoved}
+            firstIdea={myIdeas[0] ? { id: myIdeas[0].id, title: myIdeas[0].title, github_url: myIdeas[0].github_url } : null}
+          />
+          {!hasMcpConnection && (
+            <div className="mb-6">
+              <McpConnectionBanner
+                agentCount={botProfiles.length}
+                taskCount={tasks.length}
               />
-              <DashboardGrid sections={sections} defaultOrder={DEFAULT_PANEL_ORDER} />
-            </>
-          }
-        />
+            </div>
+          )}
+          <StatsCards
+            ideasCount={ideasCount}
+            collaborationsCount={collaborationsCount}
+            upvotesReceived={totalUpvotes}
+            tasksAssigned={tasks.length}
+          />
+          <DashboardGrid sections={sections} defaultOrder={DEFAULT_PANEL_ORDER} />
+        </>
       )}
     </div>
   );

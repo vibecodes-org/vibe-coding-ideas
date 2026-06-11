@@ -5,11 +5,23 @@ import { useRouter } from "next/navigation";
 import { OnboardingDialog } from "./onboarding-dialog";
 import type { KitWithSteps } from "@/actions/kits";
 
+interface SimpleBotProfile {
+  id: string;
+  full_name: string | null;
+  role: string | null;
+  system_prompt: string | null;
+  is_active: boolean;
+}
+
 interface OnboardingWrapperProps {
   userFullName: string | null;
   userAvatarUrl: string | null;
   userGithubUsername: string | null;
   kits: KitWithSteps[];
+  canUseAi: boolean;
+  hasByokKey: boolean;
+  starterCredits: number;
+  bots: SimpleBotProfile[];
 }
 
 export function OnboardingWrapper({
@@ -17,6 +29,10 @@ export function OnboardingWrapper({
   userAvatarUrl,
   userGithubUsername,
   kits,
+  canUseAi,
+  hasByokKey,
+  starterCredits,
+  bots,
 }: OnboardingWrapperProps) {
   const [open, setOpen] = useState(true);
   const router = useRouter();
@@ -36,6 +52,10 @@ export function OnboardingWrapper({
       userAvatarUrl={userAvatarUrl}
       userGithubUsername={userGithubUsername}
       kits={kits}
+      canUseAi={canUseAi}
+      hasByokKey={hasByokKey}
+      starterCredits={starterCredits}
+      bots={bots}
     />
   );
 }

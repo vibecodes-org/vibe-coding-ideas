@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback, useEffect, useRef } from "react";
+import Link from "next/link";
 import { toast } from "sonner";
 import {
   Sparkles,
@@ -10,10 +11,10 @@ import {
   Lightbulb,
   LayoutDashboard,
   Bot,
-  Cable,
   Copy,
-  Globe,
-  Lock,
+  Monitor,
+  Rocket,
+  Terminal,
   X,
 } from "lucide-react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -21,20 +22,32 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { StepIndicator } from "./step-indicator";
+import { TOTAL_STEPS, indicatorIndex } from "./onboarding-steps";
 import { Confetti } from "./confetti";
 import { ProjectTypeSelector } from "@/components/kits/project-type-selector";
 import { KitPreview } from "@/components/kits/kit-preview";
-import { MCP_COMMAND } from "@/lib/constants";
+import { CreateEnhanceDialog } from "@/components/ideas/create-enhance-dialog";
+import { VisibilitySelector } from "@/components/ideas/visibility-selector";
+import { useMediaQuery } from "@/hooks/use-media-query";
+import { useLaunchClaudeCode } from "@/lib/use-launch-claude-code";
+import { MCP_COMMAND, MCP_GUIDE_URL } from "@/lib/constants";
 import { cn } from "@/lib/utils";
 import {
   completeOnboarding,
   createIdeaFromOnboarding,
   updateProfileFromOnboarding,
-  enhanceOnboardingDescription,
   generateBoardFromOnboarding,
 } from "@/actions/onboarding";
 import type { KitWithSteps } from "@/actions/kits";
 import type { OnboardingGeneratedTask } from "@/actions/onboarding";
+
+interface SimpleBotProfile {
+  id: string;
+  full_name: string | null;
+  role: string | null;
+  system_prompt: string | null;
+  is_active: boolean;
+}
 
 interface OnboardingDialogProps {
   open: boolean;
@@ -43,6 +56,10 @@ interface OnboardingDialogProps {
   userAvatarUrl: string | null;
   userGithubUsername: string | null;
   kits: KitWithSteps[];
+  canUseAi: boolean;
+  hasByokKey: boolean;
+  starterCredits: number;
+  bots: SimpleBotProfile[];
 }
 
 export function OnboardingDialog({
@@ -52,6 +69,10 @@ export function OnboardingDialog({
   userAvatarUrl,
   userGithubUsername,
   kits,
+  canUseAi,
+  hasByokKey,
+  starterCredits,
+  bots,
 }: OnboardingDialogProps) {
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
@@ -68,7 +89,11 @@ export function OnboardingDialog({
   const [ideaDescription, setIdeaDescription] = useState("");
   const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
   const [visibility, setVisibility] = useState<"public" | "private">("public");
-  const [enhancing, setEnhancing] = useState(false);
+
+  // AI Enhance (preview dialog — shared with the New Idea flow)
+  const [enhanceDialogOpen, setEnhanceDialogOpen] = useState(false);
+  const [descriptionEnhanced, setDescriptionEnhanced] = useState(false);
+  const [creditsRemaining, setCreditsRemaining] = useState(starterCredits);
 
   // Creation state (Step 2 loading → Step 3)
   const [creating, setCreating] = useState(false);
@@ -83,9 +108,24 @@ export function OnboardingDialog({
 
   // MCP (Step 4)
   const [copied, setCopied] = useState(false);
+  const [copiedLink, setCopiedLink] = useState(false);
+  // Manual `claude mcp add` setup is demoted to a collapsed disclosure below the
+  // primary "Launch Claude Code" action on desktop.
+  const [manualOpen, setManualOpen] = useState(false);
+  const isMobile = useMediaQuery("(max-width: 640px)");
+  const isDesktop = useMediaQuery("(min-width: 768px)");
+
+  // Launch deep link built from the just-created idea (auto-connects MCP +
+  // picks up the board). Desktop-only — gated below. Stable when no idea yet.
+  const { launch: launchClaudeCode, copyCommand: copyLaunchCommand } =
+    useLaunchClaudeCode({
+      ideaId: createdIdeaId ?? "",
+      ideaTitle: ideaTitle || "your project",
+    });
 
   const avatarInitial = displayName.charAt(0).toUpperCase() || "?";
   const selectedKit = kits.find((k) => k.id === selectedKitId) ?? null;
+  const isCustomKit = selectedKit?.name === "Custom";
 
   const goToStep = useCallback((s: number) => {
     setStep(s);
@@ -125,28 +165,22 @@ export function OnboardingDialog({
     }
   };
 
-  const handleEnhance = async () => {
-    if (enhancing) return;
+  const handleOpenEnhance = useCallback(() => {
     if (!ideaTitle.trim()) {
-      toast.error("Add a title first so AI knows what to enhance");
+      toast.error("Add a project name first so AI knows what to enhance");
       return;
     }
-    setEnhancing(true);
-    try {
-      const { enhanced } = await enhanceOnboardingDescription({
-        title: ideaTitle,
-        description: ideaDescription,
-      });
-      setIdeaDescription(enhanced);
-      toast.success("Description enhanced!");
-    } catch (err) {
-      toast.error(
-        err instanceof Error ? err.message : "Failed to enhance description"
-      );
-    } finally {
-      setEnhancing(false);
-    }
-  };
+    setEnhanceDialogOpen(true);
+  }, [ideaTitle]);
+
+  const handleApplyEnhanced = useCallback(
+    (text: string) => {
+      setIdeaDescription(text);
+      setDescriptionEnhanced(true);
+      if (!hasByokKey) setCreditsRemaining((prev) => Math.max(0, prev - 1));
+    },
+    [hasByokKey]
+  );
 
   const handleProfileContinue = async () => {
     if (submitting) return;
@@ -258,7 +292,20 @@ export function OnboardingDialog({
     }
   };
 
+  const copyMcpGuideLink = async () => {
+    try {
+      const url = `${window.location.origin}${MCP_GUIDE_URL}`;
+      await navigator.clipboard.writeText(url);
+      setCopiedLink(true);
+      toast.success("Setup link copied — paste it on your computer");
+      setTimeout(() => setCopiedLink(false), 2000);
+    } catch {
+      toast.error("Failed to copy — please copy manually");
+    }
+  };
+
   return (
+    <>
     <Dialog open={open} onOpenChange={() => {}}>
       <DialogContent
         showCloseButton={false}
@@ -275,7 +322,10 @@ export function OnboardingDialog({
           <div className="mx-auto h-20 w-72 bg-primary/[0.08] blur-3xl" />
         </div>
 
-        <StepIndicator totalSteps={6} currentStep={step} />
+        <StepIndicator
+          totalSteps={TOTAL_STEPS}
+          currentStep={indicatorIndex(step)}
+        />
 
         <div
           key={step}
@@ -357,7 +407,7 @@ export function OnboardingDialog({
               </Button>
               <button
                 onClick={handleSkip}
-                className="mt-3 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+                className="mt-3 block w-full text-center text-[13px] text-muted-foreground transition-colors hover:text-foreground"
               >
                 Skip for now
               </button>
@@ -376,8 +426,8 @@ export function OnboardingDialog({
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="text-xs text-muted-foreground/60">
-                  Step 2 of 6
+                <span className="text-xs text-muted-foreground">
+                  Step 2 of {TOTAL_STEPS}
                 </span>
               </div>
 
@@ -385,7 +435,7 @@ export function OnboardingDialog({
                 Quick profile setup
               </h2>
               <p className="mb-6 text-sm text-muted-foreground">
-                Help others know who you are. Takes 10 seconds.
+                Optional — help others know who you are, or skip and do it later.
               </p>
 
               <div className="mb-5 flex items-center gap-3.5">
@@ -472,7 +522,7 @@ export function OnboardingDialog({
               </Button>
               <button
                 onClick={() => goToStep(2)}
-                className="mt-3 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+                className="mt-3 block w-full text-center text-[13px] text-muted-foreground transition-colors hover:text-foreground"
               >
                 Skip this step
               </button>
@@ -491,8 +541,8 @@ export function OnboardingDialog({
                 >
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <span className="text-xs text-muted-foreground/60">
-                  Step 3 of 6
+                <span className="text-xs text-muted-foreground">
+                  Step 3 of {TOTAL_STEPS}
                 </span>
               </div>
 
@@ -500,39 +550,24 @@ export function OnboardingDialog({
                 What are you building?
               </h2>
               <p className="mb-3 text-sm text-muted-foreground">
-                Describe your project and we&apos;ll set up everything — agents,
-                workflows, and your board.
+                Name it, pick a starting point, and we&apos;ll set up your board,
+                agents, and workflows.
               </p>
 
+              {/* 1 · Project name */}
               <div className="mb-3">
                 <label className="mb-1.5 block text-[13px] font-medium text-foreground">
                   Project name
                 </label>
                 <Input
-                  placeholder="e.g., A recipe sharing app with AI suggestions"
+                  placeholder="e.g. Recipe-sharing app with AI meal suggestions"
                   value={ideaTitle}
                   onChange={(e) => setIdeaTitle(e.target.value)}
                   autoFocus
                 />
               </div>
 
-              <div className="mb-3">
-                <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-foreground">
-                  Description
-                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
-                    optional — AI can help
-                  </span>
-                </label>
-                <Textarea
-                  placeholder="What's the idea? Don't overthink it — AI can refine it later."
-                  value={ideaDescription}
-                  onChange={(e) => setIdeaDescription(e.target.value)}
-                  rows={2}
-                  className="max-h-32 overflow-y-auto"
-                />
-              </div>
-
-              {/* Kit selector */}
+              {/* 2 · Project type (kit) — above description so it feeds AI context */}
               {kits.length > 0 && (
                 <div className="mb-3">
                   <label className="mb-1.5 block text-[13px] font-medium text-foreground">
@@ -558,79 +593,73 @@ export function OnboardingDialog({
                 </div>
               )}
 
-              {/* Visibility toggle */}
-              <div className="mb-3 flex items-center gap-2">
-                <span className="text-[13px] font-medium text-foreground">
-                  Visibility
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setVisibility("public")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all",
-                    visibility === "public"
-                      ? "border-primary bg-primary/[0.08] text-primary"
-                      : "border-border text-muted-foreground hover:border-border/80"
-                  )}
-                >
-                  <Globe className="h-3 w-3" />
-                  Public
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setVisibility("private")}
-                  className={cn(
-                    "inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-medium transition-all",
-                    visibility === "private"
-                      ? "border-primary bg-primary/[0.08] text-primary"
-                      : "border-border text-muted-foreground hover:border-border/80"
-                  )}
-                >
-                  <Lock className="h-3 w-3" />
-                  Private
-                </button>
-              </div>
-
-              {/* AI Enhance CTA */}
-              <button
-                type="button"
-                onClick={handleEnhance}
-                disabled={enhancing}
-                className="enhance-cta-border group mb-4 flex w-full flex-col rounded-xl bg-violet-500/[0.06] px-4 py-3 text-left transition-all hover:bg-violet-500/[0.10] hover:shadow-[0_0_32px_-6px_rgba(139,92,246,0.2)] disabled:pointer-events-none disabled:opacity-70 sm:flex-row sm:items-center sm:gap-3.5"
-              >
-                <div className="mb-2 flex items-center gap-3 sm:mb-0 sm:contents">
-                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-[10px] bg-gradient-to-br from-violet-500/25 to-purple-500/[0.12]">
-                    <Sparkles
-                      className={cn(
-                        "h-4.5 w-4.5 text-violet-300",
-                        enhancing && "animate-spin"
-                      )}
-                      style={enhancing ? { animationDuration: "2s" } : undefined}
-                    />
-                  </div>
-                  <div className="flex-1 sm:flex-initial">
-                    <div className="flex items-center gap-2">
-                      <span className="text-sm font-semibold text-zinc-200">
-                        {enhancing ? "Enhancing..." : "Enhance with AI"}
-                      </span>
-                      {!enhancing && (
-                        <span className="rounded bg-violet-500/20 border border-violet-500/30 px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide text-violet-300">
-                          Free
-                        </span>
-                      )}
-                    </div>
-                    <span className="text-xs text-zinc-500">
-                      {enhancing
-                        ? "This may take a moment..."
-                        : "AI can refine your description and help generate better tasks"}
+              {/* 3 · Description (optional) with enhance affordance in toolbar */}
+              <div className="mb-3">
+                <label className="mb-1.5 flex items-center gap-1.5 text-[13px] font-medium text-foreground">
+                  Description
+                  <span className="rounded bg-muted px-1.5 py-0.5 text-[10px] font-normal text-muted-foreground">
+                    optional
+                  </span>
+                  {descriptionEnhanced && (
+                    <span className="inline-flex items-center gap-1 rounded-full border border-green-500/20 bg-green-500/10 px-2 py-0.5 text-[10px] font-medium text-green-500">
+                      <Check className="h-2.5 w-2.5" />
+                      AI enhanced
                     </span>
+                  )}
+                </label>
+                <div
+                  className={cn(
+                    "overflow-hidden rounded-md border transition-colors focus-within:border-violet-500",
+                    descriptionEnhanced
+                      ? "border-violet-500/25 bg-violet-500/[0.03]"
+                      : "border-border"
+                  )}
+                >
+                  <Textarea
+                    placeholder="A few rough notes are plenty — AI can flesh it out for you below."
+                    value={ideaDescription}
+                    onChange={(e) => {
+                      setIdeaDescription(e.target.value);
+                      if (descriptionEnhanced) setDescriptionEnhanced(false);
+                    }}
+                    rows={3}
+                    className="max-h-32 overflow-y-auto rounded-none border-0 focus-visible:ring-0 focus-visible:ring-offset-0"
+                  />
+                  <div className="flex items-center justify-between border-t border-border bg-muted/20 px-3 py-1.5">
+                    <span className="text-[11px] text-muted-foreground/60">
+                      Supports markdown
+                    </span>
+                    {canUseAi && (
+                      <button
+                        type="button"
+                        onClick={handleOpenEnhance}
+                        title="Preview an AI-polished description before applying it"
+                        className="group inline-flex items-center gap-1.5 rounded-md border border-violet-500/30 bg-gradient-to-r from-violet-500/[0.12] to-purple-500/[0.06] px-2.5 py-1 text-[13px] font-semibold text-violet-400 transition-all hover:border-violet-500/50 hover:from-violet-500/[0.2] hover:to-purple-500/[0.12]"
+                      >
+                        <Sparkles className="h-3.5 w-3.5" />
+                        {descriptionEnhanced ? "Re-enhance" : "Enhance with AI"}
+                        {!hasByokKey && creditsRemaining > 0 && (
+                          <span className="flex h-[1.1rem] w-[1.1rem] items-center justify-center rounded-full bg-violet-600 text-[0.6rem] font-bold leading-none text-white">
+                            {creditsRemaining}
+                          </span>
+                        )}
+                      </button>
+                    )}
                   </div>
                 </div>
-                <span className="flex w-full shrink-0 items-center justify-center gap-1.5 rounded-lg bg-gradient-to-br from-violet-600 to-violet-700 px-4 py-1.5 text-[13px] font-semibold text-white shadow-[0_2px_8px_rgba(124,58,237,0.3)] sm:w-[110px]">
-                  <Sparkles className="h-3.5 w-3.5" />
-                  {enhancing ? "Working..." : "Enhance"}
-                </span>
-              </button>
+              </div>
+
+              {/* 4 · Visibility (shared segmented control) */}
+              <div className="mb-4">
+                <label className="mb-1.5 block text-[13px] font-medium text-foreground">
+                  Visibility
+                </label>
+                <VisibilitySelector
+                  value={visibility}
+                  onChange={setVisibility}
+                  idPrefix="onboarding-visibility"
+                />
+              </div>
 
               <Button
                 className="w-full gap-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white hover:brightness-110"
@@ -639,16 +668,16 @@ export function OnboardingDialog({
                 disabled={creating}
               >
                 <Sparkles className="h-4 w-4" />
-                Create & Generate Board
+                Create &amp; generate board
                 <ArrowRight className="h-4 w-4" />
               </Button>
-              <p className="mt-2 text-center text-[11px] text-muted-foreground/60">
-                This will create your idea, set up agents from the selected kit,
-                and generate an AI-powered task board.
+              <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                Creates the idea, applies the kit&apos;s agents &amp; workflow,
+                and auto-generates an AI task board.
               </p>
               <button
                 onClick={handleSkip}
-                className="mt-2 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+                className="mt-2 block w-full text-center text-[13px] text-muted-foreground transition-colors hover:text-foreground"
               >
                 I&apos;ll do this later
               </button>
@@ -668,12 +697,12 @@ export function OnboardingDialog({
                 Creating your project...
               </h2>
               <p className="mb-5 text-sm text-muted-foreground max-w-[350px] mx-auto">
-                Setting up your board, agents, and workflows.
+                This can take up to a minute — generating your board, agents, and
+                workflows.
                 {elapsedSeconds > 0 && (
                   <span className="block mt-1 text-xs tabular-nums">
-                    {elapsedSeconds < 15
-                      ? "This usually takes 15–30 seconds..."
-                      : `${elapsedSeconds}s elapsed — almost there...`}
+                    {elapsedSeconds}s elapsed — hang tight, this runs in the
+                    background.
                   </span>
                 )}
               </p>
@@ -873,7 +902,7 @@ export function OnboardingDialog({
               </Button>
               <button
                 onClick={handleSkipToBoard}
-                className="mt-3 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+                className="mt-3 block w-full text-center text-[13px] text-muted-foreground transition-colors hover:text-foreground"
               >
                 I&apos;ll do this later
               </button>
@@ -882,7 +911,21 @@ export function OnboardingDialog({
 
           {/* ── STEP 4: CONNECT MCP ── */}
           {step === 4 && (
-            <div className="px-8 pt-5 pb-8 sm:px-10">
+            <div className="px-8 pt-4 pb-8 sm:px-10">
+              <div className="mb-3 flex items-center justify-between">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-8 w-8"
+                  onClick={() => goToStep(3)}
+                >
+                  <ChevronLeft className="h-4 w-4" />
+                </Button>
+                <span className="text-xs text-muted-foreground">
+                  Step 4 of {TOTAL_STEPS}
+                </span>
+              </div>
+
               <h2 className="-tracking-wide mb-1 text-xl font-bold text-foreground sm:text-[22px]">
                 Connect Claude Code
               </h2>
@@ -891,6 +934,39 @@ export function OnboardingDialog({
                 board, claims tasks, and executes workflow steps as each agent
                 persona.
               </p>
+
+              {/* Mobile off-ramp — a phone has no terminal */}
+              {isMobile && (
+                <div className="mb-4 flex items-start gap-2.5 rounded-lg border border-cyan-500/25 bg-cyan-500/[0.06] p-3">
+                  <Monitor className="mt-0.5 h-4 w-4 shrink-0 text-cyan-400" />
+                  <div className="min-w-0">
+                    <p className="text-xs font-semibold text-foreground">
+                      You&apos;ll need a computer for this step
+                    </p>
+                    <p className="mt-0.5 text-[11px] text-muted-foreground">
+                      Claude Code runs in a terminal. Open the{" "}
+                      <Link
+                        href={MCP_GUIDE_URL}
+                        className="font-medium text-cyan-400 hover:text-cyan-300"
+                      >
+                        setup guide
+                      </Link>{" "}
+                      on your dev machine to continue — or skip and connect later.
+                    </p>
+                    <button
+                      onClick={copyMcpGuideLink}
+                      className="mt-2 inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-[11px] font-semibold text-foreground transition-colors hover:bg-card/80"
+                    >
+                      {copiedLink ? (
+                        <Check className="h-3 w-3 text-emerald-400" />
+                      ) : (
+                        <Copy className="h-3 w-3" />
+                      )}
+                      {copiedLink ? "Copied!" : "Copy setup link"}
+                    </button>
+                  </div>
+                </div>
+              )}
 
               {/* Why this matters callout */}
               <div className="mb-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-3.5">
@@ -904,68 +980,116 @@ export function OnboardingDialog({
                 </p>
               </div>
 
-              {/* Terminal block */}
-              <div className="mb-3 rounded-xl border border-border bg-[#0a0a0a] p-4 font-mono text-[12px] leading-relaxed">
-                <div>
-                  <span className="text-emerald-400">$</span>{" "}
-                  <span className="text-foreground">
-                    claude mcp add -s user --transport http vibecodes-remote{" "}
-                    <span className="text-amber-400">
-                      https://vibecodes.co.uk/api/mcp
-                    </span>
+              {/* PRIMARY: Launch Claude Code (desktop only — opens the local app,
+                  auto-connects MCP, and picks up this idea's board). */}
+              {isDesktop && (
+                <div className="mb-4">
+                  <Button
+                    className="w-full gap-2 bg-emerald-500 text-zinc-950 hover:bg-emerald-400"
+                    size="lg"
+                    onClick={launchClaudeCode}
+                    disabled={!createdIdeaId}
+                  >
+                    <Rocket className="h-4 w-4" />
+                    Launch Claude Code
+                  </Button>
+                  <p className="mt-2 text-center text-[11px] text-muted-foreground">
+                    Opens Claude Code on this computer, connects VibeCodes, and
+                    starts on your board. Review the prompt, then press Enter.
+                  </p>
+                  {!createdIdeaId && (
+                    <p className="mt-1 text-center text-[11px] text-amber-400/80">
+                      Create your project first to enable Launch.
+                    </p>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void copyLaunchCommand()}
+                    disabled={!createdIdeaId}
+                    className="mx-auto mt-2 flex items-center gap-1.5 text-[12px] font-medium text-muted-foreground transition-colors hover:text-foreground disabled:opacity-50"
+                  >
+                    <Copy className="h-3 w-3" />
+                    Or copy the launch command
+                  </button>
+                </div>
+              )}
+
+              {/* FALLBACK: manual `claude mcp add` for users without Claude Code
+                  set up, or who prefer the manual path. Collapsed by default. */}
+              <div className="mb-4 rounded-xl border border-border bg-card/40">
+                <button
+                  type="button"
+                  onClick={() => setManualOpen((o) => !o)}
+                  aria-expanded={manualOpen}
+                  className="flex w-full items-center justify-between gap-2 px-3.5 py-2.5 text-left"
+                >
+                  <span className="flex items-center gap-2 text-[13px] font-medium text-foreground">
+                    <Terminal className="h-3.5 w-3.5 text-muted-foreground" />
+                    No Claude Code yet? Manual setup
                   </span>
-                </div>
-                <div className="text-muted-foreground/60">
-                  → Connecting to VibeCodes MCP server...
-                </div>
-                <div className="text-muted-foreground/60">
-                  → Opening browser for authentication...
-                </div>
-                <div className="text-emerald-400">
-                  ✓ Connected as{" "}
-                  <span className="font-bold text-violet-400">
-                    {displayName || "You"}
-                  </span>
-                </div>
-                {createdIdeaId && (
-                  <div className="text-emerald-400">
-                    ✓ Board:{" "}
-                    <span className="font-bold text-violet-400">
-                      {ideaTitle}
-                    </span>{" "}
-                    ({generatedTasks.length} tasks
-                    {agentCount > 0 ? `, ${agentCount} agents` : ""})
+                  <ChevronLeft
+                    className={cn(
+                      "h-4 w-4 text-muted-foreground transition-transform",
+                      manualOpen ? "-rotate-90" : "rotate-0"
+                    )}
+                    aria-hidden="true"
+                  />
+                </button>
+                {manualOpen && (
+                  <div className="border-t border-border px-3.5 pt-3 pb-3.5">
+                    <p className="mb-2 text-[11px] text-muted-foreground">
+                      Run this once in your terminal — it connects VibeCodes for
+                      all your projects.
+                    </p>
+                    {/* Terminal block */}
+                    <div className="mb-3 rounded-lg border border-border bg-[#0a0a0a] p-3 font-mono text-[12px] leading-relaxed">
+                      <div className="break-all">
+                        <span className="text-emerald-400">$</span>{" "}
+                        <span className="text-foreground">
+                          claude mcp add -s user --transport http vibecodes-remote{" "}
+                          <span className="text-amber-400">
+                            https://vibecodes.co.uk/api/mcp
+                          </span>
+                        </span>
+                      </div>
+                      <div className="text-muted-foreground/60">
+                        → Connecting to VibeCodes MCP server...
+                      </div>
+                      <div className="text-emerald-400">
+                        ✓ Connected as{" "}
+                        <span className="font-bold text-violet-400">
+                          {displayName || "You"}
+                        </span>
+                      </div>
+                      {createdIdeaId && (
+                        <div className="text-emerald-400">
+                          ✓ Board:{" "}
+                          <span className="font-bold text-violet-400">
+                            {ideaTitle}
+                          </span>{" "}
+                          ({generatedTasks.length} tasks
+                          {agentCount > 0 ? `, ${agentCount} agents` : ""})
+                        </div>
+                      )}
+                    </div>
+                    <button
+                      onClick={copyMcpCommand}
+                      className={cn(
+                        "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px] font-semibold transition-all",
+                        copied
+                          ? "border-emerald-500/50 text-emerald-400"
+                          : "border-border bg-card text-foreground hover:bg-card/80"
+                      )}
+                    >
+                      {copied ? (
+                        <Check className="h-3.5 w-3.5" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                      {copied ? "Copied!" : "Copy command"}
+                    </button>
                   </div>
                 )}
-                <div className="mt-1 text-muted-foreground/60">
-                  Try:{" "}
-                  <span className="text-foreground">claude</span> then ask it to{" "}
-                  <span className="font-bold text-violet-400">
-                    &quot;check my board and start working&quot;
-                  </span>
-                </div>
-              </div>
-
-              <div className="mb-4 flex items-center gap-3">
-                <button
-                  onClick={copyMcpCommand}
-                  className={cn(
-                    "inline-flex items-center gap-2 rounded-lg border px-3 py-1.5 text-[13px] font-semibold transition-all",
-                    copied
-                      ? "border-emerald-500/50 text-emerald-400"
-                      : "border-border bg-card text-foreground hover:bg-card/80"
-                  )}
-                >
-                  {copied ? (
-                    <Check className="h-3.5 w-3.5" />
-                  ) : (
-                    <Copy className="h-3.5 w-3.5" />
-                  )}
-                  {copied ? "Copied!" : "Copy command"}
-                </button>
-                <span className="text-xs text-muted-foreground/60">
-                  Run this in your terminal where you code
-                </span>
               </div>
 
               {/* Fallback */}
@@ -996,7 +1120,7 @@ export function OnboardingDialog({
               </Button>
               <button
                 onClick={handleSkipToBoard}
-                className="mt-3 block w-full text-center text-[13px] text-muted-foreground/60 transition-colors hover:text-muted-foreground"
+                className="mt-3 block w-full text-center text-[13px] text-muted-foreground transition-colors hover:text-foreground"
               >
                 I&apos;ll do this later
               </button>
@@ -1089,5 +1213,21 @@ export function OnboardingDialog({
         `}</style>
       </DialogContent>
     </Dialog>
+
+    {canUseAi && (
+      <CreateEnhanceDialog
+        open={enhanceDialogOpen}
+        onOpenChange={setEnhanceDialogOpen}
+        title={ideaTitle}
+        description={ideaDescription}
+        kitType={selectedKit && !isCustomKit ? selectedKit.name : undefined}
+        bots={bots}
+        onApply={handleApplyEnhanced}
+        onCreditUsed={() => {
+          if (!hasByokKey) setCreditsRemaining((prev) => Math.max(0, prev - 1));
+        }}
+      />
+    )}
+    </>
   );
 }

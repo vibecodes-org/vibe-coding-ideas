@@ -1,0 +1,810 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VibeCodes — New Onboarding "Create Project" Step (Harmonised Mockup)</title>
+<style>
+  /* ───────────────────────────────────────────────────────────
+     Design tokens lifted verbatim from src/app/globals.css (.dark)
+     Tailwind/shadcn New York · Zinc · dark default
+     ─────────────────────────────────────────────────────────── */
+  :root {
+    --radius: 0.625rem;
+    --background: oklch(0.141 0.005 285.823);
+    --foreground: oklch(0.985 0 0);
+    --card: oklch(0.21 0.006 285.885);
+    --card-foreground: oklch(0.985 0 0);
+    --primary: oklch(0.92 0.004 286.32);
+    --primary-foreground: oklch(0.21 0.006 285.885);
+    --muted: oklch(0.274 0.006 286.033);
+    --muted-foreground: oklch(0.705 0.015 286.067);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 15%);
+    --ring: oklch(0.552 0.016 285.938);
+
+    /* accent families used across the real components */
+    --violet-300: oklch(0.811 0.111 293.571);
+    --violet-400: oklch(0.702 0.183 293.541);
+    --violet-500: oklch(0.606 0.25 292.717);
+    --violet-600: oklch(0.541 0.281 293.009);
+    --violet-700: oklch(0.491 0.27 292.581);
+    --emerald-400: oklch(0.765 0.177 163.223);
+    --amber-400: oklch(0.828 0.189 84.429);
+    --blue-400: oklch(0.707 0.165 254.624);
+
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+    --radius-2xl: calc(var(--radius) + 8px);
+
+    /* annotation layer — outside the product, intentionally distinct */
+    --note-bg: oklch(0.18 0.02 264);
+    --note-line: oklch(0.55 0.18 264 / 55%);
+    --note-text: oklch(0.82 0.05 264);
+    --keep-line: oklch(0.66 0.14 163 / 60%);
+    --keep-text: oklch(0.8 0.08 163);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility; }
+  body {
+    margin: 0;
+    background:
+      radial-gradient(900px 500px at 18% -8%, oklch(0.606 0.25 292.717 / 0.10), transparent 60%),
+      radial-gradient(800px 600px at 100% 10%, oklch(0.707 0.165 254.624 / 0.06), transparent 55%),
+      var(--background);
+    color: var(--foreground);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    line-height: 1.5;
+    padding: 56px 32px 120px;
+  }
+  .mono { font-family: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace; }
+
+  /* ── Page header / meta ─────────────────────────────────────── */
+  .page-head { max-width: 1180px; margin: 0 auto 12px; }
+  .kicker {
+    display: inline-flex; align-items: center; gap: 8px;
+    font-size: 11px; font-weight: 700; letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--violet-300);
+    border: 1px solid oklch(0.606 0.25 292.717 / 0.3);
+    background: oklch(0.606 0.25 292.717 / 0.08);
+    padding: 5px 12px; border-radius: 999px;
+  }
+  .page-head h1 {
+    font-size: clamp(26px, 3.4vw, 38px); line-height: 1.08; letter-spacing: -0.025em;
+    margin: 16px 0 8px; font-weight: 800;
+  }
+  .page-head p.lede { color: var(--muted-foreground); max-width: 760px; font-size: 15px; margin: 0; }
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 18px; margin-top: 20px;
+    font-size: 12.5px; color: var(--muted-foreground);
+  }
+  .legend span { display: inline-flex; align-items: center; gap: 7px; }
+  .swatch { width: 26px; height: 0; border-top-width: 2px; border-top-style: dashed; display: inline-block; border-radius: 2px; }
+  .swatch.changed { border-color: var(--note-line); }
+  .swatch.kept { border-color: var(--keep-line); border-top-style: solid; }
+
+  /* ── Layout grid for the three panels ───────────────────────── */
+  .stage {
+    max-width: 1180px; margin: 44px auto 0;
+    display: grid; grid-template-columns: minmax(0, 1fr) 392px; gap: 40px; align-items: start;
+  }
+  @media (max-width: 1080px) { .stage { grid-template-columns: 1fr; } }
+
+  .panel-label {
+    display: flex; align-items: baseline; gap: 10px; margin: 0 0 18px;
+  }
+  .panel-label .n {
+    font-family: ui-monospace, monospace; font-size: 11px; font-weight: 700;
+    color: var(--background); background: var(--violet-400);
+    border-radius: 6px; padding: 2px 7px; letter-spacing: 0.02em;
+  }
+  .panel-label h2 { font-size: 16px; font-weight: 700; margin: 0; letter-spacing: -0.01em; }
+  .panel-label .sub { font-size: 12.5px; color: var(--muted-foreground); }
+
+  /* ════════════════════════════════════════════════════════════
+     THE MODAL (replicates onboarding-dialog DialogContent ~580px)
+     ════════════════════════════════════════════════════════════ */
+  .modal-wrap { position: relative; }
+  .modal {
+    position: relative;
+    width: 100%; max-width: 580px;
+    background: var(--background);
+    border: 1px solid oklch(1 0 0 / 0.06);
+    border-radius: 16px;
+    overflow: hidden;
+    box-shadow:
+      0 1px 0 oklch(1 0 0 / 0.04) inset,
+      0 30px 80px -20px oklch(0 0 0 / 0.7),
+      0 8px 30px -10px oklch(0 0 0 / 0.5);
+  }
+  /* ambient glow line at top (matches real component) */
+  .glow { position: absolute; inset: 0 0 auto 0; z-index: 0; pointer-events: none; }
+  .glow .line { margin: 0 auto; height: 1px; width: 256px;
+    background: linear-gradient(90deg, transparent, var(--violet-400), transparent); }
+  .glow .blur { margin: 0 auto; height: 80px; width: 288px;
+    background: oklch(0.606 0.25 292.717 / 0.10); filter: blur(48px); }
+
+  .modal-inner { position: relative; z-index: 1; padding: 14px 40px 24px; }
+
+  /* step indicator (segmented dots) */
+  .stepbar { display: flex; gap: 6px; padding: 16px 0 4px; }
+  .stepbar i {
+    height: 4px; flex: 1; border-radius: 999px; background: var(--muted);
+  }
+  .stepbar i.done { background: var(--violet-400); }
+  .stepbar i.active { background: var(--violet-500);
+    box-shadow: 0 0 0 3px oklch(0.606 0.25 292.717 / 0.18); }
+
+  .modal-toprow { display: flex; align-items: center; justify-content: space-between; margin: 14px 0 4px; }
+  .ghost-btn {
+    width: 32px; height: 32px; border-radius: 8px; border: none; background: transparent;
+    color: var(--muted-foreground); display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer;
+  }
+  .ghost-btn:hover { background: oklch(1 0 0 / 0.06); color: var(--foreground); }
+  .step-count { font-size: 12px; color: oklch(0.705 0.015 286.067 / 0.6); }
+
+  .modal h2.title {
+    font-size: 20px; font-weight: 700; letter-spacing: -0.02em; margin: 6px 0 2px;
+  }
+  .modal p.subtitle { font-size: 13.5px; color: var(--muted-foreground); margin: 0 0 16px; }
+
+  /* fields */
+  .field { margin-bottom: 16px; }
+  .field > label.lbl {
+    display: flex; align-items: center; gap: 8px;
+    font-size: 13px; font-weight: 500; color: var(--foreground); margin-bottom: 7px;
+  }
+  .opt-pill {
+    font-size: 10px; font-weight: 400; color: var(--muted-foreground);
+    background: var(--muted); border-radius: 4px; padding: 2px 6px;
+  }
+  .input, .textarea {
+    width: 100%; background: transparent; color: var(--foreground);
+    border: 1px solid var(--input); border-radius: var(--radius-md);
+    padding: 9px 12px; font-size: 14px; font-family: inherit; line-height: 1.5;
+    transition: border-color .15s, box-shadow .15s;
+  }
+  .input::placeholder, .textarea::placeholder { color: oklch(0.705 0.015 286.067 / 0.7); }
+  .input:focus, .textarea:focus { outline: none; border-color: var(--ring); box-shadow: 0 0 0 3px oklch(0.552 0.016 285.938 / 0.18); }
+  .textarea { resize: vertical; min-height: 64px; }
+
+  .field-hint { font-size: 11.5px; color: var(--muted-foreground); margin: 6px 0 0; }
+
+  /* ── Kit picker (ProjectTypeSelector, compact) ──────────────── */
+  .kit-grid {
+    display: grid; gap: 8px;
+    grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  }
+  .kit {
+    border: 2px solid var(--border); background: oklch(0.21 0.006 285.885);
+    border-radius: 12px; padding: 10px; text-align: center; cursor: pointer;
+    transition: transform .2s, border-color .2s, background .2s;
+  }
+  .kit:hover { transform: translateY(-2px); border-color: oklch(0.705 0.015 286.067 / 0.25); }
+  .kit.sel { border-color: var(--violet-500); background: oklch(0.606 0.25 292.717 / 0.12); }
+  .kit.sel:hover { transform: translateY(-2px); }
+  .kit .emoji { font-size: 20px; line-height: 1.1; margin-bottom: 2px; }
+  .kit .kname { font-size: 12px; font-weight: 700; }
+  .kit .chips { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px; margin-top: 8px; }
+  .chip {
+    font-size: 10.5px; font-weight: 600; border-radius: 999px; padding: 2px 7px; line-height: 1.3;
+  }
+  .chip.wf { color: var(--violet-400); background: oklch(0.606 0.25 292.717 / 0.12); }
+  .chip.ag { color: var(--emerald-400); background: oklch(0.765 0.177 163.223 / 0.12); }
+  .chip.choice { color: var(--muted-foreground); background: var(--muted); }
+  .kit.new::after {
+    content: "NEW"; position: absolute; }
+  .kit { position: relative; }
+  .kit.new .newtag {
+    position: absolute; top: -8px; right: -6px;
+    font-size: 8.5px; font-weight: 800; letter-spacing: 0.06em;
+    color: #fff; background: var(--violet-600);
+    border: 1px solid oklch(0.811 0.111 293.571 / 0.5);
+    border-radius: 999px; padding: 2px 6px;
+    box-shadow: 0 3px 10px -2px oklch(0.606 0.25 292.717 / 0.6);
+  }
+
+  /* ── Description field w/ enhance toolbar (mirrors idea-form) ── */
+  .desc-shell {
+    border: 1px solid var(--border); border-radius: var(--radius-md); overflow: hidden;
+    transition: border-color .15s;
+  }
+  .desc-shell:focus-within { border-color: var(--violet-500); }
+  .desc-shell .textarea { border: 0; border-radius: 0; }
+  .desc-shell .textarea:focus { box-shadow: none; }
+  .desc-toolbar {
+    display: flex; align-items: center; justify-content: space-between;
+    border-top: 1px solid var(--border); background: oklch(0.274 0.006 286.033 / 0.2);
+    padding: 6px 10px;
+  }
+  .desc-toolbar .md { font-size: 11px; color: oklch(0.705 0.015 286.067 / 0.6); }
+  .enhance-btn {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    font-size: 13px; font-weight: 600; color: var(--violet-400);
+    border: 1px solid oklch(0.606 0.25 292.717 / 0.3); border-radius: 8px;
+    padding: 5px 10px;
+    background: linear-gradient(90deg, oklch(0.606 0.25 292.717 / 0.12), oklch(0.541 0.281 293.009 / 0.06));
+    transition: border-color .15s, background .15s, box-shadow .15s;
+  }
+  .enhance-btn:hover {
+    border-color: oklch(0.606 0.25 292.717 / 0.5);
+    box-shadow: 0 0 24px -6px oklch(0.606 0.25 292.717 / 0.4);
+  }
+  .credit-badge {
+    display: inline-flex; align-items: center; justify-content: center;
+    min-width: 18px; height: 18px; padding: 0 4px;
+    border-radius: 999px; background: var(--violet-600); color: #fff;
+    font-size: 10px; font-weight: 800; line-height: 1;
+  }
+
+  /* ── Visibility segmented pills (new shared VisibilitySelector) ─ */
+  .vis-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .vis {
+    display: flex; gap: 11px; align-items: flex-start; text-align: left; cursor: pointer;
+    border: 1px solid var(--border); border-radius: var(--radius-md);
+    background: oklch(0.21 0.006 285.885 / 0.5); padding: 11px 12px;
+    transition: border-color .15s, background .15s;
+  }
+  .vis:hover { border-color: oklch(0.705 0.015 286.067 / 0.4); }
+  .vis.sel { border-color: var(--violet-500); background: oklch(0.606 0.25 292.717 / 0.08); }
+  .vis .ic {
+    width: 28px; height: 28px; flex: none; border-radius: 8px;
+    display: grid; place-items: center; background: var(--muted); color: var(--muted-foreground);
+  }
+  .vis.sel .ic { background: oklch(0.606 0.25 292.717 / 0.18); color: var(--violet-300); }
+  .vis .vtitle { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; }
+  .vis .vdesc { font-size: 11px; color: var(--muted-foreground); margin-top: 2px; line-height: 1.35; }
+  .vis .radio {
+    width: 15px; height: 15px; border-radius: 999px; border: 1.5px solid var(--border);
+    flex: none; margin-left: auto; display: grid; place-items: center;
+  }
+  .vis.sel .radio { border-color: var(--violet-400); }
+  .vis.sel .radio::after { content: ""; width: 7px; height: 7px; border-radius: 999px; background: var(--violet-400); }
+
+  /* ── Primary CTA ────────────────────────────────────────────── */
+  .cta {
+    width: 100%; display: inline-flex; align-items: center; justify-content: center; gap: 9px;
+    border: none; cursor: pointer; color: #fff; font-size: 15px; font-weight: 600;
+    padding: 12px 18px; border-radius: var(--radius-md);
+    background: linear-gradient(90deg, var(--violet-600), oklch(0.55 0.27 305));
+    box-shadow: 0 8px 24px -8px oklch(0.606 0.25 292.717 / 0.55);
+    transition: filter .15s;
+    margin-top: 6px;
+  }
+  .cta:hover { filter: brightness(1.1); }
+  .cta-helper { text-align: center; font-size: 11px; color: oklch(0.705 0.015 286.067 / 0.7); margin: 9px 0 0; }
+  .later { display: block; width: 100%; text-align: center; background: none; border: none; cursor: pointer;
+    font-size: 13px; color: oklch(0.705 0.015 286.067 / 0.6); margin-top: 12px; }
+  .later:hover { color: var(--muted-foreground); }
+
+  /* ── Inline annotation callouts (the spec layer) ────────────── */
+  .callout {
+    position: relative; margin: 10px 0 18px;
+    border-left: 2px solid var(--note-line);
+    background: var(--note-bg);
+    border-radius: 0 10px 10px 0;
+    padding: 10px 13px;
+    font-size: 12.5px; color: var(--note-text);
+  }
+  .callout.kept { border-left-color: var(--keep-line); color: var(--keep-text); background: oklch(0.16 0.02 163); }
+  .callout b { color: var(--foreground); font-weight: 700; }
+  .callout .tag {
+    display: inline-block; font-size: 9.5px; font-weight: 800; letter-spacing: 0.08em;
+    text-transform: uppercase; border-radius: 4px; padding: 2px 6px; margin-right: 8px;
+    color: var(--note-line); background: oklch(0.55 0.18 264 / 0.14);
+  }
+  .callout.kept .tag { color: var(--keep-line); background: oklch(0.66 0.14 163 / 0.14); }
+
+  /* ════════ Mobile frame (375px) ════════ */
+  .phone {
+    width: 375px; margin: 0 auto;
+    border: 1px solid oklch(1 0 0 / 0.08); border-radius: 30px; padding: 10px;
+    background: oklch(0.1 0.004 286);
+    box-shadow: 0 30px 70px -25px oklch(0 0 0 / 0.75);
+  }
+  .phone .notch { width: 120px; height: 6px; border-radius: 999px; background: oklch(1 0 0 / 0.14); margin: 4px auto 10px; }
+  .phone .modal { border-radius: 22px; max-width: none; box-shadow: none; }
+  .phone .modal-inner { padding: 12px 18px 18px; }
+  .phone .vis-grid { grid-template-columns: 1fr; }
+  .phone .kit-grid { grid-template-columns: 1fr 1fr; }
+  .phone .enhance-row { flex-direction: column; align-items: stretch; }
+
+  /* enhance CTA card (stacked variant used in mobile + dialog opener) */
+  .enhance-card {
+    display: flex; gap: 12px; align-items: center; width: 100%; text-align: left; cursor: pointer;
+    border-radius: 12px; padding: 12px 14px;
+    background: oklch(0.606 0.25 292.717 / 0.06);
+    border: 1px solid oklch(0.606 0.25 292.717 / 0.25);
+    transition: background .15s, box-shadow .15s;
+  }
+  .enhance-card:hover { background: oklch(0.606 0.25 292.717 / 0.1); box-shadow: 0 0 32px -6px oklch(0.606 0.25 292.717 / 0.2); }
+  .enhance-card .ec-ic {
+    width: 36px; height: 36px; flex: none; border-radius: 10px; display: grid; place-items: center;
+    background: linear-gradient(135deg, oklch(0.606 0.25 292.717 / 0.25), oklch(0.541 0.281 293.009 / 0.12));
+    color: var(--violet-300);
+  }
+  .enhance-card .ec-t { font-size: 14px; font-weight: 600; color: oklch(0.92 0 0); display: flex; align-items: center; gap: 8px; }
+  .enhance-card .ec-d { font-size: 12px; color: var(--muted-foreground); margin-top: 1px; }
+  .enhance-card .ec-go {
+    margin-left: auto; flex: none; display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 600; color: #fff;
+    background: linear-gradient(135deg, var(--violet-600), var(--violet-700));
+    border-radius: 9px; padding: 7px 14px;
+    box-shadow: 0 2px 8px oklch(0.541 0.281 293.009 / 0.3);
+  }
+  .phone .enhance-card { flex-wrap: wrap; }
+  .phone .enhance-card .ec-go { width: 100%; justify-content: center; margin-top: 8px; }
+
+  /* ════════ Enhance preview dialog (EnhanceDialogShell) ════════ */
+  .dlg {
+    width: 100%; max-width: 820px;
+    background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 30px 80px -20px oklch(0 0 0 / 0.7);
+  }
+  .dlg-head { display: flex; flex-direction: column; gap: 3px; border-bottom: 1px solid var(--border); padding: 16px 22px; }
+  .dlg-head .t { font-size: 17px; font-weight: 600; display: flex; align-items: center; gap: 9px; }
+  .dlg-head .t .spk { color: var(--violet-400); }
+  .dlg-head .d { font-size: 13px; color: var(--muted-foreground); }
+  .dlg-body { padding: 18px 22px; }
+
+  /* clarifying-question chip row + question */
+  .kit-context {
+    border: 1px solid oklch(0.606 0.25 292.717 / 0.2); background: oklch(0.606 0.25 292.717 / 0.06);
+    border-radius: 8px; padding: 8px 12px; font-size: 12px; color: var(--violet-400); margin-bottom: 16px;
+  }
+  .q-block { margin-bottom: 16px; }
+  .q-block .q { font-size: 13px; font-weight: 500; margin-bottom: 7px; }
+  .head-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }
+  .head-chip {
+    display: inline-flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 500;
+    color: var(--violet-400); border: 1px solid oklch(0.606 0.25 292.717 / 0.2);
+    background: oklch(0.606 0.25 292.717 / 0.06); border-radius: 999px; padding: 2px 9px;
+  }
+
+  /* result: two columns Original / Enhanced */
+  .compare { display: grid; grid-template-columns: 240px 1fr; gap: 16px; }
+  @media (max-width: 760px){ .compare { grid-template-columns: 1fr; } }
+  .col-h { display: flex; align-items: center; gap: 8px; margin-bottom: 6px;
+    font-size: 11px; font-weight: 500; letter-spacing: 0.08em; text-transform: uppercase; }
+  .col-h.orig { color: var(--muted-foreground); }
+  .col-h.enh { color: var(--violet-400); }
+  .dot { width: 6px; height: 6px; border-radius: 999px; }
+  .dot.muted { background: oklch(0.705 0.015 286.067 / 0.5); }
+  .dot.v { background: var(--violet-400); box-shadow: 0 0 0 3px oklch(0.606 0.25 292.717 / 0.2); }
+  .pane { border-radius: 8px; padding: 12px; font-size: 12.5px; line-height: 1.55; max-height: 230px; overflow: auto; }
+  .pane.orig { border: 1px solid var(--border); background: oklch(0.274 0.006 286.033 / 0.2); color: var(--muted-foreground); }
+  .pane.enh { border: 1px solid oklch(0.606 0.25 292.717 / 0.25);
+    background: linear-gradient(135deg, oklch(0.606 0.25 292.717 / 0.06), transparent); color: var(--foreground); }
+  .pane.enh h4 { margin: 10px 0 3px; font-size: 13px; color: var(--violet-300); }
+  .pane.enh h4:first-child { margin-top: 0; }
+  .pane.enh p { margin: 0 0 7px; }
+  .caret { display: inline-block; width: 7px; height: 14px; background: var(--violet-400);
+    vertical-align: -2px; margin-left: 1px; animation: blink 1s steps(2) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .skel { height: 9px; border-radius: 4px; background: oklch(1 0 0 / 0.08); margin-top: 7px; opacity: 0.5; }
+
+  /* dialog footer w/ Undo / Use this + credits */
+  .dlg-foot {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    border-top: 1px solid var(--border); background: var(--background); padding: 12px 22px;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 7px; cursor: pointer;
+    font-size: 13px; font-weight: 600; border-radius: 8px; padding: 8px 14px;
+    border: 1px solid transparent; background: transparent; color: var(--muted-foreground);
+  }
+  .btn.ghost:hover { background: oklch(1 0 0 / 0.05); color: var(--foreground); }
+  .btn.outline { border-color: var(--border); color: var(--foreground); }
+  .btn.outline:hover { background: oklch(1 0 0 / 0.05); }
+  .btn.primary { background: var(--primary); color: var(--primary-foreground); font-weight: 700; }
+  .btn.primary:hover { filter: brightness(0.94); }
+  .spacer { flex: 1; }
+  .credits-foot {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 11.5px; color: var(--muted-foreground);
+    border: 1px solid var(--border); border-radius: 999px; padding: 3px 9px;
+  }
+  .credits-foot .dotc { width: 6px; height: 6px; border-radius: 999px; background: var(--emerald-400); }
+
+  /* component-map footer */
+  .map {
+    max-width: 1180px; margin: 56px auto 0; border-top: 1px solid var(--border); padding-top: 26px;
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 18px;
+  }
+  .map h3 { grid-column: 1 / -1; font-size: 13px; text-transform: uppercase; letter-spacing: 0.1em;
+    color: var(--muted-foreground); margin: 0 0 4px; font-weight: 700; }
+  .map-card { border: 1px solid var(--border); border-radius: 12px; background: oklch(0.21 0.006 285.885 / 0.5); padding: 14px 16px; }
+  .map-card .role { font-size: 12px; color: var(--muted-foreground); margin-bottom: 4px; }
+  .map-card code { font-size: 12.5px; color: var(--violet-300); }
+  .map-card .where { font-size: 11.5px; color: var(--muted-foreground); margin-top: 5px; }
+  .map-card .badge-new {
+    font-size: 9px; font-weight: 800; letter-spacing: 0.06em; color: #fff; background: var(--violet-600);
+    border-radius: 4px; padding: 1px 5px; margin-left: 6px; vertical-align: 1px;
+  }
+
+  svg.i { width: 1em; height: 1em; flex: none; }
+</style>
+</head>
+<body>
+
+<header class="page-head">
+  <span class="kicker">VibeCodes · UX Spec · Mockup</span>
+  <h1>Harmonised Onboarding — "Create Project" Step</h1>
+  <p class="lede">
+    The first-run project step re-aligned with the standalone New Idea form
+    (<span class="mono">src/components/ideas/idea-form.tsx</span>) while staying intentionally lean.
+    Shown in-modal at the real ≈580px width, plus the 375px mobile layout and the upgraded
+    Enhance preview dialog. Annotations mark what changed vs. today and what was deliberately kept lean.
+  </p>
+  <div class="legend">
+    <span><i class="swatch changed"></i> Changed vs. current onboarding</span>
+    <span><i class="swatch kept"></i> Deliberately kept lean (justified)</span>
+    <span class="mono" style="color:var(--violet-300)">Step 3 of 5 — flow trimmed</span>
+  </div>
+</header>
+
+<div class="stage">
+
+  <!-- ════════ LEFT COLUMN: desktop form + mobile ════════ -->
+  <div>
+    <div class="panel-label">
+      <span class="n">A</span>
+      <h2>Desktop — the new form, in-modal</h2>
+      <span class="sub">≈580px onboarding dialog</span>
+    </div>
+
+    <div class="modal-wrap">
+      <div class="modal">
+        <div class="glow"><div class="line"></div><div class="blur"></div></div>
+
+        <div class="modal-inner">
+          <!-- step indicator: now 5 steps, step 3 active -->
+          <div class="stepbar">
+            <i class="done"></i><i class="done"></i><i class="active"></i><i></i><i></i>
+          </div>
+
+          <div class="modal-toprow">
+            <button class="ghost-btn" aria-label="Back">
+              <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <span class="step-count">Step 3 of 5</span>
+          </div>
+
+          <!-- HEADING kept warm -->
+          <h2 class="title">What are you building?</h2>
+          <p class="subtitle">Name it, pick a starting point, and we'll set up your board, agents, and workflows.</p>
+
+          <!-- 1 · NAME -->
+          <div class="field">
+            <label class="lbl">Project name</label>
+            <input class="input" placeholder="e.g. Recipe-sharing app with AI meal suggestions" value="" />
+          </div>
+
+          <!-- 2 · PROJECT TYPE (kit picker) — ABOVE description -->
+          <div class="field">
+            <label class="lbl">What kind of project?</label>
+            <div class="kit-grid">
+              <button class="kit sel" type="button">
+                <div class="emoji">🌐</div>
+                <div class="kname">Web Application</div>
+                <div class="chips"><span class="chip wf">3 workflows</span><span class="chip ag">5 agents</span></div>
+              </button>
+              <button class="kit" type="button">
+                <div class="emoji">📱</div>
+                <div class="kname">Mobile App</div>
+                <div class="chips"><span class="chip wf">2 workflows</span><span class="chip ag">4 agents</span></div>
+              </button>
+              <button class="kit new" type="button">
+                <span class="newtag">NEW</span>
+                <div class="emoji">📣</div>
+                <div class="kname">Marketing Site</div>
+                <div class="chips"><span class="chip wf">1 workflow</span><span class="chip ag">5 agents</span></div>
+              </button>
+              <button class="kit new" type="button">
+                <span class="newtag">NEW</span>
+                <div class="emoji">🤖</div>
+                <div class="kname">AI App / Agent</div>
+                <div class="chips"><span class="chip wf">2 workflows</span><span class="chip ag">5 agents</span></div>
+              </button>
+              <button class="kit" type="button">
+                <div class="emoji">⚙️</div>
+                <div class="kname">API / Backend</div>
+                <div class="chips"><span class="chip wf">3 workflows</span><span class="chip ag">4 agents</span></div>
+              </button>
+              <button class="kit" type="button">
+                <div class="emoji">✨</div>
+                <div class="kname">Custom</div>
+                <div class="chips"><span class="chip choice">Your choice</span></div>
+              </button>
+            </div>
+          </div>
+
+          <!-- 3 · DESCRIPTION (optional) with enhance affordance -->
+          <div class="field">
+            <label class="lbl">
+              Description
+              <span class="opt-pill">optional</span>
+            </label>
+            <div class="desc-shell">
+              <textarea class="textarea" rows="3" placeholder="A few rough notes are plenty — AI can flesh it out for you below.">Home cooks save & share recipes. AI suggests meals from what's in the fridge.</textarea>
+              <div class="desc-toolbar">
+                <span class="md">Supports markdown</span>
+                <button class="enhance-btn" type="button">
+                  <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5 11 6l3.5 1.5L11 9l-1.5 3.5L8 9 4.5 7.5 8 6z"/><path d="M18 4v3"/><path d="M19.5 5.5h-3"/><path d="M18 17v3"/><path d="M19.5 18.5h-3"/></svg>
+                  Enhance with AI
+                  <span class="credit-badge">3</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- 4 · VISIBILITY (segmented pills, shared control) -->
+          <div class="field">
+            <label class="lbl">Visibility</label>
+            <div class="vis-grid">
+              <button class="vis sel" type="button">
+                <span class="ic">
+                  <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>
+                </span>
+                <span>
+                  <span class="vtitle">Public</span>
+                  <span class="vdesc">Discoverable in the community feed. Anyone can find &amp; star it.</span>
+                </span>
+                <span class="radio"></span>
+              </button>
+              <button class="vis" type="button">
+                <span class="ic">
+                  <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                </span>
+                <span>
+                  <span class="vtitle">Private</span>
+                  <span class="vdesc">Only you and invited collaborators can see this project.</span>
+                </span>
+                <span class="radio"></span>
+              </button>
+            </div>
+          </div>
+
+          <!-- PRIMARY CTA -->
+          <button class="cta" type="button">
+            <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5 11 6l3.5 1.5L11 9l-1.5 3.5L8 9 4.5 7.5 8 6z"/><path d="M18 4v3"/><path d="M18 17v3"/></svg>
+            Create &amp; generate board
+            <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </button>
+          <p class="cta-helper">Creates the idea, applies the kit's agents &amp; workflow, and auto-generates an AI task board.</p>
+          <button class="later" type="button">I'll do this later</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- callouts under the desktop form -->
+    <div style="max-width:580px">
+      <div class="callout">
+        <span class="tag">Changed</span><b>Field order now matches New Idea:</b>
+        Name → <b>Project type</b> → Description → Visibility. The kit sits <b>above</b> the description so it feeds AI context, exactly like <span class="mono">idea-form.tsx</span> (was: description-first).
+      </div>
+      <div class="callout">
+        <span class="tag">Changed</span><b>Aligned labels &amp; placeholders.</b>
+        Friendly "Project name" + concrete placeholder. Kit set is the revised one — <b>Marketing Site 📣</b> &amp; <b>AI App / Agent 🤖</b> added, <b>Design System</b> removed.
+      </div>
+      <div class="callout">
+        <span class="tag">Changed</span><b>Visibility is a single shared control</b> — segmented Public / Private pills (icon + one-line description, no colour-only meaning), default Public. Replaces the bare toggle / loose chips.
+      </div>
+      <div class="callout">
+        <span class="tag">Changed</span><b>Enhance is now the New Idea affordance:</b>
+        a clear "✨ Enhance with AI" button with a live <b>credit counter</b> that opens the <b>preview dialog</b> (panel C) — no more silent overwrite.
+      </div>
+      <div class="callout kept">
+        <span class="tag">Kept lean</span><b>No Tags, no GitHub URL.</b>
+        Description stays <b>optional</b>. Primary CTA is <b>"Create &amp; generate board"</b> with a one-line helper, because onboarding auto-builds the AI board on submit.
+      </div>
+    </div>
+
+    <!-- ════════ MOBILE 375px ════════ -->
+    <div class="panel-label" style="margin-top:48px">
+      <span class="n">B</span>
+      <h2>Mobile — 375px</h2>
+      <span class="sub">kit grid 2-up · pills full-width · enhance stacks</span>
+    </div>
+
+    <div class="phone">
+      <div class="notch"></div>
+      <div class="modal">
+        <div class="modal-inner">
+          <div class="stepbar"><i class="done"></i><i class="done"></i><i class="active"></i><i></i><i></i></div>
+          <div class="modal-toprow">
+            <button class="ghost-btn" aria-label="Back">
+              <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+            </button>
+            <span class="step-count">Step 3 of 5</span>
+          </div>
+          <h2 class="title">What are you building?</h2>
+          <p class="subtitle">Name it, pick a starting point, and we'll set up your board.</p>
+
+          <div class="field">
+            <label class="lbl">Project name</label>
+            <input class="input" placeholder="e.g. Recipe-sharing app…" />
+          </div>
+
+          <div class="field">
+            <label class="lbl">What kind of project?</label>
+            <div class="kit-grid">
+              <button class="kit sel" type="button"><div class="emoji">🌐</div><div class="kname">Web App</div><div class="chips"><span class="chip ag">5 agents</span></div></button>
+              <button class="kit new" type="button"><span class="newtag">NEW</span><div class="emoji">📣</div><div class="kname">Marketing</div><div class="chips"><span class="chip ag">5 agents</span></div></button>
+              <button class="kit new" type="button"><span class="newtag">NEW</span><div class="emoji">🤖</div><div class="kname">AI App</div><div class="chips"><span class="chip ag">5 agents</span></div></button>
+              <button class="kit" type="button"><div class="emoji">✨</div><div class="kname">Custom</div><div class="chips"><span class="chip choice">Your choice</span></div></button>
+            </div>
+          </div>
+
+          <div class="field">
+            <label class="lbl">Description <span class="opt-pill">optional</span></label>
+            <textarea class="textarea" rows="2" placeholder="A few rough notes — AI can flesh it out.">Home cooks save & share recipes…</textarea>
+          </div>
+
+          <!-- enhance stacks full-width on mobile -->
+          <div class="field">
+            <button class="enhance-card" type="button">
+              <span class="ec-ic">
+                <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5 11 6l3.5 1.5L11 9l-1.5 3.5L8 9 4.5 7.5 8 6z"/><path d="M18 4v3"/><path d="M18 17v3"/></svg>
+              </span>
+              <span>
+                <span class="ec-t">Enhance with AI <span class="credit-badge">3</span></span>
+                <span class="ec-d">Refines your description &amp; previews before applying.</span>
+              </span>
+              <span class="ec-go">
+                <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5 11 6l3.5 1.5L11 9l-1.5 3.5L8 9 4.5 7.5 8 6z"/></svg>
+                Enhance
+              </span>
+            </button>
+          </div>
+
+          <!-- pills full-width stacked -->
+          <div class="field">
+            <label class="lbl">Visibility</label>
+            <div class="vis-grid">
+              <button class="vis sel" type="button">
+                <span class="ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20"/><path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg></span>
+                <span><span class="vtitle">Public</span><span class="vdesc">Discoverable in the community feed.</span></span>
+                <span class="radio"></span>
+              </button>
+              <button class="vis" type="button">
+                <span class="ic"><svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="11" x="3" y="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg></span>
+                <span><span class="vtitle">Private</span><span class="vdesc">Only you and collaborators.</span></span>
+                <span class="radio"></span>
+              </button>
+            </div>
+          </div>
+
+          <button class="cta" type="button">
+            <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5 11 6l3.5 1.5L11 9l-1.5 3.5L8 9 4.5 7.5 8 6z"/><path d="M18 4v3"/></svg>
+            Create &amp; generate board
+          </button>
+          <p class="cta-helper">Auto-generates your AI task board on submit.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════ RIGHT COLUMN: enhance preview dialog ════════ -->
+  <div>
+    <div class="panel-label">
+      <span class="n">C</span>
+      <h2>Enhance preview dialog</h2>
+      <span class="sub">the upgraded interaction</span>
+    </div>
+
+    <div class="dlg">
+      <div class="dlg-head">
+        <span class="t"><svg class="i spk" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9.5 2.5 11 6l3.5 1.5L11 9l-1.5 3.5L8 9 4.5 7.5 8 6z"/><path d="M18 4v3"/><path d="M19.5 5.5h-3"/><path d="M18 17v3"/><path d="M19.5 18.5h-3"/></svg>Enhance with AI</span>
+        <span class="d">Compare the original and enhanced descriptions, then keep or undo.</span>
+      </div>
+
+      <div class="dlg-body">
+        <!-- kit context (from selected kit) -->
+        <div class="kit-context">Tailoring for <b>Web Application</b> project type</div>
+
+        <!-- clarifying question (answered) -->
+        <div class="q-block">
+          <div class="q">1. Who is the primary user, and what's the one task they must nail?</div>
+          <textarea class="textarea" rows="2">Busy home cooks — log what's in the fridge and get 3 dinner ideas in under 10 seconds.</textarea>
+        </div>
+
+        <!-- section heading chips from the streamed result -->
+        <div class="head-chips">
+          <span class="head-chip">+ Problem</span>
+          <span class="head-chip">+ Core features</span>
+          <span class="head-chip">+ User stories</span>
+          <span class="head-chip">+ Tech scope</span>
+        </div>
+
+        <!-- streamed preview: Original vs Enhanced -->
+        <div class="compare">
+          <div>
+            <div class="col-h orig"><span class="dot muted"></span>Original</div>
+            <div class="pane orig">Home cooks save &amp; share recipes. AI suggests meals from what's in the fridge.</div>
+          </div>
+          <div>
+            <div class="col-h enh"><span class="dot v"></span>Enhanced
+              <svg class="i" style="margin-left:2px;color:var(--violet-400)" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.219-8.56" stroke-linecap="round"/></svg>
+            </div>
+            <div class="pane enh">
+              <h4>Problem</h4>
+              <p>Home cooks waste food and time deciding what to make. There's no fast way to turn "what's in the fridge" into a decision.</p>
+              <h4>Core features</h4>
+              <p>Pantry input, AI meal suggestions ranked by available ingredients, one-tap save, and shareable recipe cards.</p>
+              <h4>User stories</h4>
+              <p>As a busy cook, I want 3 dinner ideas from my fridge in seconds so I can start cooking without<span class="caret"></span></p>
+              <div class="skel" style="width:88%"></div>
+              <div class="skel" style="width:72%"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- footer: Undo / Use this + credits -->
+      <div class="dlg-foot">
+        <button class="btn ghost">
+          <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+          Regenerate
+        </button>
+        <button class="btn outline">
+          <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/></svg>
+          Refine
+        </button>
+        <span class="spacer"></span>
+        <span class="credits-foot"><span class="dotc"></span>3 enhances left today</span>
+        <button class="btn ghost">
+          <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7v6h6"/><path d="M21 17a9 9 0 0 0-9-9 9 9 0 0 0-6 2.3L3 13"/></svg>
+          Undo
+        </button>
+        <button class="btn primary">
+          <svg class="i" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+          Use this
+        </button>
+      </div>
+    </div>
+
+    <div class="callout">
+      <span class="tag">Changed</span><b>Preview, not silent overwrite.</b>
+      The button opens <span class="mono">EnhanceDialogShell</span>: optional clarifying question → streamed side-by-side preview → explicit <b>Use this</b> / <b>Undo</b>. The user always sees the diff before it lands.
+    </div>
+    <div class="callout">
+      <span class="tag">Changed</span><b>Credits are visible everywhere.</b>
+      The badge on the trigger and the "enhances left today" counter in the footer make platform-credit usage legible (BYOK users see no badge — same logic as New Idea).
+    </div>
+    <div class="callout kept">
+      <span class="tag">Kept lean</span>The dialog is <b>shared</b> with the New Idea flow — onboarding doesn't fork it. Same Refine / Regenerate, persona, and kit-context behaviour; one component, two entry points.
+    </div>
+  </div>
+</div>
+
+<!-- ════════ COMPONENT MAP ════════ -->
+<div class="map">
+  <h3>Maps to real components</h3>
+  <div class="map-card">
+    <div class="role">Kit picker (compact)</div>
+    <code>&lt;ProjectTypeSelector compact /&gt;</code>
+    <div class="where">Reused verbatim — already lives above the description in idea-form.tsx.</div>
+  </div>
+  <div class="map-card">
+    <div class="role">Enhance preview dialog</div>
+    <code>&lt;EnhanceDialogShell /&gt;</code>
+    <div class="where">Shared shell via CreateEnhanceDialog. Replaces the onboarding's silent <span class="mono">enhanceOnboardingDescription</span> call.</div>
+  </div>
+  <div class="map-card">
+    <div class="role">Visibility control <span class="badge-new">NEW</span></div>
+    <code>&lt;VisibilitySelector /&gt;</code>
+    <div class="where">New shared segmented pills, used by both onboarding and the New Idea form (replaces idea-form's Switch + onboarding's loose chips).</div>
+  </div>
+  <div class="map-card">
+    <div class="role">Modal frame &amp; steps</div>
+    <code>OnboardingDialog · StepIndicator</code>
+    <div class="where">≈580px DialogContent; StepIndicator <span class="mono">totalSteps</span> 6 → 5 (flow trimmed).</div>
+  </div>
+</div>
+
+</body>
+</html>

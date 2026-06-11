@@ -1,0 +1,146 @@
+"use client";
+
+import { useCallback, useMemo, useRef } from "react";
+import { toast } from "sonner";
+import {
+  type LaunchMode,
+  buildClaudeDeepLink,
+  buildBoardBootstrapPrompt,
+  buildLaunchCommand,
+} from "@/lib/launch-claude-code";
+import { logger } from "@/lib/logger";
+
+/**
+ * Shared "Launch Claude Code" client logic — the single source of truth for the
+ * custom-scheme deep link + its visibility-race fallback + the copy-command
+ * fallback. Extracted from the board's `LaunchClaudeCodeButton` so EVERY MCP
+ * surface (onboarding, dashboard checklist, connection banner, board) drives one
+ * launch implementation rather than duplicating the race/fallback handling.
+ *
+ * The deep link auto-connects MCP: every bootstrap prompt is prefixed with the
+ * `mcpSetupHead` block, so pressing Launch both connects the hosted connector
+ * (human-in-the-loop) AND picks up the user's board work for this idea.
+ *
+ * Launch is desktop-only (the `claude-cli://` scheme has no handler on a phone);
+ * callers gate visibility with `useMediaQuery`. The copy-command fallback is
+ * always provided so non-Claude-Code / web users can still connect.
+ */
+
+const APP_URL =
+  process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || "https://vibecodes.co.uk";
+
+// Visibility-race window: if the page never blurs/hides within this, assume no
+// handler picked up the deep link and offer the copy-command fallback.
+const SCHEME_RACE_MS = 1200;
+
+export interface UseLaunchClaudeCodeArgs {
+  ideaId: string;
+  ideaTitle: string;
+  /** Idea github_url (raw); resolved internally for the repo / clone step. */
+  ideaGithubUrl?: string | null;
+}
+
+export interface UseLaunchClaudeCodeResult {
+  /** Fire the deep link (with copy-command fallback on the visibility race). */
+  launch: () => void;
+  /** Copy the `cd … && claude "…"` command to the clipboard. */
+  copyCommand: () => Promise<void>;
+}
+
+/**
+ * Build the board-bootstrap prompt for an idea. Repo-backed ideas resolve the
+ * working copy via the deep link's `repo` slug; repo-less ideas default to a
+ * brand-new `~/projects/<slug>` the launched agent creates (mode "new").
+ */
+function promptFor(
+  ideaId: string,
+  ideaTitle: string,
+  ideaGithubUrl: string | null | undefined
+): { prompt: string; mode: LaunchMode } {
+  const mode: LaunchMode = ideaGithubUrl ? "existing" : "new";
+  const prompt = buildBoardBootstrapPrompt({
+    appUrl: APP_URL,
+    ideaId,
+    ideaTitle,
+    mode,
+    repoUrl: ideaGithubUrl,
+  });
+  return { prompt, mode };
+}
+
+export function useLaunchClaudeCode({
+  ideaId,
+  ideaTitle,
+  ideaGithubUrl,
+}: UseLaunchClaudeCodeArgs): UseLaunchClaudeCodeResult {
+  // In-flight guard: blocks a second launch during the visibility-race window so
+  // rapid double-clicks don't fire two assigns + two fallback timers.
+  const launchingRef = useRef(false);
+
+  const copyCommand = useCallback(async () => {
+    const { prompt, mode } = promptFor(ideaId, ideaTitle, ideaGithubUrl);
+    const command = buildLaunchCommand({ prompt, mode, repoUrl: ideaGithubUrl });
+    try {
+      await navigator.clipboard.writeText(command);
+      toast.success("Launch command copied — paste it in your terminal");
+    } catch (err) {
+      logger.error("launch-claude-code copy failed", { err });
+      toast.error("Couldn't copy the launch command");
+    }
+  }, [ideaId, ideaTitle, ideaGithubUrl]);
+
+  const launch = useCallback(() => {
+    // Ignore re-entry while a launch is mid-flight (double-click / Enter+click).
+    if (launchingRef.current) return;
+    launchingRef.current = true;
+
+    const { prompt } = promptFor(ideaId, ideaTitle, ideaGithubUrl);
+    const link = buildClaudeDeepLink({
+      prompt,
+      repo: ideaGithubUrl ?? undefined,
+    });
+
+    let handled = false;
+    const onVisibility = () => {
+      if (document.visibilityState === "hidden") handled = true;
+    };
+    const onBlur = () => {
+      handled = true;
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("blur", onBlur);
+
+    function cleanup() {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("blur", onBlur);
+    }
+
+    try {
+      window.location.assign(link);
+    } catch (err) {
+      // Some browsers throw synchronously on a blocked custom scheme.
+      cleanup();
+      launchingRef.current = false;
+      logger.warn("launch-claude-code deep link blocked", { err });
+      toast.error("Your browser blocked the launch", {
+        description: "Copy the command and run it in your terminal instead.",
+        action: { label: "Copy command", onClick: () => void copyCommand() },
+      });
+      return;
+    }
+
+    window.setTimeout(() => {
+      cleanup();
+      launchingRef.current = false;
+      if (handled) return;
+      // Detection is heuristic — Claude Code may have opened anyway — so keep
+      // this soft and always offer the manual fallback.
+      toast.error("Couldn't confirm Claude Code opened", {
+        description: "If nothing happened, copy the command and run it in your terminal.",
+        action: { label: "Copy command", onClick: () => void copyCommand() },
+      });
+    }, SCHEME_RACE_MS);
+  }, [ideaId, ideaTitle, ideaGithubUrl, copyCommand]);
+
+  return useMemo(() => ({ launch, copyCommand }), [launch, copyCommand]);
+}

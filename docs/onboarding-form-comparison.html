@@ -1,0 +1,508 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>VibeCodes — Onboarding Form Comparison (current state)</title>
+<style>
+  /* ── Zinc / shadcn dark tokens (matched to the real app) ── */
+  :root{
+    --background:#09090b; --foreground:#fafafa;
+    --card:#0c0c0e; --card-soft:#141417;
+    --muted:#27272a; --muted-foreground:#a1a1aa; --muted-foreground-60:#71717a;
+    --border:#27272a; --input:#3f3f46;
+    --primary:#a78bfa; /* violet primary in dark */
+    --violet-400:#a78bfa; --violet-500:#8b5cf6; --violet-600:#7c3aed;
+    --emerald-400:#34d399; --amber-400:#fbbf24; --green-500:#22c55e;
+    --radius:8px;
+    --sans:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:#050506;color:var(--foreground);font-family:var(--sans);font-size:15px;line-height:1.5;-webkit-font-smoothing:antialiased}
+  .page{max-width:1400px;margin:0 auto;padding:40px 28px 80px}
+  h1{font-size:26px;font-weight:800;letter-spacing:-.02em;margin:0 0 6px}
+  .sub{color:var(--muted-foreground);max-width:820px;margin:0 0 8px;font-size:14px}
+  .meta{color:var(--muted-foreground-60);font-size:12px;margin-bottom:30px}
+  h2.section{font-size:19px;font-weight:700;margin:54px 0 6px;letter-spacing:-.01em}
+  h2.section .pill{font-size:11px;font-weight:600;vertical-align:middle;margin-left:8px;padding:3px 8px;border-radius:999px;background:var(--muted);color:var(--muted-foreground)}
+
+  /* layout */
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:28px;align-items:start;margin-top:18px}
+  @media(max-width:1000px){.cols{grid-template-columns:1fr}}
+  .col-label{font-size:13px;font-weight:700;margin:0 0 4px;display:flex;align-items:center;gap:8px}
+  .col-label .tag{font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:2px 7px;border-radius:5px}
+  .tag-idea{background:rgba(167,139,250,.14);color:var(--violet-400);border:1px solid rgba(167,139,250,.25)}
+  .tag-onb{background:rgba(52,211,153,.12);color:var(--emerald-400);border:1px solid rgba(52,211,153,.25)}
+  .col-route{font-size:11px;color:var(--muted-foreground-60);margin:0 0 12px;font-family:var(--mono)}
+
+  /* ── faithful form chrome ── */
+  .card{background:var(--card);border:1px solid var(--border);border-radius:14px;overflow:hidden}
+  .card-head{padding:22px 24px 0}
+  .card-title{font-size:22px;font-weight:600;letter-spacing:-.01em;margin:0}
+  .card-desc{color:var(--muted-foreground);font-size:14px;margin:6px 0 0}
+  .card-body{padding:22px 24px 24px}
+
+  /* modal chrome (onboarding) */
+  .modal{position:relative;background:#0b0b0d;border:1px solid rgba(39,39,42,.6);border-radius:16px;overflow:hidden}
+  .modal-glow{height:2px;width:60%;margin:0 auto;background:linear-gradient(90deg,transparent,var(--primary),transparent);opacity:.7}
+  .step-ind{display:flex;gap:6px;justify-content:center;padding:16px 0 4px}
+  .dot{height:5px;width:26px;border-radius:999px;background:var(--muted)}
+  .dot.on{background:var(--primary)}
+  .dot.done{background:rgba(167,139,250,.5)}
+  .modal-body{padding:8px 34px 24px}
+  .modal-topbar{display:flex;align-items:center;justify-content:space-between;margin-bottom:10px}
+  .chev{height:30px;width:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;color:var(--muted-foreground);background:transparent;border:0}
+  .stepcount{font-size:12px;color:var(--muted-foreground-60)}
+
+  /* fields */
+  .field{margin-bottom:18px}
+  .field.tight{margin-bottom:12px}
+  label.lbl{display:flex;align-items:center;gap:6px;font-size:14px;font-weight:500;margin-bottom:8px}
+  label.lbl.sm{font-size:13px;margin-bottom:6px}
+  .opt-chip{font-size:10px;font-weight:400;background:var(--muted);color:var(--muted-foreground);padding:2px 6px;border-radius:4px}
+  .input{width:100%;background:var(--background);border:1px solid var(--input);border-radius:8px;color:var(--foreground);font-size:14px;padding:9px 12px;font-family:var(--sans)}
+  .input::placeholder{color:var(--muted-foreground-60)}
+  .input.ph{color:var(--muted-foreground-60)}
+  textarea.input{resize:none}
+  .hint{font-size:12px;color:var(--muted-foreground);margin-top:6px;display:flex;align-items:center;gap:6px}
+
+  /* description w/ toolbar (new idea) */
+  .desc-wrap{border:1px solid var(--border);border-radius:8px;overflow:hidden}
+  .desc-toolbar{display:flex;align-items:center;justify-content:space-between;border-top:1px solid var(--border);background:rgba(39,39,42,.2);padding:6px 12px}
+  .desc-toolbar .md{font-size:11px;color:var(--muted-foreground-60)}
+  .enh-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid rgba(139,92,246,.3);background:linear-gradient(90deg,rgba(139,92,246,.12),rgba(168,85,247,.06));color:var(--violet-400);font-size:13px;font-weight:600;padding:5px 10px;border-radius:7px;cursor:pointer}
+  .credit{display:inline-flex;height:17px;width:17px;align-items:center;justify-content:center;border-radius:999px;background:var(--violet-600);color:#fff;font-size:10px;font-weight:700}
+
+  /* project type cards */
+  .ptype{display:grid;gap:8px;margin-top:4px}
+  .ptype.full{grid-template-columns:repeat(3,1fr)}
+  .ptype.compact{grid-template-columns:repeat(3,1fr)}
+  .pt{border:2px solid var(--border);background:#18181b;border-radius:12px;text-align:center}
+  .pt.full{padding:12px}
+  .pt.compact{padding:10px}
+  .pt.sel{border-color:var(--violet-500);background:rgba(139,92,246,.12)}
+  .pt .ic{font-size:22px;margin-bottom:2px}
+  .pt.compact .ic{font-size:18px}
+  .pt .nm{font-weight:700;font-size:14px}
+  .pt.compact .nm{font-size:12px}
+  .pt .badges{display:flex;flex-wrap:wrap;justify-content:center;gap:5px;margin-top:7px}
+  .b-wf{background:rgba(139,92,246,.12);color:var(--violet-400)}
+  .b-ag{background:rgba(52,211,153,.12);color:var(--emerald-400)}
+  .b-wf,.b-ag{border-radius:999px;padding:2px 6px;font-size:10px;font-weight:600}
+
+  /* tags */
+  .tagbox{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--input);background:var(--background);border-radius:8px;padding:6px 10px;min-height:38px}
+  .tag-badge{display:inline-flex;align-items:center;gap:4px;background:var(--muted);color:var(--foreground);font-size:12px;height:24px;padding:0 4px 0 8px;border-radius:6px}
+  .tag-badge .x{height:16px;width:16px;display:flex;align-items:center;justify-content:center;border-radius:999px;font-size:11px;color:var(--muted-foreground)}
+  .tag-sugg{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+  .sugg{border:1px dashed var(--border);color:var(--muted-foreground);font-size:12px;padding:5px 10px;border-radius:999px}
+
+  /* visibility — new idea (switch row) */
+  .vis-row{display:flex;align-items:center;justify-content:space-between;border:1px solid var(--border);border-radius:10px;padding:16px}
+  .vis-left{display:flex;align-items:center;gap:12px}
+  .vis-left .ico{color:var(--muted-foreground)}
+  .vis-left .t{font-size:14px;font-weight:500}
+  .vis-left .d{font-size:12px;color:var(--muted-foreground)}
+  .switch{width:36px;height:20px;border-radius:999px;background:var(--muted);position:relative;flex:none}
+  .switch::after{content:"";position:absolute;top:2px;left:2px;height:16px;width:16px;border-radius:999px;background:#71717a}
+
+  /* visibility — onboarding (segmented pills) */
+  .vis-seg{display:flex;align-items:center;gap:8px}
+  .vis-seg .vlbl{font-size:13px;font-weight:500}
+  .seg{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border);color:var(--muted-foreground);font-size:12px;font-weight:500;padding:5px 10px;border-radius:7px}
+  .seg.on{border-color:var(--primary);background:rgba(167,139,250,.08);color:var(--primary)}
+
+  /* onboarding enhance CTA card */
+  .enh-card{display:flex;align-items:center;gap:14px;width:100%;background:rgba(139,92,246,.06);border:1px solid rgba(139,92,246,.25);border-radius:12px;padding:12px 16px;text-align:left;margin-bottom:16px}
+  .enh-ic{height:36px;width:36px;border-radius:10px;flex:none;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,rgba(139,92,246,.25),rgba(168,85,247,.12))}
+  .enh-card .ttl{display:flex;align-items:center;gap:8px;font-size:14px;font-weight:600;color:#e4e4e7}
+  .enh-card .free{background:rgba(139,92,246,.2);border:1px solid rgba(139,92,246,.3);color:var(--violet-400);font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;padding:1px 6px;border-radius:4px}
+  .enh-card .sub2{font-size:12px;color:#71717a;margin-top:2px}
+  .enh-go{margin-left:auto;flex:none;display:inline-flex;align-items:center;gap:6px;justify-content:center;width:110px;background:linear-gradient(135deg,var(--violet-600),#6d28d9);color:#fff;font-size:13px;font-weight:600;padding:7px 0;border-radius:8px}
+
+  /* buttons */
+  .btn-row{display:flex;gap:12px;margin-top:8px}
+  .btn{flex:1;border:1px solid var(--input);background:transparent;color:var(--foreground);font-size:14px;font-weight:500;padding:11px;border-radius:8px;text-align:center;cursor:pointer}
+  .btn.primary{background:var(--foreground);color:#09090b;border-color:var(--foreground);font-weight:600}
+  .btn.grad{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;flex:none;background:linear-gradient(90deg,var(--violet-600),#9333ea);color:#fff;border:0;font-weight:600;padding:12px}
+  .btn.solid{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;flex:none;background:var(--foreground);color:#09090b;border:0;font-weight:600;padding:12px}
+  .subtle-link{display:block;text-align:center;color:var(--muted-foreground-60);font-size:13px;margin-top:10px}
+  .micro{font-size:11px;color:var(--muted-foreground-60);text-align:center;margin-top:8px}
+
+  /* annotations */
+  .annot{margin-top:14px;border:1px solid rgba(251,191,36,.25);background:rgba(251,191,36,.05);border-radius:10px;padding:12px 14px}
+  .annot h4{margin:0 0 8px;font-size:12px;font-weight:700;color:var(--amber-400);text-transform:uppercase;letter-spacing:.04em}
+  .annot ul{margin:0;padding-left:18px}
+  .annot li{font-size:13px;color:#d4d4d8;margin-bottom:5px}
+  .annot li b{color:#fff}
+
+  /* mobile preview frame */
+  .mobile-row{display:flex;gap:36px;flex-wrap:wrap;margin-top:20px}
+  .phone{width:375px;max-width:100%}
+  .phone-cap{font-size:12px;color:var(--muted-foreground);margin-bottom:8px;font-family:var(--mono)}
+  .frame{border:8px solid #18181b;border-radius:28px;overflow:hidden;background:#09090b}
+
+  /* diff table */
+  table.diff{width:100%;border-collapse:collapse;margin-top:18px;font-size:13.5px}
+  table.diff th,table.diff td{border:1px solid var(--border);padding:10px 12px;text-align:left;vertical-align:top}
+  table.diff th{background:var(--card-soft);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.03em;color:var(--muted-foreground)}
+  table.diff td:first-child{font-weight:600;white-space:nowrap;color:#e4e4e7}
+  .drift{color:var(--amber-400);font-weight:600;font-size:11px}
+  .ok{color:var(--emerald-400);font-weight:600;font-size:11px}
+
+  /* recommendation */
+  .rec{margin-top:20px;border:1px solid rgba(52,211,153,.3);background:rgba(52,211,153,.05);border-radius:14px;padding:22px 24px}
+  .rec .badge{display:inline-block;background:var(--emerald-400);color:#052e16;font-size:12px;font-weight:800;padding:4px 12px;border-radius:999px;text-transform:uppercase;letter-spacing:.04em;margin-bottom:12px}
+  .rec h3{margin:0 0 10px;font-size:20px}
+  .rec p{font-size:14px;color:#d4d4d8;margin:0 0 12px}
+  .rec ul{margin:0 0 12px;padding-left:20px}
+  .rec li{font-size:14px;color:#d4d4d8;margin-bottom:6px}
+  .opt-grid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin:18px 0}
+  @media(max-width:900px){.opt-grid{grid-template-columns:1fr}}
+  .opt{border:1px solid var(--border);border-radius:12px;padding:16px;background:var(--card)}
+  .opt.win{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.04)}
+  .opt h4{margin:0 0 8px;font-size:14px}
+  .opt .verdict{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.04em}
+  .opt.win .verdict{color:var(--emerald-400)}
+  .opt .verdict.no{color:#f87171}
+  .opt p{font-size:12.5px;color:var(--muted-foreground);margin:8px 0 0}
+  .keep-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:18px}
+  @media(max-width:900px){.keep-grid{grid-template-columns:1fr}}
+  .keep{border:1px solid var(--border);border-radius:12px;padding:16px;background:var(--card)}
+  .keep.stay{border-color:rgba(52,211,153,.3)}
+  .keep.go{border-color:rgba(251,191,36,.3)}
+  .keep h4{margin:0 0 10px;font-size:13px;text-transform:uppercase;letter-spacing:.03em}
+  .keep.stay h4{color:var(--emerald-400)}
+  .keep.go h4{color:var(--amber-400)}
+  .keep ul{margin:0;padding-left:18px}.keep li{font-size:13px;color:#d4d4d8;margin-bottom:6px}
+  code.k{font-family:var(--mono);font-size:12px;background:var(--muted);padding:1px 5px;border-radius:4px;color:#e4e4e7}
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Onboarding form comparison — honest current state</h1>
+  <p class="sub">Two places where a first project / idea is created. Reconstructed faithfully from the live JSX (<code class="k">idea-form.tsx</code> and <code class="k">onboarding-dialog.tsx</code> step&nbsp;2). This panel shows <b>what the code renders today</b> — not a proposed fix.</p>
+  <p class="meta">Reconstruction, not a screenshot (local Supabase/Docker down). Strings, field order, required-ness, controls and enhance UX taken verbatim from source.</p>
+
+  <!-- ════════════ SIDE BY SIDE (desktop) ════════════ -->
+  <h2 class="section">1 · Side by side <span class="pill">desktop scale</span></h2>
+  <div class="cols">
+
+    <!-- ───── NEW IDEA ───── -->
+    <div>
+      <p class="col-label"><span class="tag tag-idea">New Idea</span> standalone page</p>
+      <p class="col-route">/ideas/new → &lt;IdeaForm&gt;</p>
+
+      <div class="card">
+        <div class="card-head">
+          <h3 class="card-title">Share Your Idea</h3>
+          <p class="card-desc">Describe your vibe coding project idea and find collaborators</p>
+        </div>
+        <div class="card-body">
+
+          <!-- Title -->
+          <div class="field">
+            <label class="lbl">Title</label>
+            <div class="input ph">A catchy title for your idea</div>
+          </div>
+
+          <!-- Project type -->
+          <div class="field">
+            <p style="font-size:14px;font-weight:500;margin:0">What kind of project is this?</p>
+            <p style="font-size:12px;color:var(--muted-foreground);margin:2px 0 8px">This sets up the right workflow, agents, and board labels for you. You can customise everything later.</p>
+            <div class="ptype full">
+              <div class="pt full sel"><div class="ic">🌐</div><div class="nm">Web App</div><div class="badges"><span class="b-wf">2 workflows</span><span class="b-ag">5 agents</span></div></div>
+              <div class="pt full"><div class="ic">📱</div><div class="nm">Mobile</div><div class="badges"><span class="b-wf">1 workflow</span><span class="b-ag">4 agents</span></div></div>
+              <div class="pt full"><div class="ic">⚙️</div><div class="nm">Custom</div><div class="badges"><span class="b-wf" style="background:var(--muted);color:var(--muted-foreground)">Your choice</span></div></div>
+            </div>
+          </div>
+
+          <!-- Description w/ toolbar -->
+          <div class="field">
+            <label class="lbl">Description</label>
+            <div class="desc-wrap">
+              <div class="input ph" style="border:0;min-height:120px">Describe your idea in detail. What problem does it solve? What tech stack would you use?</div>
+              <div class="desc-toolbar">
+                <span class="md">Supports markdown</span>
+                <span class="enh-btn">✨ Enhance with AI <span class="credit">3</span></span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tags -->
+          <div class="field">
+            <label class="lbl">Tags</label>
+            <div class="tagbox">
+              <span class="tag-badge">react <span class="x">✕</span></span>
+              <span class="input ph" style="border:0;background:transparent;flex:1;padding:0;min-height:auto">Add tags...</span>
+            </div>
+            <div class="tag-sugg">
+              <span class="sugg">+ ai</span><span class="sugg">+ saas</span><span class="sugg">+ mobile</span><span class="sugg">+ web3</span>
+            </div>
+          </div>
+
+          <!-- GitHub -->
+          <div class="field">
+            <label class="lbl">GitHub URL (optional)</label>
+            <div class="input ph">https://github.com/username/repo</div>
+            <p class="hint">⌥ <a style="color:var(--primary)">Connect your GitHub</a> to auto-fill repository URLs</p>
+          </div>
+
+          <!-- Visibility: switch row -->
+          <div class="field">
+            <div class="vis-row">
+              <div class="vis-left">
+                <span class="ico">🔒</span>
+                <div><div class="t">Private idea</div><div class="d">Only you and collaborators can see this idea</div></div>
+              </div>
+              <span class="switch"></span>
+            </div>
+          </div>
+
+          <!-- Buttons -->
+          <div class="btn-row">
+            <span class="btn">Cancel</span>
+            <span class="btn primary">Create idea &amp; apply kit</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ───── ONBOARDING ───── -->
+    <div>
+      <p class="col-label"><span class="tag tag-onb">Onboarding</span> in-modal · step 3 of 6</p>
+      <p class="col-route">OnboardingDialog · step === 2</p>
+
+      <div class="modal">
+        <div class="modal-glow"></div>
+        <div class="step-ind">
+          <span class="dot done"></span><span class="dot done"></span><span class="dot on"></span>
+          <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        </div>
+        <div class="modal-body">
+          <div class="modal-topbar">
+            <span class="chev">‹</span>
+            <span class="stepcount">Step 3 of 6</span>
+          </div>
+
+          <h3 style="font-size:20px;font-weight:700;letter-spacing:-.01em;margin:0 0 4px">What are you building?</h3>
+          <p style="font-size:14px;color:var(--muted-foreground);margin:0 0 14px">Describe your project and we'll set up everything — agents, workflows, and your board.</p>
+
+          <!-- Project name -->
+          <div class="field tight">
+            <label class="lbl sm">Project name</label>
+            <div class="input ph">e.g., A recipe sharing app with AI suggestions</div>
+          </div>
+
+          <!-- Description (optional) -->
+          <div class="field tight">
+            <label class="lbl sm">Description <span class="opt-chip">optional — AI can help</span></label>
+            <div class="input ph" style="min-height:52px">What's the idea? Don't overthink it — AI can refine it later.</div>
+          </div>
+
+          <!-- Project type (compact) -->
+          <div class="field tight">
+            <label class="lbl sm">What kind of project?</label>
+            <div class="ptype compact">
+              <div class="pt compact sel"><div class="ic">🌐</div><div class="nm">Web App</div><div class="badges"><span class="b-wf">2 workflows</span><span class="b-ag">5 agents</span></div></div>
+              <div class="pt compact"><div class="ic">📱</div><div class="nm">Mobile</div><div class="badges"><span class="b-wf">1 workflow</span><span class="b-ag">4 agents</span></div></div>
+              <div class="pt compact"><div class="ic">⚙️</div><div class="nm">Custom</div><div class="badges"><span class="b-wf" style="background:var(--muted);color:var(--muted-foreground)">Your choice</span></div></div>
+            </div>
+          </div>
+
+          <!-- Visibility: segmented pills -->
+          <div class="field tight">
+            <div class="vis-seg">
+              <span class="vlbl">Visibility</span>
+              <span class="seg on">🌐 Public</span>
+              <span class="seg">🔒 Private</span>
+            </div>
+          </div>
+
+          <!-- Enhance CTA card -->
+          <div class="enh-card">
+            <span class="enh-ic">✨</span>
+            <div>
+              <div class="ttl">Enhance with AI <span class="free">Free</span></div>
+              <div class="sub2">AI can refine your description and help generate better tasks</div>
+            </div>
+            <span class="enh-go">✨ Enhance</span>
+          </div>
+
+          <!-- Submit -->
+          <span class="btn grad">✨ Create &amp; Generate Board →</span>
+          <p class="micro">This will create your idea, set up agents from the selected kit, and generate an AI-powered task board.</p>
+          <span class="subtle-link">I'll do this later</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- per-column annotations -->
+  <div class="cols">
+    <div class="annot">
+      <h4>New Idea — concrete facts</h4>
+      <ul>
+        <li><b>5 fields:</b> Title, Project type, Description, Tags, GitHub URL, + Private switch</li>
+        <li><b>Description is REQUIRED</b> (<code class="k">required</code> on textarea)</li>
+        <li><b>Order:</b> Title → Project type → Description → Tags → GitHub → Visibility</li>
+        <li><b>Enhance = full dialog:</b> persona picker, prompt template, clarifying questions, streamed result, refine + undo, <b>credit counter</b> (BYOK/starter credits)</li>
+        <li><b>Visibility = Switch row</b> labelled "Private idea" (off = public, implicit)</li>
+        <li><b>Submit:</b> creates idea + applies kit → redirects to board. <b>No AI board generation.</b></li>
+        <li>Container: shadcn <code class="k">Card</code>, "Share Your Idea", max-w-2xl page</li>
+      </ul>
+    </div>
+    <div class="annot">
+      <h4>Onboarding — concrete facts</h4>
+      <ul>
+        <li><b>3 fields:</b> Project name, Description, Project type, + Visibility. <b>No Tags, no GitHub URL.</b></li>
+        <li><b>Description is OPTIONAL</b> ("optional — AI can help"); only 2 rows tall</li>
+        <li><b>Order:</b> Name → Description → Project type → Visibility → Enhance → Submit</li>
+        <li><b>Enhance = one click, inline-replace:</b> overwrites textarea, toast "Description enhanced!". No preview, no undo, no persona, no questions, <b>no credits</b> (badged "Free")</li>
+        <li><b>Visibility = segmented Public/Private pills</b>, default Public, both shown</li>
+        <li><b>Submit ALSO auto-generates the board</b> (AI tasks) → loading state → step 3 preview</li>
+        <li>Container: 580px <code class="k">Dialog</code>, label "Project name" not "Title"</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- ════════════ MOBILE 375px ════════════ -->
+  <h2 class="section">2 · Mobile <span class="pill">375px</span></h2>
+  <div class="mobile-row">
+    <div class="phone">
+      <p class="phone-cap">New Idea — /ideas/new @ 375px</p>
+      <div class="frame">
+        <div class="card" style="border-radius:0;border:0">
+          <div class="card-head" style="padding:18px 16px 0"><h3 class="card-title" style="font-size:20px">Share Your Idea</h3><p class="card-desc" style="font-size:13px">Describe your vibe coding project idea and find collaborators</p></div>
+          <div class="card-body" style="padding:18px 16px">
+            <div class="field tight"><label class="lbl sm">Title</label><div class="input ph">A catchy title for your idea</div></div>
+            <div class="field tight">
+              <p style="font-size:13px;font-weight:500;margin:0 0 6px">What kind of project is this?</p>
+              <!-- full variant collapses to grid-cols-2 on mobile -->
+              <div class="ptype" style="grid-template-columns:1fr 1fr">
+                <div class="pt full sel"><div class="ic">🌐</div><div class="nm">Web App</div><div class="badges"><span class="b-wf">2 wf</span><span class="b-ag">5 ag</span></div></div>
+                <div class="pt full"><div class="ic">📱</div><div class="nm">Mobile</div><div class="badges"><span class="b-ag">4 ag</span></div></div>
+              </div>
+            </div>
+            <div class="field tight"><label class="lbl sm">Description</label>
+              <div class="desc-wrap"><div class="input ph" style="border:0;min-height:90px">Describe your idea in detail…</div>
+              <div class="desc-toolbar"><span class="md">Supports markdown</span><span class="enh-btn" style="font-size:12px">✨ Enhance <span class="credit">3</span></span></div></div>
+            </div>
+            <div class="field tight"><label class="lbl sm">Tags</label><div class="tagbox"><span class="input ph" style="border:0;background:transparent;flex:1;padding:0">Add tags...</span></div></div>
+            <div class="field tight"><label class="lbl sm">GitHub URL (optional)</label><div class="input ph">https://github.com/username/repo</div></div>
+            <div class="field tight"><div class="vis-row" style="padding:12px"><div class="vis-left"><span class="ico">🔒</span><div><div class="t">Private idea</div><div class="d">Only you and collaborators…</div></div></div><span class="switch"></span></div></div>
+            <div class="btn-row"><span class="btn">Cancel</span><span class="btn primary" style="font-size:13px">Create idea &amp; apply kit</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="phone">
+      <p class="phone-cap">Onboarding — step 3 @ 375px (modal ≈ full width)</p>
+      <div class="frame">
+        <div class="modal" style="border-radius:0;border:0">
+          <div class="modal-glow"></div>
+          <div class="step-ind"><span class="dot done"></span><span class="dot done"></span><span class="dot on"></span><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+          <div class="modal-body" style="padding:6px 18px 20px">
+            <div class="modal-topbar"><span class="chev">‹</span><span class="stepcount">Step 3 of 6</span></div>
+            <h3 style="font-size:18px;font-weight:700;margin:0 0 4px">What are you building?</h3>
+            <p style="font-size:13px;color:var(--muted-foreground);margin:0 0 12px">Describe your project and we'll set up everything…</p>
+            <div class="field tight"><label class="lbl sm">Project name</label><div class="input ph">e.g., A recipe sharing app…</div></div>
+            <div class="field tight"><label class="lbl sm">Description <span class="opt-chip">optional — AI can help</span></label><div class="input ph" style="min-height:46px">What's the idea? Don't overthink it…</div></div>
+            <div class="field tight"><label class="lbl sm">What kind of project?</label>
+              <!-- compact auto-fill minmax(140px) → 2 per row on 375 -->
+              <div class="ptype" style="grid-template-columns:1fr 1fr">
+                <div class="pt compact sel"><div class="ic">🌐</div><div class="nm">Web App</div><div class="badges"><span class="b-wf">2 wf</span></div></div>
+                <div class="pt compact"><div class="ic">📱</div><div class="nm">Mobile</div><div class="badges"><span class="b-ag">4 ag</span></div></div>
+              </div>
+            </div>
+            <div class="field tight"><div class="vis-seg" style="flex-wrap:wrap"><span class="vlbl">Visibility</span><span class="seg on">🌐 Public</span><span class="seg">🔒 Private</span></div></div>
+            <!-- enhance CTA stacks vertically on mobile (sm:flex-row) -->
+            <div class="enh-card" style="flex-direction:column;align-items:flex-start;gap:10px">
+              <div style="display:flex;align-items:center;gap:12px"><span class="enh-ic">✨</span><div><div class="ttl">Enhance with AI <span class="free">Free</span></div><div class="sub2">AI can refine your description…</div></div></div>
+              <span class="enh-go" style="width:100%">✨ Enhance</span>
+            </div>
+            <span class="btn grad" style="font-size:13px">✨ Create &amp; Generate Board →</span>
+            <p class="micro">This will create your idea, set up agents…</p>
+            <span class="subtle-link">I'll do this later</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ════════════ DIFF TABLE ════════════ -->
+  <h2 class="section">3 · Difference map</h2>
+  <table class="diff">
+    <thead><tr><th style="width:150px">Aspect</th><th>New Idea (/ideas/new)</th><th>Onboarding (step 3)</th><th style="width:130px">Verdict</th></tr></thead>
+    <tbody>
+      <tr><td>Container</td><td>shadcn <code class="k">Card</code>, page, max-w-2xl</td><td>580px <code class="k">Dialog</code> with stepper</td><td><span class="ok">justified</span></td></tr>
+      <tr><td>Heading</td><td>"Share Your Idea"</td><td>"What are you building?"</td><td><span class="drift">drift</span></td></tr>
+      <tr><td>Name field label</td><td>"Title"</td><td>"Project name"</td><td><span class="drift">drift</span></td></tr>
+      <tr><td>Name placeholder</td><td>"A catchy title for your idea"</td><td>"e.g., A recipe sharing app…"</td><td><span class="drift">drift</span></td></tr>
+      <tr><td>Description</td><td><b>Required</b>, 6→10 rows, "Supports markdown" toolbar</td><td><b>Optional</b>, 2 rows, no toolbar</td><td><span class="ok">mostly justified</span></td></tr>
+      <tr><td>AI Enhance UX</td><td>Full dialog: persona, prompt template, clarifying Qs, streamed preview, refine + undo, <b>credit counter</b></td><td>One click → inline replace + toast. No preview/undo/persona/credits</td><td><span class="drift">drift (big)</span></td></tr>
+      <tr><td>Tags</td><td>TagInput + suggestion chips</td><td><b>Absent</b></td><td><span class="ok">justified</span></td></tr>
+      <tr><td>GitHub URL</td><td>Present (optional) + connect hint</td><td><b>Absent</b></td><td><span class="ok">justified</span></td></tr>
+      <tr><td>Visibility control</td><td>Switch row "Private idea" (default public, implicit)</td><td>Segmented Public/Private pills (default public, explicit)</td><td><span class="drift">drift</span></td></tr>
+      <tr><td>Field order</td><td>Title → Type → Desc → Tags → GitHub → Vis</td><td>Name → Desc → Type → Vis → Enhance</td><td><span class="drift">drift</span></td></tr>
+      <tr><td>Submit label</td><td>"Create idea &amp; apply kit"</td><td>"Create &amp; Generate Board"</td><td><span class="ok">justified</span></td></tr>
+      <tr><td>Submit behaviour</td><td>Create idea + apply kit → board</td><td>Create + apply kit + <b>AI-generate board tasks</b> → preview</td><td><span class="ok">justified</span></td></tr>
+      <tr><td>Cancel affordance</td><td>"Cancel" button (router.back)</td><td>"I'll do this later" text link</td><td><span class="ok">justified</span></td></tr>
+    </tbody>
+  </table>
+
+  <!-- ════════════ RECOMMENDATION ════════════ -->
+  <h2 class="section">4 · Recommendation</h2>
+
+  <div class="opt-grid">
+    <div class="opt"><div class="verdict no">Not chosen</div><h4>(a) Share one component</h4><p>Onboarding embeds <code class="k">&lt;IdeaForm variant="onboarding"&gt;</code> (hides tags+GitHub, makes desc optional). Zero drift, but forces the heavy Card + full enhance dialog + credit UI into the 580px modal, and the modal needs board auto-generation the page form doesn't have. High refactor cost, fights the modal's leaner intent.</p></div>
+    <div class="opt win"><div class="verdict">★ Recommended</div><h4>(b) Harmonise patterns</h4><p>Keep two surfaces, but unify the things that are pure drift: labels, visibility control, enhance UX, ordering. Cheap, low-risk, preserves the deliberately lean first-run modal and its auto-generate-board flow while killing the inconsistencies users actually notice.</p></div>
+    <div class="opt"><div class="verdict no">Not chosen</div><h4>(c) Keep leaner, minimal fixes</h4><p>Only fix the very worst inconsistency. Leaves most drift in place — labels, enhance, visibility still diverge — so the next change re-opens the gap. Under-corrects.</p></div>
+  </div>
+
+  <div class="rec">
+    <span class="badge">Recommendation: (b) Harmonise patterns</span>
+    <h3>Keep two forms, unify the patterns — don't force-share the component.</h3>
+    <p><b>Why not (a).</b> The two surfaces have genuinely different jobs. The page form is a deliberate, full-detail idea (required description, tags, GitHub, repeatable, no board generation). The onboarding step is a low-friction <i>first-run</i> form whose whole point is speed and a magic "Create &amp; Generate Board" payoff. Cramming the real <code class="k">IdeaForm</code> — Card chrome, the multi-phase enhance dialog with credits, tags, GitHub — into a 580px stepper modal would bloat first-run friction and still require an <code class="k">onboarding</code> branch for board auto-generation. The shared component would be mostly <code class="k">if (variant === "onboarding")</code> branches: the "never diverge" win is undercut by a component that's now two forms in a trench coat.</p>
+    <p><b>Why (b).</b> Most of the differences in the map above are <span class="drift">drift</span>, not design. They can be removed without sharing JSX, by aligning four things:</p>
+    <ul>
+      <li><b>Enhance UX is the big one.</b> The page gives a previewable, undoable, persona-aware, credit-aware enhance; onboarding silently overwrites the textarea with a toast and no undo. That's a trust gap on a brand-new user's first AI interaction. Onboarding should adopt the <b>preview + Undo</b> affordance (it can stay single-click and free — just don't destroy the user's text irreversibly). Reuse <code class="k">EnhanceDialogShell</code> in a lightweight mode, or at minimum keep an "Undo — restore original" link like the page form's <code class="k">handleUndo</code>.</li>
+      <li><b>Visibility control:</b> pick ONE pattern. The segmented Public/Private pills (onboarding) are clearer than the implicit "Private idea" Switch (off = public is non-obvious). Recommend standardising on the <b>segmented pills</b> in both.</li>
+      <li><b>Labels &amp; copy:</b> "Title" vs "Project name", "Share Your Idea" vs "What are you building?". Different microcopy is fine if intentional; the field label for the same concept should not differ. Align the name field label (pick "Project name") and the enhance button label.</li>
+      <li><b>Ordering:</b> put Description immediately after the name in both (onboarding already does; the page interleaves Project type between them — acceptable since it feeds enhance context, so leave that one).</li>
+    </ul>
+    <p><b>Concrete refactor.</b> Extract the shared pieces, not the whole form: (1) a <code class="k">&lt;VisibilitySelector&gt;</code> (segmented pills) used by both <code class="k">idea-form.tsx</code> and <code class="k">onboarding-dialog.tsx</code>; (2) a shared enhance entry that exposes preview+undo (lift the onboarding enhance onto <code class="k">EnhanceDialogShell</code> like <code class="k">CreateEnhanceDialog</code> already does, or give onboarding the same undo link). Drive name label and the kit-context strings from one constants source. No <code class="k">variant</code> prop, no shared mega-component. Low effort, low risk, and the drift can't silently re-grow because the load-bearing controls now come from one place.</p>
+  </div>
+
+  <h2 class="section">5 · Justified vs drift</h2>
+  <div class="keep-grid">
+    <div class="keep stay">
+      <h4>✓ Should REMAIN different</h4>
+      <ul>
+        <li><b>Auto-generate board</b> — onboarding's "Create &amp; Generate Board" + loading/preview is the first-run magic moment; the page form deliberately doesn't.</li>
+        <li><b>Fewer fields</b> — no Tags / no GitHub URL keeps first-run fast; both are easily added later from the idea page.</li>
+        <li><b>Optional, shorter description</b> — first-run shouldn't gate on a written description, especially with enhance available.</li>
+        <li><b>Container</b> — Card page vs stepper modal; different surfaces, correct.</li>
+        <li><b>Cancel affordance</b> — "Cancel" vs "I'll do this later" matches each context.</li>
+      </ul>
+    </div>
+    <div class="keep go">
+      <h4>✗ Pure drift — should GO</h4>
+      <ul>
+        <li><b>Two different enhance UXs</b> — destructive overwrite vs preview+undo. Unify on preview+undo.</li>
+        <li><b>Two visibility controls</b> — Switch vs pills. Standardise on segmented pills.</li>
+        <li><b>Name field label</b> — "Title" vs "Project name" for the same field.</li>
+        <li><b>Credit visibility</b> — page shows credit count, onboarding hides it. Pick one truth (onboarding's free enhance should still be honest about credits if it consumes them).</li>
+        <li><b>Enhance button label / styling</b> — "Enhance with AI" pill vs full CTA card. Visual scale can differ; the wording shouldn't.</li>
+      </ul>
+    </div>
+  </div>
+
+  <p class="meta" style="margin-top:40px">Sources: <code class="k">src/components/ideas/idea-form.tsx</code>, <code class="k">src/components/ideas/create-enhance-dialog.tsx</code>, <code class="k">src/components/ideas/enhance-dialog-shell.tsx</code>, <code class="k">src/components/ideas/tag-input.tsx</code>, <code class="k">src/components/kits/project-type-selector.tsx</code>, <code class="k">src/components/onboarding/onboarding-dialog.tsx</code> (step&nbsp;2).</p>
+
+</div>
+</body>
+</html>
