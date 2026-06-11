@@ -16,15 +16,6 @@ export async function initializeBoardColumns(ideaId: string) {
 
   if (!user) throw new Error("Not authenticated");
 
-  // Check if columns already exist
-  const { data: existing } = await supabase
-    .from("board_columns")
-    .select("id")
-    .eq("idea_id", ideaId)
-    .limit(1);
-
-  if (existing && existing.length > 0) return;
-
   // Check for user's custom default columns
   const { data: userProfile } = await supabase
     .from("users")
@@ -35,13 +26,21 @@ export async function initializeBoardColumns(ideaId: string) {
   const columnDefs = userProfile?.default_board_columns ?? DEFAULT_BOARD_COLUMNS;
 
   const columns = columnDefs.map((col, i) => ({
-    idea_id: ideaId,
     title: col.title,
     position: i * POSITION_GAP,
     is_done_column: col.is_done_column,
   }));
 
-  await supabase.from("board_columns").insert(columns);
+  // Race-safe init: the RPC takes a per-idea advisory lock + re-checks existence,
+  // so two concurrent board loads (Next.js prefetch + navigation) can't both insert
+  // the default set. The old check-then-insert here raced → duplicate columns.
+  const { error } = await supabase.rpc("initialize_board_columns", {
+    p_idea_id: ideaId,
+    p_columns: columns,
+  });
+  if (error) {
+    logger.error("initializeBoardColumns failed", { ideaId, error: error.message });
+  }
 }
 
 export async function createBoardColumn(ideaId: string, title: string) {

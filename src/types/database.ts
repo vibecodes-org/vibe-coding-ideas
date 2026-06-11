@@ -2574,6 +2574,10 @@ export type Database = {
         Args: { target_user_id: string };
         Returns: undefined;
       };
+      initialize_board_columns: {
+        Args: { p_idea_id: string; p_columns: Json };
+        Returns: undefined;
+      };
       get_public_stats: {
         Args: Record<string, never>;
         Returns: Json;
