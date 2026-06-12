@@ -197,4 +197,76 @@ describe("getAgentSkillContent", () => {
 
     await expect(getAgentSkillContent(ctx, params)).rejects.toThrow("not found");
   });
+
+  it("resolves bot_id from agent_id when supplied, even if ctx.userId differs", async () => {
+    const OTHER_BOT_ID = "00000000-0000-4000-a000-000000000077";
+    const skillData = {
+      name: "api-design-review",
+      description: "Checklist for REST/RPC contracts",
+      content: "## Review\nCheck the contract.",
+      category: "Development",
+    };
+
+    const chain = createChain(skillData);
+    const ctx: McpContext = {
+      supabase: { from: vi.fn(() => chain) } as unknown as McpContext["supabase"],
+      userId: BOT_ID, // active identity differs from the agent_id passed below
+    };
+
+    const { getAgentSkillContent, getAgentSkillContentSchema } = await import("./agent-skill");
+    const params = getAgentSkillContentSchema.parse({
+      skill_name: "api-design-review",
+      agent_id: OTHER_BOT_ID,
+    });
+    const result = await getAgentSkillContent(ctx, params);
+
+    expect(result.skill_name).toBe("api-design-review");
+    // Must have queried the passed agent_id, NOT ctx.userId
+    expect(chain.eq).toHaveBeenCalledWith("bot_id", OTHER_BOT_ID);
+    expect(chain.eq).not.toHaveBeenCalledWith("bot_id", BOT_ID);
+  });
+
+  it("resolves bot_id from ctx.userId when agent_id omitted (back-compat)", async () => {
+    const skillData = {
+      name: "webapp-testing",
+      description: "Test web applications",
+      content: "## How to test",
+      category: "Development",
+    };
+
+    const chain = createChain(skillData);
+    const ctx: McpContext = {
+      supabase: { from: vi.fn(() => chain) } as unknown as McpContext["supabase"],
+      userId: BOT_ID,
+    };
+
+    const { getAgentSkillContent, getAgentSkillContentSchema } = await import("./agent-skill");
+    const params = getAgentSkillContentSchema.parse({ skill_name: "webapp-testing" });
+    await getAgentSkillContent(ctx, params);
+
+    expect(chain.eq).toHaveBeenCalledWith("bot_id", BOT_ID);
+  });
+
+  it("not-found message references the agent when agent_id supplied", async () => {
+    const AGENT_ID = "00000000-0000-4000-a000-000000000088";
+    const chain = createChain(null);
+    const ctx: McpContext = {
+      supabase: { from: vi.fn(() => chain) } as unknown as McpContext["supabase"],
+      userId: BOT_ID,
+    };
+
+    const { getAgentSkillContent, getAgentSkillContentSchema } = await import("./agent-skill");
+    const params = getAgentSkillContentSchema.parse({
+      skill_name: "missing",
+      agent_id: AGENT_ID,
+    });
+
+    await expect(getAgentSkillContent(ctx, params)).rejects.toThrow(
+      `not found for agent ${AGENT_ID}`
+    );
+    // Must NOT tell the caller to call set_agent_identity in the agent_id branch
+    await expect(getAgentSkillContent(ctx, params)).rejects.not.toThrow(
+      "set_agent_identity"
+    );
+  });
 });

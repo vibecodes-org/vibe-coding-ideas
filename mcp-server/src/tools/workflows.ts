@@ -633,6 +633,38 @@ export async function claimNextStep(
     ? available_agents.find((a) => a.bot_id === updated.bot_id)
     : null;
 
+  // Surface the assigned agent's skills so the executing subagent can self-load
+  // the relevant ones (names + descriptions only — never the skill bodies). Only
+  // fetched when a bot is assigned; bot_id = null steps stay byte-identical.
+  let available_skills: { name: string; description: string }[] = [];
+  if (updated.bot_id) {
+    const { data: skillRows } = await ctx.supabase
+      .from("agent_skills")
+      .select("name, description")
+      .eq("bot_id", updated.bot_id)
+      .order("created_at", { ascending: true })
+      .limit(50);
+    available_skills = skillRows ?? [];
+  }
+
+  // Subagent-addressed directive advertising the agent's skills. Built only when
+  // skills exist so skill-less / bot_id=null paths add nothing to `instruction`.
+  let skillsInstruction = "";
+  if (available_skills.length > 0) {
+    const skillList = available_skills
+      .map((s) => `- ${s.name} — ${s.description}`)
+      .join("\n");
+    skillsInstruction =
+      `SKILLS: You have these skills available:\n${skillList}\n\n` +
+      `As you work, if one of these is relevant to your task, call get_agent_skill_content ` +
+      `with agent_id "${updated.bot_id}" and the skill name, then follow its instructions. ` +
+      `Load ONLY the skills that are relevant to this step — do not load all of them. ` +
+      `You do NOT need set_agent_identity; pass agent_id directly.\n` +
+      `EXCEPTION — if your spawned subagent does NOT have the get_agent_skill_content tool in its own context: ` +
+      `you (the orchestrator) call get_agent_skill_content yourself for each relevant skill and fold the returned ` +
+      `instructions into the subagent's system prompt before spawning it. This is a fallback only — prefer letting the subagent self-load.`;
+  }
+
   // Subagent orchestration is the ONLY mode (task bd13ee8f — the per-session
   // toggle was retired): every step runs in a fresh subagent whose system prompt
   // IS the step's persona. The claim_token authorises completion and step
@@ -750,9 +782,19 @@ export async function claimNextStep(
     `TASK DESCRIPTION: After calling complete_step, call update_task to append a summary of your deliverable to the task description under a markdown heading.`
   );
 
-  const instruction = [identityInstruction, ...contextParts].join("\n\n");
+  const instruction = [identityInstruction, skillsInstruction, ...contextParts].filter(Boolean).join("\n\n");
 
-  return { done: false, step: updated, claim_token, instruction, rework_instructions, available_agents, context, expected_deliverables };
+  return {
+    done: false,
+    step: updated,
+    claim_token,
+    instruction,
+    rework_instructions,
+    available_agents,
+    context,
+    expected_deliverables,
+    ...(available_skills.length > 0 ? { available_skills } : {}),
+  };
 }
 
 // --- Complete Step ---

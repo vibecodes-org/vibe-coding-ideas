@@ -1,0 +1,535 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UX Design — Skills in the Workflow Loop (MCP interaction contract)</title>
+<style>
+  :root{
+    --bg:#0d1117; --panel:#161b22; --panel2:#1c232c; --border:#2b333d;
+    --text:#e6edf3; --muted:#9aa7b4; --accent:#58a6ff; --green:#3fb950;
+    --amber:#d29922; --red:#f85149; --purple:#bc8cff; --code:#0a0e14;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.55;padding:0 0 80px}
+  header{padding:38px 28px 26px;border-bottom:1px solid var(--border);
+    background:linear-gradient(180deg,#11161d,#0d1117)}
+  header h1{margin:0 0 6px;font-size:25px;letter-spacing:-.3px}
+  header .sub{color:var(--muted);font-size:14px;max-width:880px}
+  .wrap{max-width:1080px;margin:0 auto;padding:0 28px}
+  h2{margin:42px 0 6px;font-size:19px;border-left:3px solid var(--accent);padding-left:12px}
+  h2 .n{color:var(--accent);font-weight:700;margin-right:8px}
+  h3{margin:26px 0 8px;font-size:15px;color:var(--text)}
+  p,li{font-size:14px}
+  .muted{color:var(--muted)}
+  .lead{color:var(--muted);font-size:13.5px;margin:2px 0 4px}
+  code{font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;font-size:12.5px;
+    background:#21262d;padding:1px 5px;border-radius:4px;color:#c9d4df}
+  pre{background:var(--code);border:1px solid var(--border);border-radius:8px;
+    padding:14px 16px;overflow:auto;font-size:12.3px;line-height:1.5;
+    font-family:"SF Mono",ui-monospace,Menlo,Consolas,monospace;color:#c9d4df}
+  pre .k{color:var(--purple)} pre .s{color:#a5d6a7} pre .c{color:#6e7781}
+  pre .a{color:var(--accent)}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;
+    padding:18px 20px;margin:14px 0}
+  .cite{background:#13202e;border:1px solid #1f3a52;border-left:3px solid var(--accent);
+    border-radius:8px;padding:12px 16px;margin:14px 0;font-size:13px}
+  .cite b{color:var(--accent)}
+  /* flow */
+  .flow{display:flex;flex-direction:column;gap:0;margin:10px 0}
+  .lane-h{font-size:12px;text-transform:uppercase;letter-spacing:.7px;color:var(--muted);
+    margin:18px 0 6px}
+  .node{background:var(--panel2);border:1px solid var(--border);border-radius:9px;
+    padding:11px 14px;font-size:13px;position:relative}
+  .node .lbl{font-size:11px;text-transform:uppercase;letter-spacing:.6px;color:var(--muted);
+    display:block;margin-bottom:3px}
+  .node.actor-orch{border-left:3px solid var(--accent)}
+  .node.actor-sub{border-left:3px solid var(--purple)}
+  .node.actor-srv{border-left:3px solid var(--green)}
+  .arrow{text-align:center;color:var(--muted);font-size:17px;line-height:1.1;margin:5px 0}
+  .branch{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin:8px 0}
+  @media(max-width:720px){.branch{grid-template-columns:1fr}}
+  .col-skilled{border-top:3px solid var(--purple);border-radius:9px;padding:12px;background:#15121d}
+  .col-plain{border-top:3px solid var(--muted);border-radius:9px;padding:12px;background:#15191e}
+  .tag{display:inline-block;font-size:10.5px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.5px;padding:2px 8px;border-radius:20px;margin-bottom:6px}
+  .tag.purple{background:#2a1f3d;color:var(--purple)}
+  .tag.grey{background:#22272e;color:var(--muted)}
+  .tag.blue{background:#13202e;color:var(--accent)}
+  /* primary/fallback callouts */
+  .primary-badge{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.6px;padding:3px 10px;border-radius:6px;background:#11271a;color:var(--green);
+    border:1px solid #1f4030;margin-left:8px}
+  .fallback-badge{display:inline-block;font-size:11px;font-weight:700;text-transform:uppercase;
+    letter-spacing:.6px;padding:3px 10px;border-radius:6px;background:#2a230f;color:var(--amber);
+    border:1px solid #4a3b14;margin-left:8px}
+  .fallback-box{background:#1c1810;border:1px solid #4a3b14;border-left:3px solid var(--amber);
+    border-radius:9px;padding:14px 16px;margin:14px 0}
+  .fallback-box .hd{color:var(--amber);font-weight:700;font-size:13px;margin-bottom:6px;
+    text-transform:uppercase;letter-spacing:.5px}
+  /* before/after */
+  .ba{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media(max-width:720px){.ba{grid-template-columns:1fr}}
+  .ba .hd{font-weight:700;font-size:13px;margin-bottom:6px}
+  .before .hd{color:var(--amber)} .after .hd{color:var(--green)}
+  /* states table */
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:13px}
+  th,td{border:1px solid var(--border);padding:9px 11px;text-align:left;vertical-align:top}
+  th{background:var(--panel2);font-size:12px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted)}
+  td code{font-size:11.5px}
+  .pill{display:inline-block;padding:1px 8px;border-radius:20px;font-size:11px;font-weight:600}
+  .pill.load{background:#11271a;color:var(--green)}
+  .pill.adv{background:#2a230f;color:var(--amber)}
+  .pill.none{background:#22272e;color:var(--muted)}
+  .pill.err{background:#2a1416;color:var(--red)}
+  .scent{background:#10231a;border:1px solid #1f4030;border-left:3px solid var(--green);
+    border-radius:8px;padding:12px 16px;margin:12px 0;font-size:13px}
+  .scent b{color:var(--green)}
+  .err-box{background:#1d1314;border:1px solid #3a1d1f;border-left:3px solid var(--red);
+    border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12.5px;color:#f0b6b6}
+  .kvs{font-size:12.5px}
+  .kvs li{margin:3px 0}
+  .ac{font-size:11px;font-weight:700;color:var(--accent);background:#13202e;
+    border:1px solid #1f3a52;border-radius:5px;padding:1px 6px;margin-left:6px}
+  footer{margin-top:50px;padding-top:18px;border-top:1px solid var(--border);
+    color:var(--muted);font-size:12px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap">
+    <h1>Skills in the Workflow Loop — Interaction Contract &amp; Flow</h1>
+    <div class="sub">
+      UX Design step (Compass) · <b>revised after board-owner rework feedback</b>. This is a
+      <b>backend MCP change</b>: the "user" is the <b>workflow orchestrator (Claude Code) +
+      the spawned subagent persona</b> — not a GUI. So this document designs the
+      <b>interaction contract</b>: the shape of the MCP tool responses and the orchestration
+      flow from trigger → completion → error recovery.
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+  <div class="cite">
+    <b>Building on the Requirements step</b> (not repeated here). Requirements defined:
+    the optional <code>agent_id</code> parameter on <code>get_agent_skill_content</code>,
+    the <code>available_skills</code> advertisement on <code>claim_next_step</code>,
+    <b>instruction-only loading</b> (no server-side injection), the back-compat /
+    no-regression constraints, and 13 acceptance criteria. Below is the concrete contract
+    + flow that satisfies them. ACs are cited inline as <span class="ac">AC#n</span>.
+  </div>
+
+  <div class="panel" style="border-left:3px solid var(--purple)">
+    <div class="hd" style="color:var(--purple);font-weight:700;font-size:13px;margin-bottom:6px;
+      text-transform:uppercase;letter-spacing:.5px">Rework applied — model inversion</div>
+    <p style="margin:4px 0 0">The previous revision had the <b>orchestrator</b> fetch
+      (<code>get_agent_skill_content</code>) and fold each relevant skill body into the
+      subagent prompt before spawning. Per rework feedback, that is now the
+      <span class="fallback-badge">Fallback</span> only. The
+      <span class="primary-badge">Primary</span> model is:
+      the orchestrator <b>only advertises</b> — it forwards <code>available_skills</code> +
+      the <code>agent_id</code> + a subagent-addressed directive — and the
+      <b>subagent self-loads its own skills</b>, on demand, while doing the work, using its
+      own <code>get_agent_skill_content</code> MCP tool. The orchestrator never reads or folds
+      skill bodies in the primary path.</p>
+  </div>
+
+  <!-- ===================== 1. FLOW ===================== -->
+  <h2><span class="n">1</span>Flow — a workflow step executing, skilled vs skill-less</h2>
+  <p class="lead">Three actors:
+    <span style="color:var(--accent)">■ Orchestrator</span> (Claude Code, advertises only),
+    <span style="color:var(--purple)">■ Subagent</span> (fresh persona context, self-loads skills),
+    <span style="color:var(--green)">■ MCP server</span>.
+    The branch point is the <code>claim_next_step</code> response.</p>
+
+  <div class="flow">
+    <div class="node actor-orch"><span class="lbl">Orchestrator → Server</span>
+      <code>claim_next_step({ idea_id })</code> — picks up the next pending step.</div>
+    <div class="arrow">↓</div>
+    <div class="node actor-srv"><span class="lbl">Server → Orchestrator (response)</span>
+      Returns <code>step</code>, one-time <code>claim_token</code>, <code>available_agents</code>,
+      <code>context</code>, <code>expected_deliverables</code>, <code>instruction</code>
+      — <b>and now</b> <code>available_skills</code> + the <code>agent_id</code> (the step's
+      <code>bot_id</code>) + a subagent-addressed SKILLS directive <i>iff</i>
+      <code>step.bot_id</code> owns skills.</div>
+  </div>
+
+  <div class="arrow" style="font-size:20px">▼ &nbsp; branch on <code>available_skills</code></div>
+
+  <div class="branch">
+    <!-- SKILLED -->
+    <div class="col-skilled">
+      <span class="tag purple">Skilled agent path</span>
+      <span class="primary-badge">Primary · subagent self-loads</span>
+      <div class="flow">
+        <div class="node actor-srv"><span class="lbl">In the response</span>
+          <code>available_skills: [{name, description}]</code> (names + one-liners,
+          <b>no bodies</b>) <span class="ac">AC#5</span> + <code>agent_id</code> +
+          a <b>subagent-addressed</b> SKILLS directive appended to
+          <code>instruction</code> <span class="ac">AC#6</span>.</div>
+        <div class="arrow">↓</div>
+        <div class="node actor-orch"><span class="lbl">Orchestrator — ADVERTISE ONLY</span>
+          Reads <code>get_agent_prompt</code> → spawns a <b>fresh subagent</b> whose
+          system prompt IS the persona. Passes step description + prior
+          <code>context</code> + <b>verbatim the SKILLS directive + the
+          <code>agent_id</code> + the <code>available_skills</code> list</b>.
+          <br><span class="muted">Orchestrator does <b>NOT</b> call
+          <code>get_agent_skill_content</code> and does <b>NOT</b> read or fold any skill
+          body. It only forwards the advertisement.</span></div>
+        <div class="arrow">↓</div>
+        <div class="node actor-sub"><span class="lbl">Subagent — RELEVANCE GATE (self, while working)</span>
+          The subagent reads the directive. For each advertised skill it judges, as it works:
+          <i>relevant to THIS step?</i>
+          <br><span class="muted">Relevant → self-fetch · Not relevant → ignore (advertise ≠ load)</span></div>
+        <div class="arrow">↓ &nbsp;<span class="muted">(only for skills the subagent finds relevant)</span></div>
+        <div class="node actor-sub"><span class="lbl">Subagent → Server</span>
+          <code>get_agent_skill_content({ agent_id: "&lt;bot_id&gt;", skill_name })</code>
+          <br><span class="muted">subagent calls it from its OWN context · agent_id supplied
+          ⇒ no <code>set_agent_identity</code> needed</span> <span class="ac">AC#2</span></div>
+        <div class="arrow">↓</div>
+        <div class="node actor-srv"><span class="lbl">Server → returns</span>
+          <code>{ skill_name, skill_description, category, instructions }</code></div>
+        <div class="arrow">↓</div>
+        <div class="node actor-sub"><span class="lbl">Subagent</span>
+          Follows the returned <code>instructions</code> inline → continues executing the
+          step with the skill applied.</div>
+        <div class="arrow">↓</div>
+        <div class="node actor-orch"><span class="lbl">Orchestrator → Server</span>
+          <code>complete_step({ step_id, claim_token, output })</code></div>
+      </div>
+    </div>
+
+    <!-- SKILL-LESS -->
+    <div class="col-plain">
+      <span class="tag grey">Skill-less path (unchanged)</span>
+      <div class="flow">
+        <div class="node actor-srv"><span class="lbl">In the response</span>
+          <b>No</b> <code>available_skills</code> (key omitted) and <b>no</b> SKILLS
+          directive. The <code>instruction</code> block is byte-for-byte what it is today.
+          <span class="ac">AC#8</span></div>
+        <div class="arrow">↓</div>
+        <div class="node actor-orch"><span class="lbl">Orchestrator</span>
+          <code>get_agent_prompt</code> → spawn fresh subagent with persona prompt + context.</div>
+        <div class="arrow">↓</div>
+        <div class="node actor-sub"><span class="lbl">Subagent</span>
+          Executes the step with persona prompt only. <b>No skill calls.</b></div>
+        <div class="arrow">↓</div>
+        <div class="node actor-orch"><span class="lbl">Orchestrator → Server</span>
+          <code>complete_step({ step_id, claim_token, output })</code></div>
+        <div class="node" style="border-style:dashed;background:transparent;color:var(--muted)">
+          Identical to today — <b>zero regression</b> for skill-less agents and for
+          <code>bot_id = null</code> steps (no agent ⇒ no skills ⇒ nothing added).</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- FALLBACK -->
+  <div class="fallback-box">
+    <div class="hd">Fallback path — orchestrator pre-loads + folds in
+      <span class="fallback-badge">only when the subagent has no <code>get_agent_skill_content</code> tool</span></div>
+    <p style="margin:4px 0 8px">Some clients spawn subagents that <b>do not inherit MCP tools</b>
+      — those subagents cannot call <code>get_agent_skill_content</code> themselves, so the
+      primary self-load model is impossible for them. This mirrors the existing
+      <b>"no subagent capability" EXCEPTION</b> already present in the claim instruction
+      (where the orchestrator executes the step directly instead of spawning).</p>
+    <div class="flow">
+      <div class="node actor-orch"><span class="lbl">Orchestrator — RELEVANCE GATE (on behalf of the subagent)</span>
+        For each advertised skill, judge relevance to THIS step.</div>
+      <div class="arrow">↓ &nbsp;<span class="muted">(only for relevant skills)</span></div>
+      <div class="node actor-orch"><span class="lbl">Orchestrator → Server</span>
+        <code>get_agent_skill_content({ agent_id: "&lt;bot_id&gt;", skill_name })</code>
+        — the orchestrator fetches because the subagent can't.</div>
+      <div class="arrow">↓</div>
+      <div class="node actor-orch"><span class="lbl">Orchestrator</span>
+        Folds the returned <code>instructions</code> into the subagent's system prompt
+        <b>before spawning</b>.</div>
+      <div class="arrow">↓</div>
+      <div class="node actor-sub"><span class="lbl">Subagent</span>
+        Executes the step with persona + pre-folded skill instructions. Makes no skill calls.</div>
+      <div class="arrow">↓</div>
+      <div class="node actor-orch"><span class="lbl">Orchestrator → Server</span>
+        <code>complete_step({ step_id, claim_token, output })</code></div>
+    </div>
+    <p class="muted" style="font-size:12.5px;margin:6px 0 0">Same MCP contract, same tool,
+      same call shape — only <b>who</b> calls it shifts from subagent to orchestrator. The
+      server is unaware of which path ran.</p>
+  </div>
+
+  <p class="muted" style="font-size:13px">
+    <b>Trigger → completion:</b> trigger = a pending step exists; completion =
+    <code>complete_step</code> succeeds. <b>Error recovery</b> threads through both
+    paths (claim_token re-claim, not-found skill fallback) — see §4.
+  </p>
+
+  <!-- ===================== 2. get_agent_skill_content ===================== -->
+  <h2><span class="n">2</span><code>get_agent_skill_content</code> — contract (before → after)</h2>
+  <p class="lead">Add an <b>optional</b> <code>agent_id</code> (uuid). Resolution becomes
+    <code>.eq("bot_id", agent_id ?? ctx.userId)</code>. Supplying <code>agent_id</code>
+    means the caller (a subagent that never ran <code>set_agent_identity</code>) can load
+    skills directly; omitting it preserves today's identity-based behaviour. <span class="ac">AC#2</span></p>
+
+  <div class="panel ba">
+    <div class="before">
+      <div class="hd">BEFORE (today)</div>
+<pre><span class="k">schema</span> = {
+  skill_name: string   <span class="c">// required</span>
+}
+
+<span class="c">// resolves on the ACTIVE identity</span>
+.from(<span class="s">"agent_skills"</span>)
+ .eq(<span class="s">"bot_id"</span>, ctx.userId)
+ .eq(<span class="s">"name"</span>, args.skill_name)
+ .maybeSingle()</pre>
+      <p class="muted" style="font-size:12px">Requires <code>set_agent_identity</code> to
+        have run first — a subagent has no such ambient identity.</p>
+    </div>
+    <div class="after">
+      <div class="hd">AFTER (proposed)</div>
+<pre><span class="k">schema</span> = {
+  skill_name: string,  <span class="c">// required</span>
+  agent_id?: uuid      <span class="a">// NEW · optional</span>
+}
+
+<span class="k">const</span> targetBot = args.agent_id ?? ctx.userId;
+.from(<span class="s">"agent_skills"</span>)
+ .eq(<span class="s">"bot_id"</span>, targetBot)
+ .eq(<span class="s">"name"</span>, args.skill_name)
+ .maybeSingle()</pre>
+      <p class="muted" style="font-size:12px">With <code>agent_id</code>: no identity
+        needed (the subagent self-loads). Without: falls back to <code>ctx.userId</code>
+        → <b>back-compatible</b>.</p>
+    </div>
+  </div>
+
+  <h3>Two call shapes (same tool)</h3>
+  <div class="ba">
+    <div class="panel">
+      <div class="hd" style="color:var(--purple)">With <code>agent_id</code> — new flow (subagent self-load)</div>
+<pre><span class="a">get_agent_skill_content</span>({
+  agent_id: <span class="s">"a1b2-...-bot"</span>,
+  skill_name: <span class="s">"api-design-review"</span>
+})
+<span class="c">// ↳ resolves bot_id = a1b2-...-bot</span>
+<span class="c">// ↳ no set_agent_identity required</span></pre>
+    </div>
+    <div class="panel">
+      <div class="hd" style="color:var(--accent)">Without <code>agent_id</code> — back-compat</div>
+<pre><span class="a">get_agent_skill_content</span>({
+  skill_name: <span class="s">"api-design-review"</span>
+})
+<span class="c">// ↳ resolves bot_id = ctx.userId</span>
+<span class="c">// ↳ same as today</span></pre>
+    </div>
+  </div>
+
+  <h3>Not-found error — concrete copy for BOTH cases</h3>
+  <p class="lead">Error must name the resolved target so the caller can self-correct.
+    Provide a concrete, actionable message — never an abstract "not found".</p>
+
+  <div class="err-box">
+    <b>Case A — agent_id supplied, no row:</b><br>
+    <code>Skill "api-design-review" not found for agent &lt;agent_id&gt;. Check the skill name
+    matches one from this step's available_skills list, and that agent_id is the step's bot_id.</code>
+  </div>
+  <div class="err-box">
+    <b>Case B — agent_id omitted (back-compat), no row:</b><br>
+    <code>Skill "api-design-review" not found for the active agent. Make sure you've called
+    set_agent_identity first and the skill name matches one from available_skills.</code>
+    <span class="muted">(today's message, unchanged)</span>
+  </div>
+  <p class="muted" style="font-size:12.5px">Both keep the existing
+    <code>.maybeSingle()</code> → <code>throw new Error(...)</code> shape; only the branch on
+    whether <code>agent_id</code> was supplied changes the wording. Information scent: the
+    message tells the caller exactly which knob (skill name vs. identity vs. agent_id) is wrong.</p>
+
+  <h3>RLS rulings (per-mode authorization)</h3>
+  <ul class="kvs">
+    <li><b>Remote (per-user RLS).</b> <code>agent_skills</code> stays scoped to the caller's
+      owned bots. A passed <code>agent_id</code> the caller does <b>not</b> own resolves to
+      <b>no row</b> → returns the Case-A <b>not-found</b> error — never another tenant's skill.
+      No leak.</li>
+    <li><b>Stdio (service-role).</b> The service-role client bypasses RLS, so it
+      <b>can read any</b> agent's skills by <code>agent_id</code>. This is acceptable:
+      stdio mode is the trusted local/server context and already operates with full
+      service-role reach.</li>
+  </ul>
+
+  <!-- ===================== 3. claim_next_step ===================== -->
+  <h2><span class="n">3</span><code>claim_next_step</code> — response addition</h2>
+  <p class="lead">When <code>step.bot_id</code> owns skills, add
+    <code>available_skills: [{name, description}]</code> (<b>names + one-liners only, no
+    bodies</b>) <span class="ac">AC#5</span> and append a <b>subagent-addressed</b> SKILLS
+    directive to the <code>instruction</code> string <span class="ac">AC#6</span>. When the
+    bot has <b>no</b> skills, <b>omit the <code>available_skills</code> key entirely</b> and
+    add no directive <span class="ac">AC#8</span>.</p>
+
+  <div class="ba">
+    <div class="panel after">
+      <div class="hd">Skilled — response shape</div>
+<pre>{
+  done: false,
+  step: {...},
+  claim_token: <span class="s">"otk_..."</span>,
+  available_agents: [...],
+  context: [...],
+  expected_deliverables: [...],
+  <span class="a">agent_id</span>: <span class="s">"a1b2-...-bot"</span>,   <span class="c">// the step's bot_id</span>
+  <span class="a">available_skills</span>: [
+    { name: <span class="s">"api-design-review"</span>,
+      description: <span class="s">"Checklist for REST/RPC contracts"</span> },
+    { name: <span class="s">"a11y-audit"</span>,
+      description: <span class="s">"WCAG 2.2 AA pass for new UI"</span> }
+  ],
+  instruction: <span class="s">"...persona/subagent rules... \n\n SKILLS: ..."</span>
+}</pre>
+    </div>
+    <div class="panel before">
+      <div class="hd">Skill-less — response shape</div>
+<pre>{
+  done: false,
+  step: {...},
+  claim_token: <span class="s">"otk_..."</span>,
+  available_agents: [...],
+  context: [...],
+  expected_deliverables: [...],
+  <span class="c">// available_skills key OMITTED entirely</span>
+  instruction: <span class="s">"...persona/subagent rules..."</span>
+  <span class="c">// ← NO SKILLS block appended</span>
+}</pre>
+    </div>
+  </div>
+
+  <h3>Exact NEW instruction text to append (only when skills exist)</h3>
+  <p class="lead">Appended to <code>instruction</code> as one more <code>contextParts</code>
+    block (joined with <code>\n\n</code>, same as the existing CONTEXT / DELIVERABLES blocks).
+    It is <b>addressed to the subagent</b> — the orchestrator forwards it verbatim into the
+    spawned subagent's prompt and does nothing else with it. <code>&lt;persona&gt;</code> and
+    <code>&lt;bot_id&gt;</code> are interpolated from the matched agent;
+    <code>&lt;skill list&gt;</code> is "name — description" per line. The trailing
+    <b>EXCEPTION</b> mirrors the existing "no subagent capability" exception in the claim
+    instruction.</p>
+<pre>SKILLS: You have these skills available:
+- api-design-review — Checklist for REST/RPC contracts
+- a11y-audit — WCAG 2.2 AA pass for new UI
+
+As you work, if one of these is relevant to your task, call
+<span class="a">get_agent_skill_content</span> with agent_id "&lt;bot_id&gt;" and the skill name,
+then follow its instructions. Load ONLY the skills that are relevant
+to this step — do not load all of them. You do NOT need
+set_agent_identity; pass agent_id directly.
+
+EXCEPTION — if your spawned subagent does NOT have the
+get_agent_skill_content tool in its own context: you (the orchestrator)
+call get_agent_skill_content yourself for each relevant skill and fold
+the returned instructions into the subagent's system prompt before
+spawning it.</pre>
+
+  <div class="scent">
+    <b>Information scent (why this wording):</b> the directive is written in the
+    <b>second person to the subagent</b> ("You have these skills… call… follow its
+    instructions") so the actor that holds the MCP tool is the one told to act. It (a) lists
+    name + one-liner so relevance can be judged <i>without</i> a round-trip, (b) gives the
+    exact next call verbatim with the <code>agent_id</code> already filled in, (c) states the
+    <i>load-only-relevant</i> constraint and the <i>no set_agent_identity</i> shortcut up
+    front, and (d) carries the <b>EXCEPTION</b> for tool-less subagents so the orchestrator
+    knows precisely when — and only when — to do the loading itself. Concrete, not abstract.
+  </div>
+
+  <!-- ===================== 4. STATES ===================== -->
+  <h2><span class="n">4</span>All states — concrete behaviour for each</h2>
+  <table>
+    <thead><tr><th>State</th><th>claim_next_step response</th><th>Skill load?</th><th>Concrete outcome</th></tr></thead>
+    <tbody>
+      <tr>
+        <td><b>Skilled + skill relevant</b></td>
+        <td><code>available_skills</code> populated + <code>agent_id</code> + SKILLS directive</td>
+        <td><span class="pill load">SUBAGENT LOADS</span></td>
+        <td><b>Primary:</b> the subagent itself calls
+          <code>get_agent_skill_content({agent_id, skill_name})</code> while working, follows
+          the returned <code>instructions</code>, finishes the step.
+          <b>Fallback (tool-less subagent):</b> orchestrator pre-loads + folds in. <span class="ac">AC#5</span></td>
+      </tr>
+      <tr>
+        <td><b>Skilled + NOT relevant</b></td>
+        <td><code>available_skills</code> populated + <code>agent_id</code> + SKILLS directive</td>
+        <td><span class="pill adv">ADVERTISED, ignored</span></td>
+        <td>Skill is advertised but the subagent's relevance gate ignores it → <b>no</b>
+          content fetch. Lean prompt. Advertise ≠ load. <span class="ac">AC#6</span></td>
+      </tr>
+      <tr>
+        <td><b>Skill-less agent</b></td>
+        <td><code>available_skills</code> key omitted · no directive</td>
+        <td><span class="pill none">NOTHING</span></td>
+        <td>Byte-identical to today. Zero new calls, zero regression. <span class="ac">AC#8</span></td>
+      </tr>
+      <tr>
+        <td><b><code>step.bot_id = null</code></b></td>
+        <td><code>available_skills</code> key omitted · no directive</td>
+        <td><span class="pill none">NOTHING</span></td>
+        <td>No assigned agent ⇒ nothing to advertise. Orchestrator still picks an agent
+          from <code>available_agents</code> as today. (Skills resolve later only if it
+          chooses to load them by that agent's <code>bot_id</code>.)</td>
+      </tr>
+      <tr>
+        <td><b>Not-found skill</b></td>
+        <td>(skill advertised but lookup misses — typo / wrong agent_id / unowned agent_id under RLS)</td>
+        <td><span class="pill err">ERROR</span></td>
+        <td>Clear thrown error naming the resolved target (§2). Recovery: caller re-reads
+          <code>available_skills</code>, fixes the name/agent_id, or proceeds without the
+          skill — <b>the step is NOT blocked</b>.</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>Error recovery, end to end</h3>
+  <ul class="kvs muted">
+    <li><b>Wrong skill_name / agent_id</b> → not-found error → the subagent (or orchestrator,
+      in the fallback) re-reads <code>available_skills</code>, retries with the corrected
+      value; a missing skill never fails the step (the persona prompt alone is still a valid
+      baseline).</li>
+    <li><b>Lost claim_token after compaction</b> → re-call <code>claim_next_step</code> for a
+      fresh token + a fresh <code>available_skills</code> list + <code>agent_id</code>
+      (unchanged existing recovery).</li>
+    <li><b>Subagent drops mid-execution</b> → orchestrator retries/resumes (it has the
+      <code>agent_id</code> and the directive); skills reload identically since loading is
+      idempotent and driven by the same advertised list.</li>
+  </ul>
+
+  <!-- ===================== 5. WHY ===================== -->
+  <h2><span class="n">5</span>Why subagent-self-load (instruction-only), not server-inject or orchestrator-fold</h2>
+  <p>Keeps prompts lean and avoids paying for skill bodies that the step doesn't need —
+    the <b>subagent</b> loads full content <b>on demand, by relevance, in the same context
+    that does the work</b>, instead of the server force-feeding every skill body into every
+    claim, and instead of the orchestrator round-tripping bodies it never reads. The subagent
+    is the actor with the persona context and the MCP tool, so it is best placed to judge
+    relevance and apply the skill. Orchestrator-folding remains available as an explicit
+    fallback purely for clients whose subagents cannot reach the MCP tool.
+    <span class="ac">AC (instruction-only loading)</span></p>
+
+  <!-- AMBIGUITIES -->
+  <h2 style="border-left-color:var(--amber)"><span class="n" style="color:var(--amber)">+</span>Contract notes confirmed with Requirements</h2>
+  <ul class="kvs">
+    <li><b>Empty vs. absent <code>available_skills</code>.</b> Resolved: <b>omit the key
+      entirely</b> when the bot has no skills (consistent with the SKILLS directive simply
+      not being appended) so clients branch on a single signal.</li>
+    <li><b>Relevance ownership.</b> Resolved per rework: the <b>subagent</b> decides + self-loads
+      (primary), since it owns the persona context and the MCP tool. The orchestrator only
+      advertises. Orchestrator-load is the explicit fallback for tool-less subagents.</li>
+    <li><b>Authorization of cross-agent <code>agent_id</code>.</b> Resolved (§2 RLS rulings):
+      remote/RLS scopes <code>agent_skills</code> to owned bots → unowned <code>agent_id</code>
+      returns not-found (no leak); stdio/service-role can read any, which is acceptable.</li>
+  </ul>
+
+  <footer>
+    Compass · UX Design step (revised after rework) · interaction-contract design for the
+    "skills in the workflow loop" MCP change. Grounded in
+    <code>mcp-server/src/tools/agent-skill.ts</code> and
+    <code>mcp-server/src/tools/workflows.ts</code> (claim_next_step instruction builder).
+    Deliverable: <code>docs/skills-in-workflow-design.html</code>.
+  </footer>
+</div>
+</body>
+</html>

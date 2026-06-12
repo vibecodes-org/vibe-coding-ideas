@@ -491,6 +491,137 @@ describe("claimNextStep", () => {
 });
 
 // ---------------------------------------------------------------------------
+// claimNextStep — agent skills advertisement
+// ---------------------------------------------------------------------------
+
+const SKILL_BOT_ID = "00000000-0000-4000-a000-000000000050";
+
+/**
+ * Like makeClaimContext but assigns a bot (so matchedAgent resolves) and lets a
+ * test supply the agent_skills the assigned bot owns. claimNextStep queries
+ * agent_skills once (only when bot_id is set) — routed here.
+ */
+function makeSkillsClaimContext(opts: {
+  pendingStep: ReturnType<typeof makeStepRow>;
+  updatedStep: Record<string, unknown>;
+  skills: { name: string; description: string }[];
+}) {
+  const tableCounts: Record<string, number> = {};
+
+  return makeContext(((table: string) => {
+    tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+    const callNum = tableCounts[table];
+
+    if (table === "task_workflow_steps") {
+      const chain = createChain(null);
+      if (callNum === 1) {
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [opts.pendingStep], error: null }).then(resolve);
+      } else if (callNum === 2) {
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: opts.updatedStep, error: null })
+        );
+      } else if (callNum === 3) {
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [{ id: opts.pendingStep.id }], error: null }).then(resolve);
+      } else if (callNum === 4) {
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [], error: null }).then(resolve);
+      }
+      return chain.chain;
+    }
+
+    if (table === "idea_agents") {
+      // matchedAgent needs the assigned bot to appear in available_agents
+      const chain = createChain(null);
+      chain.chain.then = (resolve: (val: unknown) => void) =>
+        Promise.resolve({
+          data: [
+            {
+              bot_id: SKILL_BOT_ID,
+              bot: { id: SKILL_BOT_ID, name: "Atlas", role: "Full Stack Engineer", avatar_url: null, is_active: true },
+            },
+          ],
+          error: null,
+        }).then(resolve);
+      return chain.chain;
+    }
+
+    if (table === "agent_skills") {
+      const chain = createChain(null);
+      chain.chain.then = (resolve: (val: unknown) => void) =>
+        Promise.resolve({ data: opts.skills, error: null }).then(resolve);
+      return chain.chain;
+    }
+
+    if (table === "workflow_runs" || table === "workflow_step_comments") {
+      return createChain([]).chain;
+    }
+
+    return createChain(null).chain;
+  }) as unknown as McpContext["supabase"]["from"]);
+}
+
+describe("claimNextStep — agent skills", () => {
+  it("includes available_skills and a SKILLS directive when the assigned bot has skills", async () => {
+    const step = makeStepRow({ step_order: 1, bot_id: SKILL_BOT_ID });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const skills = [
+      { name: "api-design-review", description: "Checklist for REST/RPC contracts" },
+      { name: "a11y-audit", description: "WCAG 2.2 AA pass for new UI" },
+    ];
+
+    const ctx = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as {
+      instruction: string;
+      available_skills?: { name: string; description: string }[];
+    };
+
+    expect(r.available_skills).toEqual(skills);
+    expect(r.instruction).toContain("SKILLS: You have these skills available");
+    expect(r.instruction).toContain("- api-design-review — Checklist for REST/RPC contracts");
+    expect(r.instruction).toContain("- a11y-audit — WCAG 2.2 AA pass for new UI");
+    // Directive must reference get_agent_skill_content with the bot's id as agent_id
+    expect(r.instruction).toContain("get_agent_skill_content");
+    expect(r.instruction).toContain(`agent_id "${SKILL_BOT_ID}"`);
+    // Includes the tool-less subagent EXCEPTION fallback
+    expect(r.instruction).toContain("EXCEPTION");
+  });
+
+  it("omits available_skills key and adds no SKILLS directive when the assigned bot has none", async () => {
+    const step = makeStepRow({ step_order: 1, bot_id: SKILL_BOT_ID });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const ctx = makeSkillsClaimContext({ pendingStep: step, updatedStep, skills: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as {
+      instruction: string;
+      available_skills?: unknown;
+    };
+
+    expect(r).not.toHaveProperty("available_skills");
+    expect(r.instruction).not.toContain("SKILLS: You have these skills available");
+  });
+
+  it("does not fetch skills or add the key for a bot_id=null step (byte-identical path)", async () => {
+    const step = makeStepRow({ step_order: 1, bot_id: null });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    // Reuse the original no-bot harness — it has no agent_skills branch, proving
+    // claimNextStep never queries agent_skills when bot_id is null.
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string; available_skills?: unknown };
+    expect(r).not.toHaveProperty("available_skills");
+    expect(r.instruction).not.toContain("SKILLS: You have these skills available");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // completeStep tests
 // ---------------------------------------------------------------------------
 

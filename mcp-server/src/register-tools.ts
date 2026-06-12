@@ -1439,7 +1439,7 @@ export function registerTools(
 
   server.tool(
     "get_agent_skill_content",
-    "Load the full SKILL.md instructions for a specific skill attached to the active agent. Use this when a task matches a skill's description from the available_skills list returned by set_agent_identity. Progressive disclosure: only call this when you need the skill's detailed instructions.",
+    "Load the full SKILL.md instructions for a specific skill attached to an agent. Use this when a task matches a skill's description from an available_skills list (returned by set_agent_identity or claim_next_step). Pass the optional agent_id (a bot_id) to load that agent's skill WITHOUT switching identity — the preferred path for orchestrators/subagents executing a workflow step (no set_agent_identity required). Omit agent_id to resolve against the active agent identity (back-compatible). Progressive disclosure: only call this when you need the skill's detailed instructions.",
     getAgentSkillContentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
