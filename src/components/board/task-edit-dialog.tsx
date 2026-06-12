@@ -13,10 +13,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
-import { X, Image as ImageIcon, Sparkles, Loader2, Eye, Pencil, Tag } from "lucide-react";
-import { Popover as PopoverPrimitive } from "radix-ui";
-import { Popover, PopoverTrigger } from "@/components/ui/popover";
-import { Checkbox } from "@/components/ui/checkbox";
+import { X, Image as ImageIcon, Sparkles, Loader2, Eye, Pencil, Tag, Check } from "lucide-react";
 import { AssigneeSelect } from "./assignee-select";
 import { Markdown } from "@/components/ui/markdown";
 import { getLabelColorConfig } from "@/lib/utils";
@@ -67,8 +64,10 @@ export function TaskEditDialog({
   const [isDragging, setIsDragging] = useState(false);
   const [enhancing, setEnhancing] = useState(false);
   const [previewDesc, setPreviewDesc] = useState(false);
+  const [labelsOpen, setLabelsOpen] = useState(false);
   const dragCounterRef = useRef(0);
   const dialogRef = useRef<HTMLDivElement>(null);
+  const labelsRef = useRef<HTMLDivElement>(null);
   const ops = useBoardOps();
 
   const showAiEnhance = canUseAi && description.trim().length > 10;
@@ -116,6 +115,27 @@ export function TaskEditDialog({
     document.addEventListener("paste", handlePaste);
     return () => document.removeEventListener("paste", handlePaste);
   }, [open]);
+
+  // Close the labels dropdown on outside-click / Escape. It's a plain dropdown
+  // (NOT a Radix Popover): a Popover.Content rendered inside this modal Dialog
+  // caused a focus-scope render loop (React #185), so we manage open state here.
+  useEffect(() => {
+    if (!labelsOpen) return;
+    function onPointerDown(e: MouseEvent) {
+      if (labelsRef.current && !labelsRef.current.contains(e.target as Node)) {
+        setLabelsOpen(false);
+      }
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") setLabelsOpen(false);
+    }
+    document.addEventListener("mousedown", onPointerDown);
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", onPointerDown);
+      document.removeEventListener("keydown", onKeyDown);
+    };
+  }, [labelsOpen]);
 
   function handleDragEnter(e: React.DragEvent) {
     e.preventDefault();
@@ -424,57 +444,81 @@ export function TaskEditDialog({
           {boardLabels.length > 0 && (
             <div className="space-y-2">
               <Label>Labels</Label>
-              <Popover>
-                <PopoverTrigger asChild>
-                  <Button variant="outline" size="sm" className="h-8 w-full justify-start gap-2 text-xs font-normal">
-                    <Tag className="h-3.5 w-3.5 text-muted-foreground" />
-                    {selectedLabelIds.size > 0 ? (
-                      <span className="flex flex-1 flex-wrap gap-1">
-                        {boardLabels
-                          .filter((l) => selectedLabelIds.has(l.id))
-                          .map((l) => {
-                            const config = getLabelColorConfig(l.color);
-                            return (
-                              <span key={l.id} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${config.badgeClass}`}>
-                                <span className={`h-1.5 w-1.5 rounded-full ${config.swatchColor}`} />
-                                {l.name}
-                              </span>
-                            );
-                          })}
-                      </span>
-                    ) : (
-                      <span className="text-muted-foreground">Select labels…</span>
-                    )}
-                  </Button>
-                </PopoverTrigger>
-                {/* Rendered inside a modal Dialog — render without Portal so the
-                    dialog's pointer-events lock doesn't swallow clicks on the
-                    label checkboxes (mirrors LabelPicker's inDialog path). */}
-                <PopoverPrimitive.Content
-                  align="start"
-                  sideOffset={4}
-                  className="z-50 w-[220px] rounded-md border bg-popover p-2 text-popover-foreground shadow-md outline-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
-                  onOpenAutoFocus={(e) => e.preventDefault()}
+              <div className="relative" ref={labelsRef}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  className="h-8 w-full justify-start gap-2 text-xs font-normal"
+                  onClick={() => setLabelsOpen((v) => !v)}
+                  aria-expanded={labelsOpen}
                 >
-                  <p className="mb-2 text-xs font-medium text-muted-foreground">Labels</p>
-                  <div className="max-h-[200px] space-y-1 overflow-y-auto">
-                    {boardLabels.map((label) => {
-                      const config = getLabelColorConfig(label.color);
-                      return (
-                        <div
-                          key={label.id}
-                          className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/50"
-                          onClick={() => toggleLabel(label.id)}
-                        >
-                          <Checkbox checked={selectedLabelIds.has(label.id)} onCheckedChange={() => toggleLabel(label.id)} />
-                          <span className={`h-3 w-3 shrink-0 rounded-sm ${config.swatchColor}`} />
-                          <span className="text-xs font-medium">{label.name}</span>
-                        </div>
-                      );
-                    })}
+                  <Tag className="h-3.5 w-3.5 text-muted-foreground" />
+                  {selectedLabelIds.size > 0 ? (
+                    <span className="flex flex-1 flex-wrap gap-1">
+                      {boardLabels
+                        .filter((l) => selectedLabelIds.has(l.id))
+                        .map((l) => {
+                          const config = getLabelColorConfig(l.color);
+                          return (
+                            <span key={l.id} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-medium ${config.badgeClass}`}>
+                              <span className={`h-1.5 w-1.5 rounded-full ${config.swatchColor}`} />
+                              {l.name}
+                            </span>
+                          );
+                        })}
+                    </span>
+                  ) : (
+                    <span className="text-muted-foreground">Select labels…</span>
+                  )}
+                </Button>
+                {/* Plain in-tree dropdown — NOT a Radix Popover. A Popover.Content
+                    rendered inside this modal Dialog caused a focus-scope render
+                    loop (React #185). In-tree render keeps clicks reachable
+                    without the portal/focus-scope conflict. */}
+                {labelsOpen && (
+                  <div className="absolute left-0 top-full z-50 mt-1 w-[220px] rounded-md border bg-popover p-2 text-popover-foreground shadow-md">
+                    <p className="mb-2 text-xs font-medium text-muted-foreground">Labels</p>
+                    <div className="max-h-[200px] space-y-1 overflow-y-auto">
+                      {boardLabels.map((label) => {
+                        const config = getLabelColorConfig(label.color);
+                        const checked = selectedLabelIds.has(label.id);
+                        return (
+                          <div
+                            key={label.id}
+                            role="checkbox"
+                            tabIndex={0}
+                            aria-checked={checked}
+                            className="flex cursor-pointer items-center gap-2 rounded-md px-1 py-1 hover:bg-muted/50"
+                            onClick={() => toggleLabel(label.id)}
+                            onKeyDown={(e) => {
+                              if (e.key === "Enter" || e.key === " ") {
+                                e.preventDefault();
+                                toggleLabel(label.id);
+                              }
+                            }}
+                          >
+                            {/* Plain check indicator — NOT a Radix Checkbox. Its
+                                Presence-based indicator looped (React #185) when
+                                toggled inside the modal Dialog. The row owns the
+                                toggle (single fire). */}
+                            <span
+                              aria-hidden
+                              className={`flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border ${
+                                checked ? "border-primary bg-primary text-primary-foreground" : "border-input"
+                              }`}
+                            >
+                              {checked && <Check className="h-3 w-3" />}
+                            </span>
+                            <span className={`h-3 w-3 shrink-0 rounded-sm ${config.swatchColor}`} />
+                            <span className="text-xs font-medium">{label.name}</span>
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
-                </PopoverPrimitive.Content>
-              </Popover>
+                )}
+              </div>
             </div>
           )}
 

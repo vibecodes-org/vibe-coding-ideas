@@ -1,17 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, cleanup, fireEvent, within } from "@testing-library/react";
 
-// Regression guard for the "label dropdown bug" (see the Reproduce & Investigate
-// step). The Labels Popover lives inside a Radix *modal* Dialog. Previously it
-// used the shared <PopoverContent>, which ALWAYS wraps its children in a Radix
-// Portal. Because a portalled popover escapes the dialog's DOM subtree, the
-// dialog's `pointer-events` lock swallowed clicks on the label checkboxes,
-// making them unclickable. The fix renders the popover content in-tree (no
-// Portal), mirroring LabelPicker's `inDialog` path. These tests assert the
-// content mounts inside the dialog subtree (so clicks reach it) rather than in
-// a portal at the document root.
+// Regression guard for the "label dropdown bug" in the New Task dialog.
+//
+// History: the Labels picker lives inside a Radix *modal* Dialog.
+//  1. It first used the shared <PopoverContent>, which portals to document.body
+//     — outside the dialog subtree — so the dialog's pointer-events lock swallowed
+//     clicks and the checkboxes were unclickable.
+//  2. The "fix" rendered a non-portal Radix <Popover.Content> in-tree, but a
+//     Radix Popover focus-scope inside a modal Dialog caused an infinite
+//     focus/layout-effect loop (React #185, "Maximum update depth exceeded") the
+//     moment you interacted with it.
+//
+// Final fix: a PLAIN in-tree dropdown (no Radix Popover, no FocusScope). These
+// tests open the dropdown and actually toggle a label — the interaction that
+// crashed under the Radix version — asserting it renders in-tree and toggles
+// cleanly (single-fire), with no render loop.
 
-// Radix Popover positioning relies on ResizeObserver, which jsdom lacks.
+// Radix primitives (Checkbox) use ResizeObserver, which jsdom lacks.
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -73,54 +79,52 @@ function setup() {
   );
 }
 
-function openLabelPopover() {
+function openLabelDropdown() {
   fireEvent.click(screen.getByRole("button", { name: /Select labels/i }));
 }
 
-/** The modal Dialog's content element (it owns the pointer-events lock). */
+/** The modal Dialog's content element. */
 function getDialogContent() {
   return document.querySelector<HTMLElement>("[data-slot='dialog-content']")!;
 }
 
-describe("TaskEditDialog — Labels popover (in-dialog, no-portal regression)", () => {
-  it("renders the label options when the popover opens", () => {
+describe("TaskEditDialog — Labels dropdown (plain dropdown, no Radix Popover)", () => {
+  it("opens the dropdown and renders the label options in-tree", () => {
     setup();
-    openLabelPopover();
-    expect(screen.getByText("Bug")).toBeInTheDocument();
-    expect(screen.getByText("Feature")).toBeInTheDocument();
-  });
-
-  it("renders the popover content INSIDE the dialog subtree, not in a Radix portal", () => {
-    setup();
-    openLabelPopover();
+    openLabelDropdown();
 
     const dialogContent = getDialogContent();
     expect(dialogContent).not.toBeNull();
-
-    // Core regression guard: the popover content (and its label rows) must live
-    // within the dialog content subtree. If it were portalled to document.body,
-    // the dialog's pointer-events lock would swallow clicks on the checkboxes.
+    // Options live INSIDE the dialog subtree (so clicks reach them), not in a portal.
     expect(within(dialogContent).getByText("Bug")).toBeInTheDocument();
     expect(within(dialogContent).getByText("Feature")).toBeInTheDocument();
-
-    // And it must NOT have been portalled out by the shared PopoverContent.
     expect(document.querySelector("[data-radix-portal]")).toBeNull();
   });
 
-  it("renders a real checkbox per label, reachable for pointer events inside the dialog", () => {
+  it("toggles a label on/off via the row — single fire, no render loop (guards React #185)", () => {
     setup();
-    openLabelPopover();
+    openLabelDropdown();
 
     const dialogContent = getDialogContent();
-    const checkboxes = within(dialogContent).getAllByRole("checkbox");
-    expect(checkboxes).toHaveLength(labels.length);
+    // The row IS the checkbox (role=checkbox, aria-checked) — no Radix Checkbox,
+    // whose Presence indicator looped when toggled inside the modal Dialog.
+    const bugRow = within(dialogContent).getByText("Bug").closest("[role='checkbox']") as HTMLElement;
+    expect(bugRow).not.toBeNull();
+    expect(bugRow).not.toBeChecked();
 
-    // The row is the click target (onClick toggles selection). It must not be
-    // pointer-events-disabled — that is what the portal regression caused.
-    for (const checkbox of checkboxes) {
-      const row = checkbox.closest("div");
-      expect(row).not.toBeNull();
-      expect(row).toHaveClass("cursor-pointer");
-    }
+    // The interaction that crashed (Maximum update depth) before this fix.
+    fireEvent.click(bugRow);
+    expect(bugRow).toBeChecked(); // one click selects (single fire — no double-toggle)
+
+    fireEvent.click(bugRow);
+    expect(bugRow).not.toBeChecked(); // toggles back off
+  });
+
+  it("renders one checkbox row per label, in-tree", () => {
+    setup();
+    openLabelDropdown();
+
+    const dialogContent = getDialogContent();
+    expect(within(dialogContent).getAllByRole("checkbox")).toHaveLength(labels.length);
   });
 });
