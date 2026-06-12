@@ -87,7 +87,19 @@ export function OnboardingDialog({
   // Project fields (Step 2)
   const [ideaTitle, setIdeaTitle] = useState("");
   const [ideaDescription, setIdeaDescription] = useState("");
-  const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
+  // Pre-select the Web kit so onboarding matches the New Idea form (commit
+  // 000d8e9) — users land with a ready kit instead of nothing. Match by name,
+  // fall back to the first non-Custom kit by display order.
+  const [selectedKitId, setSelectedKitId] = useState<string | null>(() => {
+    if (!kits?.length) return null;
+    const web = kits.find((k) => k.name.toLowerCase() === "web application");
+    if (web) return web.id;
+    return (
+      [...kits]
+        .filter((k) => k.name !== "Custom")
+        .sort((a, b) => a.display_order - b.display_order)[0]?.id ?? null
+    );
+  });
   const [visibility, setVisibility] = useState<"public" | "private">("public");
 
   // AI Enhance (preview dialog — shared with the New Idea flow)

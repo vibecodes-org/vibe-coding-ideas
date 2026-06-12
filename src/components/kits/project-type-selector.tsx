@@ -65,10 +65,6 @@ export function ProjectTypeSelector({
       {sorted.map((kit, i) => {
         const isCustom = kit.name === "Custom";
         const isSelected = selectedKitId === kit.id;
-        const agentCount = (kit.agent_roles as unknown[])?.length ?? 0;
-        const mappings = kit.workflow_mappings ?? [];
-        const uniqueTemplateCount = new Set(mappings.map((m) => m.template_name)).size;
-        const workflowCount = uniqueTemplateCount || (kit.workflow_steps?.length ? 1 : 0);
 
         return (
           <button
@@ -97,26 +93,13 @@ export function ProjectTypeSelector({
             >
               {kit.name}
             </div>
-            <div className="mt-2 flex flex-wrap justify-center gap-2">
-              {isCustom ? (
+            {isCustom && (
+              <div className="mt-2 flex justify-center">
                 <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold text-muted-foreground">
                   Your choice
                 </span>
-              ) : (
-                <>
-                  {workflowCount > 0 && (
-                    <span className="rounded-full bg-violet-500/[0.12] px-[0.45rem] py-[0.15rem] text-[0.65rem] font-semibold text-violet-400">
-                      {workflowCount} workflow{workflowCount !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                  {agentCount > 0 && (
-                    <span className="rounded-full bg-emerald-500/[0.12] px-[0.45rem] py-[0.15rem] text-[0.65rem] font-semibold text-emerald-400">
-                      {agentCount} agent{agentCount !== 1 ? "s" : ""}
-                    </span>
-                  )}
-                </>
-              )}
-            </div>
+              </div>
+            )}
           </button>
         );
       })}

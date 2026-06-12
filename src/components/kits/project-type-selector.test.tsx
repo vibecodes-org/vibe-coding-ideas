@@ -87,13 +87,14 @@ describe("ProjectTypeSelector", () => {
     expect(lastButton.textContent).toContain("Custom");
   });
 
-  it("shows both workflow count and agent count pills for non-Custom kits", () => {
+  it("does not render workflow/agent count pills (removed for a cleaner, shorter grid)", () => {
     render(
       <ProjectTypeSelector kits={mockKits} selectedKitId={null} onSelect={() => {}} />
     );
-    expect(screen.getAllByText("1 workflow")).toHaveLength(2);
-    expect(screen.getByText("2 agents")).toBeDefined();
-    expect(screen.getByText("3 agents")).toBeDefined();
+    expect(screen.queryByText("1 workflow")).toBeNull();
+    expect(screen.queryByText("2 agents")).toBeNull();
+    expect(screen.queryByText("3 agents")).toBeNull();
+    // Custom keeps its "Your choice" indicator.
     expect(screen.getByText("Your choice")).toBeDefined();
   });
 
