@@ -207,7 +207,7 @@ describe("composeNewProjectPath", () => {
 });
 
 describe("buildBoardBootstrapPrompt", () => {
-  it("existing mode contains the env-derived MCP add and get_my_tasks", () => {
+  it("existing mode contains the env-derived MCP add and uses get_board (not get_my_tasks)", () => {
     const p = buildBoardBootstrapPrompt({
       appUrl: APP_URL,
       ideaId: "idea-1",
@@ -215,7 +215,10 @@ describe("buildBoardBootstrapPrompt", () => {
       mode: "existing",
     });
     expect(p).toContain(`vibecodes-remote ${APP_URL}/api/mcp`);
-    expect(p).toContain("get_my_tasks");
+    // A freshly created board has nothing ASSIGNED, so get_my_tasks would
+    // return empty — the prompt must drive get_board instead.
+    expect(p).toContain("get_board");
+    expect(p).toContain("Do NOT use get_my_tasks");
     expect(p).toContain("My Idea");
     expect(p).not.toContain("mkdir -p");
   });

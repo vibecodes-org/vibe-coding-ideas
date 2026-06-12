@@ -462,9 +462,11 @@ export function buildBoardBootstrapPrompt({
   const mcp = mcpSetupHead(appUrl);
   const work = `Then, pick up my work on the VibeCodes board for this idea:
   • Idea: "${ideaTitle}"  (idea_id: ${ideaId})
-  • Call get_my_tasks (or claim_next_step) and start the top item.
+  • Call get_board with idea_id ${ideaId} to see the columns and tasks. Do NOT use get_my_tasks here — it only returns tasks already ASSIGNED to you, and a freshly created board has none, so it would look (wrongly) like there's no work.
+  • Pick the top unstarted task (e.g. the first item in To Do, then Backlog), read it with get_task, assign it to yourself, and move it to In Progress.
+  • If that task has a workflow attached, use claim_next_step to claim its next step and follow the orchestration loop instead.
 
-Use the MCP tools (get_task / claim_next_step / set_agent_identity / move_task / …) to do the work. Move the task to In Progress and comment as you go.`;
+Use the MCP tools (get_board / get_task / claim_next_step / set_agent_identity / move_task / …) to do the work. Move the task to In Progress and comment as you go.`;
 
   // Directory step FIRST so the session is in the right folder before anything
   // else, then MCP setup — both protected from truncation; work is the trimmable tail.
