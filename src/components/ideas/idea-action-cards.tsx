@@ -62,6 +62,18 @@ export function IdeaActionCards({
   const disabled = !userCanUseAi;
   const hasBoard = taskCount > 0;
 
+  // State-aware enhance wording, matching idea-form.tsx's DescriptionField
+  // (<80 chars = a one-liner we DRAFT from; longer = EXPAND what's there). The
+  // form's third state ("Refine") is a just-applied session flag, which these
+  // cards don't have — closing the dialog refreshes the page — so it's Draft /
+  // Expand only here.
+  const isSparseDescription = currentDescription.trim().length < 80;
+  const enhanceLabel = isSparseDescription ? "Draft with AI" : "Expand with AI";
+  const enhanceVerb = isSparseDescription ? "Draft" : "Expand";
+  const enhanceSubtitle = isSparseDescription
+    ? "Let AI write a full description from your notes"
+    : "Expand and improve your description";
+
   // ── Board exists ──────────────────────────────────
   if (hasBoard) {
     return (
@@ -76,12 +88,12 @@ export function IdeaActionCards({
                 <Sparkles className="h-5 w-5 text-zinc-400 group-hover:text-violet-400 transition-colors" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-foreground group-hover:text-violet-300 transition-colors">Enhance with AI</p>
-                <p className="text-[11px] text-muted-foreground">Re-enhance your description</p>
+                <p className="text-sm font-semibold text-foreground group-hover:text-violet-300 transition-colors">{enhanceLabel}</p>
+                <p className="text-[11px] text-muted-foreground">{enhanceSubtitle}</p>
               </div>
             </div>
             <div className="flex items-center gap-1.5 text-xs text-muted-foreground group-hover:text-violet-400 font-medium transition-colors">
-              <span>Re-enhance</span>
+              <span>{enhanceVerb}</span>
               <ArrowRight className="h-3 w-3" />
             </div>
           </button>
@@ -140,10 +152,8 @@ export function IdeaActionCards({
                 <Sparkles className="h-5 w-5 text-violet-400" />
               </div>
               <div>
-                <p className="text-sm font-semibold text-foreground group-hover:text-violet-300 transition-colors">Enhance with AI</p>
-                <p className="text-[11px] text-muted-foreground">
-                  {hasDescription ? "Re-enhance your description" : "Refine your description for better AI results"}
-                </p>
+                <p className="text-sm font-semibold text-foreground group-hover:text-violet-300 transition-colors">{enhanceLabel}</p>
+                <p className="text-[11px] text-muted-foreground">{enhanceSubtitle}</p>
               </div>
             </div>
             <div className="flex items-center gap-1.5 text-xs font-medium">
@@ -158,7 +168,7 @@ export function IdeaActionCards({
                     <span className="text-violet-400">{creditsRemaining} free credit{creditsRemaining !== 1 ? "s" : ""}</span>
                   )}
                   {(hasByokKey || creditsRemaining === 0) && (
-                    <span className="text-violet-400">Enhance</span>
+                    <span className="text-violet-400">{enhanceVerb}</span>
                   )}
                   <ArrowRight className="h-3 w-3 text-violet-400" />
                 </>
