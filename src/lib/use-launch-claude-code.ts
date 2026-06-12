@@ -130,8 +130,19 @@ export function useLaunchClaudeCode({
       window.removeEventListener("pagehide", markHandled);
     }
 
+    // Fire the deep link via a transient hidden anchor click rather than
+    // window.location.assign. Setting window.location to a custom scheme drops
+    // the document into a "navigating" state that CANCELS the client-side
+    // router.push below — so the board navigation never happens. An anchor click
+    // triggers the OS handler WITHOUT touching the page's own navigation, so the
+    // route completes cleanly.
     try {
-      window.location.assign(link);
+      const a = document.createElement("a");
+      a.href = link;
+      a.style.display = "none";
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
     } catch (err) {
       // Some browsers throw synchronously on a blocked custom scheme.
       cleanup();
@@ -146,11 +157,9 @@ export function useLaunchClaudeCode({
 
     // Land the user on this idea's board — Launch is a "go work on it" action and
     // only makes sense there. This hook is used ONLY off-board (dashboard
-    // checklist, onboarding, MCP banner), so always navigate. The deep link is
-    // fired FIRST (above): a custom-scheme assign triggers the OS handler without
-    // navigating the page, so this client-side route doesn't cancel it. The board
-    // is a fine place to land even if the launch is blocked (it has its own
-    // Launch + copy-command).
+    // checklist, onboarding, MCP banner), so always navigate. Because the deep
+    // link was fired via an anchor (above), the page was never put into a
+    // navigating state, so this route completes.
     router.push(`/ideas/${ideaId}/board`);
 
     window.setTimeout(() => {

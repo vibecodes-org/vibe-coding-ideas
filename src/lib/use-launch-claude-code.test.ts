@@ -28,20 +28,24 @@ import { mcpEndpoint } from "./launch-claude-code";
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || "https://vibecodes.co.uk";
 
-// Spy on window.location.assign (jsdom doesn't navigate).
-let assignSpy: ReturnType<typeof vi.fn>;
+// The deep link is fired via a hidden <a>.click() (NOT window.location.assign,
+// which would cancel the router.push). Spy on the anchor click + capture the
+// raw href it was given (getAttribute, not .href, to avoid jsdom URL mangling).
+let clickSpy: ReturnType<typeof vi.spyOn>;
+let lastHref: string;
 beforeEach(() => {
   vi.useFakeTimers();
-  assignSpy = vi.fn();
-  Object.defineProperty(window, "location", {
-    value: { ...window.location, assign: assignSpy },
-    writable: true,
-    configurable: true,
-  });
+  lastHref = "";
+  clickSpy = vi
+    .spyOn(HTMLAnchorElement.prototype, "click")
+    .mockImplementation(function (this: HTMLAnchorElement) {
+      lastHref = this.getAttribute("href") ?? "";
+    });
 });
 afterEach(() => {
   vi.runOnlyPendingTimers();
   vi.useRealTimers();
+  clickSpy.mockRestore();
   vi.clearAllMocks();
 });
 
@@ -53,11 +57,10 @@ describe("useLaunchClaudeCode — launch deep link", () => {
 
     act(() => result.current.launch());
 
-    expect(assignSpy).toHaveBeenCalledTimes(1);
-    const link = assignSpy.mock.calls[0][0] as string;
-    expect(link.startsWith("claude-cli://open?")).toBe(true);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
+    expect(lastHref.startsWith("claude-cli://open?")).toBe(true);
 
-    const q = decodeURIComponent(link.split("q=")[1].split("&")[0]);
+    const q = decodeURIComponent(lastHref.split("q=")[1].split("&")[0]);
     // MCP auto-setup is always present (this is what connects the user).
     expect(q).toContain(`claude mcp add -s local --transport http vibecodes-remote ${mcpEndpoint(APP_URL)}`);
     // And it picks up THIS idea's board via get_board (not get_my_tasks).
@@ -73,12 +76,12 @@ describe("useLaunchClaudeCode — launch deep link", () => {
 
     act(() => result.current.launch());
 
-    expect(assignSpy).toHaveBeenCalledTimes(1); // deep link fired
+    expect(clickSpy).toHaveBeenCalledTimes(1); // deep link fired (via anchor, not location.assign)
     expect(pushMock).toHaveBeenCalledWith("/ideas/idea-123/board"); // then routed to the board
   });
 
-  it("does NOT navigate when the browser blocks the scheme (assign throws)", () => {
-    assignSpy.mockImplementation(() => {
+  it("does NOT navigate when the browser blocks the scheme (click throws)", () => {
+    clickSpy.mockImplementation(() => {
       throw new Error("blocked");
     });
     const { result } = renderHook(() =>
@@ -106,8 +109,7 @@ describe("useLaunchClaudeCode — launch deep link", () => {
     );
 
     act(() => result.current.launch());
-    const link = assignSpy.mock.calls[0][0] as string;
-    expect(link).toContain("repo=acme%2Fwidgets");
+    expect(lastHref).toContain("repo=acme%2Fwidgets");
   });
 
   it("shows the neutral fallback nudge when the scheme race times out (no blur, still focused)", () => {
@@ -117,7 +119,6 @@ describe("useLaunchClaudeCode — launch deep link", () => {
     );
 
     act(() => result.current.launch());
-    // No visibility/blur event + still focused → the timer fires the soft nudge.
     act(() => {
       vi.advanceTimersByTime(1300);
     });
@@ -152,7 +153,7 @@ describe("useLaunchClaudeCode — launch deep link", () => {
       result.current.launch();
       result.current.launch();
     });
-    expect(assignSpy).toHaveBeenCalledTimes(1);
+    expect(clickSpy).toHaveBeenCalledTimes(1);
   });
 });
 
