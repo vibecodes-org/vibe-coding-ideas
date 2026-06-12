@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useMemo, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   type LaunchMode,
@@ -77,6 +78,7 @@ export function useLaunchClaudeCode({
   // In-flight guard: blocks a second launch during the visibility-race window so
   // rapid double-clicks don't fire two assigns + two fallback timers.
   const launchingRef = useRef(false);
+  const router = useRouter();
 
   const copyCommand = useCallback(async () => {
     const { prompt, mode } = promptFor(ideaId, ideaTitle, ideaGithubUrl);
@@ -142,6 +144,15 @@ export function useLaunchClaudeCode({
       return;
     }
 
+    // Land the user on this idea's board — Launch is a "go work on it" action and
+    // only makes sense there. This hook is used ONLY off-board (dashboard
+    // checklist, onboarding, MCP banner), so always navigate. The deep link is
+    // fired FIRST (above): a custom-scheme assign triggers the OS handler without
+    // navigating the page, so this client-side route doesn't cancel it. The board
+    // is a fine place to land even if the launch is blocked (it has its own
+    // Launch + copy-command).
+    router.push(`/ideas/${ideaId}/board`);
+
     window.setTimeout(() => {
       cleanup();
       launchingRef.current = false;
@@ -157,7 +168,7 @@ export function useLaunchClaudeCode({
         action: { label: "Copy command", onClick: () => void copyCommand() },
       });
     }, SCHEME_RACE_MS);
-  }, [ideaId, ideaTitle, ideaGithubUrl, copyCommand]);
+  }, [ideaId, ideaTitle, ideaGithubUrl, copyCommand, router]);
 
   return useMemo(() => ({ launch, copyCommand }), [launch, copyCommand]);
 }
