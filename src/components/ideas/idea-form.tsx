@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import { usePostHog } from "posthog-js/react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -161,7 +162,21 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
   const [isPending, startTransition] = useTransition();
   const [tags, setTags] = useState<string[]>([]);
   const [visibility, setVisibility] = useState<"public" | "private">("public");
-  const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
+  // Pre-select the Web kit so every new idea starts with a ready team +
+  // workflows + labels (the empty-board default was the weakest first run).
+  // Visible, not silent — the preview panel shows what's selected, and Custom
+  // remains the explicit opt-out. Match by name, fall back to the first
+  // non-Custom kit by display order.
+  const [selectedKitId, setSelectedKitId] = useState<string | null>(() => {
+    if (!kits?.length) return null;
+    const web = kits.find((k) => k.name.toLowerCase() === "web application");
+    if (web) return web.id;
+    return (
+      [...kits]
+        .filter((k) => k.name !== "Custom")
+        .sort((a, b) => a.display_order - b.display_order)[0]?.id ?? null
+    );
+  });
 
   // AI Enhance state
   const [description, setDescription] = useState("");
@@ -171,6 +186,44 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
   const originalDescRef = useRef("");
   const actionsRef = useRef<HTMLDivElement>(null);
   const [enhanceDialogOpen, setEnhanceDialogOpen] = useState(false);
+
+  const posthog = usePostHog();
+  // The kit we pre-selected at mount — the baseline for "did they ship our
+  // default untouched?" (was_default). Captured once so the fallback kit still
+  // counts correctly if the Web kit is ever renamed/removed.
+  const defaultKitIdRef = useRef(selectedKitId);
+  const kitName = useCallback(
+    (id: string | null) => kits?.find((k) => k.id === id)?.name ?? "none",
+    [kits]
+  );
+
+  // Denominator: every form view + what we defaulted the user to. Fire once.
+  useEffect(() => {
+    posthog?.capture("idea_form_opened", {
+      default_kit: kitName(defaultKitIdRef.current),
+      kit_count: kits?.length ?? 0,
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Genuine user override of the pre-selection — the signal that decides
+  // whether Web is the right default. NEVER fired for the programmatic initial
+  // set, only from the selector's onSelect.
+  const handleKitSelect = useCallback(
+    (id: string | null) => {
+      if (id !== selectedKitId) {
+        const to = kitName(id);
+        posthog?.capture("idea_kit_changed", {
+          from_kit: kitName(selectedKitId),
+          to_kit: to,
+          changed_to_custom: to === "Custom",
+          from_default: selectedKitId === defaultKitIdRef.current,
+        });
+      }
+      setSelectedKitId(id);
+    },
+    [selectedKitId, kitName, posthog]
+  );
 
   // isCompactPreview removed — KitPreview no longer has compact mode
   const selectedKit = kits?.find((k) => k.id === selectedKitId) ?? null;
@@ -220,6 +273,15 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
           kitId: hasKit ? selectedKitId : null,
         });
 
+        // Outcome event: what kit shipped, whether it was our untouched
+        // default, and whether AI enhance was used. Numerator for the
+        // default-ship and empty-board rates.
+        posthog?.capture("idea_created", {
+          kit: hasKit ? kitName(selectedKitId) : "none",
+          was_default: hasKit && selectedKitId === defaultKitIdRef.current,
+          enhanced,
+        });
+
         if (result.kitError) {
           toast.error("Idea created but kit application failed — you can apply it later from the board.");
         }
@@ -241,7 +303,7 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
         toast.error(err instanceof Error ? err.message : "Failed to create idea");
       }
     });
-  }, [title, description, tags, visibility, hasKit, selectedKitId, router, startTransition]);
+  }, [title, description, tags, visibility, hasKit, selectedKitId, enhanced, kitName, posthog, router, startTransition]);
 
   return (
     <Card className="mx-auto max-w-2xl">
@@ -284,7 +346,7 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
               <ProjectTypeSelector
                 kits={kits}
                 selectedKitId={selectedKitId}
-                onSelect={setSelectedKitId}
+                onSelect={handleKitSelect}
               />
               {selectedKit && !isCustomKit && (
                 <KitPreview
