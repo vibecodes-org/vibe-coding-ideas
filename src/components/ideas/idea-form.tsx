@@ -79,6 +79,16 @@ function DescriptionField({
 }) {
   const [showPulse, setShowPulse] = useState(false);
 
+  // State-aware label so it says what will actually happen:
+  //  - already enhanced → "Refine" (run it again on the result)
+  //  - sparse box (one-liner) → "Draft with AI" (we're generating, not polishing)
+  //  - has real content → "Expand with AI" (fill out what's there)
+  const enhanceLabel = enhanced
+    ? "Refine"
+    : description.trim().length < 80
+      ? "Draft with AI"
+      : "Expand with AI";
+
   const handleFocus = useCallback(() => {
     if (canUseAi && !enhanced) {
       setShowPulse(true);
@@ -133,7 +143,7 @@ function DescriptionField({
               }`}
             >
               <Sparkles className="h-3.5 w-3.5" />
-              {enhanced ? "Re-enhance" : "Enhance with AI"}
+              {enhanceLabel}
               {!hasByokKey && creditsRemaining > 0 && (
                 <span className="flex h-[1.1rem] w-[1.1rem] items-center justify-center rounded-full bg-violet-600 text-[0.6rem] font-bold leading-none text-white">
                   {creditsRemaining}

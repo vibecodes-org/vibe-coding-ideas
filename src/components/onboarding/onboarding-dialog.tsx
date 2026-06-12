@@ -637,7 +637,11 @@ export function OnboardingDialog({
                         className="group inline-flex items-center gap-1.5 rounded-md border border-violet-500/30 bg-gradient-to-r from-violet-500/[0.12] to-purple-500/[0.06] px-2.5 py-1 text-[13px] font-semibold text-violet-400 transition-all hover:border-violet-500/50 hover:from-violet-500/[0.2] hover:to-purple-500/[0.12]"
                       >
                         <Sparkles className="h-3.5 w-3.5" />
-                        {descriptionEnhanced ? "Re-enhance" : "Enhance with AI"}
+                        {descriptionEnhanced
+                          ? "Refine"
+                          : ideaDescription.trim().length < 80
+                            ? "Draft with AI"
+                            : "Expand with AI"}
                         {!hasByokKey && creditsRemaining > 0 && (
                           <span className="flex h-[1.1rem] w-[1.1rem] items-center justify-center rounded-full bg-violet-600 text-[0.6rem] font-bold leading-none text-white">
                             {creditsRemaining}
