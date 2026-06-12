@@ -195,14 +195,15 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       });
 
       let handled = false;
+      const markHandled = () => {
+        handled = true;
+      };
       const onVisibility = () => {
         if (document.visibilityState === "hidden") handled = true;
       };
-      const onBlur = () => {
-        handled = true;
-      };
       document.addEventListener("visibilitychange", onVisibility);
-      window.addEventListener("blur", onBlur);
+      window.addEventListener("blur", markHandled);
+      window.addEventListener("pagehide", markHandled);
 
       try {
         window.location.assign(link);
@@ -219,17 +220,22 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
 
       function cleanup() {
         document.removeEventListener("visibilitychange", onVisibility);
-        window.removeEventListener("blur", onBlur);
+        window.removeEventListener("blur", markHandled);
+        window.removeEventListener("pagehide", markHandled);
       }
 
       window.setTimeout(() => {
         cleanup();
         launchingRef.current = false;
-        if (handled) return;
-        // Detection is heuristic — Claude Code may have opened anyway — so keep
-        // this soft and always offer the manual fallback.
-        toast.error("Couldn't confirm Claude Code opened", {
-          description: "If nothing happened, copy the command and run it in your terminal.",
+        // A custom-scheme launch can't be reliably confirmed: when the browser
+        // shows its native "Open Claude Code?" prompt the page fires no
+        // blur/visibilitychange, so `handled` stays false even on success.
+        // A lost document focus (app switch OR that native prompt) means it
+        // almost certainly launched — treat it as handled. Otherwise show a
+        // NEUTRAL nudge, not a red error, since it most likely opened anyway.
+        if (handled || !document.hasFocus()) return;
+        toast("Opening Claude Code…", {
+          description: "Didn't open? Copy the command and run it in your terminal.",
           action: { label: "Copy command", onClick: () => void copyCommand(state) },
         });
       }, SCHEME_RACE_MS);
