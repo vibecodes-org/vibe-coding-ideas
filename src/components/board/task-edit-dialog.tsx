@@ -14,7 +14,8 @@ import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { toast } from "sonner";
 import { X, Image as ImageIcon, Sparkles, Loader2, Eye, Pencil, Tag } from "lucide-react";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover as PopoverPrimitive } from "radix-ui";
+import { Popover, PopoverTrigger } from "@/components/ui/popover";
 import { Checkbox } from "@/components/ui/checkbox";
 import { AssigneeSelect } from "./assignee-select";
 import { Markdown } from "@/components/ui/markdown";
@@ -446,7 +447,15 @@ export function TaskEditDialog({
                     )}
                   </Button>
                 </PopoverTrigger>
-                <PopoverContent className="w-[220px] p-2" align="start">
+                {/* Rendered inside a modal Dialog — render without Portal so the
+                    dialog's pointer-events lock doesn't swallow clicks on the
+                    label checkboxes (mirrors LabelPicker's inDialog path). */}
+                <PopoverPrimitive.Content
+                  align="start"
+                  sideOffset={4}
+                  className="z-50 w-[220px] rounded-md border bg-popover p-2 text-popover-foreground shadow-md outline-hidden data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+                  onOpenAutoFocus={(e) => e.preventDefault()}
+                >
                   <p className="mb-2 text-xs font-medium text-muted-foreground">Labels</p>
                   <div className="max-h-[200px] space-y-1 overflow-y-auto">
                     {boardLabels.map((label) => {
@@ -464,7 +473,7 @@ export function TaskEditDialog({
                       );
                     })}
                   </div>
-                </PopoverContent>
+                </PopoverPrimitive.Content>
               </Popover>
             </div>
           )}
