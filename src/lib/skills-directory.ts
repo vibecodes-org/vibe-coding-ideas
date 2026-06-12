@@ -125,6 +125,80 @@ const FALLBACK_SKILLS: SkillDirectoryEntry[] = [
   },
 ];
 
+/**
+ * The VibeCodes-authored `browser-testing` SKILL.md body. Generic to ANY user
+ * project — it guides a user's QA/Bug agent to browser-test the app THEY are
+ * building, with no VibeCodes-specific auth assumptions. Backticks are escaped
+ * because this lives in a template literal.
+ */
+const BROWSER_TESTING_SKILL_CONTENT = `# Browser Testing
+
+Drive a real browser to test the web app **you are building** — verify behaviour that unit tests can't see: rendering, clicks, focus traps, forms, navigation, and responsive layout. This skill is generic: it works against *your* project's app, whatever stack it uses.
+
+## When to use
+- A task involves UI / interaction behaviour: a button, form, dropdown, modal, drag-and-drop, navigation, or responsive layout.
+- You're verifying a bug fix or an acceptance criterion that only shows up in the browser.
+- You need visual proof of a defect, or of a flow passing.
+
+Do NOT use it for pure logic/data checks (write unit tests instead), or when there's no running app to point at.
+
+## Prerequisites
+- The app under test must be running and reachable — e.g. your local dev server at http://localhost:3000, or a preview URL. If it isn't running, start it (or ask the human to) before testing.
+- The Playwright browser tools (\`mcp__plugin_playwright_playwright__browser_*\`) must be available in this session.
+
+## Driving the browser
+1. \`browser_navigate\` to the target URL.
+2. \`browser_snapshot\` to read the accessibility tree — prefer this over screenshots for *locating* elements; it's cheaper and gives stable element refs. Act on those refs, not guessed CSS selectors.
+3. Interact: \`browser_click\`, \`browser_type\`, \`browser_fill_form\`, \`browser_select_option\`, \`browser_press_key\`, \`browser_hover\`.
+4. \`browser_wait_for\` to wait for text/elements to appear or disappear *before* you assert — don't race the UI.
+5. \`browser_console_messages\` and \`browser_network_requests\` to find the JS error or failed request behind a visible symptom.
+
+## Auth — you handle this with YOUR project's setup
+There is **no central login tool** — every project's auth is different, so use what *your* project provides:
+- Prefer a **test / dev login path**: a seeded test user, a magic-link or dev bypass, or an env-gated "log in as test user" route. Check the project's e2e/test setup and README for how its tests authenticate.
+- If the app's login uses a third-party provider or a CAPTCHA, do NOT try to defeat it — use the project's test bypass, or test the **unauthenticated** flows you can reach.
+- Never hard-code or commit real credentials; read test creds from the project's existing test config/env.
+- If you genuinely can't authenticate, test what you can unauthenticated and clearly report what was blocked. Do not pretend you tested gated flows.
+
+## Capturing evidence
+- For a defect: \`browser_take_screenshot\` of the broken state, then attach it to the board task with \`mcp__vibecodes-remote__upload_attachment\` so the evidence lives on the task, not just in chat.
+- Pair every screenshot with: numbered repro steps, expected vs actual behaviour, and (for a bug) a root-cause hypothesis.
+- Capture \`browser_console_messages\` whenever there's a JS error.
+
+## Guardrails
+- **Budget:** keep a pass tight — aim for no more than ~10 browser tool calls and ~3 screenshots per step. If you're blowing past that, stop and report progress instead of grinding.
+- **Kill-switch:** if the app won't load, auth is impossible, or you hit the same wall twice, STOP and report — don't loop.
+- **Never fabricate:** report exactly what you observed. "Could not reproduce" and "blocked on auth" are valid, useful outcomes. Never claim a screenshot or result you didn't actually produce.
+- **Leave it clean:** \`browser_close\` when you're done; don't leave sessions open.
+
+## Output
+File your result on the board task: numbered repro steps, expected vs actual, the screenshot attachment(s), a root-cause hypothesis (for bugs), and a clear pass / fail / blocked verdict.`;
+
+/**
+ * VibeCodes-authored skills that are ALWAYS present in the directory, regardless
+ * of whether GitHub is reachable. Unlike FALLBACK_SKILLS (only returned when
+ * EVERY GitHub source fails), these are merged into every result and take
+ * precedence over any same-named upstream skill, so users can always discover +
+ * add them via the "Browse Directory" tab.
+ */
+const CURATED_SKILLS: SkillDirectoryEntry[] = [
+  {
+    name: "browser-testing",
+    description:
+      "Drive a real browser (via Playwright) to test the web app you're building — verify UI behaviour unit tests can't catch, with guidance on auth, evidence capture, and guardrails. Generic to any project.",
+    content: BROWSER_TESTING_SKILL_CONTENT,
+    category: "Development",
+    source_url: "https://vibecodes.co.uk/guide",
+    provider: "VibeCodes",
+  },
+];
+
+/** Merge curated skills ahead of `entries`, de-duping by name (curated wins). */
+export function withCurated(entries: SkillDirectoryEntry[]): SkillDirectoryEntry[] {
+  const names = new Set(CURATED_SKILLS.map((s) => s.name));
+  return [...CURATED_SKILLS, ...entries.filter((e) => !names.has(e.name))];
+}
+
 interface GitHubTreeEntry {
   path: string;
   type: string;
@@ -176,7 +250,9 @@ async function _fetchAllSources(): Promise<SkillDirectoryEntry[]> {
       }
     }
 
-    // If we got at least some results, cache them
+    // If we got at least some results, cache them. NOTE: this function stays
+    // GitHub-pure — curated skills are merged in by callers (the directory
+    // action + getFallbackSkills) via withCurated(), not cached here.
     if (allEntries.length > 0) {
       cachedDirectory = allEntries;
       cacheTimestamp = Date.now();
@@ -262,7 +338,7 @@ async function _fetchFromSource(source: SkillSource): Promise<SkillDirectoryEntr
  * Get the fallback skills list (always available, no network needed).
  */
 export function getFallbackSkills(): SkillDirectoryEntry[] {
-  return FALLBACK_SKILLS;
+  return withCurated(FALLBACK_SKILLS);
 }
 
 /**

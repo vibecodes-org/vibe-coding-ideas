@@ -1,5 +1,11 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import { fetchSkillsFromGitHub, clearSkillsCache, getProviders } from "./skills-directory";
+import {
+  fetchSkillsFromGitHub,
+  clearSkillsCache,
+  getProviders,
+  getFallbackSkills,
+  withCurated,
+} from "./skills-directory";
 
 type FetchResponder = (url: string) => Response | Promise<Response>;
 
@@ -169,6 +175,22 @@ describe("fetchSkillsFromGitHub", () => {
     expect(getProviders()).toEqual(["Anthropic", "Microsoft", "Vercel"]);
   });
 
+  it("merges the curated browser-testing skill ahead of GitHub results (always discoverable)", async () => {
+    installFetch((url) => {
+      if (url.includes("anthropics/skills/git/trees")) return treeResponse(["skills/a1/SKILL.md"]);
+      if (url.includes("microsoft/skills/git/trees")) return treeResponse([]);
+      if (url.includes("vercel-labs/agent-skills/git/trees")) return treeResponse([]);
+      if (url.includes("raw.githubusercontent")) return textResponse(skillMd("a1", "anth"));
+      return new Response("nope", { status: 404 });
+    });
+    // The action layer wraps fetch with withCurated — model that here.
+    const directory = withCurated(await fetchSkillsFromGitHub());
+    expect(directory[0].name).toBe("browser-testing"); // curated comes first
+    expect(directory.some((s) => s.name === "a1")).toBe(true);
+    // fetchSkillsFromGitHub itself stays GitHub-pure (no curated leakage into cache).
+    const raw = await fetchSkillsFromGitHub();
+    expect(raw.some((s) => s.name === "browser-testing")).toBe(false);
+  });
   it("deduplicates skills with the same name across sources, preferring source order", async () => {
     installFetch((url) => {
       if (url.includes("anthropics/skills/git/trees")) {
@@ -199,5 +221,38 @@ describe("fetchSkillsFromGitHub", () => {
 
     const names = skills.map((s) => s.name).sort();
     expect(names).toEqual(["mcp-builder", "unique-anth", "unique-ms"]);
+  });
+});
+
+describe("curated browser-testing skill", () => {
+  const browserTesting = getFallbackSkills().find((s) => s.name === "browser-testing");
+
+  it("is always present (survives GitHub being unreachable)", () => {
+    expect(browserTesting).toBeDefined();
+    expect(browserTesting!.provider).toBe("VibeCodes");
+    expect(browserTesting!.category).toBe("Development");
+  });
+
+  it("documents all five required sections", () => {
+    const c = browserTesting!.content;
+    expect(c).toMatch(/## When to use/);
+    expect(c).toMatch(/## Driving the browser/);
+    expect(c).toMatch(/## Auth/);
+    expect(c).toMatch(/## Capturing evidence/);
+    expect(c).toMatch(/## Guardrails/);
+  });
+
+  it("guides Playwright + evidence-on-task, with no central-auth assumption", () => {
+    const c = browserTesting!.content;
+    expect(c).toContain("mcp__plugin_playwright_playwright__browser_");
+    expect(c).toContain("upload_attachment");
+    expect(c).toMatch(/no central login tool/i); // direction B: no VibeCodes mint tool
+    expect(c).toMatch(/never fabricate/i);
+  });
+
+  it("withCurated is idempotent (no duplicate when input already has curated)", () => {
+    const once = withCurated([]);
+    const twice = withCurated(once);
+    expect(twice.filter((s) => s.name === "browser-testing")).toHaveLength(1);
   });
 });

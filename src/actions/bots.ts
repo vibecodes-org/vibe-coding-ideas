@@ -6,7 +6,7 @@ import { validateBio, validateSkills } from "@/lib/validation";
 import { getDefaultSkillsForRole } from "@/lib/agent-skills";
 import { parseSkillMd, inferRole, slugifyName } from "@/lib/skill-md";
 import type { ParsedSkill } from "@/lib/skill-md";
-import { fetchSkillsFromGitHub } from "@/lib/skills-directory";
+import { fetchSkillsFromGitHub, withCurated } from "@/lib/skills-directory";
 import type { SkillDirectoryEntry } from "@/lib/skills-directory";
 import type { BotProfile, FeaturedTeamWithAgents, AgentSkill } from "@/types";
 
@@ -727,6 +727,8 @@ export async function fetchSkillsDirectory(): Promise<SkillDirectoryEntry[]> {
   } = await supabase.auth.getUser();
   if (!user) throw new Error("Not authenticated");
 
-  return fetchSkillsFromGitHub();
+  // VibeCodes-authored skills (e.g. browser-testing) are always shown first,
+  // ahead of the GitHub directory and even if GitHub is unreachable.
+  return withCurated(await fetchSkillsFromGitHub());
 }
 
