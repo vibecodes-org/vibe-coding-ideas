@@ -20,6 +20,7 @@ import {
   buildLaunchCommand,
   buildBoardBootstrapPrompt,
   buildTaskBootstrapPrompt,
+  buildCompactBootstrapPrompt,
   readLaunchPath,
   resolveEffectiveLaunchTarget,
   slugifyIdeaTitle,
@@ -145,6 +146,26 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     [props, ideaId, ideaTitle, ideaGithubUrl]
   );
 
+  // Compact variant for the DEEP LINK only — the claude-cli:// URL has an OS
+  // length ceiling and an over-long URL silently fails to launch. The verbose
+  // buildPrompt above stays on the copy-command path (a shell arg, no limit).
+  const buildDeepLinkPrompt = useCallback(
+    (state: LaunchPathState): string => {
+      const newProject =
+        state.mode === "new" ? { newProjectPath: state.path } : undefined;
+      return buildCompactBootstrapPrompt({
+        appUrl: APP_URL,
+        ideaId,
+        ideaTitle,
+        mode: state.mode,
+        repoUrl: ideaGithubUrl,
+        newProject,
+        taskId: props.variant === "board" ? undefined : props.taskId,
+      });
+    },
+    [props, ideaId, ideaTitle, ideaGithubUrl]
+  );
+
   const copyCommand = useCallback(
     async (state: LaunchPathState) => {
       const prompt = buildPrompt(state);
@@ -172,7 +193,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       if (launchingRef.current) return;
       launchingRef.current = true;
 
-      const prompt = buildPrompt(state);
+      const prompt = buildDeepLinkPrompt(state);
       // cwd resolution:
       //  - existing mode with a user-pinned absolute path → use it.
       //  - new (no-repo) mode → use the effective target's cwd (the saved path or,
@@ -240,7 +261,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         });
       }, SCHEME_RACE_MS);
     },
-    [buildPrompt, ideaGithubUrl, effectiveTarget.cwd, copyCommand]
+    [buildDeepLinkPrompt, ideaGithubUrl, effectiveTarget.cwd, copyCommand]
   );
 
   // Primary action: always launch. No path needed — repo-backed ideas resolve via

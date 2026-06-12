@@ -15,6 +15,17 @@
  */
 export const MAX_DEEP_LINK_PROMPT_LENGTH = 5000;
 
+/**
+ * Hard ceiling on the FULL `claude-cli://` URL for the deep-link path. Chromium
+ * silently refuses to launch an external-protocol URL past an OS limit (Windows
+ * ShellExecute ≈ 2083 chars; macOS higher but finite) — the launch just no-ops,
+ * no error. The verbose bootstrap prompt blew past this on a no-repo "new" board
+ * (~5000-char URL → silent failure). The deep link therefore uses the COMPACT
+ * prompt builder, kept well under this; the copy-command (no URL limit) keeps the
+ * verbose prompt. 1900 leaves margin below the strictest (Windows) ceiling.
+ */
+export const MAX_DEEP_LINK_URL_LENGTH = 1900;
+
 /** localStorage key namespace for the per-user-per-idea launch path. */
 export const LAUNCH_PATH_KEY_PREFIX = "vibecodes:launch-path:";
 
@@ -503,6 +514,69 @@ Use the MCP tools (get_task / set_agent_identity / move_task / …) to do the wo
   // else, then MCP setup — both protected from truncation; work is the trimmable tail.
   const head = dir ? `${dir}\n\n${mcp}` : mcp;
   return enforcePromptLength(head, `\n\n${work}`);
+}
+
+export interface CompactBootstrapArgs extends CommonPromptArgs {
+  ideaTitle: string;
+  /** Per-task launch: targets this task instead of the top of the queue. */
+  taskId?: string;
+}
+
+/**
+ * COMPACT bootstrap prompt — used ONLY for the deep link, whose URL must stay
+ * under MAX_DEEP_LINK_URL_LENGTH (see that constant). It keeps every ESSENTIAL
+ * step (project dir first, MCP connect, record_project_path, find/start work)
+ * but terse, so the encoded claude-cli:// URL stays well under the OS ceiling.
+ * The verbose buildBoard/TaskBootstrapPrompt is reserved for the copy-command,
+ * which is a shell arg with no URL-length limit.
+ */
+export function buildCompactBootstrapPrompt({
+  appUrl,
+  ideaId,
+  ideaTitle,
+  repoUrl,
+  newProject,
+  taskId,
+}: CompactBootstrapArgs): string {
+  const title = ideaTitle.length > 80 ? `${ideaTitle.slice(0, 79)}…` : ideaTitle;
+  const repo = parseRepoFromGithubUrl(repoUrl);
+  const steps: string[] = [];
+
+  // Directory step. Skipped for existing-no-repo: the deep link's cwd already
+  // starts the session in the right folder.
+  if (newProject) {
+    const p = newProject.newProjectPath;
+    const git = repo
+      ? `if empty, \`git clone https://github.com/${repo}.git .\`, else keep existing files`
+      : "if empty, `git init`";
+    steps.push(
+      `Project folder FIRST, before anything else (even planning/research): if ${p} exists, cd in and reuse it as-is; else \`mkdir -p ${p} && cd ${p}\`. Never work in your home directory (${git}).`
+    );
+  } else if (repo) {
+    steps.push(
+      `Get into the repo ${repo} first: cd your local clone, or \`git clone https://github.com/${repo}.git ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}\` and cd in. Never work in your home directory.`
+    );
+  }
+
+  steps.push(
+    `Connect the board tools: run \`claude mcp add -s local --transport http vibecodes-remote ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes-remote → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`
+  );
+
+  steps.push(
+    `Once the board tools work, call record_project_path (idea_id ${ideaId}, your machine \`hostname\`, and \`pwd\`) so future launches reopen in this folder.`
+  );
+
+  steps.push(
+    taskId
+      ? `Work this task: get_task (task_id ${taskId}, idea_id ${ideaId}), move it to In Progress, then start. Comment as you go.`
+      : `Find work: call get_board (idea_id ${ideaId}) — NOT get_my_tasks, which only returns tasks already assigned to you (a new board has none). Take the top task in To Do (then Backlog), get_task it, assign it to yourself, move it to In Progress, then start. Comment as you go.`
+  );
+
+  const header = taskId
+    ? `Set up VibeCodes and work a board task for "${title}".`
+    : `Set up VibeCodes and pick up board work for "${title}".`;
+  const numbered = steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+  return `${header}\n\n${numbered}`;
 }
 
 // ────────────────────────────────────────────────────────────────────────────

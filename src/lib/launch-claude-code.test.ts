@@ -23,6 +23,8 @@ import {
   mcpEndpoint,
   enforcePromptLength,
   MAX_DEEP_LINK_PROMPT_LENGTH,
+  MAX_DEEP_LINK_URL_LENGTH,
+  buildCompactBootstrapPrompt,
   parseRepoFromGithubUrl,
   validateFolderName,
   looksAbsolutePath,
@@ -775,5 +777,107 @@ describe("no-repo bootstrap prompt — pwd + record_project_path + cd guard", ()
       repoUrl: "https://github.com/acme/widget",
     });
     expect(p).not.toContain("record_project_path");
+  });
+});
+
+describe("buildCompactBootstrapPrompt (deep-link prompt)", () => {
+  const APP_URL = "https://vibecodes.co.uk";
+
+  // THE regression guard: a no-repo, no-recorded-path board launches in mode
+  // "new" with the directory step. The verbose builder produced a ~5000-char
+  // claude-cli:// URL that Chromium SILENTLY refused to launch. The compact
+  // deep-link prompt must keep the URL under the OS ceiling.
+  it("new no-repo board deep link stays under MAX_DEEP_LINK_URL_LENGTH", () => {
+    const prompt = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "1beea99a-0377-421b-9a8b-a9956ae34b5d",
+      ideaTitle: "horse racing predictor",
+      mode: "new",
+      repoUrl: null,
+      newProject: { newProjectPath: "~/projects/horse-racing-predictor" },
+    });
+    const link = buildClaudeDeepLink({ prompt });
+    expect(link.length).toBeLessThanOrEqual(MAX_DEEP_LINK_URL_LENGTH);
+  });
+
+  it("keeps the URL under the cap even for a pathological title + long slug", () => {
+    const prompt = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "1beea99a-0377-421b-9a8b-a9956ae34b5d",
+      ideaTitle: "Q".repeat(5000),
+      mode: "new",
+      repoUrl: null,
+      newProject: { newProjectPath: "~/projects/" + "x".repeat(40) },
+    });
+    expect(buildClaudeDeepLink({ prompt }).length).toBeLessThanOrEqual(MAX_DEEP_LINK_URL_LENGTH);
+  });
+
+  it("repo and existing-with-cwd deep links also stay under the cap", () => {
+    const repo = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "horse racing predictor",
+      mode: "existing",
+      repoUrl: "https://github.com/acme/horse-racing-predictor",
+    });
+    expect(buildClaudeDeepLink({ prompt: repo, repo: "acme/horse-racing-predictor" }).length)
+      .toBeLessThanOrEqual(MAX_DEEP_LINK_URL_LENGTH);
+
+    const existing = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "horse racing predictor",
+      mode: "existing",
+      repoUrl: null,
+    });
+    expect(buildClaudeDeepLink({ prompt: existing, cwd: "/Users/nickball/projects/horse-racing-predictor" }).length)
+      .toBeLessThanOrEqual(MAX_DEEP_LINK_URL_LENGTH);
+  });
+
+  it("keeps every essential step: dir-first, MCP add, record_project_path, get_board (not get_my_tasks)", () => {
+    const p = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "new",
+      repoUrl: null,
+      newProject: { newProjectPath: "~/projects/my-idea" },
+    });
+    expect(p).toContain("mkdir -p ~/projects/my-idea");
+    expect(p).toContain(`claude mcp add -s local --transport http vibecodes-remote ${APP_URL}/api/mcp`);
+    expect(p).toContain("/mcp");
+    expect(p).toContain("record_project_path");
+    expect(p).toContain("get_board");
+    expect(p).toContain("NOT get_my_tasks");
+    expect(p).toContain("In Progress");
+    // dir step comes before the MCP step
+    expect(p.indexOf("mkdir -p")).toBeLessThan(p.indexOf("claude mcp add"));
+  });
+
+  it("existing-no-repo skips the directory step (the deep link cwd handles it)", () => {
+    const p = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: null,
+    });
+    expect(p).not.toContain("mkdir -p");
+    expect(p).toContain("get_board");
+  });
+
+  it("task variant targets the task_id and does not call get_board", () => {
+    const p = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "new",
+      repoUrl: null,
+      newProject: { newProjectPath: "~/projects/my-idea" },
+      taskId: "task-9",
+    });
+    expect(p).toContain("task_id task-9");
+    expect(p).toContain("get_task");
+    expect(p).not.toContain("get_board");
   });
 });
