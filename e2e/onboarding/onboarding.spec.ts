@@ -59,7 +59,7 @@ test.describe("Onboarding", () => {
       await page.getByRole("button", { name: /Let's get started/i }).click();
       await expect(page.getByPlaceholder("Your name")).toBeVisible({ timeout: EXPECT_TIMEOUT });
       await page.getByText(/Skip this step/i).click();
-      await expect(page.getByPlaceholder(/recipe sharing app/i)).toBeVisible({ timeout: EXPECT_TIMEOUT });
+      await expect(page.getByPlaceholder(/Recipe-sharing app/i)).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
 
     test("should show kit selector on project step", async ({ freshPage: page }) => {
@@ -68,7 +68,8 @@ test.describe("Onboarding", () => {
       await page.getByRole("button", { name: /Let's get started/i }).click();
       await page.getByText(/Skip this step/i).click();
       await expect(page.getByText(/What kind of project/i)).toBeVisible({ timeout: EXPECT_TIMEOUT });
-      await expect(page.getByText("Web Application")).toBeVisible();
+      // Kit cards load async from the DB — allow the full timeout, not the 5s default
+      await expect(page.getByText("Web Application")).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
 
     test("should show validation error when creating project without name", async ({ freshPage: page }) => {

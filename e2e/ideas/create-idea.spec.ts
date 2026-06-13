@@ -17,7 +17,8 @@ test.describe("Create Idea", () => {
   test("should have visibility toggle", async ({ userAPage: page }) => {
     await page.goto("/ideas/new");
     await expect(page.getByText("Share Your Idea")).toBeVisible({ timeout: EXPECT_TIMEOUT });
-    await expect(page.getByText("Private idea")).toBeVisible();
+    // Visibility is a segmented Public/Private radiogroup (VisibilitySelector)
+    await expect(page.getByRole("radio", { name: /Private/i })).toBeVisible();
   });
 
   test("should show project type selector when kits exist", async ({ userAPage: page }) => {
