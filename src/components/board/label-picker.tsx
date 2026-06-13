@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import { toast } from "sonner";
 import { Plus, Pencil, Trash2, Check, X } from "lucide-react";
 import { Popover as PopoverPrimitive } from "radix-ui";
@@ -96,72 +96,111 @@ export function LabelPicker({
     setLastTaskLabelsKey(currentKey);
   }
 
-  async function handleToggleLabel(labelId: string) {
-    const isCurrentlyAssigned = localLabelIds.has(labelId);
+  // Mirror the current assigned set to the parent (optimistic toggles + resync).
+  useEffect(() => {
+    onLabelsChange?.([...localLabelIds]);
+  }, [localLabelIds, onLabelsChange]);
 
-    // When removing a label, check if it has an auto-rule with an active workflow
-    if (isCurrentlyAssigned) {
-      try {
-        const check = await checkLabelAutoRuleWorkflow(taskId, labelId, ideaId);
-        if (check.hasActiveWorkflow) {
-          setConfirmRemove({ labelId, templateName: check.templateName });
-          return;
-        }
-      } catch {
-        // If check fails, proceed without confirmation
-      }
-    }
+  // Per-label in-flight guard: drop rapid re-clicks on the SAME label so we never
+  // fire overlapping add/remove requests (the old "Failed to update label" race).
+  const inFlightRef = useRef<Set<string>>(new Set());
+  // Set true by a dialog button so the dialog's dismiss path (Escape) doesn't
+  // double-handle / wrongly revert after a real choice.
+  const resolvingRef = useRef(false);
 
-    await executeToggleLabel(labelId, isCurrentlyAssigned, false);
+  // Optimistic UI ONLY — functional + concurrency-safe (rapid toggles of
+  // different labels won't clobber each other). Server work is `persist`.
+  function applyOptimistic(labelId: string, assigned: boolean) {
+    setLocalLabelIds((prev) => {
+      const next = new Set(prev);
+      if (assigned) next.add(labelId);
+      else next.delete(labelId);
+      return next;
+    });
   }
 
-  async function executeToggleLabel(labelId: string, isCurrentlyAssigned: boolean, removeWorkflow: boolean) {
-    // Optimistic update
-    const nextIds = new Set(localLabelIds);
-    if (isCurrentlyAssigned) {
-      nextIds.delete(labelId);
-    } else {
-      nextIds.add(labelId);
-    }
-    setLocalLabelIds(nextIds);
-    onLabelsChange?.([...nextIds]);
-
+  // Persist a toggle to the server; revert the optimistic UI on failure.
+  async function persist(labelId: string, wasAssigned: boolean, removeWorkflow: boolean) {
     try {
-      if (isCurrentlyAssigned) {
+      if (wasAssigned) {
         await removeLabelFromTask(taskId, labelId, ideaId, removeWorkflow);
       } else {
         await addLabelToTask(taskId, labelId, ideaId);
       }
       if (currentUserId) {
         const label = localBoardLabels.find((l) => l.id === labelId);
-        logTaskActivity(taskId, ideaId, currentUserId, isCurrentlyAssigned ? "label_removed" : "label_added", {
-          label_name: label?.name ?? "Unknown",
-        });
+        logTaskActivity(
+          taskId,
+          ideaId,
+          currentUserId,
+          wasAssigned ? "label_removed" : "label_added",
+          { label_name: label?.name ?? "Unknown" }
+        );
       }
     } catch {
       toast.error("Failed to update label");
-      const rolledBack = new Set(localLabelIds);
-      if (isCurrentlyAssigned) {
-        rolledBack.add(labelId);
-      } else {
-        rolledBack.delete(labelId);
-      }
-      setLocalLabelIds(rolledBack);
-      onLabelsChange?.([...rolledBack]);
+      applyOptimistic(labelId, wasAssigned); // revert to the pre-toggle state
     }
   }
 
-  function handleConfirmRemoveWorkflow() {
-    if (!confirmRemove) return;
-    executeToggleLabel(confirmRemove.labelId, true, true);
-    setConfirmRemove(null);
+  async function handleToggleLabel(labelId: string) {
+    if (inFlightRef.current.has(labelId)) return; // drop rapid re-clicks
+    inFlightRef.current.add(labelId);
+    try {
+      const wasAssigned = localLabelIds.has(labelId);
+
+      if (!wasAssigned) {
+        applyOptimistic(labelId, true); // instant check
+        await persist(labelId, false, false);
+        return;
+      }
+
+      // Uncheck: update the UI immediately, THEN check for an attached workflow —
+      // the check is a server round-trip and must NOT block the visual toggle
+      // (this was the "slow to uncheck" bug).
+      applyOptimistic(labelId, false);
+      let hasActiveWorkflow = false;
+      let templateName: string | undefined;
+      try {
+        const check = await checkLabelAutoRuleWorkflow(taskId, labelId, ideaId);
+        hasActiveWorkflow = check.hasActiveWorkflow;
+        templateName = check.templateName;
+      } catch {
+        // Check failed — fall through to a plain removal.
+      }
+
+      if (hasActiveWorkflow) {
+        // Label is already removed from the UI; the dialog only decides whether
+        // to ALSO remove the workflow (or to Cancel, which re-adds the label).
+        setConfirmRemove({ labelId, templateName });
+        return; // server removal deferred to the dialog handlers
+      }
+
+      await persist(labelId, true, false);
+    } finally {
+      inFlightRef.current.delete(labelId);
+    }
   }
 
+  // "Remove workflow" — label already removed from UI; persist removal + workflow.
+  function handleConfirmRemoveWorkflow() {
+    if (!confirmRemove) return;
+    resolvingRef.current = true;
+    void persist(confirmRemove.labelId, true, true);
+  }
+
+  // "Keep workflow" — label already removed from UI; persist removal only.
   function handleCancelRemoveWorkflow() {
     if (!confirmRemove) return;
-    // Remove label without removing workflow
-    executeToggleLabel(confirmRemove.labelId, true, false);
-    setConfirmRemove(null);
+    resolvingRef.current = true;
+    void persist(confirmRemove.labelId, true, false);
+  }
+
+  // "Cancel"/dismiss — the label was optimistically removed but never persisted;
+  // re-add it (revert) and keep the workflow.
+  function handleAbortRemove() {
+    if (!confirmRemove) return;
+    applyOptimistic(confirmRemove.labelId, true);
   }
 
   async function handleCreate(e: React.FormEvent) {
@@ -382,7 +421,16 @@ export function LabelPicker({
         )}
       </Popover>
 
-      <AlertDialog open={!!confirmRemove} onOpenChange={(open) => !open && setConfirmRemove(null)}>
+      <AlertDialog
+        open={!!confirmRemove}
+        onOpenChange={(open) => {
+          if (open) return;
+          // Closed. If no button handled it (e.g. Escape), treat as Cancel → revert.
+          if (!resolvingRef.current) handleAbortRemove();
+          resolvingRef.current = false;
+          setConfirmRemove(null);
+        }}
+      >
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Remove label with active workflow?</AlertDialogTitle>
@@ -395,7 +443,12 @@ export function LabelPicker({
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel onClick={() => setConfirmRemove(null)}>
+            <AlertDialogCancel
+              onClick={() => {
+                resolvingRef.current = true;
+                handleAbortRemove();
+              }}
+            >
               Cancel
             </AlertDialogCancel>
             <AlertDialogAction onClick={handleCancelRemoveWorkflow}>
