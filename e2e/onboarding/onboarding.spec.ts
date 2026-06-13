@@ -68,8 +68,11 @@ test.describe("Onboarding", () => {
       await page.getByRole("button", { name: /Let's get started/i }).click();
       await page.getByText(/Skip this step/i).click();
       await expect(page.getByText(/What kind of project/i)).toBeVisible({ timeout: EXPECT_TIMEOUT });
-      // Kit cards load async from the DB — allow the full timeout, not the 5s default
-      await expect(page.getByText("Web Application")).toBeVisible({ timeout: EXPECT_TIMEOUT });
+      // "Web Application" also appears in the selected-kit preview + a label chip,
+      // so target the kit card radio specifically to avoid a strict-mode match.
+      await expect(
+        page.getByRole("radio", { name: /Web Application/i })
+      ).toBeVisible({ timeout: EXPECT_TIMEOUT });
     });
 
     test("should show validation error when creating project without name", async ({ freshPage: page }) => {

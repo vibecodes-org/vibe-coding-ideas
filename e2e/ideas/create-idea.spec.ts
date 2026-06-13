@@ -38,8 +38,12 @@ test.describe("Create Idea", () => {
     // Submit — button text varies based on kit selection
     await page.getByRole("button", { name: /Create idea/i }).click();
 
-    // Should redirect to the idea detail page
-    await page.waitForURL(/\/ideas\/[a-f0-9-]+$/, { timeout: 30_000 });
-    await expect(page.getByText("[E2E] Test Idea Creation")).toBeVisible({ timeout: EXPECT_TIMEOUT });
+    // A kit is applied on create (default Web kit pre-selected), so creation
+    // lands on the idea's board, not the idea detail page.
+    await page.waitForURL(/\/ideas\/[a-f0-9-]+\/board/, { timeout: 30_000 });
+    // The board breadcrumb links back to the idea using its title.
+    await expect(
+      page.getByRole("link", { name: "[E2E] Test Idea Creation" })
+    ).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 });
