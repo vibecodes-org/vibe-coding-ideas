@@ -436,9 +436,7 @@ export async function addLabelToTask(
     label_id: labelId,
   });
 
-  // Ignore duplicate-key (23505): the label is already on the task, which is the
-  // desired end state — makes rapid/concurrent toggles idempotent instead of erroring.
-  if (error && error.code !== "23505") throw new Error(error.message);
+  if (error) throw new Error(error.message);
 
   // Check for auto-rule workflow application
   await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate);
