@@ -334,7 +334,7 @@ export function BoardToolbar({
                     }}
                   >
                     <Sparkles className="h-3.5 w-3.5" />
-                    <span className="hidden sm:inline">AI Generate</span>
+                    <span className="hidden sm:inline">AI Generate Tasks</span>
                     {!hasByokKey && starterCredits > 0 && (
                       <span className="rounded-full bg-violet-600 px-1.5 text-[10px] leading-none text-white">
                         {starterCredits}

@@ -497,7 +497,7 @@ export function AiGenerateDialog({
         <DialogHeader className="shrink-0 border-b border-border px-5 py-4 sm:px-6">
           <DialogTitle className="flex items-center gap-2">
             <Sparkles className="h-[18px] w-[18px] text-violet-400" />
-            AI Generate Board
+            AI Generate Tasks
           </DialogTitle>
           <DialogDescription>{phaseDescriptions[phase]}</DialogDescription>
         </DialogHeader>
