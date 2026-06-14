@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback, useContext } from "react";
-import Link from "next/link";
 import { toast } from "sonner";
 import { HelpLink } from "@/components/shared/help-link";
+import { switchBoardTab } from "@/lib/board-tab-nav";
 import {
   Check,
   Loader2,
@@ -372,9 +372,9 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                   {templates === null ? (
                     <SelectItem value="__loading" disabled>Loading...</SelectItem>
                   ) : templates.length === 0 ? (
-                    <SelectItem value="__empty" disabled>
-                      No templates — <a href="?tab=workflows" className="underline">create one in the Workflows tab</a>
-                    </SelectItem>
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                      No templates — <button type="button" className="underline" onClick={() => switchBoardTab("workflows")}>create one in the Workflows tab</button>
+                    </div>
                   ) : (
                     templates.map((t) => (
                       <SelectItem key={t.id} value={t.id}>
@@ -491,7 +491,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
               matching agent:{" "}
               {unmatchedSteps.map((s) => s.agent_role).join(", ")}.
               Allocate agents with matching roles from the{" "}
-              <Link href="?tab=agents" className="underline hover:text-amber-300">Agents tab</Link>.
+              <button type="button" className="underline hover:text-amber-300" onClick={() => switchBoardTab("agents")}>Agents tab</button>.
             </p>
           </div>
         )}
