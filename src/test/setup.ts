@@ -1,4 +1,5 @@
 import "@testing-library/jest-dom/vitest";
+import { beforeEach } from "vitest";
 
 // --- localStorage polyfill for Node 26+ under jsdom ---------------------------
 //
@@ -57,3 +58,16 @@ if (typeof globalThis.localStorage === "undefined") {
     });
   }
 }
+
+// --- reset Web Storage between tests -----------------------------------------
+//
+// The in-memory shim above (and a real Storage, if the runtime provides one)
+// persist for the whole worker. Reset before each test so keys can't bleed
+// across cases and cause order-dependent flakiness. Purely preventative —
+// today's storage tests clean their own keys; this removes the footgun for
+// future tests that forget to. Optional-chained so it's a no-op if a runtime
+// ever omits one of these globals.
+beforeEach(() => {
+  globalThis.localStorage?.clear();
+  globalThis.sessionStorage?.clear();
+});
