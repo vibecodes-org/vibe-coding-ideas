@@ -289,9 +289,10 @@ export interface ResolveEffectiveLaunchTargetArgs {
  * Precedence:
  *  1. Repo-backed idea → never inject a cwd (the `repo` slug resolves the folder).
  *  2. Saved `existing`-mode path that passes strict validation → use it
- *     (labelled "This machine (set manually)" — localStorage has no hostname).
+ *     (labelled "This machine — set manually" — localStorage has no hostname).
  *  3. Otherwise the DB recorded path via `chooseLaunchCwd` (0/1/>1 contract),
- *     labelled "This machine — <host>".
+ *     labelled "This machine — <host>". Both share the "This machine — <detail>"
+ *     shape so they read as one box with two path sources, not two concepts.
  *  4. Nothing usable → source "none" (first-launch flow; no path line).
  *
  * `new`-mode saved state is intentionally ignored here: its composed
@@ -315,7 +316,7 @@ export function resolveEffectiveLaunchTarget({
       return {
         cwd: trimmed,
         displayPath: trimmed,
-        displayLabel: "This machine (set manually)",
+        displayLabel: "This machine — set manually",
         host: null,
         source: "saved",
       };

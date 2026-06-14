@@ -604,7 +604,7 @@ describe("resolveEffectiveLaunchTarget (single source for DISPLAY + LAUNCH)", ()
     expect(t.cwd).toBe("/Users/nick/projects/from-dialog");
     expect(t.displayPath).toBe("/Users/nick/projects/from-dialog");
     expect(t.source).toBe("saved");
-    expect(t.displayLabel).toBe("This machine (set manually)");
+    expect(t.displayLabel).toBe("This machine — set manually");
     expect(t.host).toBeNull();
   });
 
