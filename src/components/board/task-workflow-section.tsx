@@ -143,23 +143,9 @@ interface TaskWorkflowSectionProps {
   taskId: string;
   ideaId: string;
   isReadOnly?: boolean;
-  /**
-   * Close the surrounding task dialog. The cross-links below switch the board
-   * tab (Workflows / Agents), which sits BEHIND this modal — without closing the
-   * dialog first the tab change is invisible and the link appears dead.
-   */
-  onClose?: () => void;
 }
 
-export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false, onClose }: TaskWorkflowSectionProps) {
-  // Switch the board tab AND close this dialog so the destination tab is visible.
-  const goToBoardTab = useCallback(
-    (tab: "workflows" | "agents") => {
-      onClose?.();
-      switchBoardTab(tab);
-    },
-    [onClose],
-  );
+export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: TaskWorkflowSectionProps) {
   const [steps, setSteps] = useState<TaskWorkflowStep[] | null>(null);
   const [run, setRun] = useState<(WorkflowRun & { template_name?: string }) | null>(null);
   const [loading, setLoading] = useState(true);
@@ -377,22 +363,42 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false, onClos
         <div className="space-y-3">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold">Workflow <HelpLink href="/guide/workflows" tooltip="How workflows work" /></h3>
           {showApply ? (
-            templates !== null && templates.length === 0 ? (
-              // No templates yet — show a visible CTA, not an empty dropdown you'd
-              // have to open to discover there's nothing in it. The link closes
-              // this dialog and switches to the Workflows tab behind it.
-              <div className="space-y-2">
-                <p className="text-xs text-muted-foreground">
-                  No workflow templates yet.{" "}
-                  <button
-                    type="button"
-                    className="underline hover:text-foreground"
-                    onClick={() => goToBoardTab("workflows")}
-                  >
-                    Create one in the Workflows tab
-                  </button>
-                  .
-                </p>
+            <div className="space-y-2">
+              <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Select a template..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates === null ? (
+                    <SelectItem value="__loading" disabled>Loading...</SelectItem>
+                  ) : templates.length === 0 ? (
+                    <div className="px-2 py-1.5 text-sm text-muted-foreground">
+                      No templates — <button type="button" className="underline" onClick={() => switchBoardTab("workflows")}>create one in the Workflows tab</button>
+                    </div>
+                  ) : (
+                    templates.map((t) => (
+                      <SelectItem key={t.id} value={t.id}>
+                        {t.name} ({(t.steps as unknown[]).length} steps)
+                      </SelectItem>
+                    ))
+                  )}
+                </SelectContent>
+              </Select>
+              <div className="flex gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  className="gap-1.5 text-xs"
+                  onClick={handleApplyTemplate}
+                  disabled={!selectedTemplateId || applying}
+                >
+                  {applying ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Play className="h-3 w-3" />
+                  )}
+                  Apply
+                </Button>
                 <Button
                   size="sm"
                   variant="ghost"
@@ -402,50 +408,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false, onClos
                   Cancel
                 </Button>
               </div>
-            ) : (
-              <div className="space-y-2">
-                <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select a template..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {templates === null ? (
-                      <SelectItem value="__loading" disabled>Loading...</SelectItem>
-                    ) : (
-                      templates.map((t) => (
-                        <SelectItem key={t.id} value={t.id}>
-                          {t.name} ({(t.steps as unknown[]).length} steps)
-                        </SelectItem>
-                      ))
-                    )}
-                  </SelectContent>
-                </Select>
-                <div className="flex gap-2">
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    className="gap-1.5 text-xs"
-                    onClick={handleApplyTemplate}
-                    disabled={!selectedTemplateId || applying}
-                  >
-                    {applying ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
-                    ) : (
-                      <Play className="h-3 w-3" />
-                    )}
-                    Apply
-                  </Button>
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    className="text-xs"
-                    onClick={() => { setShowApply(false); setSelectedTemplateId(""); }}
-                  >
-                    Cancel
-                  </Button>
-                </div>
-              </div>
-            )
+            </div>
           ) : (
             <Button
               variant="outline"
@@ -528,7 +491,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false, onClos
               matching agent:{" "}
               {unmatchedSteps.map((s) => s.agent_role).join(", ")}.
               Allocate agents with matching roles from the{" "}
-              <button type="button" className="underline hover:text-amber-300" onClick={() => goToBoardTab("agents")}>Agents tab</button>.
+              <button type="button" className="underline hover:text-amber-300" onClick={() => switchBoardTab("agents")}>Agents tab</button>.
             </p>
           </div>
         )}
