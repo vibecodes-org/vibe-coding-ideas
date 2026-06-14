@@ -29,6 +29,10 @@ test.describe("Create Idea", () => {
   });
 
   test("should create an idea with title and description", async ({ userAPage: page }) => {
+    // Creation now applies the default Web kit, which seeds columns + labels +
+    // workflows; the board's first render is heavy and slow in CI, so this test
+    // needs more than the default 30s budget.
+    test.setTimeout(75_000);
     await page.goto("/ideas/new");
     await expect(page.getByText("Share Your Idea")).toBeVisible({ timeout: EXPECT_TIMEOUT });
 
@@ -38,12 +42,13 @@ test.describe("Create Idea", () => {
     // Submit — button text varies based on kit selection
     await page.getByRole("button", { name: /Create idea/i }).click();
 
-    // A kit is applied on create (default Web kit pre-selected), so creation
-    // lands on the idea's board, not the idea detail page.
+    // A kit is applied on create, so creation lands on the idea's board (not the
+    // detail page). Reaching this URL already proves the idea was created.
     await page.waitForURL(/\/ideas\/[a-f0-9-]+\/board/, { timeout: 30_000 });
-    // The board breadcrumb links back to the idea using its title.
+    // The board breadcrumb links back to the idea using its title — give the
+    // kit-seeded board ample time to paint.
     await expect(
       page.getByRole("link", { name: "[E2E] Test Idea Creation" })
-    ).toBeVisible({ timeout: EXPECT_TIMEOUT });
+    ).toBeVisible({ timeout: 30_000 });
   });
 });
