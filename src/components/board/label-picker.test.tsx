@@ -117,6 +117,43 @@ describe("LabelPicker — existing-task toggle (row owns the toggle, no Radix Ch
     expect(removeLabelFromTask).toHaveBeenCalledWith("task-1", "label-1", "idea-1", false);
   });
 
+  it("preserves an in-flight toggle when a piecemeal Realtime echo resyncs props (board flakiness)", async () => {
+    let resolveAdd: () => void = () => {};
+    addLabelToTask.mockImplementation(() => new Promise<void>((res) => { resolveAdd = res; }));
+
+    const el = (taskLabels: BoardLabel[]) => (
+      <LabelPicker
+        boardLabels={labels}
+        taskLabels={taskLabels}
+        taskId="task-1"
+        ideaId="idea-1"
+        currentUserId="user-1"
+        inDialog
+      >
+        <button>Open labels</button>
+      </LabelPicker>
+    );
+
+    const { rerender } = render(el([]));
+    fireEvent.click(screen.getByRole("button", { name: /Open labels/i }));
+
+    // Start adding Feature — still in flight (add promise unresolved).
+    fireEvent.click(row("Feature"));
+    expect(row("Feature")).toBeChecked();
+
+    // A piecemeal echo lands for an UNRELATED label (Bug added elsewhere) while
+    // Feature's add hasn't echoed back yet. The old code reset localLabelIds to
+    // the server set [Bug] and Feature flickered off — this is the board bug.
+    await act(async () => {
+      rerender(el([labels[0]]));
+    });
+
+    expect(row("Feature")).toBeChecked(); // pending intent preserved
+    expect(row("Bug")).toBeChecked();     // server truth merged in
+
+    await act(async () => { resolveAdd(); });
+  });
+
   it("in-flight guard drops a rapid second click — no duplicate add", async () => {
     let resolveAdd: () => void = () => {};
     addLabelToTask.mockImplementation(() => new Promise<void>((res) => { resolveAdd = res; }));
