@@ -1,10 +1,13 @@
 import type { MetadataRoute } from "next";
 
-// Force static generation. Without this, Next 16 intermittently tries to
-// prerender /robots.txt as a *dynamic* route handler and fails the build with
-// "No response is returned from route handler in all branches" — the same CI
-// flake fixed for manifest.ts in aca8dac. robots() is pure, so static is correct.
-export const dynamic = "force-static";
+// Opt out of build-time static prerendering. Next 16 intermittently fails to
+// prerender /robots.txt under its multi-worker static-gen with "No response is
+// returned from route handler in all branches", crashing the whole build (seen
+// on several CI runs; force-static did NOT help — it keeps the route in that
+// flaky path). Serving it dynamically skips build-time prerender entirely, the
+// same approach sitemap.ts already uses successfully. robots() is trivial, so
+// the per-request cost is negligible.
+export const dynamic = "force-dynamic";
 
 const BASE_URL = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
 
