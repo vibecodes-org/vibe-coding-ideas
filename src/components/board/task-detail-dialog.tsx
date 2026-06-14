@@ -880,7 +880,7 @@ export function TaskDetailDialog({
 
               <Separator />
 
-              <TaskWorkflowSection taskId={task.id} ideaId={ideaId} isReadOnly={isReadOnly} />
+              <TaskWorkflowSection taskId={task.id} ideaId={ideaId} isReadOnly={isReadOnly} onClose={() => onOpenChange(false)} />
             </div>
           </TabsContent>
 
