@@ -16,7 +16,8 @@
     "supabase:stop": "npx supabase stop",
     "supabase:reset": "npx supabase db reset",
     "supabase:migrate": "npx supabase migration up --local",
-    "supabase:studio": "open http://localhost:54323"
+    "supabase:studio": "open http://localhost:54323",
+    "check:migrations": "node scripts/check-migration-drift.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^3.0.44",

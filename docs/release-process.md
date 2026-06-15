@@ -324,6 +324,48 @@ Feature branch → develop (staging DB, auto-applied) → master (production DB,
 
 You can also manually trigger against staging the same way (useful for re-runs or catching up).
 
+### ⚠️ Migration tracking drift (numeric files vs timestamp records)
+
+**Known issue.** The repo names migrations `00NNN_description.sql`, but the production
+`supabase_migrations.schema_migrations` table records them under **timestamp** versions
+(e.g. `20260611191754`), with the `00NNN_…` stem stored in the `name` column. The two
+schemes don't sort together, so the `apply-production` job's `supabase db push` sees a
+local `00NNN` file as *older* than the latest applied (timestamp) migration and can refuse
+to apply it. **Net effect: a migration can silently fail to land on prod** (this happened to
+`00126`). Until the history is reconciled (see below), treat prod applies as needing a check.
+
+**After applying to production, always verify there's no drift:**
+
+```bash
+SUPABASE_ACCESS_TOKEN=<token> SUPABASE_PROJECT_REF=<prod-ref> npm run check:migrations
+```
+
+This compares every `supabase/migrations/*.sql` file against what's actually recorded in
+prod and exits non-zero (listing the offenders) if any repo migration is missing. Run it
+after every prod apply — it's the guard that would have caught `00126` immediately.
+
+**If the workflow `db push` fails / a migration didn't land**, apply it manually and record it
+in the convention so the history stays consistent:
+
+1. Apply the migration SQL to prod (Supabase Studio SQL editor, or the MCP).
+2. Record it so `schema_migrations` matches the file:
+
+   ```sql
+   INSERT INTO supabase_migrations.schema_migrations (version, name, statements)
+   SELECT to_char(now(), 'YYYYMMDDHH24MISS'),   -- timestamp version, sorts after the last
+          '00NNN_description',                   -- the repo filename stem (no .sql)
+          ARRAY[$mig$ <full migration body> $mig$]
+   WHERE NOT EXISTS (
+     SELECT 1 FROM supabase_migrations.schema_migrations WHERE name LIKE '00NNN\_%'
+   );
+   ```
+3. Re-run `npm run check:migrations` to confirm 0 drift.
+
+**Permanent fix** (reconcile to a single versioning scheme so plain `db push` works) is bigger
+and risky to do ad-hoc — a partial rename makes `db push` think the 125 already-applied files
+are unapplied and try to re-run them. Do it on a throwaway environment first; it's folded into
+the **"Recreate staging database properly (via Supabase Branching off prod)"** task.
+
 ### Required secrets
 
 These must be set in **GitHub → Settings → Secrets and variables → Actions**:
