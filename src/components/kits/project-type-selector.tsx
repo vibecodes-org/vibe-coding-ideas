@@ -83,7 +83,7 @@ export function ProjectTypeSelector({
               // flex + justify-center keeps content vertically centred now that all
               // rows are equalised to the same height.
               "flex flex-col items-center justify-center rounded-xl border-2 text-center transition-all duration-200",
-              compact ? "p-2.5" : "p-3",
+              compact ? "px-2 py-1.5" : "px-3 py-2",
               isSelected
                 ? "border-violet-500 bg-violet-500/[0.12] hover:-translate-y-0.5"
                 : "border-border bg-zinc-900 hover:border-muted-foreground/25 hover:-translate-y-0.5",
@@ -91,13 +91,13 @@ export function ProjectTypeSelector({
               dimmed && "opacity-60 saturate-50 hover:opacity-100 hover:saturate-100 focus-visible:opacity-100 focus-visible:saturate-100"
             )}
           >
-            <div className={compact ? "text-xl mb-0.5" : "text-2xl mb-1"}>
+            <div className={cn("leading-none mb-1", compact ? "text-base" : "text-lg")}>
               {kit.icon}
             </div>
             <div
               className={cn(
-                "font-bold",
-                compact ? "text-xs" : "text-sm"
+                "font-bold leading-tight",
+                compact ? "text-xs" : "text-[0.8rem]"
               )}
             >
               {kit.name}
@@ -105,16 +105,16 @@ export function ProjectTypeSelector({
             {kit.description && (
               <p
                 className={cn(
-                  "mt-1 text-balance leading-snug text-muted-foreground",
-                  compact ? "text-[0.7rem]" : "text-xs"
+                  "mt-0.5 text-balance leading-snug text-muted-foreground",
+                  compact ? "text-[0.65rem]" : "text-[0.7rem]"
                 )}
               >
                 {kit.description}
               </p>
             )}
             {isCustom && (
-              <div className="mt-2 flex justify-center">
-                <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold text-muted-foreground">
+              <div className="mt-1 flex justify-center">
+                <span className="rounded-full bg-muted px-1.5 py-0 text-[0.6rem] font-semibold text-muted-foreground">
                   Your choice
                 </span>
               </div>
