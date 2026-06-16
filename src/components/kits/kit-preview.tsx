@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { ArrowRight, Lock } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { KitWithSteps, WorkflowMapping } from "@/actions/kits";
@@ -63,17 +63,21 @@ function getUniqueTemplates(mappings: WorkflowMapping[]) {
 }
 
 export function KitPreview({ kit }: KitPreviewProps) {
-  const [expandedWf, setExpandedWf] = useState(0);
+  const [expandedWf, setExpandedWf] = useState(-1);
   const agentRoles = (kit.agent_roles ?? []) as AgentRole[];
   const labelPresets = (kit.label_presets ?? []) as LabelPreset[];
   const mappings = kit.workflow_mappings ?? [];
   const isCustom = kit.name === "Custom";
   const uniqueTemplates = mappings.length > 0 ? getUniqueTemplates(mappings) : [];
 
-  // All workflows collapsed by default when kit changes
-  useEffect(() => {
+  // Collapse all workflow steps when the kit changes — adjust state during render
+  // (React's "you might not need an effect" pattern) instead of a useEffect, which
+  // would cause a cascading re-render.
+  const [prevKitId, setPrevKitId] = useState(kit.id);
+  if (kit.id !== prevKitId) {
+    setPrevKitId(kit.id);
     setExpandedWf(-1);
-  }, [kit.id]);
+  }
 
   return (
     <div
