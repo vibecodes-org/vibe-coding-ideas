@@ -10,10 +10,6 @@ type LabelPreset = { name: string; color: string };
 
 interface KitPreviewProps {
   kit: KitWithSteps;
-  /** Index of the selected card in the grid (0-based) for arrow positioning */
-  selectedIndex?: number;
-  /** Number of columns in the grid */
-  columnCount?: number;
 }
 
 const ROLE_META: Record<string, { icon: string; short: string }> = {
@@ -66,7 +62,7 @@ function getUniqueTemplates(mappings: WorkflowMapping[]) {
   });
 }
 
-export function KitPreview({ kit, selectedIndex = 0, columnCount = 3 }: KitPreviewProps) {
+export function KitPreview({ kit }: KitPreviewProps) {
   const [expandedWf, setExpandedWf] = useState(0);
   const agentRoles = (kit.agent_roles ?? []) as AgentRole[];
   const labelPresets = (kit.label_presets ?? []) as LabelPreset[];
@@ -79,22 +75,17 @@ export function KitPreview({ kit, selectedIndex = 0, columnCount = 3 }: KitPrevi
     setExpandedWf(-1);
   }, [kit.id]);
 
-  // Arrow position based on which column the selected card is in
-  const col = selectedIndex % columnCount;
-  const arrowLeftPercent = ((col + 0.5) / columnCount) * 100;
-
   return (
     <div
       className="relative mt-2 rounded-[10px] border border-violet-500 bg-zinc-900 p-4 shadow-[0_8px_32px_rgba(0,0,0,0.5),0_0_20px_rgba(139,92,246,0.25)] animate-in slide-in-from-top-2 duration-200"
       aria-live="polite"
     >
-      {/* Arrow */}
-      <div
-        className="absolute -top-[6px] h-[10px] w-[10px] rotate-45 border-l border-t border-violet-500 bg-zinc-900"
-        style={{ left: `calc(${arrowLeftPercent}% - 5px)` }}
-      />
+      {/* No connector arrow — the tie to the chosen card is carried by the grid's
+          "promote & recede" treatment (selected card lit, others dimmed) plus this
+          panel echoing the kit's icon + name below. A fixed arrow mispointed at the
+          bottom row when a top-row card was selected. */}
 
-      {/* Header */}
+      {/* Header — echoes the selected card */}
       <div className="mb-3 flex items-center gap-2.5 border-b border-violet-500/15 pb-3">
         <span className="text-xl">{kit.icon}</span>
         <div>

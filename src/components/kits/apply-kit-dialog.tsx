@@ -132,11 +132,7 @@ export function ApplyKitDialog({
         compact
       />
       {selectedKit && !isCustom && (
-        <KitPreview
-          kit={selectedKit}
-          selectedIndex={selectableKits.sort((a, b) => a.display_order - b.display_order).findIndex((k) => k.id === selectedKitId)}
-          columnCount={3}
-        />
+        <KitPreview kit={selectedKit} />
       )}
       <div className="flex items-start gap-2 rounded-md border border-blue-500/25 bg-blue-500/[0.06] px-3 py-2.5 text-xs text-blue-200">
         <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-blue-400" />

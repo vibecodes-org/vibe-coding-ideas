@@ -53,7 +53,9 @@ export function ProjectTypeSelector({
     <div
       ref={groupRef}
       className={cn(
-        "grid gap-2",
+        // grid-auto-rows:1fr → every row is the same height, so the Custom card's
+        // "Your choice" badge can't make its row taller than the others.
+        "grid gap-2 [grid-auto-rows:1fr]",
         compact
           ? "grid-cols-[repeat(auto-fill,minmax(140px,1fr))]"
           : "grid-cols-2 sm:grid-cols-3"
@@ -65,6 +67,9 @@ export function ProjectTypeSelector({
       {sorted.map((kit, i) => {
         const isCustom = kit.name === "Custom";
         const isSelected = selectedKitId === kit.id;
+        // Option D — "promote & recede": once something is picked, the other cards
+        // recede so the chosen one (and its preview below) clearly owns the focus.
+        const dimmed = selectedKitId !== null && !isSelected;
 
         return (
           <button
@@ -75,11 +80,15 @@ export function ProjectTypeSelector({
             tabIndex={isSelected || (!selectedKitId && i === 0) ? 0 : -1}
             onClick={() => onSelect(isSelected ? null : kit.id)}
             className={cn(
-              "rounded-xl border-2 text-center transition-all duration-200",
+              // flex + justify-center keeps content vertically centred now that all
+              // rows are equalised to the same height.
+              "flex flex-col items-center justify-center rounded-xl border-2 text-center transition-all duration-200",
               compact ? "p-2.5" : "p-3",
               isSelected
                 ? "border-violet-500 bg-violet-500/[0.12] hover:-translate-y-0.5"
-                : "border-border bg-zinc-900 hover:border-muted-foreground/25 hover:-translate-y-0.5"
+                : "border-border bg-zinc-900 hover:border-muted-foreground/25 hover:-translate-y-0.5",
+              // Receded state restores on hover/focus so it still reads as clickable.
+              dimmed && "opacity-60 saturate-50 hover:opacity-100 hover:saturate-100 focus-visible:opacity-100 focus-visible:saturate-100"
             )}
           >
             <div className={compact ? "text-xl mb-0.5" : "text-2xl mb-1"}>

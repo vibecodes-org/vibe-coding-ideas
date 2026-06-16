@@ -190,15 +190,18 @@ describe("KitPreview", () => {
     expect(screen.getByText(/Labels auto-assign workflows/)).toBeDefined();
   });
 
-  // --- Arrow positioning ---
+  // --- No connector arrow (Option D: promote & recede) ---
 
-  it("positions arrow based on selectedIndex and columnCount", () => {
-    const { container } = render(
-      <KitPreview kit={makeKit()} selectedIndex={1} columnCount={3} />
-    );
-    const arrow = container.querySelector("[class*='rotate-45']") as HTMLElement;
-    expect(arrow).toBeDefined();
-    // Column 1 of 3 → arrow at 50% (center of second column)
-    expect(arrow?.style.left).toContain("50%");
+  it("renders no connector arrow (it mispointed at the wrong row)", () => {
+    const { container } = render(<KitPreview kit={makeKit()} />);
+    expect(container.querySelector("[class*='rotate-45']")).toBeNull();
+  });
+
+  it("echoes the selected kit's name + description in the header", () => {
+    const kit = makeKit();
+    render(<KitPreview kit={kit} />);
+    // The header repeating the pick is what ties the panel to the chosen card now.
+    expect(screen.getByText(kit.name)).toBeDefined();
+    expect(screen.getByText(kit.description!)).toBeDefined();
   });
 });
