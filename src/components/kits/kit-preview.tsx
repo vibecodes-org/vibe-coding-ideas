@@ -89,13 +89,11 @@ export function KitPreview({ kit }: KitPreviewProps) {
           panel echoing the kit's icon + name below. A fixed arrow mispointed at the
           bottom row when a top-row card was selected. */}
 
-      {/* Header — echoes the selected card */}
+      {/* Header — echoes the selected card. Name only: the description is already
+          shown on the card you just picked, so repeating it here is redundant. */}
       <div className="mb-3 flex items-center gap-2.5 border-b border-violet-500/15 pb-3">
         <span className="text-xl">{kit.icon}</span>
-        <div>
-          <div className="text-sm font-bold">{kit.name}</div>
-          <div className="text-[0.65rem] text-muted-foreground">{kit.description}</div>
-        </div>
+        <div className="text-sm font-bold">{kit.name}</div>
       </div>
 
       {/* Custom empty state */}

@@ -81,10 +81,9 @@ const makeKit = (overrides = {}): KitWithSteps => ({
 describe("KitPreview", () => {
   // --- Header ---
 
-  it("renders kit name and description in header", () => {
+  it("renders kit name in header", () => {
     render(<KitPreview kit={makeKit()} />);
     expect(screen.getByText("Web Application")).toBeDefined();
-    expect(screen.getByText(/Full-stack web app/)).toBeDefined();
   });
 
   it("shows Custom empty state", () => {
@@ -197,11 +196,12 @@ describe("KitPreview", () => {
     expect(container.querySelector("[class*='rotate-45']")).toBeNull();
   });
 
-  it("echoes the selected kit's name + description in the header", () => {
+  it("echoes the selected kit's name in the header, without repeating the description", () => {
     const kit = makeKit();
     render(<KitPreview kit={kit} />);
-    // The header repeating the pick is what ties the panel to the chosen card now.
+    // The name ties the panel to the chosen card; the description is already on
+    // the card you just picked, so it's intentionally not repeated here.
     expect(screen.getByText(kit.name)).toBeDefined();
-    expect(screen.getByText(kit.description!)).toBeDefined();
+    expect(screen.queryByText(kit.description!)).toBeNull();
   });
 });
