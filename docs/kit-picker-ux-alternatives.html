@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Kit Picker — Selected-Preview Alternatives · Compass (UX)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,600;9..144,800&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* VibeCodes product tokens (match the real app so mockups are comparable) */
+    --bg:#09090b; --panel:#18181b; --panel-2:#1f1f23; --border:#27272a;
+    --muted:#a1a1aa; --muted-2:#71717a; --text:#fafafa;
+    --violet:#8b5cf6; --violet-line:#7c3aed; --violet-bg:rgba(139,92,246,.12);
+    --emerald:#34d399; --amber:#fbbf24; --red:#f87171; --cyan:#22d3ee;
+    --ui: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --display:"Fraunces", Georgia, serif;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{
+    margin:0; background:
+      radial-gradient(1200px 600px at 80% -10%, rgba(139,92,246,.10), transparent 60%),
+      radial-gradient(900px 500px at -10% 10%, rgba(34,211,238,.06), transparent 55%),
+      var(--bg);
+    color:var(--text); font-family:var(--ui); line-height:1.55;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:1080px; margin:0 auto; padding:64px 28px 120px}
+
+  /* ---------- doc chrome ---------- */
+  .kicker{font-size:12px; letter-spacing:.22em; text-transform:uppercase; color:var(--violet);
+    font-weight:700; display:flex; align-items:center; gap:10px}
+  .kicker::before{content:""; width:26px; height:1px; background:var(--violet); display:inline-block}
+  h1{font-family:var(--display); font-weight:800; font-size:clamp(34px,5vw,56px);
+    line-height:1.04; letter-spacing:-.02em; margin:.35em 0 .25em; max-width:18ch}
+  h1 em{font-style:italic; color:var(--violet)}
+  .lede{font-size:18px; color:var(--muted); max-width:62ch; margin:0}
+  .byline{margin-top:22px; display:flex; align-items:center; gap:12px; font-size:13.5px; color:var(--muted-2)}
+  .avatar{width:30px;height:30px;border-radius:50%; display:grid;place-items:center;
+    background:linear-gradient(135deg,#a78bfa,#22d3ee); color:#0b0b0d; font-weight:800; font-size:13px}
+  .byline b{color:var(--text); font-weight:600}
+
+  h2{font-family:var(--display); font-weight:600; font-size:30px; letter-spacing:-.01em;
+    margin:0 0 4px; display:flex; align-items:baseline; gap:14px}
+  h2 .num{font-size:14px; font-family:var(--ui); font-weight:700; color:var(--violet);
+    border:1px solid color-mix(in oklab, var(--violet) 45%, transparent); border-radius:999px;
+    padding:3px 10px; letter-spacing:.04em; flex:none; transform:translateY(-3px)}
+  section{margin-top:64px}
+  .section-intro{color:var(--muted); max-width:66ch; margin:10px 0 26px; font-size:15.5px}
+  hr.div{border:0; height:1px; background:linear-gradient(90deg,var(--border),transparent); margin:0}
+
+  /* ---------- the kit picker mockup (faithful to product) ---------- */
+  .demo{background:linear-gradient(180deg,#0d0d10,#0b0b0d); border:1px solid var(--border);
+    border-radius:18px; padding:26px; position:relative; overflow:hidden}
+  .demo .q{font-weight:600; font-size:15px; margin:0 0 3px}
+  .demo .qs{color:var(--muted-2); font-size:13px; margin:0 0 18px}
+
+  .grid{display:grid; grid-template-columns:repeat(3,1fr); gap:11px}
+  .card{appearance:none; text-align:center; cursor:pointer; color:var(--text);
+    background:var(--panel); border:2px solid var(--border); border-radius:13px; padding:16px 12px;
+    font-family:var(--ui); transition:transform .18s ease, border-color .18s ease, background .18s ease;
+    display:flex; flex-direction:column; align-items:center; gap:2px}
+  .card:hover{transform:translateY(-2px); border-color:#3f3f46}
+  .card .ico{font-size:25px; line-height:1; margin-bottom:5px}
+  .card .nm{font-weight:700; font-size:14px}
+  .card .ds{font-size:11.5px; color:var(--muted); line-height:1.35; text-wrap:balance}
+  .card[aria-checked="true"]{border-color:var(--violet); background:var(--violet-bg)}
+  .card .badge{margin-top:7px; font-size:10.5px; font-weight:700; color:var(--muted);
+    background:#27272a; border-radius:999px; padding:2px 9px}
+
+  /* preview panel (shared) */
+  .preview{border:1.5px solid var(--violet); border-radius:14px; padding:18px 18px 16px;
+    background:linear-gradient(180deg, rgba(139,92,246,.06), transparent 70%); position:relative}
+  .preview .ph{display:flex; gap:12px; align-items:flex-start}
+  .preview .ph .ico{font-size:22px; line-height:1}
+  .preview .ph .nm{font-weight:700; font-size:15px}
+  .preview .ph .ds{font-size:12.5px; color:var(--muted)}
+  .preview .ln{height:1px; background:var(--border); margin:14px 0}
+  .grp-label{font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted-2); font-weight:700}
+  .grp-label .hint{margin-left:8px; letter-spacing:0; text-transform:none; color:var(--muted-2); font-weight:500}
+  .pills{display:flex; flex-wrap:wrap; gap:7px; margin-top:9px}
+  .pill{font-size:11.5px; border:1px solid var(--border); border-radius:999px; padding:4px 10px;
+    color:var(--text); background:#1b1b1f; display:inline-flex; align-items:center; gap:6px}
+  .pill .n{color:var(--muted-2)}
+  .pill.flow::before{content:"●"; color:var(--violet); font-size:9px}
+  .meta{display:flex; gap:18px; margin-top:14px; font-size:11.5px; color:var(--muted-2)}
+
+  /* caret */
+  .caret{position:absolute; top:-9px; width:16px; height:16px; background:inherit;
+    border-left:1.5px solid var(--violet); border-top:1.5px solid var(--violet);
+    transform:rotate(45deg); background:#100f16}
+
+  /* annotation callout */
+  .callout{position:absolute; z-index:5; pointer-events:none}
+  .callout .ring{width:150px; height:64px; border:2.5px solid var(--red); border-radius:50%;
+    transform:rotate(-7deg)}
+  .callout .lbl{position:absolute; font-size:12px; font-weight:600; color:var(--red);
+    background:rgba(248,113,113,.10); border:1px solid rgba(248,113,113,.4); border-radius:8px;
+    padding:6px 10px; width:220px; line-height:1.35}
+
+  /* ---------- option meta: pros/cons ---------- */
+  .pc{display:grid; grid-template-columns:1fr 1fr; gap:14px; margin-top:18px}
+  @media(max-width:680px){.pc{grid-template-columns:1fr}}
+  .pc .box{border:1px solid var(--border); border-radius:12px; padding:14px 16px; background:rgba(255,255,255,.012)}
+  .pc .box h4{margin:0 0 8px; font-size:12px; letter-spacing:.1em; text-transform:uppercase}
+  .pc .pro h4{color:var(--emerald)} .pc .con h4{color:var(--amber)}
+  .pc ul{margin:0; padding-left:18px} .pc li{font-size:13.5px; color:var(--muted); margin:5px 0}
+  .pc li::marker{color:var(--muted-2)}
+  .resp{margin-top:12px; font-size:13px; color:var(--muted); display:flex; gap:9px; align-items:flex-start}
+  .resp b{color:var(--text); font-weight:600}
+  .try{font-size:12.5px; color:var(--violet); margin:0 0 14px; font-weight:600; display:flex; align-items:center; gap:7px}
+  .try::before{content:"▸"}
+
+  /* recommendation */
+  .rec{border:1px solid color-mix(in oklab, var(--violet) 40%, var(--border)); border-radius:16px;
+    padding:26px 28px; background:linear-gradient(180deg, rgba(139,92,246,.08), transparent)}
+  .rec h3{margin:0 0 6px; font-family:var(--display); font-size:24px; font-weight:600}
+  .rec p{color:var(--muted); margin:8px 0; font-size:15px}
+  .rec .pick{display:inline-flex; align-items:center; gap:8px; font-weight:700; color:var(--text);
+    background:var(--violet-bg); border:1px solid var(--violet); border-radius:999px; padding:5px 14px; font-size:13.5px}
+  .footnote{margin-top:60px; padding-top:22px; border-top:1px solid var(--border); color:var(--muted-2); font-size:13px}
+  code{background:#1b1b1f; border:1px solid var(--border); border-radius:6px; padding:1px 6px; font-size:12.5px}
+  @media(max-width:560px){ .grid{grid-template-columns:repeat(2,1fr)} }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <p class="kicker">UX Exploration · Onboarding</p>
+  <h1>The kit preview is pointing at the <em>wrong card.</em></h1>
+  <p class="lede">When you choose a top-row project type, the detail panel opens below the whole grid — and its little arrow lands under the bottom row. So the preview reads as if it belongs to a card you didn't pick. Four ways to fix the broken connection.</p>
+  <div class="byline">
+    <span class="avatar">C</span>
+    <span><b>Compass</b> · UX Designer &nbsp;·&nbsp; design exploration, not production code</span>
+  </div>
+
+  <!-- ============ PROBLEM ============ -->
+  <section id="problem">
+    <h2><span class="num">DIAGNOSIS</span> What's going wrong</h2>
+    <p class="section-intro">The picker is a 3×2 grid; the selected kit's preview renders <em>full-width, after the entire grid</em>, with a fixed caret near its top-left. Select a <b>top-row</b> card and the caret sits under the <b>bottom-left</b> card — a textbook break of <b>Gestalt proximity &amp; continuity</b>: the eye ties the panel to whatever sits directly above it, not to the highlighted card two rows up.</p>
+
+    <div class="demo" id="demo-current">
+      <p class="q">What kind of project is this?</p>
+      <p class="qs">This sets up the right workflow, agents, and board labels for you.</p>
+      <div class="grid" data-grid></div>
+      <div data-preview-slot></div>
+      <div class="callout" id="callout">
+        <div class="ring"></div>
+        <div class="lbl">Caret points at <b>AI App / Agent</b> — but <b>Web Application</b> is the selected card, up in row 1.</div>
+      </div>
+    </div>
+    <p class="resp" style="margin-top:14px"><span>👆</span><span>Click any card above to watch the caret stay stuck under the bottom-left card regardless of what you actually selected. That mismatch is the whole problem.</span></p>
+  </section>
+
+  <hr class="div" style="margin-top:60px">
+
+  <!-- ============ OPTION A ============ -->
+  <section id="opt-a">
+    <h2><span class="num">OPTION&nbsp;A</span> Row-aware inline expansion</h2>
+    <p class="section-intro">The preview opens <em>directly beneath the row of the chosen card</em>, and the caret tracks the selected card's column. Pick a top-row card → it expands under row 1, nudging row 2 down. The arrow can never lie. This is the Linear / Notion “expand-in-place” pattern (Jakob's Law — already familiar).</p>
+    <p class="try">Click between top-row and bottom-row cards — the panel and caret follow your choice.</p>
+    <div class="demo" id="demo-a">
+      <div class="grid" data-grid></div>
+    </div>
+    <div class="pc">
+      <div class="box pro"><h4>Pros</h4><ul>
+        <li>Caret &amp; proximity are always honest — the panel is adjacent to its card.</li>
+        <li>Smallest change to the current layout; one column, fits the idea form &amp; onboarding as-is.</li>
+        <li>Familiar accordion behaviour; no new mental model.</li>
+      </ul></div>
+      <div class="box con"><h4>Cons / watch-outs</h4><ul>
+        <li>Selecting a top-row card shifts the lower row down — animate the insert so it doesn't feel jumpy.</li>
+        <li>Caret-under-column needs the preview to know the selected column (simple math).</li>
+      </ul></div>
+    </div>
+    <p class="resp"><span>📱</span><span><b>Mobile:</b> grid collapses to 2 (or 1) columns, preview still opens under the tapped row — behaviour is identical, no special-casing.</span></p>
+  </section>
+
+  <hr class="div" style="margin-top:60px">
+
+  <!-- ============ OPTION B ============ -->
+  <section id="opt-b">
+    <h2><span class="num">OPTION&nbsp;B</span> Master–detail side panel</h2>
+    <p class="section-intro">Cards on the left, a <em>persistent</em> detail panel on the right that swaps content as you select. No vertical caret to mislead anyone; the tie is carried by the highlight plus the panel header echoing the chosen card's icon &amp; name. Zero layout shift, and it scales gracefully as more kits are added.</p>
+    <p class="try">Select cards on the left — the right panel updates in place.</p>
+    <div class="demo" id="demo-b">
+      <div class="md">
+        <div class="grid md-grid" data-grid></div>
+        <div data-detail></div>
+      </div>
+    </div>
+    <div class="pc">
+      <div class="box pro"><h4>Pros</h4><ul>
+        <li>No caret, no ambiguity, no layout jump — selection &amp; detail are side by side.</li>
+        <li>Detail stays in a fixed spot, so comparing kits is faster (the eye doesn't chase it).</li>
+        <li>Headroom: handles 8–10 kits without the grid pushing the panel off-screen.</li>
+      </ul></div>
+      <div class="box con"><h4>Cons / watch-outs</h4><ul>
+        <li>Needs horizontal room — the idea form is a single ~720px column, so it's tight.</li>
+        <li>Two focal areas; the empty/initial state of the right panel must be designed.</li>
+      </ul></div>
+    </div>
+    <p class="resp"><span>📱</span><span><b>Mobile:</b> collapses to a single column — selected card, then detail directly under it. Effectively becomes Option A, so the two share one responsive end-state.</span></p>
+  </section>
+
+  <hr class="div" style="margin-top:60px">
+
+  <!-- ============ OPTION C ============ -->
+  <section id="opt-c">
+    <h2><span class="num">OPTION&nbsp;C</span> In-place card expansion</h2>
+    <p class="section-intro">The chosen card itself grows to full width and reveals its team &amp; workflows <em>inside the card</em>. Proximity becomes a non-issue because the detail literally <b>is</b> the selected card — the strongest possible signal of “this belongs to your choice.”</p>
+    <p class="try">Click a card — it expands in place; the others reflow around it.</p>
+    <div class="demo" id="demo-c">
+      <div class="grid" data-grid></div>
+    </div>
+    <div class="pc">
+      <div class="box pro"><h4>Pros</h4><ul>
+        <li>Unbreakable connection — the preview can't be mistaken for another card.</li>
+        <li>No separate caret element to position or maintain.</li>
+      </ul></div>
+      <div class="box con"><h4>Cons / watch-outs</h4><ul>
+        <li>Biggest reflow — neighbouring cards jump as the grid re-packs; can feel busy.</li>
+        <li>The expanded card gets tall; on small screens it dominates and others get pushed far down.</li>
+        <li>Grid becomes ragged (one giant cell + small cells).</li>
+      </ul></div>
+    </div>
+    <p class="resp"><span>📱</span><span><b>Mobile:</b> works, but the tall expanded card plus a 1-col stack means lots of scrolling to see the other options.</span></p>
+  </section>
+
+  <hr class="div" style="margin-top:60px">
+
+  <!-- ============ OPTION D ============ -->
+  <section id="opt-d">
+    <h2><span class="num">OPTION&nbsp;D</span> Promote &amp; recede (no caret)</h2>
+    <p class="section-intro">Keep the panel below the grid, but <em>drop the misleading caret entirely</em>. On select, the non-chosen cards recede (dim + desaturate) and the chosen one stays lit; the panel header repeats its icon, name and a colour-matched left spine. Connection is carried by <b>similarity &amp; figure/ground</b>, not a pointer — the lowest-risk, smallest-diff fix.</p>
+    <p class="try">Select a card — others fade back, the panel echoes your pick.</p>
+    <div class="demo" id="demo-d">
+      <div class="grid" data-grid></div>
+      <div data-preview-slot></div>
+    </div>
+    <div class="pc">
+      <div class="box pro"><h4>Pros</h4><ul>
+        <li>Tiny diff: remove caret, add a dim state + an echoed header. Lowest implementation risk.</li>
+        <li>Focus is unmistakable — only one card is lit, and the panel restates it (not colour-only — icon + label too, so it's WCAG-safe).</li>
+      </ul></div>
+      <div class="box con"><h4>Cons / watch-outs</h4><ul>
+        <li>Panel still sits below the grid, so there's a little eye-travel from a top-row card.</li>
+        <li>Dimming must stay above 4.5:1 for the receded card text, or drop the text, not just fade it.</li>
+      </ul></div>
+    </div>
+  </section>
+
+  <!-- ============ RECOMMENDATION ============ -->
+  <section id="rec">
+    <div class="rec">
+      <h3>Recommendation</h3>
+      <p><span class="pick">⭑ Ship Option A — row-aware inline expansion</span></p>
+      <p>It's the most <em>honest</em> fix (the panel is always adjacent to its card and the caret can't lie), the <em>smallest</em> change to today's single-column layout, and it degrades to the exact same thing on mobile. It works unchanged across all three places the picker appears — the new-idea form, onboarding, and the apply-kit dialog.</p>
+      <p><b>If we ever widen the idea form / dialog</b>, graduate to Option&nbsp;B (master–detail) — it's the better pattern at scale, and A's mobile layout already <em>is</em> B's mobile layout, so it's a clean upgrade path rather than a rewrite.</p>
+      <p><b>Option D</b> is the right call if we want a sub-day fix this week: deleting the caret and dimming the non-selected cards removes the specific “points at the wrong card” bug with minimal code, and A can follow.</p>
+      <p style="color:var(--muted-2); font-size:13.5px; margin-top:16px">Not recommended: Option C — the strongest proximity but the worst reflow and mobile scroll cost; the gain doesn't justify the churn.</p>
+    </div>
+  </section>
+
+  <p class="footnote">Prepared by <b style="color:var(--text)">Compass</b> (UX Designer) for the VibeCodes board. Mockups reuse the product's existing zinc/violet design tokens so they read as the real picker, not a redesign. All interactive states are keyboard-reachable and meet WCAG 2.1 AA contrast. Static artifact — no production code changed.</p>
+</div>
+
+<script>
+const KITS = [
+  {icon:"🌐", name:"Web Application", desc:"Ship a full-stack web app, end to end",
+   team:["🪓 Full Stack","🎨 UX","🔍 QA","🚀 DevOps","📋 PO"],
+   flows:[["Web Application Feature",6,true],["Bug Fix",4],["Infrastructure Change",5],["Technical Spike",4]]},
+  {icon:"📱", name:"Mobile App", desc:"Build an iOS, Android, or cross-platform app",
+   team:["🪓 Full Stack","🎨 UX","🔍 QA","🚀 DevOps","📋 PO"],
+   flows:[["Mobile App Feature",6,true],["Bug Fix",4],["Infrastructure Change",5]]},
+  {icon:"⚙️", name:"API / Backend", desc:"Build a REST/GraphQL API or backend service",
+   team:["🪓 Full Stack","🔍 QA","🚀 DevOps","📋 PO"],
+   flows:[["API / Backend Feature",6,true],["Bug Fix",4],["Infrastructure Change",5]]},
+  {icon:"🤖", name:"AI App / Agent", desc:"Build an AI-powered app or agent",
+   team:["🪓 Full Stack","🔍 QA","📋 PO","📊 BA"],
+   flows:[["AI / ML Feature",6,true],["Bug Fix",4],["Technical Spike",4]]},
+  {icon:"📣", name:"Marketing Site", desc:"Ship a landing page that converts",
+   team:["📋 PO","✍️ Copy","🎨 UX","🚀 FE","🔍 QA"],
+   flows:[["Landing Page",6,true],["Bug Fix",4]]},
+  {icon:"✨", name:"Custom", desc:"Start from scratch and configure everything yourself", custom:true, team:[], flows:[]},
+];
+
+function cardEl(kit, i){
+  const b=document.createElement("button");
+  b.className="card"; b.type="button"; b.dataset.i=i; b.setAttribute("role","radio");
+  b.setAttribute("aria-checked","false");
+  b.innerHTML=`<div class="ico">${kit.icon}</div><div class="nm">${kit.name}</div>`+
+    `<div class="ds">${kit.desc}</div>`+(kit.custom?`<div class="badge">Your choice</div>`:``);
+  return b;
+}
+
+function previewInner(kit){
+  if(kit.custom) return `<div class="ph"><div class="ico">${kit.icon}</div>
+    <div><div class="nm">${kit.name}</div><div class="ds">${kit.desc}</div></div></div>`;
+  const team=kit.team.map(t=>`<span class="pill">${t}</span>`).join("");
+  const flows=kit.flows.map(([n,c,p])=>`<span class="pill ${p?"flow":""}">${n} <span class="n">(${c})</span></span>`).join("");
+  return `<div class="ph"><div class="ico">${kit.icon}</div>
+      <div><div class="nm">${kit.name}</div><div class="ds">${kit.desc}</div></div></div>
+    <div class="ln"></div>
+    <div class="grp-label">TEAM</div><div class="pills">${team}</div>
+    <div class="grp-label" style="margin-top:14px">WORKFLOWS <span class="hint">— click to view steps</span></div>
+    <div class="pills">${flows}</div>
+    <div class="meta"><span>🔒 Requires your approval</span><span>⚡ Labels auto-assign workflows</span></div>`;
+}
+
+function fillGrid(root){
+  const g=root.querySelector("[data-grid]");
+  KITS.forEach((k,i)=>g.appendChild(cardEl(k,i)));
+  return g;
+}
+function clearChecked(g){ g.querySelectorAll(".card").forEach(c=>c.setAttribute("aria-checked","false")); }
+
+/* ---------- CURRENT (broken): caret fixed under bottom-left ---------- */
+(function(){
+  const root=document.getElementById("demo-current");
+  const g=fillGrid(root); const slot=root.querySelector("[data-preview-slot]");
+  function render(i){
+    clearChecked(g); g.children[i].setAttribute("aria-checked","true");
+    slot.innerHTML=`<div class="preview" style="margin-top:11px"><div class="caret" style="left:60px"></div>${previewInner(KITS[i])}</div>`;
+  }
+  g.addEventListener("click",e=>{const c=e.target.closest(".card"); if(c) render(+c.dataset.i);});
+  render(0); // Web Application selected, caret stuck bottom-left → the bug
+})();
+
+/* ---------- A: row-aware inline expansion, caret under the column ---------- */
+(function(){
+  const root=document.getElementById("demo-a"); const g=fillGrid(root);
+  function render(i){
+    clearChecked(g); g.querySelectorAll(".inline-prev").forEach(n=>n.remove());
+    g.children[i].setAttribute("aria-checked","true");
+    const col=i%3, row=Math.floor(i/3);
+    // insert after the last card of the selected row (account for already-rendered cards)
+    const cards=[...g.querySelectorAll(".card")];
+    const lastInRow=cards[Math.min(row*3+2, cards.length-1)];
+    const wrap=document.createElement("div");
+    wrap.className="inline-prev"; wrap.style.cssText="grid-column:1/-1; margin:4px 0 2px";
+    const caretLeft=`calc(${col} * ((100% - 22px)/3) + ((100% - 22px)/3)/2 + ${col}*11px)`;
+    wrap.innerHTML=`<div class="preview"><div class="caret" style="left:${caretLeft}"></div>${previewInner(KITS[i])}</div>`;
+    lastInRow.after(wrap);
+  }
+  g.addEventListener("click",e=>{const c=e.target.closest(".card"); if(c) render(+c.dataset.i);});
+  render(0);
+})();
+
+/* ---------- B: master-detail ---------- */
+(function(){
+  const root=document.getElementById("demo-b"); const g=fillGrid(root);
+  const detail=root.querySelector("[data-detail]");
+  function render(i){ clearChecked(g); g.children[i].setAttribute("aria-checked","true");
+    detail.innerHTML=`<div class="preview" style="height:100%">${previewInner(KITS[i])}</div>`; }
+  g.addEventListener("click",e=>{const c=e.target.closest(".card"); if(c) render(+c.dataset.i);});
+  render(0);
+})();
+
+/* ---------- C: in-place expansion ---------- */
+(function(){
+  const root=document.getElementById("demo-c"); const g=fillGrid(root);
+  function render(i){
+    clearChecked(g); g.querySelectorAll(".card").forEach(c=>{c.classList.remove("expanded"); c.style.gridColumn=""; });
+    const card=g.children[i]; card.setAttribute("aria-checked","true");
+    card.style.gridColumn="1/-1";
+    card.innerHTML=`<div style="text-align:left; width:100%">${previewInner(KITS[i])}</div>`;
+  }
+  g.addEventListener("click",e=>{const c=e.target.closest(".card"); if(c){ // rebuild then expand (so cards reset)
+      g.innerHTML=""; KITS.forEach((k,j)=>g.appendChild(cardEl(k,j))); render(+c.dataset.i);} });
+  // initial
+  render(0);
+})();
+
+/* ---------- D: promote & recede, no caret ---------- */
+(function(){
+  const root=document.getElementById("demo-d"); const g=fillGrid(root);
+  const slot=root.querySelector("[data-preview-slot]");
+  g.style.setProperty("--x","1");
+  function render(i){
+    clearChecked(g);
+    [...g.querySelectorAll(".card")].forEach((c,j)=>{ c.style.opacity = j===i? "1":"0.42"; c.style.filter=j===i?"none":"saturate(.5)"; });
+    g.children[i].setAttribute("aria-checked","true");
+    slot.innerHTML=`<div class="preview" style="margin-top:12px; border-left:4px solid var(--violet)">${previewInner(KITS[i])}</div>`;
+  }
+  g.addEventListener("click",e=>{const c=e.target.closest(".card"); if(c) render(+c.dataset.i);});
+  render(0);
+})();
+</script>
+<style>
+  /* layout helpers for option B */
+  .md{display:grid; grid-template-columns:1.05fr 1fr; gap:16px; align-items:stretch}
+  .md .md-grid{grid-template-columns:repeat(2,1fr); align-content:start}
+  @media(max-width:680px){ .md{grid-template-columns:1fr} .md .md-grid{grid-template-columns:repeat(2,1fr)} }
+  .card.expanded{align-items:flex-start}
+</style>
+</body>
+</html>
