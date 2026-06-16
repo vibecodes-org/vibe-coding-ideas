@@ -98,6 +98,16 @@ describe("ProjectTypeSelector", () => {
     expect(screen.getByText("Your choice")).toBeDefined();
   });
 
+  it("renders each kit's description on the card (recognition over recall)", () => {
+    render(
+      <ProjectTypeSelector kits={mockKits} selectedKitId={null} onSelect={() => {}} />
+    );
+    // Description is on the card itself, not hidden until after selecting.
+    expect(screen.getByText("Full-stack web app")).toBeDefined();
+    expect(screen.getByText("Mobile application")).toBeDefined();
+    expect(screen.getByText("Start from scratch")).toBeDefined();
+  });
+
   it("calls onSelect with kit id when clicked", () => {
     const onSelect = vi.fn();
     render(

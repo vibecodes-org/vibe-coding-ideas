@@ -93,6 +93,16 @@ export function ProjectTypeSelector({
             >
               {kit.name}
             </div>
+            {kit.description && (
+              <p
+                className={cn(
+                  "mt-1 text-balance leading-snug text-muted-foreground",
+                  compact ? "text-[0.7rem]" : "text-xs"
+                )}
+              >
+                {kit.description}
+              </p>
+            )}
             {isCustom && (
               <div className="mt-2 flex justify-center">
                 <span className="rounded-full bg-muted px-2 py-0.5 text-[0.65rem] font-semibold text-muted-foreground">
