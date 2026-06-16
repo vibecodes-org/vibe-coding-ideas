@@ -411,6 +411,11 @@ jobs:
         with:
           version: latest
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
       - name: Link to production project
         run: supabase link --project-ref ${{ secrets.PROD_PROJECT_REF }}
         env:
@@ -426,6 +431,17 @@ jobs:
           fi
         env:
           SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+
+      # Post-apply gate: `db push` can silently skip a migration because the repo's
+      # 00NNN filenames don't sort with the timestamp versions recorded in prod.
+      # This fails the job if any repo migration isn't recorded after the apply.
+      # See docs/release-process.md → "Migration tracking drift".
+      - name: Verify no migration drift
+        if: github.event.inputs.dry_run != 'true'
+        run: node scripts/check-migration-drift.mjs
+        env:
+          SUPABASE_ACCESS_TOKEN: ${{ secrets.SUPABASE_ACCESS_TOKEN }}
+          SUPABASE_PROJECT_REF: ${{ secrets.PROD_PROJECT_REF }}
 
       - name: Log result
         run: |
