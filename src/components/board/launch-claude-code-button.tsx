@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { usePostHog } from "posthog-js/react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import {
   type LaunchMode,
@@ -166,6 +167,8 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     [props, ideaId, ideaTitle, ideaGithubUrl]
   );
 
+  const posthog = usePostHog();
+
   const copyCommand = useCallback(
     async (state: LaunchPathState) => {
       const prompt = buildPrompt(state);
@@ -177,6 +180,10 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         newProject: state.mode === "new" ? { newProjectPath: state.path } : undefined,
         repoUrl: ideaGithubUrl,
       });
+      // Copying the command = the user fell back from the one-click deep link to
+      // the terminal — a key signal of local-launch friction (desktop/mobile via
+      // PostHog's $device_type).
+      posthog?.capture("launch_command_copied", { mode: state.mode, has_repo: !!ideaGithubUrl });
       try {
         await navigator.clipboard.writeText(command);
         toast.success("Launch command copied — paste it in your terminal");
@@ -184,7 +191,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         toast.error("Couldn't copy the launch command");
       }
     },
-    [buildPrompt, ideaGithubUrl]
+    [buildPrompt, ideaGithubUrl, posthog]
   );
 
   const openInClaudeCode = useCallback(
@@ -192,6 +199,11 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       // Ignore re-entry while a launch is mid-flight (double-click / Enter+click).
       if (launchingRef.current) return;
       launchingRef.current = true;
+      posthog?.capture("launch_claude_code_clicked", {
+        method: "deep_link",
+        mode: state.mode,
+        has_repo: !!ideaGithubUrl,
+      });
 
       const prompt = buildDeepLinkPrompt(state);
       // cwd resolution:
@@ -232,6 +244,11 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         // Some browsers throw synchronously on a blocked custom scheme.
         cleanup();
         launchingRef.current = false;
+        posthog?.capture("launch_claude_code_fallback", {
+          reason: "blocked",
+          mode: state.mode,
+          has_repo: !!ideaGithubUrl,
+        });
         toast.error("Your browser blocked the launch", {
           description: "Copy the command and run it in your terminal instead.",
           action: { label: "Copy command", onClick: () => void copyCommand(state) },
@@ -255,13 +272,18 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         // almost certainly launched — treat it as handled. Otherwise show a
         // NEUTRAL nudge, not a red error, since it most likely opened anyway.
         if (handled || !document.hasFocus()) return;
+        posthog?.capture("launch_claude_code_fallback", {
+          reason: "no_confirm",
+          mode: state.mode,
+          has_repo: !!ideaGithubUrl,
+        });
         toast("Opening Claude Code…", {
           description: "Didn't open? Copy the command and run it in your terminal.",
           action: { label: "Copy command", onClick: () => void copyCommand(state) },
         });
       }, SCHEME_RACE_MS);
     },
-    [buildDeepLinkPrompt, ideaGithubUrl, effectiveTarget.cwd, copyCommand]
+    [buildDeepLinkPrompt, ideaGithubUrl, effectiveTarget.cwd, copyCommand, posthog]
   );
 
   // Primary action: always launch. No path needed — repo-backed ideas resolve via
