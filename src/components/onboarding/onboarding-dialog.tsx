@@ -590,6 +590,7 @@ export function OnboardingDialog({
                     selectedKitId={selectedKitId}
                     onSelect={setSelectedKitId}
                     compact
+                    surface="onboarding"
                   />
                   {selectedKit && (
                     <KitPreview kit={selectedKit} />

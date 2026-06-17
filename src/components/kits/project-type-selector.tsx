@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useCallback } from "react";
+import { usePostHog } from "posthog-js/react";
 import { cn } from "@/lib/utils";
 import type { KitWithSteps } from "@/actions/kits";
 
@@ -9,6 +10,10 @@ interface ProjectTypeSelectorProps {
   selectedKitId: string | null;
   onSelect: (kitId: string | null) => void;
   compact?: boolean;
+  /** Analytics surface this picker is shown on (e.g. "onboarding",
+   *  "apply_kit_dialog"). When set, selecting a kit fires a `kit_selected`
+   *  PostHog event. Omit to stay silent (the create form fires its own events). */
+  surface?: string;
 }
 
 export function ProjectTypeSelector({
@@ -16,8 +21,26 @@ export function ProjectTypeSelector({
   selectedKitId,
   onSelect,
   compact = false,
+  surface,
 }: ProjectTypeSelectorProps) {
+  const posthog = usePostHog();
   const groupRef = useRef<HTMLDivElement>(null);
+
+  // Per-surface selection event — only when a surface is provided.
+  const handleSelect = useCallback(
+    (kitId: string | null) => {
+      if (surface && kitId) {
+        const kit = kits.find((k) => k.id === kitId);
+        posthog?.capture("kit_selected", {
+          surface,
+          kit: kit?.name ?? "unknown",
+          is_custom: kit?.name === "Custom",
+        });
+      }
+      onSelect(kitId);
+    },
+    [surface, kits, onSelect, posthog]
+  );
 
   // Sort: Custom always last
   const sorted = [...kits].sort((a, b) => {
@@ -44,9 +67,9 @@ export function ProjectTypeSelector({
         next = (currentIndex - 1 + buttons.length) % buttons.length;
       }
       buttons[next].focus();
-      onSelect(sorted[next].id);
+      handleSelect(sorted[next].id);
     },
-    [sorted, onSelect]
+    [sorted, handleSelect]
   );
 
   return (
@@ -78,7 +101,7 @@ export function ProjectTypeSelector({
             role="radio"
             aria-checked={isSelected}
             tabIndex={isSelected || (!selectedKitId && i === 0) ? 0 : -1}
-            onClick={() => onSelect(isSelected ? null : kit.id)}
+            onClick={() => handleSelect(isSelected ? null : kit.id)}
             className={cn(
               // flex + justify-center keeps content vertically centred now that all
               // rows are equalised to the same height.

@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
 import { Loader2, Package, Info, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -45,6 +46,7 @@ export function ApplyKitDialog({
   const [applying, setApplying] = useState(false);
   const [selectedKitId, setSelectedKitId] = useState<string | null>(null);
   const isMobile = useMediaQuery("(max-width: 767px)");
+  const posthog = usePostHog();
 
   const loadKits = useCallback(() => {
     setLoading(true);
@@ -83,6 +85,13 @@ export function ApplyKitDialog({
       if (tplCount > 0) parts.push(`${tplCount} workflow${tplCount !== 1 ? "s" : ""}`);
       if (trgCount > 0) parts.push(`${trgCount} trigger${trgCount !== 1 ? "s" : ""}`);
 
+
+      posthog?.capture("kit_applied", {
+        surface: "apply_kit_dialog",
+        kit: selectedKit!.name,
+        agents_created: result.agentsCreated,
+        labels_created: result.labelsCreated,
+      });
 
       toast.success(
         `${selectedKit!.name} kit applied${parts.length > 0 ? ` — ${parts.join(", ")}` : ""}`
@@ -130,6 +139,7 @@ export function ApplyKitDialog({
         selectedKitId={selectedKitId}
         onSelect={setSelectedKitId}
         compact
+        surface="apply_kit_dialog"
       />
       {selectedKit && !isCustom && (
         <KitPreview kit={selectedKit} />

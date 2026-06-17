@@ -3,6 +3,9 @@ import { render, screen, fireEvent } from "@testing-library/react";
 import { ProjectTypeSelector } from "./project-type-selector";
 import type { KitWithSteps } from "@/actions/kits";
 
+const { mockCapture } = vi.hoisted(() => ({ mockCapture: vi.fn() }));
+vi.mock("posthog-js/react", () => ({ usePostHog: () => ({ capture: mockCapture }) }));
+
 const mockKits: KitWithSteps[] = [
   {
     id: "kit-web",
@@ -139,5 +142,38 @@ describe("ProjectTypeSelector", () => {
       <ProjectTypeSelector kits={mockKits} selectedKitId={null} onSelect={() => {}} />
     );
     expect(container.querySelector("[role='radiogroup']")).toBeDefined();
+  });
+
+  it("fires kit_selected with the surface when a surface is provided", () => {
+    mockCapture.mockClear();
+    render(
+      <ProjectTypeSelector kits={mockKits} selectedKitId={null} onSelect={() => {}} surface="onboarding" />
+    );
+    fireEvent.click(screen.getByText("Web Application"));
+    expect(mockCapture).toHaveBeenCalledWith(
+      "kit_selected",
+      expect.objectContaining({ surface: "onboarding", kit: "Web Application", is_custom: false })
+    );
+  });
+
+  it("flags is_custom when the Custom card is picked", () => {
+    mockCapture.mockClear();
+    render(
+      <ProjectTypeSelector kits={mockKits} selectedKitId={null} onSelect={() => {}} surface="onboarding" />
+    );
+    fireEvent.click(screen.getByText("Custom"));
+    expect(mockCapture).toHaveBeenCalledWith(
+      "kit_selected",
+      expect.objectContaining({ kit: "Custom", is_custom: true })
+    );
+  });
+
+  it("stays silent (no kit_selected) when no surface is provided", () => {
+    mockCapture.mockClear();
+    render(
+      <ProjectTypeSelector kits={mockKits} selectedKitId={null} onSelect={() => {}} />
+    );
+    fireEvent.click(screen.getByText("Web Application"));
+    expect(mockCapture).not.toHaveBeenCalled();
   });
 });

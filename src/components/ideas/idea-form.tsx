@@ -286,10 +286,24 @@ export function IdeaForm({ githubUsername, userId, kits, canUseAi = false, hasBy
         // Outcome event: what kit shipped, whether it was our untouched
         // default, and whether AI enhance was used. Numerator for the
         // default-ship and empty-board rates.
+        const selectedKitName = selectedKitId ? kitName(selectedKitId) : "none";
+        const kitChoice = !selectedKitId
+          ? "none"
+          : selectedKitName === "Custom"
+            ? "custom"
+            : "kit";
         posthog?.capture("idea_created", {
           kit: hasKit ? kitName(selectedKitId) : "none",
+          // Disambiguate "explicitly chose Custom" from "submitted with nothing" —
+          // the old `kit: "none"` collapsed both, hiding why 19/30 ideas use no kit.
+          selected_kit: selectedKitName,
+          kit_choice: kitChoice,
           was_default: hasKit && selectedKitId === defaultKitIdRef.current,
           enhanced,
+          // "What are you building?" signal — compare users' own words vs our kit
+          // labels. NOTE: sends the idea title to PostHog (see task comment).
+          intent_title: title.trim(),
+          description_length: description.trim().length,
         });
 
         if (result.kitError) {
