@@ -95,6 +95,7 @@ export function TaskCardMenu({
   function handleArchive() {
     const rollback = ops.archiveTask(task.id, columnId);
     ops.incrementPendingOps();
+    ops.trustRemoval(task.id); // suppress a lagging-replica snapshot re-showing it
 
     updateBoardTask(task.id, ideaId, { archived: true })
       .then(() => {
@@ -102,6 +103,7 @@ export function TaskCardMenu({
       })
       .catch(() => {
         rollback();
+        ops.trustRemoval(task.id, false); // rolled back — stop trusting the removal
         toast.error("Couldn't archive task");
       })
       .finally(() => {
@@ -113,10 +115,12 @@ export function TaskCardMenu({
     setConfirmDeleteOpen(false);
     const rollback = ops.deleteTask(task.id, columnId);
     ops.incrementPendingOps();
+    ops.trustRemoval(task.id); // suppress a lagging-replica snapshot re-showing it
 
     deleteBoardTask(task.id, ideaId)
       .catch(() => {
         rollback();
+        ops.trustRemoval(task.id, false); // rolled back — stop trusting the removal
         toast.error("Couldn't delete task");
       })
       .finally(() => {

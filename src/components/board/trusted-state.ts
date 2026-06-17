@@ -23,10 +23,16 @@
 export const TRUST_WINDOW_MS = 3000;
 
 export interface TrustedTaskState {
-  /** Column the task was moved into. */
+  /** Column the task was moved into (ignored when `removed`). */
   columnId: string;
-  /** Position assigned within that column. */
+  /** Position assigned within that column (ignored when `removed`). */
   position: number;
+  /**
+   * The task was archived/deleted locally. Suppress it from server snapshots
+   * until the server drops/archives it too or the window lapses — otherwise a
+   * lagging replica can briefly re-show the card. `columnId`/`position` unused.
+   */
+  removed?: boolean;
   /** Epoch ms after which the entry is no longer trusted. */
   trustedUntil: number;
 }
@@ -67,13 +73,24 @@ export function mergeTrustedState<T extends MinTask, C extends MinColumn<T>>(
   }
 
   // Decide which trusted entries still need to override the server.
-  const overrides = new Map<string, TrustedTaskState>();
+  const moveOverrides = new Map<string, TrustedTaskState>();
+  const removedIds = new Set<string>(); // archived/deleted locally — suppress
   for (const [taskId, ts] of trusted) {
     if (now >= ts.trustedUntil) {
       resolved.push(taskId); // window expired
       continue;
     }
     const loc = serverLoc.get(taskId);
+    if (ts.removed) {
+      // Trusted removal (archive/delete): suppress the stale row until the server
+      // drops/archives it too, or the window lapses.
+      if (!loc) {
+        resolved.push(taskId); // server has dropped it as well
+      } else {
+        removedIds.add(taskId);
+      }
+      continue;
+    }
     if (!loc) {
       resolved.push(taskId); // task no longer exists (archived/deleted)
       continue;
@@ -82,18 +99,20 @@ export function mergeTrustedState<T extends MinTask, C extends MinColumn<T>>(
       resolved.push(taskId); // server has caught up
       continue;
     }
-    overrides.set(taskId, ts);
+    moveOverrides.set(taskId, ts);
   }
 
-  if (overrides.size === 0) return { columns: serverColumns, resolved };
+  if (moveOverrides.size === 0 && removedIds.size === 0) {
+    return { columns: serverColumns, resolved };
+  }
 
-  const overriddenIds = new Set(overrides.keys());
+  const overriddenIds = new Set(moveOverrides.keys());
   const columns = serverColumns.map((col) => {
-    // Drop any overridden task from wherever the server put it.
-    let tasks = col.tasks.filter((t) => !overriddenIds.has(t.id));
+    // Drop overridden-move tasks AND trusted-removed tasks from where the server put them.
+    let tasks = col.tasks.filter((t) => !overriddenIds.has(t.id) && !removedIds.has(t.id));
     // Add overridden tasks whose trusted column is this one, at their position.
     const incoming: T[] = [];
-    for (const [taskId, ts] of overrides) {
+    for (const [taskId, ts] of moveOverrides) {
       if (ts.columnId !== col.id) continue;
       const original = taskById.get(taskId);
       if (original) incoming.push({ ...original, position: ts.position });

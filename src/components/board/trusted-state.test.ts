@@ -122,6 +122,40 @@ describe("mergeTrustedState", () => {
     expect(res.columns.find((c) => c.id === "a")!.tasks.map((t) => t.id)).toEqual(["t2", "t1"]);
   });
 
+  it("suppresses a trusted-removed task the stale server still shows (archive/delete)", () => {
+    // Server (lagging replica) still has t1; we archived/deleted it locally.
+    const server = cols(["a", [{ id: "t1", position: 0 }, { id: "t2", position: 1000 }]]);
+    const res = mergeTrustedState(
+      server,
+      trust({ t1: { columnId: "", position: 0, removed: true, ...live } }),
+      NOW
+    );
+    expect(res.columns.find((c) => c.id === "a")!.tasks.map((t) => t.id)).toEqual(["t2"]);
+    expect(res.resolved).toEqual([]);
+  });
+
+  it("resolves a trusted removal once the server has dropped the task too", () => {
+    const server = cols(["a", [{ id: "t2", position: 1000 }]]); // t1 gone server-side
+    const res = mergeTrustedState(
+      server,
+      trust({ t1: { columnId: "", position: 0, removed: true, ...live } }),
+      NOW
+    );
+    expect(res.columns).toBe(server); // nothing to suppress → identity preserved
+    expect(res.resolved).toEqual(["t1"]);
+  });
+
+  it("resolves a trusted removal when the window expires (server then wins)", () => {
+    const server = cols(["a", [{ id: "t1", position: 0 }]]);
+    const res = mergeTrustedState(
+      server,
+      trust({ t1: { columnId: "", position: 0, removed: true, trustedUntil: NOW - 1 } }),
+      NOW
+    );
+    expect(res.columns).toBe(server);
+    expect(res.resolved).toEqual(["t1"]);
+  });
+
   it("does not mutate the input columns or tasks", () => {
     const server = cols(["a", [{ id: "t1", position: 0 }]], ["b", []]);
     const snapshot = JSON.stringify(server);

@@ -609,6 +609,19 @@ export function KanbanBoard({
     []
   );
 
+  const trustRemoval = useCallback((taskId: string, trusted = true) => {
+    if (!trusted) {
+      trustedTasksRef.current.delete(taskId); // rolled-back removal — stop trusting it
+      return;
+    }
+    trustedTasksRef.current.set(taskId, {
+      columnId: "",
+      position: 0,
+      removed: true,
+      trustedUntil: Date.now() + TRUST_WINDOW_MS,
+    });
+  }, []);
+
   const incrementPendingOps = useCallback(() => {
     setPendingOps((n) => n + 1);
   }, []);
@@ -629,6 +642,7 @@ export function KanbanBoard({
       updateColumn: optimisticUpdateColumn,
       archiveColumnTasks: optimisticArchiveColumnTasks,
       trustMove,
+      trustRemoval,
       incrementPendingOps,
       decrementPendingOps,
     }),
@@ -642,6 +656,7 @@ export function KanbanBoard({
       optimisticUpdateColumn,
       optimisticArchiveColumnTasks,
       trustMove,
+      trustRemoval,
       incrementPendingOps,
       decrementPendingOps,
     ]

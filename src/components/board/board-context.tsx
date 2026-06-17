@@ -34,6 +34,12 @@ export interface BoardOptimisticOps {
    * Pass `null` to drop the entry (e.g. a rejected move).
    */
   trustMove: (taskId: string, columnId: string, position: number | null) => void;
+  /**
+   * Trust a local removal (archive/delete) over lagging Realtime snapshots for
+   * the standard trust window, so a stale read replica can't briefly re-show the
+   * card. Pass `false` to drop the entry (e.g. a rolled-back removal).
+   */
+  trustRemoval: (taskId: string, trusted?: boolean) => void;
   /** Increment pending ops counter (prevents Realtime from overwriting state). */
   incrementPendingOps: () => void;
   /** Decrement pending ops counter and mark last op time. */
