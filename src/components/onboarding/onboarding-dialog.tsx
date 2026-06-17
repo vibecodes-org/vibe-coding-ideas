@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect, useRef } from "react";
 import Link from "next/link";
+import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
 import {
   Sparkles,
@@ -76,6 +77,13 @@ export function OnboardingDialog({
 }: OnboardingDialogProps) {
   const [step, setStep] = useState(0);
   const [submitting, setSubmitting] = useState(false);
+
+  // Onboarding funnel / drop-off — especially step 4 ("Connect Claude Code"), the
+  // suspected terminal wall for non-technical founders (task 3a14dba3).
+  const posthog = usePostHog();
+  useEffect(() => {
+    posthog?.capture("onboarding_step_viewed", { step });
+  }, [step, posthog]);
 
   // Profile fields
   const [displayName, setDisplayName] = useState(userFullName ?? "");
