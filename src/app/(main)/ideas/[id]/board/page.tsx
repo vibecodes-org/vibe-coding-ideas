@@ -5,7 +5,6 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
-import { logger } from "@/lib/logger";
 import { initializeBoardColumns } from "@/actions/board";
 import { getIdeaTeam } from "@/lib/idea-team";
 import { KanbanBoard } from "@/components/board/kanban-board";
@@ -249,15 +248,6 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       taskLabelsMap[row.task_id].push(label);
     }
   }
-
-  // TEMP DIAGNOSTIC (remove after verifying board-labels-scale fix): confirms the
-  // board page actually receives label rows for this idea at scale.
-  logger.warn("board_labels_diagnostic", {
-    ideaId: id,
-    taskCount: (rawTasks ?? []).length,
-    labelRowsFetched: taskLabelRows?.length ?? null,
-    tasksWithLabels: Object.keys(taskLabelsMap).length,
-  });
 
   const userHasByokKey = !isReadOnly && !!userProfile?.encrypted_anthropic_key;
   const starterCredits = userProfile?.ai_starter_credits ?? 0;
