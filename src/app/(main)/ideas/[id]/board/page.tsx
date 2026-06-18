@@ -5,6 +5,7 @@ import Link from "next/link";
 import { ChevronRight } from "lucide-react";
 import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
+import { logger } from "@/lib/logger";
 import { initializeBoardColumns } from "@/actions/board";
 import { getIdeaTeam } from "@/lib/idea-team";
 import { KanbanBoard } from "@/components/board/kanban-board";
@@ -203,24 +204,24 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
   // Phase 3: Queries that depend on Phase 2 results
   const taskIds = (rawTasks ?? []).map((t) => t.id);
 
-  const { data: taskLabelRows } = taskIds.length > 0
-    ? await supabase
-        .from("board_task_labels")
-        .select("task_id, label:board_labels!board_task_labels_label_id_fkey(*)")
-        .in("task_id", taskIds)
-    : { data: null };
+  // Scope by the parent task's idea via an inner-join filter rather than a
+  // giant .in(taskIds) list — the IN URL grew with task count and silently
+  // failed to return rows on large boards, blanking every card's labels.
+  const { data: taskLabelRows } = await supabase
+    .from("board_task_labels")
+    .select("task_id, label:board_labels!board_task_labels_label_id_fkey(*), board_tasks!inner(idea_id)")
+    .eq("board_tasks.idea_id", id);
 
   // Open workflow suggestions for this board — single query, mapped per task so
   // the card can render its (distinct) indicator. Realtime on the
   // workflow_suggestions table (subscribed in BoardRealtime) triggers a refresh.
-  const { data: suggestionRows } = taskIds.length > 0
-    ? await supabase
-        .from("workflow_suggestions")
-        .select("task_id, source, reason, adjudication_started_at")
-        .eq("idea_id", id)
-        .eq("status", "suggested")
-        .in("task_id", taskIds)
-    : { data: null };
+  // Scoped by idea_id alone — every open suggestion for the idea belongs to a
+  // task on this board, so the .in(taskIds) list was redundant (and grew the URL).
+  const { data: suggestionRows } = await supabase
+    .from("workflow_suggestions")
+    .select("task_id, source, reason, adjudication_started_at")
+    .eq("idea_id", id)
+    .eq("status", "suggested");
 
   const suggestionsByTask: Record<string, BoardSuggestionIndicator> = {};
   if (suggestionRows) {
@@ -248,6 +249,15 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       taskLabelsMap[row.task_id].push(label);
     }
   }
+
+  // TEMP DIAGNOSTIC (remove after verifying board-labels-scale fix): confirms the
+  // board page actually receives label rows for this idea at scale.
+  logger.warn("board_labels_diagnostic", {
+    ideaId: id,
+    taskCount: (rawTasks ?? []).length,
+    labelRowsFetched: taskLabelRows?.length ?? null,
+    tasksWithLabels: Object.keys(taskLabelsMap).length,
+  });
 
   const userHasByokKey = !isReadOnly && !!userProfile?.encrypted_anthropic_key;
   const starterCredits = userProfile?.ai_starter_credits ?? 0;
