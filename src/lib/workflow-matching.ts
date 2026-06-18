@@ -24,6 +24,7 @@ import {
   decrementStarterCredit,
 } from "@/lib/ai-helpers";
 import { logger } from "@/lib/logger";
+import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
 
 // ============================================================
 // Constants
@@ -33,14 +34,11 @@ import { logger } from "@/lib/logger";
 export const WORKFLOW_AI_AUTOAPPLY_THRESHOLD = 0.85;
 
 /**
- * How long a `workflow_suggestions.adjudication_started_at` marker is treated as
- * "in flight". While the marker is set AND within this window, agent pickup
- * (get_task / claim_next_step) reports the suggestion as still being checked and
- * asks the caller to re-claim shortly. Once older than this, the marker is stale
- * and the suggestion is surfaced as a normal blocking suggestion — the slice-2
- * adjudication path owns the actual fallback resolution.
+ * Re-exported from the client-safe constants module so server-side callers that
+ * already import workflow-matching.ts keep working, while UI components import
+ * the client-safe module directly (no AI SDK in the browser bundle).
  */
-export const WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS = 60_000;
+export { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS };
 
 /** Small/fast model for cheap workflow-matching adjudication. */
 export const WORKFLOW_MATCHING_MODEL = "claude-haiku-4-5";

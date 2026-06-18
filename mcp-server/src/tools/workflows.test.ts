@@ -620,6 +620,33 @@ describe("claimNextStep — workflow suggestion precedence", () => {
     expect(result.done).toBe(false);
   });
 
+  it("AC-26: a dismissed suggestion with no steps (post-Remove) returns done — never blocked/adjudicating", async () => {
+    // After "Remove", the suggestion row is dismissed (status != 'suggested') and
+    // no workflow steps exist. fetchOpenSuggestions filters by status='suggested',
+    // so the dismissed row is invisible → claim_next_step must report done:true.
+    let suggestionChain: ReturnType<typeof createChain> | null = null;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") return createChain([]).chain; // no steps
+      if (table === "workflow_suggestions") {
+        // A dismissed row exists in the table, but the status='suggested' filter
+        // excludes it, so the open-suggestions query resolves to [].
+        suggestionChain = createChain([]);
+        return suggestionChain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as Record<string, unknown>;
+
+    expect(result.done).toBe(true);
+    expect(result.blocked_on_suggestion).toBeUndefined();
+    expect(result.adjudication_pending).toBeUndefined();
+    expect(result).not.toHaveProperty("claim_token");
+    // Confirms the open-suggestion query is scoped to status='suggested'.
+    expect(suggestionChain!.captured.eqs).toContainEqual(["status", "suggested"]);
+  });
+
   it("AC-26: after a run with a pending step exists (post-Keep), claims the first real step normally", async () => {
     const step = makeStepRow({ step_order: 1 });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };

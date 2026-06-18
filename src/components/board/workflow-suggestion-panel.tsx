@@ -22,6 +22,7 @@ import {
   removeWorkflowSuggestion,
 } from "@/actions/workflow-suggestions";
 import { listWorkflowTemplates } from "@/actions/workflow-templates";
+import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
 import type { WorkflowSuggestion, WorkflowTemplate } from "@/types";
 
 /**
@@ -36,17 +37,23 @@ import type { WorkflowSuggestion, WorkflowTemplate } from "@/types";
  * callback re-fetches the workflow so the normal run UI takes over.
  */
 
-const ADJUDICATING_FRESH_MS = 30_000; // "checking fit…" window for an unfinalised row
-
 /**
  * Whether an open suggestion is still being adjudicated (async AI verdict in
  * flight): no finalised reason yet and the adjudication started recently.
  * Module-level so the `Date.now()` read isn't an impure call during render.
+ *
+ * Uses the shared adjudication window so the UI and an agent's
+ * `claim_next_step` never disagree about whether a row is still "checking fit".
  */
-function isAdjudicating(s: Pick<WorkflowSuggestion, "reason" | "adjudication_started_at">): boolean {
+export function isAdjudicating(
+  s: Pick<WorkflowSuggestion, "reason" | "adjudication_started_at">,
+): boolean {
   if (s.reason) return false;
   if (!s.adjudication_started_at) return false;
-  return Date.now() - new Date(s.adjudication_started_at).getTime() < ADJUDICATING_FRESH_MS;
+  return (
+    Date.now() - new Date(s.adjudication_started_at).getTime() <
+    WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS
+  );
 }
 
 type OpenSuggestion = Pick<

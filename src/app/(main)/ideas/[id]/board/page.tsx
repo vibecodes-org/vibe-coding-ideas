@@ -14,6 +14,7 @@ import { BoardPageTabs } from "@/components/board/board-page-tabs";
 import { KitAppliedToast } from "@/components/board/kit-applied-toast";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { computeIdeaHealth } from "@/lib/idea-health";
+import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
 import type {
   BoardColumnWithTasks,
   BoardTaskWithAssignee,
@@ -212,7 +213,6 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
   // Open workflow suggestions for this board — single query, mapped per task so
   // the card can render its (distinct) indicator. Realtime on the
   // workflow_suggestions table (subscribed in BoardRealtime) triggers a refresh.
-  const ADJUDICATING_FRESH_MS = 30_000;
   const { data: suggestionRows } = taskIds.length > 0
     ? await supabase
         .from("workflow_suggestions")
@@ -231,7 +231,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
         !row.reason &&
         !!row.adjudication_started_at &&
         Date.now() - new Date(row.adjudication_started_at).getTime() <
-          ADJUDICATING_FRESH_MS;
+          WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS;
       suggestionsByTask[row.task_id] = { source: row.source, adjudicating };
     }
   }
