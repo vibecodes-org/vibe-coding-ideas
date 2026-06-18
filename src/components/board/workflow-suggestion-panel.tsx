@@ -81,16 +81,13 @@ function templateStepCount(t: WorkflowTemplate): number {
   return Array.isArray(t.steps) ? t.steps.length : 0;
 }
 
-/** Narrow a template's untyped `steps` JSON to the title/role we display. */
+/** Extract the title/role we display from a template's steps. */
 function templateSteps(t: WorkflowTemplate): { title: string; role?: string }[] {
   if (!Array.isArray(t.steps)) return [];
-  return t.steps.map((s) => {
-    const o = (s ?? {}) as Record<string, unknown>;
-    return {
-      title: typeof o.title === "string" ? o.title : "Untitled step",
-      role: typeof o.role === "string" ? o.role : undefined,
-    };
-  });
+  return t.steps.map((s) => ({
+    title: s.title || "Untitled step",
+    role: s.role || undefined,
+  }));
 }
 
 export function WorkflowSuggestionPanel({
