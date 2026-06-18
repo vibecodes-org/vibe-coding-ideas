@@ -160,18 +160,25 @@ export async function applyOrSuggest(
     return { applied: true, suggested: false };
   }
 
-  // Fetch the task and the OTHER labels on it (to classify the task).
-  const [{ data: taskRow }, { data: labelRows }] = await Promise.all([
-    supabase
-      .from("board_tasks")
-      .select("id, title, description")
-      .eq("id", taskId)
-      .maybeSingle(),
-    supabase
-      .from("board_task_labels")
-      .select("board_labels(name)")
-      .eq("task_id", taskId),
-  ]);
+  // Fetch the task, the OTHER labels on it (to classify the task), and ALL of
+  // the idea's templates (so the AI can recommend a BETTER-fitting one — not
+  // just keep/null the mismatched template the rule attached).
+  const [{ data: taskRow }, { data: labelRows }, { data: ideaTemplateRows }] =
+    await Promise.all([
+      supabase
+        .from("board_tasks")
+        .select("id, title, description")
+        .eq("id", taskId)
+        .maybeSingle(),
+      supabase
+        .from("board_task_labels")
+        .select("board_labels(name)")
+        .eq("task_id", taskId),
+      supabase
+        .from("workflow_templates")
+        .select("id, name, description, steps")
+        .eq("idea_id", ideaId),
+    ]);
 
   if (!taskRow) {
     await applyFn(taskId, templateId);
@@ -190,11 +197,39 @@ export async function applyOrSuggest(
     })
     .filter((n): n is string => !!n);
 
+  // Build the candidate set the AI may recommend from. Always include the
+  // rule's own template; add every other template on the idea. Steps are
+  // narrowed to {title, role} to match AdjudicationCandidateTemplate.
+  const candidateTemplates = ((ideaTemplateRows ?? []) as Array<{
+    id: string;
+    name: string;
+    description: string | null;
+    steps: unknown;
+  }>).map((row) => {
+    const t = templateFromRow(row);
+    return {
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      steps: t.steps.map((s) => ({ title: s.title, role: s.role })),
+    };
+  });
+  if (!candidateTemplates.some((t) => t.id === templateRow.id)) {
+    const t = templateFromRow(templateRow);
+    candidateTemplates.push({
+      id: t.id,
+      name: t.name,
+      description: t.description,
+      steps: t.steps.map((s) => ({ title: s.title, role: s.role })),
+    });
+  }
+
   const result = await decideAutoRuleApplication(supabase, {
     ideaId,
     labelId,
     ruleId,
     template: templateFromRow(templateRow),
+    candidateTemplates,
     task: {
       id: taskRow.id,
       title: taskRow.title,
