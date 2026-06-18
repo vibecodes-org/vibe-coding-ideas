@@ -65,7 +65,7 @@ describe("BoardRealtime", () => {
     vi.useRealTimers();
   });
 
-  it("subscribes to 5 tables (not 7 — comments and attachments removed)", () => {
+  it("subscribes to 6 tables (not 7 — comments and attachments removed)", () => {
     render(<BoardRealtime ideaId="idea-1" taskIds={["task-1", "task-2"]} />);
 
     const tables = subscriptions.map((s) => s.table);
@@ -74,9 +74,10 @@ describe("BoardRealtime", () => {
     expect(tables).toContain("board_labels");
     expect(tables).toContain("board_task_labels");
     expect(tables).toContain("task_workflow_steps");
+    expect(tables).toContain("workflow_suggestions");
     expect(tables).not.toContain("board_task_comments");
     expect(tables).not.toContain("board_task_attachments");
-    expect(tables).toHaveLength(5);
+    expect(tables).toHaveLength(6);
   });
 
   it("does not count the non-postgres 'system' channel-error handler as a table subscription", () => {
@@ -84,10 +85,10 @@ describe("BoardRealtime", () => {
 
     // board-realtime also registers a `.on("system", …)` channel-error logger.
     // It must NOT be treated as a table subscription (it has no table/filter).
-    // Regression guard for the prior failures where it inflated the count to 6
+    // Regression guard for the prior failures where it inflated the count
     // and tripped the "filtered by idea_id" assertion with filter: undefined.
     expect(systemEvents).toContain("system");
-    expect(subscriptions).toHaveLength(5);
+    expect(subscriptions).toHaveLength(6);
     expect(subscriptions.every((s) => typeof s.table === "string" && s.table.length > 0)).toBe(true);
   });
 

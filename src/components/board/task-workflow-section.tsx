@@ -60,6 +60,7 @@ import {
 } from "@/actions/workflow";
 import { applyWorkflowTemplate, listWorkflowTemplates, rematchWorkflowAgents } from "@/actions/workflow-templates";
 import { StepDetailDialog } from "./step-detail-dialog";
+import { WorkflowSuggestionPanel } from "./workflow-suggestion-panel";
 import { TaskAutoOpenContext } from "./kanban-board";
 import { ApprovalLockIcon } from "./approval-lock-icon";
 import type { TaskWorkflowStep, WorkflowRun, WorkflowTemplate } from "@/types";
@@ -362,6 +363,12 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
       <>
         <div className="space-y-3">
           <h3 className="flex items-center gap-1.5 text-sm font-semibold">Workflow <HelpLink href="/guide/workflows" tooltip="How workflows work" /></h3>
+          <WorkflowSuggestionPanel
+            taskId={taskId}
+            ideaId={ideaId}
+            isReadOnly={isReadOnly}
+            onResolved={fetchData}
+          />
           {showApply ? (
             <div className="space-y-2">
               <Select value={selectedTemplateId} onValueChange={setSelectedTemplateId}>
@@ -432,6 +439,12 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
   return (
     <>
       <div className="space-y-3">
+        <WorkflowSuggestionPanel
+          taskId={taskId}
+          ideaId={ideaId}
+          isReadOnly={isReadOnly}
+          onResolved={fetchData}
+        />
         {/* Header */}
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

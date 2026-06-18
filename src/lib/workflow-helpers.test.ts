@@ -323,6 +323,162 @@ describe("checkAndApplyAutoRules", () => {
   });
 });
 
+// --- checkAndApplyAutoRules with options (mismatch suggestions) ---
+
+// A richer mock covering the apply/suggest path: rule lookup, active-run guard,
+// template + task + label fetch, and workflow_suggestions insert.
+function createSuggestPathSupabase(opts: {
+  rule: { id: string; template_id: string };
+  template: { id: string; name: string; description: string; steps: unknown };
+  task: { id: string; title: string; description: string };
+  taskLabels: string[];
+}) {
+  const suggestionInserts: Record<string, unknown>[] = [];
+
+  const resolve = (data: unknown) => Promise.resolve({ data, error: null });
+
+  return {
+    from: vi.fn((table: string) => {
+      switch (table) {
+        case "workflow_auto_rules":
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn(() => resolve(opts.rule)),
+          };
+        case "workflow_runs":
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            not: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn(() => resolve(null)), // no active run
+          };
+        case "workflow_templates":
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn(() => resolve(opts.template)),
+          };
+        case "board_tasks":
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            maybeSingle: vi.fn(() => resolve(opts.task)),
+          };
+        case "board_task_labels":
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn(() =>
+              resolve(opts.taskLabels.map((name) => ({ board_labels: { name } })))
+            ),
+          };
+        case "workflow_suggestions": {
+          const updateChain: Record<string, unknown> = {
+            update: vi.fn(() => updateChain),
+            eq: vi.fn(() => updateChain),
+            then: (r?: (v: unknown) => unknown) => {
+              const v = { data: null, error: null };
+              return typeof r === "function" ? r(v) : Promise.resolve(v);
+            },
+          };
+          return {
+            ...updateChain,
+            insert: vi.fn((vals: Record<string, unknown>) => {
+              suggestionInserts.push(vals);
+              return {
+                select: vi.fn().mockReturnThis(),
+                maybeSingle: vi.fn(() => resolve({ id: "sug-1" })),
+              };
+            }),
+          };
+        }
+        default:
+          return {
+            select: vi.fn().mockReturnThis(),
+            eq: vi.fn().mockReturnThis(),
+            not: vi.fn().mockReturnThis(),
+            single: vi.fn(() => resolve(null)),
+            maybeSingle: vi.fn(() => resolve(null)),
+          };
+      }
+    }),
+    _suggestionInserts: suggestionInserts,
+  };
+}
+
+describe("checkAndApplyAutoRules with userId option", () => {
+  const buildTemplate = {
+    id: "tmpl-build",
+    name: "Build feature",
+    description: "engineering",
+    steps: [
+      { title: "Implement API", description: "build backend", role: "Engineer" },
+      { title: "Fix bug and deploy", description: "refactor", role: "Backend" },
+    ],
+  };
+  const discoveryTemplate = {
+    id: "tmpl-discovery",
+    name: "Market discovery",
+    description: "validation",
+    steps: [
+      { title: "Competitor analysis", description: "market research", role: "Analyst" },
+      { title: "Pricing and go/no-go", description: "validation", role: "PM" },
+    ],
+  };
+
+  it("auto-applies a clearly-good fit and writes no suggestion", async () => {
+    const applyFn = vi.fn().mockResolvedValue({});
+    const supabase = createSuggestPathSupabase({
+      rule: { id: "rule-1", template_id: "tmpl-build" },
+      template: buildTemplate,
+      task: { id: "task-1", title: "Implement checkout API", description: "build and deploy backend" },
+      taskLabels: ["backend"],
+    });
+
+    await checkAndApplyAutoRules(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase as any,
+      "task-1",
+      "label-1",
+      "idea-1",
+      applyFn,
+      { userId: "user-1", isAutonomousAgent: false }
+    );
+
+    expect(applyFn).toHaveBeenCalledWith("task-1", "tmpl-build");
+    expect(supabase._suggestionInserts).toHaveLength(0);
+  });
+
+  it("writes a suggestion (not applyFn) for a suspect mismatch", async () => {
+    const applyFn = vi.fn().mockResolvedValue({});
+    const supabase = createSuggestPathSupabase({
+      rule: { id: "rule-1", template_id: "tmpl-discovery" },
+      template: discoveryTemplate,
+      task: { id: "task-1", title: "Implement checkout API", description: "build and deploy backend" },
+      taskLabels: ["backend"],
+    });
+
+    await checkAndApplyAutoRules(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase as any,
+      "task-1",
+      "label-1",
+      "idea-1",
+      applyFn,
+      // Await adjudication for determinism; with no AI profile the resolver
+      // returns heuristic, so the suggestion stays open and applyFn is skipped.
+      { userId: "user-1", isAutonomousAgent: true, awaitAdjudication: true }
+    );
+
+    expect(applyFn).not.toHaveBeenCalled();
+    expect(supabase._suggestionInserts).toHaveLength(1);
+    expect(supabase._suggestionInserts[0]).toMatchObject({
+      status: "suggested",
+      suggested_template_id: "tmpl-discovery",
+    });
+  });
+});
+
 // --- propagateTemplateEdits ---
 
 function createPropagationMockSupabase(options: {

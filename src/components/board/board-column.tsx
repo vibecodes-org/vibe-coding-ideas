@@ -23,6 +23,7 @@ import type {
   BoardColumnWithTasks,
   BoardLabel,
   User,
+  BoardSuggestionIndicator,
 } from "@/types";
 
 const TaskEditDialog = dynamic(() => import("./task-edit-dialog").then((m) => m.TaskEditDialog), { ssr: false });
@@ -39,6 +40,7 @@ interface BoardColumnProps {
   initialTaskId?: string;
   ideaAgents?: User[];
   coverImageUrls?: Record<string, string>;
+  suggestionsByTask?: Record<string, BoardSuggestionIndicator>;
   canUseAi?: boolean;
   hasByokKey?: boolean;
   starterCredits?: number;
@@ -59,6 +61,7 @@ export const BoardColumn = memo(function BoardColumn({
   initialTaskId,
   ideaAgents = [],
   coverImageUrls = {},
+  suggestionsByTask = {},
   canUseAi = false,
   hasByokKey = false,
   starterCredits = 0,
@@ -227,6 +230,7 @@ export const BoardColumn = memo(function BoardColumn({
                 autoOpen={task.id === initialTaskId}
                 ideaAgents={ideaAgents}
                 initialCoverUrl={task.cover_image_path ? coverImageUrls[task.cover_image_path] : undefined}
+                suggestion={suggestionsByTask[task.id]}
                 isReadOnly={isReadOnly}
                 canUseAi={canUseAi}
                 hasByokKey={hasByokKey}

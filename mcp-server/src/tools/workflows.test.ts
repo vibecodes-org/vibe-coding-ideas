@@ -491,6 +491,171 @@ describe("claimNextStep", () => {
 });
 
 // ---------------------------------------------------------------------------
+// claimNextStep — workflow suggestion precedence (FR-2/FR-4, AC-21/22/24/25/26)
+// ---------------------------------------------------------------------------
+
+function makeSuggestionRow(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "sug-1",
+    label_id: "lbl-1",
+    rule_id: "rule-1",
+    suggested_template_id: "tmpl-suggested",
+    recommended_template_id: "tmpl-recommended",
+    source: "ai",
+    ai_confidence: 0.6,
+    reason: "Mismatch detected",
+    detected_categories: { task: "build", template: "discovery" },
+    status: "suggested",
+    adjudication_started_at: null,
+    ...overrides,
+  };
+}
+
+describe("claimNextStep — workflow suggestion precedence", () => {
+  it("AC-21: blocks on an open suggestion when there is no claimable step (no token, no writes)", async () => {
+    let suggestionChain: ReturnType<typeof createChain> | null = null;
+    let stepChain: ReturnType<typeof createChain> | null = null;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        stepChain = createChain([]); // no claimable step
+        return stepChain.chain;
+      }
+      if (table === "workflow_suggestions") {
+        suggestionChain = createChain([makeSuggestionRow()]);
+        return suggestionChain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as Record<string, unknown>;
+
+    expect(result.blocked_on_suggestion).toBe(true);
+    expect(result.done).toBe(false);
+    expect(result).not.toHaveProperty("claim_token");
+    expect((result.suggestion as Record<string, unknown>).suggestion_id).toBe("sug-1");
+    expect(result.instruction).toContain("do NOT start work");
+
+    // No claim token minted, no rows written.
+    expect(stepChain!.captured.updated).toBeNull();
+    expect(stepChain!.captured.inserted).toBeNull();
+    expect(suggestionChain!.captured.updated).toBeNull();
+    expect(suggestionChain!.captured.inserted).toBeNull();
+  });
+
+  it("AC-22: claims the pending step normally and never queries suggestions when a step is claimable", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const tableCounts: Record<string, number> = {};
+    let suggestionQueried = false;
+
+    const ctx = makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      if (table === "workflow_suggestions") {
+        suggestionQueried = true;
+        return createChain([makeSuggestionRow()]).chain;
+      }
+      if (table === "task_workflow_steps") {
+        const callNum = tableCounts[table];
+        const chain = createChain(null);
+        if (callNum === 1) {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [step], error: null }).then(resolve);
+        } else if (callNum === 2) {
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: updatedStep, error: null })
+          );
+        } else {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [], error: null }).then(resolve);
+        }
+        return chain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as Record<string, unknown>;
+
+    expect(suggestionQueried).toBe(false);
+    expect(result.blocked_on_suggestion).toBeUndefined();
+    expect(result.adjudication_pending).toBeUndefined();
+    expect(result.done).toBe(false);
+    expect(result).toHaveProperty("claim_token");
+    expect((result.step as Record<string, unknown>).id).toBe(STEP_ID);
+  });
+
+  it("AC-24: returns adjudication_pending for a fresh adjudication marker with no claimable step", async () => {
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") return createChain([]).chain;
+      if (table === "workflow_suggestions") {
+        return createChain([
+          makeSuggestionRow({ adjudication_started_at: new Date().toISOString() }),
+        ]).chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as Record<string, unknown>;
+
+    expect(result.adjudication_pending).toBe(true);
+    expect(result.done).toBe(false);
+    expect(result.retry_after_seconds).toBe(10);
+    expect(result).not.toHaveProperty("claim_token");
+  });
+
+  it("AC-25: treats a stale adjudication marker as a normal blocking suggestion", async () => {
+    const stale = new Date(Date.now() - 120_000).toISOString();
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") return createChain([]).chain;
+      if (table === "workflow_suggestions") {
+        return createChain([makeSuggestionRow({ adjudication_started_at: stale })]).chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as Record<string, unknown>;
+
+    expect(result.adjudication_pending).toBeUndefined();
+    expect(result.blocked_on_suggestion).toBe(true);
+    expect(result.done).toBe(false);
+  });
+
+  it("AC-26: after a run with a pending step exists (post-Keep), claims the first real step normally", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const tableCounts: Record<string, number> = {};
+
+    const ctx = makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      if (table === "task_workflow_steps") {
+        const callNum = tableCounts[table];
+        const chain = createChain(null);
+        if (callNum === 1) {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [step], error: null }).then(resolve);
+        } else if (callNum === 2) {
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: updatedStep, error: null })
+          );
+        } else {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [], error: null }).then(resolve);
+        }
+        return chain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as Record<string, unknown>;
+
+    expect(result.done).toBe(false);
+    expect(result.blocked_on_suggestion).toBeUndefined();
+    expect(result).toHaveProperty("claim_token");
+    expect((result.step as Record<string, unknown>).id).toBe(STEP_ID);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // claimNextStep — agent skills advertisement
 // ---------------------------------------------------------------------------
 

@@ -56,6 +56,7 @@ export type WorkflowStepComment = Database["public"]["Tables"]["workflow_step_co
 export type WorkflowTemplate = Database["public"]["Tables"]["workflow_templates"]["Row"];
 export type WorkflowAutoRule = Database["public"]["Tables"]["workflow_auto_rules"]["Row"];
 export type WorkflowRun = Database["public"]["Tables"]["workflow_runs"]["Row"];
+export type WorkflowSuggestion = Database["public"]["Tables"]["workflow_suggestions"]["Row"];
 export type BoardTaskActivity = Database["public"]["Tables"]["board_task_activity"]["Row"];
 export type BoardTaskComment = Database["public"]["Tables"]["board_task_comments"]["Row"];
 export type BoardTaskAttachment = Database["public"]["Tables"]["board_task_attachments"]["Row"];
@@ -73,6 +74,16 @@ export type BoardTaskWithAssignee = BoardTask & {
   labels: BoardLabel[];
 };
 export type BoardColumnWithTasks = BoardColumn & { tasks: BoardTaskWithAssignee[] };
+
+/**
+ * Per-task open-suggestion summary for the board card indicator. Distinct from an
+ * active run's progress chip. `adjudicating` marks an async AI verdict still in
+ * flight (shows "Checking workflow fit…" instead of "Workflow suggested").
+ */
+export type BoardSuggestionIndicator = {
+  source: WorkflowSuggestion["source"];
+  adjudicating: boolean;
+};
 export type BoardTaskActivityWithActor = BoardTaskActivity & { actor: User };
 export type BoardTaskCommentWithAuthor = BoardTaskComment & { author: User };
 

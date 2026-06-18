@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_BOARD_COLUMNS, POSITION_GAP } from "@/lib/constants";
 import { validateTitle, validateOptionalDescription, validateLabelName, validateLabelColor, validateComment } from "@/lib/validation";
 import { checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow } from "@/lib/workflow-helpers";
+import { dismissSuggestionsForLabel } from "@/lib/workflow-matching";
 import { applyWorkflowTemplate, applyWorkflowTemplateWithContext } from "@/actions/workflow-templates";
 import { logger } from "@/lib/logger";
 import type { RoleMatchWithTier } from "@/lib/ai-role-matching";
@@ -441,7 +442,10 @@ export async function addLabelToTask(
   if (error && error.code !== "23505") throw new Error(error.message);
 
   // Check for auto-rule workflow application
-  await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate);
+  await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate, {
+    userId: user.id,
+    isAutonomousAgent: false,
+  });
 
   // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }
@@ -471,7 +475,10 @@ export async function addLabelsToTask(
 
   // Check for auto-rule workflow application for each label
   for (const labelId of labelIds) {
-    await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate);
+    await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate, {
+      userId: user.id,
+      isAutonomousAgent: false,
+    });
   }
 
   // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
@@ -510,7 +517,10 @@ export async function triggerAutoRulesForTasks(
     await Promise.all(
       batch.map(async ({ taskId, labelIds }) => {
         for (const labelId of labelIds) {
-          await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyFn);
+          await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyFn, {
+            userId: user.id,
+            isAutonomousAgent: false,
+          });
         }
         onProgress?.(taskId);
       })
@@ -558,6 +568,9 @@ export async function removeLabelFromTask(
     .eq("label_id", labelId);
 
   if (error) throw new Error(error.message);
+
+  // Auto-dismiss any open mismatch suggestion tied to this (task, label).
+  await dismissSuggestionsForLabel(supabase, taskId, labelId);
 
   // Remove associated auto-rule workflow if requested
   let workflowRemoved = false;

@@ -1,6 +1,11 @@
 import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { WorkflowTemplateStep } from "@/types/database";
+import {
+  decideAutoRuleApplication,
+  templateFromRow,
+  type GenerateObjectFn,
+} from "@/lib/workflow-matching";
 
 export const TERMINAL_STATUSES = ["completed", "skipped"] as const;
 
@@ -15,13 +20,25 @@ export function approvalCount(steps: Pick<WorkflowTemplateStep, "requires_approv
  * workflow template. Non-throwing — errors are logged but label
  * assignment always succeeds.
  */
+export interface AutoRuleOptions {
+  /** User id for AI access / usage logging. Required to run AI adjudication. */
+  userId?: string;
+  /** True when an autonomous agent (not a human in the UI) triggered this. */
+  isAutonomousAgent?: boolean;
+  /** Test seam: override the AI generate call. */
+  generate?: GenerateObjectFn;
+  /** Test seam: await the async adjudication. */
+  awaitAdjudication?: boolean;
+}
+
 export async function checkAndApplyAutoRules(
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   supabase: SupabaseClient<any, any, any>,
   taskId: string,
   labelId: string,
   ideaId: string,
-  applyFn: (taskId: string, templateId: string) => Promise<unknown>
+  applyFn: (taskId: string, templateId: string) => Promise<unknown>,
+  options: AutoRuleOptions = {}
 ): Promise<void> {
   try {
     // Find matching auto-rule for this idea + label
@@ -76,7 +93,17 @@ export async function checkAndApplyAutoRules(
       }
     }
 
-    await applyFn(taskId, rule.template_id);
+    // Past all active-run guards — route through the shared apply/suggest
+    // decision (detect mismatch → auto-apply good fits, suggest suspect ones).
+    await applyOrSuggest(supabase, {
+      taskId,
+      labelId,
+      ideaId,
+      ruleId: rule.id,
+      templateId: rule.template_id,
+      applyFn,
+      options,
+    });
   } catch (err) {
     logger.error("Failed to apply auto-rule", {
       error: err instanceof Error ? err.message : String(err),
@@ -84,6 +111,98 @@ export async function checkAndApplyAutoRules(
       labelId,
     });
   }
+}
+
+/**
+ * Gather the template + task + sibling-label context and run the shared
+ * apply/suggest decision. Used by both the synchronous label-write path and
+ * the retroactive bulk path so detection logic lives in one place.
+ */
+export async function applyOrSuggest(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  args: {
+    taskId: string;
+    labelId: string;
+    ideaId: string;
+    ruleId: string | null;
+    templateId: string;
+    applyFn: (taskId: string, templateId: string) => Promise<unknown>;
+    options?: AutoRuleOptions;
+  }
+): Promise<{ applied: boolean; suggested: boolean }> {
+  const { taskId, labelId, ideaId, ruleId, templateId, applyFn } = args;
+  const options = args.options ?? {};
+
+  // Without a userId we can't run AI adjudication; preserve the legacy
+  // behaviour of applying directly rather than blocking the workflow.
+  if (!options.userId) {
+    await applyFn(taskId, templateId);
+    return { applied: true, suggested: false };
+  }
+
+  // Fetch template (steps/name) — needed to classify the workflow.
+  const { data: templateRow } = await supabase
+    .from("workflow_templates")
+    .select("id, name, description, steps")
+    .eq("id", templateId)
+    .maybeSingle();
+
+  if (!templateRow) {
+    // Template vanished — let applyFn surface the error path as before.
+    await applyFn(taskId, templateId);
+    return { applied: true, suggested: false };
+  }
+
+  // Fetch the task and the OTHER labels on it (to classify the task).
+  const [{ data: taskRow }, { data: labelRows }] = await Promise.all([
+    supabase
+      .from("board_tasks")
+      .select("id, title, description")
+      .eq("id", taskId)
+      .maybeSingle(),
+    supabase
+      .from("board_task_labels")
+      .select("board_labels(name)")
+      .eq("task_id", taskId),
+  ]);
+
+  if (!taskRow) {
+    await applyFn(taskId, templateId);
+    return { applied: true, suggested: false };
+  }
+
+  // Supabase may type the embedded relation as object or array depending on
+  // the inferred FK cardinality — normalize both shapes to a name string.
+  const labelNames = ((labelRows ?? []) as Array<{ board_labels: unknown }>)
+    .map((r) => {
+      const rel = r.board_labels;
+      const obj = Array.isArray(rel) ? rel[0] : rel;
+      return obj && typeof obj === "object" && "name" in obj
+        ? (obj as { name: string }).name
+        : undefined;
+    })
+    .filter((n): n is string => !!n);
+
+  const result = await decideAutoRuleApplication(supabase, {
+    ideaId,
+    labelId,
+    ruleId,
+    template: templateFromRow(templateRow),
+    task: {
+      id: taskRow.id,
+      title: taskRow.title,
+      description: taskRow.description,
+      labelNames,
+    },
+    applyFn,
+    userId: options.userId,
+    isAutonomousAgent: options.isAutonomousAgent,
+    generate: options.generate,
+    awaitAdjudication: options.awaitAdjudication,
+  });
+
+  return { applied: result.applied, suggested: result.suggested };
 }
 
 /**

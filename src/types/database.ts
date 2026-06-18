@@ -667,6 +667,123 @@ export type Database = {
           },
         ];
       };
+      workflow_suggestions: {
+        Row: {
+          id: string;
+          idea_id: string;
+          task_id: string;
+          label_id: string;
+          rule_id: string | null;
+          suggested_template_id: string | null;
+          recommended_template_id: string | null;
+          replacement_template_id: string | null;
+          status: "suggested" | "accepted" | "replaced" | "dismissed";
+          source: "ai" | "heuristic";
+          ai_confidence: number | null;
+          reason: string | null;
+          detected_categories: Json | null;
+          adjudication_started_at: string | null;
+          created_at: string;
+          resolved_at: string | null;
+          resolved_by: string | null;
+        };
+        Insert: {
+          id?: string;
+          idea_id: string;
+          task_id: string;
+          label_id: string;
+          rule_id?: string | null;
+          suggested_template_id?: string | null;
+          recommended_template_id?: string | null;
+          replacement_template_id?: string | null;
+          status?: "suggested" | "accepted" | "replaced" | "dismissed";
+          source?: "ai" | "heuristic";
+          ai_confidence?: number | null;
+          reason?: string | null;
+          detected_categories?: Json | null;
+          adjudication_started_at?: string | null;
+          created_at?: string;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
+        };
+        Update: {
+          id?: string;
+          idea_id?: string;
+          task_id?: string;
+          label_id?: string;
+          rule_id?: string | null;
+          suggested_template_id?: string | null;
+          recommended_template_id?: string | null;
+          replacement_template_id?: string | null;
+          status?: "suggested" | "accepted" | "replaced" | "dismissed";
+          source?: "ai" | "heuristic";
+          ai_confidence?: number | null;
+          reason?: string | null;
+          detected_categories?: Json | null;
+          adjudication_started_at?: string | null;
+          created_at?: string;
+          resolved_at?: string | null;
+          resolved_by?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "workflow_suggestions_idea_id_fkey";
+            columns: ["idea_id"];
+            isOneToOne: false;
+            referencedRelation: "ideas";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workflow_suggestions_task_id_fkey";
+            columns: ["task_id"];
+            isOneToOne: false;
+            referencedRelation: "board_tasks";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workflow_suggestions_label_id_fkey";
+            columns: ["label_id"];
+            isOneToOne: false;
+            referencedRelation: "board_labels";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workflow_suggestions_rule_id_fkey";
+            columns: ["rule_id"];
+            isOneToOne: false;
+            referencedRelation: "workflow_auto_rules";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workflow_suggestions_suggested_template_id_fkey";
+            columns: ["suggested_template_id"];
+            isOneToOne: false;
+            referencedRelation: "workflow_templates";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workflow_suggestions_recommended_template_id_fkey";
+            columns: ["recommended_template_id"];
+            isOneToOne: false;
+            referencedRelation: "workflow_templates";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workflow_suggestions_replacement_template_id_fkey";
+            columns: ["replacement_template_id"];
+            isOneToOne: false;
+            referencedRelation: "workflow_templates";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "workflow_suggestions_resolved_by_fkey";
+            columns: ["resolved_by"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       workflow_runs: {
         Row: {
           id: string;
@@ -1890,7 +2007,7 @@ export type Database = {
         Row: {
           id: string;
           user_id: string;
-          action_type: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "enhance_create_description" | "role_matching";
+          action_type: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "enhance_create_description" | "role_matching" | "workflow_matching";
           input_tokens: number;
           output_tokens: number;
           model: string;
@@ -1901,7 +2018,7 @@ export type Database = {
         Insert: {
           id?: string;
           user_id: string;
-          action_type: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "enhance_create_description" | "role_matching";
+          action_type: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "enhance_create_description" | "role_matching" | "workflow_matching";
           input_tokens?: number;
           output_tokens?: number;
           model: string;
@@ -1912,7 +2029,7 @@ export type Database = {
         Update: {
           id?: string;
           user_id?: string;
-          action_type?: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "enhance_create_description" | "role_matching";
+          action_type?: "enhance_description" | "generate_questions" | "enhance_with_context" | "generate_board_tasks" | "enhance_task_description" | "enhance_discussion_body" | "enhance_create_description" | "role_matching" | "workflow_matching";
           input_tokens?: number;
           output_tokens?: number;
           model?: string;

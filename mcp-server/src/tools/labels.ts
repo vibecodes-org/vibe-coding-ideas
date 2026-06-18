@@ -3,6 +3,7 @@ import { VALID_LABEL_COLORS } from "../constants";
 import { logActivity } from "../activity";
 import type { McpContext } from "../context";
 import { checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow } from "../../../src/lib/workflow-helpers";
+import { dismissSuggestionsForLabel } from "../../../src/lib/workflow-matching";
 import { applyWorkflowTemplate } from "./workflows";
 
 // --- manage_labels ---
@@ -87,7 +88,11 @@ export async function manageLabels(
     // Check for auto-rule workflow application
     await checkAndApplyAutoRules(
       ctx.supabase, params.task_id, params.label_id, params.idea_id,
-      (taskId, templateId) => applyWorkflowTemplate(ctx, { task_id: taskId, template_id: templateId })
+      (taskId, templateId) => applyWorkflowTemplate(ctx, { task_id: taskId, template_id: templateId }),
+      {
+        userId: ctx.ownerUserId ?? ctx.userId,
+        isAutonomousAgent: !!ctx.ownerUserId && ctx.ownerUserId !== ctx.userId,
+      }
     );
 
     return { success: true };
@@ -115,6 +120,9 @@ export async function manageLabels(
     await logActivity(ctx, params.task_id, params.idea_id, "label_removed", {
       label_name: label?.name ?? params.label_id,
     });
+
+    // Auto-dismiss any open mismatch suggestion tied to this (task, label).
+    await dismissSuggestionsForLabel(ctx.supabase, params.task_id, params.label_id);
 
     // Check for active auto-rule workflow associated with this label
     const workflowCheck = await checkAutoRuleWorkflow(

@@ -17,6 +17,8 @@ import {
   Clock,
   CircleCheck,
   Bell,
+  Lightbulb,
+  Sparkles,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
@@ -30,7 +32,7 @@ import { DueDateBadge } from "./due-date-badge";
 import { createClient } from "@/lib/supabase/client";
 import { TaskAutoOpenContext } from "./kanban-board";
 import { TaskCardMenu } from "./task-card-menu";
-import type { BoardTaskWithAssignee, BoardLabel, User } from "@/types";
+import type { BoardTaskWithAssignee, BoardLabel, User, BoardSuggestionIndicator } from "@/types";
 
 const TaskDetailDialog = dynamic(() => import("./task-detail-dialog").then((m) => m.TaskDetailDialog), { ssr: false });
 
@@ -52,6 +54,45 @@ interface BoardTaskCardProps {
   hasByokKey?: boolean;
   starterCredits?: number;
   isWiring?: boolean;
+  /** Open workflow suggestion for this task, if any — drives the card indicator. */
+  suggestion?: BoardSuggestionIndicator;
+}
+
+/**
+ * Distinct, non-alarming indicator for a task carrying an open workflow
+ * suggestion. Visually different from the active-run progress chip (amber
+ * Lightbulb + "Workflow suggested", no progress fraction). When the async AI
+ * verdict is still in flight, shows a calm "Checking workflow fit…" state.
+ * Icon + text — never colour alone (WCAG).
+ */
+function SuggestionBadge({ suggestion }: { suggestion: BoardSuggestionIndicator }) {
+  if (suggestion.adjudicating) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            aria-live="polite"
+            className="inline-flex max-w-full items-center gap-1 rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[10px] font-medium text-violet-300"
+          >
+            <Sparkles className="h-2.5 w-2.5 shrink-0" />
+            <span className="truncate">Checking workflow fit&hellip;</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>Checking whether the matched workflow fits this task</TooltipContent>
+      </Tooltip>
+    );
+  }
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-500/30 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
+          <Lightbulb className="h-2.5 w-2.5 shrink-0" />
+          <span className="truncate">Workflow suggested</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>A workflow was suggested for this task — open it to Keep, Replace, or Remove</TooltipContent>
+    </Tooltip>
+  );
 }
 
 function HighlightedText({ text, query }: { text: string; query: string }) {
@@ -231,6 +272,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   hasByokKey = false,
   starterCredits = 0,
   isWiring = false,
+  suggestion,
 }: BoardTaskCardProps) {
   const botRoles = useBotRoles();
   // Use context for auto-open — bypasses memo chain and reacts to URL navigation
@@ -474,6 +516,10 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                   </span>
                 )}
                 {task.due_date && <DueDateBadge dueDate={task.due_date} />}
+                {/* Open suggestion — distinct from a run; only when no run is attached */}
+                {suggestion && task.workflow_step_total === 0 && (
+                  <SuggestionBadge suggestion={suggestion} />
+                )}
                 {task.workflow_step_total > 0 && (
                   <WorkflowStatusBadge task={task} isWiring={isWiring} />
                 )}

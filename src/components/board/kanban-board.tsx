@@ -54,6 +54,7 @@ import type {
   BoardLabel,
   User,
   BotProfile,
+  BoardSuggestionIndicator,
 } from "@/types";
 
 // Context for auto-open state — bypasses memo chain so task cards can react to URL navigation
@@ -144,6 +145,7 @@ interface KanbanBoardProps {
   botProfiles?: BotProfile[];
   userBotProfiles?: BotProfile[];
   coverImageUrls?: Record<string, string>;
+  suggestionsByTask?: Record<string, BoardSuggestionIndicator>;
   isReadOnly?: boolean;
   hasWorkflowTemplates?: boolean;
   hasKit?: boolean;
@@ -260,6 +262,7 @@ export function KanbanBoard({
   botProfiles = [],
   userBotProfiles = [],
   coverImageUrls = {},
+  suggestionsByTask = {},
   isReadOnly = false,
   hasWorkflowTemplates = false,
   hasKit = false,
@@ -1104,6 +1107,7 @@ export function KanbanBoard({
                       initialTaskId={autoOpenTaskId}
                       ideaAgents={ideaAgents}
                       coverImageUrls={coverImageUrls}
+                      suggestionsByTask={suggestionsByTask}
                       canUseAi={canUseAi}
                       ideaDescription={ideaDescription}
                       isReadOnly={isReadOnly}

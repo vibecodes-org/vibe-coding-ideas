@@ -18,6 +18,7 @@ import type {
   BoardColumnWithTasks,
   BoardTaskWithAssignee,
   BoardLabel,
+  BoardSuggestionIndicator,
   User,
 } from "@/types";
 import type { Metadata } from "next";
@@ -208,6 +209,33 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
         .in("task_id", taskIds)
     : { data: null };
 
+  // Open workflow suggestions for this board — single query, mapped per task so
+  // the card can render its (distinct) indicator. Realtime on the
+  // workflow_suggestions table (subscribed in BoardRealtime) triggers a refresh.
+  const ADJUDICATING_FRESH_MS = 30_000;
+  const { data: suggestionRows } = taskIds.length > 0
+    ? await supabase
+        .from("workflow_suggestions")
+        .select("task_id, source, reason, adjudication_started_at")
+        .eq("idea_id", id)
+        .eq("status", "suggested")
+        .in("task_id", taskIds)
+    : { data: null };
+
+  const suggestionsByTask: Record<string, BoardSuggestionIndicator> = {};
+  if (suggestionRows) {
+    for (const row of suggestionRows) {
+      // One indicator per task — first open suggestion wins.
+      if (suggestionsByTask[row.task_id]) continue;
+      const adjudicating =
+        !row.reason &&
+        !!row.adjudication_started_at &&
+        Date.now() - new Date(row.adjudication_started_at).getTime() <
+          ADJUDICATING_FRESH_MS;
+      suggestionsByTask[row.task_id] = { source: row.source, adjudicating };
+    }
+  }
+
   // Build taskLabelsMap: Record<taskId, BoardLabel[]>
   const taskLabelsMap: Record<string, BoardLabel[]> = {};
   if (taskLabelRows) {
@@ -319,6 +347,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
           botProfiles={ideaAgentBotProfiles}
           userBotProfiles={(userBotProfiles ?? []) as import("@/types").BotProfile[]}
           coverImageUrls={coverImageUrls}
+          suggestionsByTask={suggestionsByTask}
           isReadOnly={isReadOnly}
           hasWorkflowTemplates={hasWorkflowTemplates}
           hasKit={!!(idea as unknown as { project_kit: { name: string } | null }).project_kit}

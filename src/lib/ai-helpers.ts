@@ -20,7 +20,8 @@ export type AiActionType =
   | "enhance_task_description"
   | "enhance_discussion_body"
   | "enhance_create_description"
-  | "role_matching";
+  | "role_matching"
+  | "workflow_matching";
 
 /** Create an Anthropic provider using the user's BYOK key. */
 export function getAnthropicProvider(encryptedKey: string | null) {

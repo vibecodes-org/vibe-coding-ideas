@@ -3,9 +3,11 @@ import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
 import { mintClaimToken, verifyClaimToken } from "../claim-token";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
-import { checkAndCompleteRun, propagateTemplateEdits } from "../../../src/lib/workflow-helpers";
+import { checkAndCompleteRun, propagateTemplateEdits, applyOrSuggest } from "../../../src/lib/workflow-helpers";
 import { tierRank } from "../../../src/lib/role-matching";
+import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "../../../src/lib/workflow-matching";
 import { logActivity } from "../activity";
+import { fetchOpenSuggestions } from "./board-read";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -388,6 +390,41 @@ export async function claimNextStep(
   if (error) throw new Error(`Failed to fetch pending steps: ${error.message}`);
 
   if (!steps || steps.length === 0) {
+    // FR-2/FR-4: an active run ALWAYS wins (AC-22) — the suggestion lookup ONLY
+    // runs once we know there's no claimable step. This branch mints no claim
+    // token and writes nothing (AC-21).
+    const openSuggestions = await fetchOpenSuggestions(ctx, params.task_id);
+    if (openSuggestions.length > 0) {
+      const now = Date.now();
+      const inFlight = openSuggestions.find((s) => {
+        if (!s.adjudication_started_at) return false;
+        const started = Date.parse(s.adjudication_started_at);
+        return Number.isFinite(started) && now - started < WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS;
+      });
+
+      if (inFlight) {
+        // AC-24: AI fit-check still in flight — ask the caller to re-claim shortly.
+        return {
+          adjudication_pending: true,
+          done: false,
+          retry_after_seconds: 10,
+          instruction:
+            "Workflow fit is being checked for this task — re-claim shortly with claim_next_step(task_id).",
+        };
+      }
+
+      // AC-21/AC-25: a stale marker (older than the timeout) is treated as a
+      // normal open suggestion; the slice-2 adjudication path owns the fallback.
+      const suggestion = openSuggestions[0];
+      return {
+        blocked_on_suggestion: true,
+        done: false,
+        suggestion,
+        instruction:
+          "This task has an unresolved workflow suggestion — do NOT start work. Surface it to a human to Keep / Replace / Remove first. Agents cannot resolve suggestions.",
+      };
+    }
+
     return { done: true, message: "All steps complete or no pending steps" };
   }
 
@@ -1602,7 +1639,12 @@ export async function applyAutoRuleRetroactively(
 
   let applied = 0;
   let skipped = 0;
+  let suggested = 0;
 
+  const isAutonomousAgent = !!ctx.ownerUserId && ctx.ownerUserId !== ctx.userId;
+
+  // Sequential loop bounds the async AI dispatch — awaitAdjudication runs one
+  // AI call at a time rather than firing hundreds concurrently for a big board.
   for (const taskId of taskIds) {
     if (tasksWithActiveRuns.has(taskId)) {
       skipped++;
@@ -1610,16 +1652,28 @@ export async function applyAutoRuleRetroactively(
     }
 
     try {
-      await applyWorkflowTemplate(ctx, {
-        task_id: taskId,
-        template_id: rule.template_id,
+      const result = await applyOrSuggest(ctx.supabase, {
+        taskId,
+        labelId: rule.label_id,
+        ideaId: rule.idea_id,
+        ruleId: rule.id,
+        templateId: rule.template_id,
+        applyFn: (tId, templateId) =>
+          applyWorkflowTemplate(ctx, { task_id: tId, template_id: templateId }),
+        options: {
+          userId: ctx.ownerUserId ?? ctx.userId,
+          isAutonomousAgent,
+          awaitAdjudication: true,
+        },
       });
-      applied++;
+      if (result.applied) applied++;
+      else if (result.suggested) suggested++;
+      else skipped++;
     } catch {
       // Task may have gotten a workflow between our check and apply — skip it
       skipped++;
     }
   }
 
-  return { applied, skipped, total: taskIds.length };
+  return { applied, skipped, suggested, total: taskIds.length };
 }

@@ -72,6 +72,23 @@ function makeStep(overrides: Record<string, unknown> = {}) {
   };
 }
 
+function makeSuggestion(overrides: Record<string, unknown> = {}) {
+  return {
+    id: "sug-1",
+    label_id: "lbl-1",
+    rule_id: "rule-1",
+    suggested_template_id: "tmpl-suggested",
+    recommended_template_id: "tmpl-recommended",
+    source: "ai",
+    ai_confidence: 0.62,
+    reason: "Task looks like build work but template is discovery.",
+    detected_categories: { task: "build", template: "discovery" },
+    status: "suggested",
+    adjudication_started_at: null,
+    ...overrides,
+  };
+}
+
 /**
  * Build a mock context where `from(table)` returns different chains
  * based on the table name.
@@ -82,12 +99,14 @@ function buildContext(opts: {
   comments?: unknown[];
   activity?: unknown[];
   attachments?: unknown[];
+  suggestions?: unknown[];
 }): McpContext {
   const taskChain = createChain(opts.task ?? makeTask());
   const stepsChain = createChain(opts.steps ?? []);
   const commentsChain = createChain(opts.comments ?? []);
   const activityChain = createChain(opts.activity ?? []);
   const attachmentsChain = createChain(opts.attachments ?? []);
+  const suggestionsChain = createChain(opts.suggestions ?? []);
 
   const fromFn = vi.fn((table: string) => {
     switch (table) {
@@ -101,6 +120,8 @@ function buildContext(opts: {
         return activityChain;
       case "board_task_attachments":
         return attachmentsChain;
+      case "workflow_suggestions":
+        return suggestionsChain;
       default:
         return createChain();
     }
@@ -301,5 +322,69 @@ describe("getTask — workflow_instruction", () => {
     expect(result.workflow_instruction).not.toBeNull();
     expect(result.workflow_instruction).toContain("update_task");
     expect(result.workflow_instruction).toContain("assignee_id");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getTask — workflow_suggestions (FR-1, AC-19/AC-20)
+// ---------------------------------------------------------------------------
+
+describe("getTask — workflow_suggestions", () => {
+  const params = getTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID });
+
+  it("AC-19: returns workflow_suggestions array with full fields when an open suggestion exists", async () => {
+    const ctx = buildContext({ steps: [], suggestions: [makeSuggestion()] });
+
+    const result = await getTask(ctx, params);
+
+    expect(result.workflow_suggestions).toHaveLength(1);
+    expect(result.workflow_suggestions[0]).toEqual({
+      suggestion_id: "sug-1",
+      label_id: "lbl-1",
+      rule_id: "rule-1",
+      suggested_template_id: "tmpl-suggested",
+      recommended_template_id: "tmpl-recommended",
+      source: "ai",
+      ai_confidence: 0.62,
+      reason: "Task looks like build work but template is discovery.",
+      detected_categories: { task: "build", template: "discovery" },
+      status: "suggested",
+      adjudication_started_at: null,
+    });
+  });
+
+  it("returns an empty workflow_suggestions array when none exist", async () => {
+    const ctx = buildContext({ steps: [], suggestions: [] });
+
+    const result = await getTask(ctx, params);
+
+    expect(result.workflow_suggestions).toEqual([]);
+  });
+
+  it("AC-20: emits suggestion-aware instruction (not self-assign) when an open suggestion exists with no steps", async () => {
+    const ctx = buildContext({ steps: [], suggestions: [makeSuggestion()] });
+
+    const result = await getTask(ctx, params);
+
+    expect(result.workflow_instruction).not.toBeNull();
+    expect(result.workflow_instruction).toContain("unresolved workflow suggestion");
+    expect(result.workflow_instruction).toContain("Do NOT begin work");
+    expect(result.workflow_instruction).toContain("Keep / Replace / Remove");
+    // Suppresses the self-assign directive
+    expect(result.workflow_instruction).not.toContain("update_task");
+    expect(result.workflow_instruction).not.toContain("assignee_id");
+  });
+
+  it("does not affect workflow_step_total — a suggestion is not a step", async () => {
+    const ctx = buildContext({
+      task: makeTask({ workflow_step_total: 0 }),
+      steps: [],
+      suggestions: [makeSuggestion()],
+    });
+
+    const result = await getTask(ctx, params);
+
+    expect(result.workflow_step_total).toBe(0);
+    expect(result.workflow_steps).toEqual([]);
   });
 });

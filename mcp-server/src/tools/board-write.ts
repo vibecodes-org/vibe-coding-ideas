@@ -129,7 +129,11 @@ export async function createTask(ctx: McpContext, params: z.infer<typeof createT
         });
         await checkAndApplyAutoRules(
           ctx.supabase, task.id, match.id, params.idea_id,
-          (taskId, templateId) => applyWorkflowTemplate(ctx, { task_id: taskId, template_id: templateId })
+          (taskId, templateId) => applyWorkflowTemplate(ctx, { task_id: taskId, template_id: templateId }),
+          {
+            userId: ctx.ownerUserId ?? ctx.userId,
+            isAutonomousAgent: !!ctx.ownerUserId && ctx.ownerUserId !== ctx.userId,
+          }
         );
       }
     }

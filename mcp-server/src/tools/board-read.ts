@@ -2,6 +2,50 @@ import { z } from "zod";
 import { DEFAULT_BOARD_COLUMNS } from "../constants";
 import type { McpContext } from "../context";
 
+/**
+ * The fields selected for an open workflow suggestion, in agent-pickup payloads.
+ * Shared between get_task (FR-1) and claim_next_step (FR-2) so both surface an
+ * identical suggestion shape. A suggestion is NOT a workflow step — it never
+ * affects workflow_step_total or any claim token.
+ */
+export const OPEN_SUGGESTION_FIELDS =
+  "id, label_id, rule_id, suggested_template_id, recommended_template_id, source, ai_confidence, reason, detected_categories, status, adjudication_started_at";
+
+/** Maps a raw workflow_suggestions row to the agent-facing payload shape. */
+export function shapeOpenSuggestion(row: Record<string, unknown>) {
+  return {
+    suggestion_id: row.id as string,
+    label_id: row.label_id as string,
+    rule_id: (row.rule_id as string | null) ?? null,
+    suggested_template_id: (row.suggested_template_id as string | null) ?? null,
+    recommended_template_id: (row.recommended_template_id as string | null) ?? null,
+    source: row.source as string,
+    ai_confidence: (row.ai_confidence as number | null) ?? null,
+    reason: (row.reason as string | null) ?? null,
+    detected_categories: row.detected_categories ?? null,
+    status: row.status as string,
+    adjudication_started_at: (row.adjudication_started_at as string | null) ?? null,
+  };
+}
+
+/**
+ * Fetch all OPEN (status = 'suggested') workflow suggestions for a task, shaped
+ * for agent pickup. Returns [] when there are none.
+ */
+export async function fetchOpenSuggestions(
+  ctx: McpContext,
+  taskId: string
+): Promise<ReturnType<typeof shapeOpenSuggestion>[]> {
+  const { data, error } = await ctx.supabase
+    .from("workflow_suggestions")
+    .select(OPEN_SUGGESTION_FIELDS)
+    .eq("task_id", taskId)
+    .eq("status", "suggested");
+
+  if (error) throw new Error(`Failed to fetch workflow suggestions: ${error.message}`);
+  return (data ?? []).map((r) => shapeOpenSuggestion(r as Record<string, unknown>));
+}
+
 export const getBoardSchema = z.object({
   idea_id: z.string().uuid().describe("The idea ID"),
   column_ids: z
@@ -199,6 +243,10 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
     .eq("task_id", params.task_id)
     .order("created_at");
 
+  // Fetch OPEN workflow suggestions (FR-1, AC-19). A suggestion is not a step —
+  // it blocks pickup but never contributes to workflow_step_total.
+  const workflow_suggestions = await fetchOpenSuggestions(ctx, params.task_id);
+
   // Compute workflow instruction for agents
   const steps = workflowSteps ?? [];
   const pendingCount = steps.filter((s: Record<string, unknown>) => s.status === "pending").length;
@@ -215,11 +263,19 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
       `each step has specific deliverables, role requirements, and instructions that are only revealed when claimed.` +
       (hasApprovalGates ? ` Some steps require human approval before proceeding.` : ``);
   } else if (steps.length === 0) {
-    // No workflow — instruct the agent to assign itself so the board shows in-progress
-    workflow_instruction =
-      `This task has no workflow. Before starting work, call update_task with assignee_id set to your bot user ID ` +
-      `(from set_agent_identity) so the board shows you are actively working on it. ` +
-      `When finished, move the task to the appropriate done/verify column using move_task.`;
+    if (workflow_suggestions.length > 0) {
+      // Open suggestion + no steps (AC-20): suppress the self-assign instruction.
+      // Agents cannot resolve suggestions — surface it to a human instead.
+      workflow_instruction =
+        `This task has an unresolved workflow suggestion. Do NOT begin work or assign yourself. ` +
+        `Surface it to a human to Keep / Replace / Remove. Agents cannot resolve suggestions.`;
+    } else {
+      // No workflow — instruct the agent to assign itself so the board shows in-progress
+      workflow_instruction =
+        `This task has no workflow. Before starting work, call update_task with assignee_id set to your bot user ID ` +
+        `(from set_agent_identity) so the board shows you are actively working on it. ` +
+        `When finished, move the task to the appropriate done/verify column using move_task.`;
+    }
   }
 
   return {
@@ -232,6 +288,7 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
       ) ?? [],
     board_task_labels: undefined,
     workflow_steps: steps,
+    workflow_suggestions,
     workflow_instruction,
     comments:
       comments?.map((c) => ({

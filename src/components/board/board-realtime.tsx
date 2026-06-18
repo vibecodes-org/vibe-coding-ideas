@@ -124,6 +124,20 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
           },
           debouncedRefreshWithFollowUp
         )
+        // Open workflow suggestions drive the card indicator. A suggestion
+        // appearing (async AI verdict over Realtime) or resolving must update
+        // the card without a manual refresh. Use the follow-up variant because
+        // resolving a suggestion also writes a denormalized run onto board_tasks.
+        .on(
+          "postgres_changes",
+          {
+            event: "*",
+            schema: "public",
+            table: "workflow_suggestions",
+            filter: `idea_id=eq.${ideaId}`,
+          },
+          debouncedRefreshWithFollowUp
+        )
         // board_task_comments and board_task_attachments are NOT subscribed here.
         // TaskCommentsSection and TaskAttachmentsSection have their own granular,
         // task-scoped realtime subscriptions. Denormalized comment_count/attachment_count
