@@ -81,6 +81,18 @@ function templateStepCount(t: WorkflowTemplate): number {
   return Array.isArray(t.steps) ? t.steps.length : 0;
 }
 
+/** Narrow a template's untyped `steps` JSON to the title/role we display. */
+function templateSteps(t: WorkflowTemplate): { title: string; role?: string }[] {
+  if (!Array.isArray(t.steps)) return [];
+  return t.steps.map((s) => {
+    const o = (s ?? {}) as Record<string, unknown>;
+    return {
+      title: typeof o.title === "string" ? o.title : "Untitled step",
+      role: typeof o.role === "string" ? o.role : undefined,
+    };
+  });
+}
+
 export function WorkflowSuggestionPanel({
   taskId,
   ideaId,
@@ -376,6 +388,13 @@ function ReplacePicker({
   disabled,
   templateStepCount,
 }: ReplacePickerProps) {
+  // Which row's steps are expanded. Default to the AI-recommended template so
+  // the user immediately sees what they'd be attaching. Declared before any
+  // early return to satisfy the Rules of Hooks.
+  const [expandedId, setExpandedId] = useState<string | null>(
+    recommendedTemplateId,
+  );
+
   if (templates === null) {
     return (
       <div className="flex items-center gap-2 py-3">
@@ -445,60 +464,108 @@ function ReplacePicker({
     <div>
       <p className="mb-2.5 text-[12.5px] text-muted-foreground">
         Pick the workflow that matches this work. Scoped to this idea&rsquo;s
-        templates.
+        templates. Tap a workflow to select it, or the arrow to preview its
+        steps.
       </p>
       <ul role="listbox" aria-label="Replacement workflow templates" className="space-y-1.5">
         {ordered.map(({ template, tag }) => {
           const selected = template.id === selectedTemplateId;
+          const expanded = template.id === expandedId;
+          const steps = templateSteps(template);
           return (
             <li key={template.id}>
-              <button
-                type="button"
-                role="option"
-                aria-selected={selected}
-                onClick={() => onSelect(template.id)}
-                disabled={disabled}
-                className={`flex w-full min-h-[44px] items-center gap-3 rounded-md border px-3 py-2 text-left transition-colors ${
+              <div
+                className={`flex w-full items-stretch rounded-md border transition-colors ${
                   selected
                     ? "border-violet-500/60 bg-violet-500/10"
                     : "border-border bg-muted/40 hover:border-border/80 hover:bg-muted/70"
                 } ${tag === "labelled" ? "opacity-80" : ""}`}
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="truncate text-[13px] font-semibold text-foreground">
-                      {template.name}
+                <button
+                  type="button"
+                  role="option"
+                  aria-selected={selected}
+                  onClick={() => onSelect(template.id)}
+                  disabled={disabled}
+                  className="flex min-h-[44px] flex-1 items-center gap-3 rounded-l-md px-3 py-2 text-left"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="truncate text-[13px] font-semibold text-foreground">
+                        {template.name}
+                      </span>
+                      {tag === "ai" && (
+                        <Badge
+                          variant="outline"
+                          className="gap-1 border-violet-500/40 bg-violet-500/15 text-[10px] font-bold uppercase text-violet-300"
+                        >
+                          <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
+                          AI recommends
+                        </Badge>
+                      )}
+                      {tag === "labelled" && (
+                        <Badge
+                          variant="outline"
+                          className="border-border text-[10px] font-medium text-muted-foreground"
+                        >
+                          originally labelled
+                        </Badge>
+                      )}
+                    </div>
+                    <span className="text-[11.5px] text-muted-foreground">
+                      {templateStepCount(template)} step
+                      {templateStepCount(template) === 1 ? "" : "s"}
                     </span>
-                    {tag === "ai" && (
-                      <Badge
-                        variant="outline"
-                        className="gap-1 border-violet-500/40 bg-violet-500/15 text-[10px] font-bold uppercase text-violet-300"
-                      >
-                        <Sparkles className="h-2.5 w-2.5" aria-hidden="true" />
-                        AI recommends
-                      </Badge>
-                    )}
-                    {tag === "labelled" && (
-                      <Badge
-                        variant="outline"
-                        className="border-border text-[10px] font-medium text-muted-foreground"
-                      >
-                        originally labelled
-                      </Badge>
-                    )}
                   </div>
-                  <span className="text-[11.5px] text-muted-foreground">
-                    {templateStepCount(template)} step
-                    {templateStepCount(template) === 1 ? "" : "s"}
-                  </span>
-                </div>
-                <ChevronRight
-                  className={`h-4 w-4 shrink-0 ${
-                    selected ? "text-violet-300" : "text-muted-foreground"
-                  }`}
-                  aria-hidden="true"
-                />
-              </button>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setExpandedId(expanded ? null : template.id)}
+                  disabled={disabled}
+                  aria-expanded={expanded}
+                  aria-label={
+                    expanded
+                      ? `Hide ${template.name} steps`
+                      : `Show ${template.name} steps`
+                  }
+                  className="flex min-h-[44px] shrink-0 items-center rounded-r-md px-3 text-muted-foreground transition-colors hover:text-foreground"
+                >
+                  <ChevronRight
+                    className={`h-4 w-4 shrink-0 transition-transform ${
+                      expanded ? "rotate-90" : ""
+                    } ${selected ? "text-violet-300" : ""}`}
+                    aria-hidden="true"
+                  />
+                </button>
+              </div>
+              {expanded && (
+                <ol className="mb-0.5 mt-1 space-y-1 rounded-md border border-border/60 bg-background/40 px-3 py-2">
+                  {steps.length === 0 ? (
+                    <li className="text-[11.5px] text-muted-foreground">
+                      No steps defined.
+                    </li>
+                  ) : (
+                    steps.map((s, i) => (
+                      <li
+                        key={i}
+                        className="flex items-center gap-2 text-[11.5px]"
+                      >
+                        <span className="shrink-0 tabular-nums text-muted-foreground/70">
+                          {i + 1}.
+                        </span>
+                        <span className="min-w-0 truncate text-foreground/90">
+                          {s.title}
+                        </span>
+                        {s.role && (
+                          <span className="ml-auto shrink-0 text-muted-foreground/70">
+                            {s.role}
+                          </span>
+                        )}
+                      </li>
+                    ))
+                  )}
+                </ol>
+              )}
             </li>
           );
         })}

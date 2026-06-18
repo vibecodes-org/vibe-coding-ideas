@@ -71,8 +71,16 @@ function makeRow(overrides: Partial<WorkflowSuggestion> = {}): Record<string, un
   };
 }
 
-function tmpl(id: string, name: string, steps = 1) {
-  return { id, name, steps: Array.from({ length: steps }, () => ({})) };
+function tmpl(
+  id: string,
+  name: string,
+  steps: number | Array<{ title?: string; role?: string }> = 1,
+) {
+  const arr =
+    typeof steps === "number"
+      ? Array.from({ length: steps }, () => ({}))
+      : steps;
+  return { id, name, steps: arr };
 }
 
 describe("WorkflowSuggestionPanel", () => {
@@ -156,6 +164,32 @@ describe("WorkflowSuggestionPanel", () => {
     expect(names[0]).toMatch(/AI recommends/i);
     expect(names[names.length - 1]).toContain("Labelled Discovery");
     expect(names[names.length - 1]).toMatch(/originally labelled/i);
+  });
+
+  it("Replace picker auto-expands the AI-recommended steps and toggles others on demand", async () => {
+    listWorkflowTemplates.mockResolvedValue([
+      tmpl("tmpl-labelled", "Labelled Discovery", [
+        { title: "Competitor analysis", role: "Analyst" },
+      ]),
+      tmpl("tmpl-ai", "AI Build Flow", [
+        { title: "Requirements", role: "PO" },
+        { title: "Implementation", role: "Engineer" },
+      ]),
+    ]);
+
+    render(<WorkflowSuggestionPanel taskId="task-1" ideaId="idea-1" />);
+    fireEvent.click(await screen.findByRole("button", { name: /Replace/i }));
+
+    // Recommended template's steps are visible by default (no extra tap).
+    expect(await screen.findByText("Implementation")).toBeInTheDocument();
+    expect(screen.getByText("Requirements")).toBeInTheDocument();
+
+    // Another template's steps stay hidden until its arrow is tapped.
+    expect(screen.queryByText("Competitor analysis")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", { name: /Show Labelled Discovery steps/i }),
+    );
+    expect(await screen.findByText("Competitor analysis")).toBeInTheDocument();
   });
 
   it("Replace picker shows the create-template hint when only the labelled template exists", async () => {
