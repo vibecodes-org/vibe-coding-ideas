@@ -29,6 +29,12 @@ export interface AutoRuleOptions {
   generate?: GenerateObjectFn;
   /** Test seam: await the async adjudication. */
   awaitAdjudication?: boolean;
+  /**
+   * Schedule the async adjudication as a post-response task (Next.js `after()`)
+   * so it reliably runs on serverless and its logs are captured. Server actions
+   * pass `after`; non-Next callers omit it and get the detached-promise fallback.
+   */
+  schedule?: (task: () => void) => void;
 }
 
 export async function checkAndApplyAutoRules(
@@ -200,6 +206,7 @@ export async function applyOrSuggest(
     isAutonomousAgent: options.isAutonomousAgent,
     generate: options.generate,
     awaitAdjudication: options.awaitAdjudication,
+    schedule: options.schedule,
   });
 
   return { applied: result.applied, suggested: result.suggested };

@@ -1,5 +1,6 @@
 "use server";
 
+import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_BOARD_COLUMNS, POSITION_GAP } from "@/lib/constants";
 import { validateTitle, validateOptionalDescription, validateLabelName, validateLabelColor, validateComment } from "@/lib/validation";
@@ -445,6 +446,8 @@ export async function addLabelToTask(
   await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate, {
     userId: user.id,
     isAutonomousAgent: false,
+    // after(): run the AI adjudication post-response — reliable + logged on serverless.
+    schedule: after,
   });
 
   // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
@@ -520,6 +523,7 @@ export async function triggerAutoRulesForTasks(
           await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyFn, {
             userId: user.id,
             isAutonomousAgent: false,
+            schedule: after,
           });
         }
         onProgress?.(taskId);

@@ -490,6 +490,13 @@ export interface DecideAutoRuleInput {
    * Production callers leave this false so the request path stays fast.
    */
   awaitAdjudication?: boolean;
+  /**
+   * Schedule the async adjudication as a post-response task (e.g. Next.js
+   * `after()`) so it reliably runs on serverless AND its logs are captured. A
+   * bare detached promise is dropped (and un-logged) once the function returns
+   * on Vercel. Falls back to `void` when not provided (non-Next contexts).
+   */
+  schedule?: (task: () => void) => void;
 }
 
 export interface DecideAutoRuleResult {
@@ -562,6 +569,7 @@ export async function decideAutoRuleApplication(
     candidateTemplates,
     generate,
     awaitAdjudication = false,
+    schedule,
   } = input;
 
   const mismatch = detectMismatch(
@@ -644,13 +652,21 @@ export async function decideAutoRuleApplication(
     return { applied: false, suggested: true, suggestionId, mismatch, adjudication };
   }
 
-  // Fire-and-forget — keep the request path fast. Catch everything.
-  void adjudicate().catch((err) => {
-    logger.error("Workflow suggestion: async adjudication crashed", {
-      error: err instanceof Error ? err.message : String(err),
-      suggestionId,
+  // Run after the response so the request path stays fast. Prefer a scheduled
+  // post-response task (Next.js `after()`): it reliably runs on serverless and
+  // its logs are captured. A bare detached promise is dropped + un-logged there.
+  const runAdjudicate = () =>
+    adjudicate().catch((err) => {
+      logger.error("Workflow suggestion: async adjudication crashed", {
+        error: err instanceof Error ? err.message : String(err),
+        suggestionId,
+      });
     });
-  });
+  if (schedule) {
+    schedule(runAdjudicate);
+  } else {
+    void runAdjudicate();
+  }
 
   return { applied: false, suggested: true, suggestionId, mismatch };
 }
