@@ -40,8 +40,14 @@ export const WORKFLOW_AI_AUTOAPPLY_THRESHOLD = 0.85;
  */
 export { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS };
 
-/** Small/fast model for cheap workflow-matching adjudication. */
-export const WORKFLOW_MATCHING_MODEL = "claude-haiku-4-5";
+/**
+ * Model for the cheap workflow-matching adjudication (gated behind the keyword
+ * pre-filter, tiny 3-field output). Uses the same model the rest of the app's AI
+ * runs on — the `claude-haiku-4-5` alias was rejected by the Anthropic API on the
+ * resolved key (adjudication silently fell back to heuristic in prod); the proven
+ * model works. Revisit a Haiku-tier id (e.g. dated) later as a cost optimisation.
+ */
+export const WORKFLOW_MATCHING_MODEL = "claude-sonnet-4-6";
 
 const AI_TIMEOUT_MS = 30_000;
 
