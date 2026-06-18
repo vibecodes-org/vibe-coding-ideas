@@ -433,8 +433,14 @@ export async function adjudicateWorkflowMatch(
       recommendedTemplateId,
       confidence,
       rationale: parsed.data.rationale,
+      // Only silently auto-apply when the AI confirms the RULE'S OWN template
+      // (i.e. the keyword filter raised a false-positive mismatch). When the AI
+      // picks a DIFFERENT template, autoApply stays false: the suggestion is
+      // left open with that template pre-selected so a human confirms the swap.
+      // Never silently substitute a workflow the user didn't choose.
       autoApply:
-        confidence >= WORKFLOW_AI_AUTOAPPLY_THRESHOLD && recommendedTemplateId !== null,
+        confidence >= WORKFLOW_AI_AUTOAPPLY_THRESHOLD &&
+        recommendedTemplateId === suggestedTemplate.id,
     };
   } catch (err) {
     logger.error("Workflow matching: AI adjudication failed, using heuristic", {

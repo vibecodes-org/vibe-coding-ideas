@@ -233,7 +233,7 @@ describe("adjudicateWorkflowMatch", () => {
     vi.clearAllMocks();
   });
 
-  it("confident AI verdict (>=0.85) returns recommended template + autoApply", async () => {
+  it("confident AI pick of a DIFFERENT template does NOT auto-apply (confirm before swap)", async () => {
     aiAvailable();
     const generate = vi.fn().mockResolvedValue({
       object: {
@@ -254,9 +254,11 @@ describe("adjudicateWorkflowMatch", () => {
     );
 
     expect(result.source).toBe("ai");
+    // Recommendation is surfaced (pre-selected in Replace) but NOT auto-applied:
+    // it differs from the rule's own template, so a human must confirm the swap.
     expect(result.recommendedTemplateId).toBe("tmpl-spike");
     expect(result.confidence).toBe(0.92);
-    expect(result.autoApply).toBe(true);
+    expect(result.autoApply).toBe(false);
     expect(mockLogAiUsage).toHaveBeenCalledWith(
       fakeSupabase,
       expect.objectContaining({
@@ -267,6 +269,31 @@ describe("adjudicateWorkflowMatch", () => {
     );
     // byok → no credit decrement
     expect(mockDecrementStarterCredit).not.toHaveBeenCalled();
+  });
+
+  it("confident AI confirmation of the RULE'S OWN template auto-applies (false-positive recovery)", async () => {
+    aiAvailable();
+    const generate = vi.fn().mockResolvedValue({
+      object: {
+        recommended_template_id: "tmpl-validation",
+        confidence: 0.91,
+        rationale: "On reflection the labelled validation workflow does fit.",
+      },
+      usage: { inputTokens: 90, outputTokens: 18 },
+    });
+
+    const result = await adjudicateWorkflowMatch(
+      fakeSupabase,
+      "user-1",
+      suggested,
+      candidates,
+      task,
+      { generate: generate as never, ideaId: "idea-1" }
+    );
+
+    expect(result.source).toBe("ai");
+    expect(result.recommendedTemplateId).toBe("tmpl-validation");
+    expect(result.autoApply).toBe(true);
   });
 
   it("uncertain AI verdict (<0.85) suggests without auto-apply", async () => {
