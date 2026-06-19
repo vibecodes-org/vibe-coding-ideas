@@ -377,6 +377,7 @@ export type Database = {
           workflow_step_started_at: string | null;
           workflow_active_step_title: string | null;
           workflow_active_agent_name: string | null;
+          workflow_template_name: string | null;
           archived: boolean;
           attachment_count: number;
           comment_count: number;

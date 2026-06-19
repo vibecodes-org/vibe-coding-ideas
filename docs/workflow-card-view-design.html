@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UX Design — Workflow Card Idle Chip (REWORK, idle-only)</title>
+<style>
+  :root {
+    --page: #09090b;
+    --card: #0a0a0a;
+    --zinc-border: #27272a;
+    --zinc-border-soft: #1f1f23;
+    --muted: #a1a1aa;
+    --muted-2: #71717a;
+    --fg: #fafafa;
+    --blue-chip: #2563eb;   /* bg-blue-600, ~4.9:1 with white — passes AA */
+    --blue-bar: #3b82f6;    /* bg-blue-500 / bg-primary — bar fill */
+    --blue-track: rgba(59,130,246,0.18);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--fg);
+    font: 14px/1.6 ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    padding: 40px 20px 80px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 0 0 4px; letter-spacing: -0.01em; }
+  h2 { font-size: 17px; margin: 40px 0 12px; letter-spacing: -0.01em; }
+  h3 { font-size: 14px; margin: 22px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+  p { color: var(--muted); margin: 8px 0; }
+  .sub { color: var(--muted-2); font-size: 13px; margin-top: 0; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; background: #18181b; border: 1px solid var(--zinc-border-soft); border-radius: 4px; padding: 1px 5px; color: #e4e4e7; }
+  pre { background: #18181b; border: 1px solid var(--zinc-border); border-radius: 8px; padding: 14px 16px; overflow-x: auto; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; line-height: 1.55; color: #e4e4e7; }
+  .callout { border: 1px solid var(--zinc-border); border-radius: 10px; padding: 14px 16px; margin: 14px 0; background: #0e0e11; }
+  .callout.scope { border-color: #3f3f46; }
+  .callout.locked { border-left: 3px solid #f59e0b; }
+  .callout.cite { border-left: 3px solid var(--blue-bar); }
+  .callout.data { border-left: 3px solid #a855f7; }
+  .callout.aa { border-left: 3px solid #10b981; }
+  ul { color: var(--muted); margin: 8px 0; padding-left: 20px; }
+  li { margin: 4px 0; }
+
+  /* ---- shared card shell to render chips in-context ---- */
+  .card { background: var(--card); border: 1px solid var(--zinc-border); border-radius: 12px; padding: 12px 14px; }
+  .card .ttl { font-size: 13px; font-weight: 600; color: var(--fg); margin-bottom: 10px; }
+  .row { display: flex; flex-wrap: wrap; gap: 18px; align-items: flex-start; }
+  .cell { display: flex; flex-direction: column; gap: 8px; }
+  .cell .lbl { font-size: 11px; color: var(--muted-2); }
+
+  /* ============ IDLE CHIP — NEW DESIGN ============ */
+  .wf-idle { display: inline-flex; flex-direction: column; gap: 3px; max-width: 100%; }
+  .wf-chip {
+    display: inline-flex; max-width: 100%; align-items: center; gap: 4px;
+    border-radius: 9999px; padding: 2px 8px;
+    font-size: 10px; line-height: 1.2; font-weight: 600;
+    background: var(--blue-chip); color: #fff;
+  }
+  .wf-chip svg { width: 10px; height: 10px; flex: 0 0 auto; }
+  .wf-chip .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .wf-chip .sep, .wf-chip .frac { flex: 0 0 auto; }
+  .wf-chip .frac { font-variant-numeric: tabular-nums; }
+  .wf-bar { height: 3px; width: 100%; min-width: 56px; border-radius: 9999px; background: var(--blue-track); overflow: hidden; }
+  .wf-bar > span { display: block; height: 100%; border-radius: 9999px; background: var(--blue-bar); }
+
+  /* width constraints for demos */
+  .narrow { max-width: 170px; }
+  .mobile { width: 288px; } /* card content width at ~320px viewport */
+
+  /* ============ OLD IDLE CHIP (before) ============ */
+  .wf-old {
+    display: inline-flex; align-items: center; gap: 4px;
+    border: 1px solid var(--zinc-border); background: rgba(255,255,255,0.04);
+    border-radius: 9999px; padding: 2px 8px;
+    font-size: 10px; line-height: 1.2; font-weight: 500; color: var(--muted);
+  }
+  .wf-old svg { width: 10px; height: 10px; flex: 0 0 auto; }
+
+  /* ============ ACTIVE CHIP — UNCHANGED reference ============ */
+  .wf-active {
+    display: inline-flex; max-width: 100%; align-items: center; gap: 4px;
+    border: 1px solid rgba(59,130,246,0.25); background: rgba(59,130,246,0.15);
+    border-radius: 9999px; padding: 2px 8px;
+    font-size: 10px; line-height: 1.2; font-weight: 600; color: #60a5fa;
+  }
+  .wf-active svg { width: 10px; height: 10px; flex: 0 0 auto; }
+  .wf-active .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .wf-active-frac { font-family: ui-monospace, monospace; font-size: 10px; font-weight: 500; color: var(--muted); }
+  .spin { animation: spin 0.9s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .pair { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .arrow { color: var(--muted-2); font-size: 18px; }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; padding: 2px 7px; border-radius: 5px; }
+  .tag.lock { background: rgba(245,158,11,0.12); color: #fbbf24; border: 1px solid rgba(245,158,11,0.3); }
+  .tag.new { background: rgba(37,99,235,0.18); color: #93c5fd; border: 1px solid rgba(59,130,246,0.4); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Workflow Card — Idle Chip Redesign</h1>
+  <p class="sub">UX Design step (REWORK) · Target: <code>WorkflowStatusBadge</code> in <code>src/components/board/board-task-card.tsx</code></p>
+
+  <div class="callout cite">
+    <strong>Per the Requirements step:</strong> board task cards should communicate, at a glance, that a workflow is attached and how far along it is — including the workflow's <em>name</em> — before the run begins. The current idle chip shows only a bare grey <code>☑ N/M</code>, giving neither a name nor a visual sense of progress.
+  </div>
+
+  <div class="callout scope">
+    <h3 style="margin-top:0;">Corrected scope — IDLE STATE ONLY</h3>
+    <p style="margin-bottom:6px;">The prior submission redesigned all six chip states and was rejected as too broad. This rework changes <strong>only the <code>idle</code> branch</strong> of <code>WorkflowStatusBadge</code> (the chip shown when a workflow is attached but not yet running).</p>
+    <div class="callout locked" style="margin:10px 0 0;">
+      <strong>States left UNCHANGED (do not touch):</strong>
+      <ul style="margin-bottom:0;">
+        <li><code>active</code> — blue <code>border-blue-500/25 bg-blue-500/15 text-blue-400</code> chip, spinning <code>Loader2</code> + "{title} in progress" + separate mono fraction span</li>
+        <li><code>approval</code> — amber chip + <code>Bell</code> + "{title} needs approval" + separate fraction</li>
+        <li><code>failed</code> — red chip + <code>AlertTriangle</code> + "{title} failed" + separate fraction</li>
+        <li><code>stale</code> — amber chip + <code>Clock</code> + "{title} stale · {timeLabel}" + separate fraction</li>
+        <li><code>complete</code> — emerald chip + <code>CircleCheck</code> + fraction</li>
+      </ul>
+    </div>
+  </div>
+
+  <!-- =================== BEFORE / AFTER =================== -->
+  <h2>1 · Before &rarr; After (idle chip only)</h2>
+  <p>The grey, name-less idle chip becomes a solid blue play-icon chip carrying the workflow name and a thin progress bar.</p>
+
+  <div class="card">
+    <div class="ttl">Implement billing webhook handler</div>
+    <div class="pair">
+      <div class="cell">
+        <span class="lbl">Before <span class="tag lock">CURRENT</span></span>
+        <span class="wf-old">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"></polyline><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>
+          0/4
+        </span>
+      </div>
+      <span class="arrow">&rarr;</span>
+      <div class="cell">
+        <span class="lbl">After <span class="tag new">NEW</span></span>
+        <span class="wf-idle" role="img" aria-label="Workflow: Feature Development, 0 of 6 steps complete">
+          <span class="wf-chip">
+            <svg viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+            <span class="name">Feature Development</span>
+            <span class="sep" aria-hidden="true">&middot;</span>
+            <span class="frac">0/6</span>
+          </span>
+          <span class="wf-bar" aria-hidden="true"><span style="width:0%"></span></span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== FILL LEVELS =================== -->
+  <h2>2 · Idle chip at different completed counts</h2>
+  <p>These all remain the <strong>idle / not-yet-running</strong> state — the fraction and bar simply reflect how many steps were already completed. They are <em>not</em> "in progress" (that is the untouched <code>active</code> state).</p>
+
+  <div class="card">
+    <div class="row">
+      <div class="cell">
+        <span class="lbl">0 of 6</span>
+        <span class="wf-idle" role="img" aria-label="Workflow: Feature Development, 0 of 6 steps complete">
+          <span class="wf-chip">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+            <span class="name">Feature Development</span><span class="sep" aria-hidden="true">&middot;</span><span class="frac">0/6</span>
+          </span>
+          <span class="wf-bar" aria-hidden="true"><span style="width:0%"></span></span>
+        </span>
+      </div>
+      <div class="cell">
+        <span class="lbl">3 of 6</span>
+        <span class="wf-idle" role="img" aria-label="Workflow: Feature Development, 3 of 6 steps complete">
+          <span class="wf-chip">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+            <span class="name">Feature Development</span><span class="sep" aria-hidden="true">&middot;</span><span class="frac">3/6</span>
+          </span>
+          <span class="wf-bar" aria-hidden="true"><span style="width:50%"></span></span>
+        </span>
+      </div>
+      <div class="cell">
+        <span class="lbl">6 of 6</span>
+        <span class="wf-idle" role="img" aria-label="Workflow: Feature Development, 6 of 6 steps complete">
+          <span class="wf-chip">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+            <span class="name">Feature Development</span><span class="sep" aria-hidden="true">&middot;</span><span class="frac">6/6</span>
+          </span>
+          <span class="wf-bar" aria-hidden="true"><span style="width:100%"></span></span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== ACTIVE UNCHANGED =================== -->
+  <h2>3 · <code>active</code> chip — UNCHANGED reference</h2>
+  <p>Shown only to mark the boundary. This is exactly the current code and <strong>must not be modified by implementation</strong>. Note the distinct treatment: outlined (not solid) chip, spinner, "in progress" text, and a <em>separate</em> mono fraction sitting beside the chip (no progress bar).</p>
+
+  <div class="card">
+    <div class="cell">
+      <span class="lbl"><span class="tag lock">DO NOT TOUCH</span></span>
+      <span style="display:inline-flex;align-items:center;gap:6px;">
+        <span class="wf-active">
+          <svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg>
+          <span class="truncate">Feature Development in progress</span>
+        </span>
+        <span class="wf-active-frac">3/6</span>
+      </span>
+    </div>
+  </div>
+
+  <!-- =================== EDGE CASES =================== -->
+  <h2>4 · Edge cases (idle chip)</h2>
+
+  <h3>Long workflow name — truncates, fraction stays visible</h3>
+  <div class="card">
+    <div class="cell narrow">
+      <span class="lbl">max-width 170px</span>
+      <span class="wf-idle" role="img" aria-label="Workflow: End-to-end Release &amp; Compliance Pipeline, 2 of 9 steps complete">
+        <span class="wf-chip">
+          <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+          <span class="name">End-to-end Release &amp; Compliance Pipeline</span><span class="sep" aria-hidden="true">&middot;</span><span class="frac">2/9</span>
+        </span>
+        <span class="wf-bar" aria-hidden="true"><span style="width:22%"></span></span>
+      </span>
+    </div>
+  </div>
+
+  <h3>~320px mobile card</h3>
+  <div class="card mobile">
+    <div class="ttl">Add CSV export to the reports page</div>
+    <span class="wf-idle" role="img" aria-label="Workflow: Feature Development, 1 of 6 steps complete">
+      <span class="wf-chip">
+        <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+        <span class="name">Feature Development</span><span class="sep" aria-hidden="true">&middot;</span><span class="frac">1/6</span>
+      </span>
+      <span class="wf-bar" aria-hidden="true"><span style="width:16.6%"></span></span>
+    </span>
+  </div>
+
+  <h3>Missing name fallback &amp; divide-by-zero</h3>
+  <div class="card">
+    <div class="row">
+      <div class="cell">
+        <span class="lbl">name absent &rarr; "Workflow"</span>
+        <span class="wf-idle" role="img" aria-label="Workflow, 0 of 4 steps complete">
+          <span class="wf-chip">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+            <span class="name">Workflow</span><span class="sep" aria-hidden="true">&middot;</span><span class="frac">0/4</span>
+          </span>
+          <span class="wf-bar" aria-hidden="true"><span style="width:0%"></span></span>
+        </span>
+      </div>
+      <div class="cell">
+        <span class="lbl">total = 0 &rarr; empty track, no NaN</span>
+        <span class="wf-idle" role="img" aria-label="Workflow: Feature Development, 0 of 0 steps complete">
+          <span class="wf-chip">
+            <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="6 3 20 12 6 21 6 3"></polygon></svg>
+            <span class="name">Feature Development</span><span class="sep" aria-hidden="true">&middot;</span><span class="frac">0/0</span>
+          </span>
+          <span class="wf-bar" aria-hidden="true"><span style="width:0%"></span></span>
+        </span>
+      </div>
+    </div>
+  </div>
+
+  <!-- =================== DATA GAP =================== -->
+  <h2>5 · Data gap (must be surfaced by implementation)</h2>
+  <div class="callout data">
+    <p style="margin-top:0;"><strong>The workflow name is not currently on the card task object.</strong> <code>board_tasks</code> exposes <code>workflow_step_completed</code> and <code>workflow_step_total</code> (verified in <code>src/types/database.ts</code>), but there is no <code>workflow_template_name</code> field.</p>
+    <p>Implementation must surface it by joining <code>workflow_runs.template_id &rarr; workflow_templates.name</code> onto the same query that already hydrates the <code>workflow_step_*</code> counts, exposing it as e.g. <code>task.workflow_template_name</code>.</p>
+    <p style="margin-bottom:0;"><strong>Fallback:</strong> when the name is absent/null, render the literal string <code>"Workflow"</code>. The chip must never render an empty name.</p>
+  </div>
+
+  <!-- =================== IMPLEMENTATION SPEC =================== -->
+  <h2>6 · Implementation spec — <code>idle</code> branch only</h2>
+
+  <h3>Markup (replaces only the <code>case "idle"</code> return)</h3>
+<pre>// derived just for the idle branch:
+const name = task.workflow_template_name ?? "Workflow";
+const pct =
+  workflow_step_total &gt; 0
+    ? Math.min(100, (workflow_step_completed / workflow_step_total) * 100)
+    : 0; // divide-by-zero guard
+
+case "idle":
+  return (
+    &lt;Tooltip&gt;
+      &lt;TooltipTrigger asChild&gt;
+        &lt;span
+          className="inline-flex max-w-full flex-col gap-0.5"
+          role="img"
+          aria-label={`Workflow: ${name}, ${workflow_step_completed} of ${workflow_step_total} steps complete`}
+        &gt;
+          &lt;span className="inline-flex max-w-full items-center gap-1 rounded-full
+                           bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white"&gt;
+            &lt;Play className="h-2.5 w-2.5 shrink-0 fill-current" /&gt;
+            &lt;span className="truncate min-w-0"&gt;{name}&lt;/span&gt;
+            &lt;span className="shrink-0" aria-hidden&gt;&middot;&lt;/span&gt;
+            &lt;span className="shrink-0 tabular-nums"&gt;{fraction}&lt;/span&gt;
+          &lt;/span&gt;
+          &lt;span aria-hidden className="h-[3px] w-full overflow-hidden rounded-full bg-blue-500/20"&gt;
+            &lt;span className="block h-full rounded-full bg-primary" style={{ width: `${pct}%` }} /&gt;
+          &lt;/span&gt;
+        &lt;/span&gt;
+      &lt;/TooltipTrigger&gt;
+      &lt;TooltipContent&gt;{name} &mdash; not started ({fraction})&lt;/TooltipContent&gt;
+    &lt;/Tooltip&gt;
+  );</pre>
+
+  <ul>
+    <li><strong>Icon:</strong> lucide <code>Play</code> with <code>fill-current</code>, sized <code>h-2.5 w-2.5 shrink-0</code>. Add <code>Play</code> to the lucide import; <code>CheckSquare</code> can be removed if unused elsewhere.</li>
+    <li><strong>Chip:</strong> <code>inline-flex max-w-full items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white</code></li>
+    <li><strong>Container:</strong> <code>inline-flex max-w-full flex-col gap-0.5</code> so the bar sits directly under the chip.</li>
+    <li><strong>Progress bar:</strong> ~3px tall (<code>h-[3px]</code>), track <code>bg-blue-500/20</code>, fill <code>bg-primary</code> width <code>= pct%</code>. Lightweight inline div — <strong>not</strong> the shadcn <code>Progress</code> component (avoids extra nodes across many cards).</li>
+    <li><strong>Truncation:</strong> name <code>truncate min-w-0</code>; icon, <code>&middot;</code> separator, and fraction all <code>shrink-0</code> so the fraction is never clipped.</li>
+    <li><strong>Guards:</strong> <code>pct = 0</code> when <code>workflow_step_total === 0</code>; <code>Math.min(100, …)</code> caps any overflow.</li>
+  </ul>
+
+  <!-- =================== WCAG =================== -->
+  <h2>7 · WCAG 2.1 AA confirmation</h2>
+  <div class="callout aa">
+    <ul style="margin:0;">
+      <li><strong>Contrast:</strong> white text on <code>bg-blue-600</code> (#2563eb) &asymp; <strong>4.9:1</strong> &mdash; passes AA for small text (&ge;4.5:1). <code>bg-blue-500</code> (#3b82f6) would be only ~3.7:1 and was deliberately rejected.</li>
+      <li><strong>Not colour alone:</strong> meaning is carried by the <code>Play</code> icon, the workflow name, and the <code>N/M</code> fraction &mdash; not by hue. The progress bar is supplementary.</li>
+      <li><strong>Non-text contrast:</strong> the blue bar fill (#3b82f6) on its faint track is a decorative indicator that duplicates the textual fraction, so it is not relied upon as the sole carrier of state.</li>
+      <li><strong>Screen readers:</strong> chip wrapper carries <code>role="img"</code> with an <code>aria-label</code> like <em>"Workflow: Feature Development, 0 of 6 steps complete"</em>; the progress bar is <code>aria-hidden</code> to avoid double announcement; the separator <code>&middot;</code> is <code>aria-hidden</code>.</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>

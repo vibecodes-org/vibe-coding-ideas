@@ -6,7 +6,7 @@ import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import {
   GripVertical,
-  CheckSquare,
+  Play,
   Paperclip,
   MessageSquare,
   Archive,
@@ -26,6 +26,7 @@ import { Button } from "@/components/ui/button";
 import { useBotRoles } from "@/components/bot-roles-context";
 import { getRoleColor } from "@/lib/agent-colors";
 import { getInitials } from "@/lib/utils";
+import { workflowDisplayName, workflowProgressPct } from "@/lib/workflow-helpers";
 import { TaskLabelBadges } from "./task-label-badges";
 import { LabelPicker } from "./label-picker";
 import { DueDateBadge } from "./due-date-badge";
@@ -240,18 +241,32 @@ function WorkflowStatusBadge({ task, isWiring }: { task: BoardTaskWithAssignee; 
           <TooltipContent>All workflow steps complete</TooltipContent>
         </Tooltip>
       );
-    case "idle":
+    case "idle": {
+      const name = workflowDisplayName(task.workflow_template_name);
+      const pct = workflowProgressPct(workflow_step_completed, workflow_step_total);
       return (
         <Tooltip>
           <TooltipTrigger asChild>
-            <span className="inline-flex items-center gap-1 rounded-full border border-border bg-white/[0.04] px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
-              <CheckSquare className="h-2.5 w-2.5 shrink-0" />
-              {fraction}
+            <span
+              className="inline-flex max-w-full flex-col gap-0.5"
+              role="img"
+              aria-label={`Workflow: ${name}, ${workflow_step_completed} of ${workflow_step_total} steps complete`}
+            >
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+                <Play className="h-2.5 w-2.5 shrink-0 fill-current" />
+                <span className="truncate min-w-0">{name}</span>
+                <span className="shrink-0" aria-hidden>&middot;</span>
+                <span className="shrink-0 tabular-nums">{fraction}</span>
+              </span>
+              <span aria-hidden className="h-[3px] w-full overflow-hidden rounded-full bg-blue-500/20">
+                <span className="block h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+              </span>
             </span>
           </TooltipTrigger>
-          <TooltipContent>Workflow steps</TooltipContent>
+          <TooltipContent>{name} &mdash; not started ({fraction})</TooltipContent>
         </Tooltip>
       );
+    }
   }
 }
 

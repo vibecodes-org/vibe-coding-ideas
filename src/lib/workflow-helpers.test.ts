@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { checkAndCompleteRun, checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow, propagateTemplateEdits, TERMINAL_STATUSES } from "./workflow-helpers";
+import { checkAndCompleteRun, checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow, propagateTemplateEdits, TERMINAL_STATUSES, workflowDisplayName, workflowProgressPct, WORKFLOW_FALLBACK_NAME } from "./workflow-helpers";
 
 function createMockSupabase(steps: { id: string; status: string }[]) {
   const updateChain = {
@@ -26,6 +26,59 @@ describe("TERMINAL_STATUSES", () => {
     expect(TERMINAL_STATUSES).toContain("completed");
     expect(TERMINAL_STATUSES).toContain("skipped");
     expect(TERMINAL_STATUSES).toHaveLength(2);
+  });
+});
+
+describe("workflowProgressPct", () => {
+  it("returns 0 for 0/0 without NaN (divide-by-zero guard)", () => {
+    expect(workflowProgressPct(0, 0)).toBe(0);
+    expect(Number.isNaN(workflowProgressPct(0, 0))).toBe(false);
+  });
+
+  it("returns 0 for 0 of 6", () => {
+    expect(workflowProgressPct(0, 6)).toBe(0);
+  });
+
+  it("returns 50 for 3 of 6", () => {
+    expect(workflowProgressPct(3, 6)).toBe(50);
+  });
+
+  it("returns 100 for 6 of 6", () => {
+    expect(workflowProgressPct(6, 6)).toBe(100);
+  });
+
+  it("caps overflow at 100", () => {
+    expect(workflowProgressPct(9, 6)).toBe(100);
+  });
+
+  it("rounds to the nearest integer", () => {
+    // 1/6 = 16.66… → 17
+    expect(workflowProgressPct(1, 6)).toBe(17);
+  });
+
+  it("treats negative totals as zero", () => {
+    expect(workflowProgressPct(1, -3)).toBe(0);
+  });
+});
+
+describe("workflowDisplayName", () => {
+  it("falls back to 'Workflow' for null", () => {
+    expect(workflowDisplayName(null)).toBe(WORKFLOW_FALLBACK_NAME);
+    expect(WORKFLOW_FALLBACK_NAME).toBe("Workflow");
+  });
+
+  it("falls back to 'Workflow' for undefined", () => {
+    expect(workflowDisplayName(undefined)).toBe("Workflow");
+  });
+
+  it("falls back to 'Workflow' for an empty or whitespace string", () => {
+    expect(workflowDisplayName("")).toBe("Workflow");
+    expect(workflowDisplayName("   ")).toBe("Workflow");
+  });
+
+  it("passes through and trims a real name", () => {
+    expect(workflowDisplayName("Feature Development")).toBe("Feature Development");
+    expect(workflowDisplayName("  Release Pipeline  ")).toBe("Release Pipeline");
   });
 });
 

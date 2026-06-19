@@ -9,6 +9,28 @@ import {
 
 export const TERMINAL_STATUSES = ["completed", "skipped"] as const;
 
+/** Fallback label for the workflow chip when the template name is missing. */
+export const WORKFLOW_FALLBACK_NAME = "Workflow";
+
+/**
+ * Resolve the display name for a workflow on a task card, falling back to
+ * "Workflow" when the template name is null, undefined, or blank.
+ */
+export function workflowDisplayName(name: string | null | undefined): string {
+  const trimmed = name?.trim();
+  return trimmed ? trimmed : WORKFLOW_FALLBACK_NAME;
+}
+
+/**
+ * Percent (0–100, integer) of workflow steps completed, for the thin progress
+ * bar on task cards. Guards divide-by-zero (total 0 → 0, never NaN) and caps
+ * any overflow at 100.
+ */
+export function workflowProgressPct(completed: number, total: number): number {
+  if (total <= 0) return 0;
+  return Math.min(100, Math.round((completed / total) * 100));
+}
+
 /** Count how many steps in a template require human approval. */
 export function approvalCount(steps: Pick<WorkflowTemplateStep, "requires_approval">[]): number {
   return steps.filter((s) => s.requires_approval).length;
