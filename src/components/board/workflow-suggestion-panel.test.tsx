@@ -134,8 +134,34 @@ describe("WorkflowSuggestionPanel", () => {
       <WorkflowSuggestionPanel taskId="task-1" ideaId="idea-1" onResolved={onResolved} />,
     );
 
-    fireEvent.click(await screen.findByRole("button", { name: /Keep & attach/i }));
+    // Default row has a distinct AI recommendation → Keep is demoted to
+    // "Keep anyway"; match either label.
+    fireEvent.click(await screen.findByRole("button", { name: /Keep/i }));
     expect(keepWorkflowSuggestion).toHaveBeenCalledWith("sug-1");
+    await waitFor(() => expect(onResolved).toHaveBeenCalled());
+  });
+
+  it("leads with the AI recommendation as the primary action when it differs", async () => {
+    listWorkflowTemplates.mockResolvedValue([
+      tmpl("tmpl-labelled", "Idea Validation"),
+      tmpl("tmpl-ai", "Feature Development", 6),
+    ]);
+    replaceWorkflowSuggestion.mockResolvedValue({ ok: true });
+    const onResolved = vi.fn();
+    // makeRow defaults: source ai, recommended tmpl-ai ≠ suggested tmpl-labelled.
+    render(
+      <WorkflowSuggestionPanel taskId="task-1" ideaId="idea-1" onResolved={onResolved} />,
+    );
+
+    // Primary button names the recommended template and applies it directly.
+    const useBtn = await screen.findByRole("button", {
+      name: /Use .*Feature Development/i,
+    });
+    // Keep is present but demoted (not the recommended action).
+    expect(screen.getByRole("button", { name: /Keep anyway/i })).toBeInTheDocument();
+
+    fireEvent.click(useBtn);
+    expect(replaceWorkflowSuggestion).toHaveBeenCalledWith("sug-1", "tmpl-ai");
     await waitFor(() => expect(onResolved).toHaveBeenCalled());
   });
 

@@ -153,13 +153,23 @@ export function WorkflowSuggestionPanel({
     };
   }, [taskId, fetchSuggestion]);
 
-  // Load templates lazily when the picker opens (scoped to the idea).
+  // The AI recommends a DIFFERENT template than the label attached → the primary
+  // action should follow that recommendation, not "Keep" the mismatched one.
+  const recommendedId = suggestion?.recommended_template_id ?? null;
+  const hasDistinctRecommendation =
+    suggestion?.source === "ai" &&
+    !!recommendedId &&
+    recommendedId !== suggestion?.suggested_template_id;
+
+  // Load templates lazily — when the picker opens, or eagerly when there's a
+  // distinct recommendation so the primary button can name the template.
   useEffect(() => {
-    if (!showPicker || templates !== null) return;
+    if (templates !== null) return;
+    if (!showPicker && !hasDistinctRecommendation) return;
     listWorkflowTemplates(ideaId)
       .then((data) => setTemplates((data ?? []) as WorkflowTemplate[]))
       .catch(() => setTemplates([]));
-  }, [showPicker, ideaId, templates]);
+  }, [showPicker, hasDistinctRecommendation, ideaId, templates]);
 
   // The same panel instance is reused across suggestions (it returns null while
   // hidden but never unmounts). When the active suggestion changes — a resolved
@@ -199,13 +209,11 @@ export function WorkflowSuggestionPanel({
     onResolved?.();
   }
 
-  async function handleReplace() {
-    if (!suggestion || !selectedTemplateId || working) return;
+  async function handleReplace(templateId?: string) {
+    const targetId = templateId ?? selectedTemplateId;
+    if (!suggestion || !targetId || working) return;
     setWorking("replace");
-    const result = await replaceWorkflowSuggestion(
-      suggestion.id,
-      selectedTemplateId,
-    );
+    const result = await replaceWorkflowSuggestion(suggestion.id, targetId);
     if ("error" in result) {
       toast.error(result.error);
       setWorking(null);
@@ -260,6 +268,10 @@ export function WorkflowSuggestionPanel({
   }
 
   const isAi = suggestion.source === "ai";
+  const recommendedTemplate = recommendedId
+    ? templates?.find((t) => t.id === recommendedId)
+    : undefined;
+  const recommendedName = recommendedTemplate?.name;
 
   return (
     <div
@@ -311,51 +323,118 @@ export function WorkflowSuggestionPanel({
             </div>
           </div>
 
-          {/* Actions — Keep (primary) → Replace → Remove (least prominent).
-              Stack full-width on mobile, inline ≥sm; every target ≥44px. */}
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-            <Button
-              size="sm"
-              onClick={handleKeep}
-              disabled={working !== null}
-              className="min-h-[44px] gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90 sm:min-h-9"
-            >
-              {working === "keep" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <Check className="h-3.5 w-3.5" aria-hidden="true" />
-              )}
-              {working === "keep" ? "Working…" : "Keep & attach"}
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={openPicker}
-              disabled={working !== null}
-              className="min-h-[44px] gap-1.5 sm:min-h-9"
-            >
-              <ReplaceIcon className="h-3.5 w-3.5" aria-hidden="true" />
-              Replace&hellip;
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              onClick={handleRemove}
-              disabled={working !== null}
-              className="min-h-[44px] gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9 sm:ml-auto"
-            >
-              {working === "remove" ? (
-                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-              ) : (
-                <X className="h-3.5 w-3.5" aria-hidden="true" />
-              )}
-              {working === "remove" ? "Working…" : "Remove"}
-            </Button>
-          </div>
-          <p className="mt-2.5 text-[11.5px] text-muted-foreground">
-            Nothing is attached until you Keep or Replace. Remove keeps the label
-            and dismisses this suggestion.
-          </p>
+          {/* Actions. When the AI recommends a DIFFERENT template, the primary
+              action follows that recommendation; "Keep" is demoted. Otherwise
+              (heuristic / no distinct pick) Keep stays primary. Stack full-width
+              on mobile, inline ≥sm; every target ≥44px. */}
+          {hasDistinctRecommendation ? (
+            <>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+                <Button
+                  size="sm"
+                  onClick={() => recommendedId && handleReplace(recommendedId)}
+                  disabled={working !== null}
+                  className="min-h-[44px] gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90 sm:min-h-9"
+                >
+                  {working === "replace" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Sparkles className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {working === "replace"
+                    ? "Working…"
+                    : recommendedName
+                      ? `Use “${recommendedName}”`
+                      : "Use recommended workflow"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleKeep}
+                  disabled={working !== null}
+                  className="min-h-[44px] gap-1.5 sm:min-h-9"
+                >
+                  {working === "keep" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {working === "keep" ? "Working…" : "Keep anyway"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleRemove}
+                  disabled={working !== null}
+                  className="min-h-[44px] gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9 sm:ml-auto"
+                >
+                  {working === "remove" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {working === "remove" ? "Working…" : "Remove"}
+                </Button>
+              </div>
+              <p className="mt-2.5 text-[11.5px] text-muted-foreground">
+                Nothing is attached until you choose.{" "}
+                <button
+                  type="button"
+                  onClick={openPicker}
+                  disabled={working !== null}
+                  className="font-medium text-foreground underline underline-offset-2 hover:text-foreground/80 disabled:opacity-50"
+                >
+                  Replace with a different workflow&hellip;
+                </button>
+              </p>
+            </>
+          ) : (
+            <>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                <Button
+                  size="sm"
+                  onClick={handleKeep}
+                  disabled={working !== null}
+                  className="min-h-[44px] gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90 sm:min-h-9"
+                >
+                  {working === "keep" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {working === "keep" ? "Working…" : "Keep & attach"}
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={openPicker}
+                  disabled={working !== null}
+                  className="min-h-[44px] gap-1.5 sm:min-h-9"
+                >
+                  <ReplaceIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                  Replace&hellip;
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={handleRemove}
+                  disabled={working !== null}
+                  className="min-h-[44px] gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9 sm:ml-auto"
+                >
+                  {working === "remove" ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                  ) : (
+                    <X className="h-3.5 w-3.5" aria-hidden="true" />
+                  )}
+                  {working === "remove" ? "Working…" : "Remove"}
+                </Button>
+              </div>
+              <p className="mt-2.5 text-[11.5px] text-muted-foreground">
+                Nothing is attached until you Keep or Replace. Remove keeps the
+                label and dismisses this suggestion.
+              </p>
+            </>
+          )}
         </>
       ) : (
         <ReplacePicker
