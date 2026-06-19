@@ -170,9 +170,12 @@ export function WorkflowSuggestionPanel({
   // keep-busy-until-collapse behaviour.
   const suggestionId = suggestion?.id ?? null;
   useEffect(() => {
+    // Resetting in response to the suggestion changing is the intended effect.
+    /* eslint-disable react-hooks/set-state-in-effect */
     setWorking(null);
     setShowPicker(false);
     setSelectedTemplateId("");
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [suggestionId]);
 
   const openPicker = useCallback(() => {
