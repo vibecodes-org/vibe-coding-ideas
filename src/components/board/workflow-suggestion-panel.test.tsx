@@ -28,8 +28,10 @@ vi.mock("sonner", () => ({
 }));
 
 // The single open-suggestion row the supabase query resolves to. Tests mutate
-// this before render.
+// this before render (and between realtime triggers).
 let suggestionRow: Record<string, unknown> | null = null;
+// Captured postgres_changes callback so tests can simulate a realtime refetch.
+let realtimeTrigger: (() => void) | null = null;
 
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
@@ -45,7 +47,10 @@ vi.mock("@/lib/supabase/client", () => ({
     },
     channel: () => {
       const ch: Record<string, unknown> = {};
-      ch.on = vi.fn(() => ch);
+      ch.on = vi.fn((_evt: unknown, _cfg: unknown, cb: () => void) => {
+        realtimeTrigger = cb;
+        return ch;
+      });
       ch.subscribe = vi.fn(() => ch);
       ch.unsubscribe = vi.fn();
       return ch;
@@ -212,6 +217,35 @@ describe("WorkflowSuggestionPanel", () => {
     expect(
       screen.getByRole("link", { name: /Create a workflow template/i }),
     ).toBeInTheDocument();
+  });
+
+  it("clears stale 'Working…' state when a fresh suggestion replaces a resolved one", async () => {
+    removeWorkflowSuggestion.mockResolvedValue({ success: true });
+    suggestionRow = makeRow({ id: "sug-1", reason: "first build task", source: "ai" });
+
+    render(<WorkflowSuggestionPanel taskId="task-1" ideaId="idea-1" />);
+
+    // Act on the first suggestion → its Remove button goes busy.
+    fireEvent.click(await screen.findByRole("button", { name: /Remove/i }));
+    await screen.findByText(/Working…/i);
+
+    // The first suggestion resolves and clears (realtime refetch → null).
+    suggestionRow = null;
+    realtimeTrigger?.();
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/Suggested workflow looks mismatched/i),
+      ).not.toBeInTheDocument(),
+    );
+
+    // A fresh suggestion arrives on the same (reused) panel instance.
+    suggestionRow = makeRow({ id: "sug-2", reason: "second build task", source: "ai" });
+    realtimeTrigger?.();
+
+    // The new row's actions must be interactive — no leftover "Working…".
+    const remove = await screen.findByRole("button", { name: /Remove/i });
+    expect(remove).not.toBeDisabled();
+    expect(screen.queryByText(/Working…/i)).not.toBeInTheDocument();
   });
 
   it('renders the "checking fit…" state while adjudication is fresh and in flight', async () => {

@@ -161,6 +161,20 @@ export function WorkflowSuggestionPanel({
       .catch(() => setTemplates([]));
   }, [showPicker, ideaId, templates]);
 
+  // The same panel instance is reused across suggestions (it returns null while
+  // hidden but never unmounts). When the active suggestion changes — a resolved
+  // one clears, or a fresh one arrives — drop any stale action/picker state from
+  // the previous suggestion, otherwise the busy "Working…" state from a prior
+  // Keep/Replace/Remove sticks to the new row's buttons. The id is unchanged
+  // during an in-flight action, so this never interrupts the deliberate
+  // keep-busy-until-collapse behaviour.
+  const suggestionId = suggestion?.id ?? null;
+  useEffect(() => {
+    setWorking(null);
+    setShowPicker(false);
+    setSelectedTemplateId("");
+  }, [suggestionId]);
+
   const openPicker = useCallback(() => {
     // Pre-select the AI's recommended fit when present (one-click accept).
     setSelectedTemplateId(suggestion?.recommended_template_id ?? "");
