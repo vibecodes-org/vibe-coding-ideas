@@ -385,12 +385,10 @@ function ReplacePicker({
   disabled,
   templateStepCount,
 }: ReplacePickerProps) {
-  // Which row's steps are expanded. Default to the AI-recommended template so
-  // the user immediately sees what they'd be attaching. Declared before any
-  // early return to satisfy the Rules of Hooks.
-  const [expandedId, setExpandedId] = useState<string | null>(
-    recommendedTemplateId,
-  );
+  // Which row's steps are expanded. All rows start collapsed; the user expands
+  // whichever they want via the arrow. Declared before any early return to
+  // satisfy the Rules of Hooks.
+  const [expandedId, setExpandedId] = useState<string | null>(null);
 
   if (templates === null) {
     return (

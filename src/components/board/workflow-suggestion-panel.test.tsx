@@ -166,7 +166,7 @@ describe("WorkflowSuggestionPanel", () => {
     expect(names[names.length - 1]).toMatch(/originally labelled/i);
   });
 
-  it("Replace picker auto-expands the AI-recommended steps and toggles others on demand", async () => {
+  it("Replace picker keeps rows collapsed and reveals steps when the arrow is tapped", async () => {
     listWorkflowTemplates.mockResolvedValue([
       tmpl("tmpl-labelled", "Labelled Discovery", [
         { title: "Competitor analysis", role: "Analyst" },
@@ -180,11 +180,19 @@ describe("WorkflowSuggestionPanel", () => {
     render(<WorkflowSuggestionPanel taskId="task-1" ideaId="idea-1" />);
     fireEvent.click(await screen.findByRole("button", { name: /Replace/i }));
 
-    // Recommended template's steps are visible by default (no extra tap).
+    // All rows collapsed by default — no steps shown until the arrow is tapped.
+    await screen.findByRole("button", { name: /Show AI Build Flow steps/i });
+    expect(screen.queryByText("Implementation")).not.toBeInTheDocument();
+    expect(screen.queryByText("Competitor analysis")).not.toBeInTheDocument();
+
+    // Tapping a row's arrow reveals that template's steps.
+    fireEvent.click(
+      screen.getByRole("button", { name: /Show AI Build Flow steps/i }),
+    );
     expect(await screen.findByText("Implementation")).toBeInTheDocument();
     expect(screen.getByText("Requirements")).toBeInTheDocument();
 
-    // Another template's steps stay hidden until its arrow is tapped.
+    // A different template stays hidden until its own arrow is tapped.
     expect(screen.queryByText("Competitor analysis")).not.toBeInTheDocument();
     fireEvent.click(
       screen.getByRole("button", { name: /Show Labelled Discovery steps/i }),
