@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="en" class="dark">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Workflow idle chip — colour/style options</title>
+<style>
+  :root {
+    --page: #09090b;          /* zinc-950 page */
+    --card: #0a0a0a;          /* near-black card */
+    --border: #27272a;        /* zinc-800 */
+    --border-soft: #1c1c1f;   /* between zinc-900/800 */
+    --muted-fg: #a1a1aa;      /* zinc-400 */
+    --fg: #fafafa;            /* zinc-50 */
+    --blue-400: #60a5fa;
+    --blue-500: #3b82f6;
+    --blue-600: #2563eb;
+    --blue-50: #eff6ff;
+    --blue-300: #93c5fd;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--page);
+    color: var(--fg);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    line-height: 1.5;
+    padding: 40px 28px 80px;
+  }
+  .wrap { max-width: 1280px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 650; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { color: var(--muted-fg); font-size: 13.5px; margin: 0 0 22px; max-width: 760px; }
+
+  .rec {
+    border: 1px solid #1d4ed833;
+    background: #1e40af1a;
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin: 0 0 34px;
+    font-size: 13.5px;
+    color: #cfe0ff;
+    max-width: 860px;
+  }
+  .rec b { color: #fff; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+    gap: 22px;
+  }
+  .opt {
+    border: 1px solid var(--border-soft);
+    border-radius: 14px;
+    padding: 16px;
+    background: #0c0c0e;
+  }
+  .opt.current { border-color: #7f1d1d66; background: #1a0c0c40; }
+  .opt-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+  .opt-num { font-size: 12px; font-weight: 700; color: var(--muted-fg); letter-spacing: 0.04em; text-transform: uppercase; }
+  .opt-name { font-size: 14.5px; font-weight: 600; color: var(--fg); }
+  .opt.current .opt-name { color: #fca5a5; }
+  .opt-desc { font-size: 12.5px; color: var(--muted-fg); margin: 2px 0 14px; }
+
+  /* mini board card */
+  .board-bg { background: var(--page); border-radius: 10px; padding: 12px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 11px 12px 12px;
+    margin-bottom: 10px;
+  }
+  .card:last-child { margin-bottom: 0; }
+  .card-title { font-size: 13px; font-weight: 550; color: #e4e4e7; margin: 0 0 9px; }
+  .card-meta { display: flex; align-items: center; gap: 6px; margin-top: 10px; }
+  .avatar { width: 18px; height: 18px; border-radius: 999px; background: #3f3f46; }
+  .tag { font-size: 10px; color: var(--muted-fg); border: 1px solid var(--border); border-radius: 6px; padding: 1px 6px; }
+
+  /* chip + bar container */
+  .chip-block { display: inline-flex; flex-direction: column; gap: 4px; max-width: 100%; min-width: 0; }
+
+  .pill {
+    display: inline-flex; max-width: 100%; align-items: center; gap: 4px;
+    border-radius: 999px; padding: 1px 8px;
+    font-size: 10px; font-weight: 600; line-height: 1.5;
+    white-space: nowrap;
+  }
+  .pill svg { width: 10px; height: 10px; flex: 0 0 auto; }
+  .pill .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .pill .sep { flex: 0 0 auto; opacity: 0.7; }
+  .pill .frac { flex: 0 0 auto; font-variant-numeric: tabular-nums; }
+
+  .bar { height: 3px; width: 100%; border-radius: 999px; overflow: hidden; }
+  .bar > i { display: block; height: 100%; border-radius: 999px; }
+
+  .levels { display: flex; flex-direction: column; gap: 8px; }
+  .level-label { font-size: 10px; color: #71717a; margin-bottom: 2px; }
+
+  /* ---------- per-option pill styles ---------- */
+
+  /* Current — loud */
+  .p-cur { background: var(--blue-600); color: #fff; }
+  .b-cur-track { background: rgba(59,130,246,0.2); }
+  .b-cur-fill  { background: var(--blue-500); }
+
+  /* 1 Tinted/translucent */
+  .p-1 { border: 1px solid rgba(59,130,246,0.25); background: rgba(59,130,246,0.15); color: var(--blue-400); }
+  .b-1-track { background: rgba(59,130,246,0.15); }
+  .b-1-fill  { background: rgba(59,130,246,0.7); }
+
+  /* 2 Soft tint, no border */
+  .p-2 { background: rgba(59,130,246,0.10); color: var(--blue-300); }
+  .b-2-track { background: rgba(59,130,246,0.12); }
+  .b-2-fill  { background: rgba(59,130,246,0.6); }
+
+  /* 3 Ghost / outline */
+  .p-3 { background: transparent; border: 1px solid rgba(59,130,246,0.4); color: var(--blue-400); }
+  .b-3-track { background: rgba(59,130,246,0.15); }
+  .b-3-fill  { background: rgba(59,130,246,0.7); }
+
+  /* 4 Muted solid */
+  .p-4 { background: rgba(59,130,246,0.8); color: var(--blue-50); }
+  .b-4-track { background: rgba(59,130,246,0.2); }
+  .b-4-fill  { background: rgba(59,130,246,0.85); }
+
+  /* 5 Neutral chip, colour only on bar */
+  .p-5 { background: rgba(255,255,255,0.04); border: 1px solid var(--border); color: var(--muted-fg); }
+  .p-5 svg { color: var(--blue-400); }
+  .b-5-track { background: rgba(59,130,246,0.15); }
+  .b-5-fill  { background: var(--blue-500); }
+
+  /* 6 Whisper tint */
+  .p-6 { background: rgba(59,130,246,0.08); color: rgba(96,165,250,0.9); }
+  .b-6-track { background: rgba(59,130,246,0.1); }
+  .b-6-fill  { background: rgba(59,130,246,0.55); }
+
+  .classes {
+    margin-top: 14px;
+    border-top: 1px solid var(--border-soft);
+    padding-top: 11px;
+    font-size: 11px;
+  }
+  .classes .row { margin-bottom: 7px; }
+  .classes .k { display: inline-block; width: 38px; color: #71717a; font-weight: 600; vertical-align: top; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 10.5px; color: #c7d2fe;
+    background: rgba(255,255,255,0.035);
+    padding: 1px 5px; border-radius: 5px; line-height: 1.9;
+    word-break: break-word;
+  }
+  .wcag { margin-top: 10px; font-size: 11px; display: flex; align-items: flex-start; gap: 6px; }
+  .badge { flex: 0 0 auto; font-size: 9.5px; font-weight: 700; padding: 1px 6px; border-radius: 5px; letter-spacing: 0.03em; }
+  .pass { background: #14532d66; color: #86efac; border: 1px solid #15803d66; }
+  .warn { background: #78350f66; color: #fcd34d; border: 1px solid #b4530966; }
+  .fail { background: #7f1d1d66; color: #fca5a5; border: 1px solid #b91c1c66; }
+  .wcag .txt { color: var(--muted-fg); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Workflow “idle” chip — colour / style options</h1>
+  <p class="sub">
+    The idle chip (filled Play + workflow name + done/total + thin progress bar) reads as a loud CTA today because of the solid
+    <code>bg-blue-600</code> fill with white text. Below: the current treatment plus six calmer alternatives, each rendered as a live
+    mini board-card in context, at two fill levels, with a long-name truncation example on a couple. Pick whichever feels right —
+    this is your call.
+  </p>
+
+  <div class="rec">
+    <b>Recommendation:</b> <b>Option 1 — Tinted / translucent</b>
+    (<code>border border-blue-500/25 bg-blue-500/15 text-blue-400</code>). It is the same idiom already used by the active / approval / failed
+    states on this card, so the idle state becomes a quiet member of one consistent family instead of a standalone CTA. Pair it with the
+    softened bar (<code>track bg-blue-500/15</code> + <code>fill bg-blue-500/70</code>). If you want it even quieter, Option 6; if you want the
+    pill itself to recede entirely and let the bar carry the colour, Option 5. All options below meet WCAG AA except where flagged.
+  </div>
+
+  <div class="grid" id="grid"></div>
+</div>
+
+<script>
+/* lucide Play (filled) */
+const PLAY = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none" aria-hidden="true"><path d="M6 4.5v15a1 1 0 0 0 1.52.86l12-7.5a1 1 0 0 0 0-1.72l-12-7.5A1 1 0 0 0 6 4.5z"/></svg>';
+
+const SHORT = "API auth flow";
+const LONG  = "Generate end-to-end integration tests for checkout";
+
+function chip(pillClass, barTrack, barFill, name, done, total) {
+  const pct = total ? Math.round((done/total)*100) : 0;
+  return `
+    <div class="chip-block">
+      <span class="pill ${pillClass}">
+        ${PLAY}
+        <span class="name">${name}</span>
+        <span class="sep">·</span>
+        <span class="frac">${done}/${total}</span>
+      </span>
+      <span class="bar ${barTrack}"><i class="${barFill}" style="width:${pct}%"></i></span>
+    </div>`;
+}
+
+function card(title, chipHtml) {
+  return `
+    <div class="card">
+      <p class="card-title">${title}</p>
+      ${chipHtml}
+      <div class="card-meta">
+        <span class="avatar"></span>
+        <span class="tag">backend</span>
+      </div>
+    </div>`;
+}
+
+const options = [
+  {
+    cur: true,
+    num: "Current", name: "Solid blue-600 (too loud)",
+    desc: "Saturated solid fill + white text → reads as a primary CTA against the near-black card.",
+    pill: "p-cur", track: "b-cur-track", fill: "b-cur-fill",
+    longName: true,
+    pillCode: "inline-flex max-w-full items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white",
+    barCode: "track: h-[3px] w-full rounded-full bg-blue-500/20  •  fill: bg-primary (blue-500)",
+    wcag: ["fail", "white on blue-600 ≈ 3.7:1 — fails AA 4.5:1 for this small 10px text (it's the loudness, and it's technically under-contrast)."]
+  },
+  {
+    num: "Option 1", name: "Tinted / translucent  ★ recommended",
+    desc: "Matches the existing active/approval/failed states. The calm house idiom; most “see-through”.",
+    pill: "p-1", track: "b-1-track", fill: "b-1-fill",
+    longName: true,
+    pillCode: "inline-flex max-w-full items-center gap-1 rounded-full border border-blue-500/25 bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-400",
+    barCode: "track: h-[3px] w-full rounded-full bg-blue-500/15  •  fill: bg-blue-500/70",
+    wcag: ["pass", "blue-400 (#60a5fa) on the tinted-over-#0a0a0a pill ≈ 7.5:1 — comfortably passes AA."]
+  },
+  {
+    num: "Option 2", name: "Soft tint, no border",
+    desc: "Borderless, even softer edge. Slightly lighter blue-300 text keeps it legible at low opacity.",
+    pill: "p-2", track: "b-2-track", fill: "b-2-fill",
+    pillCode: "inline-flex max-w-full items-center gap-1 rounded-full bg-blue-500/10 px-2 py-0.5 text-[10px] font-semibold text-blue-300",
+    barCode: "track: h-[3px] w-full rounded-full bg-blue-500/12  •  fill: bg-blue-500/60",
+    wcag: ["pass", "blue-300 (#93c5fd) on ~#0a0a0a ≈ 11:1 — passes AA easily."]
+  },
+  {
+    num: "Option 3", name: "Ghost / outline",
+    desc: "Transparent fill, hairline outline. Colour lives in the border + the bar, not a fill.",
+    pill: "p-3", track: "b-3-track", fill: "b-3-fill",
+    longName: true,
+    pillCode: "inline-flex max-w-full items-center gap-1 rounded-full border border-blue-500/40 bg-transparent px-2 py-0.5 text-[10px] font-semibold text-blue-400",
+    barCode: "track: h-[3px] w-full rounded-full bg-blue-500/15  •  fill: bg-blue-500/70",
+    wcag: ["pass", "blue-400 on the card (#0a0a0a) ≈ 7.9:1 text; the /40 border ≈ 1.5:1 non-text — fine as decorative since text carries the meaning."]
+  },
+  {
+    num: "Option 4", name: "Muted solid",
+    desc: "Still a solid fill (keeps a touch of CTA weight) but desaturated to blue-500/80 with near-white blue-50 text.",
+    pill: "p-4", track: "b-4-track", fill: "b-4-fill",
+    pillCode: "inline-flex max-w-full items-center gap-1 rounded-full bg-blue-500/80 px-2 py-0.5 text-[10px] font-semibold text-blue-50",
+    barCode: "track: h-[3px] w-full rounded-full bg-blue-500/20  •  fill: bg-blue-500/85",
+    wcag: ["warn", "blue-50 on blue-500/80-over-black ≈ 4.2:1 — borderline, just under 4.5:1. Use text-white instead of blue-50 to clear AA."]
+  },
+  {
+    num: "Option 5", name: "Neutral chip, colour on the bar",
+    desc: "Pill is neutral glass; the only blue is the Play icon + the progress bar. Most restrained — colour cue lives in the bar.",
+    pill: "p-5", track: "b-5-track", fill: "b-5-fill",
+    longName: true,
+    pillCode: "inline-flex max-w-full items-center gap-1 rounded-full border border-border bg-white/[0.04] px-2 py-0.5 text-[10px] font-semibold text-muted-foreground  (icon: text-blue-400)",
+    barCode: "track: h-[3px] w-full rounded-full bg-blue-500/15  •  fill: bg-blue-500",
+    wcag: ["pass", "muted-foreground (zinc-400 #a1a1aa) on the glass pill ≈ 6.2:1 — passes AA. (Not colour-reliant: Play icon + bar both signal state.)"]
+  },
+  {
+    num: "Option 6", name: "Whisper tint",
+    desc: "The quietest tinted variant — barely-there fill, slightly dimmed blue-400 text, gentlest bar.",
+    pill: "p-6", track: "b-6-track", fill: "b-6-fill",
+    pillCode: "inline-flex max-w-full items-center gap-1 rounded-full bg-blue-500/8 px-2 py-0.5 text-[10px] font-semibold text-blue-400/90",
+    barCode: "track: h-[3px] w-full rounded-full bg-blue-500/10  •  fill: bg-blue-500/55",
+    wcag: ["pass", "blue-400/90 on ~#0a0a0a ≈ 6.8:1 — passes AA. The /55 bar fill ≈ 2.4:1 vs card; readable as progress but soft, which is the point."]
+  }
+];
+
+const grid = document.getElementById("grid");
+grid.innerHTML = options.map(o => {
+  let cards = "";
+  cards += card(
+    "Wire up Stripe webhooks",
+    `<div class="levels">
+       <div><div class="level-label">empty — 0/6</div>${chip(o.pill,o.track,o.fill,SHORT,0,6)}</div>
+       <div><div class="level-label">partial — 3/6</div>${chip(o.pill,o.track,o.fill,SHORT,3,6)}</div>
+     </div>`
+  );
+  if (o.longName) {
+    cards += card(
+      "Long workflow name (truncation)",
+      `<div class="levels">
+         <div><div class="level-label">truncates — 2/8</div>${chip(o.pill,o.track,o.fill,LONG,2,8)}</div>
+       </div>`
+    );
+  }
+  return `
+    <div class="opt ${o.cur ? "current" : ""}">
+      <div class="opt-head">
+        <span class="opt-num">${o.num}</span>
+        <span class="opt-name">${o.name}</span>
+      </div>
+      <p class="opt-desc">${o.desc}</p>
+      <div class="board-bg">${cards}</div>
+      <div class="classes">
+        <div class="row"><span class="k">Pill</span><code>${o.pillCode}</code></div>
+        <div class="row"><span class="k">Bar</span><code>${o.barCode}</code></div>
+      </div>
+      <div class="wcag">
+        <span class="badge ${o.wcag[0]}">AA ${o.wcag[0] === "pass" ? "PASS" : o.wcag[0] === "warn" ? "BORDER" : "FAIL"}</span>
+        <span class="txt">${o.wcag[1]}</span>
+      </div>
+    </div>`;
+}).join("");
+</script>
+</body>
+</html>

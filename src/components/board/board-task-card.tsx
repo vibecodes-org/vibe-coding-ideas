@@ -252,14 +252,14 @@ function WorkflowStatusBadge({ task, isWiring }: { task: BoardTaskWithAssignee; 
               role="img"
               aria-label={`Workflow: ${name}, ${workflow_step_completed} of ${workflow_step_total} steps complete`}
             >
-              <span className="inline-flex max-w-full items-center gap-1 rounded-full bg-blue-600 px-2 py-0.5 text-[10px] font-semibold text-white">
+              <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-blue-500/25 bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
                 <Play className="h-2.5 w-2.5 shrink-0 fill-current" />
                 <span className="truncate min-w-0">{name}</span>
                 <span className="shrink-0" aria-hidden>&middot;</span>
                 <span className="shrink-0 tabular-nums">{fraction}</span>
               </span>
-              <span aria-hidden className="h-[3px] w-full overflow-hidden rounded-full bg-blue-500/20">
-                <span className="block h-full rounded-full bg-primary" style={{ width: `${pct}%` }} />
+              <span aria-hidden className="h-[3px] w-full overflow-hidden rounded-full bg-blue-500/15">
+                <span className="block h-full rounded-full bg-blue-500/70" style={{ width: `${pct}%` }} />
               </span>
             </span>
           </TooltipTrigger>
