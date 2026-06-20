@@ -192,15 +192,15 @@ export default async function DashboardPage() {
           .order("created_at", { ascending: false })
           .limit(5)
       : Promise.resolve({ data: [] }),
-    // Task labels
-    rawTasks.length > 0
+    // Task labels — scope by the parent task's idea via an inner-join filter
+    // rather than a giant .in(taskIds) list. The IN URL grew with task count
+    // and silently returned no rows on large boards, blanking every card's
+    // labels. Idea count is bounded; we filter back to the shown tasks in JS.
+    allUserIdeaIds.length > 0
       ? supabase
           .from("board_task_labels")
-          .select("task_id, label:board_labels!board_task_labels_label_id_fkey(*)")
-          .in(
-            "task_id",
-            rawTasks.map((t) => t.id)
-          )
+          .select("task_id, label:board_labels!board_task_labels_label_id_fkey(*), board_tasks!inner(idea_id)")
+          .in("board_tasks.idea_id", allUserIdeaIds)
       : Promise.resolve({ data: [] }),
     // Board columns for user's ideas (with idea title for active boards)
     allUserIdeaIds.length > 0
@@ -541,10 +541,14 @@ export default async function DashboardPage() {
     taskCounts[r.idea_id] = (taskCounts[r.idea_id] ?? 0) + 1;
   }
 
-  // Build labels map
+  // Build labels map — the idea-scoped fetch returns labels for every task on
+  // the user's boards, so restrict to the tasks actually shown (rawTasks) to
+  // keep dashboard behaviour identical to the old per-task fetch.
+  const shownTaskIds = new Set(rawTasks.map((t) => t.id));
   const labelsMap = new Map<string, BoardLabel[]>();
   for (const row of taskLabelsResult.data ?? []) {
     const r = row as unknown as { task_id: string; label: BoardLabel };
+    if (!shownTaskIds.has(r.task_id)) continue;
     const existing = labelsMap.get(r.task_id) ?? [];
     existing.push(r.label);
     labelsMap.set(r.task_id, existing);

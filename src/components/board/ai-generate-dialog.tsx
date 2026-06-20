@@ -287,20 +287,19 @@ export function AiGenerateDialog({
       setInsertResult(null);
       setPhase("inserting");
 
-      // Delete existing tasks in replace mode
+      // Delete existing tasks in replace mode — scope by idea_id rather than a
+      // giant .in(taskIds) list (which builds a long querystring that can
+      // silently fail at scale). Deleting by idea_id is safe with zero tasks.
       if (mode === "replace") {
         const supabase = createClient();
-        const allTaskIds = columns.flatMap((c) => c.tasks.map((t) => t.id));
-        if (allTaskIds.length > 0) {
-          const { error } = await supabase
-            .from("board_tasks")
-            .delete()
-            .in("id", allTaskIds);
-          if (error) {
-            toast.error(`Failed to clear board: ${error.message}`);
-            setPhase("preview");
-            return;
-          }
+        const { error } = await supabase
+          .from("board_tasks")
+          .delete()
+          .eq("idea_id", ideaId);
+        if (error) {
+          toast.error(`Failed to clear board: ${error.message}`);
+          setPhase("preview");
+          return;
         }
       }
 

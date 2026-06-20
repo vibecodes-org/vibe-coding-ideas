@@ -11,6 +11,7 @@ import {
 import { matchRolesWithAiOrFuzzy } from "@/lib/ai-role-matching";
 import { propagateTemplateEdits } from "@/lib/workflow-helpers";
 import { tierRank } from "@/lib/role-matching";
+import { chunkIds } from "@/lib/db-helpers";
 
 // ─── Templates ───
 
@@ -419,9 +420,8 @@ export async function applyWorkflowTemplateWithContext(
  * Core rematch logic — accepts an authenticated Supabase client + userId.
  * Used by fire-and-forget callers that already have auth context.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function rematchWorkflowAgentsWithClient(
-  supabase: import("@supabase/supabase-js").SupabaseClient<any>,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   userId: string,
   taskId: string
 ) {
@@ -672,21 +672,27 @@ export async function deleteWorkflowAutoRule(
 
   // Remove related workflow runs if requested
   if (options?.removeRelatedWorkflows && rule) {
-    // Find all tasks that have this label
+    // Find all tasks that have this label — scope by idea via an inner-join
+    // filter so the lookup can't grow unbounded with global label usage.
     const { data: labeledTasks } = await supabase
       .from("board_task_labels")
-      .select("task_id")
-      .eq("label_id", rule.label_id);
+      .select("task_id, board_tasks!inner(idea_id)")
+      .eq("label_id", rule.label_id)
+      .eq("board_tasks.idea_id", rule.idea_id);
 
     if (labeledTasks && labeledTasks.length > 0) {
       const taskIds = labeledTasks.map((t) => t.task_id);
-      // Delete workflow runs for these tasks that match the rule's template
-      // Steps and step comments cascade-delete automatically via FK ON DELETE CASCADE
-      await supabase
-        .from("workflow_runs")
-        .delete()
-        .in("task_id", taskIds)
-        .eq("template_id", rule.template_id);
+      // Delete workflow runs for these tasks that match the rule's template.
+      // This is a precise delete (task_id + template_id), so we can't drop the
+      // id list — instead chunk it so the .in() URL stays under the length
+      // limit. Steps and step comments cascade-delete via FK ON DELETE CASCADE.
+      for (const batch of chunkIds(taskIds)) {
+        await supabase
+          .from("workflow_runs")
+          .delete()
+          .in("task_id", batch)
+          .eq("template_id", rule.template_id);
+      }
     }
   }
 
@@ -737,12 +743,15 @@ export async function applyAutoRuleRetroactively(ruleId: string) {
     return { applied: 0, skipped: 0 };
   }
 
-  // Find tasks that already have active workflow runs
+  // Find tasks that already have active workflow runs. Scope by idea via an
+  // inner-join filter instead of a giant .in(taskIds) list (the IN URL grew
+  // with task count and could silently return no rows at scale). Extra active
+  // runs for non-labelled tasks are harmless — we only test membership below.
   const taskIds = labelledTasks.map((lt) => lt.task_id);
   const { data: activeRuns } = await supabase
     .from("workflow_runs")
-    .select("task_id")
-    .in("task_id", taskIds)
+    .select("task_id, board_tasks!inner(idea_id)")
+    .eq("board_tasks.idea_id", rule.idea_id)
     .not("status", "in", '("completed","failed")');
 
   const activeTaskIds = new Set((activeRuns ?? []).map((r) => r.task_id));
@@ -751,7 +760,7 @@ export async function applyAutoRuleRetroactively(ruleId: string) {
   const eligibleTaskIds = taskIds.filter((id) => !activeTaskIds.has(id));
 
   let applied = 0;
-  let skipped = activeTaskIds.size;
+  let skipped = taskIds.filter((id) => activeTaskIds.has(id)).length;
 
   for (const taskId of eligibleTaskIds) {
     try {

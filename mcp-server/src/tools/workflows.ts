@@ -1608,11 +1608,13 @@ export async function applyAutoRuleRetroactively(
 
   if (ruleError || !rule) throw new Error(`Workflow trigger not found: ${params.rule_id}`);
 
-  // Find all non-archived tasks with the matching label
+  // Find all non-archived tasks with the matching label. Scope by idea via the
+  // inner-join filter so the lookup can't grow unbounded with global label use.
   const { data: labelledTasks, error: tasksError } = await ctx.supabase
     .from("board_task_labels")
     .select("task_id, board_tasks!inner(id, is_archived)")
-    .eq("label_id", rule.label_id);
+    .eq("label_id", rule.label_id)
+    .eq("board_tasks.idea_id", rule.idea_id);
 
   if (tasksError) throw new Error(`Failed to find labelled tasks: ${tasksError.message}`);
 
@@ -1628,11 +1630,14 @@ export async function applyAutoRuleRetroactively(
     return { applied: 0, skipped: 0, message: "No tasks found with the matching label" };
   }
 
-  // Find tasks that already have active workflow runs
+  // Find tasks that already have active workflow runs. Scope by idea via an
+  // inner-join filter instead of a giant .in(taskIds) list (the IN URL grew
+  // with task count and could silently return no rows at scale). Extra active
+  // runs for non-labelled tasks are harmless — we only test membership below.
   const { data: activeRuns } = await ctx.supabase
     .from("workflow_runs")
-    .select("task_id")
-    .in("task_id", taskIds)
+    .select("task_id, board_tasks!inner(idea_id)")
+    .eq("board_tasks.idea_id", rule.idea_id)
     .not("status", "in", '("completed","failed")');
 
   const tasksWithActiveRuns = new Set((activeRuns ?? []).map((r) => r.task_id));
