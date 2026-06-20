@@ -23,6 +23,7 @@ describe("logger", () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    vi.unstubAllEnvs();
     vi.useRealTimers();
     vi.restoreAllMocks();
   });
@@ -98,7 +99,7 @@ describe("logger", () => {
 
   it("defaults to warn in production", async () => {
     delete process.env.LOG_LEVEL;
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
     logger = await loadLogger();
 
     logger.info("suppressed");
@@ -113,7 +114,7 @@ describe("logger", () => {
 
   it("defaults to debug in development", async () => {
     delete process.env.LOG_LEVEL;
-    process.env.NODE_ENV = "development";
+    vi.stubEnv("NODE_ENV", "development");
     logger = await loadLogger();
 
     logger.debug("visible in dev");
@@ -149,7 +150,7 @@ describe("logger", () => {
   });
 
   it("LOG_LEVEL env var overrides NODE_ENV default", async () => {
-    process.env.NODE_ENV = "production";
+    vi.stubEnv("NODE_ENV", "production");
     process.env.LOG_LEVEL = "debug";
     logger = await loadLogger();
 

@@ -7,7 +7,7 @@ const chain: Record<string, unknown> = {};
 const mockInsert = vi.fn(() => chain);
 const mockSelect = vi.fn(() => chain);
 const mockEq = vi.fn(() => chain);
-const mockIlike = vi.fn(() => chain);
+const mockIlike = vi.fn<(...args: unknown[]) => unknown>(() => chain);
 Object.assign(chain, {
   insert: mockInsert,
   select: mockSelect,
@@ -16,7 +16,7 @@ Object.assign(chain, {
   single: mockSingle,
   maybeSingle: mockMaybeSingle,
 });
-const mockFrom = vi.fn(() => chain);
+const mockFrom = vi.fn((..._args: unknown[]) => chain);
 const mockGetUser = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({

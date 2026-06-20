@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { describe, it, expect, vi, type Mock } from "vitest";
 import type { McpContext } from "../context";
 import { getAgentMentions, getAgentMentionsSchema } from "./agent-mentions";
 
@@ -219,7 +219,7 @@ describe("getAgentMentions", () => {
         if (callNum === 1) {
           const { chain } = createChain(mockBots);
           // Wrap eq to capture calls
-          const origEq = chain.eq as ReturnType<typeof vi.fn>;
+          const origEq = chain.eq as Mock<(col: string, val: unknown) => unknown>;
           chain.eq = vi.fn((col: string, val: unknown) => {
             capturedEqs.push([col, val]);
             return origEq(col, val);
@@ -244,7 +244,7 @@ describe("getAgentMentions", () => {
       callNum++;
       if (callNum === 1) {
         const { chain } = createChain([]);
-        const origEq = chain.eq as ReturnType<typeof vi.fn>;
+        const origEq = chain.eq as Mock<(col: string, val: unknown) => unknown>;
         chain.eq = vi.fn((col: string, val: unknown) => {
           capturedEqs.push([col, val]);
           return origEq(col, val);
@@ -273,7 +273,7 @@ describe("getAgentMentions", () => {
       }
       // notifications query — capture eq calls
       const { chain } = createChain([]);
-      const origEq = chain.eq as ReturnType<typeof vi.fn>;
+      const origEq = chain.eq as Mock<(col: string, val: unknown) => unknown>;
       chain.eq = vi.fn((col: string, val: unknown) => {
         notifCapturedEqs.push([col, val]);
         return origEq(col, val);

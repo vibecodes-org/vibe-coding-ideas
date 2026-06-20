@@ -516,9 +516,9 @@ Add tests`;
 
 describe("autoMapColumns", () => {
   const columns: BoardColumnWithTasks[] = [
-    { id: "col-1", idea_id: "idea-1", title: "To Do", position: 0, is_done_column: false, tasks: [] },
-    { id: "col-2", idea_id: "idea-1", title: "In Progress", position: 1000, is_done_column: false, tasks: [] },
-    { id: "col-3", idea_id: "idea-1", title: "Done", position: 2000, is_done_column: true, tasks: [] },
+    { id: "col-1", idea_id: "idea-1", title: "To Do", position: 0, is_done_column: false, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z", tasks: [] },
+    { id: "col-2", idea_id: "idea-1", title: "In Progress", position: 1000, is_done_column: false, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z", tasks: [] },
+    { id: "col-3", idea_id: "idea-1", title: "Done", position: 2000, is_done_column: true, created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z", tasks: [] },
   ];
 
   it("maps matching column names by case-insensitive match", () => {

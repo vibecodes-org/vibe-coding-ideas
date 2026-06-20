@@ -27,7 +27,7 @@ Object.assign(chain, {
   ilike: mockIlike,
   in: mockIn,
 });
-const mockFrom = vi.fn(() => chain);
+const mockFrom = vi.fn((..._args: unknown[]) => chain);
 const mockGetUser = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({

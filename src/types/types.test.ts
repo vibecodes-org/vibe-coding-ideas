@@ -57,7 +57,10 @@ describe("Notification types", () => {
       | "task_mention"
       | "comment_mention"
       | "collaboration_request"
-      | "collaboration_response";
+      | "collaboration_response"
+      | "discussion"
+      | "discussion_reply"
+      | "discussion_mention";
     expectTypeOf<RowType>().toEqualTypeOf<ExpectedType>();
   });
 
@@ -72,7 +75,10 @@ describe("Notification types", () => {
       | "task_mention"
       | "comment_mention"
       | "collaboration_request"
-      | "collaboration_response";
+      | "collaboration_response"
+      | "discussion"
+      | "discussion_reply"
+      | "discussion_mention";
     expectTypeOf<InsertType>().toEqualTypeOf<ExpectedType>();
   });
 

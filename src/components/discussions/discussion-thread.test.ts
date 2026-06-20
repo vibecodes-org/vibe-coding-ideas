@@ -26,6 +26,8 @@ function makeReply(
       email: "test@test.com",
       is_bot: false,
       is_admin: false,
+      is_super_admin: false,
+      mcp_connected_at: null,
       bio: null,
       github_username: null,
       created_at: "2026-01-01T00:00:00Z",
@@ -35,7 +37,6 @@ function makeReply(
       ai_daily_limit: 10,
       ai_enabled: true,
       default_board_columns: null,
-      email_notifications: true,
       encrypted_anthropic_key: null,
       ai_starter_credits: 10,
       notification_preferences: {

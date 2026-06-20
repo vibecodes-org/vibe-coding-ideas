@@ -3,9 +3,9 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Supabase chain — every method returns the chain itself so calls can be
 // chained arbitrarily; terminals (single/maybeSingle) return data/error.
 const chain: Record<string, unknown> = {};
-const mockFrom = vi.fn(() => chain);
+const mockFrom = vi.fn((..._args: unknown[]) => chain);
 const mockSelect = vi.fn(() => chain);
-const mockUpdate = vi.fn(() => chain);
+const mockUpdate = vi.fn<(values: Record<string, unknown>) => unknown>(() => chain);
 const mockInsert = vi.fn(() => Promise.resolve({ data: null, error: null }));
 const mockEq = vi.fn(() => chain);
 const mockIn = vi.fn(() => chain);
@@ -74,7 +74,7 @@ describe("completeWorkflowStep — manual UI submission", () => {
 
     // Verify the update was issued with status = awaiting_approval and the
     // provided output. The first .update() call is the one we care about.
-    const updateArgs = mockUpdate.mock.calls[0]?.[0] as Record<string, unknown>;
+    const updateArgs = mockUpdate.mock.calls[0]?.[0];
     expect(updateArgs?.status).toBe("awaiting_approval");
     expect(updateArgs?.output).toBe("manual deliverable text");
     // awaiting_approval must NOT set completed_at
@@ -93,7 +93,7 @@ describe("completeWorkflowStep — manual UI submission", () => {
 
     await completeWorkflowStep("step-1");
 
-    const updateArgs = mockUpdate.mock.calls[0]?.[0] as Record<string, unknown>;
+    const updateArgs = mockUpdate.mock.calls[0]?.[0];
     expect(updateArgs?.status).toBe("completed");
     expect(updateArgs?.completed_at).toBeTypeOf("string");
   });

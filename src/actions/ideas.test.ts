@@ -12,7 +12,7 @@ Object.assign(chain, {
   eq: mockEq,
   single: mockSingle,
 });
-const mockFrom = vi.fn(() => chain);
+const mockFrom = vi.fn((..._args: unknown[]) => chain);
 const mockGetUser = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({

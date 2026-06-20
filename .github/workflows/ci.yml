@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+    branches: [master, develop]
+  pull_request:
+    branches: [master, develop]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Blocking gate: typecheck must pass for the job to succeed.
+      - name: Typecheck
+        run: npm run typecheck
+
+      # Non-blocking for now: lint and test have pre-existing failures on
+      # master (116 lint errors + 1 unrelated test failure) tracked separately.
+      # Kept for visibility so they surface red without failing the gate.
+      # Promote to blocking once those are cleaned up.
+      - name: Lint
+        run: npm run lint
+        continue-on-error: true
+
+      - name: Unit tests
+        run: npm run test
+        continue-on-error: true

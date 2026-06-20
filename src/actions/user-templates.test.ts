@@ -20,7 +20,7 @@ Object.assign(chain, {
   limit: mockLimit,
   delete: mockDelete,
 });
-const mockFrom = vi.fn(() => chain);
+const mockFrom = vi.fn((..._args: unknown[]) => chain);
 const mockGetUser = vi.fn();
 
 vi.mock("@/lib/supabase/server", () => ({
@@ -79,7 +79,7 @@ describe("user-templates server actions", () => {
       // Third call: fetch auto-rules
       const autoRuleData: unknown[] = [];
       // Fourth call: insert
-      const insertedData = { id: "saved-1", ...templateData, user_id: "user-1" };
+      const insertedData = { ...templateData, user_id: "user-1" };
 
       let fromCallCount = 0;
       mockFrom.mockImplementation(() => {
