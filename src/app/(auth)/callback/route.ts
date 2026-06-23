@@ -2,6 +2,13 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 
+// This OAuth callback is inherently dynamic — it reads `code`/`next` from the
+// querystring and sets the session cookie, so it must never be statically
+// analysed/prerendered. Forcing dynamic also keeps it out of the Next 16
+// route-handler path that intermittently emits "No response is returned from
+// route handler" (the same flake robots.ts/sitemap.ts opt out of).
+export const dynamic = "force-dynamic";
+
 export async function GET(request: Request) {
   const { searchParams, origin } = new URL(request.url);
   const code = searchParams.get("code");
