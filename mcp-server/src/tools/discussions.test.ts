@@ -23,6 +23,9 @@ const USER_ID = "00000000-0000-4000-a000-000000000001";
 const IDEA_ID = "00000000-0000-4000-a000-000000000010";
 const DISCUSSION_ID = "00000000-0000-4000-a000-000000000020";
 
+/** Return type of `supabase.from()` — what the mocked query chains stand in for. */
+type FromReturn = ReturnType<McpContext["supabase"]["from"]>;
+
 /** Creates a chainable Supabase query mock that captures method calls. */
 function createChain(resolveWith: unknown = null) {
   const captured = {
@@ -278,7 +281,7 @@ describe("createDiscussion", () => {
       title: "Test Discussion",
       created_at: "2026-01-01T00:00:00Z",
     });
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await createDiscussion(ctx, {
       idea_id: IDEA_ID,
@@ -305,7 +308,7 @@ describe("createDiscussion", () => {
       title: "Test",
       created_at: "2026-01-01T00:00:00Z",
     });
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await createDiscussion(ctx, {
       idea_id: IDEA_ID,
@@ -318,7 +321,7 @@ describe("createDiscussion", () => {
 
   it("throws on database error", async () => {
     const chain = createErrorChain("RLS policy violation");
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await expect(
       createDiscussion(ctx, {
@@ -338,7 +341,7 @@ describe("updateDiscussion", () => {
       status: "open",
       pinned: false,
     });
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await updateDiscussion(ctx, {
       discussion_id: DISCUSSION_ID,
@@ -357,7 +360,7 @@ describe("updateDiscussion", () => {
       status: "resolved",
       pinned: false,
     });
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await updateDiscussion(ctx, {
       discussion_id: DISCUSSION_ID,
@@ -375,7 +378,7 @@ describe("updateDiscussion", () => {
       status: "open",
       pinned: true,
     });
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await updateDiscussion(ctx, {
       discussion_id: DISCUSSION_ID,
@@ -393,7 +396,7 @@ describe("updateDiscussion", () => {
       status: "open",
       pinned: false,
     });
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await updateDiscussion(ctx, {
       discussion_id: DISCUSSION_ID,
@@ -411,7 +414,7 @@ describe("updateDiscussion", () => {
       status: "resolved",
       pinned: true,
     });
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await updateDiscussion(ctx, {
       discussion_id: DISCUSSION_ID,
@@ -435,7 +438,7 @@ describe("updateDiscussion", () => {
       status: "open",
       pinned: false,
     });
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await updateDiscussion(ctx, {
       discussion_id: DISCUSSION_ID,
@@ -449,7 +452,7 @@ describe("updateDiscussion", () => {
 
   it("throws when no fields to update", async () => {
     const { chain } = createChain(null);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await expect(
       updateDiscussion(ctx, {
@@ -461,7 +464,7 @@ describe("updateDiscussion", () => {
 
   it("throws on database error", async () => {
     const chain = createErrorChain("permission denied");
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await expect(
       updateDiscussion(ctx, {
@@ -479,7 +482,7 @@ describe("deleteDiscussion", () => {
     // Override delete's then to resolve with no error
     chain.then = (resolve: (val: unknown) => void) =>
       Promise.resolve({ data: null, error: null }).then(resolve);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await deleteDiscussion(ctx, {
       discussion_id: DISCUSSION_ID,
@@ -503,7 +506,7 @@ describe("deleteDiscussion", () => {
         error: { message: "foreign key violation" },
       }).then(resolve);
 
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await expect(
       deleteDiscussion(ctx, {
@@ -530,7 +533,7 @@ describe("listDiscussions", () => {
       },
     ];
     const { chain, captured } = createChain(mockDiscussions);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await listDiscussions(ctx, {
       idea_id: IDEA_ID,
@@ -545,7 +548,7 @@ describe("listDiscussions", () => {
 
   it("applies status filter when provided", async () => {
     const { chain, captured } = createChain([]);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await listDiscussions(ctx, {
       idea_id: IDEA_ID,
@@ -558,7 +561,7 @@ describe("listDiscussions", () => {
 
   it("does not filter by status when not provided", async () => {
     const { chain, captured } = createChain([]);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await listDiscussions(ctx, {
       idea_id: IDEA_ID,
@@ -577,7 +580,7 @@ describe("listDiscussions", () => {
         data: null,
         error: { message: "connection failed" },
       }).then(resolve);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await expect(
       listDiscussions(ctx, { idea_id: IDEA_ID, limit: 20 })
@@ -615,10 +618,10 @@ describe("getDiscussion", () => {
       callNum++;
       if (callNum === 1) {
         // idea_discussions query
-        return createChain(mockDiscussion).chain as any;
+        return createChain(mockDiscussion).chain as unknown as FromReturn;
       }
       // idea_discussion_replies query
-      return createChain(mockReplies).chain as any;
+      return createChain(mockReplies).chain as unknown as FromReturn;
     });
 
     const result = await getDiscussion(ctx, {
@@ -634,7 +637,7 @@ describe("getDiscussion", () => {
 
   it("throws when discussion not found", async () => {
     const { chain } = createChain(null); // maybeSingle returns null
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await expect(
       getDiscussion(ctx, {
@@ -679,8 +682,8 @@ describe("getDiscussion", () => {
     let callNum = 0;
     const ctx = makeContext(() => {
       callNum++;
-      if (callNum === 1) return createChain(mockDiscussion).chain as any;
-      return createChain(mockReplies).chain as any;
+      if (callNum === 1) return createChain(mockDiscussion).chain as unknown as FromReturn;
+      return createChain(mockReplies).chain as unknown as FromReturn;
     });
 
     const result = await getDiscussion(ctx, {
@@ -703,7 +706,7 @@ describe("addDiscussionReply", () => {
       content: "My reply",
       created_at: "2026-01-01T00:00:00Z",
     });
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await addDiscussionReply(ctx, {
       discussion_id: DISCUSSION_ID,
@@ -735,8 +738,8 @@ describe("addDiscussionReply", () => {
     let callNum = 0;
     const ctx = makeContext(() => {
       callNum++;
-      if (callNum === 1) return parentChain.chain as any;
-      return insertChain.chain as any;
+      if (callNum === 1) return parentChain.chain as unknown as FromReturn;
+      return insertChain.chain as unknown as FromReturn;
     });
 
     const result = await addDiscussionReply(ctx, {
@@ -767,8 +770,8 @@ describe("addDiscussionReply", () => {
     let callNum = 0;
     const ctx = makeContext(() => {
       callNum++;
-      if (callNum === 1) return parentChain.chain as any;
-      return insertChain.chain as any;
+      if (callNum === 1) return parentChain.chain as unknown as FromReturn;
+      return insertChain.chain as unknown as FromReturn;
     });
 
     await addDiscussionReply(ctx, {
@@ -788,7 +791,7 @@ describe("addDiscussionReply", () => {
 
   it("throws on database error", async () => {
     const chain = createErrorChain("insert failed");
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await expect(
       addDiscussionReply(ctx, {

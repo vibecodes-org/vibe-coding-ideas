@@ -9,6 +9,9 @@ import {
   listIdeaAgentsSchema,
 } from "./idea-agents";
 
+/** Return type of `supabase.from()` — what the mocked query chains stand in for. */
+type FromReturn = ReturnType<McpContext["supabase"]["from"]>;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -185,7 +188,7 @@ describe("allocateAgent", () => {
     // Override thenable — insert resolves with no error
     chain.then = (resolve: (val: unknown) => void) =>
       Promise.resolve({ data: null, error: null }).then(resolve);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await allocateAgent(ctx, {
       idea_id: IDEA_ID,
@@ -206,7 +209,7 @@ describe("allocateAgent", () => {
     const { chain, captured } = createChain(null);
     chain.then = (resolve: (val: unknown) => void) =>
       Promise.resolve({ data: null, error: null }).then(resolve);
-    const ctx = makeContext(() => chain as any, { ownerUserId: OWNER_ID });
+    const ctx = makeContext(() => chain as unknown as FromReturn, { ownerUserId: OWNER_ID });
 
     await allocateAgent(ctx, { idea_id: IDEA_ID, bot_id: BOT_ID });
 
@@ -219,7 +222,7 @@ describe("allocateAgent", () => {
 
   it("ignores duplicate allocation (error code 23505)", async () => {
     const chain = createErrorChain("duplicate key value", "23505");
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await allocateAgent(ctx, {
       idea_id: IDEA_ID,
@@ -232,7 +235,7 @@ describe("allocateAgent", () => {
 
   it("throws on non-duplicate database error", async () => {
     const chain = createErrorChain("RLS policy violation", "42501");
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await expect(
       allocateAgent(ctx, { idea_id: IDEA_ID, bot_id: BOT_ID })
@@ -249,7 +252,7 @@ describe("removeIdeaAgent", () => {
     const { chain, captured } = createChain(null);
     chain.then = (resolve: (val: unknown) => void) =>
       Promise.resolve({ data: null, error: null }).then(resolve);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await removeIdeaAgent(ctx, {
       idea_id: IDEA_ID,
@@ -265,7 +268,7 @@ describe("removeIdeaAgent", () => {
 
   it("throws on database error", async () => {
     const chain = createErrorChain("permission denied");
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await expect(
       removeIdeaAgent(ctx, { idea_id: IDEA_ID, bot_id: BOT_ID })
@@ -296,7 +299,7 @@ describe("listIdeaAgents", () => {
       },
     ];
     const { chain, captured } = createChain(mockRows);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await listIdeaAgents(ctx, { idea_id: IDEA_ID });
 
@@ -317,7 +320,7 @@ describe("listIdeaAgents", () => {
 
   it("returns empty array when no agents allocated", async () => {
     const { chain } = createChain([]);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await listIdeaAgents(ctx, { idea_id: IDEA_ID });
 
@@ -335,7 +338,7 @@ describe("listIdeaAgents", () => {
       },
     ];
     const { chain } = createChain(mockRows);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await listIdeaAgents(ctx, { idea_id: IDEA_ID });
 
@@ -354,7 +357,7 @@ describe("listIdeaAgents", () => {
         data: null,
         error: { message: "connection failed" },
       }).then(resolve);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await expect(
       listIdeaAgents(ctx, { idea_id: IDEA_ID })

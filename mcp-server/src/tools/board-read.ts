@@ -70,13 +70,14 @@ export const getBoardSchema = z.object({
 
 export async function getBoard(ctx: McpContext, params: z.infer<typeof getBoardSchema>) {
   // Check if columns exist; if not, initialize defaults
-  let { data: columns, error: colError } = await ctx.supabase
+  const colResult = await ctx.supabase
     .from("board_columns")
     .select("*")
     .eq("idea_id", params.idea_id)
     .order("position");
 
-  if (colError) throw new Error(`Failed to get board: ${colError.message}`);
+  let columns = colResult.data;
+  if (colResult.error) throw new Error(`Failed to get board: ${colResult.error.message}`);
 
   if (!columns || columns.length === 0) {
     // Before initializing, verify the idea exists and user has access

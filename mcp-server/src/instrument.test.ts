@@ -3,12 +3,13 @@ import { instrumentServer, type ToolLogEntry } from "./instrument";
 import type { McpContext } from "./context";
 
 // Mock AnyMcpServer
+type ToolHandler = (...args: unknown[]) => unknown;
 function createMockServer() {
-  const registeredTools = new Map<string, Function>();
+  const registeredTools = new Map<string, ToolHandler>();
   return {
     server: {
       tool: vi.fn((name: string, ...rest: unknown[]) => {
-        const handler = rest[rest.length - 1] as Function;
+        const handler = rest[rest.length - 1] as ToolHandler;
         registeredTools.set(name, handler);
       }),
     },

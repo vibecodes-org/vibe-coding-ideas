@@ -143,20 +143,8 @@ export function AgentCard({
       : "border-border/50 opacity-45 hover:opacity-65"
   );
 
-  const Wrapper = onClick
-    ? ({ children }: { children: React.ReactNode }) => (
-        <button type="button" onClick={onClick} className={ownedClassName}>
-          {children}
-        </button>
-      )
-    : ({ children }: { children: React.ReactNode }) => (
-        <Link href={`/agents/${bot.id}`} className={ownedClassName}>
-          {children}
-        </Link>
-      );
-
-  return (
-    <Wrapper>
+  const wrapperContent = (
+    <>
       {/* Hover edit button */}
       {onEdit && (
         <button
@@ -239,6 +227,16 @@ export function AgentCard({
           <span><span className="font-semibold text-muted-foreground/80">{stats.assignedCount}</span> assigned</span>
         </div>
       )}
-    </Wrapper>
+    </>
+  );
+
+  return onClick ? (
+    <button type="button" onClick={onClick} className={ownedClassName}>
+      {wrapperContent}
+    </button>
+  ) : (
+    <Link href={`/agents/${bot.id}`} className={ownedClassName}>
+      {wrapperContent}
+    </Link>
   );
 }

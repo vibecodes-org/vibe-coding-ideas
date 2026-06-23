@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 import { decrementStarterCredit } from "./ai-helpers";
 
 // Mock logger to suppress output
@@ -13,7 +15,7 @@ vi.mock("@/lib/encryption", () => ({
 
 describe("decrementStarterCredit", () => {
   const mockRpc = vi.fn();
-  const mockSupabase = { rpc: mockRpc } as any;
+  const mockSupabase = { rpc: mockRpc } as unknown as SupabaseClient<Database>;
   const userId = "test-user-id";
 
   beforeEach(() => {

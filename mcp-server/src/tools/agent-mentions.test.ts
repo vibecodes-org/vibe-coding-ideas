@@ -2,6 +2,9 @@ import { describe, it, expect, vi, type Mock } from "vitest";
 import type { McpContext } from "../context";
 import { getAgentMentions, getAgentMentionsSchema } from "./agent-mentions";
 
+/** Return type of `supabase.from()` — what the mocked query chains stand in for. */
+type FromReturn = ReturnType<McpContext["supabase"]["from"]>;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -152,7 +155,7 @@ describe("getAgentMentionsSchema", () => {
 describe("getAgentMentions", () => {
   it("returns empty when user has no bots", async () => {
     const { chain } = createChain([]);
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     const result = await getAgentMentions(ctx, { limit: 20 });
 
@@ -184,10 +187,10 @@ describe("getAgentMentions", () => {
       callNum++;
       if (callNum === 1) {
         // bot_profiles query
-        return createChain(mockBots).chain as any;
+        return createChain(mockBots).chain as unknown as FromReturn;
       }
       // notifications query
-      return createChain(mockNotifications).chain as any;
+      return createChain(mockNotifications).chain as unknown as FromReturn;
     });
 
     const result = await getAgentMentions(ctx, { limit: 20 });
@@ -224,9 +227,9 @@ describe("getAgentMentions", () => {
             capturedEqs.push([col, val]);
             return origEq(col, val);
           });
-          return chain as any;
+          return chain as unknown as FromReturn;
         }
-        return createChain([]).chain as any;
+        return createChain([]).chain as unknown as FromReturn;
       },
       { ownerUserId: OWNER_ID }
     );
@@ -249,9 +252,9 @@ describe("getAgentMentions", () => {
           capturedEqs.push([col, val]);
           return origEq(col, val);
         });
-        return chain as any;
+        return chain as unknown as FromReturn;
       }
-      return createChain([]).chain as any;
+      return createChain([]).chain as unknown as FromReturn;
     });
 
     await getAgentMentions(ctx, { limit: 20 });
@@ -269,7 +272,7 @@ describe("getAgentMentions", () => {
     const ctx = makeContext(() => {
       callNum++;
       if (callNum === 1) {
-        return createChain(mockBots).chain as any;
+        return createChain(mockBots).chain as unknown as FromReturn;
       }
       // notifications query — capture eq calls
       const { chain } = createChain([]);
@@ -278,7 +281,7 @@ describe("getAgentMentions", () => {
         notifCapturedEqs.push([col, val]);
         return origEq(col, val);
       });
-      return chain as any;
+      return chain as unknown as FromReturn;
     });
 
     await getAgentMentions(ctx, { idea_id: IDEA_ID, limit: 20 });
@@ -305,8 +308,8 @@ describe("getAgentMentions", () => {
     let callNum = 0;
     const ctx = makeContext(() => {
       callNum++;
-      if (callNum === 1) return createChain(mockBots).chain as any;
-      return createChain(mockNotifications).chain as any;
+      if (callNum === 1) return createChain(mockBots).chain as unknown as FromReturn;
+      return createChain(mockNotifications).chain as unknown as FromReturn;
     });
 
     const result = await getAgentMentions(ctx, { limit: 20 });
@@ -334,8 +337,8 @@ describe("getAgentMentions", () => {
     let callNum = 0;
     const ctx = makeContext(() => {
       callNum++;
-      if (callNum === 1) return createChain(mockBots).chain as any;
-      return createChain(mockNotifications).chain as any;
+      if (callNum === 1) return createChain(mockBots).chain as unknown as FromReturn;
+      return createChain(mockNotifications).chain as unknown as FromReturn;
     });
 
     const result = await getAgentMentions(ctx, { limit: 20 });
@@ -346,7 +349,7 @@ describe("getAgentMentions", () => {
 
   it("throws on bot_profiles query error", async () => {
     const chain = createErrorChain("permission denied");
-    const ctx = makeContext(() => chain as any);
+    const ctx = makeContext(() => chain as unknown as FromReturn);
 
     await expect(
       getAgentMentions(ctx, { limit: 20 })
@@ -359,8 +362,8 @@ describe("getAgentMentions", () => {
     let callNum = 0;
     const ctx = makeContext(() => {
       callNum++;
-      if (callNum === 1) return createChain(mockBots).chain as any;
-      return createErrorChain("connection failed") as any;
+      if (callNum === 1) return createChain(mockBots).chain as unknown as FromReturn;
+      return createErrorChain("connection failed") as unknown as FromReturn;
     });
 
     await expect(

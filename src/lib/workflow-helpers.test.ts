@@ -348,8 +348,8 @@ describe("checkAndApplyAutoRules", () => {
       activeRun: null,
     });
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await expect(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal supabase mock; faithful SupabaseClient generics are impractical here
       checkAndApplyAutoRules(supabase as any, "task-1", "label-1", "idea-1", applyFn)
     ).resolves.toBeUndefined();
 
@@ -366,8 +366,8 @@ describe("checkAndApplyAutoRules", () => {
       }),
     };
 
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
     await expect(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any -- minimal supabase mock; faithful SupabaseClient generics are impractical here
       checkAndApplyAutoRules(supabase as any, "task-1", "label-1", "idea-1", applyFn)
     ).resolves.toBeUndefined();
 

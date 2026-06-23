@@ -208,9 +208,8 @@ export async function toggleAgentVote(botId: string) {
  * and atomically increment the source's times_cloned counter.
  * Returns the new bot's ID.
  */
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export async function cloneBotProfile(
-  supabase: any,
+  supabase: Awaited<ReturnType<typeof createClient>>,
   source: BotProfile,
   ownerId: string
 ): Promise<string> {

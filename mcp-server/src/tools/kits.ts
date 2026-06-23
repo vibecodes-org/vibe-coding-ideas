@@ -21,7 +21,7 @@ export async function listKits(ctx: McpContext) {
   const kitIds = (data ?? []).map((k) => k.id);
 
   // Fetch workflow mappings for all kits
-  let mappingsByKit = new Map<string, { label_name: string; template_name: string; step_count: number; is_primary: boolean }[]>();
+  const mappingsByKit = new Map<string, { label_name: string; template_name: string; step_count: number; is_primary: boolean }[]>();
   if (kitIds.length > 0) {
     const { data: mappings } = await ctx.supabase
       .from("kit_workflow_mappings")

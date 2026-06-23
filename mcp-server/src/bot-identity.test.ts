@@ -26,6 +26,9 @@ import { toggleVote } from "./tools/votes";
 const HUMAN_ID = "00000000-0000-4000-a000-000000000001";
 const BOT_ID = "00000000-0000-4000-a000-000000000002";
 
+/** Return type of `supabase.from()` — what the mocked query chains stand in for. */
+type FromReturn = ReturnType<McpContext["supabase"]["from"]>;
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -111,7 +114,7 @@ describe("bot identity context — human-identity operations", () => {
   describe("listBots", () => {
     it("queries by ownerUserId (human), not userId (bot)", async () => {
       const { chain, captured } = createChain([]);
-      const ctx = botContext(() => chain as any);
+      const ctx = botContext(() => chain as unknown as FromReturn);
 
       await listBots(ctx, {});
 
@@ -122,7 +125,7 @@ describe("bot identity context — human-identity operations", () => {
 
     it("uses userId when ownerUserId is not set", async () => {
       const { chain, captured } = createChain([]);
-      const ctx = normalContext(() => chain as any);
+      const ctx = normalContext(() => chain as unknown as FromReturn);
 
       await listBots(ctx, {});
 
@@ -134,7 +137,7 @@ describe("bot identity context — human-identity operations", () => {
   describe("listNotifications", () => {
     it("queries human's notifications, not bot's", async () => {
       const { chain, captured } = createChain([]);
-      const ctx = botContext(() => chain as any);
+      const ctx = botContext(() => chain as unknown as FromReturn);
 
       await listNotifications(ctx, { unread_only: false, limit: 20 });
 
@@ -147,7 +150,7 @@ describe("bot identity context — human-identity operations", () => {
   describe("markNotificationRead", () => {
     it("marks human's notification, not bot's", async () => {
       const { chain, captured } = createChain(null);
-      const ctx = botContext(() => chain as any);
+      const ctx = botContext(() => chain as unknown as FromReturn);
 
       await markNotificationRead(ctx, {
         notification_id: "00000000-0000-4000-a000-000000000099",
@@ -162,7 +165,7 @@ describe("bot identity context — human-identity operations", () => {
   describe("markAllNotificationsRead", () => {
     it("marks human's notifications as read, not bot's", async () => {
       const { chain, captured } = createChain(null);
-      const ctx = botContext(() => chain as any);
+      const ctx = botContext(() => chain as unknown as FromReturn);
 
       await markAllNotificationsRead(ctx);
 
@@ -179,7 +182,7 @@ describe("bot identity context — human-identity operations", () => {
         title: "Test",
         status: "open",
       });
-      const ctx = botContext(() => chain as any);
+      const ctx = botContext(() => chain as unknown as FromReturn);
 
       await createIdea(ctx, {
         title: "Test Idea",
@@ -212,9 +215,9 @@ describe("bot identity context — human-identity operations", () => {
           ideaCallNum++;
           return (ideaCallNum === 1
             ? selectChain.chain
-            : deleteChain.chain) as any;
+            : deleteChain.chain) as unknown as FromReturn;
         }
-        return createChain(null).chain as any;
+        return createChain(null).chain as unknown as FromReturn;
       });
 
       // Should succeed because human is the author
@@ -236,14 +239,14 @@ describe("bot identity context — human-identity operations", () => {
       let ideaCallNum = 0;
 
       const ctx = botContext((table: string) => {
-        if (table === "users") return usersChain.chain as any;
+        if (table === "users") return usersChain.chain as unknown as FromReturn;
         if (table === "ideas") {
           ideaCallNum++;
           return (ideaCallNum === 1
             ? selectChain.chain
-            : deleteChain.chain) as any;
+            : deleteChain.chain) as unknown as FromReturn;
         }
-        return createChain(null).chain as any;
+        return createChain(null).chain as unknown as FromReturn;
       });
 
       const result = await deleteIdea(ctx, {
@@ -262,7 +265,7 @@ describe("bot identity context — human-identity operations", () => {
     it("votes as human, not bot", async () => {
       // No existing vote — will insert
       const { chain, captured } = createChain(null);
-      const ctx = botContext(() => chain as any);
+      const ctx = botContext(() => chain as unknown as FromReturn);
 
       await toggleVote(ctx, {
         idea_id: "00000000-0000-4000-a000-000000000010",
@@ -330,7 +333,7 @@ describe("bot identity context — bot-identity operations", () => {
         type: "comment",
         created_at: new Date().toISOString(),
       });
-      const ctx = botContext(() => chain as any);
+      const ctx = botContext(() => chain as unknown as FromReturn);
 
       await addIdeaComment(ctx, {
         idea_id: "00000000-0000-4000-a000-000000000010",
@@ -354,7 +357,7 @@ describe("bot identity context — bot-identity operations", () => {
         content: "Task note",
         created_at: new Date().toISOString(),
       });
-      const ctx = botContext(() => chain as any);
+      const ctx = botContext(() => chain as unknown as FromReturn);
 
       await addTaskComment(ctx, {
         task_id: "00000000-0000-4000-a000-000000000020",

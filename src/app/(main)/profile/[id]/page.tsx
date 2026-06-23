@@ -14,7 +14,7 @@ import { GithubConnection } from "@/components/profile/github-connection";
 import Link from "next/link";
 import { Bot } from "lucide-react";
 import { stripMarkdownForMeta } from "@/lib/utils";
-import type { IdeaWithAuthor } from "@/types";
+import type { IdeaWithAuthor, CommentWithAuthor } from "@/types";
 import type { Metadata } from "next";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
@@ -237,7 +237,12 @@ export default async function ProfilePage({ params }: PageProps) {
       <ProfileTabs
         ideas={(ideas as unknown as IdeaWithAuthor[]) ?? []}
         collaborations={collabIdeas}
-        comments={comments as any}
+        comments={
+          comments as unknown as (CommentWithAuthor & {
+            idea_id: string;
+            idea_title?: string;
+          })[]
+        }
         userVotes={userVotes}
         taskCounts={taskCounts}
         isOwnProfile={currentUser?.id === id}

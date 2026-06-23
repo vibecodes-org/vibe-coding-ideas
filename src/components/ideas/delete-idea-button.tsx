@@ -33,7 +33,7 @@ export function DeleteIdeaButton({ ideaId, variant = "button" }: DeleteIdeaButto
       await deleteIdea(ideaId);
     } catch (error) {
       // redirect() throws a special error — don't treat it as a failure
-      if (typeof error === "object" && error !== null && "digest" in error && String((error as any).digest).startsWith("NEXT_REDIRECT")) {
+      if (typeof error === "object" && error !== null && "digest" in error && String((error as { digest: unknown }).digest).startsWith("NEXT_REDIRECT")) {
         throw error;
       }
       toast.error("Failed to delete idea");

@@ -28,7 +28,12 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
   // Memoize task ID set for O(1) lookups in realtime callbacks
   const taskIdSet = useMemo(() => new Set(taskIds), [taskIds]);
   const taskIdSetRef = useRef(taskIdSet);
-  taskIdSetRef.current = taskIdSet;
+  // Keep the ref in sync after render so async realtime callbacks read the
+  // latest set without re-subscribing the channel. (Writing a ref during render
+  // is disallowed by react-hooks/refs.)
+  useEffect(() => {
+    taskIdSetRef.current = taskIdSet;
+  }, [taskIdSet]);
 
   const debouncedRefresh = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);

@@ -96,20 +96,28 @@ export async function listBots(
 
   if (error) throw new Error(error.message);
 
-  return (data ?? []).map((bot) => ({
-    id: bot.id,
-    name: bot.name,
-    role: bot.role,
-    system_prompt: bot.system_prompt,
-    is_active: bot.is_active,
-    bio: bot.bio,
-    skills: bot.skills,
-    is_published: bot.is_published,
-    community_upvotes: bot.community_upvotes,
-    times_cloned: bot.times_cloned,
-    avatar_url: bot.avatar_url ?? (bot.user as any)?.avatar_url ?? null,
-    created_at: bot.created_at,
-  }));
+  return (data ?? []).map((bot) => {
+    // The joined `user` relation may be inferred as an object or single-element array.
+    const joinedUser = bot.user as
+      | { avatar_url: string | null }
+      | { avatar_url: string | null }[]
+      | null;
+    const userRow = Array.isArray(joinedUser) ? joinedUser[0] : joinedUser;
+    return {
+      id: bot.id,
+      name: bot.name,
+      role: bot.role,
+      system_prompt: bot.system_prompt,
+      is_active: bot.is_active,
+      bio: bot.bio,
+      skills: bot.skills,
+      is_published: bot.is_published,
+      community_upvotes: bot.community_upvotes,
+      times_cloned: bot.times_cloned,
+      avatar_url: bot.avatar_url ?? userRow?.avatar_url ?? null,
+      created_at: bot.created_at,
+    };
+  });
 }
 
 export async function getBotPrompt(

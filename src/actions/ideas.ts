@@ -133,7 +133,14 @@ export async function updateIdeaStatus(ideaId: string, status: IdeaStatus) {
   if (collaborators && collaborators.length > 0) {
     const notifications = collaborators
       .filter((c) => {
-        const prefs = (c.user as any)?.notification_preferences;
+        // The `user:users!...(notification_preferences)` join may be inferred as
+        // an object or a single-element array depending on the relationship.
+        const joined = c.user as
+          | { notification_preferences: { status_changes?: boolean } | null }
+          | { notification_preferences: { status_changes?: boolean } | null }[]
+          | null;
+        const userRow = Array.isArray(joined) ? joined[0] : joined;
+        const prefs = userRow?.notification_preferences;
         return prefs?.status_changes !== false;
       })
       .map((c) => ({

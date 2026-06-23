@@ -381,7 +381,14 @@ describe("decideAutoRuleApplication — non-throwing (AC-18)", () => {
 // ============================================================
 
 describe("async adjudication", () => {
-  it("confident AI verdict applies the recommended template and resolves the suggestion", async () => {
+  it("confident AI verdict for a DIFFERENT template surfaces it but never silently swaps", async () => {
+    // The rule suggested tmpl-discovery; the AI confidently recommends a
+    // DIFFERENT template (tmpl-build). Per workflow-matching.ts:436-443 we never
+    // silently substitute a workflow the user didn't choose, so autoApply stays
+    // false even at high confidence: applyFn is NOT called and the suggestion is
+    // left OPEN with the recommended template surfaced for the user to choose.
+    // (The same-template confident path — recommended === suggested — is the
+    // auto-apply case and is exercised by the AC-1 / matching-unit tests.)
     withAi();
     const db = createSuggestionDb();
     const applyFn = vi.fn().mockResolvedValue(undefined);
@@ -409,12 +416,16 @@ describe("async adjudication", () => {
     });
 
     expect(result.adjudication?.source).toBe("ai");
-    expect(applyFn).toHaveBeenCalledWith("task-1", "tmpl-build");
+    // Differing template → never silently substituted, so no apply.
+    expect(applyFn).not.toHaveBeenCalled();
     const row = db.rows.find((r) => r.id === result.suggestionId)!;
-    // Recommended differs from suggested → replaced + resolved.
-    expect(row.status).toBe("replaced");
-    expect(row.replacement_template_id).toBe("tmpl-build");
-    expect(row.resolved_at).not.toBeNull();
+    // Suggestion stays open with the AI verdict recorded for the user to choose.
+    expect(row.status).toBe("suggested");
+    expect(row.source).toBe("ai");
+    expect(row.ai_confidence).toBe(0.95);
+    expect(row.recommended_template_id).toBe("tmpl-build");
+    expect(row.replacement_template_id).toBeNull();
+    expect(row.resolved_at).toBeNull();
     expect(row.adjudication_started_at).toBeNull();
   });
 

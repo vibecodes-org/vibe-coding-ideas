@@ -36,14 +36,10 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      # Non-blocking for now: lint and test have pre-existing failures on
-      # master (116 lint errors + 1 unrelated test failure) tracked separately.
-      # Kept for visibility so they surface red without failing the gate.
-      # Promote to blocking once those are cleaned up.
+      # Blocking gate: lint must pass (0 errors; warnings allowed).
       - name: Lint
         run: npm run lint
-        continue-on-error: true
 
+      # Blocking gate: the unit test suite must be green.
       - name: Unit tests
         run: npm run test
-        continue-on-error: true
