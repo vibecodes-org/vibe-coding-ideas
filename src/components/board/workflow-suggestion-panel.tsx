@@ -161,15 +161,20 @@ export function WorkflowSuggestionPanel({
     !!recommendedId &&
     recommendedId !== suggestion?.suggested_template_id;
 
-  // Load templates lazily — when the picker opens, or eagerly when there's a
-  // distinct recommendation so the primary button can name the template.
+  // Load templates when the picker opens, when there's a distinct recommendation
+  // to name, OR whenever a suggestion is open so we can name the labelled
+  // template the "Keep" action would attach. Without this last case (the common
+  // heuristic/"Rules" suggestion), templates stay null and the panel falls back
+  // to an unnamed "Keep & attach".
+  const needsTemplateNames =
+    showPicker || hasDistinctRecommendation || !!suggestion?.suggested_template_id;
   useEffect(() => {
     if (templates !== null) return;
-    if (!showPicker && !hasDistinctRecommendation) return;
+    if (!needsTemplateNames) return;
     listWorkflowTemplates(ideaId)
       .then((data) => setTemplates((data ?? []) as WorkflowTemplate[]))
       .catch(() => setTemplates([]));
-  }, [showPicker, hasDistinctRecommendation, ideaId, templates]);
+  }, [needsTemplateNames, ideaId, templates]);
 
   // The same panel instance is reused across suggestions (it returns null while
   // hidden but never unmounts). When the active suggestion changes — a resolved
