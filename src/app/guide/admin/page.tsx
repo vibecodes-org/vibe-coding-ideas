@@ -36,12 +36,21 @@ export default function AdminPage() {
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>View the AI usage analytics dashboard</li>
-            <li>Toggle AI access on or off for any user</li>
-            <li>Adjust per-user daily AI call limits</li>
-            <li>Delete any idea (not just their own)</li>
-            <li>Delete non-admin user accounts</li>
+            <li>Grant AI starter credits to any user</li>
+            <li>View per-user credit balances and platform AI costs</li>
+            <li>Manage Featured Agent Teams and Project Kits</li>
             <li>View private ideas (even without being a collaborator)</li>
           </ul>
+          <div className="mt-4 rounded-xl border border-border bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">Super admins:</strong>{" "}
+              destructive operations — such as deleting other users&apos;
+              ideas or non-admin accounts — are gated behind a separate{" "}
+              <strong className="text-foreground">is_super_admin</strong>{" "}
+              flag. A regular admin can monitor and grant credits but cannot
+              perform these destructive actions.
+            </p>
+          </div>
         </section>
 
         <section>
@@ -72,33 +81,50 @@ export default function AdminPage() {
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Tip:</strong> Use the date
               range filter to track usage trends over time and identify users
-              who may need their daily limits adjusted.
+              who may need more starter credits.
             </p>
           </div>
         </section>
 
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">User Management</h2>
+          <h2 className="mb-4 text-2xl font-semibold">User Credits</h2>
           <p className="mb-4 text-muted-foreground">
-            The admin dashboard includes a user management table where you can
-            control AI access for each user:
+            The admin dashboard includes a{" "}
+            <strong className="text-foreground">
+              User Credits &amp; Platform Costs
+            </strong>{" "}
+            table for managing each user&apos;s free AI allowance:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              <strong className="text-foreground">Toggle AI access</strong>{" "}
-              — enable or disable AI features for any user. When disabled, all
-              AI buttons are hidden from that user&apos;s interface.
+              <strong className="text-foreground">Grant credits</strong>{" "}
+              — add AI starter credits to any user (1–100 at a time). New users
+              start with 10 free credits; these are a lifetime allowance, not a
+              daily reset.
             </li>
             <li>
-              <strong className="text-foreground">Set daily limits</strong>{" "}
-              — adjust the per-user daily AI call cap. The default is 10 calls
-              per day. Set to unlimited for trusted users.
+              <strong className="text-foreground">View balances</strong>{" "}
+              — see each user&apos;s credits remaining, credits used, and the
+              estimated platform cost they&apos;ve incurred.
             </li>
             <li>
-              <strong className="text-foreground">View usage</strong> — see
-              each user&apos;s current usage against their daily limit
+              <strong className="text-foreground">Bring-your-own-key</strong>{" "}
+              — users who add their own Anthropic API key bypass the credit
+              system entirely, so they never consume starter credits.
             </li>
           </ul>
+          <div className="mt-4 rounded-xl border border-border bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">Daily safety cap:</strong>{" "}
+              separately from per-user credits, the platform enforces a global
+              daily limit on platform-key AI calls (the{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                PLATFORM_AI_DAILY_LIMIT
+              </code>{" "}
+              environment variable, default 50). This is an abuse backstop, not
+              a per-user allocation.
+            </p>
+          </div>
         </section>
 
         <section>

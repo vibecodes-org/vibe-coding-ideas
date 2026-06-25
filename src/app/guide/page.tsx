@@ -5,8 +5,10 @@ import {
   Users,
   MessageSquare,
   LayoutDashboard,
+  Package,
   Workflow,
   Terminal,
+  SquareTerminal,
   Bot,
   Shield,
 } from "lucide-react";
@@ -58,11 +60,29 @@ const sections = [
   {
     title: "Kanban Boards",
     description:
-      "Manage tasks with drag-and-drop boards, Project Kits, labels, due dates, file attachments, and AI task generation.",
+      "Manage tasks with drag-and-drop boards, labels, due dates, file attachments, and AI task generation.",
     icon: LayoutDashboard,
     href: "/guide/kanban-boards",
     iconClass: "text-blue-400",
     bgClass: "bg-blue-500/10",
+  },
+  {
+    title: "Project Kits",
+    description:
+      "One-click bundles of agents, workflows, labels, and triggers tailored to your project type — without touching your tasks.",
+    icon: Package,
+    href: "/guide/project-kits",
+    iconClass: "text-violet-400",
+    bgClass: "bg-violet-500/10",
+  },
+  {
+    title: "Workflows",
+    description:
+      "Define multi-step workflow templates, auto-apply via labels, approval gates, agent execution, and context chaining.",
+    icon: Workflow,
+    href: "/guide/workflows",
+    iconClass: "text-amber-400",
+    bgClass: "bg-amber-500/10",
   },
   {
     title: "MCP Integration",
@@ -74,13 +94,13 @@ const sections = [
     bgClass: "bg-cyan-500/10",
   },
   {
-    title: "Workflows",
+    title: "Launching Claude Code",
     description:
-      "Define multi-step workflow templates, auto-apply via labels, approval gates, agent execution, and context chaining.",
-    icon: Workflow,
-    href: "/guide/workflows",
-    iconClass: "text-amber-400",
-    bgClass: "bg-amber-500/10",
+      "Start Claude Code from any board or task with one click — auto-connected via MCP and ready to pick up work.",
+    icon: SquareTerminal,
+    href: "/guide/launching-claude-code",
+    iconClass: "text-emerald-400",
+    bgClass: "bg-emerald-500/10",
   },
   {
     title: "AI Agent Teams",

@@ -61,7 +61,7 @@ export default function GettingStartedPage() {
           <h2 className="mb-4 text-2xl font-semibold">Guided Onboarding</h2>
           <p className="mb-4 text-muted-foreground">
             After signing up, VibeCodes walks you through a{" "}
-            <strong className="text-foreground">6-step onboarding wizard</strong>{" "}
+            <strong className="text-foreground">5-step onboarding wizard</strong>{" "}
             that gets your AI-powered board running in under a minute:
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
@@ -81,9 +81,10 @@ export default function GettingStartedPage() {
               set visibility
             </li>
             <li>
-              <strong className="text-foreground">Board Ready</strong> — AI
-              generates tasks, allocates agents from your kit, and applies
-              workflow triggers automatically
+              <strong className="text-foreground">Board Ready</strong> — a brief
+              interstitial (not a numbered step) where AI generates tasks,
+              allocates agents from your kit, and applies workflow triggers
+              automatically
             </li>
             <li>
               <strong className="text-foreground">Connect Claude Code</strong> —
@@ -130,7 +131,9 @@ export default function GettingStartedPage() {
             </li>
           </ul>
           <p className="text-muted-foreground">
-            Kits are also available via MCP using the{" "}
+            You can also apply a kit later — from the board empty state or the
+            Workflows tab — and applying one never touches your existing tasks.
+            Kits are available via MCP too, using the{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-sm">
               list_kits
             </code>{" "}
@@ -138,7 +141,13 @@ export default function GettingStartedPage() {
             <code className="rounded bg-muted px-1.5 py-0.5 text-sm">
               apply_kit
             </code>{" "}
-            tools, so you can apply them programmatically at any time.
+            tools.{" "}
+            <Link
+              href="/guide/project-kits"
+              className="text-primary hover:underline"
+            >
+              Read the full Project Kits guide &rarr;
+            </Link>
           </p>
         </section>
 

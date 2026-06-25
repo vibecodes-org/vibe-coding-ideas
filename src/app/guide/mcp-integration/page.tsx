@@ -8,7 +8,7 @@ import { MCP_COMMAND } from "@/lib/constants";
 export const metadata: Metadata = {
   title: "MCP Integration Guide — Connect Claude Code to VibeCodes",
   description:
-    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 80 tools.",
+    "Step-by-step guide to connecting Claude Code to VibeCodes via MCP. Manage ideas, boards, tasks, workflows, and agents from your terminal with 83 tools.",
 };
 
 function ToolTable({
@@ -129,7 +129,7 @@ export default function McpIntegrationPage() {
             <p className="text-muted-foreground">
               The first time you use it, Claude Code will open your browser for
               OAuth authentication. Log in with your VibeCodes account and
-              authorize the connection. After that, Claude Code can use all 79
+              authorize the connection. After that, Claude Code can use all 83
               VibeCodes tools on your behalf.
             </p>
             <div className="rounded-xl border border-border bg-muted/30 p-6">
@@ -138,6 +138,25 @@ export default function McpIntegrationPage() {
                 VibeCodes uses OAuth 2.1 with PKCE. Your Supabase session token
                 is used as the OAuth access token, so all actions respect the
                 same permissions (RLS) as the web app. No API keys to manage.
+                For headless or automated setups, the server also accepts a{" "}
+                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                  vbc_
+                </code>{" "}
+                API key in place of the OAuth flow.
+              </p>
+            </div>
+            <div className="rounded-xl border border-border bg-muted/30 p-6">
+              <p className="text-sm text-muted-foreground">
+                <strong className="text-foreground">Prefer one click?</strong>{" "}
+                You can launch Claude Code straight from a board or task — it
+                connects this MCP server for you and starts working. See the{" "}
+                <Link
+                  href="/guide/launching-claude-code"
+                  className="text-primary hover:underline"
+                >
+                  Launching Claude Code
+                </Link>{" "}
+                guide.
               </p>
             </div>
           </div>
@@ -273,7 +292,7 @@ export default function McpIntegrationPage() {
           <h2 className="mb-4 text-2xl font-semibold">Available Tools</h2>
           <p className="mb-4 text-muted-foreground">
             Once connected, Claude Code has access to{" "}
-            <strong className="text-foreground">80 tools</strong> across 10
+            <strong className="text-foreground">83 tools</strong> across 10
             categories:
           </p>
 
@@ -307,13 +326,13 @@ export default function McpIntegrationPage() {
                   { name: "update_column", description: "Update a column's title or done status" },
                   { name: "delete_column", description: "Delete an empty board column" },
                   { name: "reorder_columns", description: "Reorder columns by providing IDs in desired order" },
-                  { name: "report_bug", description: "Create a task with a red 'Bug' label, assigned to you" },
                   { name: "manage_labels", description: "Create labels, add or remove them from tasks" },
+                  { name: "record_project_path", description: "Save this idea's local project folder so future Claude Code launches reopen it" },
                 ]}
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Workflows" toolCount={22}>
+            <CollapsibleTools title="Workflows" toolCount={21}>
               <ToolTable
                 tools={[
                   { name: "list_workflow_templates", description: "List all workflow templates for an idea" },
@@ -326,7 +345,6 @@ export default function McpIntegrationPage() {
                   { name: "fail_step", description: "Fail a step with optional cascade rejection to an earlier step" },
                   { name: "skip_step", description: "Skip a pending step that isn't applicable" },
                   { name: "approve_step", description: "Approve a step awaiting human review (humans only)" },
-                  { name: "get_step_comments", description: "List all comments on a workflow step" },
                   { name: "add_step_comment", description: "Add a comment to a workflow step" },
                   { name: "rematch_workflow_agents", description: "Re-match unmatched pending steps against the agent team" },
                   { name: "reset_workflow", description: "Reset all steps to pending and restart the workflow" },
@@ -376,7 +394,7 @@ export default function McpIntegrationPage() {
               />
             </CollapsibleTools>
 
-            <CollapsibleTools title="Agents & Identity" toolCount={13}>
+            <CollapsibleTools title="Agents & Identity" toolCount={15}>
               <ToolTable
                 tools={[
                   { name: "list_agents", description: "List your agent personas with name, role, and active status" },
@@ -392,6 +410,8 @@ export default function McpIntegrationPage() {
                   { name: "remove_idea_agent", description: "Remove an agent from an idea's team" },
                   { name: "list_idea_agents", description: "List agents in an idea's agent team" },
                   { name: "allocate_all_agents", description: "Allocate all agents from a user's profile to an idea" },
+                  { name: "import_agent_skill", description: "Import a SKILL.md file to create (or update) an agent" },
+                  { name: "get_agent_skill_content", description: "Read an agent's attached skill instructions" },
                 ]}
               />
             </CollapsibleTools>

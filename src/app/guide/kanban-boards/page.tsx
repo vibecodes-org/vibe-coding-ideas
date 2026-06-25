@@ -34,10 +34,14 @@ export default function KanbanBoardsPage() {
             time you visit a board, it&apos;s initialized with three default
             columns: <strong className="text-foreground">To Do</strong>,{" "}
             <strong className="text-foreground">In Progress</strong>, and{" "}
-            <strong className="text-foreground">Done</strong>. When a
-            Project Kit is applied (during onboarding or via MCP), the board
-            comes pre-configured with labels, workflow templates, and workflow
-            triggers tailored to your project type.
+            <strong className="text-foreground">Done</strong>. When a{" "}
+            <Link href="/guide/project-kits" className="text-primary hover:underline">
+              Project Kit
+            </Link>{" "}
+            is applied (during onboarding, from the board empty state, or via
+            MCP), the board comes pre-configured with labels, workflow
+            templates, and workflow triggers tailored to your project type —
+            without adding any tasks.
           </p>
         </section>
 
@@ -108,7 +112,10 @@ export default function KanbanBoardsPage() {
             </li>
             <li>
               <strong className="text-foreground">Workflow Steps</strong> — break
-              tasks into steps with progress tracking
+              tasks into steps with progress tracking. When a task has an
+              attached workflow, its card shows the workflow name with a{" "}
+              <strong className="text-foreground">completed / total</strong> step
+              count and a progress bar
             </li>
             <li>
               <strong className="text-foreground">Comments</strong> — discuss
@@ -252,9 +259,31 @@ export default function KanbanBoardsPage() {
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Tip:</strong> AI generation
               uses the same bulk import pipeline under the hood, so it handles
-              label and column creation automatically.
+              label and column creation automatically. A single run returns up
+              to <strong className="text-foreground">50 tasks</strong> — if you
+              need more, run it again.
             </p>
           </div>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">Launch Claude Code</h2>
+          <p className="mb-4 text-muted-foreground">
+            On desktop, the board toolbar has a{" "}
+            <strong className="text-foreground">&quot;Launch Claude Code&quot;</strong>{" "}
+            button (and each task card and detail view has a launch option) that
+            opens Claude Code already connected to this board via MCP, ready to
+            pick up the top unstarted task — or the specific task you launched
+            from.
+          </p>
+          <p className="text-muted-foreground">
+            <Link
+              href="/guide/launching-claude-code"
+              className="text-primary hover:underline"
+            >
+              Read the full Launching Claude Code guide &rarr;
+            </Link>
+          </p>
         </section>
 
         <section>

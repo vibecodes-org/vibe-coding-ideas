@@ -83,16 +83,46 @@ export default function WorkflowsPage() {
             </li>
           </ul>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
+            <p className="mb-3 text-sm text-muted-foreground">
+              <strong className="text-foreground">Adding templates:</strong>{" "}
+              On the Workflows tab, the{" "}
+              <strong className="text-foreground">&quot;+&quot;</strong> button
+              opens the{" "}
+              <strong className="text-foreground">Add Template</strong> dialog
+              with three tabs:
+            </p>
+            <ul className="mb-3 list-inside list-disc space-y-1.5 text-sm text-muted-foreground">
+              <li>
+                <strong className="text-foreground">My Templates</strong> —
+                your personal library, reusable across every board
+              </li>
+              <li>
+                <strong className="text-foreground">Platform Templates</strong>{" "}
+                — pre-built templates like Feature Development, Bug Fix, and
+                Design Sprint
+              </li>
+              <li>
+                <strong className="text-foreground">Create New</strong> — build
+                a template from scratch, step by step
+              </li>
+            </ul>
             <p className="text-sm text-muted-foreground">
-              <strong className="text-foreground">Tip:</strong> Use the{" "}
-              <strong className="text-foreground">Template Library</strong>{" "}
-              to import pre-built templates like Feature Development, Bug Fix,
-              Design Sprint, and more. Find it on the Workflows tab. You can
-              also save workflow templates to your{" "}
-              <strong className="text-foreground">Personal Template Library</strong>{" "}
-              for reuse across different boards. Use the{" "}
-              <strong className="text-foreground">&quot;Save to My Templates&quot;</strong>{" "}
-              button on any template detail view.
+              The dialog opens on{" "}
+              <strong className="text-foreground">My Templates</strong> if you
+              have any saved, otherwise{" "}
+              <strong className="text-foreground">Platform Templates</strong>.
+              When importing, an{" "}
+              <strong className="text-foreground">
+                &quot;Also create labels &amp; auto-rules&quot;
+              </strong>{" "}
+              checkbox wires up the matching labels and triggers for you. To add
+              one of your own board templates to{" "}
+              <strong className="text-foreground">My Templates</strong>, use the{" "}
+              <strong className="text-foreground">
+                &quot;Save to My Templates&quot;
+              </strong>{" "}
+              button on any template detail view — templates are copied, so
+              there are no cross-board dependencies.
             </p>
           </div>
         </section>
@@ -155,6 +185,76 @@ export default function WorkflowsPage() {
               Development template. Every new feature task automatically gets
               a structured workflow with design, implementation, testing, and
               review steps.
+            </p>
+          </div>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">
+            Workflow Suggestions
+          </h2>
+          <p className="mb-4 text-muted-foreground">
+            Triggers are convenient, but a label doesn&apos;t always mean the
+            mapped workflow is the right fit. When a trigger&apos;s template
+            looks mismatched for a task, VibeCodes{" "}
+            <strong className="text-foreground">
+              suggests instead of silently attaching it
+            </strong>{" "}
+            — nothing is applied until a human decides.
+          </p>
+          <p className="mb-4 text-muted-foreground">
+            Behind the scenes, a quick keyword check sorts both the task and the
+            template into &quot;discovery&quot; vs &quot;build&quot; work. Clear
+            matches attach automatically; anything ambiguous is handed to an AI
+            adjudicator that recommends the best-fitting template from the
+            idea&apos;s own set. If the AI is confident the trigger was simply a
+            false alarm it attaches the original; otherwise it opens a
+            suggestion for you to resolve. The AI never substitutes a workflow
+            you didn&apos;t choose.
+          </p>
+          <p className="mb-4 text-muted-foreground">
+            A task with an open suggestion shows a{" "}
+            <strong className="text-foreground">&quot;Workflow suggested&quot;</strong>{" "}
+            badge on its card (or{" "}
+            <strong className="text-foreground">&quot;Checking workflow fit…&quot;</strong>{" "}
+            while it&apos;s still being evaluated). Open the task to see the
+            suggestion panel, headed{" "}
+            <strong className="text-foreground">
+              &quot;Suggested workflow looks mismatched&quot;
+            </strong>
+            , with a badge showing whether the reasoning came from{" "}
+            <strong className="text-foreground">AI</strong> or the keyword{" "}
+            <strong className="text-foreground">Rules</strong>. From there you
+            can:
+          </p>
+          <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              <strong className="text-foreground">Use the recommendation</strong>{" "}
+              — when the AI recommends a different template, that&apos;s the
+              primary action (e.g. <em>Use &quot;Bug Fix&quot;</em>)
+            </li>
+            <li>
+              <strong className="text-foreground">Keep</strong> — attach the
+              originally-labelled workflow anyway
+            </li>
+            <li>
+              <strong className="text-foreground">Replace…</strong> — pick any
+              other template from this idea. The Replace picker lists the
+              AI&apos;s recommendation first (badged{" "}
+              <em>AI recommends</em>) and the originally-labelled one last
+              (badged <em>originally labelled</em>)
+            </li>
+            <li>
+              <strong className="text-foreground">Remove</strong> — dismiss the
+              suggestion and keep the label, without attaching anything
+            </li>
+          </ul>
+          <div className="rounded-xl border border-border bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">Humans only:</strong>{" "}
+              Keeping, replacing, or removing a suggestion can only be done by a
+              human team member — AI agents can&apos;t resolve suggestions. This
+              keeps a person in control of which workflow runs.
             </p>
           </div>
         </section>
