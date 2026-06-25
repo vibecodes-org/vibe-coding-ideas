@@ -759,8 +759,20 @@ async function runAdjudication(
     };
   }
 
-  // Confident verdict + valid recommendation + human context → auto-apply.
-  if (result.autoApply && result.recommendedTemplateId && !isAutonomousAgent) {
+  // Auto-apply when the AI CONFIRMS the labelled template (its recommendation is
+  // the rule's own template). That just honours the label rule the user set up —
+  // it's never a silent substitution — so it is NOT gated on the confidence
+  // threshold: a sub-threshold "yes, this fits" must not leave a suggestion whose
+  // header says "looks mismatched" while its rationale endorses the template.
+  // A DIFFERENT recommendation never auto-applies (stays open for the user), and
+  // autonomous agents never get a silent apply.
+  const aiConfirmsLabel =
+    result.source === "ai" && result.recommendedTemplateId === template.id;
+  if (
+    (aiConfirmsLabel || result.autoApply) &&
+    result.recommendedTemplateId &&
+    !isAutonomousAgent
+  ) {
     try {
       await applyFn(task.id, result.recommendedTemplateId);
       const replaced = result.recommendedTemplateId !== template.id;

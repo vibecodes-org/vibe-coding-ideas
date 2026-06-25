@@ -464,6 +464,50 @@ describe("async adjudication", () => {
     expect(row.adjudication_started_at).toBeNull();
   });
 
+  it("AI confirming the LABELLED template auto-applies it, even below the confidence bar", async () => {
+    // Ambiguous task → suspect → AI adjudicates and AGREES with the label's own
+    // template (recommended === suggested), but only 0.5 confident. Confirming
+    // the label is never a silent substitution, so it must auto-apply rather than
+    // leave a contradictory "looks mismatched" suggestion open.
+    withAi();
+    const db = createSuggestionDb();
+    const applyFn = vi.fn().mockResolvedValue(undefined);
+    const generate = fakeGenerate({
+      recommended_template_id: "tmpl-build",
+      confidence: 0.5,
+      rationale: "this is build work — the build template fits",
+    });
+    const AMBIGUOUS_TASK = {
+      id: "task-1",
+      title: "Background on-demand curator runs",
+      description: "",
+      labelNames: [],
+    };
+
+    const result = await decideAutoRuleApplication(db.client, {
+      ideaId: "idea-1",
+      labelId: "label-1",
+      ruleId: "rule-1",
+      template: BUILD_TEMPLATE,
+      task: AMBIGUOUS_TASK,
+      applyFn,
+      userId: "user-1",
+      candidateTemplates: [
+        { id: "tmpl-build", name: "Build feature", steps: [] },
+        { id: "tmpl-discovery", name: "Market discovery", steps: [] },
+      ],
+      generate,
+      awaitAdjudication: true,
+    });
+
+    expect(applyFn).toHaveBeenCalledWith("task-1", "tmpl-build");
+    const row = db.rows.find((r) => r.id === result.suggestionId)!;
+    expect(row.status).toBe("accepted");
+    expect(row.recommended_template_id).toBe("tmpl-build");
+    expect(row.replacement_template_id).toBeNull();
+    expect(row.resolved_at).not.toBeNull();
+  });
+
   it("confident verdict in an autonomous-agent context does NOT auto-apply", async () => {
     withAi();
     const db = createSuggestionDb();
