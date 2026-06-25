@@ -349,12 +349,12 @@ export function WorkflowSuggestionPanel({
               on mobile, inline ≥sm; every target ≥44px. */}
           {hasDistinctRecommendation ? (
             <>
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
+              <div className="mt-3 space-y-2">
                 <Button
                   size="sm"
                   onClick={() => recommendedId && handleReplace(recommendedId)}
                   disabled={working !== null}
-                  className="min-h-[44px] gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90 sm:min-h-9"
+                  className="min-h-[40px] w-full justify-center gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90"
                 >
                   {working === "replace" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -367,38 +367,40 @@ export function WorkflowSuggestionPanel({
                       ? `Use “${recommendedName}”`
                       : "Use recommended workflow"}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={handleKeep}
-                  disabled={working !== null}
-                  className="min-h-[44px] gap-1.5 sm:min-h-9"
-                >
-                  {working === "keep" ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <Check className="h-3.5 w-3.5" aria-hidden="true" />
-                  )}
-                  {working === "keep"
-                    ? "Working…"
-                    : suggestedName
-                      ? `Keep “${suggestedName}”`
-                      : "Keep anyway"}
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleRemove}
-                  disabled={working !== null}
-                  className="min-h-[44px] gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9 sm:ml-auto"
-                >
-                  {working === "remove" ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  )}
-                  {working === "remove" ? "Working…" : "Remove"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleKeep}
+                    disabled={working !== null}
+                    className="min-h-[40px] flex-1 justify-center gap-1.5"
+                  >
+                    {working === "keep" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <Check className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    {working === "keep"
+                      ? "Working…"
+                      : suggestedName
+                        ? `Keep “${suggestedName}”`
+                        : "Keep anyway"}
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleRemove}
+                    disabled={working !== null}
+                    className="min-h-[40px] gap-1.5 text-muted-foreground hover:text-foreground"
+                  >
+                    {working === "remove" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    {working === "remove" ? "Working…" : "Remove"}
+                  </Button>
+                </div>
               </div>
               <p className="mt-2.5 text-[11.5px] text-muted-foreground">
                 Nothing is attached until you choose.{" "}
@@ -414,12 +416,12 @@ export function WorkflowSuggestionPanel({
             </>
           ) : (
             <>
-              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+              <div className="mt-3 space-y-2">
                 <Button
                   size="sm"
                   onClick={handleKeep}
                   disabled={working !== null}
-                  className="min-h-[44px] gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90 sm:min-h-9"
+                  className="min-h-[40px] w-full justify-center gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90"
                 >
                   {working === "keep" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -432,30 +434,32 @@ export function WorkflowSuggestionPanel({
                       ? `Keep & attach “${suggestedName}”`
                       : "Keep & attach"}
                 </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={openPicker}
-                  disabled={working !== null}
-                  className="min-h-[44px] gap-1.5 sm:min-h-9"
-                >
-                  <ReplaceIcon className="h-3.5 w-3.5" aria-hidden="true" />
-                  Replace&hellip;
-                </Button>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  onClick={handleRemove}
-                  disabled={working !== null}
-                  className="min-h-[44px] gap-1.5 text-muted-foreground hover:text-foreground sm:min-h-9 sm:ml-auto"
-                >
-                  {working === "remove" ? (
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
-                  ) : (
-                    <X className="h-3.5 w-3.5" aria-hidden="true" />
-                  )}
-                  {working === "remove" ? "Working…" : "Remove"}
-                </Button>
+                <div className="flex items-center gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={openPicker}
+                    disabled={working !== null}
+                    className="min-h-[40px] flex-1 justify-center gap-1.5"
+                  >
+                    <ReplaceIcon className="h-3.5 w-3.5" aria-hidden="true" />
+                    Replace&hellip;
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    onClick={handleRemove}
+                    disabled={working !== null}
+                    className="min-h-[40px] gap-1.5 text-muted-foreground hover:text-foreground"
+                  >
+                    {working === "remove" ? (
+                      <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
+                    ) : (
+                      <X className="h-3.5 w-3.5" aria-hidden="true" />
+                    )}
+                    {working === "remove" ? "Working…" : "Remove"}
+                  </Button>
+                </div>
               </div>
               <p className="mt-2.5 text-[11.5px] text-muted-foreground">
                 Nothing is attached until you Keep or Replace. Remove keeps the
