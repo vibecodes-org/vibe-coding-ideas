@@ -272,6 +272,12 @@ export function WorkflowSuggestionPanel({
     ? templates?.find((t) => t.id === recommendedId)
     : undefined;
   const recommendedName = recommendedTemplate?.name;
+  // The originally-labelled template — what "Keep" would attach. Surfaced
+  // explicitly so the action never refers to an unnamed workflow.
+  const suggestedTemplate = templates?.find(
+    (t) => t.id === suggestion.suggested_template_id
+  );
+  const suggestedName = suggestedTemplate?.name;
 
   return (
     <div
@@ -315,6 +321,15 @@ export function WorkflowSuggestionPanel({
                   </Badge>
                 )}
               </div>
+              {suggestedName && (
+                <p className="mb-1.5 text-[12px] text-muted-foreground">
+                  Your label suggests the{" "}
+                  <span className="font-semibold text-foreground">
+                    {suggestedName}
+                  </span>{" "}
+                  workflow.
+                </p>
+              )}
               {suggestion.reason && (
                 <p className="rounded-md border border-border bg-background/60 px-2.5 py-2 text-[12.5px] leading-relaxed text-foreground/90">
                   {suggestion.reason}
@@ -359,7 +374,11 @@ export function WorkflowSuggestionPanel({
                   ) : (
                     <Check className="h-3.5 w-3.5" aria-hidden="true" />
                   )}
-                  {working === "keep" ? "Working…" : "Keep anyway"}
+                  {working === "keep"
+                    ? "Working…"
+                    : suggestedName
+                      ? `Keep “${suggestedName}”`
+                      : "Keep anyway"}
                 </Button>
                 <Button
                   size="sm"
@@ -402,7 +421,11 @@ export function WorkflowSuggestionPanel({
                   ) : (
                     <Check className="h-3.5 w-3.5" aria-hidden="true" />
                   )}
-                  {working === "keep" ? "Working…" : "Keep & attach"}
+                  {working === "keep"
+                    ? "Working…"
+                    : suggestedName
+                      ? `Keep & attach “${suggestedName}”`
+                      : "Keep & attach"}
                 </Button>
                 <Button
                   size="sm"
