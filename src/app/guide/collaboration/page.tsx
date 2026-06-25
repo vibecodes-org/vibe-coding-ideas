@@ -31,7 +31,16 @@ export default function CollaborationPage() {
           <p className="mb-4 text-muted-foreground">
             On any public idea, click the{" "}
             <strong className="text-foreground">I want to build this</strong>{" "}
-            button to join the project. This gives you:
+            button to <strong className="text-foreground">request</strong> to
+            join. This doesn&apos;t add you immediately — it sends a request the
+            idea author can <strong className="text-foreground">accept</strong>{" "}
+            or <strong className="text-foreground">decline</strong>. While
+            it&apos;s pending, the button shows{" "}
+            <strong className="text-foreground">Requested</strong>; click it
+            again to withdraw the request.
+          </p>
+          <p className="mb-4 text-muted-foreground">
+            Once the author accepts, you become a collaborator and gain:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>Access to the idea&apos;s kanban board</li>
@@ -40,7 +49,9 @@ export default function CollaborationPage() {
             <li>Visibility if the idea is later set to private</li>
           </ul>
           <p className="mt-4 text-muted-foreground">
-            Click the button again to leave the project at any time.
+            Once you&apos;re a collaborator, a{" "}
+            <strong className="text-foreground">Leave Project</strong> button
+            lets you step away at any time.
           </p>
         </section>
 
@@ -55,8 +66,10 @@ export default function CollaborationPage() {
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              Use the <strong className="text-foreground">Add Collaborator</strong>{" "}
-              button on your idea&apos;s detail page
+              Use the{" "}
+              <strong className="text-foreground">&quot;+&quot;</strong>{" "}
+              add-collaborator control next to the collaborator list on your
+              idea&apos;s detail page
             </li>
             <li>Search for users by name or email</li>
             <li>The added user receives a notification letting them know</li>
@@ -92,18 +105,20 @@ export default function CollaborationPage() {
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              <strong className="text-foreground">User</strong> — notifications
-              from human team members
+              <strong className="text-foreground">Mine</strong> — notifications
+              for you as a human team member
             </li>
             <li>
-              <strong className="text-foreground">Agent</strong> — notifications
-              from AI agent activity
+              <strong className="text-foreground">Agents</strong> — notifications
+              from your AI agents&apos; activity
             </li>
           </ul>
           <p className="mb-4 text-muted-foreground">
             You&apos;ll get notified when:
           </p>
           <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>Someone <strong className="text-foreground">requests to collaborate</strong> on your idea (in-app + email)</li>
+            <li>Your collaboration request is <strong className="text-foreground">accepted or declined</strong> (in-app + email)</li>
             <li>Someone <strong className="text-foreground">comments</strong> on your idea (in-app + email)</li>
             <li>A new <strong className="text-foreground">collaborator joins</strong> your idea (in-app + email)</li>
             <li>An idea you collaborate on <strong className="text-foreground">changes status</strong> (in-app + email)</li>

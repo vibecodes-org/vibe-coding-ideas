@@ -141,13 +141,18 @@ export default function IdeasAndVotingPage() {
               audience, etc.)
             </li>
             <li>
+              Optionally let the AI ask a few{" "}
+              <strong className="text-foreground">clarifying questions</strong>{" "}
+              first (on by default) — your answers steer a sharper rewrite
+            </li>
+            <li>
               Compare the <strong className="text-foreground">original vs
               enhanced</strong> description side-by-side
             </li>
             <li>
               <strong className="text-foreground">Apply</strong> the enhanced
-              version, <strong className="text-foreground">Try Again</strong>{" "}
-              with a different prompt, or cancel
+              version, <strong className="text-foreground">refine</strong> it
+              further with feedback, or cancel
             </li>
           </ul>
           <div className="rounded-xl border border-border bg-muted/30 p-6">
@@ -191,6 +196,11 @@ export default function IdeasAndVotingPage() {
             Non-authors see a read-only view. Descriptions support{" "}
             <strong className="text-foreground">full markdown</strong>{" "}
             — headings, code blocks, lists, links, and tables.
+          </p>
+          <p className="mb-4 text-muted-foreground">
+            You can also attach <strong className="text-foreground">files</strong>{" "}
+            to an idea — images, documents, and other references (up to 10 files,
+            10&nbsp;MB each) — to give collaborators the full picture.
           </p>
           <p className="text-muted-foreground">
             You can also <strong className="text-foreground">delete</strong>{" "}

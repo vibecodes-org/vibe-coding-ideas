@@ -58,9 +58,9 @@ export default function AiAgentTeamsPage() {
             <li>Enter a name (e.g., &quot;Dev Alpha&quot;)</li>
             <li>
               Pick a <strong className="text-foreground">role template</strong>{" "}
-              — Developer, UX Designer, Business Analyst, QA Tester, Product
-              Owner, Automated Tester, DevOps, or Support — or leave it blank
-              for a general-purpose agent
+              — choose from 18 pre-built roles spanning engineering, design,
+              product, go-to-market, and operations (see the list below) — or
+              leave it blank for a general-purpose agent
             </li>
             <li>
               Customize the <strong className="text-foreground">system prompt
@@ -83,67 +83,39 @@ export default function AiAgentTeamsPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Role Templates</h2>
           <p className="mb-4 text-muted-foreground">
-            VibeCodes includes eight role templates with pre-written system
-            prompts. Each template comes with a{" "}
+            VibeCodes ships <strong className="text-foreground">18 role
+            templates</strong>, each with a pre-written{" "}
             <strong className="text-foreground">structured prompt</strong>{" "}
-            (goal, constraints, and approach) that you can customise. Pick one
-            as a starting point, then edit to match your needs:
+            (goal, expertise, constraints, and approach) that you can customise.
+            Pick one as a starting point, then edit to match your needs. They
+            span the whole product team, not just engineering:
           </p>
           <div className="grid gap-3 sm:grid-cols-2">
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Developer</h3>
+              <h3 className="font-medium">Engineering</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Focuses on clean, tested code. Follows existing patterns.
-                Flags architectural concerns.
+                Full Stack Engineer, Front End Engineer, Backend Engineer, QA
+                Engineer, DevOps Engineer, Security Engineer, Code Reviewer,
+                Data Engineer
               </p>
             </div>
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">UX Designer</h3>
+              <h3 className="font-medium">Design &amp; Product</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Reviews for usability and accessibility. Checks WCAG
-                compliance. Suggests UI improvements.
+                UX Designer, Product Manager, Technical Writer, Business
+                Analyst, Product Owner
               </p>
             </div>
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Business Analyst</h3>
+              <h3 className="font-medium">Go-to-Market</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Reviews requirements for completeness. Writes acceptance
-                criteria. Breaks vague tasks into actionable subtasks.
+                Marketing Strategist, Copywriter / Content, Sales Lead
               </p>
             </div>
             <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">QA Tester</h3>
+              <h3 className="font-medium">Leadership &amp; Operations</h3>
               <p className="mt-1 text-sm text-muted-foreground">
-                Reviews completed tasks for bugs. Writes test scenarios.
-                Reports issues with reproduction steps.
-              </p>
-            </div>
-            <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Product Owner</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Prioritises backlog by user impact. Writes user stories.
-                Communicates trade-offs to stakeholders.
-              </p>
-            </div>
-            <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Automated Tester</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Writes and maintains automated tests. Tracks coverage.
-                Catches regressions early.
-              </p>
-            </div>
-            <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">DevOps</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Manages CI/CD pipelines. Automates deployments. Keeps
-                environments consistent and monitored.
-              </p>
-            </div>
-            <div className="rounded-lg border border-border p-4">
-              <h3 className="font-medium">Support</h3>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Triages user-reported issues. Reproduces bugs. Escalates
-                with clear reproduction steps and severity.
+                CEO / Founder, Finance &amp; Operations
               </p>
             </div>
           </div>
@@ -156,13 +128,19 @@ export default function AiAgentTeamsPage() {
           <p className="mb-4 text-muted-foreground">
             When creating or editing an agent, the{" "}
             <strong className="text-foreground">prompt builder</strong> helps
-            you craft effective system prompts using three structured fields:
+            you craft effective system prompts using four structured fields:
           </p>
           <ul className="list-inside list-disc space-y-2 text-muted-foreground">
             <li>
               <strong className="text-foreground">Goal</strong> — what the agent
               should achieve (e.g., &quot;Deliver production-ready code that
               follows project conventions&quot;)
+            </li>
+            <li>
+              <strong className="text-foreground">Expertise</strong> — the
+              domain knowledge, principles, and frameworks the agent should
+              bring (e.g., &quot;Modern React, accessibility, and testing best
+              practices&quot;)
             </li>
             <li>
               <strong className="text-foreground">Constraints</strong> — what
@@ -504,7 +482,7 @@ export default function AiAgentTeamsPage() {
                     Remove an agent from an idea&apos;s pool
                   </td>
                 </tr>
-                <tr>
+                <tr className="border-b border-border/50">
                   <td className="py-2 pr-4 font-mono text-xs text-foreground">
                     list_idea_agents
                   </td>
@@ -512,9 +490,66 @@ export default function AiAgentTeamsPage() {
                     List all agents in an idea&apos;s shared pool
                   </td>
                 </tr>
+                <tr className="border-b border-border/50">
+                  <td className="py-2 pr-4 font-mono text-xs text-foreground">
+                    import_agent_skill
+                  </td>
+                  <td className="py-2">
+                    Create (or update) an agent from a SKILL.md file
+                  </td>
+                </tr>
+                <tr>
+                  <td className="py-2 pr-4 font-mono text-xs text-foreground">
+                    get_agent_skill_content
+                  </td>
+                  <td className="py-2">
+                    Read an agent&apos;s attached skill instructions
+                  </td>
+                </tr>
               </tbody>
             </table>
           </div>
+        </section>
+
+        <section>
+          <h2 className="mb-4 text-2xl font-semibold">Agent Skills</h2>
+          <p className="mb-4 text-muted-foreground">
+            Beyond a system prompt, an agent can carry{" "}
+            <strong className="text-foreground">skills</strong> — reusable
+            instruction sets (in the{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              SKILL.md
+            </code>{" "}
+            format) that give it specialised, step-by-step know-how for a
+            particular kind of work.
+          </p>
+          <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              <strong className="text-foreground">Import a skill</strong> —
+              create or update an agent from a{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                SKILL.md
+              </code>{" "}
+              file or a URL
+            </li>
+            <li>
+              <strong className="text-foreground">Add from the directory</strong>{" "}
+              — browse and attach skills to an existing agent
+            </li>
+            <li>
+              <strong className="text-foreground">Use via Claude Code</strong>{" "}
+              — connected agents load their skill instructions on demand with
+              the{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                get_agent_skill_content
+              </code>{" "}
+              tool (and you can create agents from a skill file with{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                import_agent_skill
+              </code>
+              )
+            </li>
+          </ul>
         </section>
 
         <section>

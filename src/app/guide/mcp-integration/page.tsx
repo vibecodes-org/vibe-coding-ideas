@@ -86,7 +86,7 @@ export default function McpIntegrationPage() {
           <p className="mb-4 text-muted-foreground">
             You&apos;ll need{" "}
             <a
-              href="https://docs.anthropic.com/en/docs/claude-code/overview"
+              href="https://docs.claude.com/en/docs/claude-code/overview"
               target="_blank"
               rel="noopener noreferrer"
               className="text-primary hover:underline"

@@ -201,8 +201,9 @@ export default function GettingStartedPage() {
             </li>
             <li>
               <strong className="text-foreground">Active Boards</strong> — your
-              5 most recently active kanban boards with per-column task counts
-              and <strong className="text-foreground">Idea Health</strong>{" "}
+              active kanban boards, most recently active first, with per-column
+              task counts and{" "}
+              <strong className="text-foreground">Idea Health</strong>{" "}
               indicators showing overall project momentum
             </li>
             <li>

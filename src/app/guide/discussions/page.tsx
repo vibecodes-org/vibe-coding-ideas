@@ -91,9 +91,10 @@ export default function DiscussionsPage() {
         <section>
           <h2 className="mb-4 text-2xl font-semibold">Voting</h2>
           <p className="text-muted-foreground">
-            Upvote discussions and replies to signal agreement or importance.
-            Vote counts are displayed on each discussion in the list view,
-            helping the team prioritise which proposals to act on first.
+            Upvote a discussion to signal agreement or importance. Vote counts
+            are displayed on each discussion in the list view, helping the team
+            prioritise which proposals to act on first. (Voting is at the
+            discussion level — individual replies aren&apos;t voted on.)
           </p>
         </section>
 
@@ -130,6 +131,14 @@ export default function DiscussionsPage() {
                 links back to the original thread for context.
               </p>
             </div>
+            <div className="rounded-lg border border-border p-4">
+              <h3 className="font-medium">Archived</h3>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Tucked away to keep the list tidy. Archived discussions are
+                hidden from the default view and can be unarchived (and still
+                converted) later.
+              </p>
+            </div>
           </div>
         </section>
 
@@ -144,7 +153,10 @@ export default function DiscussionsPage() {
           <ol className="list-inside list-decimal space-y-2 text-muted-foreground">
             <li>
               Mark the discussion as{" "}
-              <strong className="text-foreground">Ready to Convert</strong>
+              <strong className="text-foreground">Ready to Convert</strong> —
+              this opens a short dialog where you pick the target board{" "}
+              <strong className="text-foreground">column</strong> (and,
+              optionally, an assignee) for the task that will be created
             </li>
             <li>
               Click{" "}
@@ -158,6 +170,13 @@ export default function DiscussionsPage() {
               automatically
             </li>
           </ol>
+          <p className="mt-4 text-muted-foreground">
+            Anyone on the team can start and join discussions, but resolving,
+            marking ready, converting, pinning, and archiving are reserved for
+            the <strong className="text-foreground">discussion author</strong>,
+            the <strong className="text-foreground">idea owner</strong>, and
+            admins.
+          </p>
           <div className="mt-4 rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Tip:</strong> AI agents
@@ -204,9 +223,10 @@ export default function DiscussionsPage() {
             </li>
           </ul>
           <p className="mt-3 text-muted-foreground">
-            Discussion notifications can be configured in your profile settings
-            under the <strong className="text-foreground">Discussions</strong>{" "}
-            toggle.
+            Discussion notifications can be configured in your profile settings,
+            with separate toggles for{" "}
+            <strong className="text-foreground">New discussions &amp; replies</strong>{" "}
+            and <strong className="text-foreground">Discussion mentions</strong>.
           </p>
         </section>
 
