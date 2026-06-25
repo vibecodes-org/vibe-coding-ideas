@@ -370,7 +370,7 @@ export function WorkflowSuggestionPanel({
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={handleKeep}
                     disabled={working !== null}
                     className="min-h-[40px] flex-1 justify-center gap-1.5"
@@ -391,7 +391,7 @@ export function WorkflowSuggestionPanel({
                     variant="ghost"
                     onClick={handleRemove}
                     disabled={working !== null}
-                    className="min-h-[40px] gap-1.5 text-muted-foreground hover:text-foreground"
+                    className="min-h-[40px] gap-1.5 border border-white/20 text-muted-foreground hover:text-foreground"
                   >
                     {working === "remove" ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -419,9 +419,10 @@ export function WorkflowSuggestionPanel({
               <div className="mt-3 space-y-2">
                 <Button
                   size="sm"
+                  variant="secondary"
                   onClick={handleKeep}
                   disabled={working !== null}
-                  className="min-h-[40px] w-full justify-center gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90"
+                  className="min-h-[40px] w-full justify-center gap-1.5"
                 >
                   {working === "keep" ? (
                     <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
@@ -437,7 +438,7 @@ export function WorkflowSuggestionPanel({
                 <div className="flex items-center gap-2">
                   <Button
                     size="sm"
-                    variant="outline"
+                    variant="secondary"
                     onClick={openPicker}
                     disabled={working !== null}
                     className="min-h-[40px] flex-1 justify-center gap-1.5"
@@ -450,7 +451,7 @@ export function WorkflowSuggestionPanel({
                     variant="ghost"
                     onClick={handleRemove}
                     disabled={working !== null}
-                    className="min-h-[40px] gap-1.5 text-muted-foreground hover:text-foreground"
+                    className="min-h-[40px] gap-1.5 border border-white/20 text-muted-foreground hover:text-foreground"
                   >
                     {working === "remove" ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden="true" />
