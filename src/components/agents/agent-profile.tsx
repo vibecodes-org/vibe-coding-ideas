@@ -290,23 +290,14 @@ export function AgentProfile({
               Skills are reusable capabilities your agent can use on tasks.
             </p>
             {isOwner && (
-              <div className="flex flex-wrap items-center gap-3">
-                <Button
-                  size="sm"
-                  className="min-h-[44px] sm:min-h-0 sm:h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-500"
-                  onClick={() => setAddSkillOpen(true)}
-                >
-                  <Plus className="h-3.5 w-3.5 mr-1" />
-                  Add Skill
-                </Button>
-                <button
-                  type="button"
-                  className="text-xs font-medium text-emerald-400 underline-offset-2 hover:text-emerald-300 hover:underline"
-                  onClick={() => setAddSkillOpen(true)}
-                >
-                  Browse the skills directory &rarr;
-                </button>
-              </div>
+              <Button
+                size="sm"
+                className="min-h-[44px] sm:min-h-0 sm:h-8 text-xs bg-emerald-600 text-white hover:bg-emerald-500"
+                onClick={() => setAddSkillOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5 mr-1" />
+                Add Skill
+              </Button>
             )}
           </div>
         ) : (
