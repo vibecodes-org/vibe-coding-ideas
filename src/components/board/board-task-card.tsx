@@ -176,7 +176,7 @@ function WorkflowStatusBadge({ task, isWiring }: { task: BoardTaskWithAssignee; 
             <TooltipTrigger asChild>
               <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-blue-500/25 bg-blue-500/15 px-2 py-0.5 text-[10px] font-semibold text-blue-400">
                 <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin" />
-                <span className="truncate">{status.title ?? "In progress"} in progress</span>
+                <span className="truncate min-w-0">{status.title ?? "In progress"} in progress</span>
               </span>
             </TooltipTrigger>
             <TooltipContent>{status.title ? `${status.title} — in progress` : "Workflow step in progress"}{status.agent ? ` (${status.agent})` : ""} ({fraction})</TooltipContent>
@@ -191,7 +191,7 @@ function WorkflowStatusBadge({ task, isWiring }: { task: BoardTaskWithAssignee; 
             <TooltipTrigger asChild>
               <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-500/25 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
                 <Bell className="h-2.5 w-2.5 shrink-0" />
-                <span className="truncate">{status.title ?? "Needs approval"} needs approval</span>
+                <span className="truncate min-w-0">{status.title ?? "Needs approval"} needs approval</span>
               </span>
             </TooltipTrigger>
             <TooltipContent>{status.title ? `${status.title} — needs approval` : "Workflow step needs approval"} ({fraction})</TooltipContent>
@@ -206,7 +206,7 @@ function WorkflowStatusBadge({ task, isWiring }: { task: BoardTaskWithAssignee; 
             <TooltipTrigger asChild>
               <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-red-500/20 bg-red-500/10 px-2 py-0.5 text-[10px] font-semibold text-red-400">
                 <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
-                <span className="truncate">{status.title ?? "Failed"} failed</span>
+                <span className="truncate min-w-0">{status.title ?? "Failed"} failed</span>
               </span>
             </TooltipTrigger>
             <TooltipContent>{status.title ? `${status.title} — failed` : "Workflow step failed"} ({fraction})</TooltipContent>
@@ -221,7 +221,7 @@ function WorkflowStatusBadge({ task, isWiring }: { task: BoardTaskWithAssignee; 
             <TooltipTrigger asChild>
               <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-500/20 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
                 <Clock className="h-2.5 w-2.5 shrink-0" />
-                <span className="truncate">{status.title ?? "Stale"} stale &middot; {status.timeLabel}</span>
+                <span className="truncate min-w-0">{status.title ?? "Stale"} stale &middot; {status.timeLabel}</span>
               </span>
             </TooltipTrigger>
             <TooltipContent>{status.title ? `${status.title} — stale for ${status.timeLabel}` : `Stale for ${status.timeLabel}`}{status.agent ? ` (${status.agent})` : ""} ({fraction})</TooltipContent>
@@ -523,7 +523,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
 
             {/* Metadata row */}
             <div className="mt-2 flex items-center gap-2">
-              <div className="flex flex-1 flex-wrap items-center gap-1.5">
+              <div className="flex flex-1 flex-wrap items-center gap-1.5 min-w-0">
                 {isArchived && (
                   <span className="inline-flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
                     <Archive className="h-3 w-3" />
@@ -552,7 +552,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                             : "border border-blue-500/25 bg-blue-500/15 text-blue-400"
                         }`}>
                           {isStale ? null : <Loader2 className="h-2.5 w-2.5 shrink-0 animate-spin" />}
-                          <span className="truncate">
+                          <span className="truncate min-w-0">
                             {task.assignee?.full_name ?? "Agent"} {isStale ? `stale (${timeLabel})` : "working"}
                           </span>
                         </span>
