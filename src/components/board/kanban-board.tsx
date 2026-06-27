@@ -45,6 +45,7 @@ import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import { moveBoardTask, reorderBoardColumns } from "@/actions/board";
 import { mergeTrustedState, TRUST_WINDOW_MS, type TrustedTaskState } from "./trusted-state";
+import { markLocalBoardMutation } from "./local-mutation-signal";
 import { POSITION_GAP } from "@/lib/constants";
 import { getDueDateStatus } from "@/lib/utils";
 import type {
@@ -862,6 +863,7 @@ export function KanbanBoard({
         columnsRef.current = newColumns;
         setColumns(newColumns);
 
+        markLocalBoardMutation(ideaId);
         setPendingOps((n) => n + 1);
         try {
           await reorderBoardColumns(
@@ -958,6 +960,7 @@ export function KanbanBoard({
         position: newPosition,
         trustedUntil: Date.now() + TRUST_WINDOW_MS,
       });
+      markLocalBoardMutation(ideaId);
       setPendingOps((n) => n + 1);
       try {
         await moveBoardTask(String(active.id), ideaId, activeColumnId, newPosition);

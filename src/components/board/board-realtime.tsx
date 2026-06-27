@@ -5,9 +5,17 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
+import { msSinceLocalBoardMutation } from "./local-mutation-signal";
 
 const DEBOUNCE_MS = 500;
 const FOLLOW_UP_DELAY_MS = 1500;
+// While the local user is actively mutating the board (e.g. dragging cards), a
+// Realtime echo of their OWN write must not trigger router.refresh(): the board
+// already shows the change optimistically, and the first refresh after a page
+// load re-enters the force-dynamic segment's loading.tsx skeleton (the visible
+// "blank flash"). Defer the refresh until the user has been idle this long so
+// the self-echo is absorbed while external changes are still reconciled.
+const SELF_MUTATION_WINDOW_MS = 2500;
 const RECONNECT_DELAY_MS = 2000;
 const HEALTH_CHECK_INTERVAL_MS = 30_000;
 
@@ -37,14 +45,31 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
 
   const debouncedRefresh = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    timeoutRef.current = setTimeout(() => {
-      // Refresh inside a transition so React keeps the current (optimistically
-      // updated) board on screen while the dynamic RSC payload re-fetches,
-      // instead of dropping the segment to its loading.tsx skeleton fallback.
-      startTransition(() => router.refresh());
-      timeoutRef.current = null;
-    }, DEBOUNCE_MS);
-  }, [router]);
+    // If the local user just mutated this board, wait out the remainder of the
+    // self-mutation window before refreshing — and re-arm on fire if they're
+    // still active, so a run of drags keeps deferring. This stops our own
+    // write's echo from flashing the loading.tsx skeleton; external changes
+    // simply land once the user is idle.
+    const arm = () => {
+      const sinceLocal = msSinceLocalBoardMutation(ideaId);
+      const delay =
+        sinceLocal < SELF_MUTATION_WINDOW_MS
+          ? SELF_MUTATION_WINDOW_MS - sinceLocal
+          : DEBOUNCE_MS;
+      timeoutRef.current = setTimeout(() => {
+        if (msSinceLocalBoardMutation(ideaId) < SELF_MUTATION_WINDOW_MS) {
+          arm();
+          return;
+        }
+        timeoutRef.current = null;
+        // Refresh inside a transition so React keeps the current (optimistically
+        // updated) board on screen while the dynamic RSC payload re-fetches,
+        // instead of dropping the segment to its loading.tsx skeleton fallback.
+        startTransition(() => router.refresh());
+      }, delay);
+    };
+    arm();
+  }, [router, ideaId]);
 
   // Workflow step changes need a follow-up refresh to catch denormalized
   // column updates on board_tasks that may not be visible on the first read
