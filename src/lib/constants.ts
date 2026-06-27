@@ -100,6 +100,7 @@ export const ACTIVITY_ACTIONS: Record<string, { label: string; icon: string }> =
   label_removed: { label: "removed a label", icon: "TagX" },
   archived: { label: "archived this task", icon: "Archive" },
   unarchived: { label: "unarchived this task", icon: "ArchiveRestore" },
+  converted_to_discussion: { label: "converted this task to a conversation", icon: "MessagesSquare" },
   title_changed: { label: "changed the title", icon: "Pencil" },
   description_changed: { label: "updated the description", icon: "FileText" },
   checklist_item_added: { label: "added a workflow step", icon: "ListPlus" },

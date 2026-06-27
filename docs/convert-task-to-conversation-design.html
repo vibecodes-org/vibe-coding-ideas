@@ -1,0 +1,493 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>UX Design — Convert Task to Conversation</title>
+<style>
+  :root{
+    /* shadcn New York / Zinc — dark */
+    --bg:#09090b;            /* zinc-950 (background) */
+    --card:#0c0c0e;          /* slightly raised panel */
+    --popover:#18181b;       /* zinc-900 (dropdown / dialog surface) */
+    --border:#27272a;        /* zinc-800 */
+    --border-soft:#27272a80;
+    --fg:#fafafa;            /* zinc-50 */
+    --muted:#a1a1aa;         /* zinc-400 */
+    --muted-2:#71717a;       /* zinc-500 */
+    --accent:#27272a;        /* zinc-800 hover */
+    --primary:#fafafa;       /* near-white primary (New York) */
+    --primary-fg:#18181b;
+    --red:#f87171;           /* red-400 */
+    --red-bg:#ef444415;
+    --blue:#60a5fa;          /* blue-400 */
+    --blue-border:#3b82f633;
+    --blue-bg:#3b82f60d;
+    --amber:#fbbf24;         /* amber-400 */
+    --amber-border:#f59e0b40;
+    --amber-bg:#f59e0b14;
+    --emerald:#34d399;
+    --radius:8px;
+    --mono:ui-monospace,SFMono-Regular,Menlo,monospace;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;padding:0}
+  body{
+    background:var(--bg);
+    color:var(--fg);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    line-height:1.6;
+    font-size:15px;
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{max-width:920px;margin:0 auto;padding:48px 24px 96px}
+  header.doc{border-bottom:1px solid var(--border);padding-bottom:28px;margin-bottom:36px}
+  .eyebrow{font-size:12px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted-2);font-weight:600}
+  h1{font-size:30px;line-height:1.2;margin:10px 0 8px;font-weight:680;letter-spacing:-.01em}
+  h2{font-size:21px;margin:48px 0 14px;font-weight:640;letter-spacing:-.01em;padding-top:8px;border-top:1px solid var(--border-soft)}
+  h3{font-size:16px;margin:28px 0 10px;font-weight:620;color:var(--fg)}
+  h4{font-size:13px;margin:18px 0 8px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.06em}
+  p{color:#d4d4d8;margin:10px 0}
+  a{color:var(--blue);text-decoration:none}
+  a:hover{text-decoration:underline}
+  ul,ol{color:#d4d4d8;padding-left:22px}
+  li{margin:6px 0}
+  code{font-family:var(--mono);font-size:12.5px;background:var(--popover);border:1px solid var(--border);border-radius:5px;padding:1px 6px;color:#e4e4e7}
+  strong{color:var(--fg);font-weight:640}
+  .lede{font-size:16.5px;color:#d4d4d8}
+  .cite{display:inline-flex;align-items:center;gap:6px;font-size:12.5px;color:var(--amber);background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:999px;padding:3px 10px;font-weight:600}
+  .panel{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px 24px;margin:18px 0}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+  @media(max-width:760px){.grid2{grid-template-columns:1fr}}
+  .note{font-size:13px;color:var(--muted)}
+  table{width:100%;border-collapse:collapse;margin:14px 0;font-size:13.5px}
+  th,td{text-align:left;padding:9px 12px;border-bottom:1px solid var(--border)}
+  th{color:var(--muted);font-weight:600;font-size:12px;text-transform:uppercase;letter-spacing:.05em}
+  td{color:#d4d4d8;vertical-align:top}
+  td code{white-space:nowrap}
+  .pillrow{display:flex;flex-wrap:wrap;gap:8px;margin:10px 0}
+  .tag{font-size:11.5px;border:1px solid var(--border);border-radius:999px;padding:3px 9px;color:var(--muted);background:var(--popover)}
+
+  /* ====== MOCKUP CANVAS ====== */
+  .stage{
+    background:
+      radial-gradient(120% 120% at 50% 0,#101013 0,#09090b 60%);
+    border:1px solid var(--border);
+    border-radius:14px;
+    padding:32px;
+    display:flex;flex-direction:column;align-items:center;gap:0;
+    position:relative;
+  }
+  .stage .caption{position:absolute;top:10px;left:14px;font-size:11px;color:var(--muted-2);font-family:var(--mono)}
+  .stage.col{align-items:stretch}
+
+  /* Board task card */
+  .card{
+    width:300px;background:var(--bg);border:1px solid var(--border);
+    border-radius:8px;box-shadow:0 1px 2px #0006;position:relative;overflow:hidden;
+  }
+  .card .body{padding:12px 12px 12px 12px}
+  .card .labels{display:flex;gap:6px;margin-bottom:7px}
+  .lbl{height:6px;width:34px;border-radius:999px;display:inline-block}
+  .lbl.b{background:#3b82f6aa}.lbl.g{background:#34d399aa}.lbl.p{background:#a78bfaaa}
+  .card .title{font-size:13.5px;font-weight:560;line-height:1.35;margin:0;color:var(--fg);padding-right:24px}
+  .card .desc{font-size:12px;color:var(--muted);margin:5px 0 0;line-height:1.4;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .card .meta{display:flex;align-items:center;gap:8px;margin-top:10px}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:10px;font-weight:600;border-radius:999px;padding:2px 8px}
+  .chip.wf{color:var(--blue);background:#3b82f626;border:1px solid #3b82f640}
+  .chip.muted{color:var(--muted);font-weight:500;border:0;padding:0}
+  .avatar{margin-left:auto;height:20px;width:20px;border-radius:999px;background:#3f3f46;color:#e4e4e7;font-size:9px;display:flex;align-items:center;justify-content:center;font-weight:600}
+  .menubtn{position:absolute;right:6px;top:6px;height:28px;width:28px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--muted);background:var(--accent)}
+  .menubtn svg{height:16px;width:16px}
+
+  /* Dropdown menu */
+  .menu{
+    width:230px;background:var(--popover);border:1px solid var(--border);
+    border-radius:8px;padding:5px;box-shadow:0 12px 32px #000b, 0 2px 8px #0008;
+    font-size:13.5px;
+  }
+  .mi{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:6px;color:#e4e4e7;cursor:default;position:relative}
+  .mi svg{height:15px;width:15px;color:var(--muted);flex:none}
+  .mi.hi{background:var(--accent);color:var(--fg)}
+  .mi.hi svg{color:var(--fg)}
+  .mi.new{background:#3b82f614}
+  .mi.new svg{color:var(--blue)}
+  .mi.danger{color:var(--red)}
+  .mi.danger svg{color:var(--red)}
+  .mi.danger.hi{background:var(--red-bg)}
+  .mi.disabled{color:var(--muted-2);opacity:.5}
+  .mi.disabled svg{color:var(--muted-2)}
+  .sep{height:1px;background:var(--border);margin:5px 4px}
+  .newflag{position:absolute;right:8px;font-size:9px;letter-spacing:.06em;font-weight:700;color:var(--blue);background:#3b82f622;border:1px solid #3b82f640;border-radius:999px;padding:1px 6px}
+
+  /* Alert dialog */
+  .dialog{
+    width:440px;max-width:100%;background:var(--popover);border:1px solid var(--border);
+    border-radius:12px;padding:24px;box-shadow:0 24px 64px #000c;
+  }
+  .dialog h5{margin:0 0 8px;font-size:17px;font-weight:620;color:var(--fg)}
+  .dialog p{font-size:13.5px;color:var(--muted);margin:0 0 4px;line-height:1.55}
+  .dialog .quoted{color:#e4e4e7;font-weight:500}
+  .dlg-warn{
+    display:flex;gap:9px;align-items:flex-start;margin-top:14px;
+    background:var(--amber-bg);border:1px solid var(--amber-border);border-radius:8px;
+    padding:10px 12px;font-size:12.5px;color:#fcd34d;line-height:1.45;
+  }
+  .dlg-warn svg{height:15px;width:15px;color:var(--amber);flex:none;margin-top:1px}
+  .dlg-foot{display:flex;justify-content:flex-end;gap:10px;margin-top:22px}
+  .btn{font-size:13px;font-weight:560;border-radius:7px;padding:8px 16px;border:1px solid transparent;cursor:default;display:inline-flex;align-items:center;gap:7px}
+  .btn-ghost{background:transparent;border-color:var(--border);color:#e4e4e7}
+  .btn-primary{background:var(--primary);color:var(--primary-fg)}
+  .btn-primary.busy{opacity:.85}
+  .btn .spin{height:14px;width:14px;border:2px solid #00000040;border-top-color:#18181b;border-radius:999px;display:inline-block;animation:sp 0.7s linear infinite}
+  @keyframes sp{to{transform:rotate(360deg)}}
+
+  /* Toast */
+  .toast{
+    width:380px;background:var(--popover);border:1px solid var(--border);border-radius:10px;
+    padding:14px 16px;box-shadow:0 16px 40px #000a;display:flex;gap:11px;align-items:flex-start;
+  }
+  .toast .ic{height:18px;width:18px;flex:none;margin-top:1px}
+  .toast.ok .ic{color:var(--emerald)}
+  .toast.err .ic{color:var(--red)}
+  .toast .tcontent{flex:1;min-width:0}
+  .toast .tt{font-size:13.5px;font-weight:560;color:var(--fg)}
+  .toast .td{font-size:12.5px;color:var(--muted);margin-top:2px}
+  .toast .taction{font-size:12.5px;font-weight:600;color:var(--fg);border:1px solid var(--border);background:var(--accent);border-radius:6px;padding:5px 11px;white-space:nowrap;align-self:center}
+
+  /* discussion backlink badge (reverse view) */
+  .backlink{display:inline-flex;align-items:center;gap:8px;font-size:12px;color:var(--blue);
+    border:1px solid var(--blue-border);background:var(--blue-bg);border-radius:8px;padding:8px 12px}
+  .backlink svg{height:14px;width:14px}
+
+  /* flow diagram */
+  .flow{display:flex;flex-direction:column;gap:0;margin:8px 0}
+  .step{display:flex;gap:14px;align-items:flex-start;position:relative;padding-bottom:18px}
+  .step:not(:last-child)::before{content:"";position:absolute;left:15px;top:30px;bottom:-2px;width:2px;background:var(--border)}
+  .step .num{height:30px;width:30px;border-radius:999px;background:var(--popover);border:1px solid var(--border);
+    color:var(--fg);font-weight:640;font-size:13px;display:flex;align-items:center;justify-content:center;flex:none;z-index:1}
+  .step .stbody{padding-top:3px}
+  .step .stbody b{color:var(--fg)}
+  .step.err .num{border-color:var(--red);color:var(--red)}
+  .step.ok .num{border-color:var(--emerald);color:var(--emerald)}
+
+  .kbd{font-family:var(--mono);font-size:11.5px;background:var(--popover);border:1px solid var(--border);
+    border-bottom-width:2px;border-radius:5px;padding:1px 6px;color:#e4e4e7}
+  .legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--muted);margin-top:14px}
+  .ok-dot,.warn-dot,.err-dot{display:inline-block;height:8px;width:8px;border-radius:999px;margin-right:6px;vertical-align:middle}
+  .ok-dot{background:var(--emerald)}.warn-dot{background:var(--amber)}.err-dot{background:var(--red)}
+  .small{font-size:12.5px;color:var(--muted)}
+  .checklist li{list-style:none;position:relative;padding-left:24px}
+  .checklist li::before{content:"✓";position:absolute;left:0;color:var(--emerald);font-weight:700}
+  .checklist{padding-left:0}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="doc">
+    <div class="eyebrow">VibeCodes · UX Design Step · by Compass</div>
+    <h1>Convert Task to Conversation</h1>
+    <p class="lede">A shortcut-menu action that turns a board task into an idea discussion (<code>idea_discussion</code>) and archives the task off the board, keeping a two-way link between them.</p>
+    <div class="pillrow">
+      <span class="cite">↳ Builds on the Requirements step</span>
+      <span class="tag">Dark · Zinc · New York</span>
+      <span class="tag">Non-destructive action</span>
+      <span class="tag">Optimistic UI</span>
+    </div>
+  </header>
+
+  <!-- ============ 1. INTRO ============ -->
+  <h2>1. Intro &amp; design goals</h2>
+  <p>This document designs the UI/UX for the <strong>Convert to conversation</strong> feature against the decisions locked in the Requirements step. Those decisions are treated as fixed constraints here, namely:</p>
+  <ul>
+    <li>A new <strong>“Convert to conversation”</strong> item in the task <code>⋯</code> menu (<code>src/components/board/task-card-menu.tsx</code>), in <strong>its own group above</strong> Archive/Delete, rendered in <strong>non-destructive style</strong> with a <code>MessagesSquare</code> icon, shown only to team members (<code>!isReadOnly</code>).</li>
+    <li>A confirm dialog <strong>“Convert to a conversation?”</strong> explaining the task is <strong>archived (not deleted)</strong> and linked to the new conversation, with a <strong>conditional workflow warning</strong> line when <code>workflow_step_total &gt; 0</code>; buttons <strong>Cancel / Convert</strong> (Convert is primary, <em>not</em> destructive).</li>
+    <li>On confirm: <strong>optimistic removal</strong> from the board, a <strong>success toast that links to the new discussion</strong>, and <strong>error toast + rollback</strong> on failure.</li>
+    <li>The archived task keeps a <code>discussion_id</code> back-link; the detail dialog already renders a <em>“From discussion — View source thread”</em> badge (<code>task-detail-dialog.tsx</code>) which we reuse for the reverse direction.</li>
+  </ul>
+  <p><strong>Design goals.</strong> (1) <em>Recognition over recall</em> &amp; information scent — the action and its consequence are self-explanatory before the user commits. (2) <em>Reversibility-minded</em> — make it obvious this is archive, not delete, so the action feels safe (Fitts: the safe action lives away from the destructive Delete). (3) <em>Consistency / Jakob's Law</em> — reuse the menu, dialog, and toast patterns already in the board exactly, so nothing new has to be learned. (4) <em>All states handled</em> — default, workflow-warning, in-flight, error+rollback, and long-title edge cases. (5) <em>WCAG 2.1 AA</em> throughout.</p>
+
+  <!-- ============ 2. USER FLOW ============ -->
+  <h2>2. End-to-end user flow</h2>
+  <p>Trigger → confirm → optimistic removal → success/failure → re-finding the discussion later, including error recovery and back-navigation.</p>
+
+  <div class="panel">
+    <div class="flow">
+      <div class="step">
+        <div class="num">1</div>
+        <div class="stbody"><b>Trigger.</b> A team member hovers a task card (or focuses it via keyboard) and opens the <code>⋯</code> actions menu. The new <b>Convert to conversation</b> item sits in its own group, visually separated above Archive/Delete. Read-only viewers never see the menu, so the item is gated automatically by the existing <code>!isReadOnly</code> wrapper in <code>board-task-card.tsx</code>.</div>
+      </div>
+      <div class="step">
+        <div class="num">2</div>
+        <div class="stbody"><b>Confirm.</b> Selecting it opens the <code>AlertDialog</code> “Convert to a conversation?”. The body names the task in quotes and explains the outcome: a new conversation is created and <i>this task is archived, not deleted</i>. If the task carries a workflow (<code>workflow_step_total &gt; 0</code>) an amber warning line appears, telling them the attached workflow won't carry over. Focus lands on <b>Cancel</b> (the safe default for an irreversible-feeling step).</div>
+      </div>
+      <div class="step">
+        <div class="num">3</div>
+        <div class="stbody"><b>Commit (optimistic).</b> On <b>Convert</b>, the button enters a busy state, then the dialog closes and the card is <b>removed from the board immediately</b> using the same <code>ops.trustRemoval()</code> + <code>incrementPendingOps()</code> recipe Archive uses — so a lagging Realtime snapshot can't re-show it.</div>
+      </div>
+      <div class="step ok">
+        <div class="num">✓</div>
+        <div class="stbody"><b>Success.</b> A success toast confirms the conversion and offers a <b>View conversation</b> action that deep-links to <code>/ideas/{ideaId}/discussions/{discussionId}</code>. The card stays gone.</div>
+      </div>
+      <div class="step err">
+        <div class="num">!</div>
+        <div class="stbody"><b>Failure &amp; recovery.</b> If the server action throws, the card <b>rolls back into place</b> at its previous position and an error toast explains what happened. No data was lost; the user can retry from the same menu. This mirrors the catch/rollback branch of <code>handleArchive</code>.</div>
+      </div>
+      <div class="step">
+        <div class="num">4</div>
+        <div class="stbody"><b>Re-finding it later.</b> The new discussion lives in the idea's Discussions list like any other. The archived task is still reachable (Show archived filter on the board / dashboard exclusion aside) and its detail dialog shows the existing blue <b>“From discussion — View source thread”</b> backlink, so the two halves always point at each other. Back-navigation from the discussion returns to wherever the user came from via normal browser history.</div>
+      </div>
+    </div>
+    <div class="legend">
+      <span><span class="ok-dot"></span>Success path</span>
+      <span><span class="warn-dot"></span>Workflow-warning variant</span>
+      <span><span class="err-dot"></span>Error → rollback → retry</span>
+    </div>
+  </div>
+
+  <!-- ============ 3. MOCKUPS ============ -->
+  <h2>3. Visual mockups</h2>
+  <p class="small">Rendered as styled HTML in the app's dark zinc palette. Spacing, radii, separators and the destructive-vs-not treatment mirror the live <code>DropdownMenu</code>, <code>AlertDialog</code> and <code>sonner</code> components.</p>
+
+  <h3>(a) The ⋯ dropdown menu — new item in context</h3>
+  <p class="small">The new item gets its own group (separator above and below) so it reads as a distinct, constructive action and is never adjacent to the destructive Delete. Constructive items use muted-grey icons; only Delete uses the red <code>variant="destructive"</code> treatment.</p>
+  <div class="stage">
+    <div class="caption">board · ⋯ menu open</div>
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap;justify-content:center">
+      <!-- card with menu button -->
+      <div class="card" style="margin-top:6px">
+        <div class="menubtn" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+        </div>
+        <div class="body">
+          <div class="labels"><span class="lbl b"></span><span class="lbl g"></span></div>
+          <p class="title">Add OAuth refresh-token rotation to the MCP server</p>
+          <p class="desc">Tokens currently never rotate; add rotation + revoke on logout.</p>
+          <div class="meta">
+            <span class="chip muted">⌗ ENG-214</span>
+            <span class="avatar">NB</span>
+          </div>
+        </div>
+      </div>
+      <!-- dropdown -->
+      <div class="menu" role="menu" aria-label="Task actions">
+        <div class="mi" role="menuitem">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+          Move to top
+        </div>
+        <div class="mi disabled" role="menuitem" aria-disabled="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12l7 7 7-7"/></svg>
+          Move to bottom
+        </div>
+        <div class="sep"></div>
+        <div class="mi" role="menuitem">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+          Launch Claude Code
+        </div>
+        <div class="sep"></div>
+        <!-- NEW ITEM -->
+        <div class="mi new hi" role="menuitem">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>
+          Convert to conversation
+        </div>
+        <div class="sep"></div>
+        <div class="mi" role="menuitem">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="20" height="5" x="2" y="3" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8M10 12h4"/></svg>
+          Archive
+        </div>
+        <div class="sep"></div>
+        <div class="mi danger" role="menuitem">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>
+          Delete
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="small"><b>Group order (top→bottom):</b> Move to top / Move to bottom · <span style="color:#d4d4d8">— sep —</span> · Launch Claude Code · <span style="color:#d4d4d8">— sep —</span> · <b style="color:var(--blue)">Convert to conversation</b> · <span style="color:#d4d4d8">— sep —</span> · Archive · <span style="color:#d4d4d8">— sep —</span> · <span style="color:var(--red)">Delete</span>. The blue tint on the convert item above is the <i>highlighted/hover</i> state shown for illustration; at rest it renders like the other constructive items (muted icon, default text) — colour is never the sole signal, the label and icon carry the meaning.</p>
+
+  <h3>(b) Confirm dialog — both variants</h3>
+  <div class="grid2">
+    <div>
+      <h4><span class="ok-dot"></span>Default — no workflow</h4>
+      <div class="stage">
+        <div class="caption">AlertDialog</div>
+        <div class="dialog" role="alertdialog" aria-labelledby="d1t" aria-describedby="d1d">
+          <h5 id="d1t">Convert to a conversation?</h5>
+          <p id="d1d"><span class="quoted">“Add OAuth refresh-token rotation to the MCP server”</span> will be moved into a new conversation where the team can discuss it.</p>
+          <p style="margin-top:8px">This task is <b style="color:#e4e4e7">archived, not deleted</b> — its comments and history stay intact and stay linked to the new conversation.</p>
+          <div class="dlg-foot">
+            <span class="btn btn-ghost">Cancel</span>
+            <span class="btn btn-primary">Convert</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h4><span class="warn-dot"></span>With attached workflow</h4>
+      <div class="stage">
+        <div class="caption">AlertDialog · workflow_step_total &gt; 0</div>
+        <div class="dialog" role="alertdialog" aria-labelledby="d2t" aria-describedby="d2d">
+          <h5 id="d2t">Convert to a conversation?</h5>
+          <p id="d2d"><span class="quoted">“Add OAuth refresh-token rotation to the MCP server”</span> will be moved into a new conversation where the team can discuss it.</p>
+          <p style="margin-top:8px">This task is <b style="color:#e4e4e7">archived, not deleted</b> — its comments and history stay intact and stay linked to the new conversation.</p>
+          <div class="dlg-warn" role="note">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z"/><path d="M12 9v4M12 17h.01"/></svg>
+            <span>This task has an attached workflow. Its steps and progress won't carry over to the conversation.</span>
+          </div>
+          <div class="dlg-foot">
+            <span class="btn btn-ghost">Cancel</span>
+            <span class="btn btn-primary">Convert</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="small">Convert is the <b>primary</b> (near-white) button, <i>not</i> the red destructive style — because the underlying task is preserved. The warning is signalled by an icon + text + border, never colour alone, satisfying the non-colour-only rule.</p>
+
+  <h3>(c) In-flight, success &amp; error states</h3>
+  <div class="grid2">
+    <div>
+      <h4>In-flight — Convert busy</h4>
+      <div class="stage">
+        <div class="caption">submitting</div>
+        <div class="dialog" aria-busy="true">
+          <h5>Convert to a conversation?</h5>
+          <p><span class="quoted">“Add OAuth refresh-token rotation…”</span> will be moved into a new conversation.</p>
+          <div class="dlg-foot">
+            <span class="btn btn-ghost" aria-disabled="true" style="opacity:.5">Cancel</span>
+            <span class="btn btn-primary busy"><span class="spin"></span>Converting…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h4>Success toast</h4>
+      <div class="stage">
+        <div class="caption">sonner · success</div>
+        <div class="toast ok" role="status">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.801 10A10 10 0 1 1 17 3.335"/><path d="m9 11 3 3L22 4"/></svg>
+          <div class="tcontent">
+            <div class="tt">Converted to a conversation</div>
+            <div class="td">The task was archived and linked to the new thread.</div>
+          </div>
+          <span class="taction">View conversation</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="grid2" style="margin-top:6px">
+    <div>
+      <h4><span class="err-dot"></span>Error toast (after rollback)</h4>
+      <div class="stage">
+        <div class="caption">sonner · error</div>
+        <div class="toast err" role="alert">
+          <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+          <div class="tcontent">
+            <div class="tt">Couldn't convert task</div>
+            <div class="td">The task is back on the board — try again.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <h4>Reverse view — backlink badge (reused)</h4>
+      <div class="stage">
+        <div class="caption">task-detail-dialog · existing badge</div>
+        <a class="backlink">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+          From discussion — View source thread
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ============ 4. STATES ============ -->
+  <h2>4. All states &amp; edge cases</h2>
+  <table>
+    <thead><tr><th style="width:26%">State</th><th>Behaviour &amp; treatment</th></tr></thead>
+    <tbody>
+      <tr><td><b>Default menu item</b></td><td>Constructive style: <code>MessagesSquare</code> icon in muted grey, default label colour, own separator group above Archive. Padding <code>py-2.5 sm:py-1.5</code> to match siblings.</td></tr>
+      <tr><td><b>Read-only viewer</b></td><td>Menu (whole subtree) is unrendered via the existing <code>!isReadOnly</code> guard — no extra gating needed for the item itself.</td></tr>
+      <tr><td><b>Workflow-warning variant</b></td><td>Amber inset note inside the dialog, only when <code>task.workflow_step_total &gt; 0</code>. Icon + text + bordered container (not colour alone). Dialog height grows gracefully.</td></tr>
+      <tr><td><b>Loading / in-flight</b></td><td>Convert button shows a spinner + “Converting…”, both footer buttons disabled, <code>aria-busy</code> on the dialog. Prevents double-submit. Dialog closes only after the optimistic mutation fires.</td></tr>
+      <tr><td><b>Success</b></td><td>Card removed optimistically; success toast with a <b>View conversation</b> action linking to the discussion. Toast auto-dismisses on sonner's default timeout; action remains clickable while shown.</td></tr>
+      <tr><td><b>Error → rollback</b></td><td>Card reappears at its prior position (<code>rollback()</code> + stop trusting the removal), error toast “Couldn't convert task”. User can immediately retry. No partial discussion is shown to the user.</td></tr>
+      <tr><td><b>Very long title</b></td><td>Card title is the existing 2-line clamp. In the dialog, the quoted title is allowed to wrap; we cap visual length so it never pushes the buttons off-screen (clamp to ~2 lines with ellipsis). See note below.</td></tr>
+      <tr><td><b>Empty / no other tasks</b></td><td>No special empty state — converting the last task in a column simply leaves the column empty, which the board already renders. Discussions list gains one new thread.</td></tr>
+      <tr><td><b>Realtime echo</b></td><td>Same <code>trustRemoval</code> guard as Archive prevents a lagging replica snapshot from re-showing the converted card.</td></tr>
+    </tbody>
+  </table>
+
+  <h4>Long-title truncation in the dialog</h4>
+  <div class="stage">
+    <div class="caption">edge case · 140-char title</div>
+    <div class="dialog">
+      <h5>Convert to a conversation?</h5>
+      <p><span class="quoted" style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden">“Investigate and remediate the intermittent OAuth refresh-token rotation failure that surfaces only under concurrent MCP sessions on the staging Supabase replica during…”</span> will be moved into a new conversation.</p>
+      <p style="margin-top:8px">This task is <b style="color:#e4e4e7">archived, not deleted</b>.</p>
+      <div class="dlg-foot">
+        <span class="btn btn-ghost">Cancel</span>
+        <span class="btn btn-primary">Convert</span>
+      </div>
+    </div>
+  </div>
+  <p class="small">The quoted title clamps to two lines so the dialog never grows unbounded and the action buttons stay on screen at 375px.</p>
+
+  <!-- ============ 5. A11Y ============ -->
+  <h2>5. Accessibility notes (WCAG 2.1 AA)</h2>
+  <ul>
+    <li><b>Keyboard flow.</b> The <code>⋯</code> trigger is reachable by Tab and reveals on <code>focus-visible</code> (already implemented). <span class="kbd">↑</span><span class="kbd">↓</span> move through menu items, <span class="kbd">Enter</span>/<span class="kbd">Space</span> selects, <span class="kbd">Esc</span> closes — inherited from Radix <code>DropdownMenu</code>. Disabled items (e.g. Move to top at the edge) are skipped.</li>
+    <li><b>Dialog focus management.</b> Radix <code>AlertDialog</code> traps focus, moves initial focus to <b>Cancel</b> (safe default), and restores focus to the trigger on close. <span class="kbd">Esc</span> and the backdrop both cancel. While submitting, focus stays within the dialog and both buttons are disabled with an explanatory busy label (no bare disabled button).</li>
+    <li><b>Contrast.</b> Primary Convert button is near-white on the zinc surface (well above 4.5:1). The amber warning text (<code>#fcd34d</code>) on the dark amber-tinted panel exceeds 4.5:1; the blue backlink and constructive label text also pass. Muted body copy (<code>zinc-400</code>) on <code>zinc-900</code> meets 4.5:1 for the ≥14px sizes used.</li>
+    <li><b>Non-colour signalling.</b> The workflow warning uses a triangle-alert icon + explicit text + a bordered container, not colour alone. The menu item conveys its constructive nature through label + icon, not tint. Toasts pair a check/X icon with text.</li>
+    <li><b>Touch targets / mobile (375px).</b> The trigger is <code>44×44</code> on mobile (<code>h-11 w-11</code>, shrinking to <code>h-7 w-7</code> on <code>sm</code>) and always visible on touch. Menu items use <code>py-2.5</code> on mobile for a ~40px+ row. The dialog is full-width with <code>max-w</code> margins; footer buttons stack comfortably and stay above the fold. The success-toast <b>View conversation</b> action button is ≥44px tall on touch.</li>
+    <li><b>Announcements.</b> Success toast uses <code>role="status"</code> (polite), error toast uses <code>role="alert"</code> (assertive) so screen-reader users hear the rollback. The dialog is a true <code>alertdialog</code> with <code>aria-labelledby</code>/<code>aria-describedby</code>.</li>
+    <li><b>Labels not placeholders.</b> No free-text input in this flow, so no placeholder-as-label risk. The trigger keeps its <code>aria-label="Task actions"</code>.</li>
+  </ul>
+
+  <!-- ============ 6. MICROCOPY ============ -->
+  <h2>6. Microcopy (exact strings)</h2>
+  <table>
+    <thead><tr><th style="width:30%">Surface</th><th>String</th></tr></thead>
+    <tbody>
+      <tr><td>Menu item</td><td><code>Convert to conversation</code></td></tr>
+      <tr><td>Dialog title</td><td><code>Convert to a conversation?</code></td></tr>
+      <tr><td>Dialog body (line 1)</td><td><code>“{task.title}” will be moved into a new conversation where the team can discuss it.</code></td></tr>
+      <tr><td>Dialog body (line 2)</td><td><code>This task is archived, not deleted — its comments and history stay intact and stay linked to the new conversation.</code></td></tr>
+      <tr><td>Workflow warning line</td><td><code>This task has an attached workflow. Its steps and progress won't carry over to the conversation.</code></td></tr>
+      <tr><td>Cancel button</td><td><code>Cancel</code></td></tr>
+      <tr><td>Confirm button (idle)</td><td><code>Convert</code></td></tr>
+      <tr><td>Confirm button (busy)</td><td><code>Converting…</code></td></tr>
+      <tr><td>Success toast (title)</td><td><code>Converted to a conversation</code></td></tr>
+      <tr><td>Success toast (description)</td><td><code>The task was archived and linked to the new thread.</code></td></tr>
+      <tr><td>Success toast (action)</td><td><code>View conversation</code></td></tr>
+      <tr><td>Error toast</td><td><code>Couldn't convert task</code> &nbsp;<span class="small">(description: <code>The task is back on the board — try again.</code>)</span></td></tr>
+    </tbody>
+  </table>
+  <p class="small">Voice matches existing board copy: sentence case, contractions, an em-dash for the consequence clause, and the same <code>Couldn't …</code> pattern as <code>"Couldn't archive task"</code> / <code>"Couldn't move task"</code>.</p>
+
+  <!-- ============ 7. HANDOFF ============ -->
+  <h2>7. Handoff to Implementation</h2>
+  <h4>Reuse — no new design-system primitives needed</h4>
+  <ul class="checklist">
+    <li><b>Menu:</b> add one <code>DropdownMenuItem</code> + a wrapping <code>DropdownMenuSeparator</code> group inside <code>task-card-menu.tsx</code>, between the Launch group and the Archive group. Icon <code>MessagesSquare</code> from <code>lucide-react</code>. Match sibling classes <code>py-2.5 sm:py-1.5</code>. Do <b>not</b> set <code>variant="destructive"</code>.</li>
+    <li><b>Dialog:</b> a second <code>AlertDialog</code> alongside the existing delete one, driven by a new <code>confirmConvertOpen</code> state. Reuse <code>AlertDialogHeader/Title/Description/Footer/Cancel</code>; the Action button is default variant (not destructive).</li>
+    <li><b>Optimistic mutation:</b> model <code>handleConvert</code> on the existing <code>handleArchive</code> — <code>ops.archiveTask()</code>-style removal (or a dedicated <code>ops.convertTask()</code> returning a rollback), <code>incrementPendingOps()</code>, <code>trustRemoval()</code>, and the catch branch that calls <code>rollback()</code> + <code>trustRemoval(id,false)</code> + <code>toast.error</code>.</li>
+    <li><b>Toast action:</b> use the sonner <code>action: &#123; label, onClick &#125;</code> shape already used in <code>kanban-board.tsx</code> / <code>launch-claude-code-button.tsx</code>; <code>onClick</code> routes to <code>/ideas/&#123;ideaId&#125;/discussions/&#123;discussionId&#125;</code>.</li>
+    <li><b>Reverse backlink:</b> already exists in <code>task-detail-dialog.tsx</code> (gated on <code>task.discussion_id</code>) — no UI change; just ensure the server action sets <code>discussion_id</code> on the archived task.</li>
+  </ul>
+
+  <h4>New work for Implementation (non-UI)</h4>
+  <ul>
+    <li>A server action (e.g. <code>convertTaskToDiscussion(taskId, ideaId)</code> in <code>src/actions/discussions.ts</code>, sibling to the existing <code>convertDiscussionToTask</code>) that: creates the <code>idea_discussion</code> from the task's title/description, archives the task, and writes <code>discussion_id</code> back onto the task — returning <code>{ discussionId }</code> for the toast link. Use the project's concurrency-guard pattern (<code>.eq("archived", false)</code> + <code>.maybeSingle()</code>) so a double-click can't double-convert.</li>
+    <li>An optional <code>ops.convertTask()</code> helper in <code>BoardOpsContext</code> returning a rollback, if a distinct activity-log verb (<code>"converted"</code>) is wanted versus reusing <code>archiveTask</code>.</li>
+  </ul>
+
+  <p class="small" style="margin-top:30px;border-top:1px solid var(--border);padding-top:16px">Compass · UX Design step · references: <code>src/components/board/task-card-menu.tsx</code>, <code>board-task-card.tsx</code>, <code>task-detail-dialog.tsx</code> (backlink at L740), <code>src/actions/discussions.ts</code> (existing reverse action). Builds on the Requirements step.</p>
+
+</div>
+</body>
+</html>

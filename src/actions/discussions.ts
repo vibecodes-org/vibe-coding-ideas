@@ -9,6 +9,7 @@ import {
   validateDiscussionReply,
   validateTitle,
 } from "@/lib/validation";
+import { buildDiscussionFromTask } from "@/lib/discussion-helpers";
 import type { DiscussionStatus } from "@/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -454,4 +455,120 @@ export async function convertDiscussionToTask(
   revalidatePath(`/ideas/${ideaId}/board`);
 
   return task.id;
+}
+
+/**
+ * Convert a board task into an idea discussion and archive the source task.
+ *
+ * Inverse of `convertDiscussionToTask`. If the task itself originated FROM a
+ * discussion (`discussion_id` set) and that discussion still exists, the
+ * existing discussion is reopened and relinked rather than minting a new one —
+ * this prevents orphaning the original and an A→T→B round-trip ping-pong. If
+ * there is no link, or the linked discussion was deleted, a fresh discussion is
+ * created instead: built first, then the task is archived behind a concurrency
+ * guard (`.eq("archived", false)`); if the task was already archived/deleted
+ * (lost race) the just-created discussion is deleted so no orphan is left
+ * behind. A pre-existing reopened discussion is never deleted on a lost race —
+ * only a discussion we just created. Relies on RLS (`is_idea_team_member()`) to
+ * reject non-members on both the read and writes.
+ *
+ * Returns the discussion id (existing or new) so the UI can deep-link to it.
+ */
+export async function convertTaskToDiscussion(taskId: string, ideaId: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  // Load the source task — RLS rejects non-members, .maybeSingle() handles a
+  // concurrently-deleted task gracefully.
+  const { data: task, error: fetchError } = await supabase
+    .from("board_tasks")
+    .select("id, idea_id, title, description, archived, discussion_id")
+    .eq("id", taskId)
+    .maybeSingle();
+
+  if (fetchError) throw new Error(fetchError.message);
+  if (!task) throw new Error("Task not found");
+  if (task.archived) throw new Error("This task has already been archived");
+
+  // Round-trip case: this task came from a discussion. If that discussion still
+  // exists, reopen it instead of creating a duplicate. A deleted link falls
+  // through to the create-new path below.
+  if (task.discussion_id) {
+    const { data: existing } = await supabase
+      .from("idea_discussions")
+      .select("id")
+      .eq("id", task.discussion_id)
+      .maybeSingle();
+
+    if (existing) {
+      // Reverse `convertDiscussionToTask`'s status flip (-> "converted").
+      const { error: reopenError } = await supabase
+        .from("idea_discussions")
+        .update({ status: "open" })
+        .eq("id", existing.id);
+
+      if (reopenError) throw new Error(reopenError.message);
+
+      // Archive the task behind the concurrency guard; the existing
+      // discussion_id backlink already points here, so we leave it in place.
+      const { data: archived, error: archiveError } = await supabase
+        .from("board_tasks")
+        .update({ archived: true })
+        .eq("id", taskId)
+        .eq("archived", false)
+        .select("id")
+        .maybeSingle();
+
+      // Never delete the pre-existing discussion on failure — it predates us.
+      if (archiveError) throw new Error(archiveError.message);
+      if (!archived) throw new Error("This task was already archived or removed");
+
+      revalidatePath(`/ideas/${ideaId}/discussions`);
+      revalidatePath(`/ideas/${ideaId}`);
+
+      return existing.id;
+    }
+  }
+
+  // Create the discussion from the task (validates title/body, status = open).
+  const { data: discussion, error: createError } = await supabase
+    .from("idea_discussions")
+    .insert(buildDiscussionFromTask(task, user.id))
+    .select("id")
+    .single();
+
+  if (createError) throw new Error(createError.message);
+
+  // Archive the source task behind a concurrency guard — only flips a task that
+  // is still un-archived, so a concurrent archive/delete can't be clobbered.
+  const { data: archived, error: archiveError } = await supabase
+    .from("board_tasks")
+    .update({ archived: true, discussion_id: discussion.id })
+    .eq("id", taskId)
+    .eq("archived", false)
+    .select("id")
+    .maybeSingle();
+
+  if (archiveError) {
+    // Roll back the orphaned discussion before surfacing the failure.
+    await supabase.from("idea_discussions").delete().eq("id", discussion.id);
+    throw new Error(archiveError.message);
+  }
+
+  if (!archived) {
+    // Lost the race (task archived/deleted concurrently) — clean up the orphan.
+    await supabase.from("idea_discussions").delete().eq("id", discussion.id);
+    throw new Error("This task was already archived or removed");
+  }
+
+  // Surface the new discussion in the discussions list; the board removal is
+  // handled optimistically + via Realtime, so no board revalidate is needed.
+  revalidatePath(`/ideas/${ideaId}/discussions`);
+  revalidatePath(`/ideas/${ideaId}`);
+
+  return discussion.id;
 }

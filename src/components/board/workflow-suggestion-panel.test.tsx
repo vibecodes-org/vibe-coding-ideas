@@ -157,8 +157,12 @@ describe("WorkflowSuggestionPanel", () => {
     const useBtn = await screen.findByRole("button", {
       name: /Use .*Feature Development/i,
     });
-    // Keep is present but demoted (not the recommended action).
-    expect(screen.getByRole("button", { name: /Keep anyway/i })).toBeInTheDocument();
+    // Keep is present but demoted (not the recommended action). With the
+    // labelled template's name loaded it reads `Keep “<labelled name>”` rather
+    // than the bare "Keep anyway" fallback used when the name is unavailable.
+    expect(
+      screen.getByRole("button", { name: /Keep .*Idea Validation/i }),
+    ).toBeInTheDocument();
 
     fireEvent.click(useBtn);
     expect(replaceWorkflowSuggestion).toHaveBeenCalledWith("sug-1", "tmpl-ai");

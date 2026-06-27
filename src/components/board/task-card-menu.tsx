@@ -1,12 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { useRouter } from "next/navigation";
 import {
   MoreHorizontal,
   ArrowUpToLine,
   ArrowDownToLine,
   Archive,
   Trash2,
+  MessagesSquare,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import {
@@ -32,6 +35,7 @@ import { LaunchClaudeCodeButton } from "./launch-claude-code-button";
 import { computeWithinColumnMove } from "./move-position";
 import type { MoveEnd } from "./move-position";
 import { deleteBoardTask, updateBoardTask, moveBoardTask } from "@/actions/board";
+import { convertTaskToDiscussion } from "@/actions/discussions";
 import { logTaskActivity } from "@/lib/activity";
 import type { BoardTaskWithAssignee } from "@/types";
 
@@ -62,7 +66,10 @@ export function TaskCardMenu({
 }: TaskCardMenuProps) {
   const ops = useBoardOps();
   const launch = useBoardLaunch();
+  const router = useRouter();
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
+  const [confirmConvertOpen, setConfirmConvertOpen] = useState(false);
+  const [converting, setConverting] = useState(false);
 
   const canTop = computeWithinColumnMove(columnTasks, task.id, "top") !== null;
   const canBottom = computeWithinColumnMove(columnTasks, task.id, "bottom") !== null;
@@ -128,6 +135,41 @@ export function TaskCardMenu({
       });
   }
 
+  async function handleConvert() {
+    // Same optimistic recipe as Archive — the card leaves the board immediately
+    // and a lagging Realtime snapshot can't re-show it. We await the action
+    // (unlike Archive) because we need the new discussion id for the toast link.
+    setConverting(true);
+    const rollback = ops.archiveTask(task.id, columnId);
+    ops.incrementPendingOps();
+    ops.trustRemoval(task.id);
+
+    try {
+      const discussionId = await convertTaskToDiscussion(task.id, ideaId);
+      logTaskActivity(task.id, ideaId, currentUserId, "converted_to_discussion");
+      setConfirmConvertOpen(false);
+      toast.success("Converted to a conversation", {
+        description:
+          "The task was archived and linked to the new conversation.",
+        action: {
+          label: "View conversation",
+          onClick: () =>
+            router.push(`/ideas/${ideaId}/discussions/${discussionId}`),
+        },
+      });
+    } catch {
+      rollback();
+      ops.trustRemoval(task.id, false); // rolled back — stop trusting the removal
+      setConfirmConvertOpen(false);
+      toast.error("Couldn't convert task", {
+        description: "The task is back on the board — try again.",
+      });
+    } finally {
+      ops.decrementPendingOps();
+      setConverting(false);
+    }
+  }
+
   return (
     <>
       <DropdownMenu>
@@ -183,6 +225,18 @@ export function TaskCardMenu({
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem
+                onSelect={() => setConfirmConvertOpen(true)}
+                className="py-2.5 sm:py-1.5"
+              >
+                <MessagesSquare className="mr-2 h-4 w-4" />
+                Convert to conversation
+              </DropdownMenuItem>
+            </>
+          )}
+          {!task.archived && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
                 onSelect={handleArchive}
                 className="py-2.5 sm:py-1.5"
               >
@@ -217,6 +271,48 @@ export function TaskCardMenu({
             <AlertDialogCancel>Cancel</AlertDialogCancel>
             <AlertDialogAction variant="destructive" onClick={handleDelete}>
               Delete task
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      <AlertDialog
+        open={confirmConvertOpen}
+        // Keep the dialog open (and the busy state visible) while converting.
+        onOpenChange={(open) => {
+          if (!converting) setConfirmConvertOpen(open);
+        }}
+      >
+        <AlertDialogContent onClick={(e) => e.stopPropagation()}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Convert to a conversation?</AlertDialogTitle>
+            <AlertDialogDescription>
+              &ldquo;{task.title}&rdquo; will be moved into a new conversation
+              where the team can discuss it. The task is archived, not deleted
+              &mdash; it and its comments stay intact and linked to the new
+              conversation.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {task.workflow_step_total > 0 && (
+            <div className="flex items-start gap-2 rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2.5 text-xs text-amber-300">
+              <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-400" />
+              <span>
+                This task has an attached workflow. Its steps and progress
+                won&rsquo;t carry over to the conversation.
+              </span>
+            </div>
+          )}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={converting}>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={converting}
+              // preventDefault so Radix doesn't auto-close before the await resolves.
+              onClick={(e) => {
+                e.preventDefault();
+                void handleConvert();
+              }}
+            >
+              {converting ? "Converting…" : "Convert"}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
