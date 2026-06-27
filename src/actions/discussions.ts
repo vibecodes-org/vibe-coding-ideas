@@ -8,8 +8,10 @@ import {
   validateDiscussionBody,
   validateDiscussionReply,
   validateTitle,
+  MAX_DISCUSSION_REPLY_LENGTH,
 } from "@/lib/validation";
 import { buildDiscussionFromTask } from "@/lib/discussion-helpers";
+import { logger } from "@/lib/logger";
 import type { DiscussionStatus } from "@/types";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -458,6 +460,148 @@ export async function convertDiscussionToTask(
 }
 
 /**
+ * Carry a converted task's comments and attachments across into the target
+ * discussion so the conversation becomes the complete record.
+ *
+ * BEST-EFFORT / NON-FATAL: the archived source task remains the full backup, so
+ * a partial migration is always recoverable. Aborting an otherwise-successful
+ * conversion (or orphaning the just-created discussion) over a single bad file
+ * copy would be strictly worse, so every failure here is logged via
+ * `logger.warn` and swallowed rather than thrown.
+ *
+ * - Comments → replies: flat board comments become top-level replies
+ *   (`parent_reply_id: null`), bulk-inserted in one call with timestamps
+ *   preserved so the conversation timeline matches the original. Content is
+ *   clamped to the `idea_discussion_replies` 1–5000 char constraint (over-long
+ *   truncated; blank skipped).
+ * - Attachments → discussion_attachments: task and discussion attachments live
+ *   in DIFFERENT storage buckets, so each object is physically copied
+ *   ("task-attachments" → "discussion-attachments", cross-bucket copy supported
+ *   by supabase-js >= 2.95) before its row is recorded. A copy that fails is
+ *   logged and skipped — we never insert a row pointing at a missing object.
+ */
+async function migrateTaskContentToDiscussion(
+  supabase: SupabaseClient,
+  taskId: string,
+  ideaId: string,
+  discussionId: string
+): Promise<void> {
+  // --- Comments → replies (single bulk insert, timeline preserved) ---
+  try {
+    const { data: comments, error } = await supabase
+      .from("board_task_comments")
+      .select("author_id, content, created_at, updated_at")
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+
+    const replies = (comments ?? [])
+      .map((c) => {
+        const content = (c.content ?? "").trim();
+        if (!content) return null; // skip blanks — replies require 1–5000 chars
+        return {
+          discussion_id: discussionId,
+          idea_id: ideaId,
+          author_id: c.author_id,
+          content: content.slice(0, MAX_DISCUSSION_REPLY_LENGTH),
+          parent_reply_id: null,
+          created_at: c.created_at,
+          updated_at: c.updated_at,
+        };
+      })
+      .filter((r): r is NonNullable<typeof r> => r !== null);
+
+    if (replies.length > 0) {
+      const { error: insertError } = await supabase
+        .from("idea_discussion_replies")
+        .insert(replies);
+      if (insertError) throw new Error(insertError.message);
+    }
+  } catch (err) {
+    logger.warn("convertTaskToDiscussion: failed to migrate task comments", {
+      taskId,
+      ideaId,
+      discussionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
+  // --- Attachments → discussion_attachments (physical cross-bucket copy) ---
+  try {
+    const { data: attachments, error } = await supabase
+      .from("board_task_attachments")
+      .select(
+        "file_name, file_size, content_type, storage_path, uploaded_by, created_at"
+      )
+      .eq("task_id", taskId)
+      .order("created_at", { ascending: true });
+
+    if (error) throw new Error(error.message);
+
+    // Bounded by the task's attachment count; the storage copy is per-object so
+    // a loop is unavoidable (and fine at this scale).
+    for (const att of attachments ?? []) {
+      const dot = att.file_name.lastIndexOf(".");
+      const ext = dot >= 0 ? att.file_name.slice(dot) : "";
+      const newPath = `${ideaId}/${discussionId}/${crypto.randomUUID()}${ext}`;
+
+      const { error: copyError } = await supabase.storage
+        .from("task-attachments")
+        .copy(att.storage_path, newPath, {
+          destinationBucket: "discussion-attachments",
+        });
+
+      if (copyError) {
+        // Skip — never record a row pointing at a non-existent object.
+        logger.warn("convertTaskToDiscussion: failed to copy task attachment", {
+          taskId,
+          ideaId,
+          discussionId,
+          storagePath: att.storage_path,
+          error: copyError.message,
+        });
+        continue;
+      }
+
+      const { error: insertError } = await supabase
+        .from("discussion_attachments")
+        .insert({
+          discussion_id: discussionId,
+          idea_id: ideaId,
+          reply_id: null,
+          uploaded_by: att.uploaded_by,
+          file_name: att.file_name,
+          file_size: att.file_size,
+          content_type: att.content_type,
+          storage_path: newPath,
+          created_at: att.created_at,
+        });
+
+      if (insertError) {
+        logger.warn(
+          "convertTaskToDiscussion: failed to record copied attachment",
+          {
+            taskId,
+            ideaId,
+            discussionId,
+            storagePath: newPath,
+            error: insertError.message,
+          }
+        );
+      }
+    }
+  } catch (err) {
+    logger.warn("convertTaskToDiscussion: failed to migrate task attachments", {
+      taskId,
+      ideaId,
+      discussionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
+/**
  * Convert a board task into an idea discussion and archive the source task.
  *
  * Inverse of `convertDiscussionToTask`. If the task itself originated FROM a
@@ -527,6 +671,10 @@ export async function convertTaskToDiscussion(taskId: string, ideaId: string) {
       if (archiveError) throw new Error(archiveError.message);
       if (!archived) throw new Error("This task was already archived or removed");
 
+      // Carry the task's comments + attachments into the reopened discussion so
+      // it stays the complete record. Non-fatal — never aborts the conversion.
+      await migrateTaskContentToDiscussion(supabase, taskId, ideaId, existing.id);
+
       revalidatePath(`/ideas/${ideaId}/discussions`);
       revalidatePath(`/ideas/${ideaId}`);
 
@@ -564,6 +712,10 @@ export async function convertTaskToDiscussion(taskId: string, ideaId: string) {
     await supabase.from("idea_discussions").delete().eq("id", discussion.id);
     throw new Error("This task was already archived or removed");
   }
+
+  // Carry the task's comments + attachments into the new discussion so it is the
+  // complete record. Non-fatal — runs only after the conversion has committed.
+  await migrateTaskContentToDiscussion(supabase, taskId, ideaId, discussion.id);
 
   // Surface the new discussion in the discussions list; the board removal is
   // handled optimistically + via Realtime, so no board revalidate is needed.
