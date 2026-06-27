@@ -45,30 +45,19 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
 
   const debouncedRefresh = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    // If the local user just mutated this board, wait out the remainder of the
-    // self-mutation window before refreshing — and re-arm on fire if they're
-    // still active, so a run of drags keeps deferring. This stops our own
-    // write's echo from flashing the loading.tsx skeleton; external changes
-    // simply land once the user is idle.
-    const arm = () => {
-      const sinceLocal = msSinceLocalBoardMutation(ideaId);
-      const delay =
-        sinceLocal < SELF_MUTATION_WINDOW_MS
-          ? SELF_MUTATION_WINDOW_MS - sinceLocal
-          : DEBOUNCE_MS;
-      timeoutRef.current = setTimeout(() => {
-        if (msSinceLocalBoardMutation(ideaId) < SELF_MUTATION_WINDOW_MS) {
-          arm();
-          return;
-        }
-        timeoutRef.current = null;
-        // Refresh inside a transition so React keeps the current (optimistically
-        // updated) board on screen while the dynamic RSC payload re-fetches,
-        // instead of dropping the segment to its loading.tsx skeleton fallback.
-        startTransition(() => router.refresh());
-      }, delay);
-    };
-    arm();
+    timeoutRef.current = setTimeout(() => {
+      timeoutRef.current = null;
+      // Drop the refresh if it lands within the window after a local mutation:
+      // it's the Realtime echo of the user's OWN change, which the board already
+      // shows optimistically (held by trusted-state). Running router.refresh()
+      // here re-enters the force-dynamic segment and flashes its loading.tsx
+      // skeleton — the visible blank ~1s after a drag. External changes arrive
+      // as their own (later) events and refresh normally.
+      if (msSinceLocalBoardMutation(ideaId) < SELF_MUTATION_WINDOW_MS) return;
+      // Still wrap in a transition so an external-change refresh keeps the
+      // current board on screen rather than dropping to the skeleton.
+      startTransition(() => router.refresh());
+    }, DEBOUNCE_MS);
   }, [router, ideaId]);
 
   // Workflow step changes need a follow-up refresh to catch denormalized
@@ -78,10 +67,11 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
     debouncedRefresh();
     if (followUpRef.current) clearTimeout(followUpRef.current);
     followUpRef.current = setTimeout(() => {
-      startTransition(() => router.refresh());
       followUpRef.current = null;
+      if (msSinceLocalBoardMutation(ideaId) < SELF_MUTATION_WINDOW_MS) return;
+      startTransition(() => router.refresh());
     }, FOLLOW_UP_DELAY_MS);
-  }, [debouncedRefresh, router]);
+  }, [debouncedRefresh, router, ideaId]);
 
   // Client-side filter for board_task_labels — the table has no idea_id column,
   // so we check if the task_id belongs to this board before refreshing.
