@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useMemo } from "react";
+import { useEffect, useRef, useCallback, useMemo, startTransition } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
@@ -38,7 +38,10 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
   const debouncedRefresh = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
-      router.refresh();
+      // Refresh inside a transition so React keeps the current (optimistically
+      // updated) board on screen while the dynamic RSC payload re-fetches,
+      // instead of dropping the segment to its loading.tsx skeleton fallback.
+      startTransition(() => router.refresh());
       timeoutRef.current = null;
     }, DEBOUNCE_MS);
   }, [router]);
@@ -50,7 +53,7 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
     debouncedRefresh();
     if (followUpRef.current) clearTimeout(followUpRef.current);
     followUpRef.current = setTimeout(() => {
-      router.refresh();
+      startTransition(() => router.refresh());
       followUpRef.current = null;
     }, FOLLOW_UP_DELAY_MS);
   }, [debouncedRefresh, router]);
@@ -174,7 +177,7 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
           if (status === "SUBSCRIBED") {
             logger.debug("Board realtime reconnected", { ideaId });
             // Refresh to catch any events missed during disconnect
-            router.refresh();
+            startTransition(() => router.refresh());
           } else if (status === "TIMED_OUT" || status === "CHANNEL_ERROR") {
             logger.warn("Board realtime reconnect failed, retrying", { ideaId, status });
             reconnect();
