@@ -26,8 +26,8 @@ const eslintConfig = defineConfig([
           caughtErrorsIgnorePattern: "^_",
         },
       ],
-      "react-hooks/set-state-in-effect": "warn",
-      "react-hooks/purity": "warn",
+      "react-hooks/set-state-in-effect": "error",
+      "react-hooks/purity": "error",
     },
   },
   // Playwright's `use()` fixture API trips the rules-of-hooks heuristic.
