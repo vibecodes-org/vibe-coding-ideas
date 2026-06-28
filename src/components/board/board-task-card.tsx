@@ -27,6 +27,7 @@ import { useBotRoles } from "@/components/bot-roles-context";
 import { getRoleColor } from "@/lib/agent-colors";
 import { getInitials } from "@/lib/utils";
 import { workflowDisplayName, workflowProgressPct } from "@/lib/workflow-helpers";
+import { useNow } from "@/hooks/use-now";
 import { TaskLabelBadges } from "./task-label-badges";
 import { LabelPicker } from "./label-picker";
 import { DueDateBadge } from "./due-date-badge";
@@ -122,7 +123,7 @@ function HighlightedText({ text, query }: { text: string; query: string }) {
 
 const STALE_THRESHOLD_MS = 2 * 60 * 60 * 1000; // 2 hours
 
-function getWorkflowStatus(task: BoardTaskWithAssignee) {
+function getWorkflowStatus(task: BoardTaskWithAssignee, now: number) {
   const { workflow_step_total, workflow_step_completed, workflow_step_failed, workflow_step_awaiting_approval, workflow_step_in_progress, workflow_step_started_at, workflow_active_step_title, workflow_active_agent_name } = task;
   if (workflow_step_total === 0) return null;
 
@@ -134,7 +135,7 @@ function getWorkflowStatus(task: BoardTaskWithAssignee) {
     return { type: "approval" as const, title: workflow_active_step_title };
   }
   if (workflow_step_in_progress > 0 && workflow_step_started_at) {
-    const elapsed = Date.now() - new Date(workflow_step_started_at).getTime();
+    const elapsed = now - new Date(workflow_step_started_at).getTime();
     if (elapsed >= STALE_THRESHOLD_MS) {
       const hours = Math.floor(elapsed / (60 * 60 * 1000));
       const timeLabel = hours >= 24 ? `${Math.floor(hours / 24)}d` : `${hours}h`;
@@ -158,7 +159,10 @@ function WiringWorkflowBadge() {
 }
 
 function WorkflowStatusBadge({ task, isWiring }: { task: BoardTaskWithAssignee; isWiring?: boolean }) {
-  const status = getWorkflowStatus(task);
+  // Tick live only while a step is in progress — the only branch whose stale
+  // computation depends on the clock. Idle/complete/failed badges stay static.
+  const now = useNow(60000, task.workflow_step_in_progress > 0 && Boolean(task.workflow_step_started_at));
+  const status = getWorkflowStatus(task, now);
   if (!status) {
     // Show wiring indicator if background auto-rules are running and task has labels
     if (isWiring && task.labels.length > 0) return <WiringWorkflowBadge />;
@@ -290,6 +294,13 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   suggestion,
 }: BoardTaskCardProps) {
   const botRoles = useBotRoles();
+  // Live clock for the card's working/stale borders. Subscribe only when there
+  // is an active workflow step or an actively-working bot — idle cards never
+  // re-render. Shared singleton ticker, so all live cards share one interval.
+  const liveTimerEnabled =
+    Boolean(task.workflow_step_started_at) ||
+    Boolean(task.working_started_at && task.assignee?.is_bot);
+  const now = useNow(60000, liveTimerEnabled);
   // Use context for auto-open — bypasses memo chain and reacts to URL navigation
   const { autoOpenTaskId, onAutoOpenConsumed } = useContext(TaskAutoOpenContext);
   const shouldAutoOpen = autoOpen || task.id === autoOpenTaskId;
@@ -307,6 +318,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   // Sync auto-open from both prop and context (e.g. notification click while on the same board)
   useEffect(() => {
     if (shouldAutoOpen) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- open dialog when prop/context-driven auto-open fires (e.g. notification click on the same board)
       setDetailOpen(true);
       wasAutoOpenRef.current = true;
     }
@@ -370,6 +382,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
     prevCoverPathRef.current = coverImagePath;
 
     if (!coverImagePath) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear stale cover when the path prop is removed after mount
       setCoverUrl(null);
       return;
     }
@@ -414,7 +427,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
   const assigneeInitials = useMemo(
     () =>
       task.assignee ? getInitials(task.assignee.full_name) : null,
-    [task.assignee?.full_name],
+    [task.assignee],
   );
 
   // Derive current label display data from boardLabels prop (always up-to-date)
@@ -440,15 +453,15 @@ export const BoardTaskCard = memo(function BoardTaskCard({
             ? "border-primary ring-2 ring-primary/50"
             : task.workflow_step_awaiting_approval > 0
               ? "border-amber-500/40 ring-1 ring-amber-500/20 shadow-[0_0_12px_rgba(251,191,36,0.2)]"
-              : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (Date.now() - new Date(task.workflow_step_started_at).getTime()) < STALE_THRESHOLD_MS
+              : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (now - new Date(task.workflow_step_started_at).getTime()) < STALE_THRESHOLD_MS
                 ? "border-blue-500/40 ring-1 ring-blue-500/20 animate-workflow-in-progress"
                 : task.workflow_step_failed > 0
                   ? "border-l-2 border-l-red-500 border-border"
-                  : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (Date.now() - new Date(task.workflow_step_started_at).getTime()) >= STALE_THRESHOLD_MS
+                  : task.workflow_step_in_progress > 0 && task.workflow_step_started_at && (now - new Date(task.workflow_step_started_at).getTime()) >= STALE_THRESHOLD_MS
                     ? "border-l-2 border-l-amber-500 border-border"
-                    : task.working_started_at && task.assignee?.is_bot && !task.workflow_step_total && (Date.now() - new Date(task.working_started_at).getTime()) < STALE_THRESHOLD_MS
+                    : task.working_started_at && task.assignee?.is_bot && !task.workflow_step_total && (now - new Date(task.working_started_at).getTime()) < STALE_THRESHOLD_MS
                       ? "border-blue-500/40 ring-1 ring-blue-500/20 animate-workflow-in-progress"
-                      : task.working_started_at && task.assignee?.is_bot && !task.workflow_step_total && (Date.now() - new Date(task.working_started_at).getTime()) >= STALE_THRESHOLD_MS
+                      : task.working_started_at && task.assignee?.is_bot && !task.workflow_step_total && (now - new Date(task.working_started_at).getTime()) >= STALE_THRESHOLD_MS
                         ? "border-l-2 border-l-amber-500 border-border"
                         : "border-border"
         } ${isDragging ? "opacity-50" : ""} ${isArchived ? "opacity-50" : ""}`}
@@ -539,7 +552,7 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                   <WorkflowStatusBadge task={task} isWiring={isWiring} />
                 )}
                 {!task.workflow_step_total && task.working_started_at && task.assignee?.is_bot && (() => {
-                  const elapsed = Date.now() - new Date(task.working_started_at!).getTime();
+                  const elapsed = now - new Date(task.working_started_at!).getTime();
                   const isStale = elapsed >= STALE_THRESHOLD_MS;
                   const hours = Math.floor(elapsed / (60 * 60 * 1000));
                   const timeLabel = hours >= 24 ? `${Math.floor(hours / 24)}d` : `${hours}h`;

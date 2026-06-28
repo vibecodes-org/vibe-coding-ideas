@@ -31,6 +31,7 @@ export function InstallPrompt() {
     localStorage.setItem(VISIT_COUNT_KEY, String(visitCount));
     if (visitCount < MIN_VISITS) return;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reveal the prompt after the visit-count threshold (client-only localStorage gating)
     setDismissed(false);
 
     // Chrome/Edge/Android: intercept native install prompt

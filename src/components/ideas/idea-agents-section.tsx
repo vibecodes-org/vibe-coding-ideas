@@ -43,6 +43,7 @@ export function IdeaAgentsSection({
 
   // Reset selection when popover closes
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset selection when the add popover closes
     if (!addOpen) setSelectedBotIds(new Set());
   }, [addOpen]);
 

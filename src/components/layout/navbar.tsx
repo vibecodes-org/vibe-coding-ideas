@@ -40,10 +40,12 @@ export function Navbar() {
 
   // Close mobile menu on route change (e.g. browser back/forward)
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- close the mobile menu on route change (e.g. browser back/forward)
     setMobileMenuOpen(false);
   }, [pathname]);
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset admin flag when the authenticated user changes
     if (!user) { setIsAdmin(false); return; }
     const supabase = createClient();
     supabase

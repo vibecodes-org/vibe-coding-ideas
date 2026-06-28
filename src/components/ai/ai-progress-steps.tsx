@@ -31,6 +31,7 @@ export function AiProgressSteps({
 
   useEffect(() => {
     if (active) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- reset elapsed + start ticking when the run becomes active
       setElapsed(0);
       timerRef.current = setInterval(() => {
         setElapsed((s) => s + 1);

@@ -54,6 +54,7 @@ export function McpConnectionBanner({
   useEffect(() => {
     try {
       if (sessionStorage.getItem(SESSION_DISMISS_KEY) === "true") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate dismissed flag from sessionStorage on mount (client-only API)
         setDismissed(true);
       }
     } catch {

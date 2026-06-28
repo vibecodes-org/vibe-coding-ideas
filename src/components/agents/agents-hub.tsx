@@ -42,6 +42,7 @@ export function AgentsHub({
 
   useEffect(() => {
     try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate dismissed flag from localStorage on mount (client-only API)
       setBannerDismissed(
         localStorage.getItem("agents-mcp-banner-dismissed") === "true"
       );

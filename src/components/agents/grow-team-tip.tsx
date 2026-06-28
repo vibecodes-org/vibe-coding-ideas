@@ -14,6 +14,7 @@ export function GrowTeamTip({ onBrowseCommunity }: GrowTeamTipProps) {
 
   useEffect(() => {
     try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate dismissed flag from localStorage on mount (client-only API)
       setDismissed(localStorage.getItem(STORAGE_KEY) === "true");
     } catch {
       // localStorage unavailable

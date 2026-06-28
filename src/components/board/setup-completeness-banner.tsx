@@ -123,11 +123,13 @@ export function SetupCompletenessBanner({
   // Check sessionStorage on mount + reappear if gap count increased
   useEffect(() => {
     const storedCount = getStoredDismissCount(ideaId);
+    /* eslint-disable react-hooks/set-state-in-effect -- sync dismissed state from sessionStorage on mount and when the gap count changes */
     if (storedCount > 0 && health.missing.length <= storedCount) {
       setDismissed(true);
     } else {
       setDismissed(false);
     }
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [ideaId, health.missing.length]);
 
   const handleDismiss = useCallback(() => {

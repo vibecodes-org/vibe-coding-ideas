@@ -38,15 +38,18 @@ export function AddCollaboratorPopover({
   // Reset state when popover closes
   useEffect(() => {
     if (!open) {
+      /* eslint-disable react-hooks/set-state-in-effect -- reset search state when the popover closes */
       setQuery("");
       setResults([]);
       setAddedIds([]);
+      /* eslint-enable react-hooks/set-state-in-effect */
     }
   }, [open]);
 
   // Debounced search
   useEffect(() => {
     if (!query.trim()) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- clear results when the query is emptied
       setResults([]);
       return;
     }

@@ -126,6 +126,7 @@ export function NudgeBanner({
 
   useEffect(() => {
     try {
+      /* eslint-disable react-hooks/set-state-in-effect -- hydrate dismissed flag from local/sessionStorage on mount (client-only API) */
       if (dismissKey && localStorage.getItem(dismissKey) === "true") {
         setDismissed(true);
       }
@@ -135,6 +136,7 @@ export function NudgeBanner({
       ) {
         setDismissed(true);
       }
+      /* eslint-enable react-hooks/set-state-in-effect */
     } catch {
       // Storage unavailable
     }

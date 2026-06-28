@@ -230,6 +230,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       const adjudicating =
         !row.reason &&
         !!row.adjudication_started_at &&
+        // eslint-disable-next-line react-hooks/purity -- async Server Component: one-time render-time timestamp, not client render state
         Date.now() - new Date(row.adjudication_started_at).getTime() <
           WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS;
       suggestionsByTask[row.task_id] = { source: row.source, adjudicating };

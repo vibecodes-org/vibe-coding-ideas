@@ -310,10 +310,12 @@ export function BotActivityDialog({
 
   useEffect(() => {
     if (open && bot) {
+      /* eslint-disable react-hooks/set-state-in-effect -- reset panel state and fetch when the dialog opens for a bot */
       setLoading(true);
       setActivities([]);
       setComments([]);
       setAssignedTasks([]);
+      /* eslint-enable react-hooks/set-state-in-effect */
       fetchData();
     }
   }, [open, bot, fetchData]);

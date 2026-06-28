@@ -66,6 +66,7 @@ export function ImportTemplateLibraryDialog({
 
   useEffect(() => {
     if (!open) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch the template library when the dialog opens
     setLoading(true);
     listLibraryTemplates(true)
       .then((data) => setTemplates(data))

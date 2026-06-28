@@ -70,6 +70,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     feedbackQuery = feedbackQuery.eq("status", status as "new" | "reviewed" | "archived");
   }
 
+  // eslint-disable-next-line react-hooks/purity -- async Server Component: one-time render-time timestamp, not client render state
   const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
 
   // All admin dashboard queries are independent of one another (only the

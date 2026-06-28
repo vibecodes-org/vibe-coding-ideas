@@ -29,6 +29,7 @@ export function CollapsibleSection({
   useEffect(() => {
     try {
       const stored = localStorage.getItem(storageKey);
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate open/closed state from localStorage on mount (client-only API)
       if (stored === "false") setIsOpen(false);
     } catch {
       // localStorage unavailable — stay expanded

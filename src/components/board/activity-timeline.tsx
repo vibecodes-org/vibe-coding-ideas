@@ -93,6 +93,7 @@ export function ActivityTimeline({ taskId, ideaId }: ActivityTimelineProps) {
   );
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- fetch activities on mount / when the fetcher identity changes
     fetchActivities();
   }, [fetchActivities]);
 

@@ -25,6 +25,7 @@ export function IdeaGettingStarted({
   useEffect(() => {
     try {
       if (sessionStorage.getItem(`${SESSION_KEY_PREFIX}${ideaId}`) === "true") {
+        // eslint-disable-next-line react-hooks/set-state-in-effect -- hydrate dismissed flag from sessionStorage on mount (client-only API)
         setDismissed(true);
       }
     } catch {

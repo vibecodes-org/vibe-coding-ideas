@@ -366,6 +366,7 @@ export default async function DashboardPage() {
   // Assemble DashboardBot[] — sorted by latest activity (most recent first),
   // bots with no activity fall to the bottom sorted by creation date
   const MCP_ACTIVE_THRESHOLD_MS = 10 * 60 * 1000; // 10 minutes
+  // eslint-disable-next-line react-hooks/purity -- async Server Component: one-time render-time timestamp, not client render state
   const now = Date.now();
   const dashboardBots: DashboardBot[] = botProfiles
     .map((bot) => {

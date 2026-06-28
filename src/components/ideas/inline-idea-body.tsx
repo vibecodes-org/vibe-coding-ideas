@@ -31,6 +31,7 @@ export function InlineIdeaBody({
   // Sync local state when the server prop changes (e.g. after AI enhance + router.refresh)
   useEffect(() => {
     if (!editingDescription) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sync local copy when the server description prop changes (e.g. after AI enhance + router.refresh)
       setDescription(initialDescription);
       previousDescRef.current = initialDescription;
     }
