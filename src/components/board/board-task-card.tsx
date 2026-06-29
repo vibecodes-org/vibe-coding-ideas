@@ -61,13 +61,19 @@ interface BoardTaskCardProps {
 }
 
 /**
- * Distinct, non-alarming indicator for a task carrying an open workflow
- * suggestion. Visually different from the active-run progress chip (amber
- * Lightbulb + "Workflow suggested", no progress fraction). When the async AI
- * verdict is still in flight, shows a calm "Checking workflow fit…" state.
+ * Distinct indicator for a task carrying an open workflow suggestion. Visually
+ * separate from the active-run progress chip so the two can sit side by side.
+ *
+ * - `adjudicating` → calm violet "Checking workflow fit…" while the async AI
+ *   verdict is still in flight.
+ * - `hasRun` (a workflow is already attached) → an amber AlertTriangle
+ *   "Workflow may be wrong" — the suggestion is a mismatch warning against the
+ *   attached run, so it must read as a flag, not a gentle hint.
+ * - otherwise → amber Lightbulb "Workflow suggested" for a task with no run.
+ *
  * Icon + text — never colour alone (WCAG).
  */
-function SuggestionBadge({ suggestion }: { suggestion: BoardSuggestionIndicator }) {
+function SuggestionBadge({ suggestion, hasRun }: { suggestion: BoardSuggestionIndicator; hasRun: boolean }) {
   if (suggestion.adjudicating) {
     return (
       <Tooltip>
@@ -81,6 +87,19 @@ function SuggestionBadge({ suggestion }: { suggestion: BoardSuggestionIndicator 
           </span>
         </TooltipTrigger>
         <TooltipContent>Checking whether the matched workflow fits this task</TooltipContent>
+      </Tooltip>
+    );
+  }
+  if (hasRun) {
+    return (
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex max-w-full items-center gap-1 rounded-full border border-amber-500/40 bg-amber-500/15 px-2 py-0.5 text-[10px] font-semibold text-amber-400">
+            <AlertTriangle className="h-2.5 w-2.5 shrink-0" />
+            <span className="truncate">Workflow may be wrong</span>
+          </span>
+        </TooltipTrigger>
+        <TooltipContent>The attached workflow looks mismatched — open the task to Keep, Replace, or Remove it</TooltipContent>
       </Tooltip>
     );
   }
@@ -544,9 +563,10 @@ export const BoardTaskCard = memo(function BoardTaskCard({
                   </span>
                 )}
                 {task.due_date && <DueDateBadge dueDate={task.due_date} />}
-                {/* Open suggestion — distinct from a run; only when no run is attached */}
-                {suggestion && task.workflow_step_total === 0 && (
-                  <SuggestionBadge suggestion={suggestion} />
+                {/* Open suggestion — shows alongside a run when one is attached
+                    (a mismatch flag), or on its own when there's no run yet. */}
+                {suggestion && (
+                  <SuggestionBadge suggestion={suggestion} hasRun={task.workflow_step_total > 0} />
                 )}
                 {task.workflow_step_total > 0 && (
                   <WorkflowStatusBadge task={task} isWiring={isWiring} />
