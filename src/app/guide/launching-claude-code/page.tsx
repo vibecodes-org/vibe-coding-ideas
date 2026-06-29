@@ -136,7 +136,7 @@ export default function LaunchingClaudeCodePage() {
             <li>
               <strong className="text-foreground">Connect the{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                vibecodes-remote
+                vibecodes
               </code>{" "}
               MCP server</strong>{" "}
               via Claude Code&apos;s built-in{" "}

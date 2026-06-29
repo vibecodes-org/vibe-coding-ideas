@@ -172,7 +172,7 @@ const handler = createMcpHandler(
     );
   },
   {
-    serverInfo: { name: "vibecodes-remote", version: "1.0.0" },
+    serverInfo: { name: "vibecodes", version: "1.0.0" },
   },
   {
     streamableHttpEndpoint: "/api/mcp",

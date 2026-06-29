@@ -4,7 +4,7 @@
 
 ## Prerequisites
 
-- `vibecodes-remote` MCP server connected and authenticated
+- `vibecodes` MCP server connected and authenticated
 - VibeCodes account logged in via OAuth flow
 - A "Claude to Code" label created on the VibeCodes board
 - A "Ready to Test" column on the VibeCodes board
@@ -20,9 +20,9 @@
 - Should return JSON pointing to `/api/mcp` resource
 
 ### 1.3 MCP connection via Claude Code
-- Run `claude mcp add --transport http vibecodes-remote https://vibe-coding-ideas.vercel.app/api/mcp`
+- Run `claude mcp add --transport http vibecodes https://vibe-coding-ideas.vercel.app/api/mcp`
 - Restart Claude Code
-- `/mcp` should show `vibecodes-remote` as connected after browser OAuth login
+- `/mcp` should show `vibecodes` as connected after browser OAuth login
 
 ---
 

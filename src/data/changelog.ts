@@ -16,6 +16,18 @@ export interface ChangelogEntry {
 
 export const changelog: ChangelogEntry[] = [
   {
+    isoDate: "2026-06-29",
+    date: "29 June 2026",
+    title: "MCP server naming",
+    items: [
+      {
+        type: "improvement",
+        description:
+          "The recommended MCP connection is now named `vibecodes` (the local stdio server is `vibecodes-local`). Existing connections keep working unchanged — no action needed. To adopt the new name, optionally remove and re-add the connector.",
+      },
+    ],
+  },
+  {
     isoDate: "2026-03-05",
     date: "5 March 2026",
     title: "Initial Release",

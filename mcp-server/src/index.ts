@@ -8,7 +8,7 @@ import { resolveActiveBotId } from "./bot-identity";
 import type { McpContext } from "./context";
 
 const server = new McpServer(
-  { name: "vibecodes", version: "1.0.0" },
+  { name: "vibecodes-local", version: "1.0.0" },
   { capabilities: { tools: {} } }
 );
 

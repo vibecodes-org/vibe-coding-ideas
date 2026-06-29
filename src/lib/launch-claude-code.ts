@@ -4,7 +4,7 @@
  *
  * All functions here are framework-agnostic and unit-tested. The deep link opens
  * the user's local, subscription-authed Claude Code via the `claude-cli://` scheme;
- * the prompt it pre-fills bootstraps the `vibecodes-remote` MCP connector and then
+ * the prompt it pre-fills bootstraps the `vibecodes` MCP connector and then
  * picks up board work. The human reviews + presses Enter (human-in-the-loop).
  */
 
@@ -366,9 +366,9 @@ function mcpSetupHead(appUrl: string): string {
   return `Make sure you can reach the VibeCodes board over MCP. If the board tools (get_my_tasks, claim_next_step, get_task, move_task) are ALREADY available, skip this section.
 
 If they are NOT available, add the hosted connector, then hand sign-in back to me. IMPORTANT: do NOT build an OAuth URL or run the authorization yourself — Claude Code's built-in \`/mcp\` flow manages the browser sign-in (and its localhost callback) reliably; a hand-driven flow fails with "localhost refused to connect".
-1. Add it at local scope (local scope intentionally overrides any existing project "vibecodes-remote", e.g. a local stdio server, so there is no conflict):
-     claude mcp add -s local --transport http vibecodes-remote ${mcpEndpoint(appUrl)}
-2. Then STOP and tell me to finish sign-in with the built-in flow: run \`/mcp\`, select "vibecodes-remote", choose Authenticate, and approve in the browser. (If the browser ever shows "localhost refused to connect", copy the full URL from the address bar and paste it back into Claude Code — that's the supported fallback.)
+1. Add it at local scope (local scope intentionally overrides any existing project "vibecodes", e.g. a local stdio server, so there is no conflict):
+     claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}
+2. Then STOP and tell me to finish sign-in with the built-in flow: run \`/mcp\`, select "vibecodes", choose Authenticate, and approve in the browser. (If the browser ever shows "localhost refused to connect", copy the full URL from the address bar and paste it back into Claude Code — that's the supported fallback.)
 3. Once I confirm it's connected, re-check the board tools and continue.
 
 Do NOT debug or reconfigure other MCP servers, and do NOT improvise the OAuth flow. If the board tools still aren't available after I authenticate, stop and tell me rather than guessing.`;
@@ -407,7 +407,7 @@ Then confirm and record exactly where you are (this lets future launches open st
   • Run \`pwd\` and capture the absolute path it prints — this is the authoritative location on this machine, not a guess.
   • ⚠️ If \`pwd\` still shows your home directory, STOP — you have not changed into the project folder. cd into it before doing anything else.
   • Get the machine name: run \`hostname\` (or \`uname -n\`).
-  • As SOON as the vibecodes-remote board tools are available (you connect them in the MCP step below), call record_project_path with idea_id "${ideaId}", that hostname, and the \`pwd\` output — do this BEFORE picking up any task. Repeat it on EVERY launch (self-heal) so a moved or renamed folder updates the stored path.
+  • As SOON as the vibecodes board tools are available (you connect them in the MCP step below), call record_project_path with idea_id "${ideaId}", that hostname, and the \`pwd\` output — do this BEFORE picking up any task. Repeat it on EVERY launch (self-heal) so a moved or renamed folder updates the stored path.
 ${setupStep}
 Only AFTER you are confirmed inside the project folder (pwd is NOT home) should you write any files — CLAUDE.md, .vibecodes/, scaffolding — so everything lands in the project, never in your home directory.`;
 }
@@ -560,7 +560,7 @@ export function buildCompactBootstrapPrompt({
   }
 
   steps.push(
-    `Connect the board tools: run \`claude mcp add -s local --transport http vibecodes-remote ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes-remote → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`
+    `Connect the board tools: run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`
   );
 
   steps.push(

@@ -567,7 +567,7 @@ export default function McpIntegrationPage() {
                 Make sure your default browser is accessible. If the issue
                 persists, remove and re-add the server:{" "}
                 <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                  claude mcp remove vibecodes-remote
+                  claude mcp remove vibecodes
                 </code>{" "}
                 then run the add command again.
               </p>
@@ -658,7 +658,7 @@ export default function McpIntegrationPage() {
           <CodeBlock
             code={`{
   "mcpServers": {
-    "vibecodes": {
+    "vibecodes-local": {
       "command": "npx",
       "args": ["tsx", "mcp-server/src/index.ts"],
       "env": {

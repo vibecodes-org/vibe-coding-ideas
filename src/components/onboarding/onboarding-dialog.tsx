@@ -1063,7 +1063,7 @@ export function OnboardingDialog({
                       <div className="break-all">
                         <span className="text-emerald-400">$</span>{" "}
                         <span className="text-foreground">
-                          claude mcp add -s user --transport http vibecodes-remote{" "}
+                          claude mcp add -s user --transport http vibecodes{" "}
                           <span className="text-amber-400">
                             https://vibecodes.co.uk/api/mcp
                           </span>

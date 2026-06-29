@@ -319,7 +319,7 @@ export const SUGGESTED_SKILLS = [
   "requirements",
 ];
 
-export const MCP_COMMAND = "claude mcp add -s user --transport http vibecodes-remote https://vibecodes.co.uk/api/mcp";
+export const MCP_COMMAND = "claude mcp add -s user --transport http vibecodes https://vibecodes.co.uk/api/mcp";
 
 export const CLAUDE_CODE_INSTALL_COMMAND = "npm install -g @anthropic-ai/claude-code";
 

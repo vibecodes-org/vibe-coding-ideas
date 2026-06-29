@@ -62,7 +62,7 @@ describe("useLaunchClaudeCode — launch deep link", () => {
 
     const q = decodeURIComponent(lastHref.split("q=")[1].split("&")[0]);
     // MCP auto-setup is always present (this is what connects the user).
-    expect(q).toContain(`claude mcp add -s local --transport http vibecodes-remote ${mcpEndpoint(APP_URL)}`);
+    expect(q).toContain(`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(APP_URL)}`);
     // And it picks up THIS idea's board via get_board (not get_my_tasks).
     expect(q).toContain("idea_id idea-123");
     expect(q).toContain("get_board");

@@ -216,7 +216,7 @@ describe("buildBoardBootstrapPrompt", () => {
       ideaTitle: "My Idea",
       mode: "existing",
     });
-    expect(p).toContain(`vibecodes-remote ${APP_URL}/api/mcp`);
+    expect(p).toContain(`vibecodes ${APP_URL}/api/mcp`);
     // A freshly created board has nothing ASSIGNED, so get_my_tasks would
     // return empty — the prompt must drive get_board instead.
     expect(p).toContain("get_board");
@@ -714,10 +714,10 @@ describe("no-repo bootstrap prompt — pwd + record_project_path + cd guard", ()
     expect(p).toMatch(/every launch/i); // self-heal: re-record each launch
   });
 
-  it("records only AFTER the vibecodes-remote connector is available (Change #2)", () => {
+  it("records only AFTER the vibecodes connector is available (Change #2)", () => {
     const p = buildBoardBootstrapPrompt(base);
     // The record instruction is gated on the board tools being available.
-    expect(p).toMatch(/as soon as the vibecodes-remote board tools are available/i);
+    expect(p).toMatch(/as soon as the vibecodes board tools are available/i);
   });
 
   it("includes the defensive cd guard (Change #3): STOP if pwd is still home", () => {
@@ -844,7 +844,7 @@ describe("buildCompactBootstrapPrompt (deep-link prompt)", () => {
       newProject: { newProjectPath: "~/projects/my-idea" },
     });
     expect(p).toContain("mkdir -p ~/projects/my-idea");
-    expect(p).toContain(`claude mcp add -s local --transport http vibecodes-remote ${APP_URL}/api/mcp`);
+    expect(p).toContain(`claude mcp add -s local --transport http vibecodes ${APP_URL}/api/mcp`);
     expect(p).toContain("/mcp");
     expect(p).toContain("record_project_path");
     expect(p).toContain("get_board");

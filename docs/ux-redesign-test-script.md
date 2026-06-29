@@ -290,7 +290,7 @@ Compare the MCP command shown in these locations — they should all match:
 
 Expected command: `claude mcp add vibecodes https://vibecodes.co.uk/api/mcp`
 
-> **Note:** The guide page (`/guide/mcp-integration`) uses a different, more detailed command format (`claude mcp add -s user --transport http vibecodes-remote ...`). This is intentional — the simplified command is for quick setup, the guide has the full syntax.
+> **Note:** The guide page (`/guide/mcp-integration`) uses a different, more detailed command format (`claude mcp add -s user --transport http vibecodes ...`). This is intentional — the simplified command is for quick setup, the guide has the full syntax.
 
 ### TC-X.2: Nudge banner colour variants
 Across all nudge banners encountered, verify the colour scheme matches the design spec:

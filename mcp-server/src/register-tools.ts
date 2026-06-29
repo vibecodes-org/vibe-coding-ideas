@@ -1425,7 +1425,7 @@ export function registerTools(
 
   server.tool(
     "record_project_path",
-    "Record the absolute path of this idea's local project folder on this machine, so future launches of Claude Code open straight in it. Call AFTER you have cd'd into the project directory and confirmed it with `pwd` (pass the exact `pwd` output as absolute_path — never `~` or a relative path), and only once the vibecodes-remote board tools are available. Pass idea_id, the machine hostname (`hostname`/`uname -n`), and the absolute path. Upserts per idea + machine; call on every launch to self-heal a moved/renamed folder.",
+    "Record the absolute path of this idea's local project folder on this machine, so future launches of Claude Code open straight in it. Call AFTER you have cd'd into the project directory and confirmed it with `pwd` (pass the exact `pwd` output as absolute_path — never `~` or a relative path), and only once the vibecodes board tools are available. Pass idea_id, the machine hostname (`hostname`/`uname -n`), and the absolute path. Upserts per idea + machine; call on every launch to self-heal a moved/renamed folder.",
     recordProjectPathSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

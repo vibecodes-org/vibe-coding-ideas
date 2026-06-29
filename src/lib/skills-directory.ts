@@ -161,7 +161,7 @@ There is **no central login tool** — every project's auth is different, so use
 - If you genuinely can't authenticate, test what you can unauthenticated and clearly report what was blocked. Do not pretend you tested gated flows.
 
 ## Capturing evidence
-- For a defect: \`browser_take_screenshot\` of the broken state, then attach it to the board task with \`mcp__vibecodes-remote__upload_attachment\` so the evidence lives on the task, not just in chat.
+- For a defect: \`browser_take_screenshot\` of the broken state, then attach it to the board task with the \`upload_attachment\` board tool (the VibeCodes MCP connector) so the evidence lives on the task, not just in chat.
 - Pair every screenshot with: numbered repro steps, expected vs actual behaviour, and (for a bug) a root-cause hypothesis.
 - Capture \`browser_console_messages\` whenever there's a JS error.
 
