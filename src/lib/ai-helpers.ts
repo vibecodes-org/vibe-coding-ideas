@@ -117,17 +117,19 @@ export async function decrementStarterCredit(
   return data ?? 0;
 }
 
+export type LogAiUsageParams = {
+  userId: string;
+  actionType: AiActionType;
+  inputTokens: number;
+  outputTokens: number;
+  model: string;
+  ideaId: string | null;
+  keyType?: "platform" | "byok";
+};
+
 export async function logAiUsage(
   supabase: SupabaseClient<Database>,
-  params: {
-    userId: string;
-    actionType: AiActionType;
-    inputTokens: number;
-    outputTokens: number;
-    model: string;
-    ideaId: string | null;
-    keyType?: "platform" | "byok";
-  }
+  params: LogAiUsageParams
 ) {
   const { error } = await supabase.from("ai_usage_log").insert({
     user_id: params.userId,
@@ -145,6 +147,49 @@ export async function logAiUsage(
       keyType: params.keyType ?? "byok",
       userId: params.userId,
     });
+  }
+}
+
+export type ChargeAiUsageParams = LogAiUsageParams & {
+  /** Which key paid for the call — only "platform" consumes a starter credit. */
+  keyType: "platform" | "byok";
+  /** Explicitly free call (e.g. onboarding): log usage but never decrement. */
+  free?: boolean;
+};
+
+/**
+ * Single chokepoint for charging an AI call: ALWAYS log usage, and for a
+ * platform key (unless `free`) consume exactly one starter credit.
+ *
+ * The log keeps `logAiUsage`'s fire-and-forget semantics (a failed log is
+ * recorded, not thrown), but the platform decrement is awaited and THROWS on
+ * failure so a missed charge surfaces to the caller instead of silently leaking
+ * a free call. Route every non-streaming AI call through here so a future
+ * feature can't skip the charge by forgetting the convention.
+ */
+export async function chargeAiUsage(
+  supabase: SupabaseClient<Database>,
+  params: ChargeAiUsageParams
+): Promise<void> {
+  await logAiUsage(supabase, params);
+  if (params.keyType === "platform" && !params.free) {
+    await decrementStarterCredit(supabase, params.userId);
+  }
+}
+
+/**
+ * Upfront half of {@link chargeAiUsage} for streaming routes, which must charge
+ * BEFORE the stream starts (a serverless function can be killed mid-stream, so a
+ * post-stream decrement risks "use now, pay never"). Decrements one starter
+ * credit for a platform key (throws on failure); the route still logs token
+ * usage after the stream via `chargeAiUsage(..., { free: true })`.
+ */
+export async function chargeAiUpfront(
+  supabase: SupabaseClient<Database>,
+  params: { userId: string; keyType: "platform" | "byok" }
+): Promise<void> {
+  if (params.keyType === "platform") {
+    await decrementStarterCredit(supabase, params.userId);
   }
 }
 

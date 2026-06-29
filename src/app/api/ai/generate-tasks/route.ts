@@ -4,8 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 import {
   AI_MODEL,
-  logAiUsage,
-  decrementStarterCredit,
+  chargeAiUsage,
+  chargeAiUpfront,
   resolveAiProvider,
 } from "@/lib/ai-helpers";
 import { buildPromptContextParts, buildAutoRuleMappings } from "@/lib/ai-prompt-helpers";
@@ -130,11 +130,9 @@ export async function POST(req: Request) {
       agentBio,
     });
 
-    // Decrement credit upfront BEFORE the AI call — prevents "use now, pay never"
-    // when the post-stream decrement fails due to expired auth context
-    if (keyType === "platform") {
-      await decrementStarterCredit(supabase, user.id);
-    }
+    // Charge upfront BEFORE the AI call — prevents "use now, pay never" when the
+    // post-stream step fails due to expired auth context. Usage logged after.
+    await chargeAiUpfront(supabase, { userId: user.id, keyType });
 
     const result = streamObject({
       model: anthropic(AI_MODEL),
@@ -158,7 +156,8 @@ export async function POST(req: Request) {
           }
         }
         const usage = await result.usage;
-        await logAiUsage(supabase, {
+        // Log only — the credit was already charged upfront (free: true here).
+        await chargeAiUsage(supabase, {
           userId: user.id,
           actionType: "generate_board_tasks",
           inputTokens: usage.inputTokens ?? 0,
@@ -166,6 +165,7 @@ export async function POST(req: Request) {
           model: AI_MODEL,
           ideaId,
           keyType,
+          free: true,
         });
         controller.close();
       },

@@ -10,7 +10,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { AI_MODEL, resolveAiProvider, logAiUsage, decrementStarterCredit } from "@/lib/ai-helpers";
+import { AI_MODEL, resolveAiProvider, chargeAiUsage } from "@/lib/ai-helpers";
 import { buildRoleMatcher, type MatchTier } from "@/lib/role-matching";
 import { logger } from "@/lib/logger";
 
@@ -105,7 +105,7 @@ export async function matchRolesWithAi(
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     });
 
-    await logAiUsage(supabase, {
+    await chargeAiUsage(supabase, {
       userId,
       actionType: "role_matching",
       inputTokens: usage.inputTokens ?? 0,
@@ -114,10 +114,6 @@ export async function matchRolesWithAi(
       ideaId: null,
       keyType: resolved.keyType,
     });
-
-    if (resolved.keyType === "platform") {
-      await decrementStarterCredit(supabase, userId);
-    }
 
     // Convert array of matches to Record<stepRole, botId>
     const result: Record<string, string | null> = {};

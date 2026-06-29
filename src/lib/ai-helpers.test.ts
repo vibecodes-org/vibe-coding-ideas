@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { decrementStarterCredit } from "./ai-helpers";
+import { decrementStarterCredit, chargeAiUsage } from "./ai-helpers";
 
 // Mock logger to suppress output
 vi.mock("@/lib/logger", () => ({
@@ -61,5 +61,64 @@ describe("decrementStarterCredit", () => {
     await expect(
       decrementStarterCredit(mockSupabase, userId)
     ).rejects.toThrow("Failed to decrement starter credit");
+  });
+});
+
+describe("chargeAiUsage", () => {
+  const mockInsert = vi.fn();
+  const mockRpc = vi.fn();
+  const mockSupabase = {
+    from: vi.fn(() => ({ insert: mockInsert })),
+    rpc: mockRpc,
+  } as unknown as SupabaseClient<Database>;
+  const userId = "test-user-id";
+
+  const baseParams = {
+    userId,
+    actionType: "enhance_description" as const,
+    inputTokens: 10,
+    outputTokens: 5,
+    model: "claude-sonnet-4-6",
+    ideaId: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockInsert.mockResolvedValue({ error: null });
+    mockRpc.mockResolvedValue({ data: 9, error: null });
+  });
+
+  it("decrements exactly once for a platform key (non-free)", async () => {
+    await chargeAiUsage(mockSupabase, { ...baseParams, keyType: "platform" });
+
+    expect(mockInsert).toHaveBeenCalledOnce();
+    expect(mockRpc).toHaveBeenCalledOnce();
+    expect(mockRpc).toHaveBeenCalledWith("decrement_starter_credit", {
+      p_user_id: userId,
+    });
+  });
+
+  it("does NOT decrement for a BYOK key (but still logs)", async () => {
+    await chargeAiUsage(mockSupabase, { ...baseParams, keyType: "byok" });
+
+    expect(mockInsert).toHaveBeenCalledOnce();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("does NOT decrement when free:true even on a platform key (but still logs)", async () => {
+    await chargeAiUsage(mockSupabase, { ...baseParams, keyType: "platform", free: true });
+
+    expect(mockInsert).toHaveBeenCalledOnce();
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("propagates a platform decrement failure so the missed charge surfaces", async () => {
+    mockRpc.mockResolvedValue({ data: null, error: { message: "rpc down" } });
+
+    await expect(
+      chargeAiUsage(mockSupabase, { ...baseParams, keyType: "platform" })
+    ).rejects.toThrow("Failed to decrement starter credit: rpc down");
+    // Usage is still logged before the throw.
+    expect(mockInsert).toHaveBeenCalledOnce();
   });
 });

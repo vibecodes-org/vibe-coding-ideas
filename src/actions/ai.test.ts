@@ -35,8 +35,7 @@ vi.mock("@/lib/ai-helpers", () => ({
     anthropic: (m: string) => m,
     keyType: "byok",
   }),
-  logAiUsage: vi.fn().mockResolvedValue(undefined),
-  decrementStarterCredit: vi.fn().mockResolvedValue(undefined),
+  chargeAiUsage: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock("@/lib/logger", () => ({

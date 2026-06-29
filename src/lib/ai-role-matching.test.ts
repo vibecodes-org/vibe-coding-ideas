@@ -8,8 +8,7 @@ vi.mock("ai", () => ({
 vi.mock("@/lib/ai-helpers", () => ({
   AI_MODEL: "claude-sonnet-4-6",
   resolveAiProvider: vi.fn(),
-  logAiUsage: vi.fn(),
-  decrementStarterCredit: vi.fn(),
+  chargeAiUsage: vi.fn(),
 }));
 
 vi.mock("@/lib/logger", () => ({
@@ -18,12 +17,11 @@ vi.mock("@/lib/logger", () => ({
 
 import { matchRolesWithAi, matchRolesWithAiOrFuzzy, roleMatchSignature } from "./ai-role-matching";
 import { generateObject } from "ai";
-import { resolveAiProvider, logAiUsage, decrementStarterCredit } from "@/lib/ai-helpers";
+import { resolveAiProvider, chargeAiUsage } from "@/lib/ai-helpers";
 
 const mockGenerateObject = vi.mocked(generateObject);
 const mockResolveAiProvider = vi.mocked(resolveAiProvider);
-const mockLogAiUsage = vi.mocked(logAiUsage);
-const mockDecrementStarterCredit = vi.mocked(decrementStarterCredit);
+const mockChargeAiUsage = vi.mocked(chargeAiUsage);
 
 // Fake Supabase client (only used for type satisfaction and passing to mocked functions)
 const fakeSupabase = {} as Parameters<typeof matchRolesWithAi>[0];
@@ -72,7 +70,9 @@ describe("matchRolesWithAi", () => {
 
     expect(mockResolveAiProvider).toHaveBeenCalledWith(fakeSupabase, "user-1");
     expect(mockGenerateObject).toHaveBeenCalledOnce();
-    expect(mockLogAiUsage).toHaveBeenCalledWith(fakeSupabase, {
+    // Charging goes through the single chokepoint with the resolved key type;
+    // the chokepoint (not this module) owns the decrement decision.
+    expect(mockChargeAiUsage).toHaveBeenCalledWith(fakeSupabase, {
       userId: "user-1",
       actionType: "role_matching",
       inputTokens: 100,
@@ -81,11 +81,9 @@ describe("matchRolesWithAi", () => {
       ideaId: null,
       keyType: "byok",
     });
-    // BYOK — should NOT decrement starter credit
-    expect(mockDecrementStarterCredit).not.toHaveBeenCalled();
   });
 
-  it("decrements starter credit when using platform key", async () => {
+  it("charges via the chokepoint with platform key type", async () => {
     mockResolveAiProvider.mockResolvedValue({
       ok: true,
       anthropic: mockAnthropicFn as never,
@@ -101,7 +99,10 @@ describe("matchRolesWithAi", () => {
 
     await matchRolesWithAi(fakeSupabase, "user-1", ["Designer"], testAgents);
 
-    expect(mockDecrementStarterCredit).toHaveBeenCalledWith(fakeSupabase, "user-1");
+    expect(mockChargeAiUsage).toHaveBeenCalledWith(
+      fakeSupabase,
+      expect.objectContaining({ keyType: "platform", actionType: "role_matching" })
+    );
   });
 
   it("returns null when AI access fails", async () => {

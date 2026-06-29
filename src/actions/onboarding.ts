@@ -8,7 +8,7 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import {
   AI_MODEL,
-  logAiUsage,
+  chargeAiUsage,
   getPlatformAiCallsToday,
   PLATFORM_AI_DAILY_LIMIT,
 } from "@/lib/ai-helpers";
@@ -222,8 +222,9 @@ export async function enhanceOnboardingDescription(data: {
     throw new Error("Failed to enhance description");
   }
 
-  // Log platform AI usage for cost monitoring
-  await logAiUsage(supabase, {
+  // Onboarding is explicitly FREE: log platform usage for cost monitoring but
+  // never decrement a starter credit (product decision).
+  await chargeAiUsage(supabase, {
     userId: user.id,
     actionType: "enhance_description",
     inputTokens: usage.inputTokens ?? 0,
@@ -231,6 +232,7 @@ export async function enhanceOnboardingDescription(data: {
     model: AI_MODEL,
     ideaId: null,
     keyType: "platform",
+    free: true,
   });
 
   return { enhanced: text };
@@ -369,8 +371,9 @@ export async function generateBoardFromOnboarding(
     outputTokens: usage.outputTokens ?? 0,
   });
 
-  // Log usage (free — no credit deduction, fire-and-forget)
-  logAiUsage(supabase, {
+  // Onboarding is explicitly FREE: log usage but never decrement a credit.
+  // Fire-and-forget — board generation shouldn't block on the log write.
+  void chargeAiUsage(supabase, {
     userId: user.id,
     actionType: "generate_board_tasks",
     inputTokens: usage.inputTokens ?? 0,
@@ -378,6 +381,7 @@ export async function generateBoardFromOnboarding(
     model: AI_MODEL,
     ideaId,
     keyType: "platform",
+    free: true,
   });
 
   const tasks = object.tasks.slice(0, 50);

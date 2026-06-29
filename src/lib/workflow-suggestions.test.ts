@@ -8,8 +8,7 @@ vi.mock("ai", () => ({
 vi.mock("@/lib/ai-helpers", () => ({
   AI_MODEL: "claude-sonnet-4-6",
   resolveAiProvider: vi.fn(),
-  logAiUsage: vi.fn(),
-  decrementStarterCredit: vi.fn(),
+  chargeAiUsage: vi.fn(),
 }));
 
 vi.mock("@/lib/logger", () => ({
@@ -22,14 +21,13 @@ import {
   type AutoRuleTemplate,
   type AutoRuleTask,
 } from "./workflow-matching";
-import { resolveAiProvider, logAiUsage, decrementStarterCredit } from "@/lib/ai-helpers";
+import { resolveAiProvider, chargeAiUsage } from "@/lib/ai-helpers";
 
 const mockResolveAiProvider = vi.mocked(resolveAiProvider);
 
 beforeEach(() => {
   vi.clearAllMocks();
-  vi.mocked(logAiUsage).mockResolvedValue(undefined as never);
-  vi.mocked(decrementStarterCredit).mockResolvedValue(undefined as never);
+  vi.mocked(chargeAiUsage).mockResolvedValue(undefined as never);
 });
 
 // ============================================================

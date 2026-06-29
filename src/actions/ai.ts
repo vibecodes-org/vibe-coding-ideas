@@ -6,8 +6,7 @@ import { z } from "zod";
 import { logger } from "@/lib/logger";
 import {
   AI_MODEL,
-  logAiUsage,
-  decrementStarterCredit,
+  chargeAiUsage,
   resolveAiProvider,
 } from "@/lib/ai-helpers";
 import type { AiAccess } from "@/lib/ai-helpers";
@@ -121,7 +120,7 @@ export async function enhanceCreateDescription(data: {
     toPlainError(err);
   }
 
-  await logAiUsage(supabase, {
+  await chargeAiUsage(supabase, {
     userId: user.id,
     actionType: "enhance_create_description",
     inputTokens: usage.inputTokens ?? 0,
@@ -130,7 +129,6 @@ export async function enhanceCreateDescription(data: {
     ideaId: null,
     keyType,
   });
-  if (keyType === "platform") await decrementStarterCredit(supabase, user.id);
 
   return { enhanced: text };
 }
@@ -181,7 +179,7 @@ ${data.description || title}`,
     toPlainError(err);
   }
 
-  await logAiUsage(supabase, {
+  await chargeAiUsage(supabase, {
     userId: user.id,
     actionType: "generate_questions",
     inputTokens: usage.inputTokens ?? 0,
@@ -190,7 +188,6 @@ ${data.description || title}`,
     ideaId: null,
     keyType,
   });
-  if (keyType === "platform") await decrementStarterCredit(supabase, user.id);
 
   return { questions: object.questions };
 }
@@ -234,7 +231,7 @@ export async function enhanceIdeaDescription(
     toPlainError(err);
   }
 
-  await logAiUsage(supabase, {
+  await chargeAiUsage(supabase, {
     userId: user.id,
     actionType: "enhance_description",
     inputTokens: usage.inputTokens ?? 0,
@@ -243,7 +240,6 @@ export async function enhanceIdeaDescription(
     ideaId,
     keyType,
   });
-  if (keyType === "platform") await decrementStarterCredit(supabase, user.id);
 
   return { enhanced: text, original: idea.description, truncated: finishReason === "length" };
 }
@@ -301,7 +297,7 @@ ${idea.description}`,
     toPlainError(err);
   }
 
-  await logAiUsage(supabase, {
+  await chargeAiUsage(supabase, {
     userId: user.id,
     actionType: "generate_questions",
     inputTokens: usage.inputTokens ?? 0,
@@ -310,7 +306,6 @@ ${idea.description}`,
     ideaId,
     keyType,
   });
-  if (keyType === "platform") await decrementStarterCredit(supabase, user.id);
 
   return { questions: object.questions };
 }
@@ -398,7 +393,7 @@ Use the answers above to inform your enhanced description. Make the enhancement 
     toPlainError(err);
   }
 
-  await logAiUsage(supabase, {
+  await chargeAiUsage(supabase, {
     userId: user.id,
     actionType: "enhance_with_context",
     inputTokens: usage.inputTokens ?? 0,
@@ -407,7 +402,6 @@ Use the answers above to inform your enhanced description. Make the enhancement 
     ideaId,
     keyType,
   });
-  if (keyType === "platform") await decrementStarterCredit(supabase, user.id);
 
   return { enhanced: text, original: idea.description, truncated: finishReason === "length" };
 }
@@ -545,7 +539,7 @@ export async function generateBoardTasks(
     toPlainError(err);
   }
 
-  await logAiUsage(supabase, {
+  await chargeAiUsage(supabase, {
     userId: user.id,
     actionType: "generate_board_tasks",
     inputTokens: usage.inputTokens ?? 0,
@@ -554,7 +548,6 @@ export async function generateBoardTasks(
     ideaId,
     keyType,
   });
-  if (keyType === "platform") await decrementStarterCredit(supabase, user.id);
 
   // Cap at 50 tasks (Anthropic API doesn't support maxItems in schema)
   const tasks = object.tasks.slice(0, 50);
@@ -600,7 +593,7 @@ ${taskDescription}
     toPlainError(err);
   }
 
-  await logAiUsage(supabase, {
+  await chargeAiUsage(supabase, {
     userId: user.id,
     actionType: "enhance_task_description",
     inputTokens: usage.inputTokens ?? 0,
@@ -609,7 +602,6 @@ ${taskDescription}
     ideaId,
     keyType,
   });
-  if (keyType === "platform") await decrementStarterCredit(supabase, user.id);
 
   return { enhanced: text };
 }
@@ -649,7 +641,7 @@ ${discussionBody}
     toPlainError(err);
   }
 
-  await logAiUsage(supabase, {
+  await chargeAiUsage(supabase, {
     userId: user.id,
     actionType: "enhance_discussion_body",
     inputTokens: usage.inputTokens ?? 0,
@@ -658,7 +650,6 @@ ${discussionBody}
     ideaId,
     keyType,
   });
-  if (keyType === "platform") await decrementStarterCredit(supabase, user.id);
 
   return { enhanced: text };
 }

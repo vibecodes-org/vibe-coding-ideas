@@ -8,8 +8,7 @@ vi.mock("ai", () => ({
 vi.mock("@/lib/ai-helpers", () => ({
   AI_MODEL: "claude-sonnet-4-6",
   resolveAiProvider: vi.fn(),
-  logAiUsage: vi.fn(),
-  decrementStarterCredit: vi.fn(),
+  chargeAiUsage: vi.fn(),
 }));
 
 vi.mock("@/lib/logger", () => ({
@@ -25,15 +24,10 @@ import {
   WORKFLOW_MATCHING_MODEL,
   type AdjudicationCandidateTemplate,
 } from "./workflow-matching";
-import {
-  resolveAiProvider,
-  logAiUsage,
-  decrementStarterCredit,
-} from "@/lib/ai-helpers";
+import { resolveAiProvider, chargeAiUsage } from "@/lib/ai-helpers";
 
 const mockResolveAiProvider = vi.mocked(resolveAiProvider);
-const mockLogAiUsage = vi.mocked(logAiUsage);
-const mockDecrementStarterCredit = vi.mocked(decrementStarterCredit);
+const mockChargeAiUsage = vi.mocked(chargeAiUsage);
 
 const fakeSupabase = {} as Parameters<typeof adjudicateWorkflowMatch>[0];
 const mockAnthropicFn = vi.fn(() => "model-handle");
@@ -259,16 +253,15 @@ describe("adjudicateWorkflowMatch", () => {
     expect(result.recommendedTemplateId).toBe("tmpl-spike");
     expect(result.confidence).toBe(0.92);
     expect(result.autoApply).toBe(false);
-    expect(mockLogAiUsage).toHaveBeenCalledWith(
+    expect(mockChargeAiUsage).toHaveBeenCalledWith(
       fakeSupabase,
       expect.objectContaining({
         actionType: "workflow_matching",
         model: WORKFLOW_MATCHING_MODEL,
         ideaId: "idea-1",
+        keyType: "byok",
       })
     );
-    // byok → no credit decrement
-    expect(mockDecrementStarterCredit).not.toHaveBeenCalled();
   });
 
   it("confident AI confirmation of the RULE'S OWN template auto-applies (false-positive recovery)", async () => {
@@ -347,7 +340,7 @@ describe("adjudicateWorkflowMatch", () => {
     expect(result.autoApply).toBe(false);
   });
 
-  it("decrements a starter credit on platform key", async () => {
+  it("charges via the chokepoint with platform key type", async () => {
     mockResolveAiProvider.mockResolvedValue({
       ok: true,
       anthropic: mockAnthropicFn as never,
@@ -362,7 +355,10 @@ describe("adjudicateWorkflowMatch", () => {
       generate: generate as never,
     });
 
-    expect(mockDecrementStarterCredit).toHaveBeenCalledWith(fakeSupabase, "user-1");
+    expect(mockChargeAiUsage).toHaveBeenCalledWith(
+      fakeSupabase,
+      expect.objectContaining({ keyType: "platform", actionType: "workflow_matching" })
+    );
   });
 
   it("AI unavailable → heuristic fallback (no throw)", async () => {
@@ -424,6 +420,6 @@ describe("adjudicateWorkflowMatch", () => {
     );
 
     expect(result.source).toBe("heuristic");
-    expect(mockLogAiUsage).not.toHaveBeenCalled();
+    expect(mockChargeAiUsage).not.toHaveBeenCalled();
   });
 });

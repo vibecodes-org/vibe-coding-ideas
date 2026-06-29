@@ -18,11 +18,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, WorkflowTemplateStep } from "@/types/database";
-import {
-  resolveAiProvider,
-  logAiUsage,
-  decrementStarterCredit,
-} from "@/lib/ai-helpers";
+import { resolveAiProvider, chargeAiUsage } from "@/lib/ai-helpers";
 import { logger } from "@/lib/logger";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
 
@@ -405,7 +401,7 @@ export async function adjudicateWorkflowMatch(
       return fallback();
     }
 
-    await logAiUsage(supabase, {
+    await chargeAiUsage(supabase, {
       userId,
       actionType: "workflow_matching",
       inputTokens: usage?.inputTokens ?? 0,
@@ -414,10 +410,6 @@ export async function adjudicateWorkflowMatch(
       ideaId: options.ideaId ?? null,
       keyType: resolved.keyType,
     });
-
-    if (resolved.keyType === "platform") {
-      await decrementStarterCredit(supabase, userId);
-    }
 
     // Only trust a recommended ID that exists in the candidate set.
     const recommendedTemplateId =

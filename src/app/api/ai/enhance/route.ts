@@ -3,8 +3,8 @@ import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 import {
   AI_MODEL,
-  logAiUsage,
-  decrementStarterCredit,
+  chargeAiUsage,
+  chargeAiUpfront,
   resolveAiProvider,
 } from "@/lib/ai-helpers";
 
@@ -105,10 +105,9 @@ Use the answers above to inform your enhanced description. Make the enhancement 
       userPrompt = `${prompt}\n\n---\n\n**Idea Title:** ${idea.title}\n\n**Current Description:**\n${idea.description}`;
     }
 
-    // Decrement credit upfront BEFORE the AI call — prevents "use now, pay never"
-    if (keyType === "platform") {
-      await decrementStarterCredit(supabase, user.id);
-    }
+    // Charge upfront BEFORE the AI call — prevents "use now, pay never" if the
+    // serverless function is killed mid-stream. Token usage is logged after.
+    await chargeAiUpfront(supabase, { userId: user.id, keyType });
 
     const result = streamText({
       model: anthropic(AI_MODEL),
@@ -129,7 +128,8 @@ Use the answers above to inform your enhanced description. Make the enhancement 
           result.usage,
           result.finishReason,
         ]);
-        await logAiUsage(supabase, {
+        // Log only — the credit was already charged upfront (free: true here).
+        await chargeAiUsage(supabase, {
           userId: user.id,
           actionType: "enhance_with_context",
           inputTokens: usage.inputTokens ?? 0,
@@ -137,6 +137,7 @@ Use the answers above to inform your enhanced description. Make the enhancement 
           model: AI_MODEL,
           ideaId,
           keyType,
+          free: true,
         });
         if (finishReason === "length") {
           logger.warn("AI enhance output truncated", { ideaId });
