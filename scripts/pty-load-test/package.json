@@ -1,0 +1,10 @@
+{
+  "name": "pty-load-test",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Isolated node-pty probe for spike 966c7d8f RQ1 — verifies prebuilt vs node-gyp fallback and live PTY spawn across runners. No app dependencies.",
+  "dependencies": {
+    "node-pty": "1.1.0"
+  }
+}

@@ -1,0 +1,4 @@
+node_modules/
+install.log
+result-*.txt
+package-lock.json
