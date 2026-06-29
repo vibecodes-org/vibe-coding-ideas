@@ -1,0 +1,113 @@
+name: PTY Probe
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "scripts/pty-load-test/**"
+      - ".github/workflows/pty-probe.yml"
+  pull_request:
+    paths:
+      - "scripts/pty-load-test/**"
+      - ".github/workflows/pty-probe.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pty-probe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  probe:
+    name: probe (${{ matrix.label }})
+    runs-on: ${{ matrix.runner }}
+    container: ${{ matrix.container }}
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: win-conpty
+            runner: windows-latest
+            container: ""
+            arch: x64
+          - label: linux-glibc
+            runner: ubuntu-latest
+            container: ""
+            arch: x64
+          - label: linux-musl
+            runner: ubuntu-latest
+            container: node:20-alpine
+            arch: x64
+          - label: macos-x64
+            runner: macos-13
+            container: ""
+            arch: x64
+          - label: macos-arm64
+            runner: macos-14
+            container: ""
+            arch: arm64
+    steps:
+      # Alpine ships without git; actions/checkout@v4 needs it. Install before checkout
+      # so the musl row produces a real node-pty verdict instead of a harness error.
+      - name: Install git (Alpine, pre-checkout)
+        if: ${{ matrix.container == 'node:20-alpine' }}
+        run: apk add --no-cache git
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build toolchain (Alpine)
+        if: ${{ matrix.container == 'node:20-alpine' }}
+        run: apk add --no-cache python3 make g++ bash
+
+      - name: Setup Node 20
+        if: ${{ matrix.container == '' }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install node-pty (capture log)
+        shell: bash
+        working-directory: scripts/pty-load-test
+        run: npm install --no-audit --no-fund --loglevel verbose > install.log 2>&1 || (cat install.log; exit 1)
+
+      - name: Run probe
+        shell: bash
+        working-directory: scripts/pty-load-test
+        run: node load-test.mjs --install-log install.log --label "${{ matrix.label }}" --out "result-${{ matrix.label }}.txt"
+
+      - name: Upload artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: pty-${{ matrix.label }}
+          path: |
+            scripts/pty-load-test/result-${{ matrix.label }}.txt
+            scripts/pty-load-test/install.log
+          retention-days: 14
+
+  summarize:
+    name: summarize
+    needs: probe
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Download probe results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: pty-*
+          merge-multiple: true
+          path: results
+
+      - name: Summarize and gate
+        run: node scripts/pty-load-test/summarize.mjs --dir results
