@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest";
-import { checkAndCompleteRun, checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow, propagateTemplateEdits, TERMINAL_STATUSES, workflowDisplayName, workflowProgressPct, WORKFLOW_FALLBACK_NAME } from "./workflow-helpers";
+import { checkAndCompleteRun, checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow, propagateTemplateEdits, resolveSuggestionOnApply, TERMINAL_STATUSES, workflowDisplayName, workflowProgressPct, WORKFLOW_FALLBACK_NAME } from "./workflow-helpers";
 
 function createMockSupabase(steps: { id: string; status: string }[]) {
   const updateChain = {
@@ -910,5 +910,205 @@ describe("removeAutoRuleWorkflow", () => {
     expect(result).toEqual({ removed: false });
     expect(consoleSpy).toHaveBeenCalled();
     consoleSpy.mockRestore();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveSuggestionOnApply — the apply-side fix for orphaned suggestions.
+// ---------------------------------------------------------------------------
+
+type OpenSuggestionRow = {
+  id: string;
+  suggested_template_id: string | null;
+  recommended_template_id: string | null;
+};
+
+/**
+ * Mock supabase for resolveSuggestionOnApply. Two distinct calls hit
+ * `workflow_suggestions`:
+ *   1. a LIST select (awaited directly → thenable resolves to the open set)
+ *   2. a guarded UPDATE terminated by `.maybeSingle()` (returns the claimed row
+ *      or null when the concurrency guard matched zero rows)
+ * Each `from()` returns a fresh chain so the two operations don't bleed state.
+ */
+function makeSuggestionSupabase(opts: {
+  openSuggestions: OpenSuggestionRow[];
+  claimResult?: { id: string } | null;
+  selectError?: { message: string } | null;
+  updateError?: { message: string } | null;
+}) {
+  const captured = {
+    updatePayload: null as Record<string, unknown> | null,
+    updateEqs: [] as [string, unknown][],
+    updateCalled: false,
+  };
+
+  function makeChain() {
+    let isUpdate = false;
+    const chain: Record<string, unknown> = {};
+    chain.select = vi.fn(() => chain);
+    chain.update = vi.fn((v: Record<string, unknown>) => {
+      isUpdate = true;
+      captured.updateCalled = true;
+      captured.updatePayload = v;
+      return chain;
+    });
+    chain.eq = vi.fn((col: string, val: unknown) => {
+      if (isUpdate) captured.updateEqs.push([col, val]);
+      return chain;
+    });
+    chain.maybeSingle = vi.fn(() =>
+      Promise.resolve({
+        data: "claimResult" in opts ? (opts.claimResult ?? null) : { id: "sug-1" },
+        error: opts.updateError ?? null,
+      })
+    );
+    // Thenable: the list select awaits the chain directly.
+    chain.then = (resolve: (v: unknown) => void) =>
+      Promise.resolve({
+        data: opts.openSuggestions,
+        error: opts.selectError ?? null,
+      }).then(resolve);
+    return chain;
+  }
+
+  const supabase = { from: vi.fn(() => makeChain()) };
+  return { supabase, captured };
+}
+
+describe("resolveSuggestionOnApply", () => {
+  it("marks the suggestion 'accepted' when the applied template matches suggested_template_id", async () => {
+    const { supabase, captured } = makeSuggestionSupabase({
+      openSuggestions: [
+        { id: "sug-1", suggested_template_id: "tpl-1", recommended_template_id: "tpl-1" },
+      ],
+    });
+
+    const result = await resolveSuggestionOnApply(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase as any,
+      { taskId: "task-1", templateId: "tpl-1", resolvedBy: "user-1" }
+    );
+
+    expect(result).toEqual({ resolved: true });
+    expect(captured.updatePayload).toMatchObject({
+      status: "accepted",
+      resolved_by: "user-1",
+      adjudication_started_at: null,
+    });
+    expect(captured.updatePayload?.resolved_at).toBeTruthy();
+    // accepted path must NOT record a replacement template.
+    expect(captured.updatePayload?.replacement_template_id).toBeUndefined();
+    // Concurrency guard present.
+    expect(captured.updateEqs).toContainEqual(["status", "suggested"]);
+    expect(captured.updateEqs).toContainEqual(["id", "sug-1"]);
+  });
+
+  it("marks the suggestion 'replaced' when the applied template matches recommended but differs from suggested", async () => {
+    const { supabase, captured } = makeSuggestionSupabase({
+      openSuggestions: [
+        { id: "sug-1", suggested_template_id: "tpl-1", recommended_template_id: "tpl-2" },
+      ],
+    });
+
+    const result = await resolveSuggestionOnApply(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase as any,
+      { taskId: "task-1", templateId: "tpl-2", resolvedBy: "user-1" }
+    );
+
+    expect(result).toEqual({ resolved: true });
+    expect(captured.updatePayload).toMatchObject({
+      status: "replaced",
+      replacement_template_id: "tpl-2",
+      resolved_by: "user-1",
+      adjudication_started_at: null,
+    });
+  });
+
+  it("is a NO-OP when the applied template matches NEITHER id (the warning is still valid)", async () => {
+    const { supabase, captured } = makeSuggestionSupabase({
+      openSuggestions: [
+        { id: "sug-1", suggested_template_id: "tpl-1", recommended_template_id: "tpl-2" },
+      ],
+    });
+
+    const result = await resolveSuggestionOnApply(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase as any,
+      { taskId: "task-1", templateId: "tpl-DIFFERENT", resolvedBy: "user-1" }
+    );
+
+    expect(result).toEqual({ resolved: false });
+    // CRITICAL regression guard: no update is issued, so the suggestion stays open.
+    expect(captured.updateCalled).toBe(false);
+  });
+
+  it("is a NO-OP (no error) when the task has no open suggestion", async () => {
+    const { supabase, captured } = makeSuggestionSupabase({ openSuggestions: [] });
+
+    const result = await resolveSuggestionOnApply(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase as any,
+      { taskId: "task-1", templateId: "tpl-1", resolvedBy: "user-1" }
+    );
+
+    expect(result).toEqual({ resolved: false });
+    expect(captured.updateCalled).toBe(false);
+  });
+
+  it("reports resolved:false when the concurrency guard matches zero rows (already resolved)", async () => {
+    const { supabase } = makeSuggestionSupabase({
+      openSuggestions: [
+        { id: "sug-1", suggested_template_id: "tpl-1", recommended_template_id: null },
+      ],
+      claimResult: null,
+    });
+
+    const result = await resolveSuggestionOnApply(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase as any,
+      { taskId: "task-1", templateId: "tpl-1", resolvedBy: "user-1" }
+    );
+
+    expect(result).toEqual({ resolved: false });
+  });
+
+  it("is non-fatal: a lookup failure is swallowed and returns resolved:false", async () => {
+    const consoleSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    const { supabase, captured } = makeSuggestionSupabase({
+      openSuggestions: [],
+      selectError: { message: "boom" },
+    });
+
+    const result = await resolveSuggestionOnApply(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase as any,
+      { taskId: "task-1", templateId: "tpl-1", resolvedBy: "user-1" }
+    );
+
+    expect(result).toEqual({ resolved: false });
+    expect(captured.updateCalled).toBe(false);
+    consoleSpy.mockRestore();
+  });
+
+  it("matches the correct suggestion among several open ones on the task (multi-label)", async () => {
+    const { supabase, captured } = makeSuggestionSupabase({
+      openSuggestions: [
+        { id: "sug-A", suggested_template_id: "tpl-A", recommended_template_id: "tpl-A" },
+        { id: "sug-B", suggested_template_id: "tpl-B", recommended_template_id: "tpl-B" },
+      ],
+    });
+
+    const result = await resolveSuggestionOnApply(
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase as any,
+      { taskId: "task-1", templateId: "tpl-B", resolvedBy: "user-1" }
+    );
+
+    expect(result).toEqual({ resolved: true });
+    // Guarded the SECOND suggestion, not the first.
+    expect(captured.updateEqs).toContainEqual(["id", "sug-B"]);
+    expect(captured.updateEqs).not.toContainEqual(["id", "sug-A"]);
   });
 });

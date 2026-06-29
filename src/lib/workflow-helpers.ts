@@ -344,6 +344,99 @@ export async function removeAutoRuleWorkflow(
 }
 
 /**
+ * Resolve an open ("suggested") workflow suggestion once a matching template has
+ * ALREADY been applied to the task by the caller. This is the write-side fix for
+ * the orphaned-suggestion bug: several apply paths created a run without closing
+ * the suggestion that recommended it, leaving a stale "workflow may be wrong"
+ * badge on the card.
+ *
+ * Scope is APPLY-ONLY and STRICTLY match-on-template-id:
+ *   - Matches the open suggestion for `taskId` whose `suggested_template_id` OR
+ *     `recommended_template_id` equals the just-applied `templateId`.
+ *   - `templateId === suggested_template_id` → the suggested workflow was taken →
+ *     `accepted`.
+ *   - matches `recommended_template_id` but differs from the suggested one →
+ *     `replaced` (record the chosen template in `replacement_template_id`).
+ *   - matches NEITHER → no-op (a genuinely different applied template leaves the
+ *     suggestion open; that warning is still valid).
+ *
+ * Never applies a template itself. Non-fatal: any failure is logged and swallowed
+ * so the successful apply is never aborted. The `.eq('status','suggested')` guard
+ * makes a concurrent/duplicate resolve match zero rows (idempotent no-op), which
+ * is exactly what the Keep/Replace buttons rely on — they resolve the suggestion
+ * BEFORE calling apply, so this second attempt harmlessly matches nothing.
+ *
+ * `resolvedBy` MUST be a valid `users` FK and an honest actor: the human user id
+ * in the server action, and the real human owner (`ctx.ownerUserId`) in MCP — not
+ * a bot identity.
+ *
+ * Returns `{ resolved }` where `resolved` is true only when a row was transitioned.
+ */
+export async function resolveSuggestionOnApply(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  supabase: SupabaseClient<any, any, any>,
+  args: { taskId: string; templateId: string; resolvedBy: string }
+): Promise<{ resolved: boolean }> {
+  const { taskId, templateId, resolvedBy } = args;
+
+  try {
+    // A task can carry more than one open suggestion (one per label — see the
+    // partial unique index on (task_id, label_id) WHERE status='suggested'), so
+    // fetch the open set and match in JS rather than risking a multi-row single.
+    const { data: openSuggestions, error: findError } = await supabase
+      .from("workflow_suggestions")
+      .select("id, suggested_template_id, recommended_template_id")
+      .eq("task_id", taskId)
+      .eq("status", "suggested");
+
+    if (findError) throw new Error(findError.message);
+
+    const match = (openSuggestions ?? []).find(
+      (s) =>
+        s.suggested_template_id === templateId ||
+        s.recommended_template_id === templateId
+    );
+
+    if (!match) return { resolved: false };
+
+    // STRICT equality decides the transition. accepted = the suggested workflow
+    // was taken; replaced = a recommended-but-different template was applied.
+    const tookSuggested = match.suggested_template_id === templateId;
+    const patch: Record<string, unknown> = tookSuggested
+      ? { status: "accepted" }
+      : { status: "replaced", replacement_template_id: templateId };
+
+    // Concurrency guard: only the still-open row is claimed (mirrors the Keep /
+    // Replace / Remove server actions). A second resolver matches zero rows.
+    const { data: claimed, error: updateError } = await supabase
+      .from("workflow_suggestions")
+      .update({
+        ...patch,
+        resolved_at: new Date().toISOString(),
+        resolved_by: resolvedBy,
+        adjudication_started_at: null,
+      })
+      .eq("id", match.id)
+      .eq("status", "suggested")
+      .select("id")
+      .maybeSingle();
+
+    if (updateError) throw new Error(updateError.message);
+
+    return { resolved: !!claimed };
+  } catch (err) {
+    // Non-fatal — the template was applied successfully; a stale suggestion is a
+    // cosmetic badge, not a reason to fail the whole operation.
+    logger.error("Failed to resolve workflow suggestion on apply", {
+      error: err instanceof Error ? err.message : String(err),
+      taskId,
+      templateId,
+    });
+    return { resolved: false };
+  }
+}
+
+/**
  * Check if all steps in a workflow run are in a terminal state (completed or skipped).
  * If so, mark the run as completed. Failed steps do NOT count as terminal —
  * the run stays running/failed until a retry resolves the failure.

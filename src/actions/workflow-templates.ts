@@ -9,7 +9,7 @@ import {
   validateOptionalDescription,
 } from "@/lib/validation";
 import { matchRolesWithAiOrFuzzy } from "@/lib/ai-role-matching";
-import { propagateTemplateEdits } from "@/lib/workflow-helpers";
+import { propagateTemplateEdits, resolveSuggestionOnApply } from "@/lib/workflow-helpers";
 import { tierRank } from "@/lib/role-matching";
 import { chunkIds } from "@/lib/db-helpers";
 
@@ -410,6 +410,16 @@ export async function applyWorkflowTemplateWithContext(
     .from("workflow_templates")
     .update({ usage_count: template.usage_count + 1 })
     .eq("id", templateId);
+
+  // Close any open suggestion that recommended this template so the card's
+  // "workflow may be wrong" badge clears. No-op (and non-fatal) when there's no
+  // matching open suggestion — covers the generic picker and is idempotent for
+  // the Keep/Replace buttons (which already resolved before calling here).
+  await resolveSuggestionOnApply(supabase, {
+    taskId,
+    templateId,
+    resolvedBy: userId,
+  });
 
   return { run, steps: createdSteps };
 }

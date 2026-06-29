@@ -3,7 +3,7 @@ import { logger } from "../../../src/lib/logger";
 import type { McpContext } from "../context";
 import { mintClaimToken, verifyClaimToken } from "../claim-token";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
-import { checkAndCompleteRun, propagateTemplateEdits, applyOrSuggest } from "../../../src/lib/workflow-helpers";
+import { checkAndCompleteRun, propagateTemplateEdits, applyOrSuggest, resolveSuggestionOnApply } from "../../../src/lib/workflow-helpers";
 import { tierRank } from "../../../src/lib/role-matching";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "../../../src/lib/workflow-matching";
 import { logActivity } from "../activity";
@@ -349,6 +349,16 @@ export async function applyWorkflowTemplate(
     .from("workflow_templates")
     .update({ usage_count: template.usage_count !== undefined ? (template.usage_count as number) + 1 : 1 })
     .eq("id", params.template_id);
+
+  // Close any open suggestion that recommended this template so the card's
+  // "workflow may be wrong" badge clears. Attribute the resolution to the real
+  // human owner (actorId = ctx.ownerUserId ?? ctx.userId — never a bot identity)
+  // and keep it non-fatal: a stale badge must not abort a successful apply.
+  await resolveSuggestionOnApply(ctx.supabase, {
+    taskId: params.task_id,
+    templateId: params.template_id,
+    resolvedBy: actorId,
+  });
 
   return { run, steps: createdSteps, agent_matches: agentMatches };
 }
