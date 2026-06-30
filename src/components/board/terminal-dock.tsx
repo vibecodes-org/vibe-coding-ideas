@@ -34,6 +34,8 @@ import {
   Copy,
   Terminal as TerminalIcon,
   RotateCw,
+  Download,
+  ChevronRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -53,6 +55,17 @@ import {
   type TerminalConnectionState,
   type TerminalStatus,
 } from "@/lib/terminal/connection";
+import { buildLaunchDeepLink, redactDeepLinkToken } from "@/lib/terminal/deep-link";
+import { subscribeBrowserLaunch } from "@/lib/terminal/launch-mode";
+
+// Where the dock points the user when no helper catches the vibecodes:// link.
+// Slice 7 (packaging) replaces this with the real signed-helper download.
+const HELPER_INSTALL_URL = "/guide";
+// How long to wait for the helper to attach before nudging "install it / Advanced".
+const HELPER_OPEN_TIMEOUT_MS = 6000;
+
+/** Launch UI phase for the same-machine deep-link auto-launch path. */
+type LaunchPhase = "idle" | "opening" | "helper-timeout";
 
 interface TerminalDockProps {
   ideaId: string;
@@ -116,12 +129,17 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
   const [readOnly, setReadOnly] = useState(false);
   const [pair, setPair] = useState<PairInfo | null>(null);
   const [xtermReady, setXtermReady] = useState(false);
+  // Same-machine auto-launch UI (the vibecodes:// deep-link path). "idle" = the
+  // manual cross-machine flow (copy a command); "opening"/"helper-timeout" = we
+  // fired a deep link and are waiting on the local helper.
+  const [launchPhase, setLaunchPhase] = useState<LaunchPhase>("idle");
 
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<XFitAddon | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const helperTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const lastDimsRef = useRef<string>("");
 
   // Mirror live state into refs so the stable xterm onData handler reads current
@@ -228,6 +246,48 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
     }
   }, []);
 
+  const clearHelperTimer = useCallback(() => {
+    if (helperTimerRef.current) {
+      clearTimeout(helperTimerRef.current);
+      helperTimerRef.current = null;
+    }
+  }, []);
+
+  // Fire the signed vibecodes:// deep link so a same-machine helper attaches as the
+  // bridge leg with no copied command. The bridge token is a secret — it travels in
+  // the link but is NEVER logged (only the redacted form is). The OS routing of the
+  // scheme to the installed helper is slice 7 (packaging); here we just fire it and
+  // fall back to the Advanced manual command if nothing attaches.
+  const fireLaunchDeepLink = useCallback(
+    (sessionId: string, bridgeToken: string) => {
+      let link: string;
+      try {
+        link = buildLaunchDeepLink({ relay: relayBaseUrl(), session: sessionId, token: bridgeToken });
+      } catch (err) {
+        logger.error("Terminal deep-link build failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        setLaunchPhase("helper-timeout");
+        return;
+      }
+      logger.info("Terminal firing launch deep link", { sessionId, url: redactDeepLinkToken(link) });
+      setLaunchPhase("opening");
+      try {
+        window.location.assign(link);
+      } catch {
+        // Some browsers throw synchronously on a blocked/unknown custom scheme.
+        setLaunchPhase("helper-timeout");
+        return;
+      }
+      // If the helper doesn't attach within a few seconds, nudge install / Advanced.
+      clearHelperTimer();
+      helperTimerRef.current = setTimeout(() => {
+        setLaunchPhase((p) => (p === "opening" ? "helper-timeout" : p));
+      }, HELPER_OPEN_TIMEOUT_MS);
+    },
+    [clearHelperTimer],
+  );
+
   const teardownSocket = useCallback(() => {
     clearConnectTimer();
     const ws = wsRef.current;
@@ -243,8 +303,14 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
   }, [clearConnectTimer]);
 
   // ── connect (browser leg) ───────────────────────────────────────────────────
-  const connect = useCallback(async () => {
+  // `autoLaunch` = the same-machine path: after minting, fire the vibecodes:// deep
+  // link so the local helper attaches automatically (no copied command). Without it
+  // (manual reconnect), we stay in the cross-machine "copy a command" flow.
+  const connect = useCallback(async (options?: { autoLaunch?: boolean }) => {
+    const autoLaunch = options?.autoLaunch ?? false;
     teardownSocket();
+    clearHelperTimer();
+    setLaunchPhase(autoLaunch ? "opening" : "idle");
     setExpanded(true);
     lastDimsRef.current = "";
     dispatch({ type: "connect" });
@@ -276,6 +342,9 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
     setPair({ sessionId: data.sessionId, bridgeToken: data.bridgeToken });
     termRef.current?.clear();
 
+    // Same-machine: hand the bridge token to the local helper via the deep link.
+    if (autoLaunch) fireLaunchDeepLink(data.sessionId, data.bridgeToken);
+
     const url = buildRelayUrl(relayBaseUrl(), data.sessionId, data.browserToken);
     let ws: WebSocket;
     try {
@@ -303,6 +372,10 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
       // BINARY = opaque PTY bytes → xterm. TEXT = control frame (none expected from
       // the bridge today); ignore so it never reaches the screen as garbage.
       if (typeof ev.data === "string") return;
+      // The helper attached and is streaming — the launch succeeded; drop the
+      // "opening helper / install it" nudge.
+      clearHelperTimer();
+      setLaunchPhase("idle");
       dispatch({ type: "data" });
       termRef.current?.write(new Uint8Array(ev.data as ArrayBuffer));
     };
@@ -315,10 +388,12 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
       wsRef.current = null;
       dispatch({ type: "closed", code: ev.code, reason: ev.reason });
     };
-  }, [ideaId, teardownSocket, clearConnectTimer]);
+  }, [ideaId, teardownSocket, clearConnectTimer, clearHelperTimer, fireLaunchDeepLink]);
 
   const endSession = useCallback(() => {
     dispatch({ type: "user-end" });
+    clearHelperTimer();
+    setLaunchPhase("idle");
     const ws = wsRef.current;
     if (ws) {
       try {
@@ -328,10 +403,22 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
       }
     }
     teardownSocket();
-  }, [teardownSocket]);
+  }, [teardownSocket, clearHelperTimer]);
 
   // Clean up the socket if the dock unmounts mid-session.
   useEffect(() => () => teardownSocket(), [teardownSocket]);
+
+  // Clear the helper-open timer on unmount.
+  useEffect(() => () => clearHelperTimer(), [clearHelperTimer]);
+
+  // The "In the browser" menu item (board toolbar) fires the launch bus; pick it up
+  // here and run the auto-launch (mint → open browser leg → fire deep link). Keeping
+  // the mint in ONE place (the dock) means the session — and its bridge token — is
+  // never created twice.
+  useEffect(() => {
+    if (!enabled) return;
+    return subscribeBrowserLaunch(() => void connect({ autoLaunch: true }));
+  }, [enabled, connect]);
 
   const copyBridgeCommand = useCallback(() => {
     if (!pair) return;
@@ -452,7 +539,8 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
               state={state}
               pair={pair}
               canLaunch={canLaunch}
-              onLaunch={() => void connect()}
+              launchPhase={launchPhase}
+              onLaunch={() => void connect({ autoLaunch: true })}
               onReconnect={() => void connect()}
               onCopyBridge={copyBridgeCommand}
             />
@@ -495,6 +583,7 @@ function StateOverlay({
   state,
   pair,
   canLaunch,
+  launchPhase,
   onLaunch,
   onReconnect,
   onCopyBridge,
@@ -502,6 +591,7 @@ function StateOverlay({
   state: TerminalConnectionState;
   pair: PairInfo | null;
   canLaunch: boolean;
+  launchPhase: LaunchPhase;
   onLaunch: () => void;
   onReconnect: () => void;
   onCopyBridge: () => void;
@@ -533,26 +623,67 @@ function StateOverlay({
 
       {state.status === "waiting-to-pair" && (
         <>
-          <Loader2 className="h-7 w-7 animate-spin text-sky-400" />
-          <div className="text-base font-semibold text-sky-400">Waiting for your machine to attach</div>
-          <p className="max-w-md text-[13px] text-zinc-400">
-            The relay is up. Start a bridge on your computer for this session to go live.
-          </p>
-          {pair && (
-            <div className="flex flex-col items-center gap-1.5">
-              <code className="rounded-md border border-dashed border-zinc-700 bg-[#0a0a0b] px-3 py-1.5 font-mono text-sm tracking-wide text-sky-300">
-                session {pair.sessionId.slice(0, 8)}
-              </code>
-              <Button
-                variant="outline"
-                size="xs"
-                className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
-                onClick={onCopyBridge}
+          {launchPhase === "opening" && (
+            <>
+              <Loader2 className="h-7 w-7 animate-spin text-sky-400" />
+              <div className="text-base font-semibold text-sky-400">Opening the VibeCodes helper…</div>
+              <p className="max-w-md text-[13px] text-zinc-400">
+                Your computer may ask to open VibeCodes — click <b className="text-zinc-200">Open</b>. The helper
+                starts Claude Code and attaches here automatically.
+              </p>
+            </>
+          )}
+
+          {launchPhase === "helper-timeout" && (
+            <>
+              <Download className="h-7 w-7 text-sky-400" />
+              <div className="text-base font-semibold text-sky-200">Don&apos;t have the helper?</div>
+              <p className="max-w-md text-[13px] text-zinc-400">
+                Nothing opened. Install the small VibeCodes helper once, then launch again — or pair another
+                machine by hand under Advanced.
+              </p>
+              <a
+                href={HELPER_INSTALL_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex items-center gap-1.5 rounded-md bg-sky-500 px-3 py-1.5 text-sm font-semibold text-sky-950 hover:bg-sky-400"
               >
-                <Copy className="h-3 w-3" /> Copy bridge command
-              </Button>
-              <span className="text-[11px] text-zinc-600">Single-use · expires ~5 min · bound to your account</span>
-            </div>
+                <Download className="h-4 w-4" /> Install the helper
+              </a>
+            </>
+          )}
+
+          {launchPhase === "idle" && (
+            <>
+              <Loader2 className="h-7 w-7 animate-spin text-sky-400" />
+              <div className="text-base font-semibold text-sky-400">Waiting for your machine to attach</div>
+              <p className="max-w-md text-[13px] text-zinc-400">
+                The relay is up. Start a bridge on your computer for this session to go live.
+              </p>
+            </>
+          )}
+
+          {/* Advanced ▾ — cross-machine fallback: copy the manual bridge command. */}
+          {pair && (
+            <details className="mt-1 w-full max-w-md text-left">
+              <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[12px] text-zinc-500 hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
+                <ChevronRight className="h-3 w-3" /> Advanced — pair a remote machine by hand
+              </summary>
+              <div className="mt-2 flex flex-col items-start gap-1.5 rounded-md border border-zinc-800 bg-[#0a0a0b] px-3 py-2.5">
+                <code className="font-mono text-xs tracking-wide text-sky-300">
+                  session {pair.sessionId.slice(0, 8)}
+                </code>
+                <Button
+                  variant="outline"
+                  size="xs"
+                  className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
+                  onClick={onCopyBridge}
+                >
+                  <Copy className="h-3 w-3" /> Copy bridge command
+                </Button>
+                <span className="text-[11px] text-zinc-600">Single-use · expires ~5 min · bound to your account</span>
+              </div>
+            </details>
           )}
         </>
       )}

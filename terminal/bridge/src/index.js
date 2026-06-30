@@ -23,6 +23,12 @@
 //   --cmd     <command>  command to run in the PTY       [BRIDGE_CMD]  default "claude"
 //                        (everything after --cmd, or the env string, is shell-split)
 //   --cwd     <dir>      working directory               [BRIDGE_CWD]  default process.cwd()
+//   --launch-url <url>   a `vibecodes://launch?…` deep link [BRIDGE_LAUNCH_URL]
+//                        Parsed for relay/session/token/cwd — exactly what a packaged
+//                        helper's URL-scheme handler hands us (slice 7). It takes
+//                        precedence over the individual --relay/--session/--token/--cwd
+//                        flags. `--launch-url` MUST come before `--cmd` (which swallows
+//                        the rest of argv). Default spawned command stays "claude".
 //   --max-seconds <n>    hard self-kill safety cap       [BRIDGE_MAX_SECONDS] default 28800 (8h)
 //   --connect-timeout-ms <n>  fail if relay not open in time  [default 30000]
 
@@ -33,6 +39,7 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
+import { parseLaunchDeepLink, redactDeepLinkToken } from "../../shared/deep-link.mjs";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -72,11 +79,29 @@ function shellSplit(s) {
 }
 
 const args = parseArgs(process.argv.slice(2));
-const RELAY = args.relay || process.env.RELAY_URL || "ws://localhost:8787";
-const SESSION = args.session || process.env.SESSION_ID || `dev-${Math.random().toString(36).slice(2, 10)}`;
-const TOKEN = args.token || process.env.BRIDGE_TOKEN || "";
+
+// A `vibecodes://launch?…` deep link, when present, is the highest-precedence source
+// of relay/session/token/cwd — this is the same string a packaged helper's URL-scheme
+// handler will pass us (slice 7). Parse it ONCE; bail clearly if it's malformed.
+const LAUNCH_URL = args["launch-url"] || process.env.BRIDGE_LAUNCH_URL || "";
+let launched = null;
+if (LAUNCH_URL) {
+  launched = parseLaunchDeepLink(LAUNCH_URL);
+  if (!launched) {
+    log("error", "invalid --launch-url (not a vibecodes://launch link)", {
+      url: redactDeepLinkToken(LAUNCH_URL),
+    });
+    process.exit(1);
+  }
+  // Log the parsed link WITHOUT the token (never log secrets).
+  log("info", "using launch deep link", { url: redactDeepLinkToken(LAUNCH_URL) });
+}
+
+const RELAY = launched?.relay || args.relay || process.env.RELAY_URL || "ws://localhost:8787";
+const SESSION = launched?.session || args.session || process.env.SESSION_ID || `dev-${Math.random().toString(36).slice(2, 10)}`;
+const TOKEN = launched?.token || args.token || process.env.BRIDGE_TOKEN || "";
 const CMD = args.cmd || process.env.BRIDGE_CMD || "claude";
-const CWD = args.cwd || process.env.BRIDGE_CWD || process.cwd();
+const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd();
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 28800);
 const CONNECT_TIMEOUT_MS = Number(args["connect-timeout-ms"] || 30000);
 

@@ -30,6 +30,7 @@ import { fileURLToPath } from "node:url";
 import WebSocket from "ws";
 import { startStandinRelay } from "./standin-relay.mjs";
 import { mintSessionTokens, signToken } from "../shared/session-token.mjs";
+import { buildLaunchDeepLink } from "../shared/deep-link.mjs";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const BRIDGE_ENTRY = path.resolve(__dirname, "../bridge/src/index.js");
@@ -160,4 +161,71 @@ test("bridge <-> relay <-> browser round-trip + single-attach + owner-binding", 
   // sanity: the original (authenticated) browser is still attached and live.
   assert.equal(browser.readyState, WebSocket.OPEN, "first browser must remain connected");
   console.log("[test] ALL ASSERTIONS PASSED");
+});
+
+// ── SLICE 4: vibecodes:// launch deep link, end to end ────────────────────────
+// Proves the FULL launch chain logically (the OS scheme-routing is slice-7
+// packaging, deliberately out of scope here):
+//   app BUILDS `vibecodes://launch?relay&session&token` (shared builder)
+//     → the SAME string is handed to `bridge --launch-url <url>`
+//     → the bridge PARSES it for relay/session/token (no RELAY/SESSION/TOKEN env)
+//     → it connects to the relay and the browser leg round-trips.
+test("bridge --launch-url parses the deep link and round-trips through the relay", { timeout: 60000 }, async (t) => {
+  const session = `dl-${Math.random().toString(36).slice(2, 8)}`;
+  const owner = "user-DL-" + Math.random().toString(36).slice(2, 8);
+  let relay;
+  let bridge;
+  let browser;
+
+  t.after(async () => {
+    try { browser?.terminate(); } catch { /* ignore */ }
+    if (bridge && bridge.exitCode === null) bridge.kill("SIGKILL");
+    if (relay) await relay.close();
+  });
+
+  const tokens = await mintSessionTokens({ sub: owner, idea: "idea-DL", sid: session, secret: SECRET });
+  relay = await startStandinRelay({ port: 0, secret: SECRET });
+  console.log(`[test/dl] relay listening at ${relay.url}`);
+
+  // The app builds this EXACT string and fires it as window.location.assign(...).
+  const launchUrl = buildLaunchDeepLink({ relay: relay.url, session, token: tokens.bridge });
+  console.log(`[test/dl] launch url = ${launchUrl.replace(/token=[^&]*/, "token=***")}`);
+
+  // Browser leg attaches first (relay has no buffering), with its browser token.
+  let browserBuf = "";
+  browser = new WebSocket(`${relay.url}/?session=${session}&role=browser&token=${encodeURIComponent(tokens.browser)}`);
+  browser.on("message", (data) => {
+    browserBuf += Buffer.isBuffer(data) ? data.toString("utf8") : String(data);
+  });
+  await Promise.race([
+    once(browser, "open"),
+    new Promise((_, rej) => setTimeout(() => rej(new Error("browser ws open timeout")), 5000)),
+  ]);
+  console.log("[test/dl] browser leg connected");
+
+  // Spawn the bridge with ONLY --launch-url (+ the cheap sentinel cmd). Crucially we
+  // pass NO RELAY_URL/SESSION_ID/BRIDGE_TOKEN env — the deep link is the sole source.
+  bridge = spawn(
+    process.execPath,
+    [BRIDGE_ENTRY, "--launch-url", launchUrl, "--cmd", `${process.execPath} ${SENTINEL}`],
+    {
+      env: { PATH: process.env.PATH, BRIDGE_MAX_SECONDS: "60" },
+      stdio: ["ignore", "inherit", "inherit"],
+    },
+  );
+  bridge.on("exit", (code, sig) => console.log(`[test/dl] bridge exited code=${code} sig=${sig}`));
+
+  // (a) browser receives the PTY output → the bridge parsed the link + connected.
+  const tReady = await waitForText(() => browserBuf, "READY", HARD_TIMEOUT_MS, "PTY sentinel (deep link)");
+  console.log(`[test/dl] (a) PASS — bridge connected via --launch-url, "READY" relayed in ${tReady}ms`);
+
+  // (b) full round-trip: browser → relay → PTY → relay → browser.
+  const token = `PING-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+  browserBuf = "";
+  browser.send(Buffer.from(token + "\n", "utf8"), { binary: true });
+  const tEcho = await waitForText(() => browserBuf, token, HARD_TIMEOUT_MS, "PTY echo (deep link)");
+  console.log(`[test/dl] (b) PASS — deep-link bridge round-trip of ${token} in ${tEcho}ms`);
+
+  assert.equal(browser.readyState, WebSocket.OPEN, "browser must remain connected");
+  console.log("[test/dl] ALL ASSERTIONS PASSED");
 });
