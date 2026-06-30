@@ -19,6 +19,7 @@
 // Flags (env fallback in brackets):
 //   --relay   <ws-url>   relay base URL                 [RELAY_URL]   default ws://localhost:8787
 //   --session <id>       session id to pair on          [SESSION_ID]  default random
+//   --token   <jwt>      app-minted bridge-role token    [BRIDGE_TOKEN] (required by the relay)
 //   --cmd     <command>  command to run in the PTY       [BRIDGE_CMD]  default "claude"
 //                        (everything after --cmd, or the env string, is shell-split)
 //   --cwd     <dir>      working directory               [BRIDGE_CWD]  default process.cwd()
@@ -73,6 +74,7 @@ function shellSplit(s) {
 const args = parseArgs(process.argv.slice(2));
 const RELAY = args.relay || process.env.RELAY_URL || "ws://localhost:8787";
 const SESSION = args.session || process.env.SESSION_ID || `dev-${Math.random().toString(36).slice(2, 10)}`;
+const TOKEN = args.token || process.env.BRIDGE_TOKEN || "";
 const CMD = args.cmd || process.env.BRIDGE_CMD || "claude";
 const CWD = args.cwd || process.env.BRIDGE_CWD || process.cwd();
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 28800);
@@ -127,8 +129,17 @@ async function main() {
     process.exit(1);
   }
 
-  const url = `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}&role=bridge`;
-  log("info", "connecting to relay", { url, host: os.hostname() });
+  // The relay requires an app-minted `bridge`-role token (slice 2). It binds this
+  // leg to its owning user; the matching `browser` token must carry the same owner.
+  if (!TOKEN) {
+    log("error", "missing bridge token — set --token or BRIDGE_TOKEN (minted by the app)");
+    process.exit(1);
+  }
+  const url =
+    `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
+    `&role=bridge&token=${encodeURIComponent(TOKEN)}`;
+  // Log the URL WITHOUT the token (never log secrets).
+  log("info", "connecting to relay", { url: url.replace(/token=[^&]*/, "token=***"), host: os.hostname() });
   const ws = new WebSocket(url);
 
   let bytesOut = 0; // PTY -> ws

@@ -1,0 +1,10 @@
+{
+  "name": "vibecodes-terminal-shared",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Shared, dependency-free session-token scheme (HMAC-SHA256 over Web Crypto). Imported by the app, the relay, the bridge, and the tests so one implementation signs and verifies everywhere. (Slice 2)",
+  "scripts": {
+    "test": "node --test"
+  }
+}

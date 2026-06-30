@@ -17,6 +17,7 @@
 // identical rules.
 
 import { decideAttach, isValidSession, CLOSE } from "./pairing.js";
+import { authorizeAttach } from "../../shared/session-token.mjs";
 
 export default {
   /**
@@ -38,9 +39,11 @@ export default {
     }
 
     const session = url.searchParams.get("session");
-    // TODO(slice 2): validate app-minted session token + owner binding here —
-    // verify the signed vibecodes:// payload and bind to the authenticated human
-    // BEFORE routing to the DO, so an unauthorized leg never reaches a session.
+    // Cheap shape guard first (a malformed session id can't address a DO). FULL
+    // token verification + owner-binding happens inside the Durable Object on WS
+    // attach (see TerminalRelay.fetch) — that is where the per-session owner state
+    // lives, so both the signature/expiry check and the owner check are enforced
+    // in one place, by the same shared `authorizeAttach`.
     if (!isValidSession(session)) {
       return new Response(CLOSE.BAD_SESSION.reason, { status: 400 });
     }
@@ -64,6 +67,8 @@ export class TerminalRelay {
     this.bridge = null;
     /** @type {WebSocket|null} */
     this.browser = null;
+    /** @type {string|null} owning user id (`sub`) this session is bound to */
+    this.owner = null;
     this.bytes = { bridge: 0, browser: 0 };
   }
 
@@ -78,6 +83,7 @@ export class TerminalRelay {
     return {
       bridge: this.bridge !== null,
       browser: this.browser !== null,
+      owner: this.owner,
     };
   }
 
@@ -86,13 +92,30 @@ export class TerminalRelay {
     const url = new URL(request.url);
     const role = url.searchParams.get("role");
     const session = url.searchParams.get("session");
+    const token = url.searchParams.get("token");
 
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
     server.accept();
 
-    const decision = decideAttach(this.attachState(), role);
+    // 1) Authenticate the leg: verify the app-minted token's signature + expiry and
+    //    that its `sid`/`role` claims match THIS connection. Never log the token.
+    const auth = await authorizeAttach({
+      token,
+      secret: this.env.TERMINAL_SESSION_SECRET,
+      session,
+      role,
+    });
+    if (!auth.ok) {
+      this.log("attach rejected (auth)", { session, role, reason: auth.reason, code: CLOSE.BAD_TOKEN.code });
+      server.close(CLOSE.BAD_TOKEN.code, CLOSE.BAD_TOKEN.reason);
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
+    // 2) Owner-binding + single-attach (pure). Both legs of a session must carry the
+    //    same `sub`; a leg for a different user is rejected with OWNER_MISMATCH.
+    const decision = decideAttach(this.attachState(), role, auth.sub);
     if (!decision.ok) {
       this.log("attach rejected", { session, role, code: decision.code, reason: decision.reason });
       // Send the close on the accepted server socket so the client sees the code.
@@ -100,6 +123,7 @@ export class TerminalRelay {
       return new Response(null, { status: 101, webSocket: client });
     }
 
+    if (this.owner === null) this.owner = auth.sub;
     if (role === "bridge") this.bridge = server;
     else this.browser = server;
     this.log("attached", { session, role, ...this.attachState() });
@@ -136,6 +160,9 @@ export class TerminalRelay {
         if (role === "bridge") this.browser = null;
         else this.bridge = null;
       }
+      // Release the owner binding once the session is fully empty so the id can be
+      // cleanly re-established by an authorized owner.
+      if (this.bridge === null && this.browser === null) this.owner = null;
     };
 
     server.addEventListener("close", () => teardown("close"));

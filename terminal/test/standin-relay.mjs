@@ -20,40 +20,52 @@ import {
   isValidSession,
   CLOSE,
 } from "../relay/src/pairing.js";
+import { authorizeAttach } from "../shared/session-token.mjs";
 
 /**
- * @param {{ port?: number, log?: (msg:string, extra?:object)=>void }} [opts]
+ * @param {{ port?: number, secret?: string, log?: (msg:string, extra?:object)=>void }} [opts]
+ *   `secret` — TERMINAL_SESSION_SECRET used to verify leg tokens (defaults to env).
  * @returns {Promise<{ url:string, port:number, close:()=>Promise<void>, sessions: Map }>}
  */
 export function startStandinRelay(opts = {}) {
   const log = opts.log || (() => {});
-  // session id -> { bridge: ws|null, browser: ws|null }
+  const secret = opts.secret ?? process.env.TERMINAL_SESSION_SECRET;
+  // session id -> { bridge: ws|null, browser: ws|null, owner: string|null }
   const sessions = new Map();
 
   const wss = new WebSocketServer({ port: opts.port ?? 0 });
 
-  wss.on("connection", (ws, req) => {
+  wss.on("connection", async (ws, req) => {
     const url = new URL(req.url, "ws://localhost");
     const session = url.searchParams.get("session");
     const role = url.searchParams.get("role");
+    const token = url.searchParams.get("token");
 
-    // TODO(slice 2): validate app-minted session token + owner binding.
     if (!isValidSession(session)) {
       ws.close(CLOSE.BAD_SESSION.code, CLOSE.BAD_SESSION.reason);
       return;
     }
 
-    if (!sessions.has(session)) sessions.set(session, { bridge: null, browser: null });
+    // Authenticate the leg with the SAME shared verifier the real relay uses.
+    const auth = await authorizeAttach({ token, secret, session, role });
+    if (!auth.ok) {
+      log("attach rejected (auth)", { session, role, reason: auth.reason });
+      ws.close(CLOSE.BAD_TOKEN.code, CLOSE.BAD_TOKEN.reason);
+      return;
+    }
+
+    if (!sessions.has(session)) sessions.set(session, { bridge: null, browser: null, owner: null });
     const legs = sessions.get(session);
 
-    const state = { bridge: legs.bridge !== null, browser: legs.browser !== null };
-    const decision = decideAttach(state, role);
+    const state = { bridge: legs.bridge !== null, browser: legs.browser !== null, owner: legs.owner };
+    const decision = decideAttach(state, role, auth.sub);
     if (!decision.ok) {
       log("attach rejected", { session, role, code: decision.code, reason: decision.reason });
       ws.close(decision.code, decision.reason);
       return;
     }
 
+    if (legs.owner === null) legs.owner = auth.sub;
     legs[role] = ws;
     log("attached", { session, role });
 

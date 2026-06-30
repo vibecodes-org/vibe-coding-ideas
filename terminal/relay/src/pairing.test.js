@@ -67,6 +67,43 @@ test("peerRole returns the opposite leg", () => {
   assert.equal(peerRole("browser"), "bridge");
 });
 
+// ── owner-binding (slice 2) ──────────────────────────────────────────────────
+
+test("owner-binding: same-user bridge+browser pair is accepted", () => {
+  let s = emptyState();
+  assert.equal(decideAttach(s, "bridge", "user-A").ok, true);
+  s = attach(s, "bridge", "user-A");
+  assert.equal(s.owner, "user-A");
+  assert.equal(decideAttach(s, "browser", "user-A").ok, true);
+  s = attach(s, "browser", "user-A");
+  assert.equal(s.owner, "user-A", "owner stays bound to the first leg's user");
+});
+
+test("owner-binding: a different user is rejected with OWNER_MISMATCH (before single-attach)", () => {
+  let s = emptyState();
+  s = attach(s, "bridge", "user-A"); // session now owned by A, browser slot free
+  const d = decideAttach(s, "browser", "user-B");
+  assert.equal(d.ok, false);
+  assert.equal(d.code, CLOSE.OWNER_MISMATCH.code);
+  assert.equal(d.code, 4005);
+  assert.match(d.reason, /owner/);
+});
+
+test("owner-binding: releases the owner once the session is fully empty", () => {
+  let s = emptyState();
+  s = attach(s, "bridge", "user-A");
+  s = detach(s, "bridge");
+  assert.equal(s.owner, null, "owner released when no legs remain");
+  // a fresh, different owner may now claim the freed session id
+  assert.equal(decideAttach(s, "bridge", "user-B").ok, true);
+});
+
+test("owner-binding: omitting sub skips the owner check (slice-1 compatibility)", () => {
+  let s = attach(emptyState(), "bridge", "user-A");
+  // No sub passed → owner check is skipped, only single-attach applies.
+  assert.equal(decideAttach(s, "browser").ok, true);
+});
+
 test("isValidSession accepts url-safe tokens and rejects junk", () => {
   assert.equal(isValidSession("a3f9"), true);
   assert.equal(isValidSession("dev-abc_123.4"), true);
