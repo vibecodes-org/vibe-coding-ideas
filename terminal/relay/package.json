@@ -1,0 +1,14 @@
+{
+  "name": "vibecodes-terminal-relay",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Cloudflare Worker + Durable Object that opaquely relays bytes between a bridge leg and a single browser leg per session. (Slice 1)",
+  "scripts": {
+    "dev": "wrangler dev",
+    "test": "node --test"
+  },
+  "devDependencies": {
+    "wrangler": "^4.105.0"
+  }
+}

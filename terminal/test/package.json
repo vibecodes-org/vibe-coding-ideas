@@ -1,0 +1,13 @@
+{
+  "name": "vibecodes-terminal-test",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Automated round-trip proof + stand-in relay + manual xterm page for the terminal slice 1.",
+  "scripts": {
+    "test": "node --test roundtrip.test.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  }
+}

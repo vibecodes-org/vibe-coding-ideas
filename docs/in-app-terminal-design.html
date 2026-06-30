@@ -1,0 +1,835 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>In-App Local Claude Code Terminal — UX Design (Compass) · Rev 2</title>
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --panel: #141417;
+    --panel-2: #1c1c21;
+    --panel-3: #232329;
+    --border: #2a2a31;
+    --border-2: #3a3a44;
+    --text: #e6e6ea;
+    --muted: #9a9aa6;
+    --muted-2: #6f6f7a;
+    --accent: #7dd3fc;
+    --emerald: #34d399;
+    --amber: #fbbf24;
+    --rose: #fb7185;
+    --violet: #a78bfa;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55; font-size: 15px;
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 48px 28px 120px; }
+  header.doc { border-bottom: 1px solid var(--border); padding-bottom: 24px; margin-bottom: 32px; }
+  .kicker { color: var(--accent); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; }
+  h1 { font-size: 30px; margin: 8px 0 6px; }
+  h2 { font-size: 21px; margin: 52px 0 14px; padding-top: 16px; border-top: 1px solid var(--border); }
+  h3 { font-size: 16px; margin: 28px 0 10px; color: var(--accent); }
+  p { color: var(--text); }
+  .sub { color: var(--muted); }
+  a { color: var(--accent); }
+  .persona { display: inline-block; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 12px; color: var(--violet); margin-right: 8px; }
+  code, .mono { font-family: var(--mono); font-size: 13px; }
+  code.inline { background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; color: var(--accent); }
+  pre { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px; overflow-x: auto; font-family: var(--mono); font-size: 12.5px; line-height: 1.5; color: #d6e7f0; }
+
+  .cite { background: linear-gradient(90deg, rgba(167,139,250,.08), transparent); border-left: 3px solid var(--violet); border-radius: 0 8px 8px 0; padding: 14px 18px; margin: 16px 0; font-size: 14px; }
+  .cite b { color: var(--violet); }
+  .rationale { background: linear-gradient(90deg, rgba(125,211,252,.07), transparent); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 14px 0 22px; font-size: 13.5px; color: var(--muted); }
+  .rationale b { color: var(--text); }
+  .rationale .law { color: var(--accent); font-weight: 600; }
+
+  .changed { background: linear-gradient(90deg, rgba(251,191,36,.10), transparent); border: 1px solid rgba(251,191,36,.4); border-radius: 12px; padding: 18px 22px; margin: 18px 0; }
+  .changed h3 { margin-top: 0; color: var(--amber); }
+  .changed ul { margin: 8px 0 0; padding-left: 18px; }
+  .changed li { margin: 7px 0; font-size: 14px; color: var(--text); }
+  .changed li b { color: var(--amber); }
+
+  .reco { background: linear-gradient(90deg, rgba(52,211,153,.10), transparent); border: 1px solid rgba(52,211,153,.4); border-radius: 12px; padding: 18px 22px; margin: 18px 0; }
+  .reco h3 { margin-top: 0; color: var(--emerald); }
+  .reco .pick { display:inline-block; background: rgba(52,211,153,.16); border:1px solid rgba(52,211,153,.5); color: var(--emerald); border-radius: 6px; padding: 2px 9px; font-size: 12px; font-weight: 700; margin-left: 6px; }
+  .alt { color: var(--muted); font-size: 13.5px; border-left: 2px solid var(--border-2); padding-left: 14px; margin-top: 12px; }
+
+  /* ── Mock chrome ── */
+  .browser { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin: 14px 0; background: var(--panel); box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+  .chrome-bar { display:flex; align-items:center; gap:8px; background: var(--panel-2); border-bottom: 1px solid var(--border); padding: 9px 14px; }
+  .dot { width:11px; height:11px; border-radius:50%; }
+  .dot.r{background:#fb7185}.dot.y{background:#fbbf24}.dot.g{background:#34d399}
+  .urlbar { flex:1; margin-left:8px; background: var(--bg); border:1px solid var(--border); border-radius:6px; padding:3px 10px; font-family:var(--mono); font-size:11.5px; color:var(--muted); }
+
+  /* ── Board chrome (hero) ── */
+  .boardtop { display:flex; align-items:center; gap:12px; padding:11px 16px; background:var(--panel); border-bottom:1px solid var(--border); }
+  .boardtop .crumb { font-size:13px; color:var(--muted); }
+  .boardtop .crumb b { color:var(--text); }
+  .boardtop .spacer { flex:1; }
+  .avatarstack { display:flex; }
+  .avatarstack span { width:24px; height:24px; border-radius:50%; border:2px solid var(--panel); margin-left:-7px; font-size:10px; display:flex; align-items:center; justify-content:center; font-weight:700; color:#06222e; }
+  .kanban { display:flex; gap:12px; padding:14px 16px; background:#0d0d10; overflow:hidden; }
+  .col { flex:1; min-width:0; }
+  .col h4 { margin:0 0 9px; font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:7px; }
+  .col h4 .count { background:var(--panel-3); border:1px solid var(--border); color:var(--muted); border-radius:999px; padding:0 7px; font-size:11px; }
+  .tcard { background:var(--panel-2); border:1px solid var(--border); border-radius:9px; padding:10px 11px; margin-bottom:9px; }
+  .tcard .ttl { font-size:13px; color:var(--text); line-height:1.4; }
+  .tcard .meta { display:flex; align-items:center; gap:6px; margin-top:8px; }
+  .chip { font-size:10.5px; font-weight:700; border-radius:5px; padding:1px 7px; letter-spacing:.02em; }
+  .chip.cyan{ color:var(--accent); background:rgba(125,211,252,.12); border:1px solid rgba(125,211,252,.4);}
+  .chip.violet{ color:var(--violet); background:rgba(167,139,250,.12); border:1px solid rgba(167,139,250,.4);}
+  .chip.amber{ color:var(--amber); background:rgba(251,191,36,.12); border:1px solid rgba(251,191,36,.4);}
+  .chip.emerald{ color:var(--emerald); background:rgba(52,211,153,.12); border:1px solid rgba(52,211,153,.4);}
+  .tcard .mini-av { width:19px; height:19px; border-radius:50%; font-size:9px; display:flex; align-items:center; justify-content:center; font-weight:700; color:#06222e; margin-left:auto; }
+
+  /* slim docked terminal tab (collapsed) */
+  .dockbar { display:flex; align-items:center; gap:10px; background:var(--panel-2); border-top:1px solid var(--border-2); padding:7px 14px; }
+  .dockbar .lbl { display:inline-flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; color:var(--text); }
+  .dockbar .spacer { flex:1; }
+
+  /* ── Terminal panel ── */
+  .term { background:#0c0c0e; border-top: 1px solid var(--border-2); }
+  .term-header { display:flex; align-items:center; gap:10px; background: var(--panel-2); border-bottom:1px solid var(--border); padding: 8px 12px; flex-wrap: wrap; }
+  .statepill { display:inline-flex; align-items:center; gap:6px; border-radius:7px; padding:4px 10px; font-size:12.5px; font-weight:600; border:1px solid var(--border-2); background: var(--panel-3); }
+  .statepill .ic { font-size:12px; line-height:1; }
+  .statepill.connected { color: var(--emerald); border-color: rgba(52,211,153,.5); background: rgba(52,211,153,.10); }
+  .statepill.connecting { color: var(--amber); border-color: rgba(251,191,36,.5); background: rgba(251,191,36,.10); }
+  .statepill.waiting { color: var(--accent); border-color: rgba(125,211,252,.5); background: rgba(125,211,252,.10); }
+  .statepill.disconnected { color: var(--muted); border-color: var(--border-2); background: var(--panel-3); }
+  .statepill.ended { color: var(--muted); border-color: var(--border-2); background: var(--panel-3); }
+  .statepill.error { color: var(--rose); border-color: rgba(251,113,133,.55); background: rgba(251,113,133,.10); }
+  .slowtag { display:inline-flex; align-items:center; gap:4px; font-size:10.5px; font-weight:700; color:var(--amber); background:rgba(251,191,36,.10); border:1px solid rgba(251,191,36,.45); border-radius:5px; padding:2px 6px; }
+  .hostinfo { font-family: var(--mono); font-size: 12px; color: var(--muted); display:flex; align-items:center; gap:6px; }
+  .hostinfo .sep { color: var(--muted-2); }
+  .ro-badge { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700; color: var(--violet); background: rgba(167,139,250,.12); border:1px solid rgba(167,139,250,.55); border-radius:6px; padding:3px 9px; letter-spacing:.02em; }
+  .spacer { flex:1; }
+  .tctrls { display:flex; align-items:center; gap:6px; }
+  .ibtn { display:inline-flex; align-items:center; gap:5px; height:30px; min-width:30px; justify-content:center; padding:0 9px; border-radius:7px; border:1px solid var(--border-2); background: var(--panel-3); color: var(--text); font-size:12.5px; cursor:pointer; }
+  .ibtn:hover { background: #2c2c34; }
+  .ibtn.danger { color: var(--rose); border-color: rgba(251,113,133,.45); }
+  .ibtn.danger:hover { background: rgba(251,113,133,.12); }
+  .ibtn.toggle-on { color: var(--violet); border-color: rgba(167,139,250,.55); background: rgba(167,139,250,.12); }
+  .ibtn:focus-visible, .btn:focus-visible, .tin:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .resize-grip { height:6px; background:repeating-linear-gradient(90deg,var(--border-2) 0 10px,transparent 10px 20px); opacity:.5; cursor:ns-resize; }
+
+  .xterm { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; padding: 16px 18px; color: #cfd8df; min-height: 230px; white-space: pre-wrap; }
+  .xterm .c-cyan { color: #7dd3fc; }
+  .xterm .c-green { color: #34d399; }
+  .xterm .c-dim { color: #6f6f7a; }
+  .xterm .c-amber { color: #fbbf24; }
+  .xterm .c-violet { color: #a78bfa; }
+  .xterm .c-white { color: #e6e6ea; }
+  .xterm .bullet { color:#34d399; }
+  .cursor { display:inline-block; width:8px; height:15px; background:#cfd8df; vertical-align:-2px; animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  .term-input { display:flex; align-items:center; gap:8px; border-top:1px solid var(--border); background: var(--panel); padding:8px 12px; }
+  .term-input .prompt { color: var(--emerald); font-family:var(--mono); font-size:12.5px; }
+  .tin { flex:1; background: var(--bg); border:1px solid var(--border-2); border-radius:7px; padding:6px 10px; color: var(--text); font-family:var(--mono); font-size:12.5px; }
+  .tin::placeholder { color: var(--muted-2); }
+  .input-note { font-size:11.5px; color: var(--muted); padding:6px 12px; background: rgba(167,139,250,.06); border-top:1px solid var(--border); }
+  .input-note b { color: var(--violet); }
+
+  /* centered state overlays inside terminal body */
+  .overlay { min-height: 230px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding: 28px; gap:12px; }
+  .overlay .big { font-size: 30px; line-height:1; }
+  .overlay .ttl { font-size: 16px; font-weight: 700; }
+  .overlay .ttl.green { color: var(--emerald); } .overlay .ttl.amber{color:var(--amber);} .overlay .ttl.rose{color:var(--rose);} .overlay .ttl.cyan{color:var(--accent);} .overlay .ttl.muted{color:var(--muted);} .overlay .ttl.violet{color:var(--violet);}
+  .overlay .msg { color: var(--muted); font-size:13.5px; max-width: 460px; }
+  .codebox { font-family: var(--mono); font-size: 28px; letter-spacing: .14em; font-weight: 700; color: var(--accent); background: var(--bg); border: 1px dashed var(--border-2); border-radius: 10px; padding: 12px 22px; }
+  .btn { display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 18px; border-radius:8px; font-size:13.5px; font-weight:600; cursor:pointer; border:1px solid transparent; }
+  .btn.lg { height:42px; padding:0 22px; font-size:14.5px; }
+  .btn.primary { background: var(--accent); color:#06222e; }
+  .btn.emerald { background: var(--emerald); color:#04231a; }
+  .btn.ghost { background: var(--panel-3); color: var(--text); border-color: var(--border-2); }
+  .btn.danger { background: rgba(251,113,133,.12); color: var(--rose); border:1px solid rgba(251,113,133,.5); }
+  .btnrow { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+  .adv { font-size:12px; color:var(--muted-2); margin-top:4px; }
+  .adv summary { cursor:pointer; color:var(--muted); }
+  .adv summary:hover { color:var(--text); }
+
+  /* OS prompt mock */
+  .osprompt { max-width:360px; margin:14px auto; background:#232327; border:1px solid #3a3a40; border-radius:14px; box-shadow:0 18px 50px rgba(0,0,0,.6); overflow:hidden; }
+  .osprompt .body { padding:22px 22px 16px; text-align:center; }
+  .osprompt .ic { width:52px; height:52px; border-radius:12px; margin:0 auto 12px; display:flex; align-items:center; justify-content:center; font-size:26px; background:linear-gradient(180deg,#3b3b42,#26262b); border:1px solid #45454d; }
+  .osprompt .t { font-size:14.5px; font-weight:700; color:#f2f2f5; }
+  .osprompt .d { font-size:12.5px; color:#b8b8c0; margin-top:6px; line-height:1.5; }
+  .osprompt .actions { display:flex; border-top:1px solid #3a3a40; }
+  .osprompt .actions button { flex:1; background:transparent; border:0; padding:11px; font-size:13.5px; color:var(--accent); cursor:pointer; }
+  .osprompt .actions button.cancel { color:#b8b8c0; border-right:1px solid #3a3a40; }
+  .osprompt .actions button.primary { font-weight:700; }
+
+  /* state index grid */
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin:16px 0; }
+  @media (max-width:760px){ .grid { grid-template-columns: 1fr; } }
+  .state { border:1px solid var(--border); border-radius:12px; padding:14px 16px; background: var(--panel); }
+  .state .tag { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; display:flex; align-items:center; gap:6px; }
+  .state.ok{border-color:rgba(52,211,153,.4)} .state.ok .tag{color:var(--emerald)}
+  .state.wait{border-color:rgba(125,211,252,.4)} .state.wait .tag{color:var(--accent)}
+  .state.warn{border-color:rgba(251,191,36,.4)} .state.warn .tag{color:var(--amber)}
+  .state.err{border-color:rgba(251,113,133,.45)} .state.err .tag{color:var(--rose)}
+  .state.kill{border-color:rgba(167,139,250,.45)} .state.kill .tag{color:var(--violet)}
+  .state.neutral .tag{color:var(--muted)}
+  .state p { font-size:13px; color:var(--muted); margin:8px 0 0; }
+  .state .next { color: var(--emerald); font-weight:600; }
+
+  table { width:100%; border-collapse:collapse; margin:14px 0; font-size:13.5px; }
+  th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  td code { color: var(--accent); }
+
+  /* flow */
+  .flow { display:flex; flex-direction:column; margin:18px 0; }
+  .step { display:flex; gap:14px; }
+  .step .num { flex:0 0 34px; height:34px; border-radius:50%; background:var(--panel-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:var(--accent); }
+  .step .body { flex:1; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:11px 16px; margin-bottom:10px; }
+  .step .body .t { font-weight:600; }
+  .step .body .d { color:var(--muted); font-size:13px; margin-top:2px; }
+  .connector { margin:-6px 0 4px 16px; color:var(--border-2); font-size:18px; line-height:1; }
+
+  /* horizontal mini-flow strip */
+  .strip { display:flex; align-items:stretch; gap:0; margin:16px 0; flex-wrap:wrap; }
+  .strip .s { flex:1; min-width:150px; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:12px 14px; position:relative; }
+  .strip .s .k { font-size:11px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--accent); }
+  .strip .s .h { font-size:13.5px; font-weight:600; margin-top:4px; }
+  .strip .s .b { font-size:12px; color:var(--muted); margin-top:3px; }
+  .strip .arrow { display:flex; align-items:center; color:var(--border-2); font-size:20px; padding:0 6px; }
+  .strip .s .once { position:absolute; top:-9px; right:10px; font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--amber); background:rgba(251,191,36,.12); border:1px solid rgba(251,191,36,.45); border-radius:5px; padding:1px 6px; }
+  .strip .s .every { position:absolute; top:-9px; right:10px; font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; color:var(--emerald); background:rgba(52,211,153,.12); border:1px solid rgba(52,211,153,.45); border-radius:5px; padding:1px 6px; }
+  @media (max-width:680px){ .strip .arrow{ transform:rotate(90deg); padding:4px 0; width:100%; justify-content:center;} .strip .s{ flex:1 1 100%; } }
+
+  .label { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:3px 10px; margin-bottom:10px; }
+  .toc { columns:2; gap:24px; font-size:13.5px; color:var(--muted); }
+  @media (max-width:680px){ .toc{columns:1;} }
+  .toc a { display:block; padding:3px 0; }
+  ul.tight { margin:8px 0 0; padding-left:18px; }
+  ul.tight li { margin:5px 0; font-size:13.5px; color:var(--muted); }
+  ul.tight li b { color: var(--text); }
+  .splitbtn { display:inline-flex; }
+  .splitbtn .main { background: var(--accent); border:1px solid var(--accent); border-right:0; border-radius:8px 0 0 8px; color:#06222e; height:34px; display:flex; align-items:center; gap:7px; padding:0 14px; font-size:13.5px; font-weight:700; }
+  .splitbtn .caret { background: var(--accent); border:1px solid var(--accent); border-radius:0 8px 8px 0; color:#06222e; height:34px; display:flex; align-items:center; padding:0 9px; }
+  .hero-cap { font-size:12px; color:var(--muted-2); text-align:center; margin:4px 0 0; }
+
+  /* ── Launch Claude Code "where should it run?" menu ── */
+  .launchmenu { width: 340px; max-width:100%; background: var(--panel); border:1px solid var(--border-2); border-radius:12px; box-shadow:0 18px 50px rgba(0,0,0,.6); overflow:hidden; }
+  .launchmenu .lm-head { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; color:var(--muted); padding:11px 14px 7px; }
+  .launchmenu .lm-item { display:flex; gap:11px; align-items:flex-start; width:100%; text-align:left; background:transparent; border:0; border-top:1px solid var(--border); padding:12px 14px; min-height:44px; cursor:pointer; color:var(--text); }
+  .launchmenu .lm-item:hover { background: var(--panel-2); }
+  .launchmenu .lm-item:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+  .launchmenu .lm-ic { font-size:18px; line-height:1.2; flex:0 0 auto; }
+  .launchmenu .lm-txt { display:flex; flex-direction:column; gap:2px; }
+  .launchmenu .lm-txt .lm-ttl { font-size:13.5px; font-weight:700; display:flex; align-items:center; gap:7px; }
+  .launchmenu .lm-sub { font-size:11.5px; color:var(--muted); line-height:1.45; }
+  .launchmenu .lm-tag { font-size:9.5px; font-weight:700; letter-spacing:.05em; text-transform:uppercase; padding:1px 6px; border-radius:5px; }
+  .launchmenu .lm-tag.today { color:var(--emerald); background:rgba(52,211,153,.12); border:1px solid rgba(52,211,153,.45); }
+  .launchmenu .lm-tag.beta { color:var(--violet); background:rgba(167,139,250,.12); border:1px solid rgba(167,139,250,.5); }
+  .launchmenu .lm-foot { font-size:11px; color:var(--muted-2); padding:9px 14px; border-top:1px solid var(--border); background:var(--panel-2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <div class="kicker">UX Design · Step 2 · In-App Local Claude Code Terminal · Revision 2 · P1</div>
+  <h1>“In the browser” — a new way to run the same Launch Claude Code button</h1>
+  <p class="sub">
+    <span class="persona">Compass · UX Designer</span>
+    This is <b>not a new button</b>. The existing <b>Launch Claude Code</b> control on your idea board now asks
+    <b>where</b> Claude should run — you pick one: <b>“In a terminal window”</b> (on your own computer — exactly how it
+    works today, nothing to install) or <b>“In the browser”</b> (new). Pick <b>In the browser</b> and — the first time only —
+    you install a small <b>VibeCodes desktop helper</b>; the OS asks “Open VibeCodes?”, the helper starts
+    <code class="inline">claude</code> on your machine, and the live session renders in a <b>terminal panel docked at the
+    bottom of the board</b> (VS Code convention). You run Claude in <i>one</i> place at a time — a terminal window
+    <i>or</i> the browser, never both. Opt-in, feature-flagged, owner-bound, <b>read-write with a read-only kill-switch</b>,
+    mac + Windows. <b>No command typing in the everyday path.</b>
+  </p>
+</header>
+
+<div class="changed">
+  <h3>⟳ What changed in this revision</h3>
+  <p style="margin:2px 0 0; font-size:13.5px; color:var(--muted);">Sent back at the Design-Review gate. The fixes:</p>
+  <ul>
+    <li><b>One entry point, not two.</b> Launch is now a <b>mode of the existing “Launch Claude Code” button</b> — terminal window (today) vs in the browser (new) — <b>pick one</b>; the helper install is only needed for the in-browser mode. No second, parallel “Launch terminal” button anywhere (§1–§2).</li>
+    <li><b>Launch is a button, not a pasted command.</b> Choosing <b>In the browser</b> = install the helper app once → OS “Open VibeCodes?” → terminal appears. The old <code class="inline">npx</code> paste survives only behind an <b>Advanced</b> disclosure (§2–§3).</li>
+    <li><b>Pairing is automatic on the same machine.</b> The <code class="inline">vibecodes://</code> deep link carries the signed session identity, so the common case has <b>no code to type</b>. The manual device-code is now just the labelled <b>cross-machine fallback</b> (§4).</li>
+    <li><b>New hero: the board mockup.</b> The terminal is shown docked on a real idea board — <b>collapsed</b> (slim bar) and <b>expanded</b> (live session) — at realistic proportions (§1).</li>
+    <li><b>End-to-end “how it works” strip</b> added: install once → click Launch → OS opens helper → terminal appears (§2).</li>
+    <li><b>Gap fixes folded in:</b> a distinct <b>“bridge belongs to another account”</b> owner-mismatch error; non-alarming <b>idle-timeout / max-duration</b> ended copy; a subtle <b>slow-connection</b> indicator on the Connected pill; and the <b>two independent clocks</b> (connect timeout vs session limits) called out (§6–§7).</li>
+    <li><b>The helper ships signed, notarized &amp; verified.</b> The first-run OS step now shows the <b>verified-developer</b> / <b>verified-publisher</b> experience, not the scary “unidentified developer” warning — plus an <b>“Is this safe?”</b> reassurance panel for non-coders (§3). <b>Code-signing + notarization is now a hard P1 requirement</b> (§3, gate).</li>
+  </ul>
+</div>
+
+<div class="cite">
+  <b>Building on Step 1 (Requirements).</b> The ProdOwner slice fixed: <b>single-attach</b> (one helper per session),
+  <b>opt-in + feature-flagged</b>, <b>owner-bound</b> (the session belongs to the authenticated human, not a bot identity),
+  <b>read-write with a read-only kill-switch</b>, and <b>mac + Windows</b>. The relay is opaque (no plaintext at the Cloudflare DO).
+  Two open questions went to UX: <b>Q2</b> pairing UX; <b>Q3</b> where the panel lives. Both are answered below and reflect the
+  reviewer’s direction: pairing should be <b>click-to-launch, auto-paired</b> for non-coders, with manual codes kept only as a fallback.
+</div>
+
+<div class="label">Contents</div>
+<nav class="toc">
+  <a href="#hero">1 · The board mockup — collapsed &amp; expanded (HERO)</a>
+  <a href="#how">2 · How it works, end to end — the “In the browser” path</a>
+  <a href="#firstrun">3 · First run — install the helper (signed &amp; verified trust step)</a>
+  <a href="#pair">4 · Pairing — automatic same-machine, manual fallback</a>
+  <a href="#gating">5 · Gating — flag-off / opt-in / first-run</a>
+  <a href="#panel">6 · Connected panel · slow-connection · two clocks</a>
+  <a href="#killswitch">7 · Read-only kill-switch</a>
+  <a href="#states">8 · All connection states (incl. owner-mismatch &amp; idle-timeout)</a>
+  <a href="#responsive">9 · Responsive — desktop vs 375px</a>
+  <a href="#a11y">10 · Accessibility &amp; review checklist</a>
+  <a href="#northstar">11 · North star — Option 3 (future, separate task)</a>
+</nav>
+
+<!-- ============================================================= -->
+<h2 id="hero">1 · The board mockup — the hero</h2>
+<p class="sub">Where it lives (Q3): a <b>collapsible terminal dock at the bottom of the idea board</b>, exactly the VS Code bottom-panel convention (Jakob’s Law). The board’s kanban columns and cards stay visible above it. Here it is in both resting states.</p>
+
+<h3>1a · Collapsed — a slim dock bar on the board</h3>
+<div class="browser">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">vibecodes.co.uk/ideas/recipe-saver/board</span></div>
+  <!-- board top bar -->
+  <div class="boardtop">
+    <span class="crumb">Recipe Saver <span style="color:var(--muted-2)">/</span> <b>Board</b></span>
+    <span class="spacer"></span>
+    <span class="splitbtn"><span class="main">▸ Launch Claude Code</span><span class="caret" aria-label="Choose where Claude runs">▾</span></span>
+    <span class="avatarstack"><span style="background:#7dd3fc">NB</span><span style="background:#a78bfa">RC</span><span style="background:#34d399">AI</span></span>
+  </div>
+  <!-- kanban -->
+  <div class="kanban">
+    <div class="col">
+      <h4>To Do <span class="count">3</span></h4>
+      <div class="tcard"><div class="ttl">Add pagination to the recipe list</div><div class="meta"><span class="chip cyan">feature</span><span class="mini-av" style="background:#7dd3fc">NB</span></div></div>
+      <div class="tcard"><div class="ttl">Email when a saved recipe goes on sale</div><div class="meta"><span class="chip violet">idea</span></div></div>
+    </div>
+    <div class="col">
+      <h4>In Progress <span class="count">1</span></h4>
+      <div class="tcard"><div class="ttl">Import recipes from a URL</div><div class="meta"><span class="chip amber">in progress</span><span class="mini-av" style="background:#a78bfa">AI</span></div></div>
+    </div>
+    <div class="col">
+      <h4>Verify <span class="count">2</span></h4>
+      <div class="tcard"><div class="ttl">Fix blurry recipe photos on mobile</div><div class="meta"><span class="chip emerald">verify</span></div></div>
+    </div>
+    <div class="col">
+      <h4>Done <span class="count">8</span></h4>
+      <div class="tcard"><div class="ttl">Sign in with Google</div><div class="meta"><span class="chip emerald">done</span></div></div>
+    </div>
+  </div>
+  <!-- collapsed terminal dock -->
+  <div class="dockbar">
+    <span class="lbl"><span style="color:var(--emerald)">●</span> Terminal <span style="color:var(--muted-2)">·</span> <span class="hostinfo" style="font-size:11.5px;">Nick’s MacBook Pro · session a3f9</span></span>
+    <span class="spacer"></span>
+    <span class="statepill connected" style="font-size:11px; padding:3px 8px;"><span class="ic">●</span> Connected</span>
+    <button class="ibtn" style="height:26px;" aria-label="Expand terminal panel">⌃ Expand</button>
+  </div>
+</div>
+<div class="hero-cap">Collapsed: the dock is a one-line bar pinned under the board. A coloured dot + “Connected” pill tell you it’s live at a glance; “Expand” opens it.</div>
+<div class="rationale"><b>The dock never steals the board.</b> Collapsed, it’s a ~36px bar — the kanban stays the focus. The live status rides on the bar itself (icon + text, never colour alone) so you don’t have to expand it to know the agent is connected. This is the <span class="law">Jakob’s Law</span> bet: anyone who’s used VS Code’s bottom panel already knows this control.</div>
+
+<h3>1a-ii · The “Launch Claude Code” menu — pick where Claude runs</h3>
+<p class="sub">Clicking the caret on the <b>existing</b> Launch Claude Code button opens a small menu. It’s a <b>pick-one</b> choice — Claude runs in <i>one</i> place at a time. Nothing auto-runs; the user chooses. The in-browser option carries a <b>Beta</b> tag and a one-line note that it needs the helper the first time.</p>
+<div class="launchmenu" role="menu" aria-label="Where should Claude Code run?">
+  <div class="lm-head">Where should Claude run?</div>
+  <button class="lm-item" role="menuitem">
+    <span class="lm-ic" aria-hidden="true">🖥️</span>
+    <span class="lm-txt">
+      <span class="lm-ttl">In a terminal window <span class="lm-tag today">Today</span></span>
+      <span class="lm-sub">On your own computer — exactly how it works now. Nothing to install.</span>
+    </span>
+  </button>
+  <button class="lm-item" role="menuitem">
+    <span class="lm-ic" aria-hidden="true">🌐</span>
+    <span class="lm-txt">
+      <span class="lm-ttl">In the browser <span class="lm-tag beta">Beta</span></span>
+      <span class="lm-sub">A live terminal docked on this board. First time only: installs a small one-time helper.</span>
+    </span>
+  </button>
+  <div class="lm-foot">You run Claude in one place at a time — terminal window <b>or</b> browser, never both.</div>
+</div>
+<div class="hero-cap" style="text-align:left;">One control, two destinations. “In a terminal window” is the unchanged deep-link / copy-command path most users already know; “In the browser” is the new docked terminal this doc designs.</div>
+<div class="rationale"><b>Additive, not disruptive.</b> Existing users who only ever want a terminal window keep doing exactly that — same button, default behaviour, <b>zero new install</b>. The in-browser terminal is a purely <i>opt-in extra destination</i> reached through the same affordance, so we never sprout a second parallel “Launch terminal” button competing with the original. <span class="law">Hick’s Law</span>: one button, one clearly-scoped two-item menu, labelled by outcome (“in a terminal window” / “in the browser”), not by mechanism. The helper-install step (§3) is reached <b>only</b> down the “In the browser” path — pick the terminal-window option and you’ll never see it.</div>
+
+<h3>1b · Expanded — the live terminal docked under the board</h3>
+<div class="browser">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">vibecodes.co.uk/ideas/recipe-saver/board</span></div>
+  <div class="boardtop">
+    <span class="crumb">Recipe Saver <span style="color:var(--muted-2)">/</span> <b>Board</b></span>
+    <span class="spacer"></span>
+    <span class="splitbtn"><span class="main">▸ Launch Claude Code</span><span class="caret" aria-label="Choose where Claude runs">▾</span></span>
+    <span class="avatarstack"><span style="background:#7dd3fc">NB</span><span style="background:#a78bfa">RC</span><span style="background:#34d399">AI</span></span>
+  </div>
+  <!-- compressed kanban peeking above -->
+  <div class="kanban" style="padding:10px 16px;">
+    <div class="col"><h4>To Do <span class="count">3</span></h4><div class="tcard" style="padding:8px 10px;"><div class="ttl" style="font-size:12px;">Add pagination to the recipe list</div></div></div>
+    <div class="col"><h4>In Progress <span class="count">1</span></h4><div class="tcard" style="padding:8px 10px; border-color:rgba(251,191,36,.4);"><div class="ttl" style="font-size:12px;">Import recipes from a URL</div></div></div>
+    <div class="col"><h4>Verify <span class="count">2</span></h4></div>
+    <div class="col"><h4>Done <span class="count">8</span></h4></div>
+  </div>
+  <!-- resize grip -->
+  <div class="resize-grip" title="Drag to resize"></div>
+  <!-- terminal -->
+  <div class="term">
+    <div class="term-header">
+      <span class="statepill connected"><span class="ic">●</span> Connected</span>
+      <span class="hostinfo">Nick’s MacBook Pro <span class="sep">·</span> ~/projects/recipe-saver <span class="sep">·</span> session a3f9</span>
+      <span class="spacer"></span>
+      <div class="tctrls">
+        <button class="ibtn" aria-label="Switch to read-only">🔒 Read-only</button>
+        <button class="ibtn" aria-label="Fullscreen the terminal">⛶</button>
+        <button class="ibtn" aria-label="Collapse terminal panel">⌄</button>
+        <button class="ibtn danger" aria-label="End session">⏻ End</button>
+      </div>
+    </div>
+    <div class="xterm"><span class="c-violet"> ▐▛███▜▌</span>   <span class="c-white">Claude Code</span> <span class="c-dim">v2.1 · model: claude-opus-4-8</span>
+<span class="c-violet">▝▜█████▛▘</span>  <span class="c-dim">connected to</span> <span class="c-cyan">vibecodes</span> <span class="c-dim">(MCP) · 83 tools · cwd ~/projects/recipe-saver</span>
+<span class="c-violet">  ▘▘ ▝▝ </span>
+
+<span class="bullet">●</span> I’ll pick up the top task on your board.
+
+<span class="bullet">●</span> <span class="c-cyan">get_board</span> <span class="c-dim">(idea_id 7f3a…)</span>
+  <span class="c-dim">⎿ To Do (3) · In Progress (1) · Verify (2)</span>
+
+<span class="bullet">●</span> Claiming <span class="c-white">“Add pagination to the recipe list”</span> → <span class="c-amber">In Progress</span>
+
+<span class="bullet">●</span> <span class="c-cyan">Edit</span> src/components/recipe-list.tsx
+  <span class="c-green">⎿ +28 -4 · added usePagination() + page controls</span>
+
+<span class="c-dim">Run the tests before you commit, then move it to Verify.</span>
+<span class="c-green">›</span> npm run test <span class="cursor"></span></div>
+    <div class="term-input">
+      <span class="prompt">›</span>
+      <input class="tin" placeholder="Type to steer the agent — Enter to send · Esc clears" aria-label="Send keystrokes to the session">
+      <button class="ibtn" aria-label="Send">↩</button>
+    </div>
+  </div>
+</div>
+<div class="hero-cap">Expanded: bottom panel ≈40% of the board height, drag-handle to resize, fullscreen + collapse + End in the header. The kanban stays visible above so you never lose board context.</div>
+<div class="rationale"><b>This is the picture the reviewer asked for.</b> The terminal is a resizable bottom dock, not a separate page or a modal — the board breathes above it. Header reads left→right as <b>state · identity · controls</b>, controls ordered safest→most destructive with <b>End</b> pinned far right and danger-tinted (<span class="law">Fitts’s Law</span>). The xterm uses real Claude Code TUI grammar (the <code class="inline">●</code> tool lines, <code class="inline">⎿</code> results) so density is judged honestly.</div>
+
+<!-- ============================================================= -->
+<h2 id="how">2 · How it works, end to end (the “In the browser” path)</h2>
+<p class="sub">This is the flow for the <b>“In the browser”</b> choice only. Pick <b>“In a terminal window”</b> instead and none of this happens — that option is unchanged from today and needs no helper. For in-browser: a non-coder never types a command, and the helper installs once. <span class="law">Hick’s Law</span> — one decision per step.</p>
+
+<div class="strip">
+  <div class="s"><span class="every">every time</span><div class="k">Step 1</div><div class="h">Launch Claude Code → <b>In the browser</b></div><div class="b">Open the existing button’s menu, pick the in-browser option.</div></div>
+  <div class="arrow">→</div>
+  <div class="s"><span class="once">first time only</span><div class="k">Step 2</div><div class="h">Install the helper</div><div class="b">Only on the in-browser path. Download &amp; open <code class="inline">VibeCodes Bridge</code>, approve once. Skipped on every later launch.</div></div>
+  <div class="arrow">→</div>
+  <div class="s"><span class="every">every time</span><div class="k">Step 3</div><div class="h">OS asks “Open VibeCodes?”</div><div class="b">Click <b>Open</b>. The helper starts <code class="inline">claude</code>.</div></div>
+  <div class="arrow">→</div>
+  <div class="s"><span class="every">every time</span><div class="k">Step 4</div><div class="h">Terminal appears</div><div class="b">The dock pairs itself and goes live. Drive or watch.</div></div>
+</div>
+<div class="rationale"><b>Two zones: a first-time setup (amber) and the everyday loop (emerald).</b> The install (Step 2) sits <b>inside the in-browser branch only</b> and fires once — pick the terminal-window option and it never appears at all. After that, the daily in-browser experience is Steps 1, 3, 4 — three clicks, zero commands. The deep link from Step 1 carries the signed session identity, so Step 4 pairs <b>without a code</b> in the common (same-machine) case.</div>
+
+<h3>2a · The launch flow in detail</h3>
+<div class="flow">
+  <div class="step"><div class="num">1</div><div class="body"><div class="t">Open <b>Launch Claude Code</b> → choose <b>In the browser</b></div><div class="d">The existing accent-filled split-button in the board toolbar; its caret opens the two-item menu (§1a-ii). Choosing <b>In the browser</b> opens the dock to <b>Connecting…</b> immediately so the click feels acknowledged. (Choosing <b>In a terminal window</b> runs today’s unchanged deep-link / copy-command flow and stops here — no dock, no helper.)</div></div></div>
+  <div class="connector">│</div>
+  <div class="step"><div class="num">2</div><div class="body"><div class="t">Browser opens <code>vibecodes://launch?session=…&amp;idea=…&amp;sig=…</code></div><div class="d">A signed deep link the installed helper is registered to handle. It carries the session id, the idea scope, and a short-lived signature — this is what makes pairing automatic.</div></div></div>
+  <div class="connector">│</div>
+  <div class="step"><div class="num">3</div><div class="body"><div class="t">OS shows “Open VibeCodes?”</div><div class="d">The familiar macOS/Windows “open this app?” confirmation. One click on <b>Open</b>. (A “Always allow” checkbox removes even this after the first time.)</div></div></div>
+  <div class="connector">│</div>
+  <div class="step"><div class="num">4</div><div class="body"><div class="t">Helper starts <code>claude</code> in your project &amp; opens the relay</div><div class="d">The helper validates the signature against your signed-in session, launches Claude Code in the idea’s folder, and attaches to the opaque relay. Dock → <b>Connected</b>.</div></div></div>
+  <div class="connector">│</div>
+  <div class="step"><div class="num">5</div><div class="body"><div class="t">Drive or watch</div><div class="d">Live xterm.js stream + keystroke input. Read-only kill-switch one tap away; End session far right.</div></div></div>
+</div>
+
+<details class="adv" style="margin:8px 0 18px;">
+  <summary>Advanced ▾ — run the bridge by hand (power users / unusual setups)</summary>
+  <div style="margin-top:10px; padding:12px 14px; background:var(--panel); border:1px solid var(--border); border-radius:10px;">
+    <p class="sub" style="margin:0 0 8px; font-size:13px;">Prefer not to install the helper, or running on a box without it? Start the bridge manually and pair with a code (§4b):</p>
+    <span class="mono" style="background:var(--bg); border:1px solid var(--border-2); border-radius:8px; padding:8px 12px; display:inline-flex; gap:10px; align-items:center; font-size:12.5px;">npx vibecodes-bridge <button class="ibtn" style="height:24px;" aria-label="Copy command">⧉ Copy</button></span>
+  </div>
+</details>
+<div class="rationale"><b>The old paste path isn’t deleted — it’s demoted.</b> Keeping <code class="inline">npx vibecodes-bridge</code> behind an <b>Advanced</b> disclosure preserves the universal/cross-machine escape hatch (and power users’ trust) without putting a command in a non-coder’s face. <span class="law">Progressive disclosure</span> — the default path has zero commands; the command is one click away for the few who want it.</div>
+
+<!-- ============================================================= -->
+<h2 id="firstrun">3 · First run — install the helper (signed, notarized &amp; verified)</h2>
+<p class="sub"><b>This step is reached only when the user picks “In the browser.”</b> The “In a terminal window” choice never lands here — it needs no helper. On the very first <i>in-browser</i> launch there’s no helper to open yet; we catch that and walk the user through a normal download → install → trust flow. Because the helper is <b>code-signed and notarized</b>, the OS shows a calm <b>verified-developer</b> confirmation — there’s still one click the first time, but it reads as safe and routine, not a scary “unidentified developer” warning. We’re honest that the click exists; we just make sure it’s the trustworthy version of it.</p>
+
+<h3>3a · No helper detected → install prompt in the dock</h3>
+<div class="browser">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">vibecodes.co.uk/ideas/recipe-saver/board</span></div>
+  <div class="term">
+    <div class="term-header">
+      <span class="statepill waiting"><span class="ic">◴</span> Set up once</span>
+      <span class="spacer"></span>
+      <button class="ibtn" aria-label="Collapse panel">⌄</button>
+    </div>
+    <div class="overlay">
+      <div class="big">🖥️</div>
+      <div class="ttl cyan">Install the VibeCodes helper — one time</div>
+      <div class="msg">A small app that lets this panel start and mirror Claude Code on your computer. After this, launching is one click. It runs only when you ask it to, and everything stays on your machine — we relay just the screen.</div>
+      <div class="btnrow">
+        <button class="btn primary lg">⬇ Download for macOS</button>
+        <button class="btn ghost">Windows</button>
+      </div>
+      <div class="msg" style="font-size:12px; color:var(--muted-2);">~6 MB · opens <b>VibeCodes Bridge.dmg</b> · <a href="#">What does the helper do?</a></div>
+    </div>
+  </div>
+</div>
+
+<!-- Is this safe? reassurance callout -->
+<div role="note" aria-label="Is this safe?" style="background:linear-gradient(90deg, rgba(52,211,153,.09), transparent); border:1px solid rgba(52,211,153,.4); border-radius:12px; padding:16px 20px; margin:16px 0 6px;">
+  <div style="display:flex; align-items:center; gap:10px;">
+    <span aria-hidden="true" style="font-size:20px; line-height:1;">🛡️</span>
+    <span style="font-size:15px; font-weight:700; color:var(--emerald);">Is this safe? Yes — here’s why</span>
+  </div>
+  <ul class="tight" style="margin-top:10px;">
+    <li><b>The OS confirms it’s really us.</b> The helper is <b>signed and notarized by Apple</b> on Mac (and <b>code-signed</b> on Windows), so your computer checks it for malware and shows <b>VibeCodes</b> as a verified developer — not “unknown”.</li>
+    <li><b>It only comes from vibecodes.co.uk.</b> You download it straight from the site you’re already signed into — nowhere else.</li>
+    <li><b>It’s open-source.</b> Anyone — including you — can read exactly what it does. Nothing hidden.</li>
+    <li><b>It does one thing.</b> It runs Claude Code on your computer and streams the terminal to your board. It <b>never sees your passwords</b>, and it only runs when you click Launch.</li>
+  </ul>
+</div>
+<div class="hero-cap" style="text-align:left;">Recognition over recall: the cautious user gets the four answers they need — who made it, where it came from, can I inspect it, what it touches — before they click anything.</div>
+
+<h3>3b · After install → the OS trust step (calm, verified — not scary)</h3>
+<p class="sub" style="margin-top:6px;">First time the helper opens, macOS/Windows asks the user to confirm. Because we’re signed + notarized, that confirmation shows <b>VibeCodes as a verified developer / publisher</b> and says the app was malware-scanned — a routine “Open?” box, not a red “can’t be opened” warning. We pre-warn the user so it isn’t a surprise and tell them exactly which button to click.</p>
+<div class="grid">
+  <!-- macOS: verified developer -->
+  <div>
+    <div class="label">macOS · Gatekeeper</div>
+    <div class="osprompt" role="dialog" aria-label="macOS open confirmation — verified developer" style="margin:0 auto;">
+      <div class="body">
+        <div class="ic">🧭</div>
+        <div style="display:inline-flex; align-items:center; gap:6px; margin-bottom:8px; font-size:11.5px; font-weight:700; color:#34d399; background:rgba(52,211,153,.14); border:1px solid rgba(52,211,153,.5); border-radius:999px; padding:3px 10px;"><span aria-hidden="true">✓</span> Verified developer</div>
+        <div class="t">Open “VibeCodes”?</div>
+        <div class="d">“VibeCodes” is from a verified developer. Apple checked it for malicious software and none was detected.</div>
+        <div class="d" style="margin-top:6px; color:#9a9aa6;">VibeCodes Bridge.dmg — downloaded from vibecodes.co.uk.</div>
+      </div>
+      <div class="actions">
+        <button class="cancel">Cancel</button>
+        <button class="primary">Open</button>
+      </div>
+    </div>
+  </div>
+  <!-- Windows: verified publisher -->
+  <div>
+    <div class="label">Windows · User Account Control</div>
+    <div class="osprompt" role="dialog" aria-label="Windows User Account Control — verified publisher" style="margin:0 auto;">
+      <div class="body" style="text-align:left;">
+        <div class="ic" style="margin:0 0 12px;">🛡️</div>
+        <div class="t">Do you want to allow this app to make changes to your device?</div>
+        <div class="d" style="margin-top:8px;"><b style="color:#f2f2f5;">VibeCodes Bridge</b></div>
+        <div class="d" style="display:inline-flex; align-items:center; gap:6px; margin-top:6px; color:#34d399; font-weight:700;"><span aria-hidden="true">✓</span> Verified publisher: VibeCodes</div>
+        <div class="d" style="margin-top:4px;">File origin: Downloaded from the Internet (vibecodes.co.uk)</div>
+      </div>
+      <div class="actions">
+        <button class="cancel">No</button>
+        <button class="primary">Yes</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="hero-cap">Both OSes name <b>VibeCodes</b> as a verified developer / publisher and say it was scanned — so the right button (<b>Open</b> / <b>Yes</b>) reads as the safe, obvious one. It only happens the first time.</div>
+<div class="rationale"><b>Signed + notarized is what turns the OS prompt from a scare into a reassurance.</b> An <i>unsigned</i> app triggers the red “unidentified developer / cannot be opened” path — the moment most non-coders abandon. A properly <b>code-signed and notarized</b> helper instead gets the calm “verified developer” box: the OS itself vouches that the app is really from VibeCodes and is malware-free. We still forewarn it — “Your Mac/PC will ask once; it’ll say VibeCodes is a verified developer — click <b>Open</b>” — so the system’s own trust signal does the reassuring. <b>This is why code-signing + notarization is a hard P1 requirement: no unidentified-developer warning, ever.</b></div>
+
+<h3>3c · Everyday launch (helper already installed &amp; trusted)</h3>
+<p class="sub" style="margin-top:6px;">From the second time on, choosing <b>Launch Claude Code → In the browser</b> shows only the lightweight “Open VibeCodes?” confirmation (or nothing, if the user ticked “Always allow”). This is the steady state for ~99% of in-browser launches.</p>
+<div class="osprompt" role="dialog" aria-label="Open app confirmation">
+  <div class="body">
+    <div class="ic">🧭</div>
+    <div class="t">Open “VibeCodes”?</div>
+    <div class="d">vibecodes.co.uk wants to open the VibeCodes Bridge helper.</div>
+    <label style="display:flex; gap:7px; align-items:center; justify-content:center; margin-top:12px; font-size:12px; color:#b8b8c0;"><input type="checkbox" checked> Always allow vibecodes.co.uk to open this</label>
+  </div>
+  <div class="actions">
+    <button class="cancel">Cancel</button>
+    <button class="primary">Open</button>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="pair">4 · Pairing — automatic on the same machine, manual fallback for cross-machine</h2>
+
+<h3>4a · Same machine (the default) — no code, ever</h3>
+<p class="sub">When the helper runs on the same computer as the browser, the signed <code class="inline">vibecodes://</code> deep link <i>is</i> the pairing. The session id and signature travel in the link; the helper redeems them against the signed-in session. The user sees <b>Connecting…</b> → <b>Connected</b> with no code field.</p>
+<div class="strip">
+  <div class="s"><div class="k">click</div><div class="h">Launch Claude Code → In the browser</div><div class="b">Dock → Connecting…</div></div>
+  <div class="arrow">→</div>
+  <div class="s"><div class="k">os</div><div class="h">Open VibeCodes?</div><div class="b">Helper validates the signed link</div></div>
+  <div class="arrow">→</div>
+  <div class="s"><div class="k">auto</div><div class="h">Bound to you</div><div class="b">Signature ↔ your session = owner-bound, no typing</div></div>
+  <div class="arrow">→</div>
+  <div class="s"><div class="k">live</div><div class="h">Connected</div><div class="b">Stream opens</div></div>
+</div>
+<div class="rationale"><b>The deep link replaces the code in the common case.</b> Because the link is signed and redeemed inside the authenticated session, owner-binding is automatic and unambiguous — the helper proves it was launched by <i>this</i> logged-in human. <span class="law">Recognition over recall</span> taken to its limit: nothing to recall at all.</div>
+
+<h3>4b · Cross-machine fallback (labelled) — bridge on a different/remote box</h3>
+<p class="sub">If the bridge runs somewhere the browser can’t deep-link to — an SSH box, a headless dev VM, a second laptop, or you’re viewing on your phone — there’s no scheme handler to catch the link. We fall back to the well-worn <b>device code</b> (the <code class="inline">gh auth login</code> / <code class="inline">tv.youtube.com</code> pattern). This path is reached via <b>Advanced → Connect a remote machine</b>, not the default.</p>
+<div class="browser">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">vibecodes.co.uk/ideas/recipe-saver/board</span></div>
+  <div class="term">
+    <div class="term-header">
+      <span class="statepill waiting"><span class="ic">◴</span> Waiting to pair</span>
+      <span class="hostinfo"><span class="sep">·</span> remote machine</span>
+      <span class="spacer"></span>
+      <button class="ibtn" aria-label="Collapse panel">⌄</button>
+    </div>
+    <div class="overlay">
+      <div class="ttl cyan">Connect a remote machine</div>
+      <div class="msg">On the other machine, run <code class="inline">npx vibecodes-bridge</code>. It prints a code — enter it here. (For your own computer, just pick <b>Launch Claude Code → In the browser</b> — no code needed.)</div>
+      <div style="display:flex; gap:8px; align-items:center;">
+        <input class="tin" style="width:170px; text-align:center; letter-spacing:.14em; text-transform:uppercase;" placeholder="QFRT-8316" aria-label="Pairing code">
+        <button class="btn primary">Pair</button>
+      </div>
+      <div class="msg" style="font-size:12px;">Single-use · expires 9:42 · binds to <b>nicholasmball@gmail.com</b></div>
+    </div>
+  </div>
+</div>
+<pre>$ npx vibecodes-bridge
+<span style="color:#7dd3fc">vibecodes-bridge</span> v0.1.0  ·  host: dev-vm-london
+
+  ◆ Pair this session — enter on your board’s Terminal panel (expires 10:00):
+
+        ┌──────────────┐
+        │   <span style="color:#34d399">QFRT - 8316</span>   │
+        └──────────────┘
+
+  ⠿ Waiting for you to pair…  (relay: connected · read-write)</pre>
+<div class="rationale"><b>The manual code earns its keep as a fallback, not the front door.</b> It’s the only thing that works when there’s no local scheme handler — so we keep it, label it for what it is (“remote machine”), and reassure same-machine users they’ll never need it. The footer still names the bound account and the single-use/expiry facts, so even the fallback makes owner-binding <i>visible</i> at the moment of consent.</div>
+
+<!-- ============================================================= -->
+<h2 id="gating">5 · Gating — flag-off / opt-in / first-run</h2>
+<p class="sub">Same board toolbar location for everyone; what renders depends on flag + opt-in + history.</p>
+
+<h3>5a · Flag OFF — in-browser option absent (terminal window unchanged)</h3>
+<div class="browser">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">vibecodes.co.uk/ideas/recipe-saver/board</span></div>
+  <div class="boardtop">
+    <span class="crumb">Recipe Saver <span style="color:var(--muted-2)">/</span> <b>Board</b></span>
+    <span class="spacer"></span>
+    <span class="splitbtn"><span class="main">▸ Launch Claude Code</span><span class="caret" aria-label="Open in a terminal window">▾</span></span>
+    <span class="avatarstack"><span style="background:#7dd3fc">NB</span><span style="background:#a78bfa">RC</span></span>
+  </div>
+  <div class="kanban" style="padding:10px 16px;"><div class="col"><h4>To Do <span class="count">3</span></h4></div><div class="col"><h4>In Progress <span class="count">1</span></h4></div><div class="col"><h4>Verify <span class="count">2</span></h4></div><div class="col"><h4>Done <span class="count">8</span></h4></div></div>
+</div>
+<div class="rationale"><b>Honest absence — but only of the new option.</b> The flag gates the <i>in-browser terminal</i>, not the whole button. Flag off → the existing <b>Launch Claude Code</b> control still works exactly as today (terminal window), and the <b>“In the browser”</b> menu item is simply <b>not rendered</b> — no disabled ghost, no “coming soon” teaser (which would violate “no disabled buttons without a what’s-needed note”). With the flag off the menu collapses to its single original action, so existing users see no change at all.</div>
+
+<h3>5b · Flag ON, not yet enabled — the opt-in moment</h3>
+<div class="browser">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">vibecodes.co.uk/ideas/recipe-saver/board</span></div>
+  <div class="term">
+    <div class="term-header">
+      <span class="statepill disconnected"><span class="ic">○</span> Terminal · off</span>
+      <span class="spacer"></span>
+      <button class="ibtn" aria-label="Collapse panel">⌄</button>
+    </div>
+    <div class="overlay">
+      <div class="big">🖥️</div>
+      <div class="ttl cyan">Watch your local Claude Code in the browser</div>
+      <div class="msg">Click one button on your board and this panel mirrors the live session on your computer — read the agent’s work as it happens, or type to steer it. It stays on your machine; we only relay the screen. <b>You can flip to read-only any time.</b></div>
+      <div class="btnrow">
+        <button class="btn primary">Enable terminal for me</button>
+        <button class="btn ghost">How it works ↗</button>
+      </div>
+      <div class="msg" style="font-size:12px; color:var(--muted-2);">Opt-in · single session · bound to your account · turn off anytime in Settings</div>
+    </div>
+  </div>
+</div>
+<div class="rationale"><b>Opt-in is a deliberate, informed choice.</b> One primary action, one secondary (<span class="law">Hick’s Law</span>). The copy answers the three questions a cautious user asks — <i>where does my code go, who can attach, how do I stop it</i> — and states the read-only promise up front.</div>
+
+<h3>5c · Enabled, helper installed, nothing launched yet — first-run resting state</h3>
+<div class="browser">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">vibecodes.co.uk/ideas/recipe-saver/board</span></div>
+  <div class="term">
+    <div class="term-header">
+      <span class="statepill disconnected"><span class="ic">○</span> Terminal · idle</span>
+      <span class="spacer"></span>
+      <button class="ibtn" aria-label="Collapse panel">⌄</button>
+    </div>
+    <div class="overlay">
+      <div class="ttl green" style="font-size:16px;">Ready when you are</div>
+      <div class="msg">You picked <b>In the browser</b>. Click <b>Launch in browser</b> to start Claude Code on <b>Nick’s MacBook Pro</b> and mirror it here. Your Mac will ask to open VibeCodes — click <b>Open</b>.</div>
+      <button class="btn primary lg">▸ Launch in browser</button>
+      <div class="msg" style="font-size:12px;"><a href="#">Run in a terminal window instead</a> · <a href="#">Connect a different / remote machine</a> · <a href="#">Advanced ↗</a></div>
+    </div>
+  </div>
+</div>
+<div class="rationale"><b>First-run is a launch pad, not an empty box.</b> This is the dock <i>after</i> the user has chosen <b>In the browser</b>; the big <b>Launch in browser</b> button is the only thing a non-coder needs, with an escape hatch back to the unchanged terminal-window option and the cross-machine + advanced paths as quiet links beneath. We forewarn the OS prompt right in the helper text so Step 3 isn’t a surprise. <span class="law">Information scent</span> — the button text matches exactly what they’ll click and what happens next.</div>
+
+<!-- ============================================================= -->
+<h2 id="panel">6 · Connected panel · slow connection · two clocks</h2>
+<p class="sub">The connected hero is shown at §1b. Two refinements the reviewer asked for: a subtle <b>slow-connection</b> indicator, and acknowledging the <b>two independent clocks</b>.</p>
+
+<h3>6a · Slow connection — a subtle pill annotation, not an alarm</h3>
+<div class="browser">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">vibecodes.co.uk/ideas/recipe-saver/board</span></div>
+  <div class="term">
+    <div class="term-header">
+      <span class="statepill connected"><span class="ic">●</span> Connected</span>
+      <span class="slowtag" title="Higher than usual latency">🐢 Slow connection</span>
+      <span class="hostinfo">Nick’s MacBook Pro <span class="sep">·</span> session a3f9</span>
+      <span class="spacer"></span>
+      <div class="tctrls">
+        <button class="ibtn" aria-label="Switch to read-only">🔒 Read-only</button>
+        <button class="ibtn danger" aria-label="End session">⏻ End</button>
+      </div>
+    </div>
+    <div class="xterm" style="min-height:120px;"><span class="bullet">●</span> <span class="c-cyan">Bash</span> npm run test
+  <span class="c-dim">⎿ running… (output a little behind)</span><span class="cursor"></span></div>
+    <div class="input-note" style="color:var(--amber); background:rgba(251,191,36,.06);">🐢 <b style="color:var(--amber);">Slow connection.</b> Keystrokes and updates may lag a second or two. The session is fine — this is just your network. Typing still works.</div>
+  </div>
+</div>
+<div class="rationale"><b>Slow ≠ broken.</b> Still <b>Connected</b> (green), with an amber <code class="inline">🐢 Slow connection</code> annotation <i>beside</i> the pill — icon + text + colour, never colour alone. It explains the lag and reassures that input still works, so a non-coder doesn’t mistake latency for a crash and yank the session. It only escalates to “Reconnecting…” if the stream actually drops.</div>
+
+<h3>6b · Two independent clocks</h3>
+<table>
+  <tr><th>Clock</th><th>What it times</th><th>Where it shows</th><th>On expiry</th></tr>
+  <tr><td><b>Connect timeout</b></td><td>How long we’ll wait for the relay to come up after Launch (≈30s).</td><td>Only during <b>Connecting…</b>.</td><td>→ <b>Error</b> “Couldn’t reach your machine” + Retry.</td></tr>
+  <tr><td><b>Session limits</b></td><td>Idle timeout (≈30 min no activity) and a max-duration safety cap (≈8 h), enforced by the bridge.</td><td>Only while <b>Connected</b> (a quiet “idle 26:10” hint appears as it nears).</td><td>→ <b>Session ended</b> with the specific reason (§8).</td></tr>
+</table>
+<div class="rationale"><b>Naming the two clocks prevents a whole class of confusion.</b> A timeout while <i>connecting</i> means “we never reached your machine” (network/helper problem → retry). A timeout while <i>connected</i> means “we ended a long-idle session on purpose” (expected, safe → relaunch). They look different, read differently, and never share copy — so the user always knows whether something broke or simply expired.</div>
+
+<!-- ============================================================= -->
+<h2 id="killswitch">7 · Read-only kill-switch</h2>
+<p class="sub">The safety control the requirements name. One tap freezes input; the live view keeps streaming so you never lose sight of the agent.</p>
+<div class="browser">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">vibecodes.co.uk/ideas/recipe-saver/board</span></div>
+  <div class="term">
+    <div class="term-header">
+      <span class="statepill connected"><span class="ic">●</span> Connected</span>
+      <span class="ro-badge">🔒 Read-only</span>
+      <span class="hostinfo">Nick’s MacBook Pro <span class="sep">·</span> session a3f9</span>
+      <span class="spacer"></span>
+      <div class="tctrls">
+        <button class="ibtn toggle-on" aria-pressed="true" aria-label="Read-only is on — click to allow input">🔒 Read-only · on</button>
+        <button class="ibtn" aria-label="Fullscreen">⛶</button>
+        <button class="ibtn danger" aria-label="End session">⏻ End</button>
+      </div>
+    </div>
+    <div class="xterm"><span class="bullet">●</span> <span class="c-cyan">Bash</span> npm run test
+  <span class="c-green">⎿ ✓ 142 passed</span> <span class="c-dim">(3.1s)</span>
+
+<span class="bullet">●</span> Tests pass. Ready to commit and move the task to Verify.
+<span class="c-dim">  (waiting — input is frozen)</span><span class="cursor"></span></div>
+    <div class="input-note">🔒 <b>Read-only is on.</b> You’re watching live; the agent can’t receive keystrokes from here. <a href="#">Allow input</a> to steer again.</div>
+  </div>
+</div>
+<div class="rationale">
+  <b>The kill-switch is signalled three ways — never colour alone.</b> (1) a <span style="color:var(--violet)">violet</span> <code class="inline">🔒 Read-only</code> badge in the header, (2) the toggle showing <code class="inline">aria-pressed="true"</code> + “on”, and (3) the input bar <b>replaced</b> by an explanatory note (not merely disabled — a disabled box with no reason violates the persona rule). Flipping back is one click. Critically, <b>the stream keeps flowing in read-only</b> — freezing input must never mean going blind. Violet keeps it distinct from the green “Connected” state, so “connected” and “read-only” read as two independent facts.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="states">8 · All connection states</h2>
+<p class="sub">Every state is distinct, labelled, and carries icon + text + actionable next step. A terminal that only handles “connected” is unshippable.</p>
+<div class="grid">
+  <div class="state wait"><div class="tag">◴ Waiting to pair</div><p>Cross-machine fallback only — bridge started, code not yet entered. (Same-machine launch skips straight to Connecting.)</p><p class="next">→ Enter the code from the remote machine, or just use Launch on your own computer.</p></div>
+  <div class="state warn"><div class="tag">◐ Connecting…</div><p>Launch clicked / code accepted; relay handshaking. Animated indicator, no input bar yet. <b>Connect-timeout clock</b> runs (≈30s) → Error.</p><p class="next">→ Click Open in the OS prompt; otherwise just wait. Cancel reverts to idle.</p></div>
+  <div class="state ok"><div class="tag">● Connected</div><p>Live stream + read-write input (or read-only if killed). May carry a 🐢 slow-connection note (§6a). The hero state.</p><p class="next">→ Watch, or type to steer.</p></div>
+  <div class="state neutral"><div class="tag">◌ Disconnected — reconnecting</div><p>Bridge dropped (laptop slept, Wi-Fi blip). Auto-reconnect with backoff; last screen dimmed + held, not cleared.</p><p class="next">→ Auto-retrying (2s, 4s, 8s…). “Reconnect now” + “End session” available.</p></div>
+  <div class="state neutral"><div class="tag">◾ Session ended</div><p>Clean stop — End pressed, bridge exited (<code>Ctrl-C</code>), <b>or a session-limit clock fired</b> (idle / max-duration). Reason named; scrollback frozen + readable.</p><p class="next">→ “Launch again” reopens the flow.</p></div>
+  <div class="state err"><div class="tag">✕ Error</div><p>Connect timed out, helper not found, version mismatch, relay rejected, or <b>owner mismatch</b>. Names the cause + a fix.</p><p class="next">→ Specific recovery (retry / install helper / update / sign in as owner).</p></div>
+</div>
+
+<h3>8a · Connecting</h3>
+<div class="browser"><div class="term"><div class="term-header"><span class="statepill connecting"><span class="ic">◐</span> Connecting…</span><span class="hostinfo">Nick’s MacBook Pro <span class="sep">·</span> opening relay</span><span class="spacer"></span><button class="ibtn">Cancel</button></div><div class="overlay"><div class="big" style="color:var(--amber)">◐</div><div class="ttl amber">Starting Claude Code on your Mac…</div><div class="msg">If your Mac asks, click <b>Open</b>. Then we open the encrypted stream — usually instant. <span style="color:var(--muted-2)">(waiting up to 30s)</span></div></div></div></div>
+
+<h3>8b · Disconnected — auto-reconnecting (recovery)</h3>
+<div class="browser"><div class="term"><div class="term-header"><span class="statepill disconnected"><span class="ic">◌</span> Reconnecting…</span><span class="hostinfo">Nick’s MacBook Pro <span class="sep">·</span> retry in 4s</span><span class="spacer"></span><div class="tctrls"><button class="ibtn">↻ Reconnect now</button><button class="ibtn danger">⏻ End</button></div></div>
+  <div class="xterm" style="opacity:.45; min-height:110px;"><span class="bullet">●</span> <span class="c-cyan">Edit</span> src/components/recipe-list.tsx
+  <span class="c-green">⎿ +28 -4</span>
+<span class="c-dim">— connection lost · last frame held —</span></div>
+  <div class="input-note">◌ <b>Lost the connection.</b> Your machine may have slept or dropped Wi-Fi. Retrying automatically (next in 4s). Nothing is lost — the agent keeps running locally; we’ll re-attach to it.</div>
+</div></div>
+<div class="rationale"><b>A drop is recoverable, and the UI says so.</b> The last frame is <b>dimmed and held</b>, not wiped — losing the relay must not look like losing the work. Copy reassures the agent keeps running locally. Auto-backoff + a manual “Reconnect now” gives passive and active recovery; the header counts down so the wait feels bounded.</div>
+
+<h3>8c · Session ended — clean stop vs idle/max-duration (distinct, non-alarming copy)</h3>
+<div class="grid">
+  <div class="browser" style="margin:0;"><div class="term"><div class="term-header"><span class="statepill ended"><span class="ic">◾</span> Session ended</span><span class="spacer"></span><button class="ibtn">⌄</button></div><div class="overlay"><div class="big" style="color:var(--muted)">◾</div><div class="ttl muted">You ended the session</div><div class="msg">Claude Code on <b>Nick’s MacBook Pro</b> stopped. Scrollback is kept below.</div><button class="btn primary">▸ Launch again</button></div></div></div>
+  <div class="browser" style="margin:0;"><div class="term"><div class="term-header"><span class="statepill ended"><span class="ic">◾</span> Session ended</span><span class="spacer"></span><button class="ibtn">⌄</button></div><div class="overlay"><div class="big" style="color:var(--muted)">⏱</div><div class="ttl muted">Ended after 30 min idle</div><div class="msg">No activity for a while, so we closed the session to keep things tidy and safe. Nothing went wrong. Your work on your machine is untouched.</div><button class="btn primary">▸ Launch again</button></div></div></div>
+</div>
+<div class="rationale"><b>Idle/max-duration endings are calm and explicitly “nothing went wrong.”</b> Same grey <code class="inline">◾ Session ended</code> family, but the headline names the <i>reason</i> — “Ended after 30 min idle” (or “Reached the 8-hour limit”) — with a clock glyph, not an error glyph, and reassuring copy. It must never read like a crash; it’s a safety timeout doing its job. One forward action: <b>Launch again</b>.</div>
+
+<h3>8d · Error — incl. the owner-mismatch case</h3>
+<div class="grid">
+  <div class="browser" style="margin:0;"><div class="term"><div class="term-header"><span class="statepill error"><span class="ic">✕</span> Error</span><span class="spacer"></span><button class="ibtn">⌄</button></div><div class="overlay"><div class="big" style="color:var(--rose)">✕</div><div class="ttl rose">Couldn’t reach your machine</div><div class="msg">We waited 30s but the helper didn’t connect. Is <b>VibeCodes Bridge</b> installed and allowed to open?</div><div class="btnrow"><button class="btn primary">↻ Try again</button><button class="btn ghost">Reinstall helper ↗</button></div></div></div></div>
+  <div class="browser" style="margin:0;"><div class="term"><div class="term-header"><span class="statepill error"><span class="ic">✕</span> Owner mismatch</span><span class="spacer"></span><button class="ibtn">⌄</button></div><div class="overlay"><div class="big" style="color:var(--rose)">🔐</div><div class="ttl rose">This bridge belongs to another account</div><div class="msg">The bridge on <b>dev-vm-london</b> was started by <b>rosa@…</b>, not your account. For safety, a bridge only attaches to the person who launched it.</div><div class="btnrow"><button class="btn ghost">Switch account ↗</button><button class="btn ghost">Start your own bridge</button></div></div></div></div>
+</div>
+<div class="rationale"><b>Owner mismatch is its own first-class error, not a generic failure.</b> When a redeemed code (or a relay attach) belongs to a different human, we say so plainly — “This bridge belongs to another account” — name who started it, and explain the rule (a bridge attaches only to its launcher). The recovery isn’t “retry” (that can’t help); it’s <b>switch account</b> or <b>start your own bridge</b>. This makes the owner-binding requirement legible at exactly the moment it bites. <b>Ended ≠ Error:</b> a clean/idle stop is calm grey with one forward action; an error is rose, names the specific cause, and hands over the exact fix.</div>
+
+<!-- ============================================================= -->
+<h2 id="responsive">9 · Responsive — desktop vs 375px</h2>
+<h3>9a · Desktop (≥768px)</h3>
+<p class="sub">Full dock as shown in §1b — a bottom panel ~40% of the board height, drag-to-resize via the grip, fullscreen toggle, persistent input bar. Header controls sit in one row; identity truncates middle-out (<code class="inline">Nick’s MacBook Pro · ~/pro…/recipe-saver · a3f9</code>) so the state pill + End never get pushed off.</p>
+
+<h3>9b · 375px mobile — the honest call: <b>read-only, view-first</b></h3>
+<div style="max-width:340px; margin:14px 0;">
+<div class="browser">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">…/recipe-saver/board</span></div>
+  <div class="term">
+    <div class="term-header" style="gap:6px;">
+      <span class="statepill connected" style="font-size:11.5px; padding:3px 7px;"><span class="ic">●</span> Connected</span>
+      <span class="ro-badge" style="font-size:10px; padding:2px 6px;">🔒 Read-only</span>
+      <span class="spacer"></span>
+      <button class="ibtn danger" style="height:44px; padding:0 10px;" aria-label="End session">⏻</button>
+    </div>
+    <div class="xterm" style="font-size:11px; min-height:140px; padding:12px;"><span class="bullet">●</span> <span class="c-cyan">Edit</span> recipe-list.tsx
+  <span class="c-green">⎿ +28 -4</span>
+
+<span class="bullet">●</span> <span class="c-cyan">Bash</span> npm run test
+  <span class="c-green">⎿ ✓ 142 passed</span>
+
+<span class="c-dim">watching live…</span><span class="cursor"></span></div>
+    <div class="input-note" style="font-size:11px;">📱 <b>Read-only on mobile.</b> Driving a terminal needs a keyboard + width. <a href="#">Open on desktop</a> to type — or use the kill-switch &amp; End here.</div>
+  </div>
+</div>
+</div>
+<div class="rationale">
+  <b>The honest call: a phone can <i>watch</i> but shouldn’t <i>drive</i>.</b> A full xterm with a soft-keyboard, escape sequences, and arrow-key navigation is genuinely bad UX — pretending otherwise fails the “does it work at 375px?” test dishonestly. So below 768px the panel is <b>read-only by default</b>: the live stream stays, and the two <b>safety</b> controls that matter on the go — the read-only kill-switch (already engaged) and <b>End</b> (a ≥44px target) — remain; keystroke input hides behind an honest note pointing to desktop. <b>Safety controls are never desktop-only</b> — you must be able to stop a runaway agent from your phone.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="a11y">10 · Accessibility &amp; review checklist</h2>
+<table>
+  <tr><th>Concern</th><th>How this design handles it</th></tr>
+  <tr><td>Never colour alone</td><td>Every state = icon + text + colour. Connected (● green text), Slow (🐢 amber tag + text), Read-only (🔒 violet badge + “on” + aria-pressed), Owner mismatch (🔐 rose + named account), Idle-ended (⏱ grey + reason). Colour-blind safe.</td></tr>
+  <tr><td>Contrast (WCAG AA)</td><td>Body text <code>#e6e6ea</code> on <code>#0c0c0e</code> ≈ 15:1. State pills use ≥4.5:1 text; muted <code>#9a9aa6</code> meta clears 4.5:1 at 12px.</td></tr>
+  <tr><td>Keyboard</td><td>Tab order: state → controls → xterm → input. xterm.js focusable with a live region for screen readers; <code>Esc</code> moves focus out of the terminal trap back to the header.</td></tr>
+  <tr><td>OS prompt forewarned</td><td>The native “Open VibeCodes?” / Gatekeeper dialog is announced in-app before it appears, with the exact button to click — no surprise system modal for non-coders. Because the helper is signed + notarized, it’s the calm <b>verified-developer / verified-publisher</b> prompt, never the red “unidentified developer” one. The verified state is shown icon + text (✓ + “Verified”), not colour alone.</td></tr>
+  <tr><td>Visible labels</td><td>The (fallback) pairing code field has a visible label, not just a placeholder. All icon-only header buttons carry <code>aria-label</code>; End also shows its text on desktop.</td></tr>
+  <tr><td>Touch targets</td><td>Header buttons ≥30px desktop; on mobile the kill-switch + End are ≥44px (Fitts’s Law).</td></tr>
+  <tr><td>No modals for inline content</td><td>Launch, pairing, errors, read-only all render inside the dock. The only modals are the OS’s own app-open prompts, which we don’t control.</td></tr>
+  <tr><td>Focus states</td><td>2px accent outline + 2px offset on every interactive element (<code>:focus-visible</code>).</td></tr>
+  <tr><td>Reduced motion</td><td>Connecting spinner + cursor blink respect <code>prefers-reduced-motion</code> (static fallback) — honoured in build.</td></tr>
+</table>
+
+<!-- ============================================================= -->
+<h2 id="northstar">11 · North star — Option 3 (future, separate task)</h2>
+<div class="reco">
+  <h3>Option 3 · Always-on background helper <span class="pick">FUTURE · own task</span></h3>
+  <p style="margin:6px 0 0;">The endgame is <b>zero clicks</b>: a tiny background helper that’s already running and signed in, so choosing <b>Launch Claude Code → In the browser</b> attaches instantly with <i>no</i> OS prompt at all — the deep link goes straight to a listening local agent. That’s the consumer-grade ideal.</p>
+  <ul class="tight">
+    <li><b>P1 ships Option 2</b> (this doc): install once, click Launch, one OS confirm. It’s the honest, shippable middle — real one-click feel without a always-resident background process to design, secure, auto-update, and earn trust for.</li>
+    <li><b>Option 3 is tracked as its own task</b> — it adds a login-item/agent lifecycle, background-permission story, and auto-update channel that deserve their own design + security review. Building Option 2 first doesn’t block it; Option 3 layers onto the same signed deep-link + relay.</li>
+  </ul>
+  <div class="alt"><b>Progression:</b> Option 1 (paste a command, now demoted to Advanced) → <b>Option 2 (P1: install once + Launch button)</b> → Option 3 (always-on, zero clicks). Each step removes friction without changing the underlying signed-link + opaque-relay model.</div>
+</div>
+
+<div class="reco" style="margin-top:26px;">
+  <h3>Design-Review gate — what to sign off</h3>
+  <ul class="tight">
+    <li><b>Launch model:</b> Approve making in-browser a <b>mode of the existing “Launch Claude Code” button</b> — a pick-one menu (“In a terminal window” = today, unchanged / “In the browser” = new, install-once helper), never a second parallel button — as the P1 primary path (npx demoted to Advanced)?</li>
+    <li><b>Pairing:</b> Approve <b>automatic same-machine pairing via signed <code>vibecodes://</code> deep link</b>, with the manual device-code kept only as the labelled cross-machine fallback?</li>
+    <li><b>Home (Q3):</b> Approve the <b>per-idea board terminal dock</b> (collapsible bottom panel) as the P1 home?</li>
+    <li><b>OS trust step:</b> Approve <b>forewarning the OS “Open VibeCodes?” prompt</b> honestly in-app rather than hiding it?</li>
+    <li><b>Signing (hard requirement):</b> Confirm <b>code-signing + notarization is a hard P1 requirement</b> — the helper must show the verified-developer / verified-publisher prompt, with <b>no “unidentified developer” warning</b> ever reaching a user?</li>
+    <li><b>Kill-switch:</b> Approve read-only that <b>freezes input but keeps the stream live</b>, badged three ways?</li>
+    <li><b>Mobile:</b> Approve <b>read-only-on-mobile</b> with safety controls retained, driving redirected to desktop?</li>
+    <li><b>Flag-off:</b> Approve <b>not rendering</b> the entry point when the flag is off?</li>
+    <li><b>Gap fixes:</b> Approve the distinct <b>owner-mismatch</b> error, <b>idle/max-duration</b> ended copy, <b>slow-connection</b> indicator, and the <b>two-clocks</b> model?</li>
+  </ul>
+</div>
+
+<p class="sub" style="margin-top:40px; font-size:12.5px; color:var(--muted-2);">Compass · UX Design · Step 2 of the Feature Development workflow · Revision 2 · single self-contained doc, no app source modified.</p>
+
+</div>
+</body>
+</html>

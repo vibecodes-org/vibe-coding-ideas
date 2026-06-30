@@ -1,0 +1,20 @@
+# VibeCodes Terminal Relay — Cloudflare Worker + Durable Object (Slice 1)
+#
+# Run locally, offline (no Cloudflare account needed):
+#   cd terminal/relay && npx wrangler dev
+# Serves on http://localhost:8787 ; connect WebSockets at
+#   ws://localhost:8787/?session=<id>&role=<bridge|browser>
+
+name = "vibecodes-terminal-relay"
+main = "src/index.js"
+compatibility_date = "2024-12-01"
+
+# One Durable Object class — TerminalRelay — bound as TERMINAL_RELAY.
+[[durable_objects.bindings]]
+name = "TERMINAL_RELAY"
+class_name = "TerminalRelay"
+
+# DO classes must be declared in a migration.
+[[migrations]]
+tag = "v1"
+new_classes = ["TerminalRelay"]
