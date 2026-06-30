@@ -1,0 +1,198 @@
+import { describe, it, expect } from "vitest";
+import {
+  RELAY_CLOSE,
+  initialConnectionState,
+  terminalReducer,
+  mapCloseCode,
+  isInputEnabled,
+  buildRelayUrl,
+  encodeResizeMessage,
+  type TerminalConnectionState,
+  type TerminalEvent,
+} from "./connection";
+
+// Helper: fold a sequence of events through the reducer from the initial state.
+function run(events: TerminalEvent[], start = initialConnectionState): TerminalConnectionState {
+  return events.reduce(terminalReducer, start);
+}
+
+describe("terminalReducer — happy path", () => {
+  it("starts idle", () => {
+    expect(initialConnectionState.status).toBe("idle");
+  });
+
+  it("connect → session-created → relay-open → data reaches connected", () => {
+    const s = run([
+      { type: "connect" },
+      { type: "session-created", sessionId: "a3f9" },
+      { type: "relay-open" },
+      { type: "data" },
+    ]);
+    expect(s.status).toBe("connected");
+    expect(s.sessionId).toBe("a3f9");
+    expect(s.errorKind).toBeNull();
+  });
+
+  it("relay-open before any bridge bytes is waiting-to-pair", () => {
+    const s = run([{ type: "connect" }, { type: "relay-open" }]);
+    expect(s.status).toBe("waiting-to-pair");
+  });
+
+  it("connect resets prior error/ended metadata", () => {
+    const errored = run([{ type: "connect" }, { type: "connect-timeout" }]);
+    expect(errored.status).toBe("error");
+    const reconnected = terminalReducer(errored, { type: "connect" });
+    expect(reconnected.status).toBe("connecting");
+    expect(reconnected.errorKind).toBeNull();
+    expect(reconnected.sessionId).toBeNull();
+  });
+});
+
+describe("terminalReducer — guards", () => {
+  it("session-created is ignored unless connecting", () => {
+    const connected = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }]);
+    const after = terminalReducer(connected, { type: "session-created", sessionId: "late" });
+    expect(after.sessionId).toBeNull();
+  });
+
+  it("relay-open is ignored unless connecting", () => {
+    const connected = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }]);
+    const after = terminalReducer(connected, { type: "relay-open" });
+    expect(after.status).toBe("connected");
+  });
+
+  it("data while connected is a no-op (same state)", () => {
+    const connected = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }]);
+    expect(terminalReducer(connected, { type: "data" })).toBe(connected);
+  });
+
+  it("connect-timeout after connected is ignored", () => {
+    const connected = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }]);
+    const after = terminalReducer(connected, { type: "connect-timeout" });
+    expect(after.status).toBe("connected");
+  });
+
+  it("connect-timeout during handshake → error", () => {
+    const s = run([{ type: "connect" }, { type: "relay-open" }, { type: "connect-timeout" }]);
+    expect(s.status).toBe("error");
+    expect(s.errorKind).toBe("connect-timeout");
+  });
+});
+
+describe("terminalReducer — ending & failures", () => {
+  it("user-end → session-ended with reason user", () => {
+    const s = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }, { type: "user-end" }]);
+    expect(s.status).toBe("session-ended");
+    expect(s.endedReason).toBe("user");
+  });
+
+  it("a close event after a user-end does not clobber session-ended", () => {
+    const ended = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }, { type: "user-end" }]);
+    const after = terminalReducer(ended, { type: "closed", code: 1000 });
+    expect(after.status).toBe("session-ended");
+    expect(after.endedReason).toBe("user");
+    expect(after.closeCode).toBe(1000);
+  });
+
+  it("session-mint-failed → error", () => {
+    const s = run([{ type: "connect" }, { type: "session-mint-failed" }]);
+    expect(s.status).toBe("error");
+    expect(s.errorKind).toBe("session-mint-failed");
+  });
+
+  it("reset returns to a fresh idle state", () => {
+    const s = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }, { type: "reset" }]);
+    expect(s).toEqual(initialConnectionState);
+  });
+});
+
+describe("mapCloseCode", () => {
+  it("4005 → owner-mismatch error", () => {
+    expect(mapCloseCode(RELAY_CLOSE.OWNER_MISMATCH, undefined, "waiting-to-pair")).toEqual({
+      status: "error",
+      errorKind: "owner-mismatch",
+      endedReason: null,
+    });
+  });
+
+  it("4006 → bad-token error", () => {
+    expect(mapCloseCode(RELAY_CLOSE.BAD_TOKEN, undefined, "connecting").errorKind).toBe("bad-token");
+  });
+
+  it("4001 / 4002 → duplicate error", () => {
+    expect(mapCloseCode(RELAY_CLOSE.DUP_BROWSER, undefined, "connected").errorKind).toBe("duplicate");
+    expect(mapCloseCode(RELAY_CLOSE.DUP_BRIDGE, undefined, "connected").errorKind).toBe("duplicate");
+  });
+
+  it("4004 peer-gone → disconnected (recoverable)", () => {
+    expect(mapCloseCode(RELAY_CLOSE.PEER_GONE, undefined, "connected").status).toBe("disconnected");
+  });
+
+  it("1000 → session-ended; reason text classifies idle / max-duration", () => {
+    expect(mapCloseCode(1000, undefined, "connected").endedReason).toBe("remote");
+    expect(mapCloseCode(1000, "idle timeout", "connected").endedReason).toBe("idle");
+    expect(mapCloseCode(1000, "max-duration", "connected").endedReason).toBe("max-duration");
+  });
+
+  it("abnormal close depends on prior status", () => {
+    // Never reached the machine while handshaking → error.
+    expect(mapCloseCode(1006, undefined, "connecting").errorKind).toBe("relay-unreachable");
+    // Dropped after a live stream → recoverable disconnect.
+    expect(mapCloseCode(1006, undefined, "connected").status).toBe("disconnected");
+  });
+
+  it("closed event flows through the reducer with the mapped state + closeCode", () => {
+    const live = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }]);
+    const owner = terminalReducer(live, { type: "closed", code: RELAY_CLOSE.OWNER_MISMATCH });
+    expect(owner.status).toBe("error");
+    expect(owner.errorKind).toBe("owner-mismatch");
+    expect(owner.closeCode).toBe(RELAY_CLOSE.OWNER_MISMATCH);
+  });
+});
+
+describe("isInputEnabled", () => {
+  const connected: TerminalConnectionState = run([
+    { type: "connect" },
+    { type: "relay-open" },
+    { type: "data" },
+  ]);
+
+  it("true only when connected and not read-only", () => {
+    expect(isInputEnabled(connected, false)).toBe(true);
+    expect(isInputEnabled(connected, true)).toBe(false);
+  });
+
+  it("false in every non-connected state", () => {
+    expect(isInputEnabled(initialConnectionState, false)).toBe(false);
+    const waiting = run([{ type: "connect" }, { type: "relay-open" }]);
+    expect(isInputEnabled(waiting, false)).toBe(false);
+  });
+});
+
+describe("buildRelayUrl", () => {
+  it("builds the browser-leg attach URL and trims trailing slashes", () => {
+    expect(buildRelayUrl("ws://127.0.0.1:8787/", "a3f9", "tok.sig")).toBe(
+      "ws://127.0.0.1:8787/?session=a3f9&role=browser&token=tok.sig",
+    );
+  });
+
+  it("URL-encodes the session id and token", () => {
+    const url = buildRelayUrl("wss://relay.example", "s/i d", "a+b/c=");
+    expect(url).toContain("session=s%2Fi%20d");
+    expect(url).toContain("token=a%2Bb%2Fc%3D");
+    expect(url).toContain("role=browser");
+  });
+});
+
+describe("encodeResizeMessage", () => {
+  it("produces the bridge's resize control frame", () => {
+    expect(encodeResizeMessage(120, 30)).toBe('{"type":"resize","cols":120,"rows":30}');
+  });
+
+  it("rejects non-sane dimensions", () => {
+    expect(encodeResizeMessage(0, 30)).toBeNull();
+    expect(encodeResizeMessage(120, -1)).toBeNull();
+    expect(encodeResizeMessage(1.5, 30)).toBeNull();
+    expect(encodeResizeMessage(120, 99999)).toBeNull();
+  });
+});
