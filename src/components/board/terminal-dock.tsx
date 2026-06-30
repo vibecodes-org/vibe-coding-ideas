@@ -59,8 +59,10 @@ import { buildLaunchDeepLink, redactDeepLinkToken } from "@/lib/terminal/deep-li
 import { subscribeBrowserLaunch } from "@/lib/terminal/launch-mode";
 
 // Where the dock points the user when no helper catches the vibecodes:// link.
-// Slice 7 (packaging) replaces this with the real signed-helper download.
-const HELPER_INSTALL_URL = "/guide";
+// Slice 7 ships the signed, notarized macOS helper (terminal/helper/) whose
+// install lives at this path. HOSTING TODO: publish the notarized .dmg there and
+// have this page link to it (see terminal/helper/BUILD-AND-SIGN.md → "Hosting").
+const HELPER_INSTALL_URL = "/download/terminal-helper";
 // How long to wait for the helper to attach before nudging "install it / Advanced".
 const HELPER_OPEN_TIMEOUT_MS = 6000;
 

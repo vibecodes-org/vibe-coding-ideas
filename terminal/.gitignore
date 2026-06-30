@@ -6,3 +6,5 @@ node_modules/
 .dev.vars
 # logs
 *.log
+# helper build output (electron-builder)
+helper/dist/
