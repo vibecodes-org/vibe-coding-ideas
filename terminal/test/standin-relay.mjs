@@ -1,17 +1,21 @@
 // Plain-ws stand-in relay (Node) — for AUTOMATED testing.
 //
 // It is a faithful, lightweight twin of the Cloudflare Worker + Durable Object
-// in ../relay/src/index.js: same opaque forwarding, same single-attach rule,
-// because it imports the SAME pure decision logic (../relay/src/pairing.js).
+// in ../relay/src/index.js: same opaque forwarding, same single-attach + owner
+// rules, and (slice 6) the SAME idle / max-duration lifecycle limits and close
+// codes/reasons — because it imports the SAME pure decision logic + reason
+// builders (../relay/src/pairing.js). It does NOT hibernate (it's plain Node), so
+// it uses plain setTimeout where the real DO uses storage alarms, but the
+// observable behaviour (close code 1000 + idle/max reason) is identical.
 //
 // Why a stand-in: `wrangler dev` boots a full workerd runtime (slow, heavy, and
 // can need a one-time binary download), which is a poor dependency for a fast,
 // hermetic round-trip assertion. The real DO is exercised manually via
-// `npx wrangler dev` (see RUN.md); this twin proves the bridge<->relay<->browser
-// byte path deterministically in CI-style runs.
+// `npx wrangler dev` (see RUN.md / verify-against-relay.mjs / verify-lifecycle.mjs);
+// this twin proves the byte path + lifecycle deterministically in CI-style runs.
 //
 // Usage (programmatic): import { startStandinRelay } from "./standin-relay.mjs"
-//   const relay = await startStandinRelay({ port: 0 });
+//   const relay = await startStandinRelay({ port: 0, idleMs: 200 });
 //   ... relay.url ("ws://127.0.0.1:<port>") ... await relay.close();
 
 import { WebSocketServer } from "ws";
@@ -19,21 +23,54 @@ import {
   decideAttach,
   isValidSession,
   CLOSE,
+  DEFAULT_IDLE_MS,
+  DEFAULT_MAX_MS,
+  idleCloseReason,
+  maxCloseReason,
+  resolveMs,
 } from "../relay/src/pairing.js";
 import { authorizeAttach } from "../shared/session-token.mjs";
 
+const NORMAL_CLOSURE = 1000;
+
 /**
- * @param {{ port?: number, secret?: string, log?: (msg:string, extra?:object)=>void }} [opts]
+ * @param {{ port?: number, secret?: string, idleMs?: number, maxMs?: number,
+ *           log?: (msg:string, extra?:object)=>void }} [opts]
  *   `secret` — TERMINAL_SESSION_SECRET used to verify leg tokens (defaults to env).
+ *   `idleMs` / `maxMs` — lifecycle caps (default 30 min / 4 h); tests pass small values.
  * @returns {Promise<{ url:string, port:number, close:()=>Promise<void>, sessions: Map }>}
  */
 export function startStandinRelay(opts = {}) {
   const log = opts.log || (() => {});
   const secret = opts.secret ?? process.env.TERMINAL_SESSION_SECRET;
-  // session id -> { bridge: ws|null, browser: ws|null, owner: string|null }
+  const idleMs = resolveMs(opts.idleMs, DEFAULT_IDLE_MS);
+  const maxMs = resolveMs(opts.maxMs, DEFAULT_MAX_MS);
+  // session id -> { bridge: ws|null, browser: ws|null, owner: string|null,
+  //                 idleTimer, maxTimer }
   const sessions = new Map();
 
   const wss = new WebSocketServer({ port: opts.port ?? 0 });
+
+  /** Close both legs with code 1000 + a lifecycle reason, then forget the session. */
+  function endSession(session, reason) {
+    const legs = sessions.get(session);
+    if (!legs) return;
+    clearTimeout(legs.idleTimer);
+    clearTimeout(legs.maxTimer);
+    for (const leg of [legs.bridge, legs.browser]) {
+      if (leg && leg.readyState === leg.OPEN) {
+        try { leg.close(NORMAL_CLOSURE, reason); } catch { /* closing */ }
+      }
+    }
+    sessions.delete(session);
+  }
+
+  /** (Re)arm the idle timer for a session (called on attach + every message). */
+  function bumpIdle(session, legs) {
+    clearTimeout(legs.idleTimer);
+    legs.idleTimer = setTimeout(() => endSession(session, idleCloseReason(idleMs)), idleMs);
+    legs.idleTimer.unref?.();
+  }
 
   wss.on("connection", async (ws, req) => {
     const url = new URL(req.url, "ws://localhost");
@@ -54,7 +91,9 @@ export function startStandinRelay(opts = {}) {
       return;
     }
 
-    if (!sessions.has(session)) sessions.set(session, { bridge: null, browser: null, owner: null });
+    if (!sessions.has(session)) {
+      sessions.set(session, { bridge: null, browser: null, owner: null, idleTimer: null, maxTimer: null });
+    }
     const legs = sessions.get(session);
 
     const state = { bridge: legs.bridge !== null, browser: legs.browser !== null, owner: legs.owner };
@@ -65,15 +104,25 @@ export function startStandinRelay(opts = {}) {
       return;
     }
 
+    const firstLeg = legs.bridge === null && legs.browser === null;
     if (legs.owner === null) legs.owner = auth.sub;
     legs[role] = ws;
     log("attached", { session, role });
+
+    // Arm the max-duration cap once, on the first leg; arm/refresh idle now.
+    if (firstLeg) {
+      legs.maxTimer = setTimeout(() => endSession(session, maxCloseReason(maxMs)), maxMs);
+      legs.maxTimer.unref?.();
+    }
+    bumpIdle(session, legs);
 
     ws.on("message", (data, isBinary) => {
       const peer = role === "bridge" ? legs.browser : legs.bridge;
       if (peer && peer.readyState === peer.OPEN) {
         peer.send(data, { binary: isBinary }); // verbatim, opaque
       }
+      // Activity → push the idle deadline out (max-duration is untouched).
+      if (sessions.get(session) === legs) bumpIdle(session, legs);
     });
 
     const teardown = () => {
@@ -85,7 +134,11 @@ export function startStandinRelay(opts = {}) {
       }
       if (role === "bridge") legs.browser = null;
       else legs.bridge = null;
-      if (!legs.bridge && !legs.browser) sessions.delete(session);
+      if (!legs.bridge && !legs.browser) {
+        clearTimeout(legs.idleTimer);
+        clearTimeout(legs.maxTimer);
+        sessions.delete(session);
+      }
     };
 
     ws.on("close", teardown);
@@ -101,6 +154,10 @@ export function startStandinRelay(opts = {}) {
         sessions,
         close: () =>
           new Promise((res) => {
+            for (const legs of sessions.values()) {
+              clearTimeout(legs.idleTimer);
+              clearTimeout(legs.maxTimer);
+            }
             for (const client of wss.clients) {
               try { client.terminate(); } catch { /* ignore */ }
             }

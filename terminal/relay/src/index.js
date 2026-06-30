@@ -1,23 +1,49 @@
-// VibeCodes Terminal Relay — Cloudflare Worker + Durable Object — SLICE 1
+// VibeCodes Terminal Relay — Cloudflare Worker + Durable Object — SLICE 6
 //
 // One Durable Object instance per `session` id. It accepts two WebSocket legs —
 // `bridge` (the local machine) and `browser` (the in-app terminal) — pairs them,
 // and forwards bytes OPAQUELY in both directions. It never parses or logs stream
-// content; only metadata (session id, role, byte counts).
+// content; only metadata (session id, role).
 //
-// Enforces SINGLE-ATTACH: a 2nd browser (or 2nd bridge) for an already-attached
-// session is rejected with a clear close code/reason.
+// Enforces SINGLE-ATTACH and OWNER-BINDING: a 2nd browser/bridge is rejected, and
+// both legs must carry the same owner (`sub`).
 //
-// Connect with:  wss://<host>/?session=<id>&role=<bridge|browser>
+// SLICE 6 — WebSocket Hibernation + lifecycle timers:
+//   The DO uses the WebSocket HIBERNATION API (`state.acceptWebSocket` + the
+//   `webSocket*` handler methods) so it can be EVICTED FROM MEMORY between
+//   messages and stop billing duration while a session sits idle. Because instance
+//   fields don't survive eviction, all session state is reconstructed from durable
+//   sources on every wake-up:
+//     - per-socket identity → `ws.serializeAttachment({ role, sub })` + tags
+//       (`role:<role>`, `sub:<sub>`), read back via `getWebSockets(tag)` /
+//       `deserializeAttachment()`.
+//     - owner binding + lifecycle bookkeeping → `state.storage`.
+//   Idle / max-duration limits are enforced with DO ALARMS (also
+//   hibernation-compatible), so a forgotten session is closed cleanly instead of
+//   living forever.
+//
+// Connect with:  wss://<host>/?session=<id>&role=<bridge|browser>&token=<jwt>
 //
 // Run locally (offline, no Cloudflare account):  npx wrangler dev
 //
-// The pairing / single-attach decision logic lives in ./pairing.js and is shared
-// with the Node stand-in relay used by the automated test, so both enforce
-// identical rules.
+// The pairing / single-attach / lifecycle decision logic lives in ./pairing.js and
+// is shared with the Node stand-in relay used by the automated tests, so both
+// enforce identical rules.
 
-import { decideAttach, isValidSession, CLOSE } from "./pairing.js";
+import {
+  decideAttach,
+  isValidSession,
+  CLOSE,
+  DEFAULT_IDLE_MS,
+  DEFAULT_MAX_MS,
+  idleCloseReason,
+  maxCloseReason,
+  resolveMs,
+} from "./pairing.js";
 import { authorizeAttach } from "../../shared/session-token.mjs";
+
+/** Normal WebSocket closure code used for clean, server-initiated session ends. */
+const NORMAL_CLOSURE = 1000;
 
 export default {
   /**
@@ -41,9 +67,7 @@ export default {
     const session = url.searchParams.get("session");
     // Cheap shape guard first (a malformed session id can't address a DO). FULL
     // token verification + owner-binding happens inside the Durable Object on WS
-    // attach (see TerminalRelay.fetch) — that is where the per-session owner state
-    // lives, so both the signature/expiry check and the owner check are enforced
-    // in one place, by the same shared `authorizeAttach`.
+    // attach (see TerminalRelay.fetch).
     if (!isValidSession(session)) {
       return new Response(CLOSE.BAD_SESSION.reason, { status: 400 });
     }
@@ -63,13 +87,9 @@ export class TerminalRelay {
   constructor(state, env) {
     this.state = state;
     this.env = env;
-    /** @type {WebSocket|null} */
-    this.bridge = null;
-    /** @type {WebSocket|null} */
-    this.browser = null;
-    /** @type {string|null} owning user id (`sub`) this session is bound to */
-    this.owner = null;
-    this.bytes = { bridge: 0, browser: 0 };
+    // NOTE (hibernation): do NOT keep session state in instance fields — the DO
+    // can be evicted between messages. Live sockets + state.storage are the only
+    // durable sources, read on demand below.
   }
 
   /** @param {string} msg @param {object} [extra] */
@@ -78,13 +98,33 @@ export class TerminalRelay {
     console.log(JSON.stringify({ comp: "relay", msg, ...extra }));
   }
 
-  /** Current attachment state derived from live sockets (pure-logic input). */
-  attachState() {
-    return {
-      bridge: this.bridge !== null,
-      browser: this.browser !== null,
-      owner: this.owner,
-    };
+  /** Idle cap in ms (env override → default). */
+  idleMs() {
+    return resolveMs(this.env.TERMINAL_IDLE_MS, DEFAULT_IDLE_MS);
+  }
+
+  /** Max session age in ms (env override → default). */
+  maxMs() {
+    return resolveMs(this.env.TERMINAL_MAX_MS, DEFAULT_MAX_MS);
+  }
+
+  /** The live peer socket for the opposite role, or null. Tag-driven so it works post-hibernation. */
+  findPeer(role) {
+    const peerTag = role === "bridge" ? "role:browser" : "role:bridge";
+    return this.state.getWebSockets(peerTag)[0] ?? null;
+  }
+
+  /**
+   * Current attachment state, derived from the LIVE hibernatable sockets + the
+   * durable owner binding — the pure-logic input for decideAttach. This is how
+   * single-attach/owner survive eviction: we never trust instance memory.
+   * @returns {Promise<import("./pairing.js").AttachState>}
+   */
+  async computeAttachState() {
+    const bridge = this.state.getWebSockets("role:bridge").length > 0;
+    const browser = this.state.getWebSockets("role:browser").length > 0;
+    const owner = (await this.state.storage.get("owner")) ?? null;
+    return { bridge, browser, owner };
   }
 
   /** @param {Request} request */
@@ -97,7 +137,6 @@ export class TerminalRelay {
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
-    server.accept();
 
     // 1) Authenticate the leg: verify the app-minted token's signature + expiry and
     //    that its `sid`/`role` claims match THIS connection. Never log the token.
@@ -109,65 +148,150 @@ export class TerminalRelay {
     });
     if (!auth.ok) {
       this.log("attach rejected (auth)", { session, role, reason: auth.reason, code: CLOSE.BAD_TOKEN.code });
+      // Reject with a close FRAME (not an HTTP error) so the client sees the code.
+      // A rejected leg never joins hibernation — plain accept + close.
+      server.accept();
       server.close(CLOSE.BAD_TOKEN.code, CLOSE.BAD_TOKEN.reason);
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    // 2) Owner-binding + single-attach (pure). Both legs of a session must carry the
-    //    same `sub`; a leg for a different user is rejected with OWNER_MISMATCH.
-    const decision = decideAttach(this.attachState(), role, auth.sub);
+    // 2) Owner-binding + single-attach (pure), fed from LIVE sockets + durable owner.
+    const state = await this.computeAttachState();
+    const decision = decideAttach(state, role, auth.sub);
     if (!decision.ok) {
       this.log("attach rejected", { session, role, code: decision.code, reason: decision.reason });
-      // Send the close on the accepted server socket so the client sees the code.
+      server.accept();
       server.close(decision.code, decision.reason);
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    if (this.owner === null) this.owner = auth.sub;
-    if (role === "bridge") this.bridge = server;
-    else this.browser = server;
-    this.log("attached", { session, role, ...this.attachState() });
+    // 3) Accept into HIBERNATION. Tag by role (+ sub) so the peer is findable and
+    //    single-attach is re-derivable after the DO is evicted from memory.
+    this.state.acceptWebSocket(server, [`role:${role}`, `sub:${auth.sub}`]);
+    // Per-socket identity that survives hibernation (read via deserializeAttachment).
+    server.serializeAttachment({ role, sub: auth.sub });
 
-    server.addEventListener("message", (event) => {
-      const peer = role === "bridge" ? this.browser : this.bridge;
-      const data = event.data;
-      // Count bytes for metadata; do NOT inspect content.
-      this.bytes[role] += typeof data === "string" ? data.length : data.byteLength;
-      if (peer) {
-        try {
-          peer.send(data); // verbatim, opaque
-        } catch (e) {
-          this.log("forward failed", { session, role, err: String(e) });
-        }
-      }
-      // If no peer yet, the frame is dropped — slice 1 has no buffering. The
-      // bridge's first PTY output may predate the browser attaching; the test
-      // orchestrates browser-first to avoid races, and real usage opens the
-      // browser dock to "Connecting…" before the bridge produces output.
-    });
+    // 4) Durable bookkeeping. Bind the owner on the first leg; stamp the session
+    //    start + activity and arm the idle/max alarm.
+    const now = Date.now();
+    if (state.owner === null) await this.state.storage.put("owner", auth.sub);
+    if ((await this.state.storage.get("sessionStartedAt")) == null) {
+      await this.state.storage.put("sessionStartedAt", now);
+    }
+    await this.state.storage.put("lastActivityAt", now);
+    await this.armAlarm(now);
 
-    const teardown = (why) => {
-      if (role === "bridge") this.bridge = null;
-      else this.browser = null;
-      this.log("detached", { session, role, why, bytes: this.bytes[role] });
-      // Tell the surviving peer its partner is gone, then drop it so the
-      // session can be cleanly re-established.
-      const peer = role === "bridge" ? this.browser : this.bridge;
-      if (peer) {
-        try {
-          peer.close(CLOSE.PEER_GONE.code, CLOSE.PEER_GONE.reason);
-        } catch { /* already closing */ }
-        if (role === "bridge") this.browser = null;
-        else this.bridge = null;
-      }
-      // Release the owner binding once the session is fully empty so the id can be
-      // cleanly re-established by an authorized owner.
-      if (this.bridge === null && this.browser === null) this.owner = null;
-    };
-
-    server.addEventListener("close", () => teardown("close"));
-    server.addEventListener("error", () => teardown("error"));
-
+    this.log("attached", { session, role, ...(await this.computeAttachState()) });
     return new Response(null, { status: 101, webSocket: client });
+  }
+
+  // ── Hibernation handlers (called by the runtime; the DO may have just woken) ──
+
+  /**
+   * @param {WebSocket} ws
+   * @param {string|ArrayBuffer} message
+   */
+  async webSocketMessage(ws, message) {
+    const att = ws.deserializeAttachment() || {};
+    const role = att.role;
+    if (role !== "bridge" && role !== "browser") return;
+
+    // Forward verbatim + opaque. Never inspect or log the payload.
+    const peer = this.findPeer(role);
+    if (peer) {
+      try {
+        peer.send(message);
+      } catch (e) {
+        this.log("forward failed", { role, err: String(e) });
+      }
+    }
+    // If no peer yet the frame is dropped (no buffering) — see slice-1 notes.
+
+    // Record activity + re-arm the idle/max alarm to the next deadline.
+    const now = Date.now();
+    await this.state.storage.put("lastActivityAt", now);
+    await this.armAlarm(now);
+  }
+
+  /**
+   * @param {WebSocket} ws @param {number} code @param {string} reason @param {boolean} wasClean
+   */
+  async webSocketClose(ws, code, reason, wasClean) {
+    await this.handleDetach(ws, "close", { code, wasClean });
+  }
+
+  /** @param {WebSocket} ws @param {unknown} error */
+  async webSocketError(ws, error) {
+    await this.handleDetach(ws, "error", { err: String(error) });
+  }
+
+  /**
+   * One leg went away. Tell the surviving peer (PEER_GONE) and drop it so the
+   * session id can be cleanly re-established, then release all session state.
+   * @param {WebSocket} ws @param {string} why @param {object} [extra]
+   */
+  async handleDetach(ws, why, extra = {}) {
+    let role = null;
+    try {
+      role = ws.deserializeAttachment()?.role ?? null;
+    } catch { /* attachment may be gone */ }
+    this.log("detached", { role, why, ...extra });
+
+    // Close the surviving peer (the closing socket may still appear in the list).
+    for (const peer of this.state.getWebSockets()) {
+      if (peer === ws) continue;
+      try {
+        peer.close(CLOSE.PEER_GONE.code, CLOSE.PEER_GONE.reason);
+      } catch { /* already closing */ }
+    }
+    // The session is now empty → release the owner binding + lifecycle state so a
+    // fresh authorized owner can re-establish the id.
+    await this.clearSessionState();
+  }
+
+  // ── Idle / max-duration via DO alarms ────────────────────────────────────────
+
+  /** Arm the alarm to the nearest of (idle deadline, max-duration deadline). */
+  async armAlarm(now) {
+    const started = (await this.state.storage.get("sessionStartedAt")) ?? now;
+    const next = Math.min(now + this.idleMs(), started + this.maxMs());
+    await this.state.storage.setAlarm(next);
+  }
+
+  /** Hibernation-compatible alarm: enforce the lifecycle caps or re-arm. */
+  async alarm() {
+    const now = Date.now();
+    const started = await this.state.storage.get("sessionStartedAt");
+    const last = await this.state.storage.get("lastActivityAt");
+
+    if (started != null && now - started >= this.maxMs()) {
+      this.log("session ended", { why: "max-duration", ageMs: now - started });
+      return this.endSession(maxCloseReason(this.maxMs()));
+    }
+    if (last != null && now - last >= this.idleMs()) {
+      this.log("session ended", { why: "idle-timeout", idleMs: now - last });
+      return this.endSession(idleCloseReason(this.idleMs()));
+    }
+    // Activity happened since the alarm was set (or no legs) → re-arm defensively.
+    if (started != null || last != null) {
+      const next = Math.min((last ?? now) + this.idleMs(), (started ?? now) + this.maxMs());
+      await this.state.storage.setAlarm(next);
+    }
+  }
+
+  /** Close BOTH legs with the normal code 1000 + lifecycle reason, then clear state. */
+  async endSession(reason) {
+    for (const ws of this.state.getWebSockets()) {
+      try {
+        ws.close(NORMAL_CLOSURE, reason);
+      } catch { /* already closing */ }
+    }
+    await this.clearSessionState();
+  }
+
+  /** Release owner binding + lifecycle bookkeeping + any pending alarm. */
+  async clearSessionState() {
+    await this.state.storage.delete(["owner", "sessionStartedAt", "lastActivityAt"]);
+    await this.state.storage.deleteAlarm();
   }
 }

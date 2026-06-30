@@ -123,7 +123,16 @@ export function mapCloseCode(
   }
 }
 
-/** Best-effort reason classification from a close-frame reason string. */
+/**
+ * Best-effort reason classification from a close-frame reason string.
+ *
+ * LOCK-STEP: the relay ends idle / max-duration sessions with code 1000 and a
+ * reason built by terminal/relay/src/pairing.js → idleCloseReason / maxCloseReason
+ * (shared by the Cloudflare DO and the Node stand-in). Those strings always contain
+ * the substring "idle" / "max" respectively, which is exactly what this matches.
+ * Keep the builders and this classifier in step — connection.test.ts pins the
+ * default strings.
+ */
 function parseEndedReason(reason: string | undefined): EndedReason {
   const r = (reason ?? "").toLowerCase();
   if (r.includes("idle")) return "idle";

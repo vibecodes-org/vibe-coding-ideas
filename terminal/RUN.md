@@ -152,8 +152,41 @@ cd terminal/bridge && RELAY_URL=ws://127.0.0.1:8787 SESSION_ID=a3f9 \
 | `--max-seconds <n>` | `BRIDGE_MAX_SECONDS` | `28800` | hard self-kill safety cap |
 | `--connect-timeout-ms <n>` | — | `30000` | fail if relay never opens |
 
+## Session lifecycle limits (slice 6)
+
+The relay now ends forgotten sessions itself. It uses the **WebSocket Hibernation
+API** (so an idle DO is evicted from memory and stops billing duration) plus DO
+**alarms** for two caps:
+
+- **idle** — no traffic for `TERMINAL_IDLE_MS` (default 30 min) → both legs close
+  `1000` with reason `idle-timeout: …`.
+- **max-duration** — total session age ≥ `TERMINAL_MAX_MS` (default 4 h) → both
+  legs close `1000` with reason `max-duration: …`.
+
+Both reasons are classified by the dock (`src/lib/terminal/connection.ts`) into the
+calm idle / max-duration copy. Override the caps via env (`[vars]` in
+`wrangler.toml`, or `--var KEY:VALUE` for a quick local run). The stand-in relay
+enforces the same caps with plain timers, so the lifecycle is testable hermetically:
+
+```bash
+cd terminal/test && node --test lifecycle.test.mjs     # idle + max, both legs, code 1000
+```
+
+Prove the REAL DO's idle alarm against `wrangler dev` (short idle for speed):
+
+```bash
+cd terminal/relay && npx wrangler dev --port 8787 --var TERMINAL_IDLE_MS:3000   # terminal 1
+cd terminal/test  && TERMINAL_SESSION_SECRET=<same-as-.dev.vars> \
+  RELAY_URL=ws://127.0.0.1:8787 EXPECT_IDLE_MS=3000 node verify-lifecycle.mjs    # terminal 2
+```
+
+The DO logs `session ended … why:idle-timeout` and closes both legs. Note: local
+`wrangler dev` does NOT forward server-initiated close frames to clients (known
+wrangler bug workers-sdk#1812/#10307); production delivers them. Deploy steps:
+`relay/DEPLOY.md`.
+
 ## Stubbed for later slices
 
-- **In-app panel** (the board terminal dock), the **Launch Claude Code menu**,
-  the signed `vibecodes://` deep link, helper **code-signing/notarization**, and
-  **lifecycle limits** (idle / max-duration UI, reconnect) — all later slices.
+- **Helper code-signing / notarization**, registering the **`vibecodes://`** URL
+  scheme with the OS, and the **real signed download** of the bridge helper
+  (slice 7) — still to come.

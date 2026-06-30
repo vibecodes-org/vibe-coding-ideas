@@ -134,6 +134,19 @@ describe("mapCloseCode", () => {
     expect(mapCloseCode(1000, "max-duration", "connected").endedReason).toBe("max-duration");
   });
 
+  // Lock-step with terminal/relay/src/pairing.js → idleCloseReason / maxCloseReason
+  // (and the Node stand-in). These are the EXACT default strings the relay emits on
+  // a lifecycle close; if those builders change, this must move with them.
+  it("classifies the relay's actual lifecycle close reasons (slice 6)", () => {
+    const idle = mapCloseCode(1000, "idle-timeout: ended after 30 min idle", "connected");
+    expect(idle.status).toBe("session-ended");
+    expect(idle.endedReason).toBe("idle");
+
+    const max = mapCloseCode(1000, "max-duration: session reached its 4 hour limit", "connected");
+    expect(max.status).toBe("session-ended");
+    expect(max.endedReason).toBe("max-duration");
+  });
+
   it("abnormal close depends on prior status", () => {
     // Never reached the machine while handshaking → error.
     expect(mapCloseCode(1006, undefined, "connecting").errorKind).toBe("relay-unreachable");

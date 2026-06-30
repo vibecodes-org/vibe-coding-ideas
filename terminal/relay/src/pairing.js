@@ -120,3 +120,37 @@ export function detach(state, role) {
 export function peerRole(role) {
   return role === "bridge" ? "browser" : "bridge";
 }
+
+// ── Session lifecycle limits (slice 6) ────────────────────────────────────────
+//
+// Two server-side caps end a forgotten session cleanly so a DO can't live (and
+// bill) forever:
+//   - idle:         no traffic for IDLE_MS → close both legs.
+//   - max-duration: total session age ≥ MAX_MS → close both legs.
+// Both close with the NORMAL code 1000 + a reason string. The reason text is the
+// SINGLE SOURCE OF TRUTH the browser dock classifies on (see
+// src/lib/terminal/connection.ts → parseEndedReason): it looks for the substrings
+// "idle" / "max", so these builders and that classifier are in lock-step.
+
+/** Default idle cap: 30 minutes of no traffic. Overridable via env TERMINAL_IDLE_MS. */
+export const DEFAULT_IDLE_MS = 30 * 60 * 1000;
+/** Default hard cap on total session age: 4 hours. Overridable via env TERMINAL_MAX_MS. */
+export const DEFAULT_MAX_MS = 4 * 60 * 60 * 1000;
+
+/** Normal-closure reason for an idle-timeout end. MUST contain "idle". */
+export function idleCloseReason(idleMs = DEFAULT_IDLE_MS) {
+  const min = Math.max(1, Math.round(idleMs / 60_000));
+  return `idle-timeout: ended after ${min} min idle`;
+}
+
+/** Normal-closure reason for a max-duration end. MUST contain "max". */
+export function maxCloseReason(maxMs = DEFAULT_MAX_MS) {
+  const hours = Math.max(1, Math.round(maxMs / 3_600_000));
+  return `max-duration: session reached its ${hours} hour limit`;
+}
+
+/** Read a positive-millisecond override from an env-like bag, else the default. */
+export function resolveMs(value, fallback) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : fallback;
+}
