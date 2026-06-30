@@ -22,11 +22,14 @@ compatibility_date = "2024-12-01"
 name = "TERMINAL_RELAY"
 class_name = "TerminalRelay"
 
-# DO classes must be declared in a migration (Durable Objects require the Workers
-# PAID plan — see DEPLOY.md).
+# DO classes must be declared in a migration. We use `new_sqlite_classes`
+# (SQLite-backed Durable Objects) — these run on the Cloudflare FREE plan, whereas
+# KV-backed `new_classes` requires the Workers Paid plan. Our storage usage
+# (state.storage put/get + alarms) and WebSocket Hibernation work identically on
+# the SQLite backend, so this is a drop-in. See DEPLOY.md.
 [[migrations]]
 tag = "v1"
-new_classes = ["TerminalRelay"]
+new_sqlite_classes = ["TerminalRelay"]
 
 # ── Session lifecycle limits (slice 6) ────────────────────────────────────────
 # Two server-side caps end a forgotten session cleanly so a DO can't live (and
