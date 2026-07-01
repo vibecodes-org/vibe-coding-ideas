@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <!-- Hardened Runtime entitlements required for an Electron + node-pty helper.
+       Notarization REQUIRES hardened runtime; these allowances let our signed
+       bundle do what it must without weakening it more than necessary. -->
+
+  <!-- Electron/V8 JIT. -->
+  <key>com.apple.security.cs.allow-jit</key>
+  <true/>
+  <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+  <true/>
+
+  <!-- Load node-pty's prebuilt native module (pty.node) and let it exec the
+       node-pty spawn-helper binary that creates the PTY. Without library
+       validation disabled, a hardened-runtime process refuses to load a .node
+       that isn't signed by the same Team ID toolchain. -->
+  <key>com.apple.security.cs.disable-library-validation</key>
+  <true/>
+
+  <!-- The helper forks the bridge (Electron-as-Node), which spawns `claude` in
+       the PTY: child processes must inherit the runtime sandbox/signature. -->
+  <key>com.apple.security.cs.allow-dyld-environment-variables</key>
+  <true/>
+  <key>com.apple.security.inherit</key>
+  <true/>
+</dict>
+</plist>

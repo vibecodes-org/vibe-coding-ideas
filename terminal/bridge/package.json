@@ -1,0 +1,18 @@
+{
+  "name": "vibecodes-terminal-bridge",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Local Node bridge: runs a command in a node-pty PTY and pipes it opaquely over an outbound WebSocket to the VibeCodes terminal relay. (Slice 1)",
+  "bin": {
+    "vibecodes-bridge": "src/index.js"
+  },
+  "scripts": {
+    "start": "node src/index.js",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0",
+    "ws": "^8.18.0"
+  }
+}

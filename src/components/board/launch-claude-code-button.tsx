@@ -2,7 +2,7 @@
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Terminal, ChevronDown, Copy, FolderCog, FolderPlus, ExternalLink } from "lucide-react";
+import { Terminal, ChevronDown, Copy, FolderCog, FolderPlus, ExternalLink, Globe } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -29,6 +29,8 @@ import {
   DEFAULT_NEW_PROJECT_PARENT,
 } from "@/lib/launch-claude-code";
 import { LaunchPathDialog } from "./launch-path-dialog";
+import { isTerminalEnabled } from "@/lib/terminal/connection";
+import { isBrowserLaunchAvailable, requestBrowserLaunch } from "@/lib/terminal/launch-mode";
 
 const APP_URL =
   process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || "https://vibecodes.co.uk";
@@ -296,6 +298,18 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     void copyCommand(resolveState());
   }, [resolveState, copyCommand]);
 
+  // The in-browser destination only exists behind the terminal flag. When the flag
+  // is OFF this is false, so the menu collapses to exactly today's single
+  // terminal-window action — the existing behaviour is completely untouched.
+  // Picking "In the browser" asks the board's terminal dock (a page-level sibling)
+  // to open + auto-launch via the vibecodes:// deep link; it does NOT also run the
+  // terminal-window flow — Claude runs in one place at a time.
+  const browserLaunchAvailable = isBrowserLaunchAvailable(isTerminalEnabled());
+  const handleLaunchInBrowser = useCallback(() => {
+    posthog?.capture("launch_claude_code_clicked", { method: "in_browser" });
+    requestBrowserLaunch();
+  }, [posthog]);
+
   const openDialog = useCallback((mode: LaunchMode, launch: boolean) => {
     setPendingLaunch(launch);
     setDialogMode(mode);
@@ -402,10 +416,40 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-72">
-            <DropdownMenuItem onSelect={handleLaunch}>
-              <Terminal className="mr-2 h-4 w-4" />
-              Open in Claude Code
-            </DropdownMenuItem>
+            {browserLaunchAvailable ? (
+              // Pick-one: where should Claude run? "In a terminal window" is today's
+              // unchanged behaviour; "In the browser" opens the docked terminal.
+              <>
+                <DropdownMenuItem onSelect={handleLaunch}>
+                  <Terminal className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span>In a terminal window</span>
+                    <span className="text-[11px] text-muted-foreground">
+                      On your computer — how it works today
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={handleLaunchInBrowser}>
+                  <Globe className="mr-2 h-4 w-4" />
+                  <div className="flex flex-col">
+                    <span className="inline-flex items-center gap-1.5">
+                      In the browser
+                      <span className="rounded bg-sky-500/15 px-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-sky-400">
+                        Beta
+                      </span>
+                    </span>
+                    <span className="text-[11px] text-muted-foreground">
+                      A live terminal docked on this board
+                    </span>
+                  </div>
+                </DropdownMenuItem>
+              </>
+            ) : (
+              <DropdownMenuItem onSelect={handleLaunch}>
+                <Terminal className="mr-2 h-4 w-4" />
+                Open in Claude Code
+              </DropdownMenuItem>
+            )}
             {effectiveTarget.source !== "none" && effectiveTarget.displayPath && (
               <>
                 <DropdownMenuSeparator />

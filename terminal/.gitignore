@@ -1,0 +1,10 @@
+# Terminal area — kept isolated from the Next.js app build.
+node_modules/
+# wrangler local dev state / cache
+.wrangler/
+# local relay secrets (TERMINAL_SESSION_SECRET) — NEVER commit
+.dev.vars
+# logs
+*.log
+# helper build output (electron-builder)
+helper/dist/

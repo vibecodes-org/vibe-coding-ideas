@@ -1,0 +1,51 @@
+# VibeCodes Terminal Relay — Cloudflare Worker + Durable Object
+#
+# Opaquely relays bytes between a `bridge` leg (local machine) and a single
+# `browser` leg (the in-app terminal) per session id. See DEPLOY.md for the full
+# step-by-step deploy. Run locally, offline (no Cloudflare account needed):
+#
+#   cd terminal/relay && npx wrangler dev
+#     → serves http://127.0.0.1:8787 ; connect WebSockets at
+#       ws://127.0.0.1:8787/?session=<id>&role=<bridge|browser>&token=<jwt>
+
+name = "vibecodes-terminal-relay"
+main = "src/index.js"
+
+# WebSocket HIBERNATION requirement: the DO uses state.acceptWebSocket() + the
+# webSocket* handler methods + storage alarms. No compat FLAG is needed — the
+# Hibernation API is on by default — but the compatibility_date must be recent
+# enough for the API to be present in the runtime. 2024-12-01 is comfortably so.
+compatibility_date = "2024-12-01"
+
+# One Durable Object class — TerminalRelay — bound as TERMINAL_RELAY.
+[[durable_objects.bindings]]
+name = "TERMINAL_RELAY"
+class_name = "TerminalRelay"
+
+# DO classes must be declared in a migration. We use `new_sqlite_classes`
+# (SQLite-backed Durable Objects) — these run on the Cloudflare FREE plan, whereas
+# KV-backed `new_classes` requires the Workers Paid plan. Our storage usage
+# (state.storage put/get + alarms) and WebSocket Hibernation work identically on
+# the SQLite backend, so this is a drop-in. See DEPLOY.md.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["TerminalRelay"]
+
+# ── Session lifecycle limits (slice 6) ────────────────────────────────────────
+# Two server-side caps end a forgotten session cleanly so a DO can't live (and
+# bill) forever. Both are read by the DO as env vars; the values below are the
+# production defaults and may be tuned WITHOUT a code change. The DO falls back to
+# the SAME defaults (30 min / 4 h) if these are absent, so they are documentation
+# as much as configuration.
+#   TERMINAL_IDLE_MS — close the session after this many ms of NO traffic.
+#   TERMINAL_MAX_MS  — hard cap on total session age, regardless of traffic.
+[vars]
+TERMINAL_IDLE_MS = "1800000"   # 30 minutes
+TERMINAL_MAX_MS  = "14400000"  # 4 hours
+
+# ── Secret (NOT set here — never commit it) ───────────────────────────────────
+# TERMINAL_SESSION_SECRET is the HMAC key the relay verifies app-minted session
+# tokens with. It MUST match the VibeCodes app's TERMINAL_SESSION_SECRET. Provide
+# it OUT OF BAND:
+#   - local dev:  terminal/relay/.dev.vars  (gitignored; loaded by `wrangler dev`)
+#   - production: `wrangler secret put TERMINAL_SESSION_SECRET`

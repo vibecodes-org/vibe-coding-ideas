@@ -12,6 +12,8 @@ import { BoardRealtime } from "@/components/board/board-realtime";
 import { GuestBoardBanner } from "@/components/board/guest-board-banner";
 import { BoardPageTabs } from "@/components/board/board-page-tabs";
 import { KitAppliedToast } from "@/components/board/kit-applied-toast";
+import { TerminalDock } from "@/components/board/terminal-dock";
+import { isTerminalEnabled } from "@/lib/terminal/connection";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { computeIdeaHealth } from "@/lib/idea-health";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
@@ -356,6 +358,12 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
         />
       </BoardPageTabs>
       <KitAppliedToast />
+
+      {/* In-app local Claude Code terminal — OFF by default (NEXT_PUBLIC_TERMINAL_ENABLED),
+          team-members only. Renders nothing when the flag is off → board unchanged. */}
+      {isTerminalEnabled() && isTeamMember && (
+        <TerminalDock ideaId={id} ideaTitle={idea.title} />
+      )}
     </div>
   );
 }

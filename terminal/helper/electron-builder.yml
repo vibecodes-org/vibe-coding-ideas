@@ -1,0 +1,75 @@
+# electron-builder config — VibeCodes macOS helper (slice 7).
+# Build:   npm run dist            (signed + notarized — needs Nick's cert + env)
+# Unsigned: npm run pack:unsigned  (proves the bundle/Info.plist locally, no cert)
+# See BUILD-AND-SIGN.md for the full runbook.
+
+appId: co.uk.vibecodes.helper
+productName: VibeCodes
+copyright: © VibeCodes
+
+directories:
+  output: dist
+  buildResources: build
+
+# Only the helper's own code goes inside app.asar. The reused bridge + shared
+# modules are shipped as extraResources (below) so node-pty's native binaries
+# stay executable on disk — you cannot exec a spawn-helper from inside an asar.
+files:
+  - main.js
+  - package.json
+
+extraResources:
+  - from: ../bridge
+    to: bridge
+    filter:
+      - "**/*"
+      - "!**/*.test.js"
+      - "!**/*.test.mjs"
+      - "!**/package-lock.json"
+      # node-pty ships prebuilts for every platform; the mac helper only needs
+      # darwin. Dropping the win32 ones trims ~65 MB of dead weight.
+      - "!**/node-pty/prebuilds/win32-*/**"
+  - from: ../shared
+    to: shared
+    filter:
+      - "**/*.mjs"
+      - "!**/*.test.mjs"
+
+# Emits Info.plist CFBundleURLTypes so the OS routes vibecodes:// to this app.
+protocols:
+  - name: VibeCodes Terminal Launch
+    schemes:
+      - vibecodes
+
+mac:
+  category: public.app-category.developer-tools
+  # Notarization requires the Hardened Runtime.
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: entitlements.mac.plist
+  entitlementsInherit: entitlements.mac.plist
+  # Sign with a "Developer ID Application" identity. electron-builder auto-selects
+  # it from the keychain; CSC_NAME / CSC_LINK env can pin a specific identity/cert.
+  # identity: "Developer ID Application: <Your Name> (<TEAMID>)"
+  # Notarize via notarytool. `true` makes electron-builder read either:
+  #   APPLE_ID + APPLE_APP_SPECIFIC_PASSWORD + APPLE_TEAM_ID, or
+  #   APPLE_API_KEY + APPLE_API_KEY_ID + APPLE_API_ISSUER  (App Store Connect key)
+  # and staples the ticket on success. No credentials live in this file.
+  notarize: true
+  target:
+    - target: dmg
+      arch:
+        - arm64
+        - x64
+    - target: zip
+      arch:
+        - arm64
+        - x64
+
+dmg:
+  title: ${productName}
+  artifactName: ${productName}-${version}-${arch}.${ext}
+
+# Universal build alternative (one binary for Intel + Apple Silicon) — bigger
+# download but a single artifact. Swap the per-arch targets above for:
+#   target: { target: dmg, arch: universal }
