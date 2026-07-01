@@ -1,0 +1,819 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Install-First Terminal — UX Design (Compass)</title>
+<style>
+  :root{
+    /* Pulled from src/components/board/terminal-dock.tsx to match the live dock */
+    --dock-header:#141417;
+    --dock-body:#0c0c0e;
+    --dock-deep:#0a0a0b;
+    --page:#09090b;
+    --card:#141417;
+    --border:#3f3f46;      /* zinc-700 */
+    --border-soft:#27272a; /* zinc-800 */
+    --text:#e4e4e7;        /* zinc-200 */
+    --text-dim:#a1a1aa;    /* zinc-400 */
+    --text-faint:#71717a;  /* zinc-500 */
+    --emerald:#34d399;
+    --emerald-deep:#052e1b;
+    --amber:#fbbf24;
+    --sky:#38bdf8;
+    --rose:#fb7185;
+    --violet:#c4b5fd;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--page);
+    color:var(--text);
+    font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:0 0 96px;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+  header.doc{
+    border-bottom:1px solid var(--border-soft);
+    background:linear-gradient(180deg,#141417,#0c0c0e);
+    padding:40px 0 30px;margin-bottom:8px;
+  }
+  header.doc .wrap{max-width:1120px}
+  .kicker{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--emerald);font-weight:700}
+  h1{font-size:30px;margin:8px 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--text-dim);font-size:15px;max-width:760px}
+  .meta-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .tag{font-size:12px;border:1px solid var(--border);border-radius:999px;padding:4px 11px;color:var(--text-dim);background:#18181b}
+  .tag.ok{border-color:rgba(52,211,153,.5);color:var(--emerald);background:rgba(52,211,153,.08)}
+
+  h2{font-size:21px;margin:44px 0 4px;letter-spacing:-.01em}
+  h2 .num{color:var(--text-faint);font-weight:600;margin-right:10px}
+  .lead{color:var(--text-dim);margin:6px 0 20px;max-width:820px}
+  h3{font-size:15px;margin:26px 0 10px;color:var(--text)}
+
+  /* ---- The mock dock ---- */
+  .dock{
+    border:1px solid var(--border);
+    border-radius:12px;
+    overflow:hidden;
+    background:var(--dock-header);
+    box-shadow:0 18px 50px rgba(0,0,0,.5);
+    max-width:860px;
+  }
+  .dock.narrow{max-width:375px}
+  .dockbar{
+    display:flex;align-items:center;gap:10px;
+    padding:8px 12px;background:var(--dock-header);
+    font-size:12px;
+  }
+  .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+  .dot.emerald{background:var(--emerald)}
+  .dot.amber{background:var(--amber)}
+  .dot.sky{background:var(--sky)}
+  .dot.zinc{background:var(--text-faint)}
+  .dot.rose{background:var(--rose)}
+  .termlabel{display:inline-flex;align-items:center;gap:8px;font-weight:600}
+  .termlabel .sess{color:var(--text-faint);font-weight:400;font-family:ui-monospace,Menlo,monospace;font-size:11px}
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;
+    border:1px solid var(--border);border-radius:7px;
+    padding:2px 9px;font-size:11px;font-weight:600;
+  }
+  .pill .ic{font-size:11px}
+  .pill.emerald{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.1);color:var(--emerald)}
+  .pill.amber{border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.1);color:var(--amber)}
+  .pill.sky{border-color:rgba(56,189,248,.5);background:rgba(56,189,248,.1);color:var(--sky)}
+  .pill.zinc{border-color:var(--border);background:#27272a99;color:var(--text-dim)}
+  .pill.rose{border-color:rgba(251,113,133,.55);background:rgba(251,113,133,.1);color:var(--rose)}
+  .spacer{margin-left:auto}
+  .ghostbtn{color:var(--text-dim);font-size:12px;display:inline-flex;align-items:center;gap:5px}
+
+  .dockhead{
+    display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+    border-top:1px solid var(--border-soft);border-bottom:1px solid var(--border-soft);
+    background:var(--dock-header);padding:9px 12px;font-size:12px;
+  }
+  .dockhead .idea{color:var(--text-faint);font-family:ui-monospace,Menlo,monospace;font-size:12px}
+
+  .dockbody{
+    background:var(--dock-body);
+    min-height:300px;
+    display:flex;align-items:center;justify-content:center;
+    padding:30px 22px;position:relative;
+  }
+  .dockbody.tall{min-height:340px}
+
+  /* centred overlay content */
+  .overlay{max-width:520px;width:100%;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px}
+  .overlay .icon{font-size:26px;line-height:1}
+  .overlay h4{font-size:17px;margin:0;font-weight:700}
+  .overlay p{margin:0;font-size:13.5px;color:var(--text-dim);max-width:460px}
+  .overlay .muted{color:var(--text-faint)}
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    border-radius:8px;padding:11px 18px;font-size:14px;font-weight:600;
+    border:1px solid transparent;cursor:default;min-height:44px;
+  }
+  .btn.primary{background:var(--emerald);color:#04160c}
+  .btn.sky{background:var(--sky);color:#04121b}
+  .btn.outline{background:#27272a99;border-color:var(--border);color:var(--text)}
+  .btn.block{width:100%}
+  .btn.disabled{background:#1c1c20;border-color:var(--border-soft);color:var(--text-faint);cursor:not-allowed}
+  .btnrow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;width:100%}
+
+  /* numbered one-time setup */
+  .setup{width:100%;max-width:520px;text-align:left;display:flex;flex-direction:column;gap:0}
+  .setup .head{text-align:center;margin-bottom:18px}
+  .setup .head .icon{font-size:24px}
+  .setup .head h4{font-size:17px;margin:8px 0 4px;font-weight:700}
+  .setup .head p{font-size:13px;color:var(--text-dim);margin:0}
+  .step{display:flex;gap:14px;padding:14px 0;border-top:1px solid var(--border-soft)}
+  .step:first-of-type{border-top:0}
+  .badge{
+    flex:0 0 auto;width:28px;height:28px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    font-size:13px;font-weight:700;
+    background:rgba(52,211,153,.12);color:var(--emerald);
+    border:1px solid rgba(52,211,153,.4);
+  }
+  .step .body{flex:1;min-width:0}
+  .step .title{font-size:14px;font-weight:600;margin-bottom:6px}
+  .step .desc{font-size:12.5px;color:var(--text-dim);margin:0 0 10px}
+  .prewarn{
+    display:flex;gap:9px;align-items:flex-start;
+    border:1px solid rgba(251,191,36,.35);background:rgba(251,191,36,.06);
+    border-radius:8px;padding:10px 12px;margin:2px 0 12px;font-size:12.5px;color:#fcd77f;
+  }
+  .prewarn b{color:#fde3a0}
+  .connectwrap{padding-top:14px;border-top:1px solid var(--border-soft);display:flex;flex-direction:column;gap:8px}
+  .subtle{font-size:11.5px;color:var(--text-faint);text-align:center}
+
+  /* faux terminal stream */
+  .stream{
+    width:100%;height:100%;min-height:260px;
+    background:var(--dock-body);border-radius:6px;
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.7;
+    color:#cfd8df;text-align:left;padding:10px 14px;align-self:stretch;
+  }
+  .stream .g{color:var(--emerald)}
+  .stream .d{color:var(--text-faint)}
+  .stream .cursor{display:inline-block;width:8px;height:15px;background:#cfd8df;vertical-align:-2px;animation:blink 1s step-end infinite}
+  @keyframes blink{50%{opacity:0}}
+  .inputbar{
+    display:flex;align-items:center;gap:8px;
+    border-top:1px solid var(--border-soft);background:var(--dock-header);
+    padding:9px 14px;font-size:12px;color:var(--text-faint);
+  }
+  .inputbar .prompt{color:var(--emerald);font-family:ui-monospace,Menlo,monospace}
+
+  /* mac dialog mock (the one we PREVENT / the one we PRE-EXPLAIN) */
+  .macdlg{
+    max-width:340px;border-radius:12px;overflow:hidden;
+    background:#2b2b2e;border:1px solid #3a3a3d;
+    box-shadow:0 20px 60px rgba(0,0,0,.6);text-align:center;
+    color:#e9e9ea;font-size:13px;
+  }
+  .macdlg .top{padding:20px 22px 14px}
+  .macdlg .appicon{font-size:30px;margin-bottom:10px}
+  .macdlg h5{margin:0 0 6px;font-size:14px}
+  .macdlg p{margin:0;font-size:12px;color:#b7b7bb}
+  .macdlg .btns{display:flex;border-top:1px solid #3a3a3d}
+  .macdlg .btns button{flex:1;padding:11px;background:transparent;border:0;color:#5aa9ff;font-size:13px;font-weight:600;cursor:default}
+  .macdlg .btns button.primary{background:#3a6df0;color:#fff;font-weight:700}
+  .macdlg .btns button+button{border-left:1px solid #3a3a3d}
+
+  /* annotation block */
+  .anno{
+    margin:14px 0 0;max-width:860px;
+    border-left:3px solid var(--emerald);
+    background:#101013;border:1px solid var(--border-soft);border-left-width:3px;
+    border-radius:0 10px 10px 0;padding:14px 18px;
+  }
+  .anno h5{margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--emerald)}
+  .anno ul{margin:0;padding-left:18px}
+  .anno li{margin:5px 0;font-size:13.5px;color:var(--text-dim)}
+  .anno li b{color:var(--text)}
+  .anno.sky{border-left-color:var(--sky)}
+  .anno.sky h5{color:var(--sky)}
+  .anno.amber{border-left-color:var(--amber)}
+  .anno.amber h5{color:var(--amber)}
+  .anno.rose{border-left-color:var(--rose)}
+  .anno.rose h5{color:var(--rose)}
+
+  .callout{
+    border:1px solid var(--border);border-radius:10px;background:#101013;
+    padding:16px 18px;margin:18px 0;max-width:860px;
+  }
+  .callout.bad{border-color:rgba(251,113,133,.4);background:rgba(251,113,133,.05)}
+  .callout.bad h4{color:var(--rose)}
+  .callout h4{margin:0 0 8px;font-size:14px}
+  .callout p{margin:0;color:var(--text-dim);font-size:13.5px}
+
+  /* flow / state map */
+  .flow{
+    border:1px solid var(--border);border-radius:12px;background:#0d0d10;
+    padding:22px;overflow-x:auto;max-width:860px;
+  }
+  .flowrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 18px}
+  .flowrow:last-child{margin-bottom:0}
+  .node{
+    border:1px solid var(--border);border-radius:9px;padding:9px 13px;font-size:12.5px;
+    background:#18181b;white-space:nowrap;font-weight:600;
+  }
+  .node.entry{border-color:rgba(56,189,248,.5);background:rgba(56,189,248,.08);color:var(--sky)}
+  .node.connect{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.08);color:var(--emerald)}
+  .node.wait{border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.08);color:var(--amber)}
+  .node.win{border-color:rgba(52,211,153,.6);background:rgba(52,211,153,.14);color:var(--emerald)}
+  .node.fall{border-color:var(--border);background:#27272a;color:var(--text-dim)}
+  .arrow{color:var(--text-faint);font-size:16px}
+  .arrow .lbl{display:block;font-size:10px;color:var(--text-faint);text-align:center;margin-top:-2px}
+  .flowlabel{font-size:12px;color:var(--text-faint);width:130px;flex:0 0 130px;font-weight:600}
+
+  /* mapping table */
+  table{border-collapse:collapse;width:100%;max-width:860px;font-size:13px;margin:8px 0}
+  th,td{border:1px solid var(--border-soft);padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:#18181b;color:var(--text);font-size:12px;letter-spacing:.03em}
+  td{color:var(--text-dim)}
+  td b,th b{color:var(--text)}
+  .crit{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--emerald);white-space:nowrap}
+
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:22px;align-items:start}
+  .caption{font-size:12px;color:var(--text-faint);margin:8px 0 0;text-align:center}
+  hr.sec{border:0;border-top:1px solid var(--border-soft);margin:40px 0}
+  .footnote{font-size:12.5px;color:var(--text-faint);max-width:860px;margin-top:8px}
+  code.inline{background:#18181b;border:1px solid var(--border-soft);border-radius:5px;padding:1px 6px;font-size:12px;color:var(--sky)}
+  @media (max-width:520px){
+    .flowlabel{width:100%;flex-basis:100%}
+    h1{font-size:24px}
+  }
+</style>
+</head>
+<body>
+
+<header class="doc">
+  <div class="wrap">
+    <div class="kicker">UX Design · Step 2 of 6 · Feature Development</div>
+    <h1>Install-First Terminal — First-Run Flow</h1>
+    <p class="sub">
+      Redesign of the in-browser terminal dock so a first-timer with nothing installed is guided through a calm,
+      one-time setup <b>before</b> any <code class="inline">vibecodes://</code> deep link fires — never seeing the
+      scary macOS “no application set” dialog. Returning users skip straight to connecting.
+    </p>
+    <div class="meta-row">
+      <span class="tag ok">Designer: Compass (UX)</span>
+      <span class="tag">Surface: board bottom terminal dock</span>
+      <span class="tag">Replaces: auto-fire deep link on “In the browser”</span>
+      <span class="tag">Palette matched to terminal-dock.tsx</span>
+      <span class="tag">Mac-first · Windows deferred</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ============================================================= -->
+<h2><span class="num">§1</span>The problem we are fixing</h2>
+<p class="lead">
+  Built on the <b>Requirements step (ProdOwner)</b> and its 12 acceptance criteria — those criteria are the spec for
+  every screen below (see the mapping table in §9). Today the board button
+  <b>“Launch Claude Code → In the browser”</b> opens the dock and <i>immediately</i> fires the deep link. A first-timer
+  with no helper installed gets macOS’s alarming dialog first, then a backwards “Nothing opened. Install the helper”
+  fallback.
+</p>
+
+<div class="grid2">
+  <div>
+    <div class="callout bad">
+      <h4>✕ Today (broken order)</h4>
+      <p>Open dock → deep link fires blind → macOS “no application set / Search App Store” → confusing fallback.
+      The user is punished for not having a thing they were never told to install.</p>
+    </div>
+    <div class="macdlg" role="img" aria-label="Mock of the scary macOS dialog we must never show first-timers">
+      <div class="top">
+        <div class="appicon">⚠️</div>
+        <h5>There is no application set to open the URL vibecodes://launch…</h5>
+        <p>Search the App Store for an application that can open this document, or choose an existing application on your computer.</p>
+      </div>
+      <div class="btns">
+        <button>Cancel</button>
+        <button>Choose Application…</button>
+        <button class="primary">Search App Store</button>
+      </div>
+    </div>
+    <p class="caption">The dialog acceptance criterion #1 forbids for first-timers. We prevent it by never firing the link until the user has explicitly set up + pressed Connect.</p>
+  </div>
+  <div>
+    <div class="callout">
+      <h4>✓ New (install-first order)</h4>
+      <p>Open dock → calm numbered <b>one-time setup</b> (no link fired) → user downloads &amp; installs →
+      presses <b>Connect</b> → link fires <i>once</i>, pre-explained → connecting → success. The paired flag then lets
+      returning users skip the setup entirely.</p>
+    </div>
+    <div class="anno" style="margin-top:16px">
+      <h5>Core inference model</h5>
+      <ul>
+        <li>The web page <b>cannot detect</b> if the native helper is installed.</li>
+        <li>We infer readiness from an <b>explicit action</b> (pressing Connect) + a
+          <code class="inline">localStorage “paired-before”</code> flag set on first success.</li>
+        <li>Unpaired → show setup. Paired → auto-connect. That single flag is the whole branch.</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§2</span>Flow &amp; state map</h2>
+<p class="lead">Two entry points (unpaired vs paired) converge on one connect→result loop. Retry never re-shows the setup wall.</p>
+
+<div class="flow" role="img" aria-label="State map of the install-first terminal flow">
+  <div class="flowrow">
+    <span class="flowlabel">Unpaired entry</span>
+    <span class="node entry">Open dock</span>
+    <span class="arrow">→</span>
+    <span class="node">① Setup panel<br><span style="font-weight:400;color:var(--text-faint)">no link fired</span></span>
+    <span class="arrow">→<span class="lbl">press Connect</span></span>
+    <span class="node connect">Deep link fires ×1</span>
+    <span class="arrow">→</span>
+    <span class="node wait">② Connecting</span>
+  </div>
+  <div class="flowrow">
+    <span class="flowlabel">Paired entry</span>
+    <span class="node entry">Open dock</span>
+    <span class="arrow">→<span class="lbl">flag set</span></span>
+    <span class="node wait">② Connecting<br><span style="font-weight:400;color:var(--text-faint)">skips setup wall</span></span>
+    <span class="arrow" style="visibility:hidden">→</span>
+  </div>
+  <div class="flowrow">
+    <span class="flowlabel">Result (both)</span>
+    <span class="node wait">② Connecting</span>
+    <span class="arrow">→<span class="lbl">~8s ok</span></span>
+    <span class="node win">③ Success<br><span style="font-weight:400;color:#a7f3d0">set paired flag</span></span>
+    <span class="arrow" style="margin:0 10px">│</span>
+    <span class="arrow">→<span class="lbl">~8s no conn.</span></span>
+    <span class="node fall">④ Calm fallback</span>
+    <span class="arrow">→<span class="lbl">Retry</span></span>
+    <span class="node wait">↺ back to ②</span>
+  </div>
+  <div class="flowrow">
+    <span class="flowlabel">Non-Mac</span>
+    <span class="node entry">Open dock</span>
+    <span class="arrow">→<span class="lbl">no link</span></span>
+    <span class="node fall">⑥ “Mac-only for now”</span>
+  </div>
+</div>
+<p class="footnote">
+  The deep link fires at exactly one edge — the Connect press on the unpaired path, and the auto-connect on the paired
+  path (both are the user opening a session on purpose). It never fires on dock open for an unpaired browser
+  (criterion #2).
+</p>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§3</span>Screen ① — First-run setup panel (unpaired)</h2>
+<p class="lead">
+  The default when an unpaired browser opens the dock. <b>No deep link has fired.</b> A calm, numbered one-time setup
+  with the OS/arch-aware download, the drag-to-Applications step, and a pre-warned primary <b>Connect</b>. This screen
+  <b>replaces</b> the current auto-fire.
+</p>
+
+<div class="dock" role="img" aria-label="Setup panel state">
+  <div class="dockbar">
+    <span class="dot zinc"></span>
+    <span class="termlabel">◱ Terminal <span class="sess">· session —</span></span>
+    <span class="spacer"></span>
+    <span class="pill zinc"><span class="ic">○</span> One-time setup</span>
+    <span class="ghostbtn">▾ Collapse</span>
+  </div>
+  <div class="dockhead">
+    <span class="pill zinc"><span class="ic">○</span> Set up once</span>
+    <span class="idea">My First App · session —</span>
+    <span class="spacer"></span>
+    <span class="ghostbtn">⌄</span>
+  </div>
+  <div class="dockbody tall">
+    <div class="setup">
+      <div class="head">
+        <div class="icon">◱</div>
+        <h4>Run Claude Code here — one-time setup</h4>
+        <p>Takes about a minute. You only do this once on this Mac.</p>
+      </div>
+
+      <div class="step">
+        <div class="badge">1</div>
+        <div class="body">
+          <div class="title">Download the VibeCodes helper</div>
+          <p class="desc">A small, Apple-notarized app that lets this page mirror Claude Code from your Mac. Your code stays on your computer.</p>
+          <span class="btn primary">⭳ Download for Mac (Apple Silicon)</span>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="badge">2</div>
+        <div class="body">
+          <div class="title">Open the file and drag VibeCodes to Applications</div>
+          <p class="desc">When the download finishes, open it and drag the <b>VibeCodes</b> icon onto the <b>Applications</b> folder shown next to it.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="badge">3</div>
+        <div class="body">
+          <div class="title">Connect this board to the helper</div>
+          <div class="prewarn">
+            <span aria-hidden="true">ℹ️</span>
+            <span>When you click Connect, your Mac may ask <b>“Open VibeCodes?”</b> — click <b>Open</b>. That’s expected, and it only happens the first time.</span>
+          </div>
+          <div class="connectwrap">
+            <span class="btn primary block">Connect</span>
+            <span class="subtle">Already installed it? Just click Connect.</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="anno">
+  <h5>Interaction &amp; why</h5>
+  <ul>
+    <li><b>No link on open.</b> Nothing fires until the user presses Connect in step 3 — directly satisfies criteria #1 and #2. The user is never ambushed by the macOS dialog.</li>
+    <li><b>Gestalt numbering.</b> The 3 numbered badges + hairline dividers group the setup into an obvious ordered sequence (recognition over recall). Progressive disclosure keeps it to 3 choices, not a wizard (Hick’s Law; no gold-plated onboarding per Requirements).</li>
+    <li><b>Information scent.</b> Button reads <b>“Download for Mac (Apple Silicon)”</b> and <b>“Connect”</b> — never “Submit”/“Download”. Arch is detected so the file always matches the machine.</li>
+    <li><b>Pre-warning near the trigger (Fitts).</b> The “Open VibeCodes?” explanation sits immediately above Connect — satisfies criterion #4 so the OS prompt is never a surprise.</li>
+    <li><b>Recovery for the already-installed user:</b> “Already installed it? Just click Connect.” lets a partway user skip straight to step 3.</li>
+    <li><b>WCAG:</b> Connect is a full-width ≥44px target; all steps carry text labels + numerals, never colour alone; emerald on near-black passes 4.5:1.</li>
+  </ul>
+</div>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§4</span>Screen ② — Connecting</h2>
+<p class="lead">After Connect (or auto-connect for returning users). Calm reassurance while we wait for the helper to attach — with the “click Open” nudge repeated in context.</p>
+
+<div class="dock" role="img" aria-label="Connecting state">
+  <div class="dockbar">
+    <span class="dot amber"></span>
+    <span class="termlabel">◱ Terminal <span class="sess">· session 8f3a1c2b</span></span>
+    <span class="spacer"></span>
+    <span class="pill amber"><span class="ic">◴</span> Connecting…</span>
+    <span class="ghostbtn">▾ Collapse</span>
+  </div>
+  <div class="dockhead">
+    <span class="pill amber"><span class="ic">◴</span> Connecting…</span>
+    <span class="idea">My First App · session 8f3a1c2b</span>
+    <span class="spacer"></span>
+    <span class="pill rose" style="cursor:default">⏻ End</span>
+    <span class="ghostbtn">⌄</span>
+  </div>
+  <div class="dockbody tall">
+    <div class="overlay">
+      <div class="icon" style="color:var(--amber)">◴</div>
+      <h4 style="color:var(--amber)">Connecting to your Mac…</h4>
+      <p>Setting up a secure link to the VibeCodes helper. This is usually a few seconds.</p>
+      <p class="muted">(If your Mac asks, click <b style="color:var(--text)">Open VibeCodes</b>.)</p>
+    </div>
+  </div>
+</div>
+
+<div class="anno amber">
+  <h5>Interaction &amp; why</h5>
+  <ul>
+    <li><b>Loading state handled explicitly.</b> Spinner pill in the header + centred status; the “End” control stays reachable so the user is never trapped.</li>
+    <li><b>The OS-prompt nudge repeats here</b> in muted text — if the “Open VibeCodes?” dialog is on screen, the answer is right behind it (criterion #4 reinforcement).</li>
+    <li><b>Calm, non-technical copy</b> — “secure link”, no ports/tokens/relay jargon (audience = non-coders).</li>
+    <li><b>Same screen for both entry points</b> — returning users land here directly (§7), so it must stand alone without the setup context.</li>
+  </ul>
+</div>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§5</span>Screen ③ — Success (connected)</h2>
+<p class="lead">The helper attached; the live terminal fills the dock. On the first success we set the <code class="inline">localStorage paired-before</code> flag so this Mac never sees the setup wall again.</p>
+
+<div class="dock" role="img" aria-label="Connected success state">
+  <div class="dockbar">
+    <span class="dot emerald"></span>
+    <span class="termlabel">◱ Terminal <span class="sess">· session 8f3a1c2b</span></span>
+    <span class="spacer"></span>
+    <span class="pill emerald"><span class="ic">◉</span> Connected</span>
+    <span class="ghostbtn">▾ Collapse</span>
+  </div>
+  <div class="dockhead">
+    <span class="pill emerald"><span class="ic">◉</span> Connected</span>
+    <span class="idea">My First App · session 8f3a1c2b</span>
+    <span class="spacer"></span>
+    <span class="pill zinc" style="cursor:default">🔓 Read-only</span>
+    <span class="pill rose" style="cursor:default">⏻ End</span>
+    <span class="ghostbtn">⌄</span>
+  </div>
+  <div class="dockbody tall" style="padding:0;align-items:stretch">
+    <div class="stream">
+      <div><span class="g">➜</span> <span class="d">my-first-app</span> claude</div>
+      <div class="d">Welcome to Claude Code — connected to VibeCodes.</div>
+      <div>&nbsp;</div>
+      <div>● Reading your project…</div>
+      <div>● Ready. What should we build?</div>
+      <div>&nbsp;</div>
+      <div><span class="g">›</span> <span class="cursor"></span></div>
+    </div>
+  </div>
+  <div class="inputbar">
+    <span class="prompt">›</span>
+    <span>Click the terminal and type to steer the agent. Enter sends.</span>
+  </div>
+</div>
+
+<div class="anno">
+  <h5>Interaction &amp; why</h5>
+  <ul>
+    <li><b>Set the paired flag on success</b> (criterion tie to #6): from now on this Mac auto-connects.</li>
+    <li><b>Reuses the existing connected chrome</b> — emerald “Connected” pill (icon + text, not colour alone), the live xterm host, the read-write input bar, and the End control in the header, exactly matching <code class="inline">terminal-dock.tsx</code>. No new component (Jakob’s Law).</li>
+    <li><b>The terminal is the reward</b> — success is the live stream itself, not a congratulatory modal (avoid modals for inline content).</li>
+  </ul>
+</div>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§6</span>Screen ④ — Timeout fallback (~8s, no connection)</h2>
+<p class="lead">
+  After ~8s with no attach, we replace the spinner with a <b>calm, actionable</b> fallback — never error-speak. The
+  forbidden words <b>“Nothing opened” / “Failed” / “Error”</b> do not appear (criterion #7).
+</p>
+
+<div class="grid2">
+  <div>
+    <h3>First-timer variant (just installed)</h3>
+    <div class="dock" role="img" aria-label="Timeout fallback for a new user">
+      <div class="dockbar">
+        <span class="dot zinc"></span>
+        <span class="termlabel">◱ Terminal <span class="sess">· session 8f3a1c2b</span></span>
+        <span class="spacer"></span>
+        <span class="pill zinc"><span class="ic">◔</span> Not connected yet</span>
+        <span class="ghostbtn">▾ Collapse</span>
+      </div>
+      <div class="dockhead">
+        <span class="pill zinc"><span class="ic">◔</span> Not connected yet</span>
+        <span class="idea">My First App · session 8f3a1c2b</span>
+        <span class="spacer"></span>
+        <span class="ghostbtn">⌄</span>
+      </div>
+      <div class="dockbody tall">
+        <div class="overlay">
+          <div class="icon" style="color:var(--sky)">◔</div>
+          <h4>Didn’t connect yet</h4>
+          <p>If you just installed it, make sure you clicked <b style="color:var(--text)">Open</b> when your Mac asked — then try again.</p>
+          <div class="btnrow">
+            <span class="btn sky">↻ Retry</span>
+            <span class="btn outline">⭳ Download the helper</span>
+          </div>
+          <span class="subtle">Not installed yet? Get the helper, then Retry.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div>
+    <h3>Returning-user variant (paired, helper unreachable)</h3>
+    <div class="dock" role="img" aria-label="Timeout fallback for a returning user">
+      <div class="dockbar">
+        <span class="dot zinc"></span>
+        <span class="termlabel">◱ Terminal <span class="sess">· session 4d90ee71</span></span>
+        <span class="spacer"></span>
+        <span class="pill zinc"><span class="ic">◔</span> Not connected yet</span>
+        <span class="ghostbtn">▾ Collapse</span>
+      </div>
+      <div class="dockhead">
+        <span class="pill zinc"><span class="ic">◔</span> Not connected yet</span>
+        <span class="idea">My First App · session 4d90ee71</span>
+        <span class="spacer"></span>
+        <span class="ghostbtn">⌄</span>
+      </div>
+      <div class="dockbody tall">
+        <div class="overlay">
+          <div class="icon" style="color:var(--sky)">◔</div>
+          <h4>Couldn’t reach the helper on this Mac</h4>
+          <p>It may not be running. Try again — or re-install the helper if it keeps happening.</p>
+          <div class="btnrow">
+            <span class="btn sky">↻ Retry</span>
+            <span class="btn outline">⭳ Re-install the helper</span>
+          </div>
+          <span class="subtle">Your work on your Mac is safe.</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="anno sky">
+  <h5>Interaction &amp; why</h5>
+  <ul>
+    <li><b>~8s calm timeout</b> (criterion #7). Header pill reads <b>“Not connected yet”</b> — provisional, not a dead end. No red, no alarm icon.</li>
+    <li><b>Forbidden words absent</b> across both variants — verified copy: no “Nothing opened”, “Failed”, or “Error”. Tone is “not yet”, always with a next action.</li>
+    <li><b>Two clear actions, right precedence.</b> <b>Retry</b> is the primary (sky, most likely fix); <b>Download / Re-install the helper</b> is the secondary. Both ≥44px, side by side, both labelled (no colour-only).</li>
+    <li><b>Retry loops to Connecting (§4)</b>, never back to the setup wall — a returning user is never demoted to “set up from scratch”.</li>
+    <li><b>Returning-user variant</b> (criterion #4b): paired flag is set but the helper didn’t answer → “Couldn’t reach the helper on this Mac … re-install”. Same calm pattern, machine-aware wording, plus reassurance that local work is safe.</li>
+  </ul>
+</div>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§7</span>Screen ⑤ — Returning user (paired flag set)</h2>
+<p class="lead">
+  Opening the dock with the paired flag present <b>skips the setup panel entirely</b> and goes straight to Connecting
+  (§4) — no setup wall (criterion #6). This is the distinct annotated entry, shown at the instant of open.
+</p>
+
+<div class="dock" role="img" aria-label="Returning user auto-connect">
+  <div class="dockbar">
+    <span class="dot amber"></span>
+    <span class="termlabel">◱ Terminal <span class="sess">· session c07be412</span></span>
+    <span class="spacer"></span>
+    <span class="pill amber"><span class="ic">◴</span> Connecting…</span>
+    <span class="ghostbtn">▾ Collapse</span>
+  </div>
+  <div class="dockhead">
+    <span class="pill amber"><span class="ic">◴</span> Connecting…</span>
+    <span class="idea">My First App · session c07be412</span>
+    <span class="spacer"></span>
+    <span class="pill rose" style="cursor:default">⏻ End</span>
+    <span class="ghostbtn">⌄</span>
+  </div>
+  <div class="dockbody tall">
+    <div class="overlay">
+      <div class="icon" style="color:var(--amber)">◴</div>
+      <h4 style="color:var(--amber)">Connecting to your Mac…</h4>
+      <p>Welcome back — reopening your terminal. No setup needed this time.</p>
+      <p class="muted">(If your Mac asks, click <b style="color:var(--text)">Open VibeCodes</b>.)</p>
+    </div>
+  </div>
+</div>
+
+<div class="anno amber">
+  <h5>Interaction &amp; why</h5>
+  <ul>
+    <li><b>No setup wall</b> — the branch is purely the <code class="inline">paired-before</code> flag; a paired browser lands on Connecting, satisfying criterion #6.</li>
+    <li><b>The deep link fires here too</b>, because auto-connect is the returning user deliberately reopening their session — still an explicit intent, not a blind dock-open fire.</li>
+    <li><b>“Welcome back … No setup needed this time.”</b> confirms recognition of the paired state so the skipped steps feel intentional, not missing.</li>
+    <li><b>Graceful degradation:</b> if it doesn’t attach in ~8s, it falls through to the returning-user fallback in §6 — never back to setup.</li>
+  </ul>
+</div>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§8</span>Screen ⑥ — Non-Mac user</h2>
+<p class="lead">On Windows/Linux we show a calm “coming soon”. <b>No deep link, no download.</b> (criterion #10)</p>
+
+<div class="dock" role="img" aria-label="Non-Mac coming soon">
+  <div class="dockbar">
+    <span class="dot zinc"></span>
+    <span class="termlabel">◱ Terminal <span class="sess">· session —</span></span>
+    <span class="spacer"></span>
+    <span class="pill zinc"><span class="ic">◷</span> Coming soon</span>
+    <span class="ghostbtn">▾ Collapse</span>
+  </div>
+  <div class="dockhead">
+    <span class="pill zinc"><span class="ic">◷</span> Coming soon</span>
+    <span class="idea">My First App</span>
+    <span class="spacer"></span>
+    <span class="ghostbtn">⌄</span>
+  </div>
+  <div class="dockbody tall">
+    <div class="overlay">
+      <div class="icon" style="color:var(--text-dim)">🖥️</div>
+      <h4 style="color:var(--text)">The in-browser terminal is Mac-only for now</h4>
+      <p>Windows support is on the way. In the meantime you can still run Claude Code the usual way in your own terminal.</p>
+      <div class="btnrow">
+        <span class="btn disabled" aria-disabled="true">Download for Windows</span>
+      </div>
+      <span class="subtle">The download unlocks automatically when Windows support ships.</span>
+    </div>
+  </div>
+</div>
+
+<div class="anno">
+  <h5>Interaction &amp; why</h5>
+  <ul>
+    <li><b>No deep link, ever</b> on non-Mac (criterion #10) — there is no helper to route to, so nothing fires.</li>
+    <li><b>Disabled button carries an adjacent explanation</b> (“unlocks automatically when Windows support ships”) — honours the constraint that no disabled control stands without saying what’s needed.</li>
+    <li><b>An escape hatch</b> — points power users to their own terminal, so the state isn’t a hard dead end.</li>
+    <li><b>Calm, no colour-only signal</b> — zinc “Coming soon” pill with icon + text; no red/error framing for a platform gap.</li>
+  </ul>
+</div>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§9</span>Acceptance-criteria coverage</h2>
+<p class="lead">Every one of the ProdOwner Requirements criteria mapped to the screen(s) that satisfy it.</p>
+
+<table>
+  <thead>
+    <tr><th style="width:60px">#</th><th>Acceptance criterion (Requirements step)</th><th style="width:210px">Satisfied by</th></tr>
+  </thead>
+  <tbody>
+    <tr><td class="crit">1</td><td>First-timer with nothing installed <b>never</b> sees the macOS “no application set / Search App Store” dialog.</td><td>§3 setup panel (no link until Connect); §1 rationale</td></tr>
+    <tr><td class="crit">2</td><td>Deep link fires <b>only</b> on explicit Connect for unpaired browsers.</td><td>§2 state map; §3 (fires at Connect edge only)</td></tr>
+    <tr><td class="crit">3</td><td>One-time setup is a clear, ordered, non-technical sequence.</td><td>§3 numbered steps ①②③ (Gestalt grouping)</td></tr>
+    <tr><td class="crit">4</td><td>The macOS “Open VibeCodes?” prompt is pre-explained.</td><td>§3 pre-warning above Connect; echoed in §4 &amp; §7</td></tr>
+    <tr><td class="crit">5</td><td>Download is OS/architecture-aware.</td><td>§3 “Download for Mac (Apple Silicon)”; §8 Windows gated</td></tr>
+    <tr><td class="crit">6</td><td>Returning/paired browser auto-connects — no setup wall.</td><td>§7 (paired flag → straight to Connecting)</td></tr>
+    <tr><td class="crit">7</td><td>~8s timeout → calm fallback (Retry + Download); no “Nothing opened / Failed / Error”.</td><td>§6 both variants (forbidden words absent)</td></tr>
+    <tr><td class="crit">8</td><td>Every state is handled explicitly (loading / success / partial / recovery).</td><td>§4 loading, §5 success, §6 recovery, §2 map</td></tr>
+    <tr><td class="crit">9</td><td>On first success, mark the browser paired for next time.</td><td>§5 (set <code class="inline">localStorage paired-before</code>)</td></tr>
+    <tr><td class="crit">10</td><td>Non-Mac → calm “coming soon”, no deep link.</td><td>§8 (no link, disabled download + explanation)</td></tr>
+    <tr><td class="crit">11</td><td>Retry recovers without re-showing the setup wall.</td><td>§6 (Retry → §4 Connecting loop)</td></tr>
+    <tr><td class="crit">12</td><td>Reuses the existing dock chrome/design system; no new modal wizard.</td><td>All screens (matched to <code class="inline">terminal-dock.tsx</code>); §5</td></tr>
+  </tbody>
+</table>
+<p class="footnote">If the ProdOwner numbering differs slightly, the coverage still holds — each named requirement (dialog prevention, explicit-Connect firing, pre-explained OS prompt, paired auto-connect, calm timeout, non-Mac coming-soon) is mapped above.</p>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§10</span>Responsive — 375px</h2>
+<p class="lead">The flow must hold on a phone-width board. The setup panel stacks; buttons stay full-width ≥44px; the pre-warning wraps without truncation.</p>
+
+<div class="dock narrow" role="img" aria-label="Setup panel at 375px width">
+  <div class="dockbar">
+    <span class="dot zinc"></span>
+    <span class="termlabel">◱ <span class="sess">setup</span></span>
+    <span class="spacer"></span>
+    <span class="pill zinc"><span class="ic">○</span> Setup</span>
+  </div>
+  <div class="dockbody" style="min-height:auto;padding:20px 16px">
+    <div class="setup">
+      <div class="head">
+        <div class="icon">◱</div>
+        <h4 style="font-size:15px">Run Claude Code here</h4>
+        <p>One-time setup, about a minute.</p>
+      </div>
+      <div class="step">
+        <div class="badge">1</div>
+        <div class="body">
+          <div class="title">Download the helper</div>
+          <span class="btn primary block" style="font-size:13px">⭳ Download for Mac (Apple Silicon)</span>
+        </div>
+      </div>
+      <div class="step">
+        <div class="badge">2</div>
+        <div class="body">
+          <div class="title">Drag VibeCodes to Applications</div>
+          <p class="desc" style="margin-bottom:0">Open the file, drag the icon onto Applications.</p>
+        </div>
+      </div>
+      <div class="step">
+        <div class="badge">3</div>
+        <div class="body">
+          <div class="title">Connect</div>
+          <div class="prewarn" style="font-size:12px">
+            <span aria-hidden="true">ℹ️</span>
+            <span>Your Mac may ask <b>“Open VibeCodes?”</b> — click <b>Open</b>.</span>
+          </div>
+          <span class="btn primary block">Connect</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="caption">Single column, full-bleed 44px controls, no horizontal scroll. Long idea titles/session ids truncate in the header, never in body copy.</p>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§11</span>Design-system &amp; accessibility notes</h2>
+<div class="anno">
+  <h5>Reuse &amp; consistency</h5>
+  <ul>
+    <li>Colours, radii, and the header/body split are lifted from <b>terminal-dock.tsx</b> (<code class="inline">#141417</code> header, <code class="inline">#0c0c0e</code> body, zinc-700 borders, emerald/amber/sky/rose status accents). Setup replaces only the centred <code class="inline">StateOverlay</code> “idle” content.</li>
+    <li>Status pills keep the existing <b>icon + text + colour</b> pattern (never colour alone). New pills: “One-time setup” (zinc), “Not connected yet” (zinc), “Coming soon” (zinc).</li>
+    <li>Buttons map to existing shadcn variants — primary = emerald (matches the live “Launch”), secondary/outline = zinc, fallback primary = sky (matches the existing helper-install accent).</li>
+  </ul>
+</div>
+<div class="anno sky">
+  <h5>WCAG 2.1 AA checklist</h5>
+  <ul>
+    <li><b>Contrast:</b> emerald/amber/sky/zinc text on near-black all ≥4.5:1; pill borders ≥3:1 for UI components.</li>
+    <li><b>Targets:</b> Connect, Retry, Download, Reinstall all ≥44×44px; full-width on mobile.</li>
+    <li><b>No colour-only signals:</b> every state pairs an icon + text label with its colour.</li>
+    <li><b>No naked disabled control:</b> the non-Mac download always carries its “unlocks when Windows ships” explanation.</li>
+    <li><b>Keyboard:</b> steps are real focusable buttons/links in reading order; the OS-prompt warning is inline text (not a tooltip), so it’s never hover-gated.</li>
+    <li><b>No primary action behind hover; no essential info in modals</b> — success is inline, setup is inline.</li>
+  </ul>
+</div>
+<div class="anno amber">
+  <h5>Scope guard (no gold-plating)</h5>
+  <ul>
+    <li>No animated onboarding, video, or progress-wizard bar — the numbered list is the whole affordance (per Requirements).</li>
+    <li>Windows is a single gated state, not a parallel flow.</li>
+    <li>The “Advanced — pair a remote machine” disclosure already in the dock is untouched and out of scope for this first-run redesign.</li>
+  </ul>
+</div>
+
+<p class="footnote" style="margin-top:30px">
+  Compass · UX Design step · Feature Development workflow. Built on the ProdOwner Requirements step. Next step: engineering
+  can implement by branching the <code class="inline">StateOverlay</code> on <code class="inline">os</code> +
+  <code class="inline">localStorage paired-before</code>, gating the deep-link fire behind the Connect press.
+</p>
+
+</div>
+</body>
+</html>

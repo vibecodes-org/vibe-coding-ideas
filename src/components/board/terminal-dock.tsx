@@ -1,29 +1,38 @@
 "use client";
 
-// In-app local Claude Code terminal — the board bottom dock (SLICE 3, browser leg).
+// In-app local Claude Code terminal — the board bottom dock (browser leg).
 //
-// Renders the collapsible VS Code-style terminal dock from the approved design
-// (docs/in-app-terminal-design.html) and wires it to the opaque Cloudflare relay
-// as the `browser` leg:
+// Renders the collapsible VS Code-style terminal dock and wires it to the opaque
+// Cloudflare relay as the `browser` leg:
 //
 //   POST /api/terminal/session  →  { sessionId, browserToken, bridgeToken }
 //   WebSocket  <relay>/?session&role=browser&token  →  xterm.js
 //
+// INSTALL-FIRST FIRST RUN (docs/install-first-terminal-ux.html, Compass UX; built on
+// the ProdOwner Requirements): an unpaired browser lands on a calm numbered SETUP
+// panel and NO `vibecodes://` deep link fires until the user explicitly presses
+// Connect — so a first-timer with nothing installed never sees macOS's scary
+// "no application set / Search App Store" dialog. On the first successful connection
+// we set a localStorage paired flag; a paired browser then auto-connects on open and
+// skips the setup wall. Non-Mac machines get a "coming soon" and never fire the link.
+//
 // The connection STATE MACHINE + close-code mapping + framing are pure and live in
-// src/lib/terminal/connection.ts (unit-tested); this component owns only the side
-// effects (fetch, socket, xterm, timers) and renders the six visible states.
+// src/lib/terminal/connection.ts; the OS/arch detection, the paired-flag gate, and
+// the first-run copy are pure and live in src/lib/terminal/{platform,paired-flag,
+// first-run-copy}.ts (all unit-tested). This component owns only the side effects
+// (fetch, socket, xterm, timers, the deep-link fire) and renders the visible states.
 //
 // GATING: off by default. Renders nothing unless NEXT_PUBLIC_TERMINAL_ENABLED is
-// exactly "true" (checked here AND at the board page mount). xterm is imported
-// dynamically (client-only) so there is no SSR / window access at module load.
+// exactly "true" (checked here AND at the board page mount).
 
 import "@xterm/xterm/css/xterm.css";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { useCallback, useEffect, useReducer, useRef, useState, type ReactNode } from "react";
 import {
   ChevronUp,
   ChevronDown,
   Circle,
   CircleDot,
+  CircleDashed,
   Loader2,
   WifiOff,
   Square,
@@ -32,6 +41,9 @@ import {
   Lock,
   LockOpen,
   Copy,
+  Clock,
+  Info,
+  Laptop,
   Terminal as TerminalIcon,
   RotateCw,
   Download,
@@ -57,17 +69,30 @@ import {
 } from "@/lib/terminal/connection";
 import { buildLaunchDeepLink, redactDeepLinkToken } from "@/lib/terminal/deep-link";
 import { subscribeBrowserLaunch } from "@/lib/terminal/launch-mode";
+import {
+  type TerminalPlatform,
+  TERMINAL_HELPER_DOWNLOAD_URL,
+  readPlatformSignals,
+  resolveTerminalPlatform,
+} from "@/lib/terminal/platform";
+import {
+  isBrowserPaired,
+  markBrowserPaired,
+  resolveFirstRunEntry,
+} from "@/lib/terminal/paired-flag";
+import { FIRST_RUN_COPY } from "@/lib/terminal/first-run-copy";
+import {
+  type DockView,
+  type LaunchPhase,
+  nextLaunchPhaseOnTimeout,
+  resolveDockView,
+} from "@/lib/terminal/first-run-flow";
 
-// Where the dock points the user when no helper catches the vibecodes:// link.
-// Slice 7 ships the signed, notarized macOS helper (terminal/helper/) whose
-// install lives at this path. HOSTING TODO: publish the notarized .dmg there and
-// have this page link to it (see terminal/helper/BUILD-AND-SIGN.md → "Hosting").
-const HELPER_INSTALL_URL = "/download/terminal-helper";
-// How long to wait for the helper to attach before nudging "install it / Advanced".
-const HELPER_OPEN_TIMEOUT_MS = 6000;
-
-/** Launch UI phase for the same-machine deep-link auto-launch path. */
-type LaunchPhase = "idle" | "opening" | "helper-timeout";
+// How long we wait for the helper to attach after firing the deep link before
+// dropping to the calm fallback (~8s, per the approved UX). This is the safety net
+// for criterion #8: a custom-scheme link with no handler can't be reliably detected,
+// so we always fall through here rather than spin forever.
+const HELPER_OPEN_TIMEOUT_MS = 8000;
 
 interface TerminalDockProps {
   ideaId: string;
@@ -86,15 +111,23 @@ interface StatusMeta {
   className: string;
 }
 
-// Header pill — icon + text + colour (never colour alone), one per status.
-function statusMeta(state: TerminalConnectionState): StatusMeta {
-  switch (state.status) {
+// Header pill — icon + text + colour (never colour alone), one per view.
+function dockStatusMeta(view: DockView, state: TerminalConnectionState): StatusMeta {
+  switch (view) {
     case "connected":
       return { label: "Connected", Icon: CircleDot, className: "border-emerald-500/50 bg-emerald-500/10 text-emerald-400" };
     case "connecting":
+    case "connecting-returning":
       return { label: "Connecting…", Icon: Loader2, spin: true, className: "border-amber-500/50 bg-amber-500/10 text-amber-400" };
-    case "waiting-to-pair":
+    case "legacy-waiting":
       return { label: "Waiting to pair", Icon: Loader2, spin: true, className: "border-sky-500/50 bg-sky-500/10 text-sky-400" };
+    case "timeout-new":
+    case "timeout-returning":
+      return { label: FIRST_RUN_COPY.pill.notConnected, Icon: CircleDashed, className: "border-zinc-600 bg-zinc-800/60 text-zinc-300" };
+    case "setup":
+      return { label: FIRST_RUN_COPY.pill.setup, Icon: Circle, className: "border-zinc-700 bg-zinc-800/60 text-zinc-400" };
+    case "coming-soon":
+      return { label: FIRST_RUN_COPY.pill.comingSoon, Icon: Clock, className: "border-zinc-700 bg-zinc-800/60 text-zinc-400" };
     case "disconnected":
       return { label: "Reconnecting…", Icon: WifiOff, className: "border-zinc-600 bg-zinc-800/60 text-zinc-300" };
     case "session-ended":
@@ -132,9 +165,16 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
   const [pair, setPair] = useState<PairInfo | null>(null);
   const [xtermReady, setXtermReady] = useState(false);
   // Same-machine auto-launch UI (the vibecodes:// deep-link path). "idle" = the
-  // manual cross-machine flow (copy a command); "opening"/"helper-timeout" = we
-  // fired a deep link and are waiting on the local helper.
+  // manual cross-machine flow (copy a command); "opening" = we fired a deep link and
+  // are waiting on the local helper; "helper-timeout" = the calm ~8s fallback.
   const [launchPhase, setLaunchPhase] = useState<LaunchPhase>("idle");
+  // Install-first gate inputs. Initialised SSR-safe (server → unsupported/unpaired)
+  // then corrected on mount; the dock body is only visible after an explicit open,
+  // which always re-reads these first.
+  const [platform, setPlatform] = useState<TerminalPlatform>(() =>
+    resolveTerminalPlatform(readPlatformSignals()),
+  );
+  const [paired, setPaired] = useState<boolean>(() => isBrowserPaired());
 
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<XTerm | null>(null);
@@ -142,14 +182,17 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
   const containerRef = useRef<HTMLDivElement | null>(null);
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const helperTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const launchIframeRef = useRef<HTMLIFrameElement | null>(null);
   const lastDimsRef = useRef<string>("");
 
-  // Mirror live state into refs so the stable xterm onData handler reads current
-  // values without re-binding on every render.
+  // Mirror live state into refs so the stable xterm onData handler + socket handlers
+  // read current values without re-binding on every render.
   const statusRef = useRef(state.status);
   const readOnlyRef = useRef(readOnly);
+  const pairedRef = useRef(paired);
   statusRef.current = state.status;
   readOnlyRef.current = readOnly;
+  pairedRef.current = paired;
 
   // ── lazy, client-only xterm init ────────────────────────────────────────────
   useEffect(() => {
@@ -206,6 +249,14 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
     };
   }, [enabled]);
 
+  // Correct the install-first gate inputs on mount (navigator is only reliable
+  // client-side; the SSR defaults above assume unsupported/unpaired).
+  useEffect(() => {
+    if (!enabled) return;
+    setPlatform(resolveTerminalPlatform(readPlatformSignals()));
+    setPaired(isBrowserPaired());
+  }, [enabled]);
+
   // Fit + emit a resize control frame (TEXT) matching the bridge's framing.
   const sendResize = useCallback(() => {
     const term = termRef.current;
@@ -255,11 +306,25 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
     }
   }, []);
 
+  // Remove the hidden probe iframe used to fire the deep link (see fireLaunchDeepLink).
+  const removeLaunchIframe = useCallback(() => {
+    const frame = launchIframeRef.current;
+    launchIframeRef.current = null;
+    if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
+  }, []);
+
   // Fire the signed vibecodes:// deep link so a same-machine helper attaches as the
   // bridge leg with no copied command. The bridge token is a secret — it travels in
-  // the link but is NEVER logged (only the redacted form is). The OS routing of the
-  // scheme to the installed helper is slice 7 (packaging); here we just fire it and
-  // fall back to the Advanced manual command if nothing attaches.
+  // the link but is NEVER logged (only the redacted form is).
+  //
+  // BEST-EFFORT dialog mitigation (criterion #8): we fire via a hidden, detached
+  // iframe rather than a top-level window.location.assign. A top-level navigation to
+  // an unhandled custom scheme is the surest way to trigger macOS's "no application
+  // set / Search App Store" dialog; routing it through a probe iframe suppresses that
+  // dialog in most Chromium builds. It is NOT a cross-browser guarantee (Safari /
+  // Firefox may still surface a milder prompt) — the ~8s timeout below is the real
+  // safety net, and the authoritative success signal is the first byte from the
+  // bridge (ws.onmessage), which proves the helper actually opened AND attached.
   const fireLaunchDeepLink = useCallback(
     (sessionId: string, bridgeToken: string) => {
       let link: string;
@@ -274,20 +339,34 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
       }
       logger.info("Terminal firing launch deep link", { sessionId, url: redactDeepLinkToken(link) });
       setLaunchPhase("opening");
+
+      removeLaunchIframe();
       try {
-        window.location.assign(link);
+        const frame = document.createElement("iframe");
+        frame.setAttribute("aria-hidden", "true");
+        frame.style.display = "none";
+        frame.src = link;
+        document.body.appendChild(frame);
+        launchIframeRef.current = frame;
       } catch {
-        // Some browsers throw synchronously on a blocked/unknown custom scheme.
-        setLaunchPhase("helper-timeout");
-        return;
+        // Iframe path unavailable — fall back to a direct assign.
+        try {
+          window.location.assign(link);
+        } catch {
+          setLaunchPhase("helper-timeout");
+          return;
+        }
       }
-      // If the helper doesn't attach within a few seconds, nudge install / Advanced.
+
+      // If the helper doesn't stream within ~8s, drop to the calm fallback (never an
+      // infinite spinner — criterion #8).
       clearHelperTimer();
       helperTimerRef.current = setTimeout(() => {
-        setLaunchPhase((p) => (p === "opening" ? "helper-timeout" : p));
+        removeLaunchIframe();
+        setLaunchPhase(nextLaunchPhaseOnTimeout);
       }, HELPER_OPEN_TIMEOUT_MS);
     },
-    [clearHelperTimer],
+    [clearHelperTimer, removeLaunchIframe],
   );
 
   const teardownSocket = useCallback(() => {
@@ -307,11 +386,14 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
   // ── connect (browser leg) ───────────────────────────────────────────────────
   // `autoLaunch` = the same-machine path: after minting, fire the vibecodes:// deep
   // link so the local helper attaches automatically (no copied command). Without it
-  // (manual reconnect), we stay in the cross-machine "copy a command" flow.
+  // (manual reconnect), we stay in the cross-machine "copy a command" flow. Callers
+  // must gate autoLaunch behind the install-first flow (setup Connect / paired
+  // auto-connect / Retry) — never on a bare dock open for an unpaired browser.
   const connect = useCallback(async (options?: { autoLaunch?: boolean }) => {
     const autoLaunch = options?.autoLaunch ?? false;
     teardownSocket();
     clearHelperTimer();
+    removeLaunchIframe();
     setLaunchPhase(autoLaunch ? "opening" : "idle");
     setExpanded(true);
     lastDimsRef.current = "";
@@ -375,9 +457,16 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
       // the bridge today); ignore so it never reaches the screen as garbage.
       if (typeof ev.data === "string") return;
       // The helper attached and is streaming — the launch succeeded; drop the
-      // "opening helper / install it" nudge.
+      // "opening helper" nudge and clean up the probe iframe/timer.
       clearHelperTimer();
+      removeLaunchIframe();
       setLaunchPhase("idle");
+      // First successful connection on this browser → remember it so future opens
+      // auto-connect and skip the setup wall (criteria #5 / #6).
+      if (!pairedRef.current) {
+        markBrowserPaired();
+        setPaired(true);
+      }
       dispatch({ type: "data" });
       termRef.current?.write(new Uint8Array(ev.data as ArrayBuffer));
     };
@@ -390,11 +479,29 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
       wsRef.current = null;
       dispatch({ type: "closed", code: ev.code, reason: ev.reason });
     };
-  }, [ideaId, teardownSocket, clearConnectTimer, clearHelperTimer, fireLaunchDeepLink]);
+  }, [ideaId, teardownSocket, clearConnectTimer, clearHelperTimer, removeLaunchIframe, fireLaunchDeepLink]);
+
+  // Install-first entry gate. This is the ONE place a browser "open" is turned into
+  // either a setup panel, a coming-soon panel, or an auto-connect — the deep link is
+  // never fired for an unpaired browser here (criterion #2).
+  const beginBrowserLaunch = useCallback(() => {
+    setExpanded(true);
+    const fresh = resolveTerminalPlatform(readPlatformSignals());
+    setPlatform(fresh);
+    const nowPaired = isBrowserPaired();
+    setPaired(nowPaired);
+    const entry = resolveFirstRunEntry({ supported: fresh.supported, paired: nowPaired });
+    if (entry === "connecting") {
+      // Paired browser deliberately reopening its session → auto-connect (fires the
+      // deep link). "setup" / "coming-soon" just show the overlay; no link fires.
+      void connect({ autoLaunch: true });
+    }
+  }, [connect]);
 
   const endSession = useCallback(() => {
     dispatch({ type: "user-end" });
     clearHelperTimer();
+    removeLaunchIframe();
     setLaunchPhase("idle");
     const ws = wsRef.current;
     if (ws) {
@@ -405,22 +512,37 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
       }
     }
     teardownSocket();
-  }, [teardownSocket, clearHelperTimer]);
+  }, [teardownSocket, clearHelperTimer, removeLaunchIframe]);
 
-  // Clean up the socket if the dock unmounts mid-session.
+  // Clean up the socket + helper timer + probe iframe if the dock unmounts mid-flow.
   useEffect(() => () => teardownSocket(), [teardownSocket]);
-
-  // Clear the helper-open timer on unmount.
   useEffect(() => () => clearHelperTimer(), [clearHelperTimer]);
+  useEffect(() => () => removeLaunchIframe(), [removeLaunchIframe]);
 
   // The "In the browser" menu item (board toolbar) fires the launch bus; pick it up
-  // here and run the auto-launch (mint → open browser leg → fire deep link). Keeping
-  // the mint in ONE place (the dock) means the session — and its bridge token — is
-  // never created twice.
+  // here and run the install-first gate. Keeping the mint in ONE place (the dock)
+  // means the session — and its bridge token — is never created twice.
   useEffect(() => {
     if (!enabled) return;
-    return subscribeBrowserLaunch(() => void connect({ autoLaunch: true }));
-  }, [enabled, connect]);
+    return subscribeBrowserLaunch(() => beginBrowserLaunch());
+  }, [enabled, beginBrowserLaunch]);
+
+  // Auto-connect a paired browser whenever the body becomes visible while idle — so
+  // a returning user who simply expands the dock also skips the setup wall
+  // (criterion #6). Unpaired / unsupported browsers never satisfy this guard, so no
+  // deep link fires for them.
+  useEffect(() => {
+    if (!enabled) return;
+    if (
+      expanded &&
+      state.status === "idle" &&
+      platform.supported &&
+      paired &&
+      launchPhase === "idle"
+    ) {
+      void connect({ autoLaunch: true });
+    }
+  }, [enabled, expanded, state.status, platform.supported, paired, launchPhase, connect]);
 
   const copyBridgeCommand = useCallback(() => {
     if (!pair) return;
@@ -433,7 +555,8 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
 
   if (!enabled) return null;
 
-  const meta = statusMeta(state);
+  const view = resolveDockView(state.status, launchPhase, platform.supported, paired);
+  const meta = dockStatusMeta(view, state);
   const inputEnabled = isInputEnabled(state, readOnly);
   const showStream = state.status === "connected" || state.status === "disconnected";
   const canLaunch =
@@ -441,6 +564,13 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
     state.status === "error" ||
     state.status === "session-ended" ||
     state.status === "disconnected";
+  // The End control is only meaningful once a session exists and is still live/opening.
+  const showEnd =
+    view === "connected" ||
+    view === "disconnected" ||
+    view === "connecting" ||
+    view === "connecting-returning" ||
+    view === "legacy-waiting";
 
   return (
     <div className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-700 bg-[#141417] text-zinc-200 shadow-[0_-8px_30px_rgba(0,0,0,0.4)]">
@@ -506,7 +636,7 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
                 {readOnly ? "Read-only · on" : "Read-only"}
               </Button>
             )}
-            {(showStream || state.status === "connecting" || state.status === "waiting-to-pair") && (
+            {showEnd && (
               <Button
                 variant="outline"
                 size="xs"
@@ -538,12 +668,14 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
           />
           {!showStream && (
             <StateOverlay
+              view={view}
               state={state}
               pair={pair}
+              platform={platform}
               canLaunch={canLaunch}
-              launchPhase={launchPhase}
-              onLaunch={() => void connect({ autoLaunch: true })}
-              onReconnect={() => void connect()}
+              onConnect={() => void connect({ autoLaunch: true })}
+              onRetry={() => void connect({ autoLaunch: true })}
+              onLaunchAgain={beginBrowserLaunch}
               onCopyBridge={copyBridgeCommand}
             />
           )}
@@ -580,92 +712,54 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
   );
 }
 
-// ── per-state centred overlays (icon + text + next step) ──────────────────────
+// ── per-view centred overlays (icon + text + next step) ───────────────────────
 function StateOverlay({
+  view,
   state,
   pair,
+  platform,
   canLaunch,
-  launchPhase,
-  onLaunch,
-  onReconnect,
+  onConnect,
+  onRetry,
+  onLaunchAgain,
   onCopyBridge,
 }: {
+  view: DockView;
   state: TerminalConnectionState;
   pair: PairInfo | null;
+  platform: TerminalPlatform;
   canLaunch: boolean;
-  launchPhase: LaunchPhase;
-  onLaunch: () => void;
-  onReconnect: () => void;
+  onConnect: () => void;
+  onRetry: () => void;
+  onLaunchAgain: () => void;
   onCopyBridge: () => void;
 }) {
   return (
-    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-[#0c0c0e]/95 px-6 text-center">
-      {state.status === "idle" && (
-        <>
-          <TerminalIcon className="h-7 w-7 text-emerald-400" />
-          <div className="text-base font-semibold text-emerald-400">Ready when you are</div>
-          <p className="max-w-md text-[13px] text-zinc-400">
-            Start Claude Code on your machine and mirror it here. Your code stays on your computer — we only relay the screen.
-          </p>
-          <Button className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400" onClick={onLaunch}>
-            <TerminalIcon className="h-4 w-4" /> Launch in browser
-          </Button>
-        </>
+    <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
+      {view === "coming-soon" && <ComingSoonPanel />}
+
+      {view === "setup" && <SetupPanel platform={platform} onConnect={onConnect} />}
+
+      {(view === "connecting" || view === "connecting-returning") && (
+        <ConnectingPanel returning={view === "connecting-returning"} />
       )}
 
-      {state.status === "connecting" && (
-        <>
-          <Loader2 className="h-7 w-7 animate-spin text-amber-400" />
-          <div className="text-base font-semibold text-amber-400">Starting your session…</div>
-          <p className="max-w-md text-[13px] text-zinc-400">
-            Opening the encrypted relay — usually instant. <span className="text-zinc-600">(waiting up to 30s)</span>
-          </p>
-        </>
+      {view === "timeout-new" && (
+        <TimeoutPanel variant="new" downloadUrl={platform.downloadUrl} onRetry={onRetry} />
+      )}
+      {view === "timeout-returning" && (
+        <TimeoutPanel variant="returning" downloadUrl={platform.downloadUrl} onRetry={onRetry} />
       )}
 
-      {state.status === "waiting-to-pair" && (
+      {view === "legacy-waiting" && (
         <>
-          {launchPhase === "opening" && (
-            <>
-              <Loader2 className="h-7 w-7 animate-spin text-sky-400" />
-              <div className="text-base font-semibold text-sky-400">Opening the VibeCodes helper…</div>
-              <p className="max-w-md text-[13px] text-zinc-400">
-                Your computer may ask to open VibeCodes — click <b className="text-zinc-200">Open</b>. The helper
-                starts Claude Code and attaches here automatically.
-              </p>
-            </>
-          )}
-
-          {launchPhase === "helper-timeout" && (
-            <>
-              <Download className="h-7 w-7 text-sky-400" />
-              <div className="text-base font-semibold text-sky-200">Don&apos;t have the helper?</div>
-              <p className="max-w-md text-[13px] text-zinc-400">
-                Nothing opened. Install the small VibeCodes helper once, then launch again — or pair another
-                machine by hand under Advanced.
-              </p>
-              <a
-                href={HELPER_INSTALL_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex items-center gap-1.5 rounded-md bg-sky-500 px-3 py-1.5 text-sm font-semibold text-sky-950 hover:bg-sky-400"
-              >
-                <Download className="h-4 w-4" /> Install the helper
-              </a>
-            </>
-          )}
-
-          {launchPhase === "idle" && (
-            <>
-              <Loader2 className="h-7 w-7 animate-spin text-sky-400" />
-              <div className="text-base font-semibold text-sky-400">Waiting for your machine to attach</div>
-              <p className="max-w-md text-[13px] text-zinc-400">
-                The relay is up. Start a bridge on your computer for this session to go live.
-              </p>
-            </>
-          )}
-
-          {/* Advanced ▾ — cross-machine fallback: copy the manual bridge command. */}
+          <Loader2 className="h-7 w-7 animate-spin text-sky-400" />
+          <div className="text-base font-semibold text-sky-400">Waiting for your machine to attach</div>
+          <p className="max-w-md text-[13px] text-zinc-400">
+            The link is up. Start a bridge on your computer for this session to go live.
+          </p>
+          {/* Advanced ▾ — cross-machine fallback: copy the manual bridge command.
+              Untouched by the install-first redesign (per the approved UX scope guard). */}
           {pair && (
             <details className="mt-1 w-full max-w-md text-left">
               <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[12px] text-zinc-500 hover:text-zinc-300 [&::-webkit-details-marker]:hidden">
@@ -690,18 +784,18 @@ function StateOverlay({
         </>
       )}
 
-      {state.status === "session-ended" && (
+      {view === "session-ended" && (
         <>
           <Square className="h-7 w-7 text-zinc-400" />
           <div className="text-base font-semibold text-zinc-300">{endedTitle(state)}</div>
           <p className="max-w-md text-[13px] text-zinc-400">{endedMessage(state)}</p>
-          <Button className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400" onClick={onLaunch}>
+          <Button className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400" onClick={onLaunchAgain}>
             <TerminalIcon className="h-4 w-4" /> Launch again
           </Button>
         </>
       )}
 
-      {state.status === "error" && (
+      {view === "error" && (
         <>
           <CircleAlert className="h-7 w-7 text-rose-400" />
           <div className="text-base font-semibold text-rose-400">{errorTitle(state)}</div>
@@ -711,7 +805,7 @@ function StateOverlay({
               variant="outline"
               size="sm"
               className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
-              onClick={onReconnect}
+              onClick={onLaunchAgain}
             >
               <RotateCw className="h-3.5 w-3.5" /> Try again
             </Button>
@@ -719,6 +813,139 @@ function StateOverlay({
         </>
       )}
     </div>
+  );
+}
+
+// ── install-first panels ──────────────────────────────────────────────────────
+
+// Screen ① — the numbered one-time setup (unpaired). No deep link has fired here.
+function SetupPanel({ platform, onConnect }: { platform: TerminalPlatform; onConnect: () => void }) {
+  const copy = FIRST_RUN_COPY.setup;
+  return (
+    <div className="flex w-full max-w-lg flex-col text-left">
+      <div className="mb-3 text-center">
+        <TerminalIcon className="mx-auto h-6 w-6 text-emerald-400" />
+        <h4 className="mt-2 text-[17px] font-bold text-zinc-100">{copy.heading}</h4>
+        <p className="mt-1 text-[13px] text-zinc-400">{copy.subheading}</p>
+      </div>
+
+      <SetupStep n={1} title={copy.step1Title}>
+        <p className="mb-2.5 text-[12.5px] text-zinc-400">{copy.step1Desc}</p>
+        <a
+          href={platform.downloadUrl ?? TERMINAL_HELPER_DOWNLOAD_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 text-sm font-semibold text-emerald-950 hover:bg-emerald-400"
+        >
+          <Download className="h-4 w-4" /> {platform.downloadLabel}
+        </a>
+      </SetupStep>
+
+      <SetupStep n={2} title={copy.step2Title}>
+        <p className="text-[12.5px] text-zinc-400">{copy.step2Desc}</p>
+      </SetupStep>
+
+      <SetupStep n={3} title={copy.step3Title}>
+        <div className="mb-3 flex items-start gap-2 rounded-md border border-amber-500/35 bg-amber-500/[0.06] px-3 py-2.5 text-[12.5px] text-amber-200/90">
+          <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-300" aria-hidden="true" />
+          <span>{copy.openPrompt}</span>
+        </div>
+        <Button
+          className="min-h-[44px] w-full bg-emerald-500 text-sm font-semibold text-emerald-950 hover:bg-emerald-400"
+          onClick={onConnect}
+        >
+          {copy.connect}
+        </Button>
+        <p className="mt-2 text-center text-[11.5px] text-zinc-500">{copy.alreadyInstalled}</p>
+      </SetupStep>
+    </div>
+  );
+}
+
+function SetupStep({ n, title, children }: { n: number; title: string; children: ReactNode }) {
+  return (
+    <div className="flex gap-3.5 border-t border-zinc-800 py-3.5 first-of-type:border-t-0">
+      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full border border-emerald-500/40 bg-emerald-500/[0.12] text-[13px] font-bold text-emerald-400">
+        {n}
+      </span>
+      <div className="min-w-0 flex-1">
+        <div className="mb-1.5 text-sm font-semibold text-zinc-200">{title}</div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// Screen ② — connecting (after Connect, or auto-connect for a returning user).
+function ConnectingPanel({ returning }: { returning: boolean }) {
+  const copy = FIRST_RUN_COPY.connecting;
+  return (
+    <>
+      <Loader2 className="h-7 w-7 animate-spin text-amber-400" />
+      <div className="text-base font-semibold text-amber-400">{copy.heading}</div>
+      <p className="max-w-md text-[13px] text-zinc-400">{returning ? copy.returningBody : copy.body}</p>
+      <p className="max-w-md text-[12.5px] text-zinc-500">{copy.openNudge}</p>
+    </>
+  );
+}
+
+// Screen ④ — the calm ~8s fallback. `variant` picks the first-timer vs returning copy.
+function TimeoutPanel({
+  variant,
+  downloadUrl,
+  onRetry,
+}: {
+  variant: "new" | "returning";
+  downloadUrl: string | null;
+  onRetry: () => void;
+}) {
+  const copy = variant === "new" ? FIRST_RUN_COPY.timeoutNew : FIRST_RUN_COPY.timeoutReturning;
+  const href = downloadUrl ?? TERMINAL_HELPER_DOWNLOAD_URL;
+  const secondaryLabel = variant === "new" ? FIRST_RUN_COPY.timeoutNew.download : FIRST_RUN_COPY.timeoutReturning.reinstall;
+  const footer = variant === "new" ? FIRST_RUN_COPY.timeoutNew.hint : FIRST_RUN_COPY.timeoutReturning.reassure;
+  return (
+    <>
+      <CircleDashed className="h-7 w-7 text-sky-400" />
+      <div className="text-base font-semibold text-zinc-200">{copy.heading}</div>
+      <p className="max-w-md text-[13px] text-zinc-400">{copy.body}</p>
+      <div className="flex w-full flex-wrap justify-center gap-2.5">
+        <Button
+          className="min-h-[44px] bg-sky-500 px-4 text-sm font-semibold text-sky-950 hover:bg-sky-400"
+          onClick={onRetry}
+        >
+          <RotateCw className="h-4 w-4" /> {copy.retry}
+        </Button>
+        <a
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-zinc-700 bg-zinc-800/60 px-4 text-sm font-semibold text-zinc-200 hover:bg-zinc-700"
+        >
+          <Download className="h-4 w-4" /> {secondaryLabel}
+        </a>
+      </div>
+      <p className="text-[11.5px] text-zinc-500">{footer}</p>
+    </>
+  );
+}
+
+// Screen ⑥ — non-Mac / unsupported machine. No deep link, gated download.
+function ComingSoonPanel() {
+  const copy = FIRST_RUN_COPY.comingSoon;
+  return (
+    <>
+      <Laptop className="h-7 w-7 text-zinc-300" />
+      <div className="text-base font-semibold text-zinc-100">{copy.heading}</div>
+      <p className="max-w-md text-[13px] text-zinc-400">{copy.body}</p>
+      <Button
+        disabled
+        aria-disabled="true"
+        className="min-h-[44px] cursor-not-allowed border border-zinc-800 bg-zinc-900 text-sm font-semibold text-zinc-500"
+      >
+        {copy.download}
+      </Button>
+      <p className="text-[11.5px] text-zinc-500">{copy.hint}</p>
+    </>
   );
 }
 
@@ -755,7 +982,7 @@ function errorTitle(state: TerminalConnectionState): string {
       return "This session is already open elsewhere";
     case "connect-timeout":
     case "relay-unreachable":
-      return "Couldn't reach the relay";
+      return "Couldn't reach your machine";
     case "session-mint-failed":
       return "Couldn't start a session";
     default:
@@ -768,16 +995,16 @@ function errorMessage(state: TerminalConnectionState): string {
     case "owner-mismatch":
       return "For safety, a bridge only attaches to the person who launched it. Start your own bridge, or sign in as the owning account.";
     case "bad-token":
-      return "The session token was invalid or expired. Launch again to mint a fresh one.";
+      return "The session couldn't be verified. Launch again to start a fresh one.";
     case "duplicate":
       return "Another browser tab is already attached to this session. Close it, then launch again.";
     case "connect-timeout":
-      return "We waited 30s but nothing connected. Is a bridge running and allowed to open?";
+      return "We waited a while but nothing connected. Is the helper running and allowed to open?";
     case "relay-unreachable":
-      return "The terminal relay didn't respond. Check it's running, then try again.";
+      return "We couldn't set up the secure link. Check your connection, then try again.";
     case "session-mint-failed":
-      return "The session request failed. Check your connection and try again.";
+      return "The session request didn't go through. Check your connection and try again.";
     default:
-      return "The terminal session failed. Try launching again.";
+      return "The terminal session didn't start. Try launching again.";
   }
 }
