@@ -184,6 +184,12 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
   const helperTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const launchIframeRef = useRef<HTMLIFrameElement | null>(null);
   const lastDimsRef = useRef<string>("");
+  // Single-flight guard: every connect() bumps this and captures its value. If a
+  // newer connect() starts while an older one is still awaiting its session mint,
+  // the older one aborts before minting a 2nd session / firing a 2nd deep link —
+  // otherwise two sessions + two bridges race and the relay tears both down
+  // (single-attach / peer-gone). This is the fix for the "connect fires twice" bug.
+  const connectGenRef = useRef(0);
 
   // Mirror live state into refs so the stable xterm onData handler + socket handlers
   // read current values without re-binding on every render.
@@ -390,6 +396,9 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
   // must gate autoLaunch behind the install-first flow (setup Connect / paired
   // auto-connect / Retry) — never on a bare dock open for an unpaired browser.
   const connect = useCallback(async (options?: { autoLaunch?: boolean }) => {
+    // Claim this attempt's generation. A later connect() bumps it, which makes this
+    // one abort at the post-mint checkpoint below instead of racing a 2nd session.
+    const gen = ++connectGenRef.current;
     const autoLaunch = options?.autoLaunch ?? false;
     teardownSocket();
     clearHelperTimer();
@@ -412,6 +421,8 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
       }
       data = await res.json();
     } catch (err) {
+      // Superseded while minting → let the newer attempt own the outcome.
+      if (gen !== connectGenRef.current) return;
       logger.error("Terminal session mint failed (client)", {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -421,6 +432,12 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
       });
       return;
     }
+
+    // A newer connect() started while we awaited the mint → abort BEFORE firing a
+    // second deep link or opening a second socket. The newer attempt already ran
+    // teardownSocket() + dispatch(connect); doing anything here would orphan a
+    // bridge and trip the relay's single-attach. This is the double-connect fix.
+    if (gen !== connectGenRef.current) return;
 
     dispatch({ type: "session-created", sessionId: data.sessionId });
     setPair({ sessionId: data.sessionId, bridgeToken: data.bridgeToken });
