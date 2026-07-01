@@ -9,11 +9,19 @@
 // exact same code verifies on the Cloudflare relay. The secret comes from the
 // TERMINAL_SESSION_SECRET env var — never hard-coded.
 
+import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 // One shared implementation of the token scheme — also imported by the relay.
 import { mintSessionTokens } from "../../../../../terminal/shared/session-token.mjs";
+
+// Pin the runtime: this handler mints per-request, auth-bound tokens and must never
+// be statically optimized or flipped to the Edge runtime. Without this, Next 16 was
+// intermittently running it as edge and losing the returned bare `Response`, yielding
+// a 500 "No response is returned from route handler" AFTER the token mint succeeded.
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
 
 const BodySchema = z.object({
   ideaId: z.string().uuid(),
@@ -24,7 +32,7 @@ export async function POST(req: Request) {
     const secret = process.env.TERMINAL_SESSION_SECRET;
     if (!secret) {
       logger.error("Terminal session mint failed: TERMINAL_SESSION_SECRET not configured");
-      return Response.json({ error: "Terminal sessions are not configured" }, { status: 503 });
+      return NextResponse.json({ error: "Terminal sessions are not configured" }, { status: 503 });
     }
 
     const supabase = await createClient();
@@ -32,12 +40,12 @@ export async function POST(req: Request) {
       data: { user },
     } = await supabase.auth.getUser();
     if (!user) {
-      return Response.json({ error: "Not authenticated" }, { status: 401 });
+      return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
     const parsed = BodySchema.safeParse(await req.json().catch(() => null));
     if (!parsed.success) {
-      return Response.json({ error: "Invalid request body" }, { status: 400 });
+      return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
     const { ideaId } = parsed.data;
 
@@ -48,7 +56,7 @@ export async function POST(req: Request) {
       .eq("id", ideaId)
       .maybeSingle();
     if (!idea) {
-      return Response.json({ error: "Idea not found" }, { status: 404 });
+      return NextResponse.json({ error: "Idea not found" }, { status: 404 });
     }
     if (idea.author_id !== user.id) {
       const { data: collab } = await supabase
@@ -58,7 +66,7 @@ export async function POST(req: Request) {
         .eq("user_id", user.id)
         .maybeSingle();
       if (!collab) {
-        return Response.json(
+        return NextResponse.json(
           { error: "Only team members can open a terminal for this idea" },
           { status: 403 },
         );
@@ -76,7 +84,7 @@ export async function POST(req: Request) {
 
     // Return both leg tokens + the session id. The browser token is for the in-app
     // panel; the bridge token is handed to the local helper (slice 3 wiring).
-    return Response.json({
+    return NextResponse.json({
       sessionId: tokens.sid,
       ideaId: tokens.idea,
       expiresAt: tokens.exp,
@@ -87,6 +95,6 @@ export async function POST(req: Request) {
     logger.error("Terminal session mint error", {
       error: err instanceof Error ? err.message : String(err),
     });
-    return Response.json({ error: "An unexpected error occurred" }, { status: 500 });
+    return NextResponse.json({ error: "An unexpected error occurred" }, { status: 500 });
   }
 }
