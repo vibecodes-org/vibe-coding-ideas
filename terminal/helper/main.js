@@ -41,6 +41,10 @@ const SHARED_REAP = app.isPackaged
   ? path.join(process.resourcesPath, "shared", "reap.mjs")
   : path.resolve(__dirname, "..", "shared", "reap.mjs");
 
+const SHARED_ALLOWLIST = app.isPackaged
+  ? path.join(process.resourcesPath, "shared", "relay-allowlist.mjs")
+  : path.resolve(__dirname, "..", "shared", "relay-allowlist.mjs");
+
 // ── logging (metadata only — NEVER log the deep-link token) ───────────────────
 const t0 = Date.now();
 function log(level, msg, extra) {
@@ -60,6 +64,14 @@ let _reap = null;
 async function reapMod() {
   if (!_reap) _reap = await import(pathToFileURL(SHARED_REAP).href);
   return _reap;
+}
+
+// Lazily import the shared relay-host allowlist (same module + predicate the
+// bridge's own gate uses — single source of truth).
+let _allowlist = null;
+async function allowlistMod() {
+  if (!_allowlist) _allowlist = await import(pathToFileURL(SHARED_ALLOWLIST).href);
+  return _allowlist;
 }
 
 // ── child-bridge bookkeeping + idle quit ─────────────────────────────────────
@@ -139,6 +151,20 @@ async function handleLaunchUrl(rawUrl) {
     });
     return;
   }
+
+  // RELAY-HOST ALLOWLIST (first-line reject, so we never fork on a hostile host).
+  // `relay=` is attacker-controllable — any web page can fire this deep link. Pin
+  // the dial target to the prod relay (loopback allowed only in dev). The forked
+  // bridge re-checks with the SAME predicate (single source of truth); this early
+  // reject just avoids spending a fork on a doomed launch. Log the HOST ONLY.
+  const { isRelayHostAllowed } = await allowlistMod();
+  if (!isRelayHostAllowed(parsed.relay, { allowLoopback: !app.isPackaged })) {
+    let host = "unparseable";
+    try { host = new URL(parsed.relay).host; } catch { /* never echo the token */ }
+    log("error", "relay host not allowed — refusing to launch bridge", { host });
+    return;
+  }
+
   log("info", "launching bridge for deep link", { url: redactDeepLinkToken(rawUrl) });
 
   // ELECTRON_RUN_AS_NODE=1 → the forked process is plain Node (Electron's bundled
@@ -146,7 +172,14 @@ async function handleLaunchUrl(rawUrl) {
   // through verbatim so test seams (e.g. BRIDGE_CMD) keep working; in production
   // the bridge defaults the spawned command to `claude`.
   const child = fork(BRIDGE_ENTRY, ["--launch-url", rawUrl], {
-    env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" },
+    env: {
+      ...process.env,
+      ELECTRON_RUN_AS_NODE: "1",
+      // Signal the bridge's OWN allowlist gate whether we're packaged. Packaged
+      // → loopback + any non-prod host rejected; dev → loopback allowed. Keeps
+      // the two gates (helper here + bridge) in lockstep.
+      VIBECODES_PACKAGED: app.isPackaged ? "1" : "",
+    },
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
   children.add(child);

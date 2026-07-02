@@ -40,6 +40,7 @@ import { createRequire } from "node:module";
 import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { parseLaunchDeepLink, redactDeepLinkToken } from "../../shared/deep-link.mjs";
+import { isRelayHostAllowed } from "../../shared/relay-allowlist.mjs";
 import { isAttachedFrame } from "../../shared/control-frames.mjs";
 import { reapPidGroupEscalated } from "../../shared/reap.mjs";
 
@@ -100,6 +101,25 @@ if (LAUNCH_URL) {
 }
 
 const RELAY = launched?.relay || args.relay || process.env.RELAY_URL || "ws://localhost:8787";
+
+// ── relay-host ALLOWLIST (load-bearing security gate) ─────────────────────────
+// `vibecodes://launch?relay=<HOST>` is fired by ANY web page, and `relay=` is the
+// highest-precedence source of RELAY above. Before this gate the bridge dialled
+// whatever host it named — an attacker relay then verifies its OWN token, passes
+// the R1 `{"t":"attached"}` gate, and streams keystrokes into the spawned `claude`
+// PTY (see the Reproduce & Investigate step). Pin the dial target HERE, before
+// `new WebSocket()` and before ANY pty.spawn on every path (promptless spawn-first
+// AND prompt-deferred). Loopback is allowed only when NOT packaged (dev/tests dial
+// the Node stand-in on ws://127.0.0.1:<port>); the packaged helper sets
+// VIBECODES_PACKAGED=1, so loopback + any non-prod host are rejected in production.
+// On reject: log the HOST ONLY (never the token) and exit cleanly, zero spawn.
+const ALLOW_LOOPBACK_RELAY = process.env.VIBECODES_PACKAGED !== "1";
+if (!isRelayHostAllowed(RELAY, { allowLoopback: ALLOW_LOOPBACK_RELAY })) {
+  let host = "unparseable";
+  try { host = new URL(RELAY).host; } catch { /* never echo the raw url — may carry a token */ }
+  log("error", "relay host not allowed", { host });
+  process.exit(1);
+}
 const SESSION = launched?.session || args.session || process.env.SESSION_ID || `dev-${Math.random().toString(36).slice(2, 10)}`;
 const TOKEN = launched?.token || args.token || process.env.BRIDGE_TOKEN || "";
 const CMD = args.cmd || process.env.BRIDGE_CMD || "claude";
