@@ -133,6 +133,49 @@ function ensureSpawnHelperExecutable() {
   }
 }
 
+// ── PATH resolution for GUI-launched bridges ─────────────────────────────────
+// When the helper app is launched by the browser (LaunchServices), it inherits
+// macOS's MINIMAL system PATH (/usr/bin:/bin:…) — NOT the user's shell PATH. The
+// default command `claude` typically lives in ~/.local/bin or /opt/homebrew/bin,
+// so the PTY died instantly with "command not found" (exitCode 1 in ~0.1s) and
+// the whole session tore down. Fix: capture the user's LOGIN-shell PATH once
+// (like Terminal.app effectively does) and fall back to appending the well-known
+// bin dirs. Never fails — worst case we keep the inherited PATH + fallbacks.
+function resolveSpawnEnv() {
+  const env = { ...process.env, TERM: "xterm-color" };
+  if (process.platform === "win32") return env; // PATH semantics differ; not needed
+  let shellPath = "";
+  let pathSource = "inherited+fallbacks";
+  try {
+    const shell = process.env.SHELL || "/bin/zsh";
+    // -ilc = interactive login shell → sources .zprofile AND .zshrc, wherever the
+    // user set PATH. Markers isolate $PATH from any rc-file banner noise.
+    const out = require("node:child_process").execFileSync(
+      shell,
+      ["-ilc", 'printf "__PATH__%s__END__" "$PATH"'],
+      { encoding: "utf8", timeout: 3000, stdio: ["ignore", "pipe", "ignore"] },
+    );
+    const m = out.match(/__PATH__([\s\S]*)__END__/);
+    if (m && m[1].trim()) {
+      shellPath = m[1].trim();
+      pathSource = "login-shell";
+    }
+  } catch {
+    /* fall through to fallbacks */
+  }
+  const parts = (shellPath || env.PATH || "").split(":").filter(Boolean);
+  for (const extra of [
+    path.join(os.homedir(), ".local", "bin"),
+    "/opt/homebrew/bin",
+    "/usr/local/bin",
+  ]) {
+    if (!parts.includes(extra)) parts.push(extra);
+  }
+  env.PATH = parts.join(":");
+  log("debug", "resolved spawn PATH", { source: pathSource, dirs: parts.length });
+  return env;
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 async function main() {
   ensureSpawnHelperExecutable();
@@ -147,7 +190,7 @@ async function main() {
       cols: 80,
       rows: 24,
       cwd: CWD,
-      env: { ...process.env, TERM: "xterm-color" },
+      env: resolveSpawnEnv(),
     });
   } catch (e) {
     log("error", "PTY spawn failed", { err: String(e?.message || e) });
