@@ -59,3 +59,35 @@ test("redactDeepLinkToken hides the token but keeps the rest", () => {
   assert.ok(!redacted.includes(encodeURIComponent(SAMPLE.token)), "encoded token must not appear");
   assert.ok(redacted.includes(`session=${SAMPLE.session}`), "non-secret params survive");
 });
+
+// ── bootstrap prompt param (in-browser terminal parity) ───────────────────────
+
+// Hostile prompt: shell metacharacters, quotes, expansion, newlines. It is INERT
+// DATA end to end — must round-trip verbatim and never appear in a redacted log.
+const HOSTILE_PROMPT =
+  "Set up $(rm -rf ~) `hostname` \"double\" 'single' ; & | > < \\ %20 + \n second line $HOME";
+
+test("build ⇄ parse round-trips a prompt (incl. hostile characters, verbatim)", () => {
+  const withPrompt = { ...SAMPLE, prompt: HOSTILE_PROMPT };
+  const url = buildLaunchDeepLink(withPrompt);
+  assert.ok(url.endsWith(`prompt=${encodeURIComponent(HOSTILE_PROMPT)}`), "prompt is the LAST param");
+  assert.deepEqual(parseLaunchDeepLink(url), withPrompt);
+});
+
+test("promptless links keep today's exact shape — no prompt key, no prompt param", () => {
+  const url = buildLaunchDeepLink(SAMPLE);
+  assert.ok(!url.includes("prompt="));
+  const parsed = parseLaunchDeepLink(url);
+  assert.deepEqual(parsed, SAMPLE);
+  assert.ok(!("prompt" in parsed), "no prompt key on a promptless link");
+});
+
+test("redactDeepLinkToken elides the prompt (user content) as well as the token", () => {
+  const url = buildLaunchDeepLink({ ...SAMPLE, prompt: HOSTILE_PROMPT });
+  const redacted = redactDeepLinkToken(url);
+  assert.match(redacted, /token=\*\*\*/);
+  assert.match(redacted, /prompt=\*\*\*/);
+  assert.ok(!redacted.includes(SAMPLE.token), "raw token must not appear");
+  assert.ok(!redacted.includes(encodeURIComponent(HOSTILE_PROMPT)), "encoded prompt must not appear");
+  assert.ok(redacted.includes(`session=${SAMPLE.session}`), "non-secret params survive");
+});

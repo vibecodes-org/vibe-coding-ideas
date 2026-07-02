@@ -1,0 +1,610 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>In-App Terminal — Bootstrap Prompt UX (Compass)</title>
+<style>
+  :root{
+    /* Pulled from src/components/board/terminal-dock.tsx to match the live dock */
+    --dock-header:#141417;
+    --dock-body:#0c0c0e;
+    --dock-deep:#0a0a0b;
+    --page:#09090b;
+    --card:#141417;
+    --border:#3f3f46;      /* zinc-700 */
+    --border-soft:#27272a; /* zinc-800 */
+    --text:#e4e4e7;        /* zinc-200 */
+    --text-dim:#a1a1aa;    /* zinc-400 */
+    --text-faint:#71717a;  /* zinc-500 */
+    --emerald:#34d399;
+    --amber:#fbbf24;
+    --sky:#38bdf8;
+    --rose:#fb7185;
+    --violet:#c4b5fd;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0}
+  body{
+    background:var(--page);
+    color:var(--text);
+    font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    padding:0 0 96px;
+  }
+  .wrap{max-width:1120px;margin:0 auto;padding:0 20px}
+  header.doc{
+    border-bottom:1px solid var(--border-soft);
+    background:linear-gradient(180deg,#141417,#0c0c0e);
+    padding:40px 0 30px;margin-bottom:8px;
+  }
+  .kicker{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--emerald);font-weight:700}
+  h1{font-size:30px;margin:8px 0 6px;letter-spacing:-.01em}
+  .sub{color:var(--text-dim);font-size:15px;max-width:800px}
+  .meta-row{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}
+  .tag{font-size:12px;border:1px solid var(--border);border-radius:999px;padding:4px 11px;color:var(--text-dim);background:#18181b}
+  .tag.ok{border-color:rgba(52,211,153,.5);color:var(--emerald);background:rgba(52,211,153,.08)}
+
+  h2{font-size:21px;margin:44px 0 4px;letter-spacing:-.01em}
+  h2 .num{color:var(--text-faint);font-weight:600;margin-right:10px}
+  .lead{color:var(--text-dim);margin:6px 0 20px;max-width:840px}
+  h3{font-size:15px;margin:26px 0 10px;color:var(--text)}
+
+  /* ---- The mock dock ---- */
+  .dock{
+    border:1px solid var(--border);
+    border-radius:12px;
+    overflow:hidden;
+    background:var(--dock-header);
+    box-shadow:0 18px 50px rgba(0,0,0,.5);
+    max-width:860px;
+  }
+  .dock.narrow{max-width:375px}
+  .dockbar{
+    display:flex;align-items:center;gap:10px;
+    padding:8px 12px;background:var(--dock-header);
+    font-size:12px;
+  }
+  .dot{width:9px;height:9px;border-radius:50%;flex:0 0 auto}
+  .dot.emerald{background:var(--emerald)}
+  .dot.amber{background:var(--amber)}
+  .dot.zinc{background:var(--text-faint)}
+  .termlabel{display:inline-flex;align-items:center;gap:8px;font-weight:600}
+  .termlabel .sess{color:var(--text-faint);font-weight:400;font-family:ui-monospace,Menlo,monospace;font-size:11px}
+  .pill{
+    display:inline-flex;align-items:center;gap:6px;
+    border:1px solid var(--border);border-radius:7px;
+    padding:2px 9px;font-size:11px;font-weight:600;
+  }
+  .pill.emerald{border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.1);color:var(--emerald)}
+  .pill.amber{border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.1);color:var(--amber)}
+  .pill.zinc{border-color:var(--border);background:#27272a99;color:var(--text-dim)}
+  .pill.rose{border-color:rgba(251,113,133,.55);background:rgba(251,113,133,.1);color:var(--rose)}
+  .spacer{margin-left:auto}
+  .ghostbtn{color:var(--text-dim);font-size:12px;display:inline-flex;align-items:center;gap:5px}
+
+  .dockhead{
+    display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+    border-top:1px solid var(--border-soft);border-bottom:1px solid var(--border-soft);
+    background:var(--dock-header);padding:9px 12px;font-size:12px;
+  }
+  .dockhead .idea{color:var(--text-faint);font-family:ui-monospace,Menlo,monospace;font-size:12px}
+
+  .dockbody{
+    background:var(--dock-body);
+    min-height:300px;
+    display:flex;align-items:center;justify-content:center;
+    padding:30px 22px;position:relative;
+  }
+  .dockbody.tall{min-height:340px}
+
+  .overlay{max-width:520px;width:100%;text-align:center;display:flex;flex-direction:column;align-items:center;gap:14px}
+  .overlay .icon{font-size:26px;line-height:1}
+  .overlay h4{font-size:17px;margin:0;font-weight:700}
+  .overlay p{margin:0;font-size:13.5px;color:var(--text-dim);max-width:460px}
+  .overlay .muted{color:var(--text-faint)}
+
+  .btn{
+    display:inline-flex;align-items:center;justify-content:center;gap:8px;
+    border-radius:8px;padding:11px 18px;font-size:14px;font-weight:600;
+    border:1px solid transparent;cursor:default;min-height:44px;
+  }
+  .btn.sky{background:var(--sky);color:#04121b}
+  .btn.outline{background:#27272a99;border-color:var(--border);color:var(--text)}
+  .btnrow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;width:100%}
+  .subtle{font-size:11.5px;color:var(--text-faint);text-align:center}
+
+  /* faux terminal stream */
+  .stream{
+    width:100%;height:100%;min-height:260px;
+    background:var(--dock-body);
+    font-family:ui-monospace,"SF Mono",Menlo,monospace;font-size:12.5px;line-height:1.7;
+    color:#cfd8df;text-align:left;padding:10px 14px;align-self:stretch;
+    overflow-x:auto;
+  }
+  .stream .g{color:var(--emerald)}
+  .stream .d{color:var(--text-faint)}
+  .stream .u{color:var(--sky)}
+  .stream .cursor{display:inline-block;width:8px;height:15px;background:#cfd8df;vertical-align:-2px;animation:blink 1s step-end infinite}
+  @keyframes blink{50%{opacity:0}}
+  .inputbar{
+    display:flex;align-items:center;gap:8px;
+    border-top:1px solid var(--border-soft);background:var(--dock-header);
+    padding:9px 14px;font-size:12px;color:var(--text-faint);
+  }
+  .inputbar .prompt{color:var(--emerald);font-family:ui-monospace,Menlo,monospace}
+
+  /* one-line hint bar (edge C) — same construction as the shipped amber
+     "Lost the connection" strip in terminal-dock.tsx, on the sky accent */
+  .hintbar{
+    display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+    border-top:1px solid rgba(56,189,248,.3);background:rgba(56,189,248,.05);
+    padding:8px 14px;font-size:11.5px;color:#9adcf8;
+  }
+  .hintbar b{color:#c8ecfb}
+  .hintbar a{color:#9adcf8;text-decoration:underline;cursor:default;padding:6px 2px}
+  .hintbar .dismiss{margin-left:auto;color:var(--text-faint);text-decoration:none;padding:6px 8px}
+
+  /* annotation block */
+  .anno{
+    margin:14px 0 0;max-width:860px;
+    border-left:3px solid var(--emerald);
+    background:#101013;border:1px solid var(--border-soft);border-left-width:3px;
+    border-radius:0 10px 10px 0;padding:14px 18px;
+  }
+  .anno h5{margin:0 0 8px;font-size:12px;letter-spacing:.08em;text-transform:uppercase;color:var(--emerald)}
+  .anno ul{margin:0;padding-left:18px}
+  .anno li{margin:5px 0;font-size:13.5px;color:var(--text-dim)}
+  .anno li b{color:var(--text)}
+  .anno.sky{border-left-color:var(--sky)}
+  .anno.sky h5{color:var(--sky)}
+  .anno.amber{border-left-color:var(--amber)}
+  .anno.amber h5{color:var(--amber)}
+  .anno.rose{border-left-color:var(--rose)}
+  .anno.rose h5{color:var(--rose)}
+
+  .callout{
+    border:1px solid var(--border);border-radius:10px;background:#101013;
+    padding:16px 18px;margin:18px 0;max-width:860px;
+  }
+  .callout h4{margin:0 0 8px;font-size:14px}
+  .callout p{margin:0;color:var(--text-dim);font-size:13.5px}
+  .callout.good{border-color:rgba(52,211,153,.4);background:rgba(52,211,153,.05)}
+  .callout.good h4{color:var(--emerald)}
+
+  /* flow map */
+  .flow{
+    border:1px solid var(--border);border-radius:12px;background:#0d0d10;
+    padding:22px;overflow-x:auto;max-width:1000px;
+  }
+  .flowrow{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:0 0 18px}
+  .flowrow:last-child{margin-bottom:0}
+  .node{
+    border:1px solid var(--border);border-radius:9px;padding:9px 13px;font-size:12.5px;
+    background:#18181b;white-space:nowrap;font-weight:600;
+  }
+  .node small{display:block;font-weight:400;color:var(--text-faint);font-size:10.5px;white-space:normal;max-width:190px}
+  .node.entry{border-color:rgba(56,189,248,.5);background:rgba(56,189,248,.08);color:var(--sky)}
+  .node.build{border-color:rgba(196,181,253,.45);background:rgba(196,181,253,.07);color:var(--violet)}
+  .node.gate{border-color:rgba(251,191,36,.6);background:rgba(251,191,36,.1);color:var(--amber)}
+  .node.win{border-color:rgba(52,211,153,.6);background:rgba(52,211,153,.14);color:var(--emerald)}
+  .node.fall{border-color:var(--border);background:#27272a;color:var(--text-dim)}
+  .node.deny{border-color:rgba(251,113,133,.5);background:rgba(251,113,133,.08);color:var(--rose)}
+  .arrow{color:var(--text-faint);font-size:16px}
+  .arrow .lbl{display:block;font-size:10px;color:var(--text-faint);text-align:center;margin-top:-2px}
+  .flowlabel{font-size:12px;color:var(--text-faint);width:130px;flex:0 0 130px;font-weight:600}
+
+  table{border-collapse:collapse;width:100%;max-width:860px;font-size:13px;margin:8px 0}
+  th,td{border:1px solid var(--border-soft);padding:9px 12px;text-align:left;vertical-align:top}
+  th{background:#18181b;color:var(--text);font-size:12px;letter-spacing:.03em}
+  td{color:var(--text-dim)}
+  td b,th b{color:var(--text)}
+  .crit{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--emerald);white-space:nowrap}
+  .copystr{font-family:ui-monospace,Menlo,monospace;font-size:12px;color:var(--text)}
+
+  .grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:22px;align-items:start}
+  .caption{font-size:12px;color:var(--text-faint);margin:8px 0 0;text-align:center;max-width:860px}
+  hr.sec{border:0;border-top:1px solid var(--border-soft);margin:40px 0}
+  .footnote{font-size:12.5px;color:var(--text-faint);max-width:860px;margin-top:8px}
+  code.inline{background:#18181b;border:1px solid var(--border-soft);border-radius:5px;padding:1px 6px;font-size:12px;color:var(--sky)}
+  @media (max-width:520px){
+    .flowlabel{width:100%;flex-basis:100%}
+    h1{font-size:24px}
+  }
+</style>
+</head>
+<body>
+
+<header class="doc">
+  <div class="wrap">
+    <div class="kicker">UX Design · Step 2 of 6 · Feature Development</div>
+    <h1>In-App Terminal — Bootstrap Prompt Flow</h1>
+    <p class="sub">
+      The in-browser dock launch must start Claude Code with the <b>same compact bootstrap prompt</b> the
+      terminal-window deep link already uses (<code class="inline">buildCompactBootstrapPrompt</code> in
+      <code class="inline">src/lib/launch-claude-code.ts</code>). Per the ProdOwner Requirements handoff, the happy
+      path is <b>intentionally invisible</b> — same button, same dock, claude simply wakes up already knowing the idea
+      and task. This document therefore designs the <b>system flow</b> and the <b>edge states only</b>.
+    </p>
+    <div class="meta-row">
+      <span class="tag ok">Designer: Compass (UX)</span>
+      <span class="tag">Built on: ProdOwner Requirements (R1, R2, R4 / AC4, AC6, AC8)</span>
+      <span class="tag">Surface: board bottom terminal dock — no new surface</span>
+      <span class="tag">Palette matched to terminal-dock.tsx</span>
+      <span class="tag">Companion: docs/install-first-terminal-ux.html</span>
+    </div>
+  </div>
+</header>
+
+<div class="wrap">
+
+<!-- ============================================================= -->
+<h2><span class="num">§1</span>Happy path statement — nothing new to learn</h2>
+<p class="lead">
+  Per the Requirements handoff: <b>no new buttons, no new settings, no new screens.</b> The user presses the same
+  Connect (or a paired browser auto-connects), the same install-first flow from
+  <code class="inline">docs/install-first-terminal-ux.html</code> runs unchanged — and the only visible difference is
+  the terminal's first screen: claude opens <i>already primed with the task</i> instead of a blank shell.
+</p>
+
+<div class="callout good">
+  <h4>✓ The whole visible feature</h4>
+  <p>Today the in-browser terminal opens cold and the user must paste or type context. After this change it opens
+  with the compact bootstrap prompt already delivered — claude connects the board tools, records the project path,
+  and picks up the task on its own. The user's mental model doesn't change; the terminal is just smarter on arrival
+  (Jakob's Law: keep the pattern they already learned, improve what it yields).</p>
+</div>
+
+<div class="dock" role="img" aria-label="Connected dock — claude opens already primed with the task">
+  <div class="dockbar">
+    <span class="dot emerald"></span>
+    <span class="termlabel">◱ Terminal <span class="sess">· session 8f3a1c2b</span></span>
+    <span class="spacer"></span>
+    <span class="pill emerald">◉ Connected</span>
+    <span class="ghostbtn">▾ Collapse</span>
+  </div>
+  <div class="dockhead">
+    <span class="pill emerald">◉ Connected</span>
+    <span class="idea">My First App · session 8f3a1c2b</span>
+    <span class="spacer"></span>
+    <span class="pill zinc" style="cursor:default">🔓 Read-only</span>
+    <span class="pill rose" style="cursor:default">⏻ End</span>
+    <span class="ghostbtn">⌄</span>
+  </div>
+  <div class="dockbody tall" style="padding:0;align-items:stretch">
+    <div class="stream">
+      <div><span class="g">➜</span> <span class="d">~</span> claude <span class="d">(launched by the VibeCodes helper)</span></div>
+      <div class="d">Welcome to Claude Code.</div>
+      <div>&nbsp;</div>
+      <div><span class="u">›</span> <span class="u">Set up VibeCodes and work a board task for "My First App".</span></div>
+      <div class="u">&nbsp;&nbsp;1. Get into the repo nickball/my-first-app first: cd your local clone, or git clone … Never work in your home directory.</div>
+      <div class="u">&nbsp;&nbsp;2. Connect the board tools: run `claude mcp add -s local --transport http vibecodes …/api/mcp`, then `/mcp` → vibecodes → Authenticate…</div>
+      <div class="u">&nbsp;&nbsp;3. Once the board tools work, call record_project_path (idea_id …, your machine `hostname`, and `pwd`)…</div>
+      <div class="u">&nbsp;&nbsp;4. Work this task: get_task (task_id …), move it to In Progress, then start. Comment as you go.</div>
+      <div>&nbsp;</div>
+      <div>● I'll start by getting into the project folder, then connect the board tools.</div>
+      <div>&nbsp;&nbsp;<span class="d">Bash(cd ~/projects/my-first-app && pwd)…</span></div>
+      <div><span class="g">›</span> <span class="cursor"></span></div>
+    </div>
+  </div>
+  <div class="inputbar">
+    <span class="prompt">›</span>
+    <span>Click the terminal and type to steer the agent. Enter sends.</span>
+  </div>
+</div>
+<p class="caption">
+  The only visible difference from today: the first message in the scrollback is the compact bootstrap prompt (shown
+  in sky above as claude renders the user turn), and claude is already acting on it. Dock bar, pills, controls, and
+  input bar are pixel-identical to the shipped <code class="inline">terminal-dock.tsx</code>.
+</p>
+
+<div class="anno">
+  <h5>Why the happy path is invisible on purpose</h5>
+  <ul>
+    <li><b>No new affordance to find</b> — the deep-link (terminal-window) flow already primes claude this way; the in-browser flow is catching up to parity, not adding a capability the user chooses (recognition over recall: they recognise the same launch, it simply does more).</li>
+    <li><b>The prompt itself is the receipt.</b> It lands in the scrollback as the first turn, so a curious user can read exactly what claude was told — full transparency without any explanatory chrome.</li>
+    <li><b>Human-in-the-loop preserved</b> — the user watches claude execute the bootstrap live and can interrupt by typing at any point (the shipped read-write input bar), same as any terminal session.</li>
+  </ul>
+</div>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§2</span>System flow — where the prompt travels</h2>
+<p class="lead">
+  The prompt is built in the browser, rides the <code class="inline">vibecodes://launch</code> deep link as an inert
+  string, and is <b>held by the helper until the relay accepts the owner-bound token</b> (the R1 gate, amber below).
+  Only after acceptance does the helper pass it to claude. Rejected token ⇒ the prompt is discarded unexecuted.
+</p>
+
+<div class="flow" role="img" aria-label="System flow map of the bootstrap prompt from board state to claude">
+  <div class="flowrow">
+    <span class="flowlabel">Browser (web)</span>
+    <span class="node entry">Board state<br><small>idea / task / repo / recorded path</small></span>
+    <span class="arrow">→</span>
+    <span class="node build">buildCompactBootstrapPrompt()<br><small>+ enforcePromptLength — MCP head always survives (R2)</small></span>
+    <span class="arrow">→</span>
+    <span class="node">Session mint<br><small>POST /api/terminal/session</small></span>
+    <span class="arrow">→</span>
+    <span class="node entry">vibecodes://launch?…&amp;prompt=<br><small>URL ≤ ~2KB · prompt is an inert string</small></span>
+  </div>
+  <div class="flowrow">
+    <span class="flowlabel">Helper (Mac)</span>
+    <span class="node">Helper opens<br><small>parses link · HOLDS the prompt · runs nothing</small></span>
+    <span class="arrow">→</span>
+    <span class="node">Bridge attaches to relay<br><small>presents the owner-bound token</small></span>
+    <span class="arrow">→</span>
+    <span class="node gate">⛨ R1 GATE — relay validates token<br><small>owner-bound · single-use · short-lived</small></span>
+  </div>
+  <div class="flowrow">
+    <span class="flowlabel">Gate passes</span>
+    <span class="node gate">⛨ accepted</span>
+    <span class="arrow">→</span>
+    <span class="node win">claude launches with the prompt<br><small>first turn in the PTY (post-auth only)</small></span>
+    <span class="arrow">→</span>
+    <span class="node win">PTY bytes → dock<br><small>§1 happy path</small></span>
+  </div>
+  <div class="flowrow">
+    <span class="flowlabel">Gate fails</span>
+    <span class="node gate">⛨ rejected<br><small>forged / expired / foreign token</small></span>
+    <span class="arrow">→</span>
+    <span class="node deny">Zero execution<br><small>prompt discarded · no claude · no shell</small></span>
+    <span class="arrow">→</span>
+    <span class="node fall">Dock: shipped ~8s timeout fallback<br><small>§3 — no new UI</small></span>
+  </div>
+</div>
+<p class="footnote">
+  The prompt crosses three trust boundaries (web → OS link → helper → relay-authenticated bridge) but is only ever
+  <i>data</i> until the amber gate passes. This ordering is the whole of R1: a crafted link on a victim's machine can
+  make the helper open, but never make anything run.
+</p>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§3</span>Edge A — pre-auth rejection (R1 / AC4): no new UI</h2>
+<p class="lead">
+  A forged, expired, or foreign-account link fails at the relay gate: the helper attaches nothing and exits quietly.
+  On the machine, <b>nothing happens</b> — which is the security win. In the dock, the launch simply never streams,
+  so the shipped install-first flow already covers it: <b>Connecting… → (~8s) → the calm timeout fallback.</b>
+</p>
+
+<div class="dock" role="img" aria-label="Rejected launch lands on the existing timeout fallback">
+  <div class="dockbar">
+    <span class="dot zinc"></span>
+    <span class="termlabel">◱ Terminal <span class="sess">· session 4d90ee71</span></span>
+    <span class="spacer"></span>
+    <span class="pill zinc">◔ Not connected yet</span>
+    <span class="ghostbtn">▾ Collapse</span>
+  </div>
+  <div class="dockhead">
+    <span class="pill zinc">◔ Not connected yet</span>
+    <span class="idea">My First App · session 4d90ee71</span>
+    <span class="spacer"></span>
+    <span class="ghostbtn">⌄</span>
+  </div>
+  <div class="dockbody tall">
+    <div class="overlay">
+      <div class="icon" style="color:var(--sky)">◔</div>
+      <h4>Didn’t connect yet</h4>
+      <p>It may not be running. Try again — or re-install the helper if it keeps happening.</p>
+      <div class="btnrow">
+        <span class="btn sky">↻ Retry</span>
+        <span class="btn outline">⭳ Re-install the helper</span>
+      </div>
+      <span class="subtle">Your work on your Mac is safe.</span>
+    </div>
+  </div>
+</div>
+<p class="caption">This is the already-shipped timeout fallback from the install-first design — reused verbatim. Zero new strings, zero new states.</p>
+
+<div class="anno sky">
+  <h5>Why no new “security” state — deliberate decision</h5>
+  <ul>
+    <li><b>The legitimate user can't reach this state through the product.</b> Every dock launch mints a fresh valid token milliseconds before firing. Expired/forged/foreign tokens arrive only via stale or crafted links opened <i>outside</i> the dock — and then there is no dock waiting, so there is nothing to show. When a dock <i>is</i> waiting and the helper doesn't stream (whatever the cause), “Didn't connect yet → Retry” is both accurate and the correct recovery: Retry mints a fresh token, which fixes the token-expiry case by construction.</li>
+    <li><b>An alarm state would misfire.</b> The dock cannot distinguish “token rejected” from “helper not running” (the helper never streams in either case). A red “security” banner on what is usually a sleeping helper violates the no-alarm-for-non-actionable-info rule and trains users to ignore red.</li>
+    <li><b>Don't brief the attacker.</b> Distinct rejection UI would give a probing attacker a feedback channel. Silence on the machine + a generic “not yet” in the dock leaks nothing.</li>
+    <li><b>Browser-leg failures are already covered</b> — the dock's own socket has explicit error states (“Couldn't verify this session”, “This bridge belongs to another account”) in <code class="inline">terminal-dock.tsx</code>; those are untouched and out of scope here.</li>
+  </ul>
+</div>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§4</span>Edge B — truncated prompt (R2 / AC6): no in-dock signal</h2>
+<p class="lead">
+  On very long task titles/context the URL cap forces deterministic truncation — but
+  <code class="inline">enforcePromptLength</code> always preserves the MCP-setup head, so claude still connects the
+  board tools and <b>re-fetches the full task from the board itself</b> (<code class="inline">get_task</code>). The
+  trimmed tail was a convenience copy, not the source of truth. <b>Recommendation: no dock UI at all.</b>
+</p>
+
+<div class="dock" role="img" aria-label="Truncated prompt — the marker is visible in the scrollback, nothing else changes">
+  <div class="dockbar">
+    <span class="dot emerald"></span>
+    <span class="termlabel">◱ Terminal <span class="sess">· session 9b21d6e0</span></span>
+    <span class="spacer"></span>
+    <span class="pill emerald">◉ Connected</span>
+    <span class="ghostbtn">▾ Collapse</span>
+  </div>
+  <div class="dockbody" style="padding:0;align-items:stretch;min-height:210px">
+    <div class="stream" style="min-height:190px">
+      <div><span class="u">›</span> <span class="u">Set up VibeCodes and work a board task for "A very long idea title that goes on and on and eventually forces the…".</span></div>
+      <div class="u">&nbsp;&nbsp;1. Get into the repo … 2. Connect the board tools … 3. record_project_path …</div>
+      <div class="u">&nbsp;&nbsp;4. Work this task: get_task (task_id 7c…, idea_id 3f…), move it to In Progr</div>
+      <div class="u">&nbsp;&nbsp;…(truncated)</div>
+      <div>&nbsp;</div>
+      <div>● Connecting the board tools, then I'll read the full task from the board.</div>
+      <div><span class="g">›</span> <span class="cursor"></span></div>
+    </div>
+  </div>
+</div>
+<p class="caption">
+  The <code class="inline">…(truncated)</code> marker (already appended by <code class="inline">enforcePromptLength</code>)
+  is visible in the scrollback for the curious. That is the entire signal.
+</p>
+
+<div class="anno">
+  <h5>Why silence is correct here</h5>
+  <ul>
+    <li><b>Nothing is lost.</b> The head (project dir + MCP connect + record path + task id) survives by contract; claude reads the authoritative task body from the board over MCP anyway. Outcome for the user: identical to the untruncated case.</li>
+    <li><b>Non-actionable ⇒ no alarm.</b> There is no user action that improves anything (“shorten your idea title” is absurd advice). A banner would add a decision point with zero payoff — pure Hick's-Law cost, and it would fire on exactly the boards with the richest context, punishing power users.</li>
+    <li><b>Never a dropped launch (R2).</b> Truncation is the overflow behaviour; the launch always proceeds. A warning would imply something failed when nothing did.</li>
+    <li><b>Escape hatch exists for the 1%:</b> the marker in the scrollback is honest and findable; anyone who cares can also use the copy-command flow, which carries the full verbose prompt with no URL limit.</li>
+  </ul>
+</div>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§5</span>Edge C — version skew (R4 / AC8): one low-key hint, feasibility-gated</h2>
+<p class="lead">
+  New web + <b>old installed helper</b>: the old helper ignores the unknown <code class="inline">prompt</code> param
+  and claude opens cold — exactly today's behaviour, so nothing breaks (R4). But unlike Edge B, here the user
+  <b>silently loses real value they can actually recover</b> with one action: update the helper. This is the one place
+  a small piece of new UI earns its keep — a single dismissible hint line, built exactly like the dock's shipped
+  amber “Lost the connection” strip, on the calm sky accent.
+</p>
+
+<div class="dock" role="img" aria-label="Version-skew state — connected cold terminal with a one-line update hint">
+  <div class="dockbar">
+    <span class="dot emerald"></span>
+    <span class="termlabel">◱ Terminal <span class="sess">· session c07be412</span></span>
+    <span class="spacer"></span>
+    <span class="pill emerald">◉ Connected</span>
+    <span class="ghostbtn">▾ Collapse</span>
+  </div>
+  <div class="dockhead">
+    <span class="pill emerald">◉ Connected</span>
+    <span class="idea">My First App · session c07be412</span>
+    <span class="spacer"></span>
+    <span class="pill zinc" style="cursor:default">🔓 Read-only</span>
+    <span class="pill rose" style="cursor:default">⏻ End</span>
+    <span class="ghostbtn">⌄</span>
+  </div>
+  <div class="dockbody" style="padding:0;align-items:stretch;min-height:240px">
+    <div class="stream" style="min-height:200px">
+      <div><span class="g">➜</span> <span class="d">~</span> claude</div>
+      <div class="d">Welcome to Claude Code.</div>
+      <div>&nbsp;</div>
+      <div><span class="g">›</span> <span class="cursor"></span></div>
+    </div>
+  </div>
+  <div class="hintbar" role="status">
+    <span aria-hidden="true">↑</span>
+    <span><b>Claude started without your task details.</b> Update the helper and your next launch will include them.</span>
+    <a href="#">Get the update</a>
+    <a href="#" class="dismiss">Dismiss</a>
+  </div>
+  <div class="inputbar">
+    <span class="prompt">›</span>
+    <span>Click the terminal and type to steer the agent. Enter sends.</span>
+  </div>
+</div>
+<p class="caption">
+  The hint sits between the terminal and the input bar — same slot and construction as the shipped amber
+  reconnect strip, so it reads as “dock status”, not an error. The session above it is fully usable.
+</p>
+
+<div class="anno amber">
+  <h5>Behaviour &amp; why</h5>
+  <ul>
+    <li><b>Why hint at all (vs Edge B's silence):</b> here the loss is real (claude opens cold; the user must hand-type context) <i>and</i> the fix is a single user action. Actionable + recurring on every launch until fixed ⇒ worth one quiet line. Non-actionable Edge B stays silent.</li>
+    <li><b>Never blocks, never modal.</b> The session is connected and fully usable; the hint is informational (<code class="inline">role="status"</code>, not <code class="inline">alert</code>). “Get the update” opens the existing <code class="inline">/download/terminal-helper</code> route — same link, same styling family as every helper-download affordance in the dock.</li>
+    <li><b>Dismiss is remembered</b> (localStorage, per browser) so it shows at most once per user decision, not once per session — no nagging. It naturally disappears for good once the updated helper delivers the prompt.</li>
+    <li><b>Feasibility gate:</b> the hint requires the dock to <i>know</i> the helper is old. Proposed detection: the new helper announces its version in a TEXT control frame on attach (the dock already ignores TEXT frames today, so old helpers are safely mute) — <b>no version frame before first PTY bytes ⇒ old helper ⇒ show the hint</b>. If engineering judges this signal unreliable, ship Edge C <b>silent</b> (graceful cold launch is already the R4 requirement); the hint is an enhancement, not a dependency.</li>
+    <li><b>WCAG:</b> sky text on near-black ≥4.5:1; “Get the update” and “Dismiss” are real links with ≥44px effective touch targets (padded); icon + bold lead-in + text — never colour alone.</li>
+  </ul>
+</div>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§6</span>Copy — exact strings (everything new)</h2>
+<p class="lead">Only Edge C introduces user-facing strings. Calm, non-technical: no “token”, “relay”, “argv”, “prompt”, or “version skew”.</p>
+
+<table>
+  <thead>
+    <tr><th style="width:220px">Where</th><th>String</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><b>Edge C hint — lead</b></td><td class="copystr">Claude started without your task details.</td></tr>
+    <tr><td><b>Edge C hint — body</b></td><td class="copystr">Update the helper and your next launch will include them.</td></tr>
+    <tr><td><b>Edge C hint — action link</b></td><td class="copystr">Get the update</td></tr>
+    <tr><td><b>Edge C hint — dismiss link</b></td><td class="copystr">Dismiss</td></tr>
+    <tr><td><b>Truncation marker (Edge B)</b></td><td class="copystr">…(truncated) <span style="color:var(--text-faint)">— already emitted by enforcePromptLength; appears only inside the terminal scrollback, not in dock chrome. Not a new string.</span></td></tr>
+  </tbody>
+</table>
+<p class="footnote">
+  Edge A and the happy path introduce <b>zero</b> new strings — they reuse the shipped install-first copy
+  (<code class="inline">FIRST_RUN_COPY</code>) verbatim.
+</p>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§7</span>Requirements coverage</h2>
+<p class="lead">Mapping this document's sections to the ProdOwner Requirements (UX-relevant ACs; others are engineering-only).</p>
+
+<table>
+  <thead>
+    <tr><th style="width:110px">Requirement</th><th>What it demands</th><th style="width:230px">Covered by</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td class="crit">Parity (core)</td>
+      <td>In-browser launch carries the same compact bootstrap prompt as the terminal-window deep link; claude wakes primed.</td>
+      <td>§1 happy-path frame (prompt as first turn); §2 flow map</td>
+    </tr>
+    <tr>
+      <td class="crit">R1 / AC4</td>
+      <td>URL-carried prompt never executes before the relay validates the owner-bound token; forged/expired/foreign ⇒ zero execution.</td>
+      <td>§2 amber gate (prompt held pre-auth); §3 (rejection lands on the shipped timeout fallback — no new UI, no attacker feedback)</td>
+    </tr>
+    <tr>
+      <td class="crit">R2 / AC6</td>
+      <td>URL ≤ ~2KB; overflow ⇒ deterministic truncation preserving the MCP head; never a dropped launch.</td>
+      <td>§4 (no in-dock signal — justified; scrollback marker is the whole signal); §2 build node annotation</td>
+    </tr>
+    <tr>
+      <td class="crit">R4 / AC8</td>
+      <td>Version skew graceful: new web + old helper ⇒ promptless (cold) launch, no breakage.</td>
+      <td>§5 (cold launch preserved; optional one-line update hint, feasibility-gated, dismissible)</td>
+    </tr>
+    <tr>
+      <td class="crit">Handoff scope</td>
+      <td>Happy path intentionally invisible — no new buttons, no new settings.</td>
+      <td>§1 (explicit statement + annotated frame); only new UI in the whole design = the §5 hint line</td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- ============================================================= -->
+<hr class="sec">
+<h2><span class="num">§8</span>Design-system, responsive &amp; scope notes</h2>
+<div class="anno">
+  <h5>Reuse &amp; consistency</h5>
+  <ul>
+    <li>All frames use the shipped dock chrome from <code class="inline">terminal-dock.tsx</code> — <code class="inline">#141417</code> header, <code class="inline">#0c0c0e</code> body, zinc-700 borders, emerald/amber/sky/rose status accents, the same pills and input bar.</li>
+    <li>The Edge C hint is structurally the existing bottom strip (amber “Lost the connection” bar) re-skinned to the sky accent — same slot, same padding, same inline-link pattern. No new component class.</li>
+    <li>Edge A reuses the install-first timeout fallback screen and copy with zero changes.</li>
+  </ul>
+</div>
+<div class="anno sky">
+  <h5>375px behaviour</h5>
+  <ul>
+    <li>The Edge C hint wraps to two lines at phone width; “Get the update” and “Dismiss” keep ≥44px padded targets and never truncate. Everything else in this design is existing, already-verified dock chrome.</li>
+  </ul>
+</div>
+<div class="anno amber">
+  <h5>Scope guard (no gold-plating)</h5>
+  <ul>
+    <li>No “task context attached ✓” badge, toast, or preview panel on the happy path — the prompt in the scrollback is the receipt.</li>
+    <li>No truncation warning (§4 justification) and no distinct security state (§3 justification).</li>
+    <li>The Edge C hint is the <b>only</b> new UI, and it is explicitly droppable if version detection proves unreliable — the feature ships whole without it.</li>
+  </ul>
+</div>
+
+<p class="footnote" style="margin-top:30px">
+  Compass · UX Design step · Feature Development workflow. Built on the ProdOwner Requirements step (R1/AC4, R2/AC6,
+  R4/AC8). Engineering notes: prompt joins the deep link at <code class="inline">buildLaunchDeepLink</code>; helper
+  must hold it until post-auth; Edge C detection = version TEXT control frame on bridge attach (absence ⇒ old helper),
+  dismiss flag in localStorage alongside the existing paired-before flag.
+</p>
+
+</div>
+</body>
+</html>

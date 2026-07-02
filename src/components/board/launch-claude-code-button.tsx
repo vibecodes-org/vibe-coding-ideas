@@ -14,6 +14,7 @@ import {
 import { usePostHog } from "posthog-js/react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import {
+  type CompactPromptParts,
   type LaunchMode,
   type LaunchPathState,
   type RecordedProjectPath,
@@ -21,19 +22,18 @@ import {
   buildLaunchCommand,
   buildBoardBootstrapPrompt,
   buildTaskBootstrapPrompt,
-  buildCompactBootstrapPrompt,
+  buildCompactBootstrapPromptParts,
   readLaunchPath,
+  resolveAppUrl,
+  resolveDefaultLaunchState,
   resolveEffectiveLaunchTarget,
-  slugifyIdeaTitle,
-  composeNewProjectPath,
-  DEFAULT_NEW_PROJECT_PARENT,
+  resolveLaunchCwd,
 } from "@/lib/launch-claude-code";
 import { LaunchPathDialog } from "./launch-path-dialog";
 import { isTerminalEnabled } from "@/lib/terminal/connection";
 import { isBrowserLaunchAvailable, requestBrowserLaunch } from "@/lib/terminal/launch-mode";
 
-const APP_URL =
-  process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || "https://vibecodes.co.uk";
+const APP_URL = resolveAppUrl();
 const INSTALL_GUIDE_URL = "https://docs.claude.com/en/docs/claude-code";
 // Visibility-race window: if the page never blurs/hides within this, assume no handler.
 const SCHEME_RACE_MS = 1200;
@@ -101,26 +101,14 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // rapid double-clicks don't fire two window.location.assign + two fallback timers.
   const launchingRef = useRef(false);
 
-  // Read fresh on each interaction (localStorage may change in another tab/window).
-  const getSaved = useCallback(() => readLaunchPath(ideaId), [ideaId]);
-
-  const defaultSlug = useMemo(() => slugifyIdeaTitle(ideaTitle), [ideaTitle]);
-
-  // The launch state used when the user hasn't pinned one. No browser path needed:
-  //  - idea has a GitHub repo → existing mode, empty path; the deep link's `repo`
-  //    param makes Claude Code open (or clone) the repo locally.
-  //  - no repo → a brand-new project under ~/projects/<slug>; the agent mkdir's it.
-  const resolveState = useCallback((): LaunchPathState => {
-    const saved = getSaved();
-    if (saved) return saved;
-    if (ideaGithubUrl) return { mode: "existing", path: "" };
-    return {
-      mode: "new",
-      path: composeNewProjectPath(DEFAULT_NEW_PROJECT_PARENT, defaultSlug),
-      parent: DEFAULT_NEW_PROJECT_PARENT,
-      name: defaultSlug,
-    };
-  }, [getSaved, ideaGithubUrl, defaultSlug]);
+  // The launch state used when the user hasn't pinned one (reads localStorage
+  // fresh on each interaction — it may change in another tab/window). The SHARED
+  // resolver is also what the terminal dock uses for its dock-initiated launches,
+  // so the two paths can never resolve different states for the same idea.
+  const resolveState = useCallback(
+    (): LaunchPathState => resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl),
+    [ideaId, ideaTitle, ideaGithubUrl]
+  );
 
   const buildPrompt = useCallback(
     (state: LaunchPathState): string => {
@@ -149,14 +137,17 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     [props, ideaId, ideaTitle, ideaGithubUrl]
   );
 
-  // Compact variant for the DEEP LINK only — the claude-cli:// URL has an OS
-  // length ceiling and an over-long URL silently fails to launch. The verbose
-  // buildPrompt above stays on the copy-command path (a shell arg, no limit).
-  const buildDeepLinkPrompt = useCallback(
-    (state: LaunchPathState): string => {
+  // Compact variant for URL-limited launches — the claude-cli:// deep link and
+  // the in-browser terminal's vibecodes:// launch both have OS URL ceilings and
+  // an over-long URL silently fails to launch. Built as head/tail PARTS so the
+  // in-browser path can budget-truncate the tail (the dock alone knows its
+  // session/token overhead); the deep-link path joins them. ONE builder, so the
+  // two launch destinations carry a byte-identical prompt for the same state.
+  const buildCompactParts = useCallback(
+    (state: LaunchPathState): CompactPromptParts => {
       const newProject =
         state.mode === "new" ? { newProjectPath: state.path } : undefined;
-      return buildCompactBootstrapPrompt({
+      return buildCompactBootstrapPromptParts({
         appUrl: APP_URL,
         ideaId,
         ideaTitle,
@@ -167,6 +158,14 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       });
     },
     [props, ideaId, ideaTitle, ideaGithubUrl]
+  );
+
+  const buildDeepLinkPrompt = useCallback(
+    (state: LaunchPathState): string => {
+      const { head, tail } = buildCompactParts(state);
+      return head + tail;
+    },
+    [buildCompactParts]
   );
 
   const posthog = usePostHog();
@@ -208,21 +207,14 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       });
 
       const prompt = buildDeepLinkPrompt(state);
-      // cwd resolution:
-      //  - existing mode with a user-pinned absolute path → use it.
-      //  - new (no-repo) mode → use the effective target's cwd (the saved path or,
-      //    falling back, the agent-recorded path for THIS machine). This is the
-      //    SAME value the dropdown displays, so display and launch can't diverge.
-      //    Otherwise none, and the bootstrap prompt's directory block creates
-      //    ~/projects/<slug>. (`~`-paths don't expand in the cwd param.)
-      //  - repo-backed → no cwd; the `repo` slug resolves the working copy
-      //    (effectiveTarget.cwd is undefined for repo ideas).
-      const cwd =
-        state.mode === "existing" && state.path.trim()
-          ? state.path.trim()
-          : state.mode === "new"
-            ? effectiveTarget.cwd
-            : undefined;
+      // cwd resolution — the SHARED rule (resolveLaunchCwd): pinned existing path
+      // → that path; new (no-repo) mode → the effective target's cwd (the saved
+      // path or the agent-recorded path for THIS machine — the SAME value the
+      // dropdown displays, so display and launch can't diverge); repo-backed →
+      // none (the `repo` slug resolves the working copy; effectiveTarget.cwd is
+      // undefined for repo ideas). The in-browser launch payload uses the same
+      // rule, so both destinations open in the same folder.
+      const cwd = resolveLaunchCwd(state, effectiveTarget.cwd);
       const link = buildClaudeDeepLink({
         prompt,
         cwd,
@@ -307,8 +299,19 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   const browserLaunchAvailable = isBrowserLaunchAvailable(isTerminalEnabled());
   const handleLaunchInBrowser = useCallback(() => {
     posthog?.capture("launch_claude_code_clicked", { method: "in_browser" });
-    requestBrowserLaunch();
-  }, [posthog]);
+    // Carry the SAME compact bootstrap prompt AND cwd the terminal-window deep
+    // link would use for this state (bootstrap-prompt + folder parity). Prompt is
+    // sent as head/tail parts so the dock can enforce its vibecodes:// URL budget
+    // without re-splitting; cwd rides the payload so a pinned/recorded existing
+    // folder is honoured in the browser too.
+    const state = resolveState();
+    const { head, tail } = buildCompactParts(state);
+    requestBrowserLaunch({
+      promptHead: head,
+      promptTail: tail,
+      cwd: resolveLaunchCwd(state, effectiveTarget.cwd),
+    });
+  }, [posthog, buildCompactParts, resolveState, effectiveTarget.cwd]);
 
   const openDialog = useCallback((mode: LaunchMode, launch: boolean) => {
     setPendingLaunch(launch);

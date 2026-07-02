@@ -362,7 +362,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       {/* In-app local Claude Code terminal — OFF by default (NEXT_PUBLIC_TERMINAL_ENABLED),
           team-members only. Renders nothing when the flag is off → board unchanged. */}
       {isTerminalEnabled() && isTeamMember && (
-        <TerminalDock ideaId={id} ideaTitle={idea.title} />
+        <TerminalDock ideaId={id} ideaTitle={idea.title} ideaGithubUrl={idea.github_url} />
       )}
     </div>
   );
