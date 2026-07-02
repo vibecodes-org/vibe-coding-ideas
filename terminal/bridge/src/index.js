@@ -41,6 +41,7 @@ import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { parseLaunchDeepLink, redactDeepLinkToken } from "../../shared/deep-link.mjs";
 import { isAttachedFrame } from "../../shared/control-frames.mjs";
+import { reapPidGroupEscalated } from "../../shared/reap.mjs";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -121,6 +122,22 @@ const CONNECT_TIMEOUT_MS = Number(args["connect-timeout-ms"] || 30000);
 // spawn — the dock's existing ~8s fallback covers the UX.
 const ATTACH_CONFIRM_TIMEOUT_MS = Number(args["attach-confirm-timeout-ms"] || 10000);
 
+// ── verified-kill escalation bounds (the orphaned-`claude` fix) ────────────────
+// node-pty's kill() is ONE unverified SIGHUP that `claude` can outlive — and the
+// PTY child is its own session/group leader (spawn-helper setsid), so nothing
+// implicit ever reaps it. Shutdown now VERIFIES death: SIGHUP → (2s) → SIGTERM →
+// (1s) → SIGKILL(+process group), and never exits with the child unconfirmed
+// unless the overall hard cap trips. See ../../shared/reap.mjs.
+const KILL_HUP_WAIT_MS = 2000;
+const KILL_TERM_WAIT_MS = 1000;
+const SHUTDOWN_CAP_MS = 5000;
+
+// ws keepalive: a dead relay link (sleep/network drop, no FIN) must not hold a
+// session — and its PTY child — alive for hours. Client-side ping only; the ws
+// server (and Cloudflare's edge) answers protocol pings automatically.
+const PING_INTERVAL_MS = Number(process.env.BRIDGE_PING_INTERVAL_MS || 30000);
+const PING_MAX_MISSED = 2;
+
 const [file, ...cmdArgs] = shellSplit(CMD);
 const spawnArgs = PROMPT ? [...cmdArgs, PROMPT] : cmdArgs;
 
@@ -199,7 +216,14 @@ async function main() {
 
   const pty = require("node-pty");
 
+  // Expose shutdown so the top-level catch can tear down (kill the PTY child)
+  // instead of process.exit()ing over a live grandchild. Assigned FIRST (the
+  // function declaration below is hoisted) so any throw in this body after the
+  // PTY spawn still reaps.
+  shutdownRef = shutdown;
+
   let term = null; // spawned lazily for prompt-carrying launches (R1 gate below)
+  let ptyExited = false; // set by term.onExit — authoritative "child is dead"
   let pendingResize = null; // a resize that arrived while the spawn was deferred
   let ws = null;
   let bytesOut = 0; // PTY -> ws
@@ -209,6 +233,15 @@ async function main() {
   let connectTimer = null;
   let maxTimer = null;
   let attachTimer = null;
+  let pingTimer = null;
+  let missedPongs = 0;
+
+  function stopKeepalive() {
+    if (pingTimer) {
+      clearInterval(pingTimer);
+      pingTimer = null;
+    }
+  }
 
   // PTY output produced before the relay socket is open (e.g. the program's
   // startup banner), flushed on open so the first bytes never lose the race.
@@ -221,16 +254,59 @@ async function main() {
     clearTimeout(connectTimer);
     clearTimeout(maxTimer);
     clearTimeout(attachTimer);
+    stopKeepalive();
     log("info", "shutting down", { why, bytesOut, bytesIn });
     try { ws?.close(1000, why); } catch { /* ignore */ }
-    try { term?.kill(); } catch { /* ignore */ }
     // Record the code first: with NO PTY (a blocked prompt launch) the event
     // loop can drain before the unref'd hard-exit timer fires, and the process
     // then exits naturally — exitCode makes that natural exit carry the right
-    // status. The timer stays as the hard stop for the PTY-alive case.
+    // status.
     process.exitCode = code;
-    // give sockets a tick to flush their close frame, then exit hard
-    setTimeout(() => process.exit(code), 200).unref();
+    // give sockets a tick to flush their close frame, then exit
+    const exitSoon = () => setTimeout(() => process.exit(code), 200).unref();
+
+    // No PTY (blocked prompt launch) or Windows (conpty — no POSIX signal
+    // escalation): node-pty's own kill + the short flush window is all there is.
+    if (!term || process.platform === "win32") {
+      try { term?.kill(); } catch { /* ignore */ }
+      exitSoon();
+      return;
+    }
+
+    // Verified-kill escalation (the orphaned-`claude` fix). The old code fired
+    // ONE unverified SIGHUP and hard-exited 200ms later; a child that ignores
+    // SIGHUP (claude does) survived as an orphan because it is its own session/
+    // group leader (spawn-helper setsid). Now: SIGHUP → SIGTERM → SIGKILL(+the
+    // child's process group), and we do NOT exit until the child is confirmed
+    // dead or the SIGKILL has been sent. The escalation's own (ref'd) poll
+    // timers keep the event loop alive; SHUTDOWN_CAP_MS is the hard stop.
+    const pid = term.pid;
+    const hardCap = setTimeout(() => {
+      log("warn", "shutdown hard cap reached — exiting", { ms: SHUTDOWN_CAP_MS, pid });
+      process.exit(code);
+    }, SHUTDOWN_CAP_MS);
+    reapPidGroupEscalated(pid, {
+      hupWaitMs: KILL_HUP_WAIT_MS,
+      termWaitMs: KILL_TERM_WAIT_MS,
+      isDead: () => ptyExited,
+      onStage: (stage) => log("warn", "pty kill escalated", { stage, pid }),
+    })
+      .then((res) => {
+        if (res.confirmedDead) {
+          if (res.stage !== "already-dead") log("info", "pty child confirmed dead", { pid, stage: res.stage });
+        } else {
+          log("error", "pty child NOT confirmed dead after SIGKILL", { pid });
+        }
+        clearTimeout(hardCap);
+        exitSoon();
+      })
+      .catch((e) => {
+        log("error", "pty kill escalation failed — sending SIGKILL", { pid, err: String(e?.message || e) });
+        try { process.kill(-pid, "SIGKILL"); } catch { /* ignore */ }
+        try { process.kill(pid, "SIGKILL"); } catch { /* ignore */ }
+        clearTimeout(hardCap);
+        exitSoon();
+      });
   }
 
   /**
@@ -260,6 +336,15 @@ async function main() {
     }
     term = spawned;
 
+    // Tell the supervising helper (if any) which pid to verify-kill should WE
+    // die uncleanly (a SIGKILL'd bridge can run no cleanup — matrix row c).
+    // Standalone CLI runs have no IPC channel; this is a guarded no-op there.
+    if (process.send && process.channel) {
+      try {
+        process.send({ type: "pty-pid", pid: spawned.pid });
+      } catch { /* channel already closing */ }
+    }
+
     // PTY -> relay (binary, verbatim).
     term.onData((data) => {
       const buf = Buffer.from(data, "utf8");
@@ -272,6 +357,7 @@ async function main() {
     });
 
     term.onExit(({ exitCode, signal }) => {
+      ptyExited = true; // lets an in-flight kill escalation confirm instantly
       log("info", "PTY exited", { exitCode, signal });
       shutdown(0, "pty-exit");
     });
@@ -283,6 +369,25 @@ async function main() {
     }
   }
 
+  // The relay requires an app-minted `bridge`-role token (slice 2). It binds this
+  // leg to its owning user; the matching `browser` token must carry the same owner.
+  // Checked BEFORE any spawn — a doomed launch must never create a child process.
+  if (!TOKEN) {
+    log("error", "missing bridge token — set --token or BRIDGE_TOKEN (minted by the app)");
+    process.exit(1);
+  }
+
+  // Helper-fork parent-death detection: the helper forks us with an IPC channel.
+  // If the helper dies uncleanly (crash/SIGKILL) the channel drops — tear down
+  // instead of running parentless forever. Standalone CLI runs have no channel,
+  // so this never arms outside a helper fork.
+  if (process.channel) {
+    process.on("disconnect", () => {
+      log("warn", "IPC channel to parent dropped — supervising helper is gone");
+      shutdown(1, "helper-gone");
+    });
+  }
+
   // R1 SEQUENCING. Promptless launches spawn FIRST, exactly as before — nothing
   // in their flow changes. A URL-carried prompt is different: it must NEVER
   // reach a child process unless the relay has accepted the owner-bound token,
@@ -291,13 +396,6 @@ async function main() {
   // gated on the relay's explicit `attached` control frame, sent only after
   // authorizeAttach + decideAttach pass. No frame → exit, zero spawn.
   if (!PROMPT) spawnPty();
-
-  // The relay requires an app-minted `bridge`-role token (slice 2). It binds this
-  // leg to its owning user; the matching `browser` token must carry the same owner.
-  if (!TOKEN) {
-    log("error", "missing bridge token — set --token or BRIDGE_TOKEN (minted by the app)");
-    process.exit(1);
-  }
   const url =
     `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
     `&role=bridge&token=${encodeURIComponent(TOKEN)}`;
@@ -356,10 +454,31 @@ async function main() {
     }
   });
 
+  // Keepalive: protocol-level ping every PING_INTERVAL_MS; the ws server (and
+  // Cloudflare's edge) auto-answers with pongs. A link that misses
+  // PING_MAX_MISSED pongs in a row is dead (sleep/network drop with no FIN) —
+  // terminate it so `close` fires and shutdown() reaps the PTY child, instead
+  // of the session holding a live `claude` for hours.
+  ws.on("pong", () => {
+    missedPongs = 0;
+  });
+
   ws.on("open", () => {
     open = true;
     clearTimeout(connectTimer);
     log("info", "relay connected (bridge leg)", { session: SESSION });
+    missedPongs = 0;
+    pingTimer = setInterval(() => {
+      if (!ws || ws.readyState !== WebSocket.OPEN) return;
+      if (missedPongs >= PING_MAX_MISSED) {
+        log("warn", "keepalive: pongs missed — terminating dead relay link", { missed: missedPongs });
+        try { ws.terminate(); } catch { /* ignore */ }
+        return;
+      }
+      missedPongs += 1;
+      try { ws.ping(); } catch { /* ignore */ }
+    }, PING_INTERVAL_MS);
+    pingTimer.unref?.();
     // Prompt launches: arm the attach-confirmation window. An OLD relay never
     // sends the frame → clean exit with NOTHING spawned (graceful skew; the
     // dock's existing ~8s fallback covers the UX).
@@ -399,7 +518,10 @@ async function main() {
   }
 }
 
+let shutdownRef = null; // set by main() once its shutdown() closure exists
+
 main().catch((e) => {
   log("error", "fatal", { err: String(e?.stack || e) });
-  process.exit(1);
+  if (shutdownRef) shutdownRef(1, "fatal");
+  else process.exit(1);
 });
