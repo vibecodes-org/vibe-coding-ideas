@@ -21,6 +21,30 @@
 // logged no-op — so sending this unconditionally is skew-safe in both
 // directions. The key `t` (not `type`) keeps it disjoint from the browser→
 // bridge control namespace (`{"type":"resize",…}`).
+//
+// GRACE-WINDOW REATTACH (fix/terminal-reconnect-reattach) adds two more relay→leg
+// TEXT control frames in the SAME `{"t":…}` namespace, sent instead of a hard
+// PEER_GONE close while a session is held open for the reconnect grace window:
+//   - `{"t":"peer-degraded"}`   — sent to the SURVIVING leg the moment its peer
+//     drops. "Your peer went away; I'm holding the session — keep your stream,
+//     it may resume." The survivor is NOT closed.
+//   - `{"t":"peer-reattached"}` — sent to BOTH legs once the dropped peer
+//     re-attaches (same sid + owner) inside the window and the pair is whole
+//     again. "Resume — the pairing is restored."
+// Both are skew-safe exactly like `attached`: an old bridge logs-and-ignores an
+// unknown control frame, and a browser dock that doesn't know them treats them
+// as a no-op.
+
+/** Detect any control TEXT frame with a given `t` tag. Cheap + strict + bounded. */
+function isControlFrame(text, tag) {
+  if (typeof text !== "string" || text.length === 0 || text.length > 64) return false;
+  try {
+    const msg = JSON.parse(text);
+    return !!msg && typeof msg === "object" && msg.t === tag;
+  } catch {
+    return false;
+  }
+}
 
 /** The exact TEXT frame the relay sends the bridge leg on successful attach. */
 export function encodeAttachedFrame() {
@@ -35,11 +59,25 @@ export function encodeAttachedFrame() {
  * @returns {boolean}
  */
 export function isAttachedFrame(text) {
-  if (typeof text !== "string" || text.length === 0 || text.length > 64) return false;
-  try {
-    const msg = JSON.parse(text);
-    return !!msg && typeof msg === "object" && msg.t === "attached";
-  } catch {
-    return false;
-  }
+  return isControlFrame(text, "attached");
+}
+
+/** TEXT frame the relay sends the SURVIVOR when its peer drops (grace window opened). */
+export function encodePeerDegradedFrame() {
+  return JSON.stringify({ t: "peer-degraded" });
+}
+
+/** @param {unknown} text @returns {boolean} */
+export function isPeerDegradedFrame(text) {
+  return isControlFrame(text, "peer-degraded");
+}
+
+/** TEXT frame the relay sends BOTH legs once the pair is whole again inside the window. */
+export function encodePeerReattachedFrame() {
+  return JSON.stringify({ t: "peer-reattached" });
+}
+
+/** @param {unknown} text @returns {boolean} */
+export function isPeerReattachedFrame(text) {
+  return isControlFrame(text, "peer-reattached");
 }

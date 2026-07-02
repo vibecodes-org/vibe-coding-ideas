@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Automated round-trip proof + stand-in relay + manual xterm page for the terminal slice 1.",
   "scripts": {
-    "test": "node --test --test-concurrency=1 roundtrip.test.mjs deep-link.test.mjs lifecycle.test.mjs control-frames.test.mjs prompt-launch.test.mjs orphan-cleanup.test.mjs relay-allowlist.test.mjs"
+    "test": "node --test --test-concurrency=1 roundtrip.test.mjs deep-link.test.mjs lifecycle.test.mjs control-frames.test.mjs prompt-launch.test.mjs orphan-cleanup.test.mjs relay-allowlist.test.mjs reconnect-reattach.test.mjs"
   },
   "dependencies": {
     "ws": "^8.18.0"

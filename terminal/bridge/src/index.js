@@ -41,7 +41,11 @@ import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { parseLaunchDeepLink, redactDeepLinkToken } from "../../shared/deep-link.mjs";
 import { isRelayHostAllowed } from "../../shared/relay-allowlist.mjs";
-import { isAttachedFrame } from "../../shared/control-frames.mjs";
+import {
+  isAttachedFrame,
+  isPeerDegradedFrame,
+  isPeerReattachedFrame,
+} from "../../shared/control-frames.mjs";
 import { reapPidGroupEscalated } from "../../shared/reap.mjs";
 
 const require = createRequire(import.meta.url);
@@ -158,6 +162,25 @@ const SHUTDOWN_CAP_MS = 5000;
 const PING_INTERVAL_MS = Number(process.env.BRIDGE_PING_INTERVAL_MS || 30000);
 const PING_MAX_MISSED = 2;
 
+// ── reconnect budget (fix/terminal-reconnect-reattach) ────────────────────────
+// A TRANSIENT relay-link drop (sleep, Wi-Fi blip, missed pongs, a 1006 with no
+// FIN) must NOT reap a live `claude`. While the PTY child is alive AND within this
+// budget the bridge RECONNECTS to the SAME session (same relay URL + sid + the
+// still-valid bridge token) with jittered backoff (1s→2s→4s→8s cap), keeping claude
+// running across the gap and resuming the byte pipe on re-attach. THE ONE SHARED
+// NUMBER — equal to the relay grace window + the client budget, and < the 300s token
+// TTL so the ORIGINAL bridge token is still valid the whole window (no re-mint).
+// Reaping still happens on: budget exhausted, claude exits, a real shutdown (parent
+// disconnect / SIGTERM / before-quit), or a TERMINAL relay close code (below).
+const BRIDGE_RECONNECT_MS = Number(process.env.BRIDGE_RECONNECT_MS || 90000);
+// Per-attempt open timeout while reconnecting: a hung connect cycles to the next
+// attempt instead of stalling the whole budget.
+const RECONNECT_ATTEMPT_TIMEOUT_MS = Number(process.env.BRIDGE_RECONNECT_ATTEMPT_TIMEOUT_MS || 10000);
+// Relay close codes that are TERMINAL for the bridge — never reconnect on these
+// (auth / duplicate failures cannot succeed on retry). Mirrors pairing.js → CLOSE.
+const TERMINAL_CLOSE_CODES = new Set([4002 /* DUP_BRIDGE */, 4005 /* OWNER_MISMATCH */, 4006 /* BAD_TOKEN */]);
+const NORMAL_CLOSURE = 1000;
+
 const [file, ...cmdArgs] = shellSplit(CMD);
 const spawnArgs = PROMPT ? [...cmdArgs, PROMPT] : cmdArgs;
 
@@ -255,6 +278,15 @@ async function main() {
   let attachTimer = null;
   let pingTimer = null;
   let missedPongs = 0;
+  // Reconnect bookkeeping. `reconnectDeadline === 0` means "link healthy, not
+  // reconnecting"; it's set on the first transient drop and cleared once the link
+  // is proven healthy again (relay `attached` frame or the first byte).
+  let reconnectDeadline = 0;
+  let reconnectAttempt = 0;
+  let reconnectTimer = null;
+  // Whether the relay socket has opened at least once — distinguishes a first-connect
+  // failure (exit 1) from a post-connection drop (exit 0) at teardown.
+  let openedAtLeastOnce = false;
 
   function stopKeepalive() {
     if (pingTimer) {
@@ -274,6 +306,7 @@ async function main() {
     clearTimeout(connectTimer);
     clearTimeout(maxTimer);
     clearTimeout(attachTimer);
+    clearTimeout(reconnectTimer);
     stopKeepalive();
     log("info", "shutting down", { why, bytesOut, bytesIn });
     try { ws?.close(1000, why); } catch { /* ignore */ }
@@ -419,115 +452,225 @@ async function main() {
   const url =
     `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
     `&role=bridge&token=${encodeURIComponent(TOKEN)}`;
-  // Log the URL WITHOUT the token (never log secrets).
-  log("info", "connecting to relay", { url: url.replace(/token=[^&]*/, "token=***"), host: os.hostname() });
-  ws = new WebSocket(url);
+  const redactedUrl = url.replace(/token=[^&]*/, "token=***");
 
-  // Hard timeouts so nothing hangs.
-  connectTimer = setTimeout(() => {
-    if (!open) {
-      log("error", "connect timeout — relay never opened", { ms: CONNECT_TIMEOUT_MS });
-      shutdown(1, "connect-timeout");
-    }
-  }, CONNECT_TIMEOUT_MS);
-
+  // The absolute max-duration cap is armed ONCE and spans reconnects (a link drop
+  // must never reset it). BRIDGE_MAX_SECONDS is preserved exactly.
   maxTimer = setTimeout(() => {
     log("warn", "max-duration cap reached — ending session", { seconds: MAX_SECONDS });
     shutdown(0, "max-duration");
   }, MAX_SECONDS * 1000);
 
-  // relay -> PTY
-  ws.on("message", (data, isBinary) => {
-    if (isBinary) {
-      // opaque keystroke bytes -> PTY stdin. While a prompt spawn is still
-      // gated there is no PTY; pre-auth keystrokes are dropped, never buffered.
-      bytesIn += data.length;
-      if (term) term.write(data.toString("utf8"));
-      return;
-    }
-    const text = data.toString("utf8");
-    // R1: the relay's post-auth confirmation — the ONLY signal that releases a
-    // prompt-carrying spawn. For promptless launches (already spawned) or an
-    // already-spawned PTY it is a harmless no-op.
-    if (isAttachedFrame(text)) {
-      clearTimeout(attachTimer);
-      attachTimer = null;
-      log("info", "relay confirmed attach", { session: SESSION });
-      if (PROMPT) spawnPty();
-      return;
-    }
-    // TEXT control frame (resize). Never written to the PTY as input.
-    const ctrl = parseControlMessage(text);
-    if (ctrl?.type === "resize") {
-      if (!term) {
-        pendingResize = ctrl; // applied right after the gated spawn
+  /** True while the PTY child (`claude`) is alive — the gate for reconnecting. */
+  function claudeAlive() {
+    return !!term && !ptyExited;
+  }
+
+  /**
+   * Decide what a relay close means. Only an ABNORMAL close (code 1006 — sleep, Wi-Fi
+   * drop, or the keepalive's own missed-pong ws.terminate(); i.e. NO close frame was
+   * received) is TRANSIENT: while claude is alive AND within the reconnect budget it
+   * RECONNECTS to the same session, keeping the child running. Every DELIBERATE relay
+   * close frame is terminal — the relay is ending the session, so reap, never retry:
+   *   - 1000                    → a clean end (idle / max / user).
+   *   - PEER_GONE 4004          → the relay's grace window elapsed (or an old relay's
+   *                               peer-gone) — the session is over.
+   *   - 4002 / 4005 / 4006      → duplicate / owner-mismatch / bad-token — cannot
+   *                               succeed on retry.
+   * (claude already gone, or the budget spent, also reap — see below.)
+   */
+  function handleRelayClose(code, reason) {
+    if (shuttingDown) return; // a real shutdown is already tearing down
+    stopKeepalive();
+    open = false;
+    const transient = code === 1006; // abnormal close = no deliberate frame from the relay
+    if (!transient) {
+      if (TERMINAL_CLOSE_CODES.has(code)) {
+        log("warn", "relay closed with a terminal code — not reconnecting", { code, reason });
+        shutdown(1, "ws-close-terminal");
         return;
       }
-      try {
-        term.resize(ctrl.cols, ctrl.rows);
-        log("debug", "resized PTY", { cols: ctrl.cols, rows: ctrl.rows });
-      } catch (e) {
-        log("warn", "resize failed", { err: String(e?.message || e) });
-      }
-    } else {
-      log("warn", "ignored unknown control frame");
+      // 1000 (clean end) or PEER_GONE 4004 (grace elapsed) — a deliberate session end.
+      shutdown(openedAtLeastOnce && !(PROMPT && !term) ? 0 : 1, "ws-close");
+      return;
     }
-  });
+    // Transient drop. Only worth reconnecting if there's a live child to preserve.
+    if (!claudeAlive()) {
+      shutdown(openedAtLeastOnce && !(PROMPT && !term) ? 0 : 1, "ws-close");
+      return;
+    }
+    const now = Date.now();
+    if (reconnectDeadline === 0) reconnectDeadline = now + BRIDGE_RECONNECT_MS;
+    if (now >= reconnectDeadline) {
+      log("warn", "reconnect budget exhausted — ending session", { budgetMs: BRIDGE_RECONNECT_MS });
+      shutdown(0, "reconnect-exhausted");
+      return;
+    }
+    scheduleReconnect(code);
+  }
 
-  // Keepalive: protocol-level ping every PING_INTERVAL_MS; the ws server (and
-  // Cloudflare's edge) auto-answers with pongs. A link that misses
-  // PING_MAX_MISSED pongs in a row is dead (sleep/network drop with no FIN) —
-  // terminate it so `close` fires and shutdown() reaps the PTY child, instead
-  // of the session holding a live `claude` for hours.
-  ws.on("pong", () => {
-    missedPongs = 0;
-  });
+  /** Schedule the next reconnect attempt with jittered exponential backoff, bounded
+   *  by the reconnect budget. */
+  function scheduleReconnect(code) {
+    const attempt = reconnectAttempt++;
+    const base = Math.min(1000 * 2 ** attempt, 8000); // 1s → 2s → 4s → 8s cap
+    const delay = base + Math.floor(Math.random() * 250); // jitter to de-sync retries
+    log("warn", "relay link dropped — will reconnect", {
+      code, attempt, delayMs: delay, budgetMsLeft: Math.max(0, reconnectDeadline - Date.now()),
+    });
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(() => {
+      if (shuttingDown) return;
+      if (Date.now() >= reconnectDeadline) {
+        log("warn", "reconnect budget exhausted — ending session", { budgetMs: BRIDGE_RECONNECT_MS });
+        shutdown(0, "reconnect-exhausted");
+        return;
+      }
+      openRelay();
+    }, delay);
+    reconnectTimer.unref?.();
+  }
 
-  ws.on("open", () => {
-    open = true;
+  /**
+   * Open (or RE-open) the bridge leg to the relay and wire its handlers. Called once
+   * initially and again for each reconnect attempt — the SAME url (relay + sid +
+   * token), which is why no re-mint is needed and the relay-allowlist gate (asserted
+   * once at startup on this exact RELAY) still holds for every attempt.
+   */
+  function openRelay() {
+    const reconnecting = reconnectDeadline !== 0;
+    log("info", reconnecting ? "reconnecting to relay" : "connecting to relay", {
+      url: redactedUrl, host: os.hostname(), attempt: reconnectAttempt,
+    });
+    ws = new WebSocket(url);
+
+    // Per-attempt open timeout. The FIRST connect failing is fatal; a RECONNECT
+    // attempt that won't open just cycles (terminate → close → next attempt/budget).
     clearTimeout(connectTimer);
-    log("info", "relay connected (bridge leg)", { session: SESSION });
-    missedPongs = 0;
-    pingTimer = setInterval(() => {
-      if (!ws || ws.readyState !== WebSocket.OPEN) return;
-      if (missedPongs >= PING_MAX_MISSED) {
-        log("warn", "keepalive: pongs missed — terminating dead relay link", { missed: missedPongs });
+    connectTimer = setTimeout(() => {
+      if (open) return;
+      if (reconnecting) {
+        log("warn", "reconnect attempt did not open in time — retrying", { ms: RECONNECT_ATTEMPT_TIMEOUT_MS });
         try { ws.terminate(); } catch { /* ignore */ }
+      } else {
+        log("error", "connect timeout — relay never opened", { ms: CONNECT_TIMEOUT_MS });
+        shutdown(1, "connect-timeout");
+      }
+    }, reconnecting ? RECONNECT_ATTEMPT_TIMEOUT_MS : CONNECT_TIMEOUT_MS);
+
+    // relay -> PTY
+    ws.on("message", (data, isBinary) => {
+      // Any inbound traffic proves the link is healthy again → reconnect complete.
+      if (reconnectDeadline !== 0) {
+        log("info", "relay link healthy again — reconnect complete", { attempts: reconnectAttempt });
+        reconnectDeadline = 0;
+        reconnectAttempt = 0;
+      }
+      if (isBinary) {
+        // opaque keystroke bytes -> PTY stdin. While a prompt spawn is still
+        // gated there is no PTY; pre-auth keystrokes are dropped, never buffered.
+        bytesIn += data.length;
+        if (term) term.write(data.toString("utf8"));
         return;
       }
-      missedPongs += 1;
-      try { ws.ping(); } catch { /* ignore */ }
-    }, PING_INTERVAL_MS);
-    pingTimer.unref?.();
-    // Prompt launches: arm the attach-confirmation window. An OLD relay never
-    // sends the frame → clean exit with NOTHING spawned (graceful skew; the
-    // dock's existing ~8s fallback covers the UX).
-    if (PROMPT && !term && !attachTimer) {
-      attachTimer = setTimeout(() => {
-        log("error", "no attach confirmation from relay — exiting without spawning", {
-          ms: ATTACH_CONFIRM_TIMEOUT_MS,
-        });
-        shutdown(1, "attach-confirm-timeout");
-      }, ATTACH_CONFIRM_TIMEOUT_MS);
-    }
-    // Flush any PTY output produced before the socket opened.
-    while (preOpenBuffer.length > 0) {
-      ws.send(preOpenBuffer.shift(), { binary: true });
-    }
-  });
+      const text = data.toString("utf8");
+      // R1: the relay's post-auth confirmation — the ONLY signal that releases a
+      // prompt-carrying spawn. Also sent on every (re)attach, so it doubles as the
+      // reconnect-complete proof above. For an already-spawned PTY it's a no-op.
+      if (isAttachedFrame(text)) {
+        clearTimeout(attachTimer);
+        attachTimer = null;
+        log("info", "relay confirmed attach", { session: SESSION });
+        if (PROMPT) spawnPty();
+        return;
+      }
+      // Grace-window notices (relay holding / pair restored). Informational for the
+      // bridge — the child keeps running regardless; recognised so they don't log as
+      // "unknown". Skew-safe: an old relay simply never sends them.
+      if (isPeerDegradedFrame(text)) {
+        log("debug", "relay reports peer degraded (holding session)");
+        return;
+      }
+      if (isPeerReattachedFrame(text)) {
+        log("debug", "relay reports pair reattached");
+        return;
+      }
+      // TEXT control frame (resize). Never written to the PTY as input.
+      const ctrl = parseControlMessage(text);
+      if (ctrl?.type === "resize") {
+        if (!term) {
+          pendingResize = ctrl; // applied right after the gated spawn
+          return;
+        }
+        try {
+          term.resize(ctrl.cols, ctrl.rows);
+          log("debug", "resized PTY", { cols: ctrl.cols, rows: ctrl.rows });
+        } catch (e) {
+          log("warn", "resize failed", { err: String(e?.message || e) });
+        }
+      } else {
+        log("warn", "ignored unknown control frame");
+      }
+    });
 
-  ws.on("close", (code, reasonBuf) => {
-    const reason = reasonBuf?.toString?.() || "";
-    log("info", "relay closed", { code, reason });
-    // A prompt launch whose spawn never got released (auth rejected / old relay)
-    // is a failure even though the socket technically opened.
-    shutdown(open && !(PROMPT && !term) ? 0 : 1, "ws-close");
-  });
+    // Keepalive: protocol-level ping every PING_INTERVAL_MS; the ws server (and
+    // Cloudflare's edge) auto-answers with pongs. A link that misses PING_MAX_MISSED
+    // pongs in a row is dead (sleep/network drop with no FIN) — terminate it so
+    // `close` fires and handleRelayClose() decides reconnect-vs-reap (within budget
+    // it now RECONNECTS rather than immediately reaping the child).
+    ws.on("pong", () => {
+      missedPongs = 0;
+    });
 
-  ws.on("error", (e) => {
-    log("error", "relay ws error", { err: String(e?.message || e) });
-    // 'close' will follow; shutdown there.
-  });
+    ws.on("open", () => {
+      open = true;
+      openedAtLeastOnce = true;
+      clearTimeout(connectTimer);
+      log("info", "relay connected (bridge leg)", { session: SESSION });
+      missedPongs = 0;
+      pingTimer = setInterval(() => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return;
+        if (missedPongs >= PING_MAX_MISSED) {
+          log("warn", "keepalive: pongs missed — terminating dead relay link", { missed: missedPongs });
+          try { ws.terminate(); } catch { /* ignore */ }
+          return;
+        }
+        missedPongs += 1;
+        try { ws.ping(); } catch { /* ignore */ }
+      }, PING_INTERVAL_MS);
+      pingTimer.unref?.();
+      // Prompt launches: arm the attach-confirmation window. An OLD relay never
+      // sends the frame → clean exit with NOTHING spawned (graceful skew; the
+      // dock's existing ~8s fallback covers the UX). Reconnects always have a live
+      // PTY (term set), so this never arms on a reconnect.
+      if (PROMPT && !term && !attachTimer) {
+        attachTimer = setTimeout(() => {
+          log("error", "no attach confirmation from relay — exiting without spawning", {
+            ms: ATTACH_CONFIRM_TIMEOUT_MS,
+          });
+          shutdown(1, "attach-confirm-timeout");
+        }, ATTACH_CONFIRM_TIMEOUT_MS);
+      }
+      // Flush any PTY output produced before the socket opened (incl. bytes buffered
+      // during a reconnect gap) — the pipe resumes seamlessly on re-attach.
+      while (preOpenBuffer.length > 0) {
+        ws.send(preOpenBuffer.shift(), { binary: true });
+      }
+    });
+
+    ws.on("close", (code, reasonBuf) => {
+      const reason = reasonBuf?.toString?.() || "";
+      log("info", "relay closed", { code, reason });
+      handleRelayClose(code, reason);
+    });
+
+    ws.on("error", (e) => {
+      log("error", "relay ws error", { err: String(e?.message || e) });
+      // 'close' will follow; handleRelayClose there.
+    });
+  }
+
+  openRelay();
 
   // Clean teardown on Ctrl-C / kill.
   for (const sig of ["SIGINT", "SIGTERM"]) {

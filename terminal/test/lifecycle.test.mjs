@@ -22,19 +22,24 @@ const SECRET = "lifecycle-test-secret";
 /** Open a leg and resolve once it's connected. */
 async function openLeg(relayUrl, session, role, token) {
   const ws = new WebSocket(`${relayUrl}/?session=${session}&role=${role}&token=${encodeURIComponent(token)}`);
+  // Clear the loser timer on settle — an orphaned ref'd setTimeout survives the
+  // race and later fires an unhandled rejection that node's runner misattributes
+  // to whichever concurrent test is still open (source of the lifecycle flake).
+  let timer;
   await Promise.race([
     once(ws, "open"),
-    new Promise((_, rej) => setTimeout(() => rej(new Error(`${role} open timeout`)), 5000)),
-  ]);
+    new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`${role} open timeout`)), 5000); }),
+  ]).finally(() => clearTimeout(timer));
   return ws;
 }
 
 /** Wait for a close and resolve [code, reason]. */
 async function closeOf(ws, label) {
+  let timer;
   const [code, reasonBuf] = await Promise.race([
     once(ws, "close"),
-    new Promise((_, rej) => setTimeout(() => rej(new Error(`${label} close timeout`)), 5000)),
-  ]);
+    new Promise((_, rej) => { timer = setTimeout(() => rej(new Error(`${label} close timeout`)), 5000); }),
+  ]).finally(() => clearTimeout(timer));
   return [code, reasonBuf ? reasonBuf.toString() : ""];
 }
 
@@ -52,8 +57,14 @@ test("idle-timeout closes BOTH legs with code 1000 + an 'idle' reason", { timeou
   // One message proves activity tracking (the idle clock starts from the LAST byte).
   bridge.send(Buffer.from("READY\n", "utf8"), { binary: true });
 
-  const [bCode, bReason] = await closeOf(browser, "browser");
-  const [gCode, gReason] = await closeOf(bridge, "bridge");
+  // Register BOTH close waiters BEFORE awaiting either. The two legs close
+  // near-simultaneously, so attaching the bridge listener only after the browser
+  // close has resolved can miss an already-fired 'close' → a spurious 5s
+  // "bridge close timeout" (the intermittent lifecycle flake).
+  const browserClosed = closeOf(browser, "browser");
+  const bridgeClosed = closeOf(bridge, "bridge");
+  const [bCode, bReason] = await browserClosed;
+  const [gCode, gReason] = await bridgeClosed;
 
   assert.equal(bCode, 1000, "browser leg must close with normal code 1000");
   assert.equal(gCode, 1000, "bridge leg must close with normal code 1000");
@@ -79,8 +90,13 @@ test("max-duration closes BOTH legs with code 1000 + a 'max' reason", { timeout:
   }, 50);
   t.after(() => clearInterval(chatter));
 
-  const [bCode, bReason] = await closeOf(browser, "browser");
-  const [gCode, gReason] = await closeOf(bridge, "bridge");
+  // Register BOTH close waiters before awaiting either (see idle test) — at
+  // maxMs=350 both legs close together, so the late-attached bridge listener
+  // was the source of the intermittent "bridge close timeout".
+  const browserClosed = closeOf(browser, "browser");
+  const bridgeClosed = closeOf(bridge, "bridge");
+  const [bCode, bReason] = await browserClosed;
+  const [gCode, gReason] = await bridgeClosed;
   clearInterval(chatter);
 
   assert.equal(bCode, 1000, "browser leg must close with normal code 1000");

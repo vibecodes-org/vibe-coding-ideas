@@ -132,6 +132,22 @@ export function peerRole(role) {
 // src/lib/terminal/connection.ts → parseEndedReason): it looks for the substrings
 // "idle" / "max", so these builders and that classifier are in lock-step.
 
+// ── Reconnect grace window (fix/terminal-reconnect-reattach) ──────────────────
+//
+// THE ONE SHARED NUMBER. When a single leg drops, the relay does NOT tear the
+// session down; it holds the owner binding + the surviving socket and arms a
+// grace alarm for this long, waiting for the dropped role to re-attach (same sid
+// + same owner + still-valid token) so the pair can resume with no re-mint. The
+// three reconnect budgets are deliberately equal and MUST stay < the token TTL
+// (DEFAULT_TTL_SECONDS = 300s in ../../shared/session-token.mjs) so the ORIGINAL
+// tokens are still valid for the whole window — no token re-mint, ever:
+//   - relay grace       → RECONNECT_GRACE_MS (here)
+//   - bridge reconnect  → BRIDGE_RECONNECT_MS (bridge/src/index.js)
+//   - client reconnect  → RECONNECT_GRACE_MS  (src/lib/terminal/connection.ts)
+// BEYOND the window the session is torn down honestly (survivor gets PEER_GONE,
+// state cleared) and the UX falls back to a clean fresh launch.
+export const RECONNECT_GRACE_MS = 90_000;
+
 /** Default idle cap: 30 minutes of no traffic. Overridable via env TERMINAL_IDLE_MS. */
 export const DEFAULT_IDLE_MS = 30 * 60 * 1000;
 /** Default hard cap on total session age: 4 hours. Overridable via env TERMINAL_MAX_MS. */

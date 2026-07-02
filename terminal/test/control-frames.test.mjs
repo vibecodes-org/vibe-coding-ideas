@@ -8,11 +8,32 @@
 
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { encodeAttachedFrame, isAttachedFrame } from "../shared/control-frames.mjs";
+import {
+  encodeAttachedFrame,
+  isAttachedFrame,
+  encodePeerDegradedFrame,
+  isPeerDegradedFrame,
+  encodePeerReattachedFrame,
+  isPeerReattachedFrame,
+} from "../shared/control-frames.mjs";
 import { parseControlMessage } from "../bridge/src/framing.js";
 
 test("encode ⇄ detect round-trips", () => {
   assert.equal(isAttachedFrame(encodeAttachedFrame()), true);
+});
+
+test("grace-window frames encode ⇄ detect round-trip and stay mutually disjoint", () => {
+  assert.equal(isPeerDegradedFrame(encodePeerDegradedFrame()), true);
+  assert.equal(isPeerReattachedFrame(encodePeerReattachedFrame()), true);
+  // Each detector is strict to its own tag — no cross-matching between the frames.
+  assert.equal(isPeerReattachedFrame(encodePeerDegradedFrame()), false);
+  assert.equal(isPeerDegradedFrame(encodePeerReattachedFrame()), false);
+  assert.equal(isAttachedFrame(encodePeerDegradedFrame()), false);
+  assert.equal(isAttachedFrame(encodePeerReattachedFrame()), false);
+  assert.equal(isPeerDegradedFrame(encodeAttachedFrame()), false);
+  // Neither is a resize control frame.
+  assert.equal(parseControlMessage(encodePeerDegradedFrame()), null);
+  assert.equal(parseControlMessage(encodePeerReattachedFrame()), null);
 });
 
 test("rejects non-attached / malformed / hostile inputs", () => {
