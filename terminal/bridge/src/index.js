@@ -40,6 +40,7 @@ import { createRequire } from "node:module";
 import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { parseLaunchDeepLink, redactDeepLinkToken } from "../../shared/deep-link.mjs";
+import { isAttachedFrame } from "../../shared/control-frames.mjs";
 
 const require = createRequire(import.meta.url);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -102,10 +103,26 @@ const SESSION = launched?.session || args.session || process.env.SESSION_ID || `
 const TOKEN = launched?.token || args.token || process.env.BRIDGE_TOKEN || "";
 const CMD = args.cmd || process.env.BRIDGE_CMD || "claude";
 const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd();
+// The URL-carried bootstrap prompt (deep-link launches only). INERT DATA with two
+// hard rules (see docs/terminal-bootstrap-prompt-ux.html + the shared deep-link
+// module):
+//   1. ARGV SAFETY — it becomes exactly ONE argv element appended after the
+//      shell-split CMD (`claude "<prompt>"`), NEVER concatenated into CMD or
+//      passed through shellSplit, so hostile characters arrive verbatim as data.
+//   2. NO PRE-AUTH EXECUTION (R1) — a prompt-carrying launch defers pty.spawn
+//      until the relay confirms the owner-bound token with the `attached`
+//      control frame (accept-then-close rejections make ws.onopen meaningless
+//      as an auth signal). No frame in time → exit WITHOUT spawning anything.
+const PROMPT = launched?.prompt || "";
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 28800);
 const CONNECT_TIMEOUT_MS = Number(args["connect-timeout-ms"] || 30000);
+// How long after the socket opens we wait for the relay's `attached` frame before
+// giving up (prompt launches only). An OLD relay never sends it → clean exit, no
+// spawn — the dock's existing ~8s fallback covers the UX.
+const ATTACH_CONFIRM_TIMEOUT_MS = Number(args["attach-confirm-timeout-ms"] || 10000);
 
 const [file, ...cmdArgs] = shellSplit(CMD);
+const spawnArgs = PROMPT ? [...cmdArgs, PROMPT] : cmdArgs;
 
 // ── the known macOS spawn-helper fix ──────────────────────────────────────────
 // node-pty ships a `spawn-helper` binary under prebuilds/<platform>-<arch>/.
@@ -182,20 +199,98 @@ async function main() {
 
   const pty = require("node-pty");
 
-  log("info", "spawning PTY", { file, args: cmdArgs, cwd: CWD });
-  let term;
-  try {
-    term = pty.spawn(file, cmdArgs, {
-      name: "xterm-color",
-      cols: 80,
-      rows: 24,
-      cwd: CWD,
-      env: resolveSpawnEnv(),
-    });
-  } catch (e) {
-    log("error", "PTY spawn failed", { err: String(e?.message || e) });
-    process.exit(1);
+  let term = null; // spawned lazily for prompt-carrying launches (R1 gate below)
+  let pendingResize = null; // a resize that arrived while the spawn was deferred
+  let ws = null;
+  let bytesOut = 0; // PTY -> ws
+  let bytesIn = 0; // ws -> PTY
+  let open = false;
+  let shuttingDown = false;
+  let connectTimer = null;
+  let maxTimer = null;
+  let attachTimer = null;
+
+  // PTY output produced before the relay socket is open (e.g. the program's
+  // startup banner), flushed on open so the first bytes never lose the race.
+  /** @type {Buffer[]} */
+  const preOpenBuffer = [];
+
+  function shutdown(code, why) {
+    if (shuttingDown) return;
+    shuttingDown = true;
+    clearTimeout(connectTimer);
+    clearTimeout(maxTimer);
+    clearTimeout(attachTimer);
+    log("info", "shutting down", { why, bytesOut, bytesIn });
+    try { ws?.close(1000, why); } catch { /* ignore */ }
+    try { term?.kill(); } catch { /* ignore */ }
+    // Record the code first: with NO PTY (a blocked prompt launch) the event
+    // loop can drain before the unref'd hard-exit timer fires, and the process
+    // then exits naturally — exitCode makes that natural exit carry the right
+    // status. The timer stays as the hard stop for the PTY-alive case.
+    process.exitCode = code;
+    // give sockets a tick to flush their close frame, then exit hard
+    setTimeout(() => process.exit(code), 200).unref();
   }
+
+  /**
+   * Spawn the PTY and wire its handlers. Called immediately for promptless
+   * launches (today's behaviour, unchanged) and ONLY after the relay's
+   * `attached` confirmation for prompt-carrying launches (R1 — see below).
+   * The prompt is one argv element in `spawnArgs`; it is deliberately NOT
+   * logged (only its length is).
+   */
+  function spawnPty() {
+    if (term || shuttingDown) return;
+    log("info", "spawning PTY", { file, args: cmdArgs, cwd: CWD, promptChars: PROMPT.length });
+    let spawned;
+    try {
+      spawned = pty.spawn(file, spawnArgs, {
+        name: "xterm-color",
+        cols: 80,
+        rows: 24,
+        cwd: CWD,
+        env: resolveSpawnEnv(),
+      });
+    } catch (e) {
+      log("error", "PTY spawn failed", { err: String(e?.message || e) });
+      if (open) shutdown(1, "spawn-failed");
+      else process.exit(1);
+      return;
+    }
+    term = spawned;
+
+    // PTY -> relay (binary, verbatim).
+    term.onData((data) => {
+      const buf = Buffer.from(data, "utf8");
+      bytesOut += buf.length;
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(buf, { binary: true });
+      } else if (!shuttingDown) {
+        preOpenBuffer.push(buf);
+      }
+    });
+
+    term.onExit(({ exitCode, signal }) => {
+      log("info", "PTY exited", { exitCode, signal });
+      shutdown(0, "pty-exit");
+    });
+
+    // Apply the browser's size if it resized while the spawn was deferred.
+    if (pendingResize) {
+      try { term.resize(pendingResize.cols, pendingResize.rows); } catch { /* best effort */ }
+      pendingResize = null;
+    }
+  }
+
+  // R1 SEQUENCING. Promptless launches spawn FIRST, exactly as before — nothing
+  // in their flow changes. A URL-carried prompt is different: it must NEVER
+  // reach a child process unless the relay has accepted the owner-bound token,
+  // and the relay REJECTS bad legs by accept()ing then immediately closing
+  // (4005/4006/…) — so `open` alone proves nothing. The spawn is therefore
+  // gated on the relay's explicit `attached` control frame, sent only after
+  // authorizeAttach + decideAttach pass. No frame → exit, zero spawn.
+  if (!PROMPT) spawnPty();
 
   // The relay requires an app-minted `bridge`-role token (slice 2). It binds this
   // leg to its owning user; the matching `browser` token must carry the same owner.
@@ -208,77 +303,56 @@ async function main() {
     `&role=bridge&token=${encodeURIComponent(TOKEN)}`;
   // Log the URL WITHOUT the token (never log secrets).
   log("info", "connecting to relay", { url: url.replace(/token=[^&]*/, "token=***"), host: os.hostname() });
-  const ws = new WebSocket(url);
-
-  let bytesOut = 0; // PTY -> ws
-  let bytesIn = 0; // ws -> PTY
-  let open = false;
-  let shuttingDown = false;
+  ws = new WebSocket(url);
 
   // Hard timeouts so nothing hangs.
-  const connectTimer = setTimeout(() => {
+  connectTimer = setTimeout(() => {
     if (!open) {
       log("error", "connect timeout — relay never opened", { ms: CONNECT_TIMEOUT_MS });
       shutdown(1, "connect-timeout");
     }
   }, CONNECT_TIMEOUT_MS);
 
-  const maxTimer = setTimeout(() => {
+  maxTimer = setTimeout(() => {
     log("warn", "max-duration cap reached — ending session", { seconds: MAX_SECONDS });
     shutdown(0, "max-duration");
   }, MAX_SECONDS * 1000);
 
-  function shutdown(code, why) {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    clearTimeout(connectTimer);
-    clearTimeout(maxTimer);
-    log("info", "shutting down", { why, bytesOut, bytesIn });
-    try { ws.close(1000, why); } catch { /* ignore */ }
-    try { term.kill(); } catch { /* ignore */ }
-    // give sockets a tick to flush their close frame, then exit hard
-    setTimeout(() => process.exit(code), 200).unref();
-  }
-
-  // PTY -> relay (binary, verbatim). Buffer output produced before the relay
-  // WebSocket is open (e.g. the program's startup banner) and flush on open, so
-  // the first bytes are never lost to a connect race.
-  /** @type {Buffer[]} */
-  const preOpenBuffer = [];
-  term.onData((data) => {
-    const buf = Buffer.from(data, "utf8");
-    bytesOut += buf.length;
-    if (ws.readyState === WebSocket.OPEN) {
-      ws.send(buf, { binary: true });
-    } else if (!shuttingDown) {
-      preOpenBuffer.push(buf);
-    }
-  });
-
-  term.onExit(({ exitCode, signal }) => {
-    log("info", "PTY exited", { exitCode, signal });
-    shutdown(0, "pty-exit");
-  });
-
   // relay -> PTY
   ws.on("message", (data, isBinary) => {
     if (isBinary) {
-      // opaque keystroke bytes -> PTY stdin
+      // opaque keystroke bytes -> PTY stdin. While a prompt spawn is still
+      // gated there is no PTY; pre-auth keystrokes are dropped, never buffered.
       bytesIn += data.length;
-      term.write(data.toString("utf8"));
-    } else {
-      // TEXT control frame (resize). Never written to the PTY as input.
-      const ctrl = parseControlMessage(data.toString("utf8"));
-      if (ctrl?.type === "resize") {
-        try {
-          term.resize(ctrl.cols, ctrl.rows);
-          log("debug", "resized PTY", { cols: ctrl.cols, rows: ctrl.rows });
-        } catch (e) {
-          log("warn", "resize failed", { err: String(e?.message || e) });
-        }
-      } else {
-        log("warn", "ignored unknown control frame");
+      if (term) term.write(data.toString("utf8"));
+      return;
+    }
+    const text = data.toString("utf8");
+    // R1: the relay's post-auth confirmation — the ONLY signal that releases a
+    // prompt-carrying spawn. For promptless launches (already spawned) or an
+    // already-spawned PTY it is a harmless no-op.
+    if (isAttachedFrame(text)) {
+      clearTimeout(attachTimer);
+      attachTimer = null;
+      log("info", "relay confirmed attach", { session: SESSION });
+      if (PROMPT) spawnPty();
+      return;
+    }
+    // TEXT control frame (resize). Never written to the PTY as input.
+    const ctrl = parseControlMessage(text);
+    if (ctrl?.type === "resize") {
+      if (!term) {
+        pendingResize = ctrl; // applied right after the gated spawn
+        return;
       }
+      try {
+        term.resize(ctrl.cols, ctrl.rows);
+        log("debug", "resized PTY", { cols: ctrl.cols, rows: ctrl.rows });
+      } catch (e) {
+        log("warn", "resize failed", { err: String(e?.message || e) });
+      }
+    } else {
+      log("warn", "ignored unknown control frame");
     }
   });
 
@@ -286,6 +360,17 @@ async function main() {
     open = true;
     clearTimeout(connectTimer);
     log("info", "relay connected (bridge leg)", { session: SESSION });
+    // Prompt launches: arm the attach-confirmation window. An OLD relay never
+    // sends the frame → clean exit with NOTHING spawned (graceful skew; the
+    // dock's existing ~8s fallback covers the UX).
+    if (PROMPT && !term && !attachTimer) {
+      attachTimer = setTimeout(() => {
+        log("error", "no attach confirmation from relay — exiting without spawning", {
+          ms: ATTACH_CONFIRM_TIMEOUT_MS,
+        });
+        shutdown(1, "attach-confirm-timeout");
+      }, ATTACH_CONFIRM_TIMEOUT_MS);
+    }
     // Flush any PTY output produced before the socket opened.
     while (preOpenBuffer.length > 0) {
       ws.send(preOpenBuffer.shift(), { binary: true });
@@ -295,7 +380,9 @@ async function main() {
   ws.on("close", (code, reasonBuf) => {
     const reason = reasonBuf?.toString?.() || "";
     log("info", "relay closed", { code, reason });
-    shutdown(open ? 0 : 1, "ws-close");
+    // A prompt launch whose spawn never got released (auth rejected / old relay)
+    // is a failure even though the socket technically opened.
+    shutdown(open && !(PROMPT && !term) ? 0 : 1, "ws-close");
   });
 
   ws.on("error", (e) => {

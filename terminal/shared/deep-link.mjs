@@ -16,8 +16,13 @@
 //   token   — the app-minted, HMAC-signed BRIDGE-role token (this IS the launch's
 //             credential; the relay verifies it, so no extra signature is needed)
 //   cwd     — optional working directory
+//   prompt  — optional compact bootstrap prompt for the spawned `claude`. INERT
+//             DATA: the bridge passes it as ONE argv element (never through
+//             shellSplit / a shell) and only spawns AFTER the relay has accepted
+//             the owner-bound token (R1 — see bridge/src/index.js).
 //
-// The `token` is a secret. NEVER log a raw link — use redactDeepLinkToken first.
+// The `token` is a secret and the `prompt` is user content. NEVER log a raw
+// link — use redactDeepLinkToken first (it elides both).
 //
 // Pure + dependency-free (only the global WHATWG `URL`), so it runs unchanged in
 // Node (bridge) and is trivially unit-testable.
@@ -28,16 +33,19 @@ export const LAUNCH_SCHEME = "vibecodes";
 export const LAUNCH_HOST = "launch";
 
 /**
- * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…]` deep link.
+ * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&prompt=…]`
+ * deep link.
  *
- * Uses encodeURIComponent so reserved characters in the relay URL / token survive
- * the round-trip. `cwd` is omitted entirely when absent (no empty param). Throws
- * when a required field is missing so a malformed link is never fired.
+ * Uses encodeURIComponent so reserved characters in the relay URL / token /
+ * prompt survive the round-trip. `cwd` / `prompt` are omitted entirely when
+ * absent (no empty params); `prompt` is always LAST so the base-link length
+ * (and therefore the app-side prompt budget) is stable. Throws when a required
+ * field is missing so a malformed link is never fired.
  *
- * @param {{ relay: string, session: string, token: string, cwd?: string }} params
+ * @param {{ relay: string, session: string, token: string, cwd?: string, prompt?: string }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, cwd } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, cwd, prompt } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -47,17 +55,21 @@ export function buildLaunchDeepLink({ relay, session, token, cwd } = {}) {
     `token=${encodeURIComponent(token)}`,
   ];
   if (cwd) parts.push(`cwd=${encodeURIComponent(cwd)}`);
+  if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
 
 /**
- * Parse a `vibecodes://launch?…` deep link into `{ relay, session, token, cwd }`,
- * or null when it is not a well-formed launch link (wrong scheme/action, or any
- * required field missing). This is exactly the logic a packaged helper's
- * URL-scheme handler will run before connecting as the bridge leg.
+ * Parse a `vibecodes://launch?…` deep link into `{ relay, session, token, cwd?,
+ * prompt? }`, or null when it is not a well-formed launch link (wrong
+ * scheme/action, or any required field missing). This is exactly the logic a
+ * packaged helper's URL-scheme handler will run before connecting as the bridge
+ * leg. `cwd` / `prompt` keys are only present when the link carried them, so a
+ * promptless link parses to exactly the same object shape as before the prompt
+ * param existed (version-skew safe both ways).
  *
  * @param {unknown} url
- * @returns {{ relay: string, session: string, token: string, cwd?: string } | null}
+ * @returns {{ relay: string, session: string, token: string, cwd?: string, prompt?: string } | null}
  */
 export function parseLaunchDeepLink(url) {
   if (typeof url !== "string" || url.length === 0) return null;
@@ -77,18 +89,26 @@ export function parseLaunchDeepLink(url) {
   const session = parsed.searchParams.get("session");
   const token = parsed.searchParams.get("token");
   const cwd = parsed.searchParams.get("cwd") || undefined;
+  const prompt = parsed.searchParams.get("prompt") || undefined;
   if (!relay || !session || !token) return null;
 
-  return cwd ? { relay, session, token, cwd } : { relay, session, token };
+  const out = { relay, session, token };
+  if (cwd) out.cwd = cwd;
+  if (prompt) out.prompt = prompt;
+  return out;
 }
 
 /**
- * Redact the `token` value from a launch link so it is safe to log. Replaces the
- * value with `***` while keeping the rest intact for debugging.
+ * Redact the secret/user-content params from a launch link so it is safe to
+ * log: the `token` (a credential) and the `prompt` (user task/idea content)
+ * both become `***` while relay/session survive for debugging. Callers that
+ * want to debug prompt delivery log the prompt LENGTH as a separate field.
  *
  * @param {unknown} url
  * @returns {string}
  */
 export function redactDeepLinkToken(url) {
-  return String(url).replace(/([?&]token=)[^&]*/g, "$1***");
+  return String(url)
+    .replace(/([?&]token=)[^&]*/g, "$1***")
+    .replace(/([?&]prompt=)[^&]*/g, "$1***");
 }

@@ -41,6 +41,7 @@ import {
   resolveMs,
 } from "./pairing.js";
 import { authorizeAttach } from "../../shared/session-token.mjs";
+import { encodeAttachedFrame } from "../../shared/control-frames.mjs";
 
 /** Normal WebSocket closure code used for clean, server-initiated session ends. */
 const NORMAL_CLOSURE = 1000;
@@ -180,6 +181,21 @@ export class TerminalRelay {
     }
     await this.state.storage.put("lastActivityAt", now);
     await this.armAlarm(now);
+
+    // 5) R1 attach confirmation — BRIDGE leg only. A rejected leg is also
+    //    accept()ed then closed (see steps 1–2), so the bridge cannot treat its
+    //    own `onopen` as proof of auth; this frame, sent strictly AFTER
+    //    authorizeAttach + decideAttach passed, is the signal a prompt-carrying
+    //    bridge waits on before spawning the PTY. The browser dock ignores TEXT
+    //    frames, and old bridges log-and-ignore unknown control frames, so this
+    //    is version-skew safe.
+    if (role === "bridge") {
+      try {
+        server.send(encodeAttachedFrame());
+      } catch (e) {
+        this.log("attached-frame send failed", { session, err: String(e) });
+      }
+    }
 
     this.log("attached", { session, role, ...(await this.computeAttachState()) });
     return new Response(null, { status: 101, webSocket: client });

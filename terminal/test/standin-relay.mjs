@@ -30,14 +30,18 @@ import {
   resolveMs,
 } from "../relay/src/pairing.js";
 import { authorizeAttach } from "../shared/session-token.mjs";
+import { encodeAttachedFrame } from "../shared/control-frames.mjs";
 
 const NORMAL_CLOSURE = 1000;
 
 /**
  * @param {{ port?: number, secret?: string, idleMs?: number, maxMs?: number,
+ *           sendAttachedFrame?: boolean,
  *           log?: (msg:string, extra?:object)=>void }} [opts]
  *   `secret` — TERMINAL_SESSION_SECRET used to verify leg tokens (defaults to env).
  *   `idleMs` / `maxMs` — lifecycle caps (default 30 min / 4 h); tests pass small values.
+ *   `sendAttachedFrame` — default true (mirrors the real DO's R1 confirmation to
+ *   the bridge leg); tests pass false to simulate an OLD relay for skew coverage.
  * @returns {Promise<{ url:string, port:number, close:()=>Promise<void>, sessions: Map }>}
  */
 export function startStandinRelay(opts = {}) {
@@ -45,6 +49,7 @@ export function startStandinRelay(opts = {}) {
   const secret = opts.secret ?? process.env.TERMINAL_SESSION_SECRET;
   const idleMs = resolveMs(opts.idleMs, DEFAULT_IDLE_MS);
   const maxMs = resolveMs(opts.maxMs, DEFAULT_MAX_MS);
+  const sendAttachedFrame = opts.sendAttachedFrame !== false;
   // session id -> { bridge: ws|null, browser: ws|null, owner: string|null,
   //                 idleTimer, maxTimer }
   const sessions = new Map();
@@ -108,6 +113,12 @@ export function startStandinRelay(opts = {}) {
     if (legs.owner === null) legs.owner = auth.sub;
     legs[role] = ws;
     log("attached", { session, role });
+
+    // R1 attach confirmation to the BRIDGE leg — mirrors the Cloudflare DO. A
+    // prompt-carrying bridge defers its PTY spawn until this frame arrives.
+    if (role === "bridge" && sendAttachedFrame) {
+      try { ws.send(encodeAttachedFrame()); } catch { /* leg already gone */ }
+    }
 
     // Arm the max-duration cap once, on the first leg; arm/refresh idle now.
     if (firstLeg) {

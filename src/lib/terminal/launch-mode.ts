@@ -36,16 +36,42 @@ export function isBrowserLaunchAvailable(terminalEnabled: boolean): boolean {
 
 const LAUNCH_EVENT = "vibecodes:terminal-browser-launch";
 
+/**
+ * The compact bootstrap prompt the launch button resolved for this launch,
+ * split head/tail (buildCompactBootstrapPromptParts) so the dock — which alone
+ * knows the final vibecodes:// URL's session/token overhead — can budget-truncate
+ * the tail with enforcePromptLength while the load-bearing head survives.
+ * Carrying the PARTS (not a joined string) keeps that truncation on the one
+ * shared implementation instead of re-splitting a built prompt.
+ */
+export interface BrowserLaunchPayload {
+  promptHead: string;
+  promptTail: string;
+  /**
+   * The working directory the launch should open in — resolved by the button
+   * with the SAME rule the claude-cli:// path uses (resolveLaunchCwd over the
+   * pinned/effective path), so a pinned or recorded existing-mode folder is
+   * honoured in the browser too. Omitted when the state carries no cwd
+   * (repo-backed, or a brand-new ~/projects/<slug> the agent creates).
+   */
+  cwd?: string;
+}
+
 /** Ask the board's terminal dock to open + auto-launch in the browser. */
-export function requestBrowserLaunch(): void {
+export function requestBrowserLaunch(payload?: BrowserLaunchPayload): void {
   if (typeof window === "undefined") return;
-  window.dispatchEvent(new CustomEvent(LAUNCH_EVENT));
+  window.dispatchEvent(
+    new CustomEvent<BrowserLaunchPayload | undefined>(LAUNCH_EVENT, { detail: payload })
+  );
 }
 
 /** Subscribe to in-browser launch requests; returns an unsubscribe fn. SSR-safe. */
-export function subscribeBrowserLaunch(handler: () => void): () => void {
+export function subscribeBrowserLaunch(
+  handler: (payload?: BrowserLaunchPayload) => void
+): () => void {
   if (typeof window === "undefined") return () => {};
-  const listener = () => handler();
+  const listener = (e: Event) =>
+    handler((e as CustomEvent<BrowserLaunchPayload | undefined>).detail ?? undefined);
   window.addEventListener(LAUNCH_EVENT, listener);
   return () => window.removeEventListener(LAUNCH_EVENT, listener);
 }

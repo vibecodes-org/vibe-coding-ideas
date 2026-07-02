@@ -19,12 +19,16 @@ const localStorageMock = (() => {
 Object.defineProperty(window, "localStorage", { value: localStorageMock, configurable: true });
 
 import {
+  type CompactBootstrapArgs,
   buildClaudeDeepLink,
   mcpEndpoint,
   enforcePromptLength,
   MAX_DEEP_LINK_PROMPT_LENGTH,
   MAX_DEEP_LINK_URL_LENGTH,
   buildCompactBootstrapPrompt,
+  buildCompactBootstrapPromptParts,
+  resolveDefaultLaunchState,
+  resolveLaunchCwd,
   parseRepoFromGithubUrl,
   validateFolderName,
   looksAbsolutePath,
@@ -879,5 +883,181 @@ describe("buildCompactBootstrapPrompt (deep-link prompt)", () => {
     expect(p).toContain("task_id task-9");
     expect(p).toContain("get_task");
     expect(p).not.toContain("get_board");
+  });
+});
+
+// ── In-browser terminal — bootstrap prompt parity (docs/terminal-bootstrap-prompt-ux.html) ──
+
+describe("buildCompactBootstrapPromptParts (in-browser terminal parity)", () => {
+  const APP_URL = "https://vibecodes.co.uk";
+  const IDEA_ID = "1beea99a-0377-421b-9a8b-a9956ae34b5d";
+  const TASK_ID = "7c1c1c1c-2222-3333-4444-555555555555";
+
+  // The four launch shapes the acceptance criteria name (AC1–AC3).
+  const FIXTURES: Record<string, CompactBootstrapArgs> = {
+    "task-selected": {
+      appUrl: APP_URL,
+      ideaId: IDEA_ID,
+      ideaTitle: "My First App",
+      mode: "new",
+      repoUrl: null,
+      newProject: { newProjectPath: "~/projects/my-first-app" },
+      taskId: TASK_ID,
+    },
+    "board-level": {
+      appUrl: APP_URL,
+      ideaId: IDEA_ID,
+      ideaTitle: "My First App",
+      mode: "existing",
+      repoUrl: null,
+    },
+    "repo-backed": {
+      appUrl: APP_URL,
+      ideaId: IDEA_ID,
+      ideaTitle: "Horse Racing Predictor",
+      mode: "existing",
+      repoUrl: "https://github.com/acme/horse-racing-predictor",
+    },
+    "new-project": {
+      appUrl: APP_URL,
+      ideaId: IDEA_ID,
+      ideaTitle: "Horse Racing Predictor",
+      mode: "new",
+      repoUrl: null,
+      newProject: { newProjectPath: "~/projects/horse-racing-predictor" },
+    },
+  };
+
+  it("head + tail is byte-identical to buildCompactBootstrapPrompt for every fixture (AC1 — one prompt source)", () => {
+    for (const [name, args] of Object.entries(FIXTURES)) {
+      const { head, tail } = buildCompactBootstrapPromptParts(args);
+      expect(head + tail, `fixture ${name}`).toBe(buildCompactBootstrapPrompt(args));
+    }
+  });
+
+  it("the load-bearing steps live in the head; only the work step is the trimmable tail", () => {
+    for (const [name, args] of Object.entries(FIXTURES)) {
+      const { head, tail } = buildCompactBootstrapPromptParts(args);
+      expect(head, `fixture ${name} head has MCP connect`).toContain("claude mcp add");
+      expect(head, `fixture ${name} head has record_project_path`).toContain("record_project_path");
+      expect(tail, `fixture ${name} tail never carries MCP setup`).not.toContain("claude mcp add");
+    }
+  });
+
+  it("task launch carries task_id + idea_id + MCP connect (AC2)", () => {
+    const { head, tail } = buildCompactBootstrapPromptParts(FIXTURES["task-selected"]);
+    expect(head).toContain(`claude mcp add -s local --transport http vibecodes ${APP_URL}/api/mcp`);
+    expect(tail).toContain(`task_id ${TASK_ID}`);
+    expect(tail).toContain(`idea_id ${IDEA_ID}`);
+    expect(tail).toContain("get_task");
+  });
+
+  it("board launch is the board-level compact prompt (AC3)", () => {
+    const { tail } = buildCompactBootstrapPromptParts(FIXTURES["board-level"]);
+    expect(tail).toContain("get_board");
+    expect(tail).toContain("NOT get_my_tasks");
+    expect(tail).not.toContain("task_id");
+  });
+
+  it("a roomy budget leaves the parts untouched — parity holds end to end (AC1)", () => {
+    for (const [name, args] of Object.entries(FIXTURES)) {
+      const { head, tail } = buildCompactBootstrapPromptParts(args);
+      expect(
+        enforcePromptLength(head, tail, MAX_DEEP_LINK_PROMPT_LENGTH),
+        `fixture ${name}`
+      ).toBe(buildCompactBootstrapPrompt(args));
+    }
+  });
+
+  it("a tight budget keeps the whole MCP head and marks the trimmed tail (AC6 overflow)", () => {
+    const { head, tail } = buildCompactBootstrapPromptParts(FIXTURES["task-selected"]);
+    const budget = encodeURIComponent(head).length + 50; // room for head + a sliver of tail
+    const fitted = enforcePromptLength(head, tail, budget);
+    expect(fitted.startsWith(head)).toBe(true);
+    expect(fitted).toContain("claude mcp add");
+    expect(fitted).toContain("…(truncated)");
+    expect(encodeURIComponent(fitted).length).toBeLessThanOrEqual(budget);
+  });
+});
+
+describe("enforcePromptLength with a custom cap (in-browser URL budget)", () => {
+  it("still defaults to MAX_DEEP_LINK_PROMPT_LENGTH", () => {
+    const head = "H".repeat(10);
+    const tail = "T".repeat(MAX_DEEP_LINK_PROMPT_LENGTH);
+    const p = enforcePromptLength(head, tail);
+    expect(encodeURIComponent(p).length).toBeLessThanOrEqual(MAX_DEEP_LINK_PROMPT_LENGTH);
+  });
+
+  it("caps the ENCODED length to the supplied budget and preserves the head", () => {
+    const head = "HEAD\n";
+    const tail = "x".repeat(500);
+    const p = enforcePromptLength(head, tail, 100);
+    expect(p.startsWith(head)).toBe(true);
+    expect(p).toContain("…(truncated)");
+    expect(encodeURIComponent(p).length).toBeLessThanOrEqual(100);
+  });
+
+  it("keeps the whole head even when the head alone exceeds the budget", () => {
+    const head = "H".repeat(200);
+    const p = enforcePromptLength(head, "tail", 100);
+    expect(p).toBe(head);
+  });
+});
+
+describe("resolveDefaultLaunchState (shared by launch button + terminal dock)", () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  it("prefers the user's saved localStorage config", () => {
+    writeLaunchPath("idea-1", { mode: "existing", path: "/Users/me/projects/x" });
+    expect(resolveDefaultLaunchState("idea-1", "My Idea", null)).toEqual({
+      mode: "existing",
+      path: "/Users/me/projects/x",
+      parent: undefined,
+      name: undefined,
+    });
+  });
+
+  it("repo-backed idea → existing mode with an empty path (repo slug resolves the folder)", () => {
+    expect(
+      resolveDefaultLaunchState("idea-1", "My Idea", "https://github.com/acme/widget")
+    ).toEqual({ mode: "existing", path: "" });
+  });
+
+  it("no repo → a new project under ~/projects/<slug>", () => {
+    expect(resolveDefaultLaunchState("idea-1", "My First App", null)).toEqual({
+      mode: "new",
+      path: `${DEFAULT_NEW_PROJECT_PARENT}/my-first-app`,
+      parent: DEFAULT_NEW_PROJECT_PARENT,
+      name: "my-first-app",
+    });
+  });
+});
+
+describe("resolveLaunchCwd (shared cwd rule: claude-cli:// + vibecodes:// launches)", () => {
+  it("existing mode with a pinned path → that path, trimmed", () => {
+    expect(
+      resolveLaunchCwd({ mode: "existing", path: "  /Users/me/projects/x  " }, undefined)
+    ).toBe("/Users/me/projects/x");
+    // A pinned path wins even when an effective cwd is supplied.
+    expect(
+      resolveLaunchCwd({ mode: "existing", path: "/Users/me/projects/x" }, "/elsewhere")
+    ).toBe("/Users/me/projects/x");
+  });
+
+  it("new mode → the caller's effective cwd (saved/recorded path), or none", () => {
+    const state = { mode: "new" as const, path: "~/projects/my-idea" };
+    expect(resolveLaunchCwd(state, "/Users/me/projects/my-idea")).toBe(
+      "/Users/me/projects/my-idea"
+    );
+    // No effective cwd (e.g. the dock's payload-less fallback, which has no
+    // recorded paths) → none; the prompt's directory step creates the folder.
+    expect(resolveLaunchCwd(state, undefined)).toBeUndefined();
+  });
+
+  it("repo-backed (existing mode, empty path) → no cwd", () => {
+    expect(resolveLaunchCwd({ mode: "existing", path: "" }, undefined)).toBeUndefined();
+    expect(resolveLaunchCwd({ mode: "existing", path: "   " }, "/ignored")).toBeUndefined();
   });
 });

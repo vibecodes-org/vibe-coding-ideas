@@ -67,8 +67,19 @@ import {
   type TerminalConnectionState,
   type TerminalStatus,
 } from "@/lib/terminal/connection";
-import { buildLaunchDeepLink, redactDeepLinkToken } from "@/lib/terminal/deep-link";
-import { subscribeBrowserLaunch } from "@/lib/terminal/launch-mode";
+import {
+  MAX_LAUNCH_URL_LENGTH,
+  buildLaunchDeepLink,
+  redactDeepLinkToken,
+} from "@/lib/terminal/deep-link";
+import { type BrowserLaunchPayload, subscribeBrowserLaunch } from "@/lib/terminal/launch-mode";
+import {
+  buildCompactBootstrapPromptParts,
+  enforcePromptLength,
+  resolveAppUrl,
+  resolveDefaultLaunchState,
+  resolveLaunchCwd,
+} from "@/lib/launch-claude-code";
 import {
   type TerminalPlatform,
   TERMINAL_HELPER_DOWNLOAD_URL,
@@ -97,6 +108,13 @@ const HELPER_OPEN_TIMEOUT_MS = 8000;
 interface TerminalDockProps {
   ideaId: string;
   ideaTitle: string;
+  /**
+   * The idea's GitHub URL (or null). Needed so dock-initiated launches — paired
+   * auto-connect and Retry, which never pass through the launch button — can
+   * build the SAME board-level compact bootstrap prompt the button would
+   * (shared resolveDefaultLaunchState + buildCompactBootstrapPromptParts).
+   */
+  ideaGithubUrl: string | null;
 }
 
 interface PairInfo {
@@ -154,7 +172,7 @@ function dotClass(status: TerminalStatus): string {
   }
 }
 
-export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
+export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockProps) {
   // Defence-in-depth: also gated at the page mount. When off, render nothing —
   // no dock, no entry point, board unchanged.
   const enabled = isTerminalEnabled();
@@ -190,6 +208,12 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
   // otherwise two sessions + two bridges race and the relay tears both down
   // (single-attach / peer-gone). This is the fix for the "connect fires twice" bug.
   const connectGenRef = useRef(0);
+  // The compact bootstrap prompt (head/tail parts) the LAST launch-bus event
+  // carried — i.e. what the launch button resolved. Dock-initiated launches with
+  // no bus payload (paired auto-connect on open, Retry) fall back to building the
+  // board-level prompt themselves via the same shared builder (see
+  // resolveLaunchPromptParts), so every launch is primed.
+  const promptPartsRef = useRef<BrowserLaunchPayload | null>(null);
 
   // Mirror live state into refs so the stable xterm onData handler + socket handlers
   // read current values without re-binding on every render.
@@ -319,9 +343,37 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
     if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
   }, []);
 
+  // The compact bootstrap prompt + cwd for THIS launch: the payload the launch
+  // button put on the bus (its exact resolved state — task- or board-level) or,
+  // for dock-initiated launches (paired auto-connect / Retry), the board-level
+  // prompt built here from the SAME shared state resolver + builder the button
+  // uses — so the in-browser prompt is byte-identical to the terminal-window deep
+  // link's for the same state, and never duplicated. The fallback's cwd uses the
+  // same shared rule (resolveLaunchCwd); the dock has no recordedProjectPaths, so
+  // it passes no effective cwd — a pinned existing-mode folder still resolves
+  // (rule 1), while the recorded-path injection only flows through the button
+  // payload, exactly as the terminal-window default path would behave.
+  const resolveLaunchPromptParts = useCallback((): BrowserLaunchPayload => {
+    const carried = promptPartsRef.current;
+    if (carried) return carried;
+    const state = resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl);
+    const { head, tail } = buildCompactBootstrapPromptParts({
+      appUrl: resolveAppUrl(),
+      ideaId,
+      ideaTitle,
+      mode: state.mode,
+      repoUrl: ideaGithubUrl,
+      newProject: state.mode === "new" ? { newProjectPath: state.path } : undefined,
+    });
+    return { promptHead: head, promptTail: tail, cwd: resolveLaunchCwd(state, undefined) };
+  }, [ideaId, ideaTitle, ideaGithubUrl]);
+
   // Fire the signed vibecodes:// deep link so a same-machine helper attaches as the
   // bridge leg with no copied command. The bridge token is a secret — it travels in
-  // the link but is NEVER logged (only the redacted form is).
+  // the link but is NEVER logged (only the redacted form is). The link also carries
+  // the compact bootstrap prompt as an INERT string: the helper/bridge hold it and
+  // only pass it to a spawned claude AFTER the relay accepts the owner-bound token
+  // (R1); an old helper simply ignores the unknown param (graceful cold launch).
   //
   // BEST-EFFORT dialog mitigation (criterion #8): we fire via a hidden, detached
   // iframe rather than a top-level window.location.assign. A top-level navigation to
@@ -334,8 +386,32 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
   const fireLaunchDeepLink = useCallback(
     (sessionId: string, bridgeToken: string) => {
       let link: string;
+      let promptChars = 0;
+      let hasCwd = false;
       try {
-        link = buildLaunchDeepLink({ relay: relayBaseUrl(), session: sessionId, token: bridgeToken });
+        const { promptHead, promptTail, cwd } = resolveLaunchPromptParts();
+        hasCwd = !!cwd;
+        // Budget the prompt against the vibecodes:// URL ceiling: everything the
+        // base link needs (relay/session/token, and the cwd when present) is
+        // spent first, the prompt gets the rest. enforcePromptLength trims only
+        // the work-step tail and always keeps the MCP-setup head (+ the
+        // …(truncated) marker on overflow).
+        const base = buildLaunchDeepLink({
+          relay: relayBaseUrl(),
+          session: sessionId,
+          token: bridgeToken,
+          cwd,
+        });
+        const budget = MAX_LAUNCH_URL_LENGTH - base.length - "&prompt=".length;
+        const prompt = enforcePromptLength(promptHead, promptTail, budget);
+        promptChars = prompt.length;
+        link = buildLaunchDeepLink({
+          relay: relayBaseUrl(),
+          session: sessionId,
+          token: bridgeToken,
+          cwd,
+          prompt,
+        });
       } catch (err) {
         logger.error("Terminal deep-link build failed", {
           error: err instanceof Error ? err.message : String(err),
@@ -343,7 +419,15 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
         setLaunchPhase("helper-timeout");
         return;
       }
-      logger.info("Terminal firing launch deep link", { sessionId, url: redactDeepLinkToken(link) });
+      // redactDeepLinkToken elides BOTH the token (secret) and the prompt (user
+      // content); the cwd (a local filesystem path) is stripped here too — only
+      // its PRESENCE and the prompt's length are logged.
+      logger.info("Terminal firing launch deep link", {
+        sessionId,
+        url: redactDeepLinkToken(link).replace(/([?&]cwd=)[^&]*/g, "$1***"),
+        promptChars,
+        hasCwd,
+      });
       setLaunchPhase("opening");
 
       removeLaunchIframe();
@@ -372,7 +456,7 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
         setLaunchPhase(nextLaunchPhaseOnTimeout);
       }, HELPER_OPEN_TIMEOUT_MS);
     },
-    [clearHelperTimer, removeLaunchIframe],
+    [clearHelperTimer, removeLaunchIframe, resolveLaunchPromptParts],
   );
 
   const teardownSocket = useCallback(() => {
@@ -470,8 +554,9 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
       dispatch({ type: "relay-open" });
     };
     ws.onmessage = (ev) => {
-      // BINARY = opaque PTY bytes → xterm. TEXT = control frame (none expected from
-      // the bridge today); ignore so it never reaches the screen as garbage.
+      // BINARY = opaque PTY bytes → xterm. TEXT = control frame — none expected on
+      // the BROWSER leg (the relay's R1 `attached` confirmation goes to the bridge
+      // leg only); ignore so a frame never reaches the screen as garbage.
       if (typeof ev.data === "string") return;
       // The helper attached and is streaming — the launch succeeded; drop the
       // "opening helper" nudge and clean up the probe iframe/timer.
@@ -538,11 +623,25 @@ export function TerminalDock({ ideaId, ideaTitle }: TerminalDockProps) {
 
   // The "In the browser" menu item (board toolbar) fires the launch bus; pick it up
   // here and run the install-first gate. Keeping the mint in ONE place (the dock)
-  // means the session — and its bridge token — is never created twice.
+  // means the session — and its bridge token — is never created twice. The payload
+  // (the button's resolved compact prompt, as head/tail parts) is remembered so
+  // this launch AND a later Retry carry the exact prompt the user launched with;
+  // a payload-less event falls back to the dock-built board-level prompt.
   useEffect(() => {
     if (!enabled) return;
-    return subscribeBrowserLaunch(() => beginBrowserLaunch());
+    return subscribeBrowserLaunch((payload) => {
+      promptPartsRef.current = payload ?? null;
+      beginBrowserLaunch();
+    });
   }, [enabled, beginBrowserLaunch]);
+
+  // The carried payload is scoped to ONE launch intent: it survives Retry (same
+  // intent, fresh session/token) but is dropped once the session ENDS (user End
+  // or a relay idle/max close), so a stale task prompt can never ride a later
+  // paired auto-connect — that launch rebuilds the board-level default instead.
+  useEffect(() => {
+    if (state.status === "session-ended") promptPartsRef.current = null;
+  }, [state.status]);
 
   // Auto-connect a paired browser whenever the body becomes visible while idle — so
   // a returning user who simply expands the dock also skips the setup wall

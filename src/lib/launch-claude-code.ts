@@ -85,21 +85,29 @@ function encodedLength(s: string): number {
 }
 
 /**
- * Enforce the ≤ MAX_DEEP_LINK_PROMPT_LENGTH guard on the URL-ENCODED prompt
- * (acceptance criterion #6). The MCP-setup `head` is load-bearing (without it
- * the agent can't connect), so it is ALWAYS preserved verbatim — we trim only
- * the variable `tail` until `encodeURIComponent(head + tail).length <= cap`.
+ * Enforce a cap on the URL-ENCODED prompt (acceptance criterion #6). The
+ * MCP-setup `head` is load-bearing (without it the agent can't connect), so it
+ * is ALWAYS preserved verbatim — we trim only the variable `tail` until
+ * `encodeURIComponent(head + tail).length <= cap`.
  *
  * `head` must already contain whatever joins it to the tail (e.g. a trailing
  * newline); `tail` is appended as-is. If the head alone exceeds the cap we keep
  * the whole head (correctness of the bootstrap beats the cap; an extreme edge).
+ *
+ * `cap` defaults to the claude-cli:// deep-link budget; the in-browser terminal
+ * launch passes its own per-launch budget (the vibecodes:// URL ceiling minus
+ * the session/token overhead — see terminal-dock.tsx).
  */
-export function enforcePromptLength(head: string, tail: string): string {
+export function enforcePromptLength(
+  head: string,
+  tail: string,
+  cap: number = MAX_DEEP_LINK_PROMPT_LENGTH
+): string {
   const full = head + tail;
-  if (encodedLength(full) <= MAX_DEEP_LINK_PROMPT_LENGTH) return full;
+  if (encodedLength(full) <= cap) return full;
 
   // Never sacrifice the head, even if it alone overflows the cap.
-  if (encodedLength(head) >= MAX_DEEP_LINK_PROMPT_LENGTH) return head;
+  if (encodedLength(head) >= cap) return head;
 
   const ellipsis = "\n…(truncated)";
   // Largest tail length whose encoded (head + tail + ellipsis) fits. Binary
@@ -109,7 +117,7 @@ export function enforcePromptLength(head: string, tail: string): string {
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
     const candidate = head + tail.slice(0, mid) + ellipsis;
-    if (encodedLength(candidate) <= MAX_DEEP_LINK_PROMPT_LENGTH) {
+    if (encodedLength(candidate) <= cap) {
       lo = mid;
     } else {
       hi = mid - 1;
@@ -524,21 +532,35 @@ export interface CompactBootstrapArgs extends CommonPromptArgs {
 }
 
 /**
- * COMPACT bootstrap prompt — used ONLY for the deep link, whose URL must stay
- * under MAX_DEEP_LINK_URL_LENGTH (see that constant). It keeps every ESSENTIAL
- * step (project dir first, MCP connect, record_project_path, find/start work)
- * but terse, so the encoded claude-cli:// URL stays well under the OS ceiling.
- * The verbose buildBoard/TaskBootstrapPrompt is reserved for the copy-command,
- * which is a shell arg with no URL-length limit.
+ * The compact prompt split into the LOAD-BEARING head (header + project-dir +
+ * MCP-connect + record_project_path steps — must always survive truncation) and
+ * the trimmable tail (the final "work" step). `head + tail` is byte-identical to
+ * buildCompactBootstrapPrompt for the same args; enforcePromptLength consumes
+ * the two parts when a launch has a hard URL budget (the in-browser terminal's
+ * vibecodes:// deep link — see terminal-dock.tsx).
  */
-export function buildCompactBootstrapPrompt({
+export interface CompactPromptParts {
+  head: string;
+  tail: string;
+}
+
+/**
+ * COMPACT bootstrap prompt, as head/tail parts — the SINGLE source of the
+ * compact prompt's content. See buildCompactBootstrapPrompt for the semantics;
+ * this variant exists so URL-budgeted launch paths can truncate the tail with
+ * enforcePromptLength while the head (title header + dir + MCP connect +
+ * record_project_path steps) survives verbatim. The task/idea ids live in the
+ * TAIL's work step; on (rare) truncation the agent recovers them from the board
+ * over MCP — the head's connect step is what makes that possible.
+ */
+export function buildCompactBootstrapPromptParts({
   appUrl,
   ideaId,
   ideaTitle,
   repoUrl,
   newProject,
   taskId,
-}: CompactBootstrapArgs): string {
+}: CompactBootstrapArgs): CompactPromptParts {
   const title = ideaTitle.length > 80 ? `${ideaTitle.slice(0, 79)}…` : ideaTitle;
   const repo = parseRepoFromGithubUrl(repoUrl);
   const steps: string[] = [];
@@ -567,17 +589,32 @@ export function buildCompactBootstrapPrompt({
     `Once the board tools work, call record_project_path (idea_id ${ideaId}, your machine \`hostname\`, and \`pwd\`) so future launches reopen in this folder.`
   );
 
-  steps.push(
-    taskId
-      ? `Work this task: get_task (task_id ${taskId}, idea_id ${ideaId}), move it to In Progress, then start. Comment as you go.`
-      : `Find work: call get_board (idea_id ${ideaId}) — NOT get_my_tasks, which only returns tasks already assigned to you (a new board has none). Take the top task in To Do (then Backlog), get_task it, assign it to yourself, move it to In Progress, then start. Comment as you go.`
-  );
+  const work = taskId
+    ? `Work this task: get_task (task_id ${taskId}, idea_id ${ideaId}), move it to In Progress, then start. Comment as you go.`
+    : `Find work: call get_board (idea_id ${ideaId}) — NOT get_my_tasks, which only returns tasks already assigned to you (a new board has none). Take the top task in To Do (then Backlog), get_task it, assign it to yourself, move it to In Progress, then start. Comment as you go.`;
 
   const header = taskId
     ? `Set up VibeCodes and work a board task for "${title}".`
     : `Set up VibeCodes and pick up board work for "${title}".`;
   const numbered = steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
-  return `${header}\n\n${numbered}`;
+  return {
+    head: `${header}\n\n${numbered}\n`,
+    tail: `${steps.length + 1}. ${work}`,
+  };
+}
+
+/**
+ * COMPACT bootstrap prompt — used ONLY for launch paths with a URL ceiling: the
+ * claude-cli:// deep link (MAX_DEEP_LINK_URL_LENGTH) and the in-browser
+ * terminal's vibecodes:// launch. It keeps every ESSENTIAL step (project dir
+ * first, MCP connect, record_project_path, find/start work) but terse, so the
+ * encoded URL stays well under the OS ceiling. The verbose
+ * buildBoard/TaskBootstrapPrompt is reserved for the copy-command, which is a
+ * shell arg with no URL-length limit.
+ */
+export function buildCompactBootstrapPrompt(args: CompactBootstrapArgs): string {
+  const { head, tail } = buildCompactBootstrapPromptParts(args);
+  return head + tail;
 }
 
 // ────────────────────────────────────────────────────────────────────────────
@@ -657,4 +694,65 @@ export function writeLaunchPath(ideaId: string, state: LaunchPathState): void {
   } catch {
     // Storage full / disabled — caller surfaces failure via the launch flow.
   }
+}
+
+/**
+ * The public app URL every bootstrap prompt points the MCP connector at.
+ * NEXT_PUBLIC_APP_URL is inlined at build time; trailing-slash safe.
+ */
+export function resolveAppUrl(): string {
+  return process.env.NEXT_PUBLIC_APP_URL?.replace(/\/+$/, "") || "https://vibecodes.co.uk";
+}
+
+/**
+ * The launch state used when the user hasn't pinned one — the ONE resolution
+ * shared by the launch button AND the terminal dock's dock-initiated launches
+ * (paired auto-connect / Retry), so both build the compact prompt from the same
+ * state and can never diverge (bootstrap-prompt parity, AC1/AC3):
+ *
+ *  - saved localStorage config for this idea → use it verbatim.
+ *  - idea has a GitHub repo → existing mode, empty path; the repo slug resolves
+ *    the working copy locally.
+ *  - no repo → a brand-new project under ~/projects/<slug>; the agent mkdir's it.
+ *
+ * SSR-safe (readLaunchPath returns null on the server).
+ */
+export function resolveDefaultLaunchState(
+  ideaId: string,
+  ideaTitle: string,
+  ideaGithubUrl: string | null
+): LaunchPathState {
+  const saved = readLaunchPath(ideaId);
+  if (saved) return saved;
+  if (ideaGithubUrl) return { mode: "existing", path: "" };
+  const name = slugifyIdeaTitle(ideaTitle);
+  return {
+    mode: "new",
+    path: composeNewProjectPath(DEFAULT_NEW_PROJECT_PARENT, name),
+    parent: DEFAULT_NEW_PROJECT_PARENT,
+    name,
+  };
+}
+
+/**
+ * The cwd a launch should carry for a given state — the ONE rule shared by the
+ * claude-cli:// deep link (launch button) and the in-browser vibecodes:// launch
+ * (bus payload + terminal dock), so both destinations open in the same folder:
+ *
+ *  - existing mode with a user-pinned absolute path → use it.
+ *  - new (no-repo) mode → the caller's effective cwd (the saved path or the
+ *    agent-recorded path for THIS machine — resolveEffectiveLaunchTarget.cwd).
+ *    Callers without the recorded paths (the dock's payload-less fallback) pass
+ *    undefined, and the bootstrap prompt's directory step creates
+ *    ~/projects/<slug> instead. (`~`-paths don't expand in the cwd param.)
+ *  - repo-backed (existing mode, empty path) → no cwd; the repo slug / prompt
+ *    directory step resolves the working copy.
+ */
+export function resolveLaunchCwd(
+  state: LaunchPathState,
+  effectiveCwd: string | undefined
+): string | undefined {
+  if (state.mode === "existing" && state.path.trim()) return state.path.trim();
+  if (state.mode === "new") return effectiveCwd;
+  return undefined;
 }
