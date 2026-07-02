@@ -37,6 +37,10 @@ const SHARED_DEEPLINK = app.isPackaged
   ? path.join(process.resourcesPath, "shared", "deep-link.mjs")
   : path.resolve(__dirname, "..", "shared", "deep-link.mjs");
 
+const SHARED_REAP = app.isPackaged
+  ? path.join(process.resourcesPath, "shared", "reap.mjs")
+  : path.resolve(__dirname, "..", "shared", "reap.mjs");
+
 // ── logging (metadata only — NEVER log the deep-link token) ───────────────────
 const t0 = Date.now();
 function log(level, msg, extra) {
@@ -51,24 +55,73 @@ async function shared() {
   return _shared;
 }
 
+// Lazily import the shared verified-kill escalation (same module the bridge uses).
+let _reap = null;
+async function reapMod() {
+  if (!_reap) _reap = await import(pathToFileURL(SHARED_REAP).href);
+  return _reap;
+}
+
 // ── child-bridge bookkeeping + idle quit ─────────────────────────────────────
 const children = new Set();
+// bridge child -> its PTY child's pid (the grandchild — `claude`). Reported by
+// the bridge over IPC ({type:"pty-pid"}) right after its pty.spawn. Needed
+// because the grandchild is its OWN session/group leader (spawn-helper setsid):
+// if the bridge dies uncleanly (SIGKILL — it can run no cleanup), WE are the
+// only thing left that can verify the grandchild died and escalate if not.
+const ptyPids = new Map();
+// In-flight grandchild verifications. The idle-quit must NOT fire — and
+// before-quit must not let the process vanish — while one is pending.
+const activeReaps = new Set();
+let quitting = false;
 let quitTimer = null;
 const IDLE_QUIT_MS = 2000; // grace after the last bridge exits before we quit
+const REAP_HUP_WAIT_MS = 1000; // grandchild SIGHUP grace before SIGKILL(+group)
 
 function scheduleQuitIfIdle() {
-  if (children.size > 0) {
+  if (quitting) return;
+  if (children.size > 0 || activeReaps.size > 0) {
     if (quitTimer) { clearTimeout(quitTimer); quitTimer = null; }
     return;
   }
   if (quitTimer) clearTimeout(quitTimer);
   quitTimer = setTimeout(() => {
-    if (children.size === 0) {
+    if (children.size === 0 && activeReaps.size === 0) {
       log("info", "idle — no active sessions, quitting");
       app.quit();
     }
   }, IDLE_QUIT_MS);
   quitTimer.unref?.();
+}
+
+/**
+ * Verify a dead bridge's PTY grandchild actually died; escalate
+ * SIGHUP → (1s) → SIGKILL(+process group) if not. Bounded (~1.6s worst case).
+ * This is the ONLY cleanup path when the bridge is SIGKILL'd (matrix row c).
+ */
+function reapGrandchild(pid, why) {
+  const p = (async () => {
+    const { pidAlive, reapPidGroupEscalated } = await reapMod();
+    if (!pidAlive(pid)) {
+      log("debug", "grandchild already dead", { pid, why });
+      return;
+    }
+    log("warn", "bridge gone but its PTY child is still alive — escalating", { pid, why });
+    const res = await reapPidGroupEscalated(pid, { hupWaitMs: REAP_HUP_WAIT_MS, termWaitMs: 0 });
+    log(res.confirmedDead ? "info" : "error", "grandchild reap finished", {
+      pid,
+      stage: res.stage,
+      confirmedDead: res.confirmedDead,
+    });
+  })().catch((err) => {
+    log("error", "grandchild reap failed", { pid, err: String(err?.message || err) });
+  });
+  activeReaps.add(p);
+  p.finally(() => {
+    activeReaps.delete(p);
+    scheduleQuitIfIdle();
+  });
+  return p;
 }
 
 /**
@@ -106,14 +159,32 @@ async function handleLaunchUrl(rawUrl) {
   child.stdout?.on("data", relay);
   child.stderr?.on("data", relay);
 
+  // The bridge reports its PTY child's pid over IPC so we can verify-kill the
+  // grandchild if the bridge itself dies uncleanly.
+  child.on("message", (m) => {
+    if (m && m.type === "pty-pid" && Number.isInteger(m.pid) && m.pid > 0) {
+      ptyPids.set(child, m.pid);
+      log("debug", "recorded bridge's pty pid", { pid: m.pid });
+    }
+  });
+
   child.on("exit", (code, signal) => {
     children.delete(child);
     log("info", "bridge exited", { code, signal, active: children.size });
+    // Trust nothing: whatever the bridge's exit looked like, VERIFY the
+    // grandchild is gone (reapGrandchild registers in activeReaps synchronously,
+    // so the idle-quit below cannot fire before the verification completes).
+    const ptyPid = ptyPids.get(child);
+    ptyPids.delete(child);
+    if (ptyPid) reapGrandchild(ptyPid, `bridge-exit code=${code} signal=${signal}`);
     scheduleQuitIfIdle();
   });
   child.on("error", (err) => {
     children.delete(child);
     log("error", "bridge failed to start", { err: String(err?.message || err) });
+    const ptyPid = ptyPids.get(child);
+    ptyPids.delete(child);
+    if (ptyPid) reapGrandchild(ptyPid, "bridge-error");
     scheduleQuitIfIdle();
   });
 }
@@ -170,9 +241,34 @@ if (!gotLock) {
   // We never open a window; keep the app alive on our own terms.
   app.on("window-all-closed", () => { /* no-op: managed via scheduleQuitIfIdle */ });
 
-  app.on("before-quit", () => {
+  app.on("before-quit", (event) => {
+    if (quitting) return; // our own deferred quit path re-entering — let it go
     for (const child of children) {
       try { child.kill(); } catch { /* ignore */ }
     }
+    const pids = [...ptyPids.values()];
+    if (pids.length === 0 && activeReaps.size === 0) return; // nothing to verify
+    // Hold the quit until every known grandchild is VERIFIED dead (bounded:
+    // ~1s SIGHUP grace then SIGKILL(+group), per pid, in parallel) and any
+    // in-flight reaps have finished — then exit for real.
+    quitting = true;
+    event.preventDefault();
+    (async () => {
+      try {
+        const inflight = [...activeReaps];
+        const { pidAlive, reapPidGroupEscalated } = await reapMod();
+        await Promise.all(
+          pids.map(async (pid) => {
+            if (!pidAlive(pid)) return;
+            const res = await reapPidGroupEscalated(pid, { hupWaitMs: REAP_HUP_WAIT_MS, termWaitMs: 0 });
+            log("info", "before-quit reaped grandchild", { pid, stage: res.stage, confirmedDead: res.confirmedDead });
+          }),
+        );
+        await Promise.allSettled(inflight);
+      } catch (err) {
+        log("error", "before-quit reap failed", { err: String(err?.message || err) });
+      }
+      app.exit(0);
+    })();
   });
 }
