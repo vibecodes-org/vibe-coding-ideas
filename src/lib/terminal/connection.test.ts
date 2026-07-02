@@ -1,15 +1,24 @@
 import { describe, it, expect } from "vitest";
 import {
   RELAY_CLOSE,
+  RECONNECT_GRACE_MS,
   initialConnectionState,
   terminalReducer,
   mapCloseCode,
   isInputEnabled,
+  isPeerDegradedFrame,
+  isPeerReattachedFrame,
   buildRelayUrl,
   encodeResizeMessage,
   type TerminalConnectionState,
   type TerminalEvent,
 } from "./connection";
+import { DEFAULT_TTL_SECONDS } from "../../../terminal/shared/session-token.mjs";
+import {
+  encodeAttachedFrame,
+  encodePeerDegradedFrame,
+  encodePeerReattachedFrame,
+} from "../../../terminal/shared/control-frames.mjs";
 
 // Helper: fold a sequence of events through the reducer from the initial state.
 function run(events: TerminalEvent[], start = initialConnectionState): TerminalConnectionState {
@@ -98,6 +107,33 @@ describe("terminalReducer — ending & failures", () => {
     const s = run([{ type: "connect" }, { type: "session-mint-failed" }]);
     expect(s.status).toBe("error");
     expect(s.errorKind).toBe("session-mint-failed");
+  });
+
+  it("reconnect-exhausted → honest session-ended (reconnect-failed), from a live drop", () => {
+    // connect → live → drop (disconnected) → grace window / token lapses.
+    const dropped = run([
+      { type: "connect" },
+      { type: "relay-open" },
+      { type: "data" },
+      { type: "closed", code: RELAY_CLOSE.PEER_GONE },
+    ]);
+    expect(dropped.status).toBe("disconnected");
+    const ended = terminalReducer(dropped, { type: "reconnect-exhausted" });
+    expect(ended.status).toBe("session-ended");
+    expect(ended.endedReason).toBe("reconnect-failed");
+    expect(ended.errorKind).toBeNull();
+  });
+
+  it("reconnect-exhausted never clobbers an existing session-ended (e.g. a user-end)", () => {
+    const ended = run([
+      { type: "connect" },
+      { type: "relay-open" },
+      { type: "data" },
+      { type: "user-end" },
+    ]);
+    const after = terminalReducer(ended, { type: "reconnect-exhausted" });
+    expect(after.status).toBe("session-ended");
+    expect(after.endedReason).toBe("user");
   });
 
   it("reset returns to a fresh idle state", () => {
@@ -207,5 +243,30 @@ describe("encodeResizeMessage", () => {
     expect(encodeResizeMessage(120, -1)).toBeNull();
     expect(encodeResizeMessage(1.5, 30)).toBeNull();
     expect(encodeResizeMessage(120, 99999)).toBeNull();
+  });
+});
+
+describe("grace-window reconnect (fix/terminal-reconnect-reattach)", () => {
+  it("the reconnect window stays strictly inside the token TTL (no re-mint)", () => {
+    // The whole point: original tokens must still be valid for the entire window, so
+    // a reattach never needs a fresh mint. Keep a safety margin below the 300s TTL.
+    expect(RECONNECT_GRACE_MS).toBeLessThan(DEFAULT_TTL_SECONDS * 1000);
+  });
+
+  // The browser detectors are duplicated from terminal/shared/control-frames.mjs
+  // (that module is plain .mjs outside the app's TS build graph). This pins them to
+  // the REAL encoders the relay sends, so any drift fails here.
+  it("detects the shared peer-degraded / peer-reattached frames the relay actually sends", () => {
+    expect(isPeerDegradedFrame(encodePeerDegradedFrame())).toBe(true);
+    expect(isPeerReattachedFrame(encodePeerReattachedFrame())).toBe(true);
+  });
+
+  it("each detector is strict to its own tag (mutually + attached-frame disjoint)", () => {
+    expect(isPeerReattachedFrame(encodePeerDegradedFrame())).toBe(false);
+    expect(isPeerDegradedFrame(encodePeerReattachedFrame())).toBe(false);
+    expect(isPeerDegradedFrame(encodeAttachedFrame())).toBe(false);
+    expect(isPeerReattachedFrame(encodeAttachedFrame())).toBe(false);
+    expect(isPeerDegradedFrame("")).toBe(false);
+    expect(isPeerDegradedFrame('{"t":"peer-degraded"' /* truncated */)).toBe(false);
   });
 });

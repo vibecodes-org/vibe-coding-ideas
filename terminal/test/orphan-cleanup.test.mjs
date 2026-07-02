@@ -153,7 +153,12 @@ async function startSession(t, relayOpts = {}) {
 
 // ── (a) ws-close teardown must reap even a HUP+TERM-immune child ──────────────
 test("(a) ws-close: escalation reaches SIGKILL(+group) and the bridge exits only after the child is confirmed dead", { timeout: 40_000 }, async (t) => {
-  const { session, tokens, relay, browser } = await startSession(t);
+  // Grace-window reattach (fix/terminal-reconnect-reattach): a single-leg drop no
+  // longer tears the session down immediately — the relay HOLDS it for the grace
+  // window, then (no reattach) closes the survivor with PEER_GONE. A tiny graceMs
+  // keeps this fast; the bridge treats that deliberate PEER_GONE as a session end and
+  // runs the SAME verified-kill teardown under test here.
+  const { session, tokens, relay, browser } = await startSession(t, { graceMs: 300 });
   const mark = newMark();
   const spawned = spawnBridge({
     relayUrl: relay.url,
@@ -167,7 +172,8 @@ test("(a) ws-close: escalation reaches SIGKILL(+group) and the bridge exits only
   t.after(() => killHard(sentinelPid));
   console.log(`[oc/a] sentinel pid=${sentinelPid}`);
 
-  // Browser leg leaves → relay closes the bridge leg (peer-gone) → teardown.
+  // Browser leg leaves → relay holds, then (grace expiry) closes the bridge leg with
+  // PEER_GONE → the bridge's verified-kill teardown reaps the child.
   browser.close();
   const { code } = await waitForExit(spawned.child, HARD_TIMEOUT_MS, "bridge (ws-close)");
 

@@ -17,6 +17,16 @@
 /** How long we wait for the relay handshake before declaring an error (≈30s). */
 export const CONNECT_TIMEOUT_MS = 30_000;
 
+/**
+ * Reconnect grace window (ms). THE ONE SHARED NUMBER — equal to the relay grace
+ * (terminal/relay/src/pairing.js → RECONNECT_GRACE_MS) and the bridge budget
+ * (terminal/bridge/src/index.js → BRIDGE_RECONNECT_MS), and deliberately < the 300s
+ * token TTL so the ORIGINAL browser token is still valid for the whole window — a
+ * transient drop REATTACHES to the same sid with no re-mint. Beyond the window the
+ * session ends honestly and the UX falls back to a clean fresh launch.
+ */
+export const RECONNECT_GRACE_MS = 90_000;
+
 /** Default dev relay (overridable via NEXT_PUBLIC_TERMINAL_RELAY_URL). */
 export const DEFAULT_RELAY_URL = "ws://127.0.0.1:8787";
 
@@ -50,7 +60,7 @@ export type TerminalErrorKind =
   | "session-mint-failed"
   | "unknown";
 
-export type EndedReason = "user" | "remote" | "idle" | "max-duration";
+export type EndedReason = "user" | "remote" | "idle" | "max-duration" | "reconnect-failed";
 
 export interface TerminalConnectionState {
   status: TerminalStatus;
@@ -69,6 +79,7 @@ export type TerminalEvent =
   | { type: "data" }
   | { type: "user-end" }
   | { type: "connect-timeout" }
+  | { type: "reconnect-exhausted" }
   | { type: "closed"; code: number; reason?: string }
   | { type: "reset" };
 
@@ -183,6 +194,13 @@ export function terminalReducer(
       if (!isHandshaking(state.status)) return state;
       return { ...state, status: "error", errorKind: "connect-timeout", closeCode: null };
 
+    case "reconnect-exhausted":
+      // The grace window / token validity elapsed while disconnected and no reattach
+      // landed → an HONEST end (not an error). The saved work on the machine is safe;
+      // the overlay offers a clean fresh launch. A user-end already terminal → keep it.
+      if (state.status === "session-ended") return state;
+      return { ...state, status: "session-ended", endedReason: "reconnect-failed", errorKind: null };
+
     case "closed": {
       // A user-initiated end already produced the terminal state; the socket's own
       // close event must not clobber it back to a generic disconnect.
@@ -239,4 +257,34 @@ export function isTerminalEnabled(): boolean {
 /** Relay base URL (public env), defaulting to the local dev relay. */
 export function relayBaseUrl(): string {
   return process.env.NEXT_PUBLIC_TERMINAL_RELAY_URL || DEFAULT_RELAY_URL;
+}
+
+// ── grace-window control frames (browser leg) ─────────────────────────────────
+//
+// The relay sends the SURVIVING leg TEXT control frames while it HOLDS a session
+// open for the reconnect grace window. These detectors mirror the shared
+// definitions in terminal/shared/control-frames.mjs (encodePeerDegradedFrame /
+// encodePeerReattachedFrame). Duplicated (not imported) for the same reason
+// RELAY_CLOSE is: that module is plain .mjs outside the app's TS build graph — the
+// drift is pinned by connection.test.ts, which imports the real encoders and checks
+// these detectors agree byte-for-byte.
+
+function isControlFrame(text: string, tag: string): boolean {
+  if (text.length === 0 || text.length > 64) return false;
+  try {
+    const msg = JSON.parse(text) as unknown;
+    return !!msg && typeof msg === "object" && (msg as { t?: unknown }).t === tag;
+  } catch {
+    return false;
+  }
+}
+
+/** The relay is HOLDING this session: our peer dropped and may re-attach — keep the stream. */
+export function isPeerDegradedFrame(text: string): boolean {
+  return isControlFrame(text, "peer-degraded");
+}
+
+/** The pair is whole again inside the window — resume. */
+export function isPeerReattachedFrame(text: string): boolean {
+  return isControlFrame(text, "peer-reattached");
 }

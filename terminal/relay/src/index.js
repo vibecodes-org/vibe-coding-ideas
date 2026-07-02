@@ -36,12 +36,17 @@ import {
   CLOSE,
   DEFAULT_IDLE_MS,
   DEFAULT_MAX_MS,
+  RECONNECT_GRACE_MS,
   idleCloseReason,
   maxCloseReason,
   resolveMs,
 } from "./pairing.js";
 import { authorizeAttach } from "../../shared/session-token.mjs";
-import { encodeAttachedFrame } from "../../shared/control-frames.mjs";
+import {
+  encodeAttachedFrame,
+  encodePeerDegradedFrame,
+  encodePeerReattachedFrame,
+} from "../../shared/control-frames.mjs";
 
 /** Normal WebSocket closure code used for clean, server-initiated session ends. */
 const NORMAL_CLOSURE = 1000;
@@ -107,6 +112,20 @@ export class TerminalRelay {
   /** Max session age in ms (env override → default). */
   maxMs() {
     return resolveMs(this.env.TERMINAL_MAX_MS, DEFAULT_MAX_MS);
+  }
+
+  /** Reconnect grace window in ms (env override → shared default). */
+  graceMs() {
+    return resolveMs(this.env.TERMINAL_RECONNECT_GRACE_MS, RECONNECT_GRACE_MS);
+  }
+
+  /** Send a control frame to EVERY live leg (used for peer-reattached). */
+  broadcast(frame) {
+    for (const ws of this.state.getWebSockets()) {
+      try {
+        ws.send(frame);
+      } catch { /* leg already closing */ }
+    }
   }
 
   /** The live peer socket for the opposite role, or null. Tag-driven so it works post-hibernation. */
@@ -180,6 +199,21 @@ export class TerminalRelay {
       await this.state.storage.put("sessionStartedAt", now);
     }
     await this.state.storage.put("lastActivityAt", now);
+
+    // 4b) GRACE-WINDOW REATTACH reconciliation. If the session was being HELD open
+    //     for a dropped leg (graceDeadline set), this attach may complete the pair
+    //     again. When BOTH legs are present once more, clear the grace hold and
+    //     tell BOTH legs to resume (peer-reattached). If only one leg is back (the
+    //     both-legs-dropped case), keep holding and wait for the other. The owner
+    //     binding was never released, so decideAttach above already enforced
+    //     same-owner + single-attach on this reattach — a foreign sub was rejected.
+    const wasHeld = (await this.state.storage.get("graceDeadline")) != null;
+    const post = await this.computeAttachState();
+    const pairWhole = post.bridge && post.browser;
+    if (wasHeld && pairWhole) {
+      await this.state.storage.delete("graceDeadline");
+      this.log("reattached — pair whole again", { session, role });
+    }
     await this.armAlarm(now);
 
     // 5) R1 attach confirmation — BRIDGE leg only. A rejected leg is also
@@ -197,7 +231,14 @@ export class TerminalRelay {
       }
     }
 
-    this.log("attached", { session, role, ...(await this.computeAttachState()) });
+    // 6) If this attach restored the pair inside the grace window, tell BOTH legs
+    //    to resume. Sent AFTER the bridge's own `attached` frame; both are no-ops
+    //    for a leg that doesn't know them (skew-safe).
+    if (wasHeld && pairWhole) {
+      this.broadcast(encodePeerReattachedFrame());
+    }
+
+    this.log("attached", { session, role, ...post });
     return new Response(null, { status: 101, webSocket: client });
   }
 
@@ -242,8 +283,20 @@ export class TerminalRelay {
   }
 
   /**
-   * One leg went away. Tell the surviving peer (PEER_GONE) and drop it so the
-   * session id can be cleanly re-established, then release all session state.
+   * One leg went away. GRACE-WINDOW REATTACH (fix/terminal-reconnect-reattach):
+   * instead of tearing the whole session down on ANY single detach, HOLD it open
+   * for the reconnect grace window so the dropped role can re-attach (same sid +
+   * owner) and resume with no token re-mint. Two cases:
+   *
+   *   - a leg is STILL attached (the survivor) → mark the session degraded
+   *     (graceDeadline), keep the owner binding + the surviving socket, arm the
+   *     grace alarm, and tell the survivor via `peer-degraded` — do NOT close it.
+   *   - BOTH legs are now gone (e.g. sleep drops both 1006) → still keep the
+   *     session + owner + grace alarm for the window so EITHER leg can come back
+   *     and wait for the other.
+   *
+   * Only when the grace alarm fires still-incomplete does the old teardown run
+   * (survivor PEER_GONE + clearSessionState) — see alarm() → endGrace().
    * @param {WebSocket} ws @param {string} why @param {object} [extra]
    */
   async handleDetach(ws, why, extra = {}) {
@@ -253,45 +306,80 @@ export class TerminalRelay {
     } catch { /* attachment may be gone */ }
     this.log("detached", { role, why, ...extra });
 
-    // Close the surviving peer (the closing socket may still appear in the list).
+    const now = Date.now();
+    // Open (or keep) the grace hold; the grace alarm governs teardown from here.
+    if ((await this.state.storage.get("graceDeadline")) == null) {
+      await this.state.storage.put("graceDeadline", now + this.graceMs());
+    }
+    await this.armAlarm(now);
+
+    // Tell any SURVIVING peer we're holding (the closing socket may still appear
+    // in the list, so skip it). We do NOT close survivors during the window.
+    let survivors = 0;
     for (const peer of this.state.getWebSockets()) {
       if (peer === ws) continue;
+      survivors++;
       try {
-        peer.close(CLOSE.PEER_GONE.code, CLOSE.PEER_GONE.reason);
+        peer.send(encodePeerDegradedFrame());
       } catch { /* already closing */ }
     }
-    // The session is now empty → release the owner binding + lifecycle state so a
-    // fresh authorized owner can re-establish the id.
-    await this.clearSessionState();
+    this.log("holding session for reconnect", { droppedRole: role, survivors, graceMs: this.graceMs() });
   }
 
   // ── Idle / max-duration via DO alarms ────────────────────────────────────────
 
-  /** Arm the alarm to the nearest of (idle deadline, max-duration deadline). */
+  /**
+   * Arm the ONE alarm to the earliest live deadline: idle, max-duration, and — while
+   * a reconnect grace window is open — the grace deadline. ONE alarm handler, earliest
+   * deadline wins (coexists with the idle/max caps). Reads lastActivityAt from storage
+   * so it stays correct whether called on fresh activity (now === last) or a defensive
+   * re-arm (stored last is older).
+   */
   async armAlarm(now) {
     const started = (await this.state.storage.get("sessionStartedAt")) ?? now;
-    const next = Math.min(now + this.idleMs(), started + this.maxMs());
-    await this.state.storage.setAlarm(next);
+    const last = (await this.state.storage.get("lastActivityAt")) ?? now;
+    const grace = await this.state.storage.get("graceDeadline");
+    const candidates = [last + this.idleMs(), started + this.maxMs()];
+    if (grace != null) candidates.push(grace);
+    await this.state.storage.setAlarm(Math.min(...candidates));
   }
 
-  /** Hibernation-compatible alarm: enforce the lifecycle caps or re-arm. */
+  /** Hibernation-compatible alarm: enforce the lifecycle caps / grace expiry, or re-arm. */
   async alarm() {
     const now = Date.now();
     const started = await this.state.storage.get("sessionStartedAt");
     const last = await this.state.storage.get("lastActivityAt");
+    const grace = await this.state.storage.get("graceDeadline");
 
     if (started != null && now - started >= this.maxMs()) {
       this.log("session ended", { why: "max-duration", ageMs: now - started });
       return this.endSession(maxCloseReason(this.maxMs()));
     }
-    if (last != null && now - last >= this.idleMs()) {
+
+    // Reconnect grace expiry: the held-open session never became whole again inside
+    // the window → the OLD teardown (survivor PEER_GONE + clearSessionState).
+    if (grace != null && now >= grace) {
+      const st = await this.computeAttachState();
+      if (st.bridge && st.browser) {
+        // Defensive: became whole without fetch clearing the hold — recover, don't tear.
+        await this.state.storage.delete("graceDeadline");
+        await this.armAlarm(now);
+        return;
+      }
+      this.log("reconnect grace expired — tearing down", { });
+      return this.endGrace();
+    }
+
+    // Idle only governs a WHOLE session; a held (degraded) session has stale activity
+    // by definition and is governed by the grace deadline above instead.
+    if (grace == null && last != null && now - last >= this.idleMs()) {
       this.log("session ended", { why: "idle-timeout", idleMs: now - last });
       return this.endSession(idleCloseReason(this.idleMs()));
     }
-    // Activity happened since the alarm was set (or no legs) → re-arm defensively.
-    if (started != null || last != null) {
-      const next = Math.min((last ?? now) + this.idleMs(), (started ?? now) + this.maxMs());
-      await this.state.storage.setAlarm(next);
+
+    // Nothing due yet → re-arm to the next earliest deadline.
+    if (started != null || last != null || grace != null) {
+      await this.armAlarm(now);
     }
   }
 
@@ -305,9 +393,20 @@ export class TerminalRelay {
     await this.clearSessionState();
   }
 
-  /** Release owner binding + lifecycle bookkeeping + any pending alarm. */
+  /** Grace window elapsed without a full reattach → the original teardown: any
+   *  survivor gets PEER_GONE (4004) and all session state is released. */
+  async endGrace() {
+    for (const ws of this.state.getWebSockets()) {
+      try {
+        ws.close(CLOSE.PEER_GONE.code, CLOSE.PEER_GONE.reason);
+      } catch { /* already closing */ }
+    }
+    await this.clearSessionState();
+  }
+
+  /** Release owner binding + lifecycle bookkeeping + grace hold + any pending alarm. */
   async clearSessionState() {
-    await this.state.storage.delete(["owner", "sessionStartedAt", "lastActivityAt"]);
+    await this.state.storage.delete(["owner", "sessionStartedAt", "lastActivityAt", "graceDeadline"]);
     await this.state.storage.deleteAlarm();
   }
 }

@@ -57,11 +57,15 @@ import type { Terminal as XTerm } from "@xterm/xterm";
 import type { FitAddon as XFitAddon } from "@xterm/addon-fit";
 import {
   CONNECT_TIMEOUT_MS,
+  RECONNECT_GRACE_MS,
   buildRelayUrl,
   encodeResizeMessage,
   initialConnectionState,
   isInputEnabled,
+  isPeerDegradedFrame,
+  isPeerReattachedFrame,
   isTerminalEnabled,
+  mapCloseCode,
   relayBaseUrl,
   terminalReducer,
   type TerminalConnectionState,
@@ -120,6 +124,11 @@ interface TerminalDockProps {
 interface PairInfo {
   sessionId: string;
   bridgeToken: string;
+  // Retained so a TRANSIENT drop can REATTACH to the SAME sid with no re-mint
+  // (grace-window reconnect). `browserToken` re-opens the browser leg; `expiresAt`
+  // (unix seconds) is the token-validity bound on how long reattach is possible.
+  browserToken: string;
+  expiresAt: number;
 }
 
 interface StatusMeta {
@@ -193,6 +202,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     resolveTerminalPlatform(readPlatformSignals()),
   );
   const [paired, setPaired] = useState<boolean>(() => isBrowserPaired());
+  // Grace-window degrade hint: the relay told us our peer (the bridge) dropped and
+  // it's HOLDING the session. The terminal stays visible; we show a subtle
+  // "reconnecting" hint until peer-reattached (or the window expires).
+  const [peerDegraded, setPeerDegraded] = useState(false);
 
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<XTerm | null>(null);
@@ -208,6 +221,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   // otherwise two sessions + two bridges race and the relay tears both down
   // (single-attach / peer-gone). This is the fix for the "connect fires twice" bug.
   const connectGenRef = useRef(0);
+  // Grace-window reconnect bookkeeping. `reconnectDeadlineRef.current === 0` means
+  // "healthy, not reconnecting"; it's set on the first transient drop and cleared
+  // once a byte proves the link healthy again. The pair (sid + retained tokens) is
+  // mirrored into a ref so the timer-driven reconnect loop reads current creds
+  // without re-binding. `scheduleReconnectRef` breaks the openBrowserLeg ⇄
+  // scheduleReconnect cycle. `degradeTimerRef` bounds the peer-degraded wait.
+  const reconnectDeadlineRef = useRef(0);
+  const reconnectAttemptRef = useRef(0);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const degradeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pairRef = useRef<PairInfo | null>(null);
+  const scheduleReconnectRef = useRef<() => void>(() => {});
   // The compact bootstrap prompt (head/tail parts) the LAST launch-bus event
   // carried — i.e. what the launch button resolved. Dock-initiated launches with
   // no bus payload (paired auto-connect on open, Retry) fall back to building the
@@ -223,6 +248,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   statusRef.current = state.status;
   readOnlyRef.current = readOnly;
   pairedRef.current = paired;
+  pairRef.current = pair;
 
   // ── lazy, client-only xterm init ────────────────────────────────────────────
   useEffect(() => {
@@ -333,6 +359,20 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     if (helperTimerRef.current) {
       clearTimeout(helperTimerRef.current);
       helperTimerRef.current = null;
+    }
+  }, []);
+
+  const clearReconnectTimer = useCallback(() => {
+    if (reconnectTimerRef.current) {
+      clearTimeout(reconnectTimerRef.current);
+      reconnectTimerRef.current = null;
+    }
+  }, []);
+
+  const clearDegradeTimer = useCallback(() => {
+    if (degradeTimerRef.current) {
+      clearTimeout(degradeTimerRef.current);
+      degradeTimerRef.current = null;
     }
   }, []);
 
@@ -461,6 +501,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
 
   const teardownSocket = useCallback(() => {
     clearConnectTimer();
+    // Cancel any in-flight grace-window reconnect loop / degrade wait, and reset the
+    // reconnect budget. Nulling the socket's handlers below means a teardown-initiated
+    // close never re-triggers the reconnect loop (only genuine drops do).
+    clearReconnectTimer();
+    clearDegradeTimer();
+    reconnectDeadlineRef.current = 0;
+    reconnectAttemptRef.current = 0;
+    setPeerDegraded(false);
     const ws = wsRef.current;
     wsRef.current = null;
     if (ws) {
@@ -471,7 +519,139 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
         /* already closing */
       }
     }
-  }, [clearConnectTimer]);
+  }, [clearConnectTimer, clearReconnectTimer, clearDegradeTimer]);
+
+  // Open (or RE-open) the BROWSER leg to the relay and wire its handlers. Shared by
+  // connect() (fresh session) and the grace-window reconnect loop (same sid, retained
+  // token — NO re-mint). `reconnect` skips the hard 30s connect-timeout→error: while
+  // reconnecting the grace-window scheduler bounds the retries instead.
+  const openBrowserLeg = useCallback(
+    (sessionId: string, browserToken: string, opts?: { reconnect?: boolean }) => {
+      const reconnect = opts?.reconnect ?? false;
+      const url = buildRelayUrl(relayBaseUrl(), sessionId, browserToken);
+      let ws: WebSocket;
+      try {
+        ws = new WebSocket(url);
+      } catch (err) {
+        logger.error("Terminal relay socket open failed", {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        dispatch({ type: "closed", code: 1006 });
+        return;
+      }
+      ws.binaryType = "arraybuffer";
+      wsRef.current = ws;
+
+      if (!reconnect) {
+        connectTimerRef.current = setTimeout(() => {
+          dispatch({ type: "connect-timeout" });
+          teardownSocket();
+        }, CONNECT_TIMEOUT_MS);
+      }
+
+      ws.onopen = () => {
+        clearConnectTimer();
+        dispatch({ type: "relay-open" });
+      };
+      ws.onmessage = (ev) => {
+        // TEXT = relay control frame on the BROWSER leg. The grace-window notices
+        // arrive here (the R1 `attached` frame goes to the bridge leg only).
+        if (typeof ev.data === "string") {
+          if (isPeerDegradedFrame(ev.data)) {
+            // Our peer (the bridge) dropped; the relay is HOLDING the session. Keep
+            // the terminal, show a subtle hint, and bound the wait to the grace window.
+            setPeerDegraded(true);
+            if (!degradeTimerRef.current) {
+              degradeTimerRef.current = setTimeout(() => {
+                degradeTimerRef.current = null;
+                setPeerDegraded(false);
+                dispatch({ type: "reconnect-exhausted" });
+                try {
+                  wsRef.current?.close(1000, "reconnect-grace-expired");
+                } catch {
+                  /* already closing */
+                }
+              }, RECONNECT_GRACE_MS);
+            }
+          } else if (isPeerReattachedFrame(ev.data)) {
+            // The pair is whole again inside the window — resume. Proves the pipe is
+            // restored even before the next byte, so drop back to connected + reset
+            // the reconnect budget (a scenario-1 already-connected leg no-ops).
+            clearDegradeTimer();
+            setPeerDegraded(false);
+            reconnectDeadlineRef.current = 0;
+            reconnectAttemptRef.current = 0;
+            dispatch({ type: "data" });
+          }
+          return;
+        }
+        // BINARY = opaque PTY bytes → the bridge is streaming; the link is HEALTHY.
+        // Clear the launch nudges, mark paired on first success, and reset every
+        // reconnect/degrade timer + budget so a later drop starts a fresh window.
+        clearHelperTimer();
+        removeLaunchIframe();
+        setLaunchPhase("idle");
+        clearDegradeTimer();
+        setPeerDegraded(false);
+        reconnectDeadlineRef.current = 0;
+        reconnectAttemptRef.current = 0;
+        if (!pairedRef.current) {
+          markBrowserPaired();
+          setPaired(true);
+        }
+        dispatch({ type: "data" });
+        termRef.current?.write(new Uint8Array(ev.data as ArrayBuffer));
+      };
+      ws.onerror = () => {
+        logger.warn("Terminal relay socket error", { sessionId });
+      };
+      ws.onclose = (ev) => {
+        clearConnectTimer();
+        wsRef.current = null;
+        dispatch({ type: "closed", code: ev.code, reason: ev.reason });
+        // Grace-window reconnect: a transient drop AFTER a live stream (PEER_GONE /
+        // abnormal 1006) is recoverable → keep reattaching within the window. Any
+        // terminal / clean-end code maps to a non-disconnected state and stops here.
+        // A teardown-initiated close nulled these handlers, so it never reaches this.
+        const mapped = mapCloseCode(ev.code, ev.reason, statusRef.current);
+        if (mapped.status === "disconnected") scheduleReconnectRef.current();
+      };
+    },
+    [teardownSocket, clearConnectTimer, clearHelperTimer, removeLaunchIframe, clearDegradeTimer],
+  );
+
+  // Drive the grace-window reconnect loop: reattach to the SAME sid with the retained
+  // browser token, with jittered exponential backoff, bounded by BOTH the grace window
+  // and the token validity. When either is spent with no reattach, end honestly
+  // (reconnect-exhausted → the calm "session ended, start a new one" overlay). No
+  // re-mint, no deep link — a bounded, silent reattach.
+  const scheduleReconnect = useCallback(() => {
+    clearDegradeTimer();
+    const p = pairRef.current;
+    const now = Date.now();
+    const tokenValid = !!p && p.expiresAt * 1000 > now + 1000;
+    if (reconnectDeadlineRef.current === 0) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
+    if (!p || !tokenValid || now >= reconnectDeadlineRef.current) {
+      reconnectDeadlineRef.current = 0;
+      reconnectAttemptRef.current = 0;
+      dispatch({ type: "reconnect-exhausted" });
+      return;
+    }
+    const attempt = reconnectAttemptRef.current++;
+    const delay = Math.min(1000 * 2 ** attempt, 8000) + Math.floor(Math.random() * 250);
+    clearReconnectTimer();
+    reconnectTimerRef.current = setTimeout(() => {
+      const pp = pairRef.current;
+      if (!pp || Date.now() >= reconnectDeadlineRef.current) {
+        reconnectDeadlineRef.current = 0;
+        reconnectAttemptRef.current = 0;
+        dispatch({ type: "reconnect-exhausted" });
+        return;
+      }
+      openBrowserLeg(pp.sessionId, pp.browserToken, { reconnect: true });
+    }, delay);
+  }, [openBrowserLeg, clearReconnectTimer, clearDegradeTimer]);
+  scheduleReconnectRef.current = scheduleReconnect;
 
   // ── connect (browser leg) ───────────────────────────────────────────────────
   // `autoLaunch` = the same-machine path: after minting, fire the vibecodes:// deep
@@ -492,7 +672,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     lastDimsRef.current = "";
     dispatch({ type: "connect" });
 
-    let data: { sessionId: string; browserToken: string; bridgeToken: string };
+    let data: { sessionId: string; browserToken: string; bridgeToken: string; expiresAt: number };
     try {
       const res = await fetch("/api/terminal/session", {
         method: "POST",
@@ -524,64 +704,43 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     if (gen !== connectGenRef.current) return;
 
     dispatch({ type: "session-created", sessionId: data.sessionId });
-    setPair({ sessionId: data.sessionId, bridgeToken: data.bridgeToken });
+    // Retain the browser token + expiry too, so a transient drop can REATTACH to
+    // this same sid with no re-mint (grace-window reconnect).
+    setPair({
+      sessionId: data.sessionId,
+      bridgeToken: data.bridgeToken,
+      browserToken: data.browserToken,
+      expiresAt: data.expiresAt,
+    });
+    // A fresh mint starts a fresh reconnect budget.
+    reconnectDeadlineRef.current = 0;
+    reconnectAttemptRef.current = 0;
     termRef.current?.clear();
 
     // Same-machine: hand the bridge token to the local helper via the deep link.
     if (autoLaunch) fireLaunchDeepLink(data.sessionId, data.bridgeToken);
 
-    const url = buildRelayUrl(relayBaseUrl(), data.sessionId, data.browserToken);
-    let ws: WebSocket;
-    try {
-      ws = new WebSocket(url);
-    } catch (err) {
-      logger.error("Terminal relay socket open failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      dispatch({ type: "closed", code: 1006 });
-      return;
+    openBrowserLeg(data.sessionId, data.browserToken);
+  }, [ideaId, teardownSocket, clearHelperTimer, removeLaunchIframe, fireLaunchDeepLink, openBrowserLeg]);
+
+  // Manual "Reconnect now" — force an immediate reattach attempt (skip the backoff
+  // wait) using the retained token, or fall back to a clean fresh launch if the
+  // token/window is spent. Fixes the old button, which minted an EMPTY session with
+  // no autoLaunch and timed out after 30s.
+  const reconnectNow = useCallback(() => {
+    const p = pairRef.current;
+    const now = Date.now();
+    const tokenValid = !!p && p.expiresAt * 1000 > now + 1000;
+    const withinWindow =
+      reconnectDeadlineRef.current === 0 || now < reconnectDeadlineRef.current;
+    if (p && tokenValid && withinWindow) {
+      clearReconnectTimer();
+      if (reconnectDeadlineRef.current === 0) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
+      openBrowserLeg(p.sessionId, p.browserToken, { reconnect: true });
+    } else {
+      void connect({ autoLaunch: true });
     }
-    ws.binaryType = "arraybuffer";
-    wsRef.current = ws;
-
-    connectTimerRef.current = setTimeout(() => {
-      dispatch({ type: "connect-timeout" });
-      teardownSocket();
-    }, CONNECT_TIMEOUT_MS);
-
-    ws.onopen = () => {
-      clearConnectTimer();
-      dispatch({ type: "relay-open" });
-    };
-    ws.onmessage = (ev) => {
-      // BINARY = opaque PTY bytes → xterm. TEXT = control frame — none expected on
-      // the BROWSER leg (the relay's R1 `attached` confirmation goes to the bridge
-      // leg only); ignore so a frame never reaches the screen as garbage.
-      if (typeof ev.data === "string") return;
-      // The helper attached and is streaming — the launch succeeded; drop the
-      // "opening helper" nudge and clean up the probe iframe/timer.
-      clearHelperTimer();
-      removeLaunchIframe();
-      setLaunchPhase("idle");
-      // First successful connection on this browser → remember it so future opens
-      // auto-connect and skip the setup wall (criteria #5 / #6).
-      if (!pairedRef.current) {
-        markBrowserPaired();
-        setPaired(true);
-      }
-      dispatch({ type: "data" });
-      termRef.current?.write(new Uint8Array(ev.data as ArrayBuffer));
-    };
-    ws.onerror = () => {
-      // A 'close' with the real code follows; just log metadata here.
-      logger.warn("Terminal relay socket error", { sessionId: data.sessionId });
-    };
-    ws.onclose = (ev) => {
-      clearConnectTimer();
-      wsRef.current = null;
-      dispatch({ type: "closed", code: ev.code, reason: ev.reason });
-    };
-  }, [ideaId, teardownSocket, clearConnectTimer, clearHelperTimer, removeLaunchIframe, fireLaunchDeepLink]);
+  }, [openBrowserLeg, clearReconnectTimer, connect]);
 
   // Install-first entry gate. This is the ONE place a browser "open" is turned into
   // either a setup panel, a coming-soon panel, or an auto-connect — the deep link is
@@ -795,13 +954,26 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
               onCopyBridge={copyBridgeCommand}
             />
           )}
+          {/* Our OWN link dropped — we're actively REATTACHING to the same session
+              within the grace window (retained token, no re-mint). Copy only claims
+              what's true DURING the window: the agent is held/running locally and we
+              reconnect automatically; if the window lapses the overlay switches to the
+              honest "session ended" end state. */}
           {state.status === "disconnected" && (
             <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
-              <WifiOff className="mr-1 inline h-3 w-3" />
-              <b>Lost the connection.</b> Your machine may have slept or dropped Wi-Fi. The agent keeps running locally.
-              <button className="ml-2 underline hover:text-amber-200" onClick={() => void connect()}>
+              <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+              <b>Reconnecting to your session…</b> Your machine may have slept or dropped Wi-Fi. Your agent keeps running locally while we reattach.
+              <button className="ml-2 underline hover:text-amber-200" onClick={reconnectNow}>
                 Reconnect now
               </button>
+            </div>
+          )}
+          {/* Peer (the bridge) dropped but our link is fine — the relay is HOLDING the
+              session. Keep the live terminal visible; just show a subtle hint. */}
+          {state.status === "connected" && peerDegraded && (
+            <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
+              <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+              <b>Connection interrupted — reconnecting…</b> Your machine may have slept; we&apos;re holding your session and will resume automatically.
             </div>
           )}
         </div>
@@ -1073,6 +1245,8 @@ function endedTitle(state: TerminalConnectionState): string {
       return "Ended after being idle";
     case "max-duration":
       return "Reached the session time limit";
+    case "reconnect-failed":
+      return "This session ended";
     default:
       return "Session ended";
   }
@@ -1083,6 +1257,10 @@ function endedMessage(state: TerminalConnectionState): string {
     case "idle":
     case "max-duration":
       return "We closed the session to keep things tidy and safe. Nothing went wrong — your work on your machine is untouched.";
+    case "reconnect-failed":
+      // The grace window / token validity lapsed before the link came back. Honest,
+      // reassuring, and the "Launch again" button below starts a clean fresh session.
+      return "We couldn't reattach in time after the connection dropped. Your saved work is safe — start a new session to pick things back up.";
     default:
       return "Claude Code on your machine stopped. The scrollback above is kept.";
   }

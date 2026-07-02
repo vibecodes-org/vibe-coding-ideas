@@ -25,21 +25,27 @@ import {
   CLOSE,
   DEFAULT_IDLE_MS,
   DEFAULT_MAX_MS,
+  RECONNECT_GRACE_MS,
   idleCloseReason,
   maxCloseReason,
   resolveMs,
 } from "../relay/src/pairing.js";
 import { authorizeAttach } from "../shared/session-token.mjs";
-import { encodeAttachedFrame } from "../shared/control-frames.mjs";
+import {
+  encodeAttachedFrame,
+  encodePeerDegradedFrame,
+  encodePeerReattachedFrame,
+} from "../shared/control-frames.mjs";
 
 const NORMAL_CLOSURE = 1000;
 
 /**
  * @param {{ port?: number, secret?: string, idleMs?: number, maxMs?: number,
- *           sendAttachedFrame?: boolean,
+ *           graceMs?: number, sendAttachedFrame?: boolean,
  *           log?: (msg:string, extra?:object)=>void }} [opts]
  *   `secret` — TERMINAL_SESSION_SECRET used to verify leg tokens (defaults to env).
  *   `idleMs` / `maxMs` — lifecycle caps (default 30 min / 4 h); tests pass small values.
+ *   `graceMs` — reconnect grace window (default 90s); tests pass small values.
  *   `sendAttachedFrame` — default true (mirrors the real DO's R1 confirmation to
  *   the bridge leg); tests pass false to simulate an OLD relay for skew coverage.
  * @returns {Promise<{ url:string, port:number, close:()=>Promise<void>, sessions: Map }>}
@@ -49,9 +55,16 @@ export function startStandinRelay(opts = {}) {
   const secret = opts.secret ?? process.env.TERMINAL_SESSION_SECRET;
   const idleMs = resolveMs(opts.idleMs, DEFAULT_IDLE_MS);
   const maxMs = resolveMs(opts.maxMs, DEFAULT_MAX_MS);
+  const graceMs = resolveMs(opts.graceMs, RECONNECT_GRACE_MS);
   const sendAttachedFrame = opts.sendAttachedFrame !== false;
   // session id -> { bridge: ws|null, browser: ws|null, owner: string|null,
-  //                 idleTimer, maxTimer }
+  //                 idleTimer, maxTimer, graceTimer }
+  //
+  // GRACE-WINDOW REATTACH (fix/terminal-reconnect-reattach): faithfully mirrors the
+  // Cloudflare DO. On a single-leg detach we HOLD the session (owner + surviving
+  // socket kept, `peer-degraded` sent, no PEER_GONE) and arm a grace timer instead
+  // of tearing down. A same-sid+owner reattach inside the window re-pairs both legs
+  // (`peer-reattached`); the timer firing still-incomplete runs the OLD teardown.
   const sessions = new Map();
 
   const wss = new WebSocketServer({ port: opts.port ?? 0 });
@@ -62,9 +75,26 @@ export function startStandinRelay(opts = {}) {
     if (!legs) return;
     clearTimeout(legs.idleTimer);
     clearTimeout(legs.maxTimer);
+    clearTimeout(legs.graceTimer);
     for (const leg of [legs.bridge, legs.browser]) {
       if (leg && leg.readyState === leg.OPEN) {
         try { leg.close(NORMAL_CLOSURE, reason); } catch { /* closing */ }
+      }
+    }
+    sessions.delete(session);
+  }
+
+  /** Grace window elapsed without a full reattach → the OLD teardown: any survivor
+   *  gets PEER_GONE (4004) and the session is forgotten. */
+  function endGrace(session) {
+    const legs = sessions.get(session);
+    if (!legs) return;
+    clearTimeout(legs.idleTimer);
+    clearTimeout(legs.maxTimer);
+    clearTimeout(legs.graceTimer);
+    for (const leg of [legs.bridge, legs.browser]) {
+      if (leg && leg.readyState === leg.OPEN) {
+        try { leg.close(CLOSE.PEER_GONE.code, CLOSE.PEER_GONE.reason); } catch { /* closing */ }
       }
     }
     sessions.delete(session);
@@ -97,7 +127,7 @@ export function startStandinRelay(opts = {}) {
     }
 
     if (!sessions.has(session)) {
-      sessions.set(session, { bridge: null, browser: null, owner: null, idleTimer: null, maxTimer: null });
+      sessions.set(session, { bridge: null, browser: null, owner: null, idleTimer: null, maxTimer: null, graceTimer: null });
     }
     const legs = sessions.get(session);
 
@@ -120,12 +150,25 @@ export function startStandinRelay(opts = {}) {
       try { ws.send(encodeAttachedFrame()); } catch { /* leg already gone */ }
     }
 
-    // Arm the max-duration cap once, on the first leg; arm/refresh idle now.
-    if (firstLeg) {
+    // GRACE-WINDOW REATTACH reconciliation: if this session was being HELD for a
+    // dropped leg and BOTH legs are present again, cancel the grace hold and tell
+    // BOTH legs to resume. (Only one leg back → keep holding, wait for the other.)
+    if (legs.graceTimer && legs.bridge && legs.browser) {
+      clearTimeout(legs.graceTimer);
+      legs.graceTimer = null;
+      for (const leg of [legs.bridge, legs.browser]) {
+        try { leg.send(encodePeerReattachedFrame()); } catch { /* closing */ }
+      }
+      log("reattached — pair whole again", { session, role });
+    }
+
+    // Arm the max-duration cap once, on the first leg; arm/refresh idle now (unless
+    // still holding a grace window — a degraded session is governed by grace, not idle).
+    if (firstLeg && !legs.maxTimer) {
       legs.maxTimer = setTimeout(() => endSession(session, maxCloseReason(maxMs)), maxMs);
       legs.maxTimer.unref?.();
     }
-    bumpIdle(session, legs);
+    if (!legs.graceTimer) bumpIdle(session, legs);
 
     ws.on("message", (data, isBinary) => {
       const peer = role === "bridge" ? legs.browser : legs.bridge;
@@ -133,22 +176,26 @@ export function startStandinRelay(opts = {}) {
         peer.send(data, { binary: isBinary }); // verbatim, opaque
       }
       // Activity → push the idle deadline out (max-duration is untouched).
-      if (sessions.get(session) === legs) bumpIdle(session, legs);
+      if (sessions.get(session) === legs && !legs.graceTimer) bumpIdle(session, legs);
     });
 
+    // One leg went away → HOLD the session for the reconnect grace window instead of
+    // tearing it down. Keep the owner + any surviving socket; tell the survivor via
+    // `peer-degraded` (do NOT close it). endGrace() runs the old teardown if the
+    // window elapses still-incomplete.
     const teardown = () => {
-      if (legs[role] === ws) legs[role] = null;
+      if (legs[role] !== ws) return; // a superseding attach already owns this slot
+      legs[role] = null;
       log("detached", { session, role });
+      if (sessions.get(session) !== legs) return;
+      if (!legs.graceTimer) {
+        clearTimeout(legs.idleTimer); // idle is suspended while degraded
+        legs.graceTimer = setTimeout(() => endGrace(session), graceMs);
+        legs.graceTimer.unref?.();
+      }
       const peer = role === "bridge" ? legs.browser : legs.bridge;
       if (peer && peer.readyState === peer.OPEN) {
-        try { peer.close(CLOSE.PEER_GONE.code, CLOSE.PEER_GONE.reason); } catch { /* closing */ }
-      }
-      if (role === "bridge") legs.browser = null;
-      else legs.bridge = null;
-      if (!legs.bridge && !legs.browser) {
-        clearTimeout(legs.idleTimer);
-        clearTimeout(legs.maxTimer);
-        sessions.delete(session);
+        try { peer.send(encodePeerDegradedFrame()); } catch { /* closing */ }
       }
     };
 
@@ -168,6 +215,7 @@ export function startStandinRelay(opts = {}) {
             for (const legs of sessions.values()) {
               clearTimeout(legs.idleTimer);
               clearTimeout(legs.maxTimer);
+              clearTimeout(legs.graceTimer);
             }
             for (const client of wss.clients) {
               try { client.terminate(); } catch { /* ignore */ }
