@@ -35,6 +35,8 @@ import {
   encodeAttachedFrame,
   encodePeerDegradedFrame,
   encodePeerReattachedFrame,
+  encodeHeartbeatAckFrame,
+  isHeartbeatFrame,
 } from "../shared/control-frames.mjs";
 
 const NORMAL_CLOSURE = 1000;
@@ -139,6 +141,18 @@ export function startStandinRelay(opts = {}) {
       return;
     }
 
+    // Same-owner browser PREEMPTION (fix/terminal-dock-heartbeat) — mirrors the
+    // Cloudflare DO: the stale browser leg (possibly silently dead) is closed 4001
+    // "preempted" and this attach takes its slot. Nulling the slot FIRST makes the
+    // stale socket's teardown a no-op (superseded), so no grace window opens for a
+    // swap that leaves the pair whole.
+    if (decision.preempt && legs[role]) {
+      const stale = legs[role];
+      legs[role] = null;
+      try { stale.close(CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason); } catch { /* closing */ }
+      log("stale browser leg preempted", { session, role });
+    }
+
     const firstLeg = legs.bridge === null && legs.browser === null;
     if (legs.owner === null) legs.owner = auth.sub;
     legs[role] = ws;
@@ -171,6 +185,13 @@ export function startStandinRelay(opts = {}) {
     if (!legs.graceTimer) bumpIdle(session, legs);
 
     ws.on("message", (data, isBinary) => {
+      // HEARTBEAT intercept (fix/terminal-dock-heartbeat) — mirrors the Cloudflare
+      // DO's auto-response: echo the ack to the PROBING leg only, never forward,
+      // and never bump the idle clock (a heartbeat is not session activity).
+      if (!isBinary && isHeartbeatFrame(String(data))) {
+        try { ws.send(encodeHeartbeatAckFrame()); } catch { /* leg already gone */ }
+        return;
+      }
       const peer = role === "bridge" ? legs.browser : legs.bridge;
       if (peer && peer.readyState === peer.OPEN) {
         peer.send(data, { binary: isBinary }); // verbatim, opaque

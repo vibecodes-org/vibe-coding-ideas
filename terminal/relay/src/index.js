@@ -46,6 +46,9 @@ import {
   encodeAttachedFrame,
   encodePeerDegradedFrame,
   encodePeerReattachedFrame,
+  encodeHeartbeatFrame,
+  encodeHeartbeatAckFrame,
+  isHeartbeatFrame,
 } from "../../shared/control-frames.mjs";
 
 /** Normal WebSocket closure code used for clean, server-initiated session ends. */
@@ -96,6 +99,22 @@ export class TerminalRelay {
     // NOTE (hibernation): do NOT keep session state in instance fields — the DO
     // can be evicted between messages. Live sockets + state.storage are the only
     // durable sources, read on demand below.
+
+    // App-level HEARTBEAT echo (fix/terminal-dock-heartbeat): answer the browser
+    // dock's `{"t":"hb"}` liveness probe with `{"t":"hb-ack"}` WITHOUT waking the
+    // DO (hibernation-safe auto-response). Deliberately NOT routed through
+    // webSocketMessage: a heartbeat is never forwarded to the peer and never
+    // stamps lastActivityAt, so the 30-min idle cap is unaffected by an
+    // open-but-idle dock. If the runtime lacks auto-response, the belt-and-braces
+    // intercept in webSocketMessage below still answers (with a DO wake).
+    try {
+      const Pair = globalThis.WebSocketRequestResponsePair;
+      if (Pair) {
+        this.state.setWebSocketAutoResponse(new Pair(encodeHeartbeatFrame(), encodeHeartbeatAckFrame()));
+      }
+    } catch (e) {
+      this.log("heartbeat auto-response unavailable", { err: String(e) });
+    }
   }
 
   /** @param {string} msg @param {object} [extra] */
@@ -185,6 +204,22 @@ export class TerminalRelay {
       return new Response(null, { status: 101, webSocket: client });
     }
 
+    // 2b) Same-owner browser PREEMPTION (fix/terminal-dock-heartbeat): decideAttach
+    //     accepted this leg OVER a still-registered browser socket — after a silent
+    //     link death (wifi off; macOS never RSTs) the dead socket lingers OPEN
+    //     forever and used to block every reattach with DUP_BROWSER. Close the
+    //     stale leg(s) BEFORE accepting the new one so single-attach holds
+    //     post-swap; handleDetach sees the pair still whole and skips the grace
+    //     hold. Foreign owners never reach here (owner check above).
+    if (decision.preempt) {
+      for (const stale of this.state.getWebSockets(`role:${role}`)) {
+        try {
+          stale.close(CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason);
+        } catch { /* already closing */ }
+      }
+      this.log("stale browser leg preempted", { session, role });
+    }
+
     // 3) Accept into HIBERNATION. Tag by role (+ sub) so the peer is findable and
     //    single-attach is re-derivable after the DO is evicted from memory.
     this.state.acceptWebSocket(server, [`role:${role}`, `sub:${auth.sub}`]);
@@ -249,6 +284,18 @@ export class TerminalRelay {
    * @param {string|ArrayBuffer} message
    */
   async webSocketMessage(ws, message) {
+    // HEARTBEAT intercept (belt-and-braces): normally the auto-response pair set
+    // in the constructor answers `{"t":"hb"}` without this handler ever running.
+    // If auto-response is unavailable at runtime, echo the ack here — BEFORE the
+    // forward (a heartbeat never reaches the peer) and BEFORE the activity stamp
+    // (heartbeats must not extend the idle clock).
+    if (typeof message === "string" && isHeartbeatFrame(message)) {
+      try {
+        ws.send(encodeHeartbeatAckFrame());
+      } catch { /* leg already closing */ }
+      return;
+    }
+
     const att = ws.deserializeAttachment() || {};
     const role = att.role;
     if (role !== "bridge" && role !== "browser") return;
@@ -306,6 +353,27 @@ export class TerminalRelay {
     } catch { /* attachment may be gone */ }
     this.log("detached", { role, why, ...extra });
 
+    // Survivors, excluding the closing socket (it may still appear in the list).
+    const surviving = { bridge: false, browser: false };
+    const survivorSockets = [];
+    for (const peer of this.state.getWebSockets()) {
+      if (peer === ws) continue;
+      survivorSockets.push(peer);
+      try {
+        const peerRole = peer.deserializeAttachment()?.role;
+        if (peerRole === "bridge" || peerRole === "browser") surviving[peerRole] = true;
+      } catch { /* attachment may be gone */ }
+    }
+
+    // PREEMPTION swap (fix/terminal-dock-heartbeat): the closing socket was
+    // already REPLACED — a same-owner attach closed it and both roles are still
+    // live. Nothing dropped, so there is nothing to hold a grace window for;
+    // opening one here would wrongly suspend the idle cap for the whole window.
+    if (surviving.bridge && surviving.browser) {
+      this.log("detach superseded — pair still whole", { role, why });
+      return;
+    }
+
     const now = Date.now();
     // Open (or keep) the grace hold; the grace alarm governs teardown from here.
     if ((await this.state.storage.get("graceDeadline")) == null) {
@@ -313,17 +381,14 @@ export class TerminalRelay {
     }
     await this.armAlarm(now);
 
-    // Tell any SURVIVING peer we're holding (the closing socket may still appear
-    // in the list, so skip it). We do NOT close survivors during the window.
-    let survivors = 0;
-    for (const peer of this.state.getWebSockets()) {
-      if (peer === ws) continue;
-      survivors++;
+    // Tell any SURVIVING peer we're holding. We do NOT close survivors during
+    // the window.
+    for (const peer of survivorSockets) {
       try {
         peer.send(encodePeerDegradedFrame());
       } catch { /* already closing */ }
     }
-    this.log("holding session for reconnect", { droppedRole: role, survivors, graceMs: this.graceMs() });
+    this.log("holding session for reconnect", { droppedRole: role, survivors: survivorSockets.length, graceMs: this.graceMs() });
   }
 
   // ── Idle / max-duration via DO alarms ────────────────────────────────────────

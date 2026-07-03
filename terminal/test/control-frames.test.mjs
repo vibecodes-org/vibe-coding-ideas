@@ -15,6 +15,10 @@ import {
   isPeerDegradedFrame,
   encodePeerReattachedFrame,
   isPeerReattachedFrame,
+  encodeHeartbeatFrame,
+  isHeartbeatFrame,
+  encodeHeartbeatAckFrame,
+  isHeartbeatAckFrame,
 } from "../shared/control-frames.mjs";
 import { parseControlMessage } from "../bridge/src/framing.js";
 
@@ -34,6 +38,20 @@ test("grace-window frames encode ⇄ detect round-trip and stay mutually disjoin
   // Neither is a resize control frame.
   assert.equal(parseControlMessage(encodePeerDegradedFrame()), null);
   assert.equal(parseControlMessage(encodePeerReattachedFrame()), null);
+});
+
+test("heartbeat frames encode ⇄ detect round-trip and stay disjoint from everything else", () => {
+  assert.equal(isHeartbeatFrame(encodeHeartbeatFrame()), true);
+  assert.equal(isHeartbeatAckFrame(encodeHeartbeatAckFrame()), true);
+  // The probe and its echo never cross-match, nor match any other control frame.
+  assert.equal(isHeartbeatFrame(encodeHeartbeatAckFrame()), false);
+  assert.equal(isHeartbeatAckFrame(encodeHeartbeatFrame()), false);
+  assert.equal(isAttachedFrame(encodeHeartbeatFrame()), false);
+  assert.equal(isPeerDegradedFrame(encodeHeartbeatAckFrame()), false);
+  assert.equal(isHeartbeatFrame(encodeAttachedFrame()), false);
+  // Neither is a resize control frame (browser→bridge namespace stays disjoint).
+  assert.equal(parseControlMessage(encodeHeartbeatFrame()), null);
+  assert.equal(parseControlMessage(encodeHeartbeatAckFrame()), null);
 });
 
 test("rejects non-attached / malformed / hostile inputs", () => {

@@ -34,6 +34,21 @@
 // Both are skew-safe exactly like `attached`: an old bridge logs-and-ignores an
 // unknown control frame, and a browser dock that doesn't know them treats them
 // as a no-op.
+//
+// LINK-LIVENESS HEARTBEAT (fix/terminal-dock-heartbeat) adds a browser→relay probe
+// pair in the SAME `{"t":…}` namespace. macOS never RSTs a socket when the network
+// silently dies (wifi off / network switch), so the browser leg needs an app-level
+// echo to prove the link is alive — the protocol-level pings the bridge relies on
+// are invisible to browser JS:
+//   - `{"t":"hb"}`     — sent BY the browser dock every ~15s while connected.
+//   - `{"t":"hb-ack"}` — echoed BY the relay, to the SENDING leg only. Never
+//     forwarded to the peer and never counted as session activity (the 30-min
+//     idle cap is unaffected). On Cloudflare this is a hibernation-safe
+//     setWebSocketAutoResponse pair — zero DO wakes.
+// Skew-safe both ways: an OLD relay forwards the hb to the bridge, which
+// logs-and-ignores it as an unknown control frame; the dock's watchdog only ARMS
+// on the first hb-ack, so with an old relay (no ack, ever) the pre-watchdog
+// behaviour is unchanged.
 
 /** Detect any control TEXT frame with a given `t` tag. Cheap + strict + bounded. */
 function isControlFrame(text, tag) {
@@ -80,4 +95,24 @@ export function encodePeerReattachedFrame() {
 /** @param {unknown} text @returns {boolean} */
 export function isPeerReattachedFrame(text) {
   return isControlFrame(text, "peer-reattached");
+}
+
+/** TEXT frame the browser dock sends the relay as its app-level liveness probe. */
+export function encodeHeartbeatFrame() {
+  return JSON.stringify({ t: "hb" });
+}
+
+/** @param {unknown} text @returns {boolean} */
+export function isHeartbeatFrame(text) {
+  return isControlFrame(text, "hb");
+}
+
+/** TEXT frame the relay echoes back to the PROBING leg only (never forwarded). */
+export function encodeHeartbeatAckFrame() {
+  return JSON.stringify({ t: "hb-ack" });
+}
+
+/** @param {unknown} text @returns {boolean} */
+export function isHeartbeatAckFrame(text) {
+  return isControlFrame(text, "hb-ack");
 }

@@ -57,16 +57,21 @@ import type { Terminal as XTerm } from "@xterm/xterm";
 import type { FitAddon as XFitAddon } from "@xterm/addon-fit";
 import {
   CONNECT_TIMEOUT_MS,
+  HEARTBEAT_INTERVAL_MS,
+  LINK_SILENT_CHECK_MS,
   RECONNECT_GRACE_MS,
   buildRelayUrl,
+  encodeHeartbeatFrame,
   encodeResizeMessage,
   initialConnectionState,
+  isHeartbeatAckFrame,
   isInputEnabled,
   isPeerDegradedFrame,
   isPeerReattachedFrame,
   isTerminalEnabled,
   mapCloseCode,
   relayBaseUrl,
+  shouldDeclareLinkSilent,
   terminalReducer,
   type TerminalConnectionState,
   type TerminalStatus,
@@ -233,6 +238,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   const degradeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pairRef = useRef<PairInfo | null>(null);
   const scheduleReconnectRef = useRef<() => void>(() => {});
+  // Silent-link watchdog bookkeeping (fix/terminal-dock-heartbeat).
+  // `lastInboundAtRef` is stamped on EVERY inbound frame (PTY bytes, control
+  // frames, hb-acks); `hbArmedRef` is a PER-SOCKET latch set on the socket's first
+  // hb-ack — an old relay never acks, so the watchdog stays disarmed there and the
+  // pre-watchdog behaviour is unchanged (version-skew gate). Both are reset in
+  // openBrowserLeg when a fresh socket is opened.
+  const lastInboundAtRef = useRef(0);
+  const hbArmedRef = useRef(false);
   // The compact bootstrap prompt (head/tail parts) the LAST launch-bus event
   // carried — i.e. what the launch button resolved. Dock-initiated launches with
   // no bus payload (paired auto-connect on open, Retry) fall back to building the
@@ -541,6 +554,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       }
       ws.binaryType = "arraybuffer";
       wsRef.current = ws;
+      // Fresh socket → fresh watchdog: disarm until ITS first hb-ack and restart
+      // the silence clock (an inherited stale stamp must never condemn a new leg).
+      hbArmedRef.current = false;
+      lastInboundAtRef.current = Date.now();
 
       if (!reconnect) {
         connectTimerRef.current = setTimeout(() => {
@@ -554,9 +571,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
         dispatch({ type: "relay-open" });
       };
       ws.onmessage = (ev) => {
+        // ANY inbound frame proves the link carried something just now — feed the
+        // silent-link watchdog before any classification.
+        lastInboundAtRef.current = Date.now();
         // TEXT = relay control frame on the BROWSER leg. The grace-window notices
         // arrive here (the R1 `attached` frame goes to the bridge leg only).
         if (typeof ev.data === "string") {
+          if (isHeartbeatAckFrame(ev.data)) {
+            // The relay's liveness echo — arm the watchdog for THIS socket. Never
+            // written to the xterm and never logged as content.
+            hbArmedRef.current = true;
+            return;
+          }
           if (isPeerDegradedFrame(ev.data)) {
             // Our peer (the bridge) dropped; the relay is HOLDING the session. Keep
             // the terminal, show a subtle hint, and bound the wait to the grace window.
@@ -652,6 +678,74 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     }, delay);
   }, [openBrowserLeg, clearReconnectTimer, clearDegradeTimer]);
   scheduleReconnectRef.current = scheduleReconnect;
+
+  // ── silent-link watchdog (fix/terminal-dock-heartbeat) ─────────────────────
+  // The watchdog verdict landed: the socket still LOOKS open but nothing inbound
+  // (PTY bytes or hb-acks) arrived for the whole silence threshold — a silent link
+  // death (wifi off / network switch; macOS never RSTs, so no close event ever
+  // fires). Tear down the ZOMBIE socket exactly like teardownSocket's socket step
+  // — null the handlers FIRST so its eventual close can't double-drive the state —
+  // then route into the EXISTING reattach machinery: disconnected + the
+  // grace-window reconnect loop (same sid, retained token, no re-mint).
+  const declareLinkSilent = useCallback(() => {
+    const ws = wsRef.current;
+    wsRef.current = null;
+    if (ws) {
+      ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+      try {
+        ws.close();
+      } catch {
+        /* already closing */
+      }
+    }
+    clearDegradeTimer();
+    setPeerDegraded(false);
+    dispatch({ type: "link-silent" });
+    scheduleReconnectRef.current();
+  }, [clearDegradeTimer]);
+
+  // While CONNECTED: probe the relay with the app-level heartbeat every
+  // HEARTBEAT_INTERVAL_MS and run the silence check every LINK_SILENT_CHECK_MS.
+  // The check computes WALL-CLOCK elapsed (a hidden tab's clamped timers can only
+  // delay a tick, never fake recency) and re-runs immediately when the tab becomes
+  // visible or the browser flips online/offline — the moments a silent death is
+  // most likely to be discovered.
+  useEffect(() => {
+    if (!enabled || state.status !== "connected") return;
+
+    const sendHeartbeat = () => {
+      const ws = wsRef.current;
+      if (ws && ws.readyState === WebSocket.OPEN) ws.send(encodeHeartbeatFrame());
+    };
+    const check = () => {
+      if (statusRef.current !== "connected") return;
+      if (shouldDeclareLinkSilent(lastInboundAtRef.current, Date.now(), hbArmedRef.current)) {
+        logger.warn("Terminal link silent — declaring dead, reattaching", {
+          silentMs: Date.now() - lastInboundAtRef.current,
+        });
+        declareLinkSilent();
+      }
+    };
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") check();
+    };
+
+    // Probe immediately so the watchdog ARMS on the first ack instead of waiting a
+    // whole interval (matters when a drop happens right after connecting).
+    sendHeartbeat();
+    const sendTimer = setInterval(sendHeartbeat, HEARTBEAT_INTERVAL_MS);
+    const checkTimer = setInterval(check, LINK_SILENT_CHECK_MS);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("online", check);
+    window.addEventListener("offline", check);
+    return () => {
+      clearInterval(sendTimer);
+      clearInterval(checkTimer);
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("online", check);
+      window.removeEventListener("offline", check);
+    };
+  }, [enabled, state.status, declareLinkSilent]);
 
   // ── connect (browser leg) ───────────────────────────────────────────────────
   // `autoLaunch` = the same-machine path: after minting, fire the vibecodes:// deep

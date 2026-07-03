@@ -104,6 +104,45 @@ test("owner-binding: omitting sub skips the owner check (slice-1 compatibility)"
   assert.equal(decideAttach(s, "browser").ok, true);
 });
 
+// ── same-owner browser preemption (fix/terminal-dock-heartbeat) ──────────────
+
+test("preemption: an owner-verified 2nd browser is accepted with the preempt flag", () => {
+  let s = emptyState();
+  s = attach(s, "bridge", "user-A");
+  s = attach(s, "browser", "user-A"); // possibly a silently-dead zombie leg
+  const d = decideAttach(s, "browser", "user-A");
+  assert.deepEqual(d, { ok: true, preempt: true }, "the newer same-owner browser wins");
+});
+
+test("preemption: a sub-less 2nd browser keeps the old DUP_BROWSER rejection", () => {
+  const s = attach(emptyState(), "browser");
+  const d = decideAttach(s, "browser");
+  assert.equal(d.ok, false);
+  assert.equal(d.code, CLOSE.DUP_BROWSER.code);
+});
+
+test("preemption: a foreign owner is still rejected OWNER_MISMATCH, never preempts", () => {
+  let s = emptyState();
+  s = attach(s, "browser", "user-A");
+  const d = decideAttach(s, "browser", "user-B");
+  assert.equal(d.ok, false);
+  assert.equal(d.code, CLOSE.OWNER_MISMATCH.code);
+});
+
+test("preemption: never applies to the bridge role — a live 2nd bridge is a real conflict", () => {
+  let s = emptyState();
+  s = attach(s, "bridge", "user-A");
+  const d = decideAttach(s, "bridge", "user-A");
+  assert.equal(d.ok, false);
+  assert.equal(d.code, CLOSE.DUP_BRIDGE.code);
+});
+
+test("preemption: the stale-leg close reuses the DUP_BROWSER code with a distinct reason", () => {
+  assert.equal(CLOSE.PREEMPTED.code, CLOSE.DUP_BROWSER.code);
+  assert.equal(CLOSE.PREEMPTED.code, 4001);
+  assert.match(CLOSE.PREEMPTED.reason, /preempted/);
+});
+
 test("isValidSession accepts url-safe tokens and rejects junk", () => {
   assert.equal(isValidSession("a3f9"), true);
   assert.equal(isValidSession("dev-abc_123.4"), true);
