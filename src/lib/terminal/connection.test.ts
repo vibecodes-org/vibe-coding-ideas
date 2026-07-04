@@ -255,9 +255,12 @@ describe("encodeResizeMessage", () => {
 });
 
 describe("grace-window reconnect (fix/terminal-reconnect-reattach)", () => {
-  it("the reconnect window stays strictly inside the token TTL (no re-mint)", () => {
-    // The whole point: original tokens must still be valid for the entire window, so
-    // a reattach never needs a fresh mint. Keep a safety margin below the 300s TTL.
+  it("the grace window is the sole reattach bound; TTL only bounds establishment", () => {
+    // fix/terminal-expired-reattach: the relay waives token expiry for a same-owner
+    // reattach to a LIVE session, so reattach is bounded purely by the grace window —
+    // the dock keeps NO client-side expiry gate. The window still sits below the TTL
+    // so a FIRST attach (never waived — no bound owner yet) always has a live token
+    // for the whole launch flow.
     expect(RECONNECT_GRACE_MS).toBeLessThan(DEFAULT_TTL_SECONDS * 1000);
   });
 

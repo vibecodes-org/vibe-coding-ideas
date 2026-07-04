@@ -155,15 +155,20 @@ export function peerRole(role) {
 // THE ONE SHARED NUMBER. When a single leg drops, the relay does NOT tear the
 // session down; it holds the owner binding + the surviving socket and arms a
 // grace alarm for this long, waiting for the dropped role to re-attach (same sid
-// + same owner + still-valid token) so the pair can resume with no re-mint. The
-// three reconnect budgets are deliberately equal and MUST stay < the token TTL
-// (DEFAULT_TTL_SECONDS = 300s in ../../shared/session-token.mjs) so the ORIGINAL
-// tokens are still valid for the whole window — no token re-mint, ever:
+// + same owner) so the pair can resume with no re-mint. The three reconnect
+// budgets are deliberately equal:
 //   - relay grace       → RECONNECT_GRACE_MS (here)
 //   - bridge reconnect  → BRIDGE_RECONNECT_MS (bridge/src/index.js)
 //   - client reconnect  → RECONNECT_GRACE_MS  (src/lib/terminal/connection.ts)
-// BEYOND the window the session is torn down honestly (survivor gets PEER_GONE,
-// state cleared) and the UX falls back to a clean fresh launch.
+// Token expiry does NOT bound reattach (fix/terminal-expired-reattach): the token
+// TTL (DEFAULT_TTL_SECONDS = 300s in ../../shared/session-token.mjs) bounds
+// session ESTABLISHMENT only. For a reattach to a session the relay is still
+// holding, authorizeAttach waives expiry IFF the token's sub matches the bound
+// owner (belt-and-braces capped at the max session age) — so an AGED session
+// (attached long ago, dropped past its TTL) reconnects inside the grace window
+// with the ORIGINAL tokens, no re-mint ever. BEYOND the window the session is
+// torn down honestly (survivor gets PEER_GONE, owner binding + state cleared, so
+// the waiver dies with it) and the UX falls back to a clean fresh launch.
 export const RECONNECT_GRACE_MS = 90_000;
 
 /** Default idle cap: 30 minutes of no traffic. Overridable via env TERMINAL_IDLE_MS. */
