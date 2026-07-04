@@ -193,7 +193,10 @@ test("prompt launch with an expired or foreign-owner token spawns NOTHING", { ti
   }
 
   // (a) expired token — fails authorizeAttach (relay close 4006).
-  const past = Math.floor(Date.now() / 1000) - 3600;
+  // fix/terminal-expired-reattach: a same-owner expired token against a LIVE
+  // session is now waived for reattach, so age this one past the max session age
+  // (default 4h) — beyond the belt-and-braces cap the reject path still holds.
+  const past = Math.floor(Date.now() / 1000) - 5 * 3600;
   const expired = await signToken(
     { sub: ownerA, sid: session, idea: "idea-P", role: "bridge", iat: past, exp: past + 60 },
     SECRET,

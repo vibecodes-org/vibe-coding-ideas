@@ -179,11 +179,18 @@ export class TerminalRelay {
 
     // 1) Authenticate the leg: verify the app-minted token's signature + expiry and
     //    that its `sid`/`role` claims match THIS connection. Never log the token.
+    //    The durable owner binding is read FIRST and handed to authorizeAttach so a
+    //    same-owner reattach to a LIVE session is accepted even after the token's
+    //    TTL lapsed (fix/terminal-expired-reattach) — establishment (no bound
+    //    owner) and foreign subs still require an unexpired token.
+    const boundOwner = (await this.state.storage.get("owner")) ?? null;
     const auth = await authorizeAttach({
       token,
       secret: this.env.TERMINAL_SESSION_SECRET,
       session,
       role,
+      boundOwner,
+      maxSessionMs: this.maxMs(),
     });
     if (!auth.ok) {
       this.log("attach rejected (auth)", { session, role, reason: auth.reason, code: CLOSE.BAD_TOKEN.code });
@@ -192,6 +199,10 @@ export class TerminalRelay {
       server.accept();
       server.close(CLOSE.BAD_TOKEN.code, CLOSE.BAD_TOKEN.reason);
       return new Response(null, { status: 101, webSocket: client });
+    }
+    if (auth.expired) {
+      // Metadata only — never token material.
+      this.log("attach authorized with expired token (reattach waiver)", { session, role });
     }
 
     // 2) Owner-binding + single-attach (pure), fed from LIVE sockets + durable owner.

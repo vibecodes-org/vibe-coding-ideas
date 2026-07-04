@@ -102,8 +102,11 @@ try {
   }
 
   // (e) expired token: refused with BAD_TOKEN.
+  // fix/terminal-expired-reattach: a same-owner expired token against a LIVE
+  // session is now waived for reattach, so age this one past the max session age
+  // (default 4h) — beyond the belt-and-braces cap the reject path still holds.
   {
-    const past = Math.floor(Date.now() / 1000) - 3600;
+    const past = Math.floor(Date.now() / 1000) - 5 * 3600;
     const expired = await signToken(
       { sub: ownerA, sid: session, idea: "idea-X", role: "browser", iat: past, exp: past + 60 },
       SECRET,

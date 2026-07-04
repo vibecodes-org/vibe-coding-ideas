@@ -121,11 +121,24 @@ export function startStandinRelay(opts = {}) {
     }
 
     // Authenticate the leg with the SAME shared verifier the real relay uses.
-    const auth = await authorizeAttach({ token, secret, session, role });
+    // Mirrors the Cloudflare DO (fix/terminal-expired-reattach): the held
+    // session's bound owner + the max session age are handed to authorizeAttach
+    // so a same-owner reattach to a LIVE session is waived past the token TTL.
+    const auth = await authorizeAttach({
+      token,
+      secret,
+      session,
+      role,
+      boundOwner: sessions.get(session)?.owner ?? null,
+      maxSessionMs: maxMs,
+    });
     if (!auth.ok) {
       log("attach rejected (auth)", { session, role, reason: auth.reason });
       ws.close(CLOSE.BAD_TOKEN.code, CLOSE.BAD_TOKEN.reason);
       return;
+    }
+    if (auth.expired) {
+      log("attach authorized with expired token (reattach waiver)", { session, role });
     }
 
     if (!sessions.has(session)) {

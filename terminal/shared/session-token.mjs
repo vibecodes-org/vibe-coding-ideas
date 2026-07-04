@@ -19,6 +19,15 @@
 //
 // The signing secret NEVER lives in code. It is read from the environment by each
 // caller (TERMINAL_SESSION_SECRET) and passed in. This module is pure crypto.
+//
+// Expiry semantics (fix/terminal-expired-reattach): the TTL bounds session
+// ESTABLISHMENT — a first attach (no bound owner yet) always needs a live token.
+// REATTACH to a session the relay is still holding is bounded by the reconnect
+// grace window + the live-session owner binding instead: `authorizeAttach` waives
+// expiry ONLY when the caller supplies the session's bound owner (`boundOwner`)
+// and the token's `sub` matches it — signature, shape, sid and role checks are
+// never waived, and a belt-and-braces cap rejects tokens older than the max
+// session age. `verifyToken` itself stays strict (expired is always a failure).
 
 /** @typedef {"bridge"|"browser"} Role */
 
@@ -34,6 +43,15 @@
 
 /** Default token lifetime: short-lived (5 minutes) — enough to open both legs. */
 export const DEFAULT_TTL_SECONDS = 300;
+
+/**
+ * Belt-and-braces cap on the expiry waiver: even for a same-owner reattach to a
+ * live session, a token whose `iat` is older than this can never be a legitimate
+ * reattach — the relay's max-duration cap (same default, see
+ * relay/src/pairing.js → DEFAULT_MAX_MS) would have ended the session already.
+ * Callers pass the relay's configured maxMs; this default (4h) applies if absent.
+ */
+export const DEFAULT_MAX_SESSION_MS = 4 * 60 * 60 * 1000;
 
 const ROLES = Object.freeze(["bridge", "browser"]);
 const enc = new TextEncoder();
@@ -85,15 +103,17 @@ export async function signToken(payload, secret) {
 }
 
 /**
- * Verify a token's signature and expiry. Constant-time signature check via
- * `crypto.subtle.verify`. Does NOT check sid/role binding — see {@link authorizeAttach}.
+ * Internal verifier: signature + shape checks are ALWAYS enforced; expiry is
+ * REPORTED (`expired`) rather than rejected, so {@link authorizeAttach} can apply
+ * the reattach waiver. Never exported — external callers go through the strict
+ * {@link verifyToken} or {@link authorizeAttach}.
  *
  * @param {unknown} token
  * @param {string} secret
  * @param {{ now?: number }} [opts] - `now` in unix seconds (defaults to wall clock)
- * @returns {Promise<{ ok: true, claims: SessionClaims } | { ok: false, reason: string }>}
+ * @returns {Promise<{ ok: true, claims: SessionClaims, expired: boolean } | { ok: false, reason: string }>}
  */
-export async function verifyToken(token, secret, opts = {}) {
+async function verifyTokenInternal(token, secret, opts = {}) {
   const now = opts.now ?? Math.floor(Date.now() / 1000);
   if (typeof token !== "string" || token.length === 0) {
     return { ok: false, reason: "missing token" };
@@ -126,7 +146,6 @@ export async function verifyToken(token, secret, opts = {}) {
   if (typeof claims.iat !== "number" || typeof claims.exp !== "number") {
     return { ok: false, reason: "missing iat/exp" };
   }
-  if (now >= claims.exp) return { ok: false, reason: "expired" };
   if (typeof claims.sub !== "string" || claims.sub.length === 0) {
     return { ok: false, reason: "missing sub" };
   }
@@ -135,7 +154,25 @@ export async function verifyToken(token, secret, opts = {}) {
   }
   if (!ROLES.includes(claims.role)) return { ok: false, reason: "bad role" };
 
-  return { ok: true, claims };
+  return { ok: true, claims, expired: now >= claims.exp };
+}
+
+/**
+ * Verify a token's signature and expiry. Constant-time signature check via
+ * `crypto.subtle.verify`. Does NOT check sid/role binding — see {@link authorizeAttach}.
+ * STRICT: an expired token always fails here (the reattach waiver lives ONLY in
+ * `authorizeAttach`, gated on the live session's bound owner).
+ *
+ * @param {unknown} token
+ * @param {string} secret
+ * @param {{ now?: number }} [opts] - `now` in unix seconds (defaults to wall clock)
+ * @returns {Promise<{ ok: true, claims: SessionClaims } | { ok: false, reason: string }>}
+ */
+export async function verifyToken(token, secret, opts = {}) {
+  const res = await verifyTokenInternal(token, secret, opts);
+  if (!res.ok) return res;
+  if (res.expired) return { ok: false, reason: "expired" };
+  return { ok: true, claims: res.claims };
 }
 
 /**
@@ -145,15 +182,50 @@ export async function verifyToken(token, secret, opts = {}) {
  *
  * Shared by the Cloudflare relay and the Node stand-in so both enforce identically.
  *
- * @param {{ token: unknown, secret: string, session: unknown, role: unknown, now?: number }} args
- * @returns {Promise<{ ok: true, sub: string, claims: SessionClaims } | { ok: false, reason: string }>}
+ * REATTACH EXPIRY WAIVER (fix/terminal-expired-reattach): when the relay is still
+ * holding a session (owner bound), the caller passes that owner as `boundOwner`.
+ * An EXPIRED token is then accepted IFF its `sub` matches `boundOwner` — i.e. the
+ * waiver applies only to the session's rightful owner reattaching to a LIVE
+ * session; establishment (no bound owner) always needs an unexpired token. A
+ * foreign expired token fails with the SAME reason as plain expiry so a rejected
+ * caller learns nothing about session liveness. Signature, shape, sid and role
+ * checks are NEVER waived. Belt-and-braces: a waived token older than
+ * `maxSessionMs` (the relay's max session age) is rejected — no legitimate
+ * session can outlive it. Waived results carry `expired: true` for logging.
+ *
+ * @param {{ token: unknown, secret: string, session: unknown, role: unknown,
+ *           now?: number, boundOwner?: string|null, maxSessionMs?: number }} args
+ *   `boundOwner` — the live session's bound owner (`sub`), or null when the
+ *   session has no owner binding (virgin / already torn down). Default null.
+ *   `maxSessionMs` — the relay's max session age; bounds the waiver (default 4h).
+ * @returns {Promise<{ ok: true, sub: string, claims: SessionClaims, expired?: true } | { ok: false, reason: string }>}
  */
-export async function authorizeAttach({ token, secret, session, role, now }) {
-  const res = await verifyToken(token, secret, { now });
+export async function authorizeAttach({
+  token,
+  secret,
+  session,
+  role,
+  now,
+  boundOwner = null,
+  maxSessionMs = DEFAULT_MAX_SESSION_MS,
+}) {
+  const res = await verifyTokenInternal(token, secret, { now });
   if (!res.ok) return res;
   const c = res.claims;
   if (c.sid !== session) return { ok: false, reason: "sid mismatch" };
   if (c.role !== role) return { ok: false, reason: "role mismatch" };
+  if (res.expired) {
+    // The waiver: only the LIVE session's bound owner may attach on an expired
+    // token. Everything else fails exactly like plain expiry (no liveness leak).
+    if (boundOwner == null || c.sub !== boundOwner) {
+      return { ok: false, reason: "expired" };
+    }
+    const nowSec = now ?? Math.floor(Date.now() / 1000);
+    if ((nowSec - c.iat) * 1000 > maxSessionMs) {
+      return { ok: false, reason: "expired" };
+    }
+    return { ok: true, sub: c.sub, claims: c, expired: true };
+  }
   return { ok: true, sub: c.sub, claims: c };
 }
 

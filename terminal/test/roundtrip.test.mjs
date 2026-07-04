@@ -171,8 +171,12 @@ test("bridge <-> relay <-> browser round-trip + single-attach + owner-binding", 
   }
 
   // (e) a browser with an EXPIRED token is rejected (bad/expired token).
+  // fix/terminal-expired-reattach: a same-owner expired token against a LIVE
+  // session is now WAIVED (that is the fix), so this fixture ages the token past
+  // the max session age (default 4h) — beyond the belt-and-braces cap no waiver
+  // ever applies, and the reject path stays covered end-to-end.
   {
-    const past = Math.floor(Date.now() / 1000) - 3600;
+    const past = Math.floor(Date.now() / 1000) - 5 * 3600;
     const expired = await signToken(
       { sub: ownerA, sid: session, idea: "idea-X", role: "browser", iat: past, exp: past + 60 },
       SECRET,

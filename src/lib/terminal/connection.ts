@@ -20,10 +20,12 @@ export const CONNECT_TIMEOUT_MS = 30_000;
 /**
  * Reconnect grace window (ms). THE ONE SHARED NUMBER — equal to the relay grace
  * (terminal/relay/src/pairing.js → RECONNECT_GRACE_MS) and the bridge budget
- * (terminal/bridge/src/index.js → BRIDGE_RECONNECT_MS), and deliberately < the 300s
- * token TTL so the ORIGINAL browser token is still valid for the whole window — a
- * transient drop REATTACHES to the same sid with no re-mint. Beyond the window the
- * session ends honestly and the UX falls back to a clean fresh launch.
+ * (terminal/bridge/src/index.js → BRIDGE_RECONNECT_MS). This window is the SOLE
+ * bound on reattach: a transient drop REATTACHES to the same sid with the ORIGINAL
+ * browser token, no re-mint — the relay waives token expiry for a same-owner
+ * reattach to a live session (fix/terminal-expired-reattach), so even a session
+ * older than the 300s token TTL reconnects. Beyond the window the session ends
+ * honestly and the UX falls back to a clean fresh launch.
  */
 export const RECONNECT_GRACE_MS = 90_000;
 

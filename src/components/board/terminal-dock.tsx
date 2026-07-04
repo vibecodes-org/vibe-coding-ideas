@@ -130,10 +130,11 @@ interface PairInfo {
   sessionId: string;
   bridgeToken: string;
   // Retained so a TRANSIENT drop can REATTACH to the SAME sid with no re-mint
-  // (grace-window reconnect). `browserToken` re-opens the browser leg; `expiresAt`
-  // (unix seconds) is the token-validity bound on how long reattach is possible.
+  // (grace-window reconnect). `browserToken` re-opens the browser leg. Reattach is
+  // bounded purely by RECONNECT_GRACE_MS — the relay waives token expiry for a
+  // same-owner reattach to a live session (fix/terminal-expired-reattach), so no
+  // client-side expiry gate exists here.
   browserToken: string;
-  expiresAt: number;
 }
 
 interface StatusMeta {
@@ -647,17 +648,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   );
 
   // Drive the grace-window reconnect loop: reattach to the SAME sid with the retained
-  // browser token, with jittered exponential backoff, bounded by BOTH the grace window
-  // and the token validity. When either is spent with no reattach, end honestly
-  // (reconnect-exhausted → the calm "session ended, start a new one" overlay). No
-  // re-mint, no deep link — a bounded, silent reattach.
+  // browser token, with jittered exponential backoff, bounded purely by the grace
+  // window (the relay waives token expiry for a same-owner reattach to a live
+  // session, so an AGED session reconnects too — fix/terminal-expired-reattach).
+  // When the window is spent with no reattach, end honestly (reconnect-exhausted →
+  // the calm "session ended, start a new one" overlay). No re-mint, no deep link —
+  // a bounded, silent reattach.
   const scheduleReconnect = useCallback(() => {
     clearDegradeTimer();
     const p = pairRef.current;
     const now = Date.now();
-    const tokenValid = !!p && p.expiresAt * 1000 > now + 1000;
     if (reconnectDeadlineRef.current === 0) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
-    if (!p || !tokenValid || now >= reconnectDeadlineRef.current) {
+    if (!p || now >= reconnectDeadlineRef.current) {
       reconnectDeadlineRef.current = 0;
       reconnectAttemptRef.current = 0;
       dispatch({ type: "reconnect-exhausted" });
@@ -798,13 +800,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     if (gen !== connectGenRef.current) return;
 
     dispatch({ type: "session-created", sessionId: data.sessionId });
-    // Retain the browser token + expiry too, so a transient drop can REATTACH to
-    // this same sid with no re-mint (grace-window reconnect).
+    // Retain the browser token too, so a transient drop can REATTACH to this same
+    // sid with no re-mint (grace-window reconnect).
     setPair({
       sessionId: data.sessionId,
       bridgeToken: data.bridgeToken,
       browserToken: data.browserToken,
-      expiresAt: data.expiresAt,
     });
     // A fresh mint starts a fresh reconnect budget.
     reconnectDeadlineRef.current = 0;
@@ -819,15 +820,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
 
   // Manual "Reconnect now" — force an immediate reattach attempt (skip the backoff
   // wait) using the retained token, or fall back to a clean fresh launch if the
-  // token/window is spent. Fixes the old button, which minted an EMPTY session with
+  // grace window is spent. Fixes the old button, which minted an EMPTY session with
   // no autoLaunch and timed out after 30s.
   const reconnectNow = useCallback(() => {
     const p = pairRef.current;
     const now = Date.now();
-    const tokenValid = !!p && p.expiresAt * 1000 > now + 1000;
     const withinWindow =
       reconnectDeadlineRef.current === 0 || now < reconnectDeadlineRef.current;
-    if (p && tokenValid && withinWindow) {
+    if (p && withinWindow) {
       clearReconnectTimer();
       if (reconnectDeadlineRef.current === 0) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
       openBrowserLeg(p.sessionId, p.browserToken, { reconnect: true });
