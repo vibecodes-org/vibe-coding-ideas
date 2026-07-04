@@ -2,12 +2,17 @@ import { describe, it, expect } from "vitest";
 import {
   RELAY_CLOSE,
   RECONNECT_GRACE_MS,
+  HEARTBEAT_INTERVAL_MS,
+  LINK_SILENT_AFTER_MS,
   initialConnectionState,
   terminalReducer,
   mapCloseCode,
   isInputEnabled,
   isPeerDegradedFrame,
   isPeerReattachedFrame,
+  encodeHeartbeatFrame,
+  isHeartbeatAckFrame,
+  shouldDeclareLinkSilent,
   buildRelayUrl,
   encodeResizeMessage,
   type TerminalConnectionState,
@@ -18,6 +23,9 @@ import {
   encodeAttachedFrame,
   encodePeerDegradedFrame,
   encodePeerReattachedFrame,
+  encodeHeartbeatFrame as encodeSharedHeartbeatFrame,
+  encodeHeartbeatAckFrame as encodeSharedHeartbeatAckFrame,
+  isHeartbeatFrame as isSharedHeartbeatFrame,
 } from "../../../terminal/shared/control-frames.mjs";
 
 // Helper: fold a sequence of events through the reducer from the initial state.
@@ -268,5 +276,72 @@ describe("grace-window reconnect (fix/terminal-reconnect-reattach)", () => {
     expect(isPeerReattachedFrame(encodeAttachedFrame())).toBe(false);
     expect(isPeerDegradedFrame("")).toBe(false);
     expect(isPeerDegradedFrame('{"t":"peer-degraded"' /* truncated */)).toBe(false);
+  });
+});
+
+describe("silent-link watchdog (fix/terminal-dock-heartbeat)", () => {
+  const connected = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }]);
+
+  it("link-silent from connected → disconnected (recoverable, feeds the reattach loop)", () => {
+    const s = terminalReducer(connected, { type: "link-silent" });
+    expect(s.status).toBe("disconnected");
+    expect(s.errorKind).toBeNull();
+    expect(s.endedReason).toBeNull();
+  });
+
+  it("link-silent is ignored in every non-connected state", () => {
+    const nonConnected: TerminalConnectionState[] = [
+      initialConnectionState, // idle
+      run([{ type: "connect" }]), // connecting
+      run([{ type: "connect" }, { type: "relay-open" }]), // waiting-to-pair
+      terminalReducer(connected, { type: "closed", code: RELAY_CLOSE.PEER_GONE }), // disconnected (already reconnecting)
+      terminalReducer(connected, { type: "user-end" }), // session-ended
+      run([{ type: "connect" }, { type: "session-mint-failed" }]), // error
+    ];
+    for (const state of nonConnected) {
+      expect(terminalReducer(state, { type: "link-silent" })).toBe(state);
+    }
+  });
+
+  // The heartbeat frame + ack detector are duplicated from
+  // terminal/shared/control-frames.mjs (plain .mjs outside the TS build graph).
+  // Pin BOTH directions byte-for-byte against the real shared encoders — the relay
+  // auto-response matches the request string EXACTLY, so any drift breaks liveness.
+  it("the probe frame is byte-for-byte the shared encoder's (relay auto-response matches exactly)", () => {
+    expect(encodeHeartbeatFrame()).toBe(encodeSharedHeartbeatFrame());
+    expect(isSharedHeartbeatFrame(encodeHeartbeatFrame())).toBe(true);
+  });
+
+  it("detects the shared hb-ack frame the relay actually echoes", () => {
+    expect(isHeartbeatAckFrame(encodeSharedHeartbeatAckFrame())).toBe(true);
+  });
+
+  it("the ack detector is strict to its tag (disjoint from every other control frame)", () => {
+    expect(isHeartbeatAckFrame(encodeSharedHeartbeatFrame())).toBe(false);
+    expect(isHeartbeatAckFrame(encodeAttachedFrame())).toBe(false);
+    expect(isHeartbeatAckFrame(encodePeerDegradedFrame())).toBe(false);
+    expect(isHeartbeatAckFrame(encodePeerReattachedFrame())).toBe(false);
+    expect(isHeartbeatAckFrame("")).toBe(false);
+    expect(isHeartbeatAckFrame('{"t":"hb-ack"' /* truncated */)).toBe(false);
+    // The other detectors must not claim the ack either.
+    expect(isPeerDegradedFrame(encodeSharedHeartbeatAckFrame())).toBe(false);
+    expect(isPeerReattachedFrame(encodeSharedHeartbeatAckFrame())).toBe(false);
+  });
+
+  it("shouldDeclareLinkSilent: exactly the threshold is NOT yet dead; strictly beyond is", () => {
+    const last = 1_000_000;
+    expect(shouldDeclareLinkSilent(last, last + LINK_SILENT_AFTER_MS, true)).toBe(false);
+    expect(shouldDeclareLinkSilent(last, last + LINK_SILENT_AFTER_MS + 1, true)).toBe(true);
+    expect(shouldDeclareLinkSilent(last, last, true)).toBe(false);
+  });
+
+  it("shouldDeclareLinkSilent: unarmed (no ack ever — old relay) never declares dead", () => {
+    const last = 1_000_000;
+    expect(shouldDeclareLinkSilent(last, last + LINK_SILENT_AFTER_MS * 100, false)).toBe(false);
+  });
+
+  it("the silence threshold tolerates lost acks (≥ 2 probe intervals of headroom)", () => {
+    // One dropped ack must never be a false alarm; three probes fit in the window.
+    expect(LINK_SILENT_AFTER_MS).toBeGreaterThanOrEqual(HEARTBEAT_INTERVAL_MS * 3);
   });
 });

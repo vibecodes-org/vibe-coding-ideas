@@ -22,6 +22,11 @@ export const CLOSE = Object.freeze({
   // SLICE 2 — auth + ownership:
   OWNER_MISMATCH: { code: 4005, reason: "owner mismatch — token is for a different user" },
   BAD_TOKEN: { code: 4006, reason: "invalid, tampered, or expired session token" },
+  // Same-owner browser preemption (fix/terminal-dock-heartbeat): the close the
+  // STALE browser leg receives when a newer same-owner browser attach replaces it.
+  // Reuses the DUP_BROWSER code (4001) — a dock that receives it maps to the
+  // existing "duplicate" copy — with a distinct reason for logs and tests.
+  PREEMPTED: { code: 4001, reason: "preempted" },
 });
 
 /**
@@ -68,10 +73,22 @@ export function isValidSession(session) {
  * ownership failure, not a duplicate. When `sub` is omitted (e.g. slice-1 callers /
  * unit tests of the bare state machine) owner-binding is skipped.
  *
+ * Same-owner browser PREEMPTION (fix/terminal-dock-heartbeat): when the browser
+ * leg dies SILENTLY (wifi off / network switch — macOS never RSTs), the dead
+ * socket still counts as attached, so a legitimate same-owner reattach used to
+ * bounce off DUP_BROWSER forever. For an owner-verified leg (`sub` present — a
+ * foreign sub was already rejected above) the NEWER browser attach now wins:
+ * `{ok: true, preempt: true}` tells the caller to close the stale browser leg
+ * (CLOSE.PREEMPTED, 4001 "preempted") before accepting this one, keeping the
+ * single-attach invariant post-swap. Sub-less callers keep the old DUP_BROWSER
+ * verdict, and a 2nd BRIDGE is still rejected — the bridge leg detects its own
+ * link death via protocol pings and closes honestly, so a live duplicate there
+ * is a real conflict, not a zombie.
+ *
  * @param {AttachState} state - current attachment state for the session
  * @param {string} role - "bridge" | "browser"
  * @param {string} [sub] - the owner id carried by the (already token-verified) leg
- * @returns {{ok: true} | {ok: false, code: number, reason: string}}
+ * @returns {{ok: true, preempt?: true} | {ok: false, code: number, reason: string}}
  */
 export function decideAttach(state, role, sub) {
   if (!ROLES.includes(role)) {
@@ -81,6 +98,7 @@ export function decideAttach(state, role, sub) {
     return { ok: false, ...CLOSE.OWNER_MISMATCH };
   }
   if (role === "browser" && state.browser) {
+    if (sub !== undefined) return { ok: true, preempt: true };
     return { ok: false, ...CLOSE.DUP_BROWSER };
   }
   if (role === "bridge" && state.bridge) {

@@ -6,7 +6,9 @@
 // and asserts everything slice 2 must prove:
 //   (a) the browser leg receives the bridge's PTY output (the READY sentinel),
 //   (b) bytes sent from the browser leg reach the PTY and echo back (round-trip),
-//   (c) a 2nd browser attach (same user, valid token) is rejected (single-attach),
+//   (c) a 2nd browser attach (same user, valid token) PREEMPTS the first leg —
+//       the stale leg is closed 4001 "preempted" and the new leg goes live, so
+//       single-attach still holds post-swap (fix/terminal-dock-heartbeat),
 //   (d) a browser whose token is for a DIFFERENT user is rejected (owner-mismatch),
 //   (e) a browser with an EXPIRED token is rejected (bad/expired token).
 //
@@ -126,13 +128,36 @@ test("bridge <-> relay <-> browser round-trip + single-attach + owner-binding", 
     return [code, reasonBuf ? reasonBuf.toString() : ""];
   }
 
-  // (c) a 2nd browser (SAME user, valid token) is rejected (single-attach).
+  // (c) a 2nd browser (SAME user, valid token) PREEMPTS the first leg
+  // (fix/terminal-dock-heartbeat): after a silent link death the old socket
+  // lingers OPEN forever, so the newer same-owner attach must WIN — the stale
+  // leg is closed 4001 "preempted", the new one becomes the live browser, and
+  // single-attach holds post-swap.
   {
-    const [code, reason] = await expectClose(tokensA.browser, "2nd browser");
-    console.log(`[test] (c) 2nd browser (same user) closed code=${code} reason=${JSON.stringify(reason)}`);
-    assert.equal(code, 4001, "2nd browser must be rejected with single-attach close code 4001");
-    assert.match(reason, /single-attach/, "close reason should explain single-attach");
-    console.log("[test] (c) PASS — single-attach enforced");
+    const firstClosed = once(browser, "close");
+    const ws2 = new WebSocket(`${relay.url}/?session=${session}&role=browser&token=${encodeURIComponent(tokensA.browser)}`);
+    ws2.on("message", (data) => {
+      browserBuf += Buffer.isBuffer(data) ? data.toString("utf8") : String(data);
+    });
+    await Promise.race([
+      once(ws2, "open"),
+      new Promise((_, rej) => setTimeout(() => rej(new Error("2nd browser open timeout")), 5000)),
+    ]);
+    const [code, reasonBuf] = await Promise.race([
+      firstClosed,
+      new Promise((_, rej) => setTimeout(() => rej(new Error("preempted-close timeout")), 5000)),
+    ]);
+    const reason = reasonBuf ? reasonBuf.toString() : "";
+    console.log(`[test] (c) stale browser closed code=${code} reason=${JSON.stringify(reason)}`);
+    assert.equal(code, 4001, "the STALE browser must be closed with the preempted/duplicate code 4001");
+    assert.match(reason, /preempted/, "close reason should say preempted");
+    browser = ws2; // the new leg is the live browser from here on
+    // The swapped-in leg still round-trips — the pipe survived the preemption.
+    const swapTok = `SWAP-${Math.random().toString(36).slice(2, 10).toUpperCase()}`;
+    browserBuf = "";
+    browser.send(Buffer.from(swapTok + "\n", "utf8"), { binary: true });
+    await waitForText(() => browserBuf, swapTok, HARD_TIMEOUT_MS, "post-preemption echo");
+    console.log("[test] (c) PASS — same-owner preemption: stale leg closed, new leg live");
   }
 
   // (d) a browser whose token is for a DIFFERENT user is rejected (owner-mismatch).
@@ -158,8 +183,8 @@ test("bridge <-> relay <-> browser round-trip + single-attach + owner-binding", 
     console.log("[test] (e) PASS — expired token rejected");
   }
 
-  // sanity: the original (authenticated) browser is still attached and live.
-  assert.equal(browser.readyState, WebSocket.OPEN, "first browser must remain connected");
+  // sanity: the live (post-preemption) browser is still attached and streaming.
+  assert.equal(browser.readyState, WebSocket.OPEN, "live browser must remain connected");
   console.log("[test] ALL ASSERTIONS PASSED");
 });
 

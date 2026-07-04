@@ -80,6 +80,7 @@ export type TerminalEvent =
   | { type: "user-end" }
   | { type: "connect-timeout" }
   | { type: "reconnect-exhausted" }
+  | { type: "link-silent" }
   | { type: "closed"; code: number; reason?: string }
   | { type: "reset" };
 
@@ -201,6 +202,17 @@ export function terminalReducer(
       if (state.status === "session-ended") return state;
       return { ...state, status: "session-ended", endedReason: "reconnect-failed", errorKind: null };
 
+    case "link-silent":
+      // The heartbeat watchdog declared the link DEAD: nothing inbound (PTY bytes
+      // or hb-acks) for the whole silence threshold while the socket still LOOKS
+      // open — silent link death (wifi off / network switch; macOS never RSTs).
+      // Same recoverable outcome as a visible drop → disconnected, so the existing
+      // grace-window reattach machinery takes over. Only meaningful from a live
+      // stream; every other state already has an honest story (the watchdog only
+      // runs while connected anyway — this guard is defence-in-depth).
+      if (state.status !== "connected") return state;
+      return { ...state, status: "disconnected", errorKind: null, endedReason: null };
+
     case "closed": {
       // A user-initiated end already produced the terminal state; the socket's own
       // close event must not clobber it back to a generic disconnect.
@@ -287,4 +299,58 @@ export function isPeerDegradedFrame(text: string): boolean {
 /** The pair is whole again inside the window — resume. */
 export function isPeerReattachedFrame(text: string): boolean {
   return isControlFrame(text, "peer-reattached");
+}
+
+// ── app-level heartbeat + silent-link watchdog (fix/terminal-dock-heartbeat) ──
+//
+// macOS never RSTs a socket when the network silently dies (wifi off / network
+// switch), and the dock only left "connected" on SOCKET events — so a silent link
+// death froze the pill on "Connected" forever. The protocol-level pings the bridge
+// relies on are invisible to browser JS, so the dock probes at the APP level:
+// while connected it sends `{"t":"hb"}` every HEARTBEAT_INTERVAL_MS and the relay
+// echoes `{"t":"hb-ack"}` to the probing leg only (hibernation-safe auto-response;
+// never forwarded, never extends the relay's idle clock). The watchdog declares
+// the link dead when NOTHING inbound — PTY bytes or acks — has arrived for
+// LINK_SILENT_AFTER_MS, but ONLY once ARMED by the socket's first ack: an OLD
+// relay never acks, so the watchdog stays disarmed there and pre-watchdog
+// behaviour is unchanged (version-skew gate).
+//
+// The frame is duplicated (not imported) from terminal/shared/control-frames.mjs
+// for the same reason RELAY_CLOSE is — that module is plain .mjs outside the app's
+// TS build graph. connection.test.ts pins both directions byte-for-byte against
+// the real .mjs encoders, so any drift fails there.
+
+/** Cadence of the dock's `{"t":"hb"}` probe while connected. */
+export const HEARTBEAT_INTERVAL_MS = 15_000;
+
+/**
+ * Silence threshold: nothing inbound for LONGER than this (strictly) → the link is
+ * declared dead. Three heartbeat intervals — one lost ack is never a false alarm.
+ */
+export const LINK_SILENT_AFTER_MS = 45_000;
+
+/**
+ * Watchdog poll cadence. Each check computes WALL-CLOCK elapsed, so a hidden tab's
+ * timer clamping can only DELAY detection, never fake recency; the dock also
+ * re-checks immediately on visibilitychange→visible and online/offline.
+ */
+export const LINK_SILENT_CHECK_MS = 5_000;
+
+/** The exact TEXT frame the dock sends as its liveness probe (mirrors encodeHeartbeatFrame in the .mjs). */
+export function encodeHeartbeatFrame(): string {
+  return JSON.stringify({ t: "hb" });
+}
+
+/** The relay's heartbeat echo — proof the link is alive. NEVER content: not written to the xterm, not logged. */
+export function isHeartbeatAckFrame(text: string): boolean {
+  return isControlFrame(text, "hb-ack");
+}
+
+/**
+ * The watchdog verdict, pure so the boundary is unit-tested: dead only when ARMED
+ * (this socket has acked at least once) AND the silence STRICTLY exceeds the
+ * threshold. Unarmed → never (old-relay skew gate).
+ */
+export function shouldDeclareLinkSilent(lastInboundAt: number, now: number, armed: boolean): boolean {
+  return armed && now - lastInboundAt > LINK_SILENT_AFTER_MS;
 }
