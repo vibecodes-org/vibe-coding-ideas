@@ -870,8 +870,8 @@ describe("buildCompactBootstrapPrompt (deep-link prompt)", () => {
     expect(p).toContain("get_board");
   });
 
-  it("task variant targets the task_id and does not call get_board", () => {
-    const p = buildCompactBootstrapPrompt({
+  it("task variant targets the task_id and its work step does not fetch the board", () => {
+    const { tail } = buildCompactBootstrapPromptParts({
       appUrl: APP_URL,
       ideaId: "idea-1",
       ideaTitle: "My Idea",
@@ -880,9 +880,12 @@ describe("buildCompactBootstrapPrompt (deep-link prompt)", () => {
       newProject: { newProjectPath: "~/projects/my-idea" },
       taskId: "task-9",
     });
-    expect(p).toContain("task_id task-9");
-    expect(p).toContain("get_task");
-    expect(p).not.toContain("get_board");
+    // The trimmable WORK step is what must target the task, not the board — the
+    // MCP-connect step (in the head) may name get_board in its skip clause, which
+    // is fine; the assertion below is scoped to the work tail on purpose.
+    expect(tail).toContain("task_id task-9");
+    expect(tail).toContain("get_task");
+    expect(tail).not.toContain("get_board");
   });
 });
 
@@ -1032,6 +1035,172 @@ describe("resolveDefaultLaunchState (shared by launch button + terminal dock)", 
       parent: DEFAULT_NEW_PROJECT_PARENT,
       name: "my-first-app",
     });
+  });
+});
+
+// ── Recorded-path idea: prompt mode must MATCH the resolved cwd (the bug) ──────
+// A no-repo idea whose folder is already recorded via record_project_path opens
+// (via the deep link's cwd) in the right folder, but the bootstrap prompt still
+// told the agent to mkdir/git-init from scratch. resolveDefaultLaunchState must
+// now promote such an idea to existing mode so the compact prompt skips the
+// create-folder block and instead confirms the already-open folder.
+describe("recorded-path idea promotes to existing mode (prompt/cwd parity)", () => {
+  const APP_URL = "https://vibecodes.co.uk";
+  const IDEA_ID = "idea-recorded";
+  const RECORDED = "/Users/nick/projects/my-idea";
+
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  // Mirror exactly what the launch button does to build the compact deep-link
+  // prompt for a no-repo idea: resolve the effective target from recorded paths,
+  // resolve the default launch state (now target-aware), then build the parts.
+  function compactPromptFor(
+    recordedPaths: { absolute_path: string; hostname: string }[]
+  ): string {
+    const effectiveTarget = resolveEffectiveLaunchTarget({
+      hasRepo: false,
+      saved: null,
+      recordedPaths,
+    });
+    const state = resolveDefaultLaunchState(IDEA_ID, "My Idea", null, effectiveTarget);
+    const existingPath =
+      state.mode === "existing" && state.path.trim() ? state.path.trim() : undefined;
+    const newProject =
+      state.mode === "new" ? { newProjectPath: state.path } : undefined;
+    return buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: IDEA_ID,
+      ideaTitle: "My Idea",
+      mode: state.mode,
+      repoUrl: null,
+      newProject,
+      existingPath,
+    });
+  }
+
+  it("resolveDefaultLaunchState promotes a recorded no-repo idea to existing mode at that path", () => {
+    const effectiveTarget = resolveEffectiveLaunchTarget({
+      hasRepo: false,
+      saved: null,
+      recordedPaths: [{ absolute_path: RECORDED, hostname: "Nicks-MacBook" }],
+    });
+    expect(resolveDefaultLaunchState(IDEA_ID, "My Idea", null, effectiveTarget)).toEqual({
+      mode: "existing",
+      path: RECORDED,
+    });
+  });
+
+  it("no-repo idea + exactly one recorded path → EXISTING-mode prompt: verify-folder, NO mkdir/git init", () => {
+    const p = compactPromptFor([{ absolute_path: RECORDED, hostname: "Nicks-MacBook" }]);
+    // Verify-folder language (already here, just confirm — don't re-init/clone).
+    expect(p).toContain(`already be in ${RECORDED}`);
+    expect(p).toMatch(/recorded from a previous session/i);
+    expect(p).toMatch(/don't re-init or re-clone/i);
+    // The whole point: no first-run create-folder block.
+    expect(p).not.toContain("mkdir -p");
+    expect(p).not.toContain("git init");
+    expect(p).not.toContain("git clone");
+    // Still drives the board.
+    expect(p).toContain("get_board");
+  });
+
+  it("first-ever launch (no recorded path, no repo, no localStorage) → UNCHANGED first-run script (mkdir)", () => {
+    const p = compactPromptFor([]);
+    expect(p).toContain("mkdir -p");
+    expect(p).toContain("git init");
+    expect(p).not.toContain("already be in");
+  });
+
+  it("ambiguous >1 recorded paths → falls back to the first-run script (no promotion)", () => {
+    const p = compactPromptFor([
+      { absolute_path: "/Users/nick/x", hostname: "mac" },
+      { absolute_path: "/home/nick/x", hostname: "linux" },
+    ]);
+    expect(p).toContain("mkdir -p");
+    expect(p).not.toContain("already be in");
+  });
+
+  it("recorded-path deep link stays under MAX_DEEP_LINK_URL_LENGTH (with the cwd param)", () => {
+    const p = compactPromptFor([{ absolute_path: RECORDED, hostname: "Nicks-MacBook" }]);
+    const link = buildClaudeDeepLink({ prompt: p, cwd: RECORDED });
+    expect(link.length).toBeLessThanOrEqual(MAX_DEEP_LINK_URL_LENGTH);
+  });
+
+  it("a saved localStorage path (no repo) is NOT clobbered by an absent recorded path", () => {
+    writeLaunchPath(IDEA_ID, { mode: "existing", path: "/Users/nick/pinned" });
+    const effectiveTarget = resolveEffectiveLaunchTarget({
+      hasRepo: false,
+      saved: readLaunchPath(IDEA_ID),
+      recordedPaths: [],
+    });
+    // Saved localStorage wins in resolveDefaultLaunchState (step 1), unchanged.
+    expect(resolveDefaultLaunchState(IDEA_ID, "My Idea", null, effectiveTarget)).toEqual({
+      mode: "existing",
+      path: "/Users/nick/pinned",
+      parent: undefined,
+      name: undefined,
+    });
+  });
+});
+
+// ── Fix 2: the compact MCP-connect step must carry the skip clause in EVERY mode ─
+describe("compact MCP-connect skip clause + record self-heal framing (Fix 2)", () => {
+  const APP_URL = "https://vibecodes.co.uk";
+  const MODES: Record<string, CompactBootstrapArgs> = {
+    "new-no-repo": {
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "new",
+      repoUrl: null,
+      newProject: { newProjectPath: "~/projects/my-idea" },
+    },
+    "repo-backed": {
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: "https://github.com/acme/widget",
+    },
+    "existing-recorded": {
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: null,
+      existingPath: "/Users/nick/projects/my-idea",
+    },
+    "existing-first-run": {
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: null,
+    },
+  };
+
+  it("the MCP-connect step carries the skip clause in every mode", () => {
+    for (const [name, args] of Object.entries(MODES)) {
+      const p = buildCompactBootstrapPrompt(args);
+      expect(p, `mode ${name}`).toContain("already available, skip this step");
+      expect(p, `mode ${name}`).toContain("claude mcp add");
+    }
+  });
+
+  it("record_project_path is framed as re-confirm/self-heal, safe to repeat", () => {
+    const p = buildCompactBootstrapPrompt(MODES["new-no-repo"]);
+    expect(p).toContain("record_project_path");
+    expect(p).toMatch(/re-confirm/i);
+    expect(p).toMatch(/every launch/i);
+  });
+
+  it("added skip clause keeps the new-no-repo deep link under the URL cap", () => {
+    const p = buildCompactBootstrapPrompt(MODES["new-no-repo"]);
+    expect(buildClaudeDeepLink({ prompt: p }).length).toBeLessThanOrEqual(
+      MAX_DEEP_LINK_URL_LENGTH
+    );
   });
 });
 

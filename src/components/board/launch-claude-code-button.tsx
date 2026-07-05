@@ -106,8 +106,9 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // resolver is also what the terminal dock uses for its dock-initiated launches,
   // so the two paths can never resolve different states for the same idea.
   const resolveState = useCallback(
-    (): LaunchPathState => resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl),
-    [ideaId, ideaTitle, ideaGithubUrl]
+    (): LaunchPathState =>
+      resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl, effectiveTarget),
+    [ideaId, ideaTitle, ideaGithubUrl, effectiveTarget]
   );
 
   const buildPrompt = useCallback(
@@ -147,6 +148,11 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     (state: LaunchPathState): CompactPromptParts => {
       const newProject =
         state.mode === "new" ? { newProjectPath: state.path } : undefined;
+      // Existing-mode absolute path (recorded/pinned) → the prompt's verify-folder
+      // step. resolveDefaultLaunchState already promoted a recorded no-repo idea
+      // to existing mode, so this carries that path into the compact prompt.
+      const existingPath =
+        state.mode === "existing" && state.path.trim() ? state.path.trim() : undefined;
       return buildCompactBootstrapPromptParts({
         appUrl: APP_URL,
         ideaId,
@@ -154,6 +160,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         mode: state.mode,
         repoUrl: ideaGithubUrl,
         newProject,
+        existingPath,
         taskId: props.variant === "board" ? undefined : props.taskId,
       });
     },

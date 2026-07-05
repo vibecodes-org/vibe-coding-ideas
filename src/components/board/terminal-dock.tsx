@@ -418,6 +418,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       mode: state.mode,
       repoUrl: ideaGithubUrl,
       newProject: state.mode === "new" ? { newProjectPath: state.path } : undefined,
+      // Parity with the launch button: a pinned existing folder emits the same
+      // verify-folder step. The dock has no recorded DB paths, so this only fires
+      // for a user-pinned localStorage path (resolveDefaultLaunchState → existing).
+      existingPath:
+        state.mode === "existing" && state.path.trim() ? state.path.trim() : undefined,
     });
     return { promptHead: head, promptTail: tail, cwd: resolveLaunchCwd(state, undefined) };
   }, [ideaId, ideaTitle, ideaGithubUrl]);

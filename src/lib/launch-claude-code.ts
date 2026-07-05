@@ -529,6 +529,15 @@ export interface CompactBootstrapArgs extends CommonPromptArgs {
   ideaTitle: string;
   /** Per-task launch: targets this task instead of the top of the queue. */
   taskId?: string;
+  /**
+   * Existing-mode, no-repo launches: the absolute folder the deep-link cwd will
+   * open in (a recorded DB path for this machine, or a user-pinned localStorage
+   * path). When set, the compact prompt emits a "you're already here, just
+   * confirm" verify-folder step INSTEAD of the create-folder/mkdir block — the
+   * session already lands here via the deep link's cwd. Omitted → no directory
+   * step at all (repo-backed or first-launch flows resolve the folder elsewhere).
+   */
+  existingPath?: string;
 }
 
 /**
@@ -559,14 +568,17 @@ export function buildCompactBootstrapPromptParts({
   ideaTitle,
   repoUrl,
   newProject,
+  existingPath,
   taskId,
 }: CompactBootstrapArgs): CompactPromptParts {
   const title = ideaTitle.length > 80 ? `${ideaTitle.slice(0, 79)}…` : ideaTitle;
   const repo = parseRepoFromGithubUrl(repoUrl);
   const steps: string[] = [];
 
-  // Directory step. Skipped for existing-no-repo: the deep link's cwd already
-  // starts the session in the right folder.
+  // Directory step. In create-new mode → mkdir/init the folder. Repo-backed →
+  // clone/cd. Existing-no-repo WITH a known folder (recorded/pinned path the deep
+  // link's cwd already opens in) → a "confirm you're already here" step, NOT a
+  // create step. Existing-no-repo with NO known folder → nothing (first-launch).
   if (newProject) {
     const p = newProject.newProjectPath;
     const git = repo
@@ -579,14 +591,18 @@ export function buildCompactBootstrapPromptParts({
     steps.push(
       `Get into the repo ${repo} first: cd your local clone, or \`git clone https://github.com/${repo}.git ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}\` and cd in. Never work in your home directory.`
     );
+  } else if (existingPath) {
+    steps.push(
+      `You should already be in ${existingPath} (recorded from a previous session). Confirm with \`pwd\`; \`cd\` there if not. Don't re-init or re-clone — reuse the folder as-is.`
+    );
   }
 
   steps.push(
-    `Connect the board tools: run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`
+    `Connect the board tools (if get_board, get_task, claim_next_step are already available, skip this step): run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`
   );
 
   steps.push(
-    `Once the board tools work, call record_project_path (idea_id ${ideaId}, your machine \`hostname\`, and \`pwd\`) so future launches reopen in this folder.`
+    `Re-confirm this folder for next time: once the board tools work, call record_project_path (idea_id ${ideaId}, your machine \`hostname\`, and \`pwd\`) so future launches reopen here — safe to repeat on every launch.`
   );
 
   const work = taskId
@@ -713,18 +729,34 @@ export function resolveAppUrl(): string {
  *  - saved localStorage config for this idea → use it verbatim.
  *  - idea has a GitHub repo → existing mode, empty path; the repo slug resolves
  *    the working copy locally.
- *  - no repo → a brand-new project under ~/projects/<slug>; the agent mkdir's it.
+ *  - no repo BUT a real existing folder is known (a recorded DB path for THIS
+ *    machine, surfaced via `effectiveTarget`) → existing mode at that absolute
+ *    path, so the bootstrap prompt SKIPS the create-folder/mkdir/git-init block
+ *    (the deep link's cwd already lands the session there — this is the fix for
+ *    the "already-recorded idea still gets the first-run script" bug).
+ *  - no repo, no known folder → a brand-new project under ~/projects/<slug>; the
+ *    agent mkdir's it.
+ *
+ * `effectiveTarget` is optional so callers without recorded paths (the terminal
+ * dock's payload-less fallback) keep working unchanged — they pass nothing and
+ * fall through to the create-new default exactly as before.
  *
  * SSR-safe (readLaunchPath returns null on the server).
  */
 export function resolveDefaultLaunchState(
   ideaId: string,
   ideaTitle: string,
-  ideaGithubUrl: string | null
+  ideaGithubUrl: string | null,
+  effectiveTarget?: EffectiveLaunchTarget
 ): LaunchPathState {
   const saved = readLaunchPath(ideaId);
   if (saved) return saved;
   if (ideaGithubUrl) return { mode: "existing", path: "" };
+  // A no-repo idea with a known folder (recorded/pinned via resolveEffective-
+  // LaunchTarget) opens THERE as existing mode so the prompt matches the cwd.
+  if (effectiveTarget && effectiveTarget.source !== "none" && effectiveTarget.cwd) {
+    return { mode: "existing", path: effectiveTarget.cwd };
+  }
   const name = slugifyIdeaTitle(ideaTitle);
   return {
     mode: "new",
