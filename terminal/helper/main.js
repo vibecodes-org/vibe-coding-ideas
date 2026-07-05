@@ -22,6 +22,8 @@ const { app } = require("electron");
 const { fork } = require("node:child_process");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
+// eslint-disable-next-line @typescript-eslint/no-require-imports -- CJS Electron main, matches the requires above
+const { shouldRegisterProtocolInDev } = require("./proto-reg");
 
 const LAUNCH_PREFIX = "vibecodes://";
 
@@ -255,8 +257,12 @@ if (!gotLock) {
     // electron-builder `protocols`; this runtime call covers dev + (re)registration.
     if (app.isPackaged) {
       app.setAsDefaultProtocolClient(LAUNCH_PREFIX.replace("://", ""));
-    } else {
-      // Dev: point the registration at this Electron + project dir.
+    } else if (shouldRegisterProtocolInDev(process.env)) {
+      // Dev: OFF by default. On macOS setAsDefaultProtocolClient IGNORES the
+      // path/args below — Launch Services registers the running bundle, i.e.
+      // the raw Electron binary (com.github.Electron), stealing vibecodes://
+      // from the installed app. Opt in with VIBECODES_DEV_PROTO_REG=1; repair
+      // by launching /Applications/VibeCodes.app once.
       app.setAsDefaultProtocolClient(LAUNCH_PREFIX.replace("://", ""), process.execPath, [
         path.resolve(__dirname),
       ]);

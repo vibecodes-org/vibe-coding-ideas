@@ -126,6 +126,13 @@ scheme and resource layout:
 
 ## Prove the end-to-end chain (against the LIVE relay)
 
+> **Launch Services hazard (dev runs):** dev runs (`electron main.js`, including
+> `verify-helper-launch.mjs`) do **not** touch the OS `vibecodes://` handler by
+> default. macOS **ignores** `setAsDefaultProtocolClient`'s path/args, so the
+> opt-in dev registration (`VIBECODES_DEV_PROTO_REG=1`) registers the raw
+> Electron bundle (`com.github.Electron`) and **steals the scheme from the
+> installed app**. Repair: launch `/Applications/VibeCodes.app` once.
+
 `verify-helper-launch.mjs` mints owner-bound tokens with the relay's
 `TERMINAL_SESSION_SECRET` (read from `terminal/relay/.dev.vars`), attaches a browser
 leg to the **deployed** relay, then drives the helper with a real

@@ -101,13 +101,16 @@ try {
   const [bin, binArgs] = process.env.HELPER_BIN
     ? [process.env.HELPER_BIN, [launchUrl]]
     : [electronBin, [MAIN, launchUrl]];
+  const helperEnv = {
+    ...process.env,
+    BRIDGE_CMD: `${process.execPath} ${SENTINEL}`,
+    ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
+  };
+  // The verify script must NEVER alter the OS vibecodes:// handler — strip any inherited opt-in.
+  delete helperEnv.VIBECODES_DEV_PROTO_REG;
   helper = spawn(bin, binArgs, {
     // Test seam: the bridge runs the sentinel instead of interactive `claude`.
-    env: {
-      ...process.env,
-      BRIDGE_CMD: `${process.execPath} ${SENTINEL}`,
-      ELECTRON_DISABLE_SECURITY_WARNINGS: "1",
-    },
+    env: helperEnv,
     stdio: ["ignore", "inherit", "inherit"],
   });
 
