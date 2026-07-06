@@ -1,0 +1,35 @@
+# Recurrence detection for card b6e5c728: the terminal session mint endpoint
+# intermittently 500ed ("No response is returned from route handler") when the
+# edge-middleware -> nodejs response bridge lost the route's response after an
+# instance recycle. The fix excludes /api/terminal from the middleware matcher;
+# this probe catches any regression. An unauthenticated POST must reach the
+# route handler and come back as a clean 401 — anything else (500, 3xx, timeout)
+# means the response path is broken again. No secrets needed: the probe is
+# deliberately unauthenticated.
+name: Terminal Mint Probe
+
+on:
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  mint-endpoint-health:
+    name: mint-endpoint-health
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Unauth POST /api/terminal/session must return 401
+        run: |
+          body=$(mktemp)
+          code=$(curl -sS -o "$body" -w "%{http_code}" --max-time 30 \
+            -X POST -H "Content-Type: application/json" -d '{}' \
+            https://vibecodes.co.uk/api/terminal/session)
+          if [ "$code" != "401" ]; then
+            echo "FAIL: expected HTTP 401, got $code (body: $(wc -c < "$body") bytes)"
+            exit 1
+          fi
+          echo "OK: 401 as expected"

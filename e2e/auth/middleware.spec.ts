@@ -40,6 +40,20 @@ test.describe("Middleware — Route Protection", () => {
     });
   });
 
+  test.describe("Middleware-excluded API routes", () => {
+    // /api/terminal is excluded from the middleware matcher (card b6e5c728) and
+    // does its own auth. An unauthenticated mint must be answered by the ROUTE
+    // (clean 401 JSON) — a redirect, 500, or empty response means the exclusion
+    // regressed. Uses the built-in `request` fixture, which carries no auth state.
+    test("unauthenticated POST /api/terminal/session returns 401 from the route", async ({
+      request,
+    }) => {
+      const res = await request.post("/api/terminal/session", { data: {} });
+      expect(res.status()).toBe(401);
+      expect(await res.json()).toEqual({ error: "Not authenticated" });
+    });
+  });
+
   test.describe("Authenticated user", () => {
     test("should access /dashboard without redirect", async ({ userAPage: page }) => {
       await page.goto("/dashboard");

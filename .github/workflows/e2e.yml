@@ -27,6 +27,10 @@ jobs:
       # Required by src/lib/encryption.ts (GitHub connection token storage). Without it,
       # rendering connected-state in github-link.spec.ts throws and the suite goes red.
       API_KEY_ENCRYPTION_KEY: ${{ secrets.API_KEY_ENCRYPTION_KEY }}
+      # Dummy value, not a secret: without it /api/terminal/session short-circuits
+      # 503 "not configured" BEFORE its auth check, and the middleware-exclusion
+      # smoke in e2e/auth/middleware.spec.ts needs the route's real 401.
+      TERMINAL_SESSION_SECRET: e2e-dummy-terminal-session-secret
       TEST_USER_A_EMAIL: ${{ secrets.TEST_USER_A_EMAIL }}
       TEST_USER_A_PASSWORD: ${{ secrets.TEST_USER_A_PASSWORD }}
       TEST_USER_B_EMAIL: ${{ secrets.TEST_USER_B_EMAIL }}
