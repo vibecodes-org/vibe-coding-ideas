@@ -1196,8 +1196,19 @@ describe("compact MCP-connect skip clause + record self-heal framing (Fix 2)", (
     expect(p).toMatch(/every launch/i);
   });
 
-  it("added skip clause keeps the new-no-repo deep link under the URL cap", () => {
-    const p = buildCompactBootstrapPrompt(MODES["new-no-repo"]);
+  // Uses a REALISTIC-length idea_id (36-char UUID) + title/path, not the tiny
+  // "idea-1" placeholders above: the skip clause pushed the compact head up, and
+  // a short-id fixture won't reveal a realistic overflow (the sibling
+  // deep-link.test.ts vibecodes:// budget test caught exactly that regression).
+  it("added skip clause keeps a realistic new-no-repo deep link under the URL cap", () => {
+    const p = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "1beea99a-0377-421b-9a8b-a9956ae34b5d",
+      ideaTitle: "Horse Racing Predictor",
+      mode: "new",
+      repoUrl: null,
+      newProject: { newProjectPath: "~/projects/horse-racing-predictor" },
+    });
     expect(buildClaudeDeepLink({ prompt: p }).length).toBeLessThanOrEqual(
       MAX_DEEP_LINK_URL_LENGTH
     );

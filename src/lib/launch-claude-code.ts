@@ -598,11 +598,11 @@ export function buildCompactBootstrapPromptParts({
   }
 
   steps.push(
-    `Connect the board tools (if get_board, get_task, claim_next_step are already available, skip this step): run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`
+    `Connect the board tools (if they're already available, skip this step): run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`
   );
 
   steps.push(
-    `Re-confirm this folder for next time: once the board tools work, call record_project_path (idea_id ${ideaId}, your machine \`hostname\`, and \`pwd\`) so future launches reopen here — safe to repeat on every launch.`
+    `Re-confirm the folder: call record_project_path (idea_id ${ideaId}, machine \`hostname\`, \`pwd\`) so future launches reopen here — safe to repeat on every launch.`
   );
 
   const work = taskId
