@@ -16,12 +16,16 @@ export const config = {
      * - .well-known (OAuth discovery endpoints)
      * - api/mcp (MCP endpoint - has its own auth via withMcpAuth)
      * - api/oauth (OAuth endpoints - handle their own auth)
-     * - api/terminal (terminal session mint - does its own supabase.auth.getUser();
-     *   the edge-middleware -> nodejs response bridge intermittently loses the
-     *   route's response after a function instance recycles, surfacing as
-     *   "No response is returned from route handler" 500s. Three production
-     *   outages: Jul 1, Jul 3, Jul 6 2026 — card b6e5c728. Excluded routes
-     *   (api/mcp, api/oauth) have never shown the error.)
+     * - api/terminal (terminal session mint - does its own supabase.auth.getUser().
+     *   Kept excluded as hygiene. NOTE: the "No response is returned from route
+     *   handler" 500s (three production outages: Jul 1, Jul 3, Jul 6 2026 — card
+     *   b6e5c728) were NOT caused by the middleware bridge as first suspected.
+     *   Root cause: mcp-handler@1.0.7 → @modelcontextprotocol/sdk@1.25.2 →
+     *   @hono/node-server getRequestListener() replaced globalThis.Response at
+     *   module load of api/mcp/[[...transport]]/route.ts, so Next's
+     *   `res instanceof Response` check rejected Response.json()/NextResponse.json()
+     *   responses from OTHER routes sharing the function instance. Fixed by
+     *   bumping mcp-handler to 1.1.0 (web-standard transport, no global mutation).)
      * - oauth (OAuth consent pages - handle their own auth)
      * - callback (auth callback - exchanges code for session, no getUser needed)
      */
