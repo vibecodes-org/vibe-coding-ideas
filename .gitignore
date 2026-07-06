@@ -67,3 +67,6 @@ supabase/.temp/
 # testing
 playwright-report/
 test-results/
+
+# Desktop helper build artifacts
+*.dmg
