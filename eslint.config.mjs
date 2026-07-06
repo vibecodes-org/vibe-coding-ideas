@@ -37,6 +37,14 @@ const eslintConfig = defineConfig([
       "react-hooks/rules-of-hooks": "off",
     },
   },
+  // The in-app terminal helper (Electron main) and bridge are CommonJS by
+  // nature — `require()` is the correct module system there, not a violation.
+  {
+    files: ["terminal/**/*.js", "terminal/**/*.cjs"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
 ]);
 
 export default eslintConfig;

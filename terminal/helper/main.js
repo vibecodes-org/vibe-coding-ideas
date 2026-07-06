@@ -22,7 +22,6 @@ const { app } = require("electron");
 const { fork } = require("node:child_process");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-// eslint-disable-next-line @typescript-eslint/no-require-imports -- CJS Electron main, matches the requires above
 const { shouldRegisterProtocolInDev } = require("./proto-reg");
 
 const LAUNCH_PREFIX = "vibecodes://";
