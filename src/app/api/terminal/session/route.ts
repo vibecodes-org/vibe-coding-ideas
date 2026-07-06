@@ -17,9 +17,13 @@ import { logger } from "@/lib/logger";
 import { mintSessionTokens } from "../../../../../terminal/shared/session-token.mjs";
 
 // Pin the runtime: this handler mints per-request, auth-bound tokens and must never
-// be statically optimized or flipped to the Edge runtime. Without this, Next 16 was
-// intermittently running it as edge and losing the returned bare `Response`, yielding
-// a 500 "No response is returned from route handler" AFTER the token mint succeeded.
+// be statically optimized or flipped to the Edge runtime. The pin stays as hygiene,
+// but NOTE: the "No response is returned from route handler" 500s this route suffered
+// (card b6e5c728) were NOT a runtime-flip problem. Root cause: mcp-handler@1.0.7's
+// transport (@hono/node-server getRequestListener) replaced globalThis.Response when
+// the MCP route loaded in the same function instance, so Next's `res instanceof
+// Response` check rejected this route's NextResponse.json() — fixed by bumping
+// mcp-handler to 1.1.0 (web-standard transport, no global mutation).
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
