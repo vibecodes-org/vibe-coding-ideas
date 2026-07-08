@@ -1,0 +1,114 @@
+<!-- P1 UX Assessment: Route in-app workflow-matching to Haiku -->
+<title>UX Assessment — Route workflow-matching to Haiku (No UI Surface)</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    max-width: 760px; margin: 2.5rem auto; padding: 0 1.25rem;
+    color: #1a1a1a; background: #fff;
+  }
+  h1 { font-size: 1.5rem; line-height: 1.25; margin: 0 0 .25rem; }
+  h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
+  .sub { color: #666; margin: 0 0 1.5rem; font-size: .9rem; }
+  .verdict {
+    border-left: 3px solid #10b981; padding: .75rem 1rem; margin: 1.25rem 0;
+    background: rgba(16,185,129,.08); border-radius: 0 6px 6px 0;
+  }
+  .verdict strong { color: #0f9d6b; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em;
+    background: rgba(127,127,127,.15); padding: .1em .35em; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .9rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid rgba(127,127,127,.25); vertical-align: top; }
+  th { font-weight: 600; color: #444; }
+  td:first-child code { white-space: nowrap; }
+  ul { margin: .4rem 0; padding-left: 1.2rem; }
+  li { margin: .3rem 0; }
+  .risk { border-left: 3px solid #f59e0b; padding: .75rem 1rem; margin: 1rem 0;
+    background: rgba(245,158,11,.08); border-radius: 0 6px 6px 0; }
+  footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid rgba(127,127,127,.25);
+    color: #777; font-size: .82rem; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6e6e6; background: #111; }
+    h1 { color: #f5f5f5; }
+    .sub, th { color: #9aa0a6; }
+    .verdict strong { color: #34d399; }
+    footer { color: #888; }
+  }
+</style>
+
+<h1>UX Assessment — No UI Surface</h1>
+<p class="sub">Step 2 (UX Design) · P1: Route in-app workflow-matching to Haiku · <code>src/lib/workflow-matching.ts</code></p>
+
+<div class="verdict">
+  <strong>Designer's verdict: no UI deliverable.</strong> This is a backend model-constant swap
+  (<code>WORKFLOW_MATCHING_MODEL</code>: <code>claude-sonnet-4-6</code> → <code>claude-haiku-4-5-20251001</code>).
+  The workflow-matching adjudication runs entirely server-side. It has no view, no control, no copy.
+  The correct UX outcome is that this change is <em>invisible</em> to users. Do not invent UI where none is needed.
+</div>
+
+<h2>1. There is no user-facing surface</h2>
+<p>
+  The adjudicator (<code>adjudicateWorkflowMatch()</code>) is a data/logic-layer function called during
+  auto-rule application. Its <em>output</em> feeds the existing workflow-suggestion experience, but the
+  <em>model choice</em> behind that output is never surfaced — no model name, latency badge, or "powered by"
+  string is shown to the user. Swapping the constant changes which API the server calls and nothing else.
+</p>
+
+<h2>2. UX non-regression requirement (the real deliverable)</h2>
+<p>
+  Because the change is invisible <em>by design</em>, the sign-off is a non-regression assertion: the
+  workflow-suggestion panel must look and behave identically before and after. Same thresholds
+  (<code>WORKFLOW_AI_AUTOAPPLY_THRESHOLD = 0.85</code>), same in-flight timing, same keep/replace/remove
+  controls, same mismatch-reason text. Each state below must render pixel- and copy-identical to today.
+</p>
+
+<table>
+  <thead>
+    <tr><th>State</th><th>What the user sees</th><th>Must remain</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>in-flight / checking</code></td>
+      <td>"Checking…" affordance while adjudication resolves</td>
+      <td>Same spinner/label, same perceived latency band — no new "slow" feeling</td>
+    </tr>
+    <tr>
+      <td><code>suggested</code></td>
+      <td>Suggestion panel with mismatch reason + keep / replace / remove controls</td>
+      <td>Same layout, same reason copy, same controls (not colour-only)</td>
+    </tr>
+    <tr>
+      <td><code>auto-applied</code></td>
+      <td>High-confidence match (≥ 0.85) applied silently, no interruption</td>
+      <td>Same silent behaviour — no new toast, banner, or confirmation</td>
+    </tr>
+    <tr>
+      <td><code>dismissed</code></td>
+      <td>User keeps existing workflow; suggestion clears</td>
+      <td>Same dismissal path and persistence</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>3. The one indirect risk: silent backend degradation</h2>
+<div class="risk">
+  The adjudicator <strong>always resolves</strong> — if the model is unavailable, errors, times out, or
+  returns invalid output, it falls back to the deterministic keyword heuristic
+  (<code>source: 'heuristic'</code>). If the Haiku model id were silently rejected, every suspect case would
+  quietly drop to the heuristic: users would get <em>worse or no</em> AI suggestions, with <strong>no visible
+  error state</strong>. This is a telemetry concern, not a UI one — there is intentionally no user-facing
+  "AI unavailable" surface here.
+</div>
+<ul>
+  <li><strong>Not a UI state:</strong> do not add an error banner — degradation is meant to be graceful and invisible.</li>
+  <li><strong>Observable via telemetry only:</strong> watch the <code>source: 'ai'</code> vs <code>source: 'heuristic'</code>
+      ratio and adjudication error/timeout rates after rollout. A spike in <code>heuristic</code> is the real "error state."</li>
+  <li><strong>Acceptance for this step:</strong> suggestion quality (which suggestions appear / auto-apply) is
+      indistinguishable to users; only cost and latency change behind the scenes.</li>
+</ul>
+
+<footer>
+  Sign-off: no new UI. Protect the existing workflow-suggestion UX (four states above) as a non-regression
+  checklist; treat a rise in heuristic-fallback rate as the only "error" to watch — via telemetry, not the interface.
+  Feeds Step 3 (Design Review / human approval).
+</footer>

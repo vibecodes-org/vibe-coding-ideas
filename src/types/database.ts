@@ -6,6 +6,8 @@ export interface WorkflowTemplateStep {
   role: string;
   requires_approval?: boolean;
   deliverables?: string[];
+  /** Advisory per-step model tier hint: 'frontier' | 'standard' | 'cheap'. Absent = Auto. */
+  model_tier?: string;
 }
 
 export type Database = {
@@ -866,6 +868,7 @@ export type Database = {
           created_at: string;
           expected_deliverables: string[];
           match_tier: string | null;
+          model_tier: string | null;
           updated_at: string;
         };
         Insert: {
@@ -886,6 +889,7 @@ export type Database = {
           human_check_required?: boolean;
           expected_deliverables?: string[];
           match_tier?: string | null;
+          model_tier?: string | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
@@ -910,6 +914,7 @@ export type Database = {
           human_check_required?: boolean;
           expected_deliverables?: string[];
           match_tier?: string | null;
+          model_tier?: string | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;

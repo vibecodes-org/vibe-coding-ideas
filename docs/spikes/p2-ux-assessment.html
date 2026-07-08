@@ -1,0 +1,187 @@
+<!-- P2 UX Assessment: Per-step model tiering (model_tier on workflow steps) -->
+<title>UX Assessment — Per-step model tiering (No UI Surface)</title>
+<style>
+  :root { color-scheme: light dark; }
+  body {
+    font: 15px/1.6 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    max-width: 780px; margin: 2.5rem auto; padding: 0 1.25rem;
+    color: #1a1a1a; background: #fff;
+  }
+  h1 { font-size: 1.5rem; line-height: 1.25; margin: 0 0 .25rem; }
+  h2 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
+  h3 { font-size: .95rem; margin: 1.25rem 0 .35rem; }
+  .sub { color: #666; margin: 0 0 1.5rem; font-size: .9rem; }
+  .verdict {
+    border-left: 3px solid #10b981; padding: .75rem 1rem; margin: 1.25rem 0;
+    background: rgba(16,185,129,.08); border-radius: 0 6px 6px 0;
+  }
+  .verdict strong { color: #0f9d6b; }
+  .future {
+    border-left: 3px solid #6366f1; padding: .75rem 1rem; margin: 1.25rem 0;
+    background: rgba(99,102,241,.09); border-radius: 0 6px 6px 0;
+  }
+  .future strong { color: #4f46e5; }
+  code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .85em;
+    background: rgba(127,127,127,.15); padding: .1em .35em; border-radius: 4px; }
+  table { border-collapse: collapse; width: 100%; margin: .75rem 0; font-size: .9rem; }
+  th, td { text-align: left; padding: .5rem .6rem; border-bottom: 1px solid rgba(127,127,127,.25); vertical-align: top; }
+  th { font-weight: 600; color: #444; }
+  td:first-child code { white-space: nowrap; }
+  ul { margin: .4rem 0; padding-left: 1.2rem; }
+  li { margin: .3rem 0; }
+  .badge { display: inline-block; font: 600 .72rem/1 ui-monospace, monospace;
+    padding: .25em .5em; border-radius: 5px; letter-spacing: .02em;
+    background: rgba(99,102,241,.16); color: #4f46e5; border: 1px solid rgba(99,102,241,.35); }
+  pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: .82rem;
+    line-height: 1.45; background: rgba(127,127,127,.10); border: 1px solid rgba(127,127,127,.22);
+    border-radius: 8px; padding: 1rem; overflow-x: auto; margin: .75rem 0; }
+  .tag { display: inline-block; font: 600 .7rem/1 system-ui, sans-serif; text-transform: uppercase;
+    letter-spacing: .04em; padding: .3em .55em; border-radius: 5px; vertical-align: middle;
+    background: rgba(245,158,11,.16); color: #b45309; border: 1px solid rgba(245,158,11,.4); }
+  footer { margin-top: 2.5rem; padding-top: 1rem; border-top: 1px solid rgba(127,127,127,.25);
+    color: #777; font-size: .82rem; }
+  @media (prefers-color-scheme: dark) {
+    body { color: #e6e6e6; background: #111; }
+    h1 { color: #f5f5f5; }
+    .sub, th { color: #9aa0a6; }
+    .verdict strong { color: #34d399; }
+    .future strong { color: #a5b4fc; }
+    .badge { background: rgba(129,140,248,.20); color: #c7d2fe; border-color: rgba(129,140,248,.45); }
+    .tag { background: rgba(245,158,11,.18); color: #fcd34d; border-color: rgba(245,158,11,.45); }
+    footer { color: #888; }
+  }
+</style>
+
+<h1>UX Assessment — No UI Surface</h1>
+<p class="sub">Step 2 (UX Design) · P2: Per-step model tiering — add <code>model_tier</code> to workflow steps, surfaced in <code>claim_next_step</code></p>
+
+<div class="verdict">
+  <strong>Designer's verdict: no UI deliverable in this slice.</strong> This is a backend/data change —
+  a nullable <code>model_tier</code> (<code>frontier</code> / <code>standard</code> / <code>cheap</code>) added to
+  workflow steps, threaded template&nbsp;→&nbsp;step, and echoed back in the <code>claim_next_step</code> MCP
+  response so the orchestrator spawns each persona subagent on the recommended model. Per Requirements <strong>NG6</strong>,
+  human-authoring UI is explicitly out of scope: authoring is seed-SQL + API pass-through only. The correct UX
+  outcome is that this change is <em>invisible</em> to end users. No view, control, or copy changes.
+</div>
+
+<h2>1. There is no user-facing surface</h2>
+<p>
+  All existing rows default to <code>model_tier = null</code>, and <code>null</code> means "orchestrator decides"
+  — identical behaviour to today. The tier is a hint carried on the data layer and consumed by the orchestrating
+  agent; it never renders. The board, the template detail view, and the workflow-suggestion panel all draw the
+  same pixels they draw now. Do not invent UI where none is needed.
+</p>
+
+<h2>2. Non-regression checklist (the real deliverable)</h2>
+<p>
+  Because the change is invisible <em>by design</em>, sign-off is a non-regression assertion. For every step
+  where <code>model_tier</code> is null — which is <strong>all existing data</strong> — these surfaces must render
+  and behave pixel- and copy-identically to today:
+</p>
+
+<table>
+  <thead>
+    <tr><th>Surface</th><th>Component</th><th>Must remain identical</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Workflow step cards</td>
+      <td><code>task-workflow-section.tsx</code></td>
+      <td>Same step rows, order, status pills, claim/complete controls — no new tier badge, column, or icon</td>
+    </tr>
+    <tr>
+      <td>Step detail</td>
+      <td><code>step-detail-dialog.tsx</code></td>
+      <td>Same fields, comments, agent identity, and rework controls — no <code>model_tier</code> field shown or editable</td>
+    </tr>
+    <tr>
+      <td>Active agent / model display</td>
+      <td>step + claim UI (if any)</td>
+      <td>Whatever "who's running this" affordance exists today is unchanged — no model-name or tier surfaced</td>
+    </tr>
+    <tr>
+      <td>Template detail view</td>
+      <td><code>workflows-tab.tsx</code>, template dialogs</td>
+      <td>Same step list and metadata — no tier picker, no tier column in the template editor</td>
+    </tr>
+    <tr>
+      <td>Suggestion panel</td>
+      <td><code>workflow-suggestion-panel.tsx</code></td>
+      <td>Same match/keep/replace copy and controls — tier is never part of a suggestion</td>
+    </tr>
+    <tr>
+      <td>Apply / resync template</td>
+      <td><code>apply_workflow_template</code>, resync</td>
+      <td>Copies <code>model_tier</code> through silently; a null-tier template produces null-tier steps as before</td>
+    </tr>
+  </tbody>
+</table>
+
+<p style="font-size:.9rem;color:#888;">
+  Acceptance: a user with only existing (null-tier) workflows sees zero difference anywhere in the product.
+  The only observable effect of a <em>non-null</em> tier is which model the orchestrator picks — a backend concern,
+  not a rendered one.
+</p>
+
+<h2>3. Fast-follow: per-step model-tier authoring <span class="tag">Out of scope · proposed</span></h2>
+
+<div class="future">
+  <strong>Future slice, not this one.</strong> Requirements NG6 deliberately deferred human authoring. Capturing the
+  design here so the opportunity isn't lost. <em>None of the below ships in P2.</em> Once tiers are proven useful via
+  seed-SQL, a follow-up could let humans set a per-step tier in the template step editor — turning an invisible
+  backend hint into an intentional, cost-aware authoring control.
+</div>
+
+<h3>Where it lives</h3>
+<p>
+  A single compact <code>&lt;select&gt;</code> on each <strong>template step editor row</strong> (the natural authoring
+  home — where step name, persona/agent, and human-check already live). Not a modal; inline with the row, consistent
+  with the rest of the template editor. Recognition over recall: the resolved tier also appears as a subtle read-only
+  badge on the <strong>workflow step card</strong> so authored intent is visible without opening the editor.
+</p>
+
+<h3>The control (Hick's-law-minimal: 4 options)</h3>
+<pre>  Template step editor — row control
+  ┌──────────────────────────────────────────────────────────┐
+  │  Step 3 · Implementation            Persona: [ Builder ▾] │
+  │                                                          │
+  │  Model tier  ┌───────────────┐                           │
+  │              │ Auto        ▾ │   ← default = null        │
+  │              └───────────────┘                           │
+  │                • Auto      (orchestrator decides)         │
+  │                • Frontier  (hardest reasoning)            │
+  │                • Standard  (most steps)                   │
+  │                • Cheap     (simple / mechanical)          │
+  │                                                          │
+  │  ⓘ Auto lets the orchestrator choose; cheaper tiers      │
+  │     save your Claude usage on simpler steps.             │
+  └──────────────────────────────────────────────────────────┘
+
+  Workflow step card — resolved badge (read-only)
+  ┌──────────────────────────────────────────────────────────┐
+  │  ● Step 3 · Implementation      In progress              │
+  │    Builder                        [ tier: Standard ]      │
+  └──────────────────────────────────────────────────────────┘
+  (Auto/null renders NO badge — keeps default cards clean.)</pre>
+
+<h3>Design rules it must honour</h3>
+<ul>
+  <li><strong>Auto = null = default:</strong> the first option is "Auto", maps to <code>model_tier = null</code>,
+      preserving today's "orchestrator decides" behaviour. Authoring is purely additive.</li>
+  <li><strong>Four options only</strong> (Hick's law): Auto + three abstract tiers. Abstract tiers (not raw model
+      ids) keep the choice durable as underlying models change.</li>
+  <li><strong>Inline helper, always visible:</strong> "Auto lets the orchestrator choose; cheaper tiers save your
+      Claude usage on simpler steps." Explains the value without a tooltip-only dependency.</li>
+  <li><strong>Recognition over recall:</strong> resolved tier shows as a subtle badge on the step card; a null/Auto
+      step shows no badge, so existing boards stay visually quiet.</li>
+  <li><strong>Never colour alone (WCAG 2.1 AA):</strong> the badge always carries the tier word
+      (<code>tier: Standard</code>), not just a hue; the select uses text labels, not swatches.</li>
+  <li><strong>No hover-only actions, no modal:</strong> the control is a persistently visible inline select.</li>
+  <li><strong>Graceful degradation:</strong> unknown/legacy tier values fall back to Auto rendering — never an error state.</li>
+</ul>
+
+<footer>
+  Sign-off: no new UI in P2. Protect the six surfaces in the non-regression checklist (all identical for null-tier
+  steps, i.e. all existing data). The per-step tier-authoring select + card badge is a deliberate, captured
+  fast-follow — <strong>out of scope for this slice</strong>. Feeds Step 3 (Design Review / human approval).
+</footer>

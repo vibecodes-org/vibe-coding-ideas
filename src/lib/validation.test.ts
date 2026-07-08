@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  validateWorkflowTemplateSteps,
   validateTitle,
   validateDescription,
   validateOptionalDescription,
@@ -385,5 +386,52 @@ describe("validateTeamDescription", () => {
   it("accepts max length description", () => {
     const desc = "a".repeat(MAX_TEAM_DESCRIPTION_LENGTH);
     expect(validateTeamDescription(desc)).toHaveLength(MAX_TEAM_DESCRIPTION_LENGTH);
+  });
+});
+
+// ── validateWorkflowTemplateSteps — model_tier (P2) ──────────────────
+
+describe("validateWorkflowTemplateSteps — model_tier", () => {
+  const base = { title: "Implement feature", role: "Full Stack Developer" };
+
+  it("passes a valid tier through", () => {
+    const [step] = validateWorkflowTemplateSteps([{ ...base, model_tier: "standard" }]);
+    expect(step.model_tier).toBe("standard");
+  });
+
+  it("accepts each of frontier / standard / cheap", () => {
+    for (const tier of ["frontier", "standard", "cheap"] as const) {
+      const [step] = validateWorkflowTemplateSteps([{ ...base, model_tier: tier }]);
+      expect(step.model_tier).toBe(tier);
+    }
+  });
+
+  it("omits model_tier when absent", () => {
+    const [step] = validateWorkflowTemplateSteps([{ ...base }]);
+    expect("model_tier" in step).toBe(false);
+  });
+
+  it("omits model_tier when null", () => {
+    const [step] = validateWorkflowTemplateSteps([{ ...base, model_tier: null }]);
+    expect("model_tier" in step).toBe(false);
+  });
+
+  it("throws a ValidationError on an unrecognised tier value", () => {
+    expect(() =>
+      validateWorkflowTemplateSteps([{ ...base, model_tier: "ultra" }])
+    ).toThrow(ValidationError);
+  });
+
+  it("preserves other fields alongside a valid tier", () => {
+    const [step] = validateWorkflowTemplateSteps([
+      { ...base, description: "  do it  ", requires_approval: true, model_tier: "cheap" },
+    ]);
+    expect(step).toMatchObject({
+      title: "Implement feature",
+      role: "Full Stack Developer",
+      description: "do it",
+      requires_approval: true,
+      model_tier: "cheap",
+    });
   });
 });

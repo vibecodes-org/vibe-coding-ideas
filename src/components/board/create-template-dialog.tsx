@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { createWorkflowTemplate } from "@/actions/workflow-templates";
 import { RoleCombobox, useRoleSuggestions } from "@/components/ui/role-combobox";
+import { ModelTierSelect } from "@/components/shared/model-tier-select";
 import { TEMPLATE_LABEL_SUGGESTIONS, LABEL_COLORS } from "@/lib/constants";
 import { Lightbulb } from "lucide-react";
 import type { WorkflowTemplateStep } from "@/types/database";
@@ -293,6 +294,10 @@ export function CreateTemplateDialog({
                       className="h-7 flex-1 text-xs"
                     />
                   </div>
+                  <ModelTierSelect
+                    value={step.model_tier ?? null}
+                    onChange={(v) => updateStep(idx, { model_tier: v ?? undefined })}
+                  />
                 </div>
 
                 <button

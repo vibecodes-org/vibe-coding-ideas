@@ -36,6 +36,7 @@ import {
 import { listLibraryTemplates } from "@/actions/admin-templates";
 import { importTemplateWithLabel, createWorkflowTemplate } from "@/actions/workflow-templates";
 import { RoleCombobox, useRoleSuggestions } from "@/components/ui/role-combobox";
+import { ModelTierSelect } from "@/components/shared/model-tier-select";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -810,6 +811,10 @@ export function AddTemplateDialog({
                     className="h-7 flex-1 text-xs"
                   />
                 </div>
+                <ModelTierSelect
+                  value={step.model_tier ?? null}
+                  onChange={(v) => updateStep(idx, { model_tier: v ?? undefined })}
+                />
               </div>
 
               <button

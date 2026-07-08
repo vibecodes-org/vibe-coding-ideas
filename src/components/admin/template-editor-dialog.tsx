@@ -17,6 +17,7 @@ import {
 } from "@/components/ui/dialog";
 import { createLibraryTemplate, updateLibraryTemplate } from "@/actions/admin-templates";
 import { RoleCombobox } from "@/components/ui/role-combobox";
+import { ModelTierSelect } from "@/components/shared/model-tier-select";
 import { LABEL_COLORS } from "@/lib/constants";
 import type { WorkflowTemplateStep } from "@/types/database";
 import type { WorkflowLibraryTemplate } from "@/types";
@@ -322,6 +323,10 @@ export function TemplateEditorDialog({
                       className="h-7 flex-1 text-xs"
                     />
                   </div>
+                  <ModelTierSelect
+                    value={step.model_tier ?? null}
+                    onChange={(v) => updateStep(idx, { model_tier: v ?? undefined })}
+                  />
                 </div>
 
                 <button

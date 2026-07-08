@@ -28,6 +28,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { RoleCombobox, useRoleSuggestions } from "@/components/ui/role-combobox";
+import { ModelTierSelect, ModelTierBadge } from "@/components/shared/model-tier-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -100,6 +101,7 @@ function StepRow({ step, index, matchTier }: { step: WorkflowTemplateStep; index
         {index + 1}
       </span>
       <span className="flex-1 truncate text-sm font-medium">{step.title}</span>
+      <ModelTierBadge tier={step.model_tier} />
       <span className="relative shrink-0">
         <Badge
           variant="outline"
@@ -241,6 +243,10 @@ function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: StepEdito
                 className="h-7 flex-1 text-xs"
               />
             </div>
+            <ModelTierSelect
+              value={step.model_tier ?? null}
+              onChange={(v) => updateStep(idx, { model_tier: v ?? undefined })}
+            />
           </div>
 
           <button

@@ -1112,3 +1112,69 @@ describe("resolveSuggestionOnApply", () => {
     expect(captured.updateEqs).not.toContainEqual(["id", "sug-A"]);
   });
 });
+
+// --- propagateTemplateEdits — model_tier (P2) ---
+
+/** Capturing mock: records the update payloads sent to pending steps. */
+function createTierCaptureSupabase(step: { id: string; status: string; step_order: number }) {
+  const updates: Record<string, unknown>[] = [];
+  const supabase = {
+    from: vi.fn((table: string) => {
+      if (table === "workflow_runs") {
+        return {
+          select: vi.fn().mockReturnValue({
+            eq: vi.fn().mockReturnValue({
+              not: vi.fn().mockResolvedValue({
+                data: [{ id: "run-1", task_id: "task-1" }],
+                error: null,
+              }),
+            }),
+          }),
+        };
+      }
+      // task_workflow_steps
+      let isUpdate = false;
+      let payload: Record<string, unknown> | null = null;
+      const chain: Record<string, unknown> = {
+        select: vi.fn(() => { isUpdate = false; return chain; }),
+        update: vi.fn((p: Record<string, unknown>) => { isUpdate = true; payload = p; return chain; }),
+        order: vi.fn(() => Promise.resolve({ data: [step], error: null })),
+        eq: vi.fn((col: string) => {
+          if (col === "status" && isUpdate) {
+            if (payload) updates.push(payload);
+            return Promise.resolve({ count: 1, error: null });
+          }
+          return chain;
+        }),
+      };
+      return chain;
+    }),
+  };
+  return { supabase, updates };
+}
+
+describe("propagateTemplateEdits — model_tier", () => {
+  it("copies a template step's model_tier onto pending steps", async () => {
+    const { supabase, updates } = createTierCaptureSupabase({ id: "s1", status: "pending", step_order: 1 });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await propagateTemplateEdits(supabase as any, "tmpl-1", [
+      { title: "Build", role: "Dev", model_tier: "standard" },
+    ]);
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0].model_tier).toBe("standard");
+  });
+
+  it("writes null model_tier when the template step has none (Auto)", async () => {
+    const { supabase, updates } = createTierCaptureSupabase({ id: "s1", status: "pending", step_order: 1 });
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    await propagateTemplateEdits(supabase as any, "tmpl-1", [
+      { title: "Build", role: "Dev" },
+    ]);
+
+    expect(updates).toHaveLength(1);
+    expect(updates[0].model_tier).toBeNull();
+  });
+});

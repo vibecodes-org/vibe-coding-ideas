@@ -2,6 +2,63 @@ import type { IdeaStatus, CommentType, SortOption } from "@/types";
 
 export const VIBECODES_USER_ID = "a0000000-0000-4000-a000-000000000001";
 
+// ─── Per-step model tiering (P2) ───
+// Advisory hint on workflow steps telling the orchestrator which Claude model to
+// run a step's subagent on. Auto = null (absent) = orchestrator decides — never
+// stored as a literal "auto".
+
+export type ModelTierValue = "frontier" | "standard" | "cheap";
+
+/** Selectable tiers with their labels + one-line glosses (fixed order = cost gradient). */
+export const MODEL_TIERS: { value: ModelTierValue; label: string; gloss: string }[] = [
+  { value: "frontier", label: "Frontier", gloss: "Highest quality — decisions & design" },
+  { value: "standard", label: "Standard", gloss: "Balanced — most build steps" },
+  { value: "cheap", label: "Cheap", gloss: "Fast & low-cost — mechanical steps" },
+];
+
+/** Gloss shown for the Auto (null) default option. */
+export const MODEL_TIER_AUTO_GLOSS = "Orchestrator picks the best model";
+
+/** Set of valid stored tier values (excludes Auto/null). */
+export const MODEL_TIER_VALUES: ReadonlySet<string> = new Set(
+  MODEL_TIERS.map((t) => t.value),
+);
+
+/** Always-visible helper text shown beneath the tier control. */
+export const MODEL_TIER_ADVISORY_HELPER =
+  "Advisory — helps stretch your Claude usage; the orchestrator can override.";
+
+/** Human label for a stored tier value; falls back to the raw value if unknown. */
+export function modelTierLabel(tier: string): string {
+  return MODEL_TIERS.find((t) => t.value === tier)?.label ?? tier;
+}
+
+/**
+ * Default advisory tier for a step's role (design §06). Tolerant of role-name
+ * variants and case. Returns null for unknown/custom roles — never guess, let the
+ * orchestrator decide. Shared by the library-seeding reference and any UI reuse.
+ */
+export function defaultTierForRole(role: string): ModelTierValue | null {
+  const r = role?.trim().toLowerCase() ?? "";
+  if (!r) return null;
+
+  // QA / mechanical → cheap (checked first: "QA Engineer" must not fall to build)
+  if (/\bqa\b|quality assurance|\btest\b|tester|testing/.test(r)) return "cheap";
+
+  // Design / UX → frontier (before build, so "UX Designer" wins over "engineer")
+  if (/\bux\b|\bui\b|designer|\bdesign\b/.test(r)) return "frontier";
+
+  // Product / analysis / decision / review → frontier
+  if (/\bproduct\b|\bowner\b|analyst|founder|\bceo\b|\bpm\b|\bba\b|review|approv|decision/.test(r))
+    return "frontier";
+
+  // Build engineers → standard
+  if (/engineer|developer|\bdev\b|programmer|architect|full[\s-]?stack|front|back|coder/.test(r))
+    return "standard";
+
+  return null;
+}
+
 export const STATUS_CONFIG: Record<
   IdeaStatus,
   { label: string; color: string; bgColor: string }

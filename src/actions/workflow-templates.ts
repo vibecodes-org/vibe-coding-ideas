@@ -387,6 +387,7 @@ export async function applyWorkflowTemplateWithContext(
         agent_role: step.role,
         human_check_required: step.requires_approval ?? false,
         expected_deliverables: step.deliverables ?? [],
+        model_tier: step.model_tier ?? null,
         position: index * 1000,
         step_order: index + 1,
         status: "pending" as const,

@@ -63,6 +63,7 @@ import { StepDetailDialog } from "./step-detail-dialog";
 import { WorkflowSuggestionPanel } from "./workflow-suggestion-panel";
 import { TaskAutoOpenContext } from "./kanban-board";
 import { ApprovalLockIcon } from "./approval-lock-icon";
+import { ModelTierBadge } from "@/components/shared/model-tier-select";
 import type { TaskWorkflowStep, WorkflowRun, WorkflowTemplate } from "@/types";
 
 /** Map a role string to a color class for the role badge. */
@@ -572,6 +573,7 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                   </span>
                 )}
 
+                <ModelTierBadge tier={step.model_tier} />
                 {step.agent_role && (
                   <Badge
                     variant="outline"

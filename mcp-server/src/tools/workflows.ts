@@ -42,7 +42,22 @@ const templateStepSchema = z.object({
   requires_approval: z.boolean().optional().describe("Whether human approval is required after completion"),
   deliverables: z.array(z.string().max(100)).max(10).optional()
     .describe("Expected deliverables this step should produce (e.g. 'HTML mockups', 'requirements doc')"),
+  model_tier: z.enum(["frontier", "standard", "cheap"]).optional()
+    .describe("Advisory model tier hint (frontier | standard | cheap). Omit for Auto — the orchestrator picks the model. Never blocks execution."),
 });
+
+/**
+ * Advisory model-tier clause appended to a claimed step's spawn instruction.
+ * Returns "" for null/undefined so callers can add it unconditionally without
+ * changing the instruction byte-for-byte when no tier is set.
+ */
+export function modelTierClause(tier: string | null | undefined): string {
+  if (!tier) return "";
+  return (
+    `RECOMMENDED MODEL TIER for this step: \`${tier}\` — spawn this step's subagent on a \`${tier}\`-tier model if available. ` +
+    `Advisory only; does not change any other instruction.`
+  );
+}
 
 // ============================================================
 // Template Tools
@@ -172,6 +187,7 @@ export async function resyncWorkflowTemplate(
     role: String(s.role ?? ""),
     requires_approval: Boolean(s.requires_approval ?? false),
     deliverables: Array.isArray(s.deliverables) ? s.deliverables.map(String) : undefined,
+    model_tier: typeof s.model_tier === "string" ? s.model_tier : undefined,
   }));
 
   // Propagate edits to pending steps
@@ -332,6 +348,7 @@ export async function applyWorkflowTemplate(
         match_tier: matchedBotId ? (match?.tier ?? null) : null,
         human_check_required: Boolean(step.requires_approval ?? false),
         expected_deliverables: Array.isArray(step.deliverables) ? step.deliverables : [],
+        model_tier: typeof step.model_tier === "string" ? step.model_tier : null,
         position: (i + 1) * 1000,
         step_order: i + 1,
       })
@@ -390,7 +407,7 @@ export async function claimNextStep(
   // (docs/claim-token-protocol-design.html §3b).
   const { data: steps, error } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, comment_count, started_at, completed_at, created_at")
+    .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, comment_count, started_at, completed_at, created_at, model_tier")
     .eq("task_id", params.task_id)
     .in("status", ["pending", "in_progress"])
     .order("step_order", { ascending: true, nullsFirst: false })
@@ -487,7 +504,7 @@ export async function claimNextStep(
     })
     .eq("id", step.id)
     .in("status", ["pending", "in_progress"])
-    .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, expected_deliverables, comment_count, started_at, completed_at, created_at")
+    .select("id, task_id, idea_id, run_id, title, description, agent_role, bot_id, claimed_by, human_check_required, status, position, step_order, output, expected_deliverables, comment_count, started_at, completed_at, created_at, model_tier")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to claim step: ${updateError.message}`);
@@ -829,7 +846,11 @@ export async function claimNextStep(
     `TASK DESCRIPTION: After calling complete_step, call update_task to append a summary of your deliverable to the task description under a markdown heading.`
   );
 
-  const instruction = [identityInstruction, skillsInstruction, ...contextParts].filter(Boolean).join("\n\n");
+  // Advisory model-tier clause — "" when model_tier is null, so .filter(Boolean)
+  // drops it and the instruction stays byte-for-byte identical to the Auto path.
+  const modelTierInstruction = modelTierClause(updated.model_tier);
+
+  const instruction = [identityInstruction, modelTierInstruction, skillsInstruction, ...contextParts].filter(Boolean).join("\n\n");
 
   return {
     done: false,
@@ -1170,6 +1191,8 @@ export const updateStepSchema = z.object({
   human_check_required: z.boolean().optional().describe("Whether human approval is required after completion"),
   expected_deliverables: z.array(z.string().max(200)).max(20).nullable().optional()
     .describe("Expected deliverables (null to clear)"),
+  model_tier: z.enum(["frontier", "standard", "cheap"]).nullish()
+    .describe("Advisory model tier hint (frontier | standard | cheap, or null to clear back to Auto). Applied to pending steps only."),
 });
 
 export async function updateStep(
@@ -1182,6 +1205,7 @@ export async function updateStep(
   if (params.agent_role !== undefined) patch.agent_role = params.agent_role;
   if (params.human_check_required !== undefined) patch.human_check_required = params.human_check_required;
   if (params.expected_deliverables !== undefined) patch.expected_deliverables = params.expected_deliverables ?? [];
+  if (params.model_tier !== undefined) patch.model_tier = params.model_tier ?? null;
 
   if (Object.keys(patch).length === 0) {
     throw new Error("No fields to update — provide at least one field to change");
@@ -1192,7 +1216,7 @@ export async function updateStep(
     .update(patch)
     .eq("id", params.step_id)
     .eq("status", "pending")
-    .select("id, task_id, run_id, title, description, agent_role, human_check_required, expected_deliverables, status")
+    .select("id, task_id, run_id, title, description, agent_role, human_check_required, expected_deliverables, model_tier, status")
     .maybeSingle();
 
   if (error) throw new Error(`Failed to update step: ${error.message}`);

@@ -9,6 +9,7 @@ import {
   SORT_OPTIONS,
   BOT_ROLE_TEMPLATES,
   SUGGESTED_TAGS,
+  defaultTierForRole,
 } from "./constants";
 import type { IdeaStatus, CommentType } from "@/types";
 
@@ -217,3 +218,44 @@ describe("SUGGESTED_TAGS", () => {
   });
 });
 
+
+// ── defaultTierForRole (P2 model tiering) ─────────────────────────────
+
+describe("defaultTierForRole", () => {
+  it("maps canonical product/analysis roles to frontier", () => {
+    expect(defaultTierForRole("Product Owner")).toBe("frontier");
+    expect(defaultTierForRole("Business Analyst")).toBe("frontier");
+    expect(defaultTierForRole("Product Manager")).toBe("frontier");
+  });
+
+  it("maps design roles to frontier", () => {
+    expect(defaultTierForRole("UX Designer")).toBe("frontier");
+    expect(defaultTierForRole("UI Designer")).toBe("frontier");
+  });
+
+  it("maps build engineers to standard", () => {
+    expect(defaultTierForRole("Full Stack Developer")).toBe("standard");
+    expect(defaultTierForRole("Full Stack Engineer")).toBe("standard");
+    expect(defaultTierForRole("Front End Engineer")).toBe("standard");
+    expect(defaultTierForRole("Frontend Engineer")).toBe("standard");
+    expect(defaultTierForRole("Back End Engineer")).toBe("standard");
+    expect(defaultTierForRole("Backend Engineer")).toBe("standard");
+  });
+
+  it("maps QA / mechanical roles to cheap", () => {
+    expect(defaultTierForRole("QA Engineer")).toBe("cheap");
+    expect(defaultTierForRole("Tester")).toBe("cheap");
+  });
+
+  it("is case-insensitive and trims", () => {
+    expect(defaultTierForRole("  qa engineer  ")).toBe("cheap");
+    expect(defaultTierForRole("ux designer")).toBe("frontier");
+    expect(defaultTierForRole("FULL STACK DEVELOPER")).toBe("standard");
+  });
+
+  it("returns null for unknown / custom roles", () => {
+    expect(defaultTierForRole("Wizard")).toBeNull();
+    expect(defaultTierForRole("")).toBeNull();
+    expect(defaultTierForRole("Community Manager")).toBeNull();
+  });
+});

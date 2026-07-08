@@ -2,6 +2,12 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import type { McpContext } from "../context";
 import { mintClaimToken, hashClaimToken } from "../claim-token";
 
+// AI role matching hits the network — stub it so applyWorkflowTemplate can run
+// against pure Supabase mocks. Only applyWorkflowTemplate uses it in this file.
+vi.mock("../../../src/lib/ai-role-matching", () => ({
+  matchRolesWithAiOrFuzzy: vi.fn(async () => ({})),
+}));
+
 // Shared valid claim token: post-cutover, every complete/fail needs one.
 const TCT = mintClaimToken();
 import {
@@ -15,6 +21,8 @@ import {
   failStepSchema,
   updateStep,
   updateStepSchema,
+  applyWorkflowTemplate,
+  modelTierClause,
 } from "./workflows";
 
 // ---------------------------------------------------------------------------
@@ -2058,6 +2066,57 @@ describe("updateStep", () => {
     });
   });
 
+  it("sets model_tier on a pending step", async () => {
+    let capturedPatch: Record<string, unknown> | null = null;
+    const ctx = makeContext(((table: string) => {
+      const chain = createChain(null);
+      chain.chain.update = vi.fn((data: unknown) => {
+        capturedPatch = data as Record<string, unknown>;
+        return chain.chain;
+      });
+      chain.chain.maybeSingle = vi.fn(() =>
+        Promise.resolve({ data: { id: STEP_ID, status: "pending", model_tier: "cheap" }, error: null })
+      );
+      return chain.chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = await updateStep(ctx, { step_id: STEP_ID, model_tier: "cheap" });
+    expect((result as { model_tier: string }).model_tier).toBe("cheap");
+    expect(capturedPatch).toEqual({ model_tier: "cheap" });
+  });
+
+  it("clears model_tier back to Auto with null", async () => {
+    let capturedPatch: Record<string, unknown> | null = null;
+    const ctx = makeContext(((table: string) => {
+      const chain = createChain(null);
+      chain.chain.update = vi.fn((data: unknown) => {
+        capturedPatch = data as Record<string, unknown>;
+        return chain.chain;
+      });
+      chain.chain.maybeSingle = vi.fn(() =>
+        Promise.resolve({ data: { id: STEP_ID, status: "pending", model_tier: null }, error: null })
+      );
+      return chain.chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await updateStep(ctx, { step_id: STEP_ID, model_tier: null });
+    expect(capturedPatch).toEqual({ model_tier: null });
+  });
+
+  it("rejects a model_tier edit when the step is not pending", async () => {
+    const ctx = makeContext(((table: string) => {
+      const chain = createChain(null);
+      chain.chain.maybeSingle = vi.fn(() =>
+        Promise.resolve({ data: null, error: null })
+      );
+      return chain.chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await expect(
+      updateStep(ctx, { step_id: STEP_ID, model_tier: "frontier" })
+    ).rejects.toThrow("Step not found or is no longer pending");
+  });
+
   it("rejects update when step is not pending", async () => {
     const ctx = makeContext(((table: string) => {
       const chain = createChain(null);
@@ -2819,5 +2878,142 @@ describe("claimNextStep — subagent instruction (only mode)", () => {
     const instruction = (result as { instruction: string }).instruction;
 
     expect(instruction).toContain("RETRY or RESUME");
+  });
+});
+
+// ---------------------------------------------------------------------------
+// modelTierClause — advisory spawn clause (P2)
+// ---------------------------------------------------------------------------
+
+describe("modelTierClause", () => {
+  it("returns empty string for null (byte-for-byte no-op)", () => {
+    expect(modelTierClause(null)).toBe("");
+  });
+
+  it("returns empty string for undefined", () => {
+    expect(modelTierClause(undefined)).toBe("");
+  });
+
+  it("returns an advisory clause naming the tier when set", () => {
+    for (const tier of ["frontier", "standard", "cheap"]) {
+      const clause = modelTierClause(tier);
+      expect(clause).toContain("RECOMMENDED MODEL TIER");
+      expect(clause).toContain(`\`${tier}\``);
+      expect(clause).toContain("Advisory only");
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// claimNextStep — model_tier advisory in the instruction (P2)
+// ---------------------------------------------------------------------------
+
+describe("claimNextStep — model_tier advisory", () => {
+  it("null model_tier leaves the instruction free of the tier clause", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: null };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string; step: { model_tier: string | null } };
+    expect(r.instruction).not.toContain("RECOMMENDED MODEL TIER");
+    expect(r.step.model_tier).toBeNull();
+  });
+
+  it("a set model_tier appends the advisory clause and surfaces on the step", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: "cheap" };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string; step: { model_tier: string | null } };
+    expect(r.instruction).toContain("RECOMMENDED MODEL TIER for this step: `cheap`");
+    expect(r.instruction).toContain("Advisory only");
+    expect(r.step.model_tier).toBe("cheap");
+  });
+
+  it("the null path is byte-for-byte identical to omitting model_tier entirely", async () => {
+    const stepA = makeStepRow({ step_order: 1 });
+    const nullCtx = makeClaimContext({
+      pendingStep: stepA,
+      updatedStep: { ...stepA, status: "in_progress", claimed_by: USER_ID, model_tier: null },
+      priorSteps: [],
+    });
+    const nullResult = (await claimNextStep(nullCtx, { task_id: TASK_ID })) as { instruction: string };
+
+    const stepB = makeStepRow({ step_order: 1 });
+    const absentCtx = makeClaimContext({
+      pendingStep: stepB,
+      updatedStep: { ...stepB, status: "in_progress", claimed_by: USER_ID },
+      priorSteps: [],
+    });
+    const absentResult = (await claimNextStep(absentCtx, { task_id: TASK_ID })) as { instruction: string };
+
+    expect(nullResult.instruction).toBe(absentResult.instruction);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// applyWorkflowTemplate — copies model_tier onto created steps (P2)
+// ---------------------------------------------------------------------------
+
+describe("applyWorkflowTemplate — model_tier", () => {
+  it("copies each template step's model_tier onto the inserted step (absent → null)", async () => {
+    const template = {
+      id: "00000000-0000-4000-a000-0000000000aa",
+      name: "Feature Dev",
+      idea_id: IDEA_ID,
+      usage_count: 0,
+      steps: [
+        { title: "Implement", role: "Full Stack Developer", model_tier: "standard" },
+        { title: "UX", role: "UX Designer" }, // no tier → null
+      ],
+    };
+
+    const insertedSteps: Record<string, unknown>[] = [];
+    const counts: Record<string, number> = {};
+
+    const ctx = makeContext(((table: string) => {
+      counts[table] = (counts[table] ?? 0) + 1;
+
+      if (table === "workflow_templates") {
+        return createChain(template).chain;
+      }
+      if (table === "board_tasks") {
+        return createChain({ id: TASK_ID, idea_id: IDEA_ID, title: "Task" }).chain;
+      }
+      if (table === "workflow_runs") {
+        // 1st call: active-run guard (maybeSingle → null). 2nd: insert run (single).
+        return counts[table] === 1
+          ? createChain(null).chain
+          : createChain({ id: RUN_ID, task_id: TASK_ID }).chain;
+      }
+      if (table === "idea_agents") {
+        return createChain([]).chain;
+      }
+      if (table === "task_workflow_steps") {
+        const chain = createChain({
+          id: "step-x", title: "x", agent_role: "y", bot_id: null,
+          status: "pending", position: 1000, step_order: 1, human_check_required: false,
+        });
+        chain.chain.insert = vi.fn((data: unknown) => {
+          insertedSteps.push(data as Record<string, unknown>);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      if (table === "workflow_suggestions") {
+        return createChain([]).chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await applyWorkflowTemplate(ctx, { task_id: TASK_ID, template_id: template.id });
+
+    expect(insertedSteps).toHaveLength(2);
+    expect(insertedSteps[0].model_tier).toBe("standard");
+    expect(insertedSteps[1].model_tier).toBeNull();
   });
 });
