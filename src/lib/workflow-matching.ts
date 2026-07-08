@@ -38,12 +38,14 @@ export { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS };
 
 /**
  * Model for the cheap workflow-matching adjudication (gated behind the keyword
- * pre-filter, tiny 3-field output). Uses the same model the rest of the app's AI
- * runs on — the `claude-haiku-4-5` alias was rejected by the Anthropic API on the
- * resolved key (adjudication silently fell back to heuristic in prod); the proven
- * model works. Revisit a Haiku-tier id (e.g. dated) later as a cost optimisation.
+ * pre-filter, tiny 3-field output) — runs on the dated Haiku 4.5 id, the cheapest
+ * tier and appropriate for this gated classification. Must stay the DATED id: the
+ * bare `claude-haiku-4-5` alias was rejected by the Anthropic API on the resolved
+ * platform key (adjudication silently fell back to heuristic in prod), so do NOT
+ * "simplify" this back to the alias. Only verifiable in prod via `ai_usage_log`
+ * (adjudication rows show `source:"ai"` rather than the heuristic fallback).
  */
-export const WORKFLOW_MATCHING_MODEL = "claude-sonnet-4-6";
+export const WORKFLOW_MATCHING_MODEL = "claude-haiku-4-5-20251001";
 
 const AI_TIMEOUT_MS = 30_000;
 
