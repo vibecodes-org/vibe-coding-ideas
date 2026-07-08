@@ -38,14 +38,18 @@ export { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS };
 
 /**
  * Model for the cheap workflow-matching adjudication (gated behind the keyword
- * pre-filter, tiny 3-field output) — runs on the dated Haiku 4.5 id, the cheapest
- * tier and appropriate for this gated classification. Must stay the DATED id: the
- * bare `claude-haiku-4-5` alias was rejected by the Anthropic API on the resolved
- * platform key (adjudication silently fell back to heuristic in prod), so do NOT
- * "simplify" this back to the alias. Only verifiable in prod via `ai_usage_log`
- * (adjudication rows show `source:"ai"` rather than the heuristic fallback).
+ * pre-filter, tiny 3-field output).
+ *
+ * Sonnet, NOT Haiku. We tried Haiku 4.5 to cut cost (both the bare
+ * `claude-haiku-4-5` alias AND the dated `claude-haiku-4-5-20251001` id), and
+ * BOTH were rejected by the Anthropic API on the resolved key — the adjudication
+ * call throws and silently falls back to the keyword heuristic (no `ai_usage_log`
+ * row, `source:"heuristic"`). Verified in prod 2026-07-08 via a real UI-triggered
+ * match: Sonnet 4.6 logs successfully but Haiku produces zero usage rows + a
+ * heuristic fallback. The account/key evidently lacks Haiku 4.5 access. Keep
+ * Sonnet — it's the proven-working model — until Haiku access is confirmed.
  */
-export const WORKFLOW_MATCHING_MODEL = "claude-haiku-4-5-20251001";
+export const WORKFLOW_MATCHING_MODEL = "claude-sonnet-4-6";
 
 const AI_TIMEOUT_MS = 30_000;
 
