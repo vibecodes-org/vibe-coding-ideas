@@ -8,11 +8,14 @@ import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { SelectContent } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { useViewerModelTierMap } from "@/hooks/use-viewer-model-tier-map";
 import {
   MODEL_TIERS,
   MODEL_TIER_AUTO_GLOSS,
-  MODEL_TIER_ADVISORY_HELPER,
+  MODEL_TIER_RUNS_ON_HELPER,
   modelTierLabel,
+  modelTierGloss,
+  type ModelTierMap,
 } from "@/lib/constants";
 
 // Radix Select can't use "" as an item value, so Auto (null) uses this sentinel.
@@ -24,18 +27,30 @@ interface TierOption {
   gloss: string;
 }
 
-const OPTIONS: TierOption[] = [
-  {
-    value: AUTO_VALUE,
-    label: (
-      <>
-        Auto <span className="font-normal text-muted-foreground">(recommended)</span>
-      </>
-    ),
-    gloss: MODEL_TIER_AUTO_GLOSS,
-  },
-  ...MODEL_TIERS.map((t) => ({ value: t.value, label: t.label, gloss: t.gloss })),
-];
+/**
+ * Tier options with viewer-resolved glosses (Design-Review CONDITION 3) — a
+ * user mapped frontier→opus must read "Runs on Opus", never the platform
+ * default. `viewerMap` is undefined while loading, which modelTierGloss
+ * falls back to the platform-default display name for.
+ */
+function buildOptions(viewerMap: ModelTierMap | null | undefined): TierOption[] {
+  return [
+    {
+      value: AUTO_VALUE,
+      label: (
+        <>
+          Auto
+        </>
+      ),
+      gloss: MODEL_TIER_AUTO_GLOSS,
+    },
+    ...MODEL_TIERS.map((t) => ({
+      value: t.value,
+      label: t.label,
+      gloss: modelTierGloss(t.value, viewerMap?.[t.value]),
+    })),
+  ];
+}
 
 /**
  * Two-line option (name + gloss). Only the name sits inside ItemText, so the
@@ -74,9 +89,11 @@ export interface ModelTierSelectProps {
 }
 
 /**
- * Shared advisory model-tier control. Auto = null (stored as absent/NULL). Same
- * four options, glosses, and always-visible helper in every mount; only the
- * layout differs between the compact template-editor row and the full dialog field.
+ * Shared model-tier control. Auto = null (stored as absent/NULL). Steps with a
+ * tier now run on that tier's mapped model (P2b — mandatory, not advisory);
+ * same four options, viewer-resolved glosses, and always-visible helper in
+ * every mount; only the layout differs between the compact template-editor
+ * row and the full dialog field.
  */
 export function ModelTierSelect({
   value,
@@ -89,6 +106,8 @@ export function ModelTierSelect({
   const reactId = React.useId();
   const triggerId = id ?? `model-tier-${reactId}`;
   const helperId = `${triggerId}-helper`;
+  const viewerMap = useViewerModelTierMap();
+  const options = React.useMemo(() => buildOptions(viewerMap), [viewerMap]);
 
   const selectValue = value ?? AUTO_VALUE;
   const handleChange = (v: string) => onChange(v === AUTO_VALUE ? null : v);
@@ -96,7 +115,7 @@ export function ModelTierSelect({
   const displayLabel =
     value === null || value === undefined ? (
       <>
-        Auto <span className="font-normal text-muted-foreground">(recommended)</span>
+        Auto
       </>
     ) : (
       modelTierLabel(value)
@@ -104,7 +123,7 @@ export function ModelTierSelect({
 
   const listbox = (
     <SelectContent aria-label="Model tier" className="min-w-[16rem]">
-      {OPTIONS.map((opt) => (
+      {options.map((opt) => (
         <TierItem key={opt.value} {...opt} />
       ))}
     </SelectContent>
@@ -137,7 +156,7 @@ export function ModelTierSelect({
           {listbox}
         </SelectPrimitive.Root>
         <p id={helperId} className="text-[11px] text-muted-foreground">
-          {MODEL_TIER_ADVISORY_HELPER}
+          {MODEL_TIER_RUNS_ON_HELPER}
         </p>
       </div>
     );
@@ -163,7 +182,7 @@ export function ModelTierSelect({
         {listbox}
       </SelectPrimitive.Root>
       <span id={helperId} className="min-w-0 flex-1 text-[10px] text-muted-foreground">
-        {MODEL_TIER_ADVISORY_HELPER}
+        {MODEL_TIER_RUNS_ON_HELPER}
       </span>
     </div>
   );

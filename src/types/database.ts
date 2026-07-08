@@ -6,7 +6,7 @@ export interface WorkflowTemplateStep {
   role: string;
   requires_approval?: boolean;
   deliverables?: string[];
-  /** Advisory per-step model tier hint: 'frontier' | 'standard' | 'cheap'. Absent = Auto. */
+  /** Model tier: 'frontier' | 'standard' | 'cheap'. Absent = Auto. Steps with a tier run on the tier's mapped model (mcp-server/src/tools/workflows.ts). */
   model_tier?: string;
 }
 
@@ -36,6 +36,7 @@ export type Database = {
             discussions: boolean;
           };
           default_board_columns: { title: string; is_done_column: boolean }[] | null;
+          model_tier_map: { frontier?: string; standard?: string; cheap?: string } | null;
           is_admin: boolean;
           is_super_admin: boolean;
           is_bot: boolean;
@@ -70,6 +71,7 @@ export type Database = {
             discussions: boolean;
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
+          model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;
@@ -104,6 +106,7 @@ export type Database = {
             discussions: boolean;
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
+          model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;

@@ -1,0 +1,625 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P2b · Enforce Model Tiers — UX Design</title>
+<style>
+  /* ── Tokens (VibeCodes dark theme: Tailwind Zinc, shadcn New York) ── */
+  :root{
+    --bg:#09090b;            /* zinc-950 — app background            */
+    --card:#101013;          /* doc section card                     */
+    --popover:#18181b;       /* zinc-900 — popover / dropdown        */
+    --border:#27272a;        /* zinc-800 — border / input            */
+    --muted:#27272a;         /* zinc-800                             */
+    --muted-20:rgba(39,39,42,.20);
+    --muted-30:rgba(39,39,42,.30);
+    --muted-60:rgba(39,39,42,.60);
+    --fg:#fafafa;            /* zinc-50                              */
+    --muted-fg:#a1a1aa;      /* zinc-400                             */
+    --faint-fg:#71717a;      /* zinc-500 — placeholders              */
+    --ring:#d4d4d8;          /* zinc-300 — focus ring                */
+    --emerald:#34d399; --emerald-b:rgba(16,185,129,.35); --emerald-bg:rgba(16,185,129,.08);
+    --red:#f87171;     --red-b:rgba(239,68,68,.35);      --red-bg:rgba(239,68,68,.10);
+    --amber:#fbbf24;   --amber-b:rgba(245,158,11,.25);   --amber-bg:rgba(245,158,11,.15);
+    --blue:#60a5fa;    --blue-b:rgba(59,130,246,.25);    --blue-bg:rgba(59,130,246,.15);
+    --violet:#a78bfa;  --violet-b:rgba(139,92,246,.25);  --violet-bg:rgba(139,92,246,.15);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);color:var(--fg);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--fg)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85em;background:var(--muted-30);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:#e4e4e7}
+
+  .wrap{max-width:980px;margin:0 auto;padding:0 24px 120px}
+  header.hero{padding:56px 0 28px;border-bottom:1px solid var(--border)}
+  .kicker{display:inline-flex;gap:8px;align-items:center;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--emerald);margin-bottom:14px}
+  .kicker .dot{width:6px;height:6px;border-radius:99px;background:var(--emerald)}
+  h1{font-size:32px;line-height:1.2;font-weight:700;letter-spacing:-.02em}
+  .sub{margin-top:12px;color:var(--muted-fg);max-width:66ch}
+  .meta{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+  .meta span{font-size:11px;color:var(--muted-fg);border:1px solid var(--border);border-radius:99px;padding:3px 10px;background:var(--muted-20)}
+
+  nav.toc{position:sticky;top:0;z-index:50;background:rgba(9,9,11,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);margin:0 -24px;padding:10px 24px;display:flex;gap:4px;overflow-x:auto;white-space:nowrap}
+  nav.toc a{font-size:12px;color:var(--muted-fg);text-decoration:none;padding:5px 10px;border-radius:6px}
+  nav.toc a:hover{color:var(--fg);background:var(--muted-30)}
+  nav.toc a b{color:var(--emerald);font-weight:600;margin-right:5px}
+
+  section{margin-top:56px;scroll-margin-top:64px}
+  h2{font-size:21px;font-weight:650;letter-spacing:-.01em;display:flex;align-items:baseline;gap:12px}
+  h2 .num{color:var(--emerald);font-size:14px;font-weight:700}
+  h3{font-size:14px;font-weight:600;margin:26px 0 10px;color:#e4e4e7}
+  section>p{margin-top:10px;color:var(--muted-fg);max-width:70ch}
+  section>p strong, li strong, td strong{color:var(--fg);font-weight:600}
+  ul.notes{margin:12px 0 0 18px;color:var(--muted-fg)}
+  ul.notes li{margin-top:7px;max-width:72ch}
+  ul.notes li::marker{color:var(--faint-fg)}
+
+  /* ── Mockup frames ── */
+  .frame{margin-top:16px;border:1px solid var(--border);border-radius:12px;background:var(--card);overflow:hidden}
+  .frame .bar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--muted-20)}
+  .frame .bar .fdot{width:9px;height:9px;border-radius:99px;background:var(--border)}
+  .frame .bar .flabel{font-size:11px;color:var(--muted-fg);margin-left:6px}
+  .frame .stage{padding:26px;background:
+    radial-gradient(circle at 1px 1px,rgba(255,255,255,.035) 1px,transparent 0) 0 0/22px 22px, var(--bg)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  @media(max-width:760px){.cols{grid-template-columns:1fr}}
+  .tag{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;border-radius:99px;padding:3px 10px;margin-bottom:12px}
+  .tag.now{color:var(--muted-fg);border:1px solid var(--border);background:var(--muted-20)}
+  .tag.new{color:var(--emerald);border:1px solid var(--emerald-b);background:var(--emerald-bg)}
+  .caption{font-size:12px;color:var(--faint-fg);margin-top:12px;max-width:70ch}
+  .caption b{color:var(--muted-fg);font-weight:600}
+
+  /* ── shadcn-style primitives (mock) ── */
+  .dialog{background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 50px rgba(0,0,0,.55);padding:22px;max-width:448px;margin:0 auto}
+  .dlg-title{font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .dlg-desc{font-size:13px;color:var(--muted-fg);margin-top:6px;line-height:1.5}
+  .lbl{display:block;font-size:13px;font-weight:500;margin-bottom:6px}
+  .lbl .sub{font-weight:400;color:var(--faint-fg)}
+  .helper{font-size:11px;color:var(--muted-fg);line-height:1.45}
+
+  .sel{display:flex;align-items:center;justify-content:space-between;gap:6px;height:36px;padding:0 12px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:13px;color:var(--fg);white-space:nowrap}
+  .sel .cue{color:var(--faint-fg);display:flex}
+  .sel.focus{outline:2px solid var(--ring);outline-offset:2px}
+  .sel .dflt{color:var(--muted-fg)}
+
+  .listbox{width:300px;margin-top:6px;background:var(--popover);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.5);padding:4px;position:relative;z-index:2}
+  .opt{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:6px}
+  .opt .name{font-size:13px;font-weight:500}
+  .opt .gloss{font-size:11px;color:var(--muted-fg);margin-top:1px}
+  .opt.active{background:var(--muted-60)}
+  .opt .chk{color:var(--fg);flex:none;margin-top:3px;visibility:hidden}
+  .opt.selected .chk{visibility:visible}
+  .opt-sep{height:1px;background:var(--border);margin:4px 6px}
+
+  .btn{display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 14px;border-radius:6px;font-size:13px;font-weight:500;border:1px solid transparent;white-space:nowrap}
+  .btn.primary{background:var(--fg);color:var(--bg)}
+  .btn.primary.disabled{opacity:.5}
+  .btn.outline{background:transparent;color:var(--fg);border-color:var(--border)}
+  .btn.outline.sm{height:30px;font-size:12px;padding:0 12px}
+  .btn.ghost{background:transparent;color:var(--muted-fg)}
+  .btn.new{border-color:var(--emerald-b);box-shadow:0 0 0 3px var(--emerald-bg)}
+  .btn.busy{opacity:.7}
+
+  .badge{display:inline-flex;align-items:center;gap:4px;flex:none;border-radius:99px;border:1px solid var(--border);padding:1px 8px;font-size:10px;font-weight:500;line-height:1.6;color:var(--fg);white-space:nowrap}
+  .badge.tier{background:transparent;color:#e4e4e7;border-color:#3f3f46}
+  .badge.tier .tk{color:var(--faint-fg);font-weight:400}
+
+  /* toast */
+  .toast{display:flex;align-items:center;gap:10px;background:var(--popover);border:1px solid var(--border);border-radius:8px;padding:10px 14px;font-size:13px;box-shadow:0 12px 32px rgba(0,0,0,.5);max-width:340px}
+  .toast .ic{flex:none;display:flex}
+  .toast.ok .ic{color:var(--emerald)}
+  .toast.err .ic{color:var(--red)}
+
+  /* skeleton */
+  .sk{border-radius:6px;background:linear-gradient(90deg,var(--muted-30) 25%,var(--muted-60) 50%,var(--muted-30) 75%);background-size:200% 100%;animation:sk 1.4s ease infinite}
+  @keyframes sk{0%{background-position:200% 0}100%{background-position:-200% 0}}
+
+  /* settings row */
+  .setrow{display:flex;flex-wrap:wrap;gap:8px;justify-content:flex-end}
+
+  /* dropdown menu (mobile settings) */
+  .menu{width:210px;background:var(--popover);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.5);padding:4px}
+  .mi{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:6px;font-size:13px;min-height:40px}
+  .mi svg{color:var(--muted-fg);flex:none}
+  .mi.hl{outline:1.5px dashed var(--emerald-b);outline-offset:-1.5px;background:var(--emerald-bg)}
+
+  /* directive blocks */
+  .direc{margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--popover);padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12.5px;line-height:1.7;color:#d4d4d8;overflow-x:auto}
+  .direc .hl{color:var(--emerald)}
+  .direc .dim{color:var(--faint-fg)}
+  .direc.bad{border-color:var(--amber-b)}
+  .direc.good{border-color:var(--emerald-b)}
+
+  /* annotation */
+  .annot{position:relative;border:1.5px dashed var(--emerald-b);border-radius:8px;padding:8px;margin:0 -8px}
+  .annot .pin{position:absolute;top:-9px;left:10px;font-size:9px;font-weight:700;letter-spacing:.08em;background:var(--emerald);color:#04231a;border-radius:99px;padding:1px 8px;z-index:3}
+
+  /* phone frame */
+  .phone{width:375px;max-width:100%;margin:0 auto;border:1px solid #3f3f46;border-radius:24px;background:var(--bg);box-shadow:0 24px 60px rgba(0,0,0,.5);overflow:hidden}
+  .phone .notch{height:26px;display:flex;align-items:center;justify-content:center}
+  .phone .notch i{display:block;width:110px;height:16px;border-radius:99px;background:#18181b}
+  .phone .screen{padding:16px 14px 24px}
+  .phone .sel{min-height:44px}
+  .phone .btn{min-height:44px}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint-fg);text-align:left;font-weight:600;padding:8px 12px;border-bottom:1px solid var(--border)}
+  td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--muted-fg);vertical-align:top}
+  td:first-child{color:var(--fg)}
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--card);padding:0 4px 4px;margin-top:16px}
+  .tablewrap table{margin-top:0}
+  .tablewrap tr:last-child td{border-bottom:0}
+  td code{white-space:normal}
+
+  .note{margin-top:16px;border:1px solid var(--amber-b);background:var(--amber-bg);border-radius:8px;padding:12px 14px;font-size:13px;color:var(--muted-fg);max-width:none}
+  .note b{color:var(--amber)}
+  .note.green{border-color:var(--emerald-b);background:var(--emerald-bg)}
+  .note.green b{color:var(--emerald)}
+
+  /* decision cards */
+  .dgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:18px}
+  @media(max-width:820px){.dgrid{grid-template-columns:1fr}}
+  .dcard{border:1px solid var(--emerald-b);background:var(--card);border-radius:10px;padding:16px}
+  .dcard .q{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--emerald)}
+  .dcard .a{font-size:14px;font-weight:600;margin-top:6px;line-height:1.4}
+  .dcard .why{font-size:12px;color:var(--muted-fg);margin-top:8px;line-height:1.5}
+
+  .check{margin-top:14px}
+  .check li{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border);color:var(--muted-fg);font-size:13.5px;list-style:none;max-width:none}
+  .check li:last-child{border-bottom:0}
+  .check .box{flex:none;width:16px;height:16px;border:1.5px solid var(--faint-fg);border-radius:4px;margin-top:3px}
+  footer{margin-top:72px;padding-top:20px;border-top:1px solid var(--border);font-size:12px;color:var(--faint-fg)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker"><span class="dot"></span>Feature Development · Step 2 — UX Design</div>
+  <h1>P2b — Enforce Model Tiers</h1>
+  <p class="sub">P2 shipped an <em>advisory</em> per-step model tier. P2b makes it real: a <strong style="color:var(--fg)">MANDATORY MODEL directive</strong> naming the exact Task-tool <code>model</code> parameter, resolved from a platform default plus a per-user override map (<code>users.model_tier_map</code>). This document designs the two user-facing surfaces — the <strong style="color:var(--fg)">Model tier mapping</strong> settings dialog on the own-profile page, and the <strong style="color:var(--fg)">“runs on” copy refresh</strong> across all five <code>ModelTierSelect</code> mounts — plus the directive's before/after story. Builds on the P2b Requirements deliverable (FR-10/13/14/16/17, AC-14); requirements are cited, not repeated.</p>
+  <div class="meta">
+    <span>Defaults: frontier→Fable · standard→Sonnet · cheap→Haiku</span>
+    <span>Fallback: one tier up (haiku→sonnet, sonnet→opus, fable→opus, opus→fable)</span>
+    <span>Auto (null) = no directive, byte-for-byte unchanged</span>
+    <span>Dark-first · shadcn New York / Zinc</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Sections">
+  <a href="#s0"><b>0</b>Decisions</a>
+  <a href="#s1"><b>1</b>Entry point</a>
+  <a href="#s2"><b>2</b>Mapping dialog</a>
+  <a href="#s3"><b>3</b>All states</a>
+  <a href="#s4"><b>4</b>Copy changes</a>
+  <a href="#s5"><b>5</b>Directive story</a>
+  <a href="#s6"><b>6</b>Mobile 375px</a>
+  <a href="#s7"><b>7</b>Accessibility</a>
+  <a href="#s8"><b>8</b>Review checklist</a>
+</nav>
+
+<!-- ══════════════════════ 0. DECISIONS ══════════════════════ -->
+<section id="s0">
+  <h2><span class="num">00</span>The three open questions — decided</h2>
+  <div class="dgrid">
+    <div class="dcard">
+      <div class="q">Q1 · Placement</div>
+      <div class="a">Own-profile settings row, next to “AI API Key” — same button-opens-dialog pattern.</div>
+      <div class="why">The profile settings “stack” is actually a row of outline buttons that each open a dialog (<code>profile/[id]/page.tsx:202-209</code>). A dedicated page section would over-weight a set-once preference and break Jakob's-Law consistency with its five siblings. It sits beside <em>AI API Key</em> because both are personal AI-account settings. Shown in context in §01.</div>
+    </div>
+    <div class="dcard">
+      <div class="q">Q2 · Unset display</div>
+      <div class="a">Inline in the closed trigger: <strong>“Fable&nbsp;(default)”</strong> — no separate caption.</div>
+      <div class="why">Recognition over recall: the default is visible exactly where the choice is made, mirroring P2's “Auto (recommended)” inline-suffix precedent. A separate caption doubles the vertical rhythm ×3 rows and detaches the fact from the control on 375px. The “(default)” suffix also encodes set-vs-unset in <em>text</em>, never colour alone.</div>
+    </div>
+    <div class="dcard">
+      <div class="q">Q3 · Resolved model on steps</div>
+      <div class="a">Tier-only on step selects &amp; badges — agree with Requirements.</div>
+      <div class="why">The tier is the shared, stored fact; the resolution is <em>per-user</em>. Printing “Frontier · Fable” on shared board/template surfaces would show different truths to different collaborators. The resolved model appears only on per-user surfaces: the mapping dialog (§02) and the tier-option glosses (§04), which read “Runs on Fable…” using the <em>viewer's</em> map. Revisit for P2c verification.</div>
+    </div>
+  </div>
+  <p class="caption"><b>One deviation from Requirements:</b> the sample gloss “Frontier — runs on Fable · your best model” is adjusted to “Runs on Fable · decisions &amp; design” — keeping the “runs on &lt;model&gt;” head but retaining P2's when-to-use tail, which is the information users need at choice time (§04).</p>
+</section>
+
+<!-- ══════════════════════ 1. ENTRY POINT ══════════════════════ -->
+<section id="s1">
+  <h2><span class="num">01</span>Entry point — own-profile settings row (Q1 in context)</h2>
+  <p>Per FR-13/14 the card is modelled on <code>api-key-settings.tsx</code>: an outline <code>size="sm"</code> trigger button in the own-profile-only settings row, opening a <code>sm:max-w-md</code> dialog. The new <strong>Model Tiers</strong> button (lucide <code>Cpu</code> icon) is inserted immediately after <strong>AI API Key</strong>. On mobile, it becomes a row in the existing <code>ProfileSettingsMenu</code> dropdown — each item there is already ≥40px tall.</p>
+
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Profile — own profile, desktop settings row (current → proposed)</span></div>
+    <div class="stage">
+      <div style="max-width:760px;margin:0 auto">
+        <div class="tag now" style="margin-bottom:10px">Before</div>
+        <div class="setrow">
+          <span class="btn outline sm">Edit Profile</span>
+          <span class="btn outline sm">🔔 Notifications</span>
+          <span class="btn outline sm">Board Columns</span>
+          <span class="btn outline sm">🔑 AI API Key</span>
+          <span class="btn outline sm">MCP API Keys</span>
+          <span class="btn outline sm">GitHub</span>
+        </div>
+        <div class="tag new" style="margin:22px 0 10px">After — Model Tiers joins the row</div>
+        <div class="setrow">
+          <span class="btn outline sm">Edit Profile</span>
+          <span class="btn outline sm">🔔 Notifications</span>
+          <span class="btn outline sm">Board Columns</span>
+          <span class="btn outline sm">🔑 AI API Key</span>
+          <span class="btn outline sm new"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg> Model Tiers</span>
+          <span class="btn outline sm">MCP API Keys</span>
+          <span class="btn outline sm">GitHub</span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>Mobile entry — ProfileSettingsMenu dropdown</h3>
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Mobile — ⚙ Settings dropdown gains one item</span></div>
+    <div class="stage">
+      <div class="menu" style="margin:0 auto">
+        <div class="mi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/></svg>Notifications</div>
+        <div class="mi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><path d="M9 3v18M15 3v18"/></svg>Board Columns</div>
+        <div class="mi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="7.5" cy="15.5" r="5.5"/><path d="m21 2-9.6 9.6"/><path d="m15.5 7.5 3 3L22 7l-3-3"/></svg>AI API Key</div>
+        <div class="mi hl"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg>Model Tiers</div>
+        <div class="mi"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>MCP API Keys</div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Data flow:</b> the profile page is a server component that already fetches the full <code>users</code> row — <code>model_tier_map</code> is passed down as a prop exactly like <code>hasKey</code> / <code>notification_preferences</code>. The dialog therefore opens <b>instantly with data</b> in the normal path; the skeleton state (§03) exists for the refetch-after-save path and any future lazy mount.</p>
+</section>
+
+<!-- ══════════════════════ 2. MAPPING DIALOG ══════════════════════ -->
+<section id="s2">
+  <h2><span class="num">02</span>The “Model tier mapping” dialog</h2>
+  <p>Three labelled selects — one per tier, in the established cost-gradient order (Frontier → Standard → Cheap) — each offering the four models. Unset renders inline as <strong>“&lt;default&gt; (default)”</strong> (Q2). A footer explains the fallback substitution (FR-10) so the settings surface and the directive tell one story. Footer actions follow the <code>api-key-settings</code> pattern: Cancel / Save right-aligned, with <strong>Reset to defaults</strong> on the left as a staged change — it clears all three selects locally and Save commits, so there is exactly one write path and Cancel always undoes.</p>
+
+  <div class="cols">
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Default state — nothing set, platform defaults shown inline</span></div>
+      <div class="stage">
+        <div class="dialog">
+          <div class="dlg-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg>Model tier mapping</div>
+          <p class="dlg-desc">Choose which Claude model runs each workflow tier. Tiers you leave unset use the platform default.</p>
+
+          <div style="margin-top:18px">
+            <label class="lbl" for="t-frontier">Frontier <span class="sub">— decisions &amp; design</span></label>
+            <div class="sel" id="t-frontier" role="combobox" aria-expanded="false"><span class="dflt">Fable (default)</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          </div>
+          <div style="margin-top:14px">
+            <label class="lbl" for="t-standard">Standard <span class="sub">— most build steps</span></label>
+            <div class="sel" id="t-standard" role="combobox" aria-expanded="false"><span class="dflt">Sonnet (default)</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          </div>
+          <div style="margin-top:14px">
+            <label class="lbl" for="t-cheap">Cheap <span class="sub">— mechanical steps</span></label>
+            <div class="sel" id="t-cheap" role="combobox" aria-expanded="false"><span class="dflt">Haiku (default)</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          </div>
+
+          <p class="helper" id="fallback-help" style="margin-top:14px">Workflow steps with a tier run on that tier's model. If a model isn't available on your plan or session, the orchestrator substitutes the next tier up and notes it in the step output.</p>
+
+          <div style="display:flex;align-items:center;gap:8px;margin-top:18px">
+            <span class="btn ghost" style="padding-left:0"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>Reset to defaults</span>
+            <span style="flex:1"></span>
+            <span class="btn outline">Cancel</span>
+            <span class="btn primary disabled" aria-disabled="true">Save</span>
+          </div>
+          <p class="helper" style="margin-top:8px;text-align:right;color:var(--faint-fg)" id="save-why">Save enables when you change a tier.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Open listbox — Frontier select, “Opus” focused</span></div>
+      <div class="stage">
+        <div class="dialog">
+          <label class="lbl">Frontier <span class="sub">— decisions &amp; design</span></label>
+          <div class="sel focus" role="combobox" aria-expanded="true"><span class="dflt">Fable (default)</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          <div class="listbox" role="listbox" aria-label="Frontier tier model">
+            <div class="opt selected" role="option" aria-selected="true">
+              <div><div class="name">Platform default <span style="color:var(--faint-fg);font-weight:400">(Fable)</span></div><div class="gloss">Follow the platform mapping for this tier</div></div>
+              <span class="chk"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            </div>
+            <div class="opt-sep"></div>
+            <div class="opt" role="option"><div><div class="name">Fable</div><div class="gloss">Most capable — frontier reasoning</div></div><span class="chk"></span></div>
+            <div class="opt active" role="option"><div><div class="name">Opus</div><div class="gloss">Deep reasoning — previous flagship</div></div><span class="chk"></span></div>
+            <div class="opt" role="option"><div><div class="name">Sonnet</div><div class="gloss">Balanced speed &amp; quality</div></div><span class="chk"></span></div>
+            <div class="opt" role="option"><div><div class="name">Haiku</div><div class="gloss">Fastest &amp; lowest cost</div></div><span class="chk"></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Why a “Platform default” first option:</b> unset must be reachable per-tier, not only via the all-or-nothing Reset — a user who overrode two tiers can return one to default without losing the other. The separator visually splits “follow the platform” from the four explicit choices. Choosing “Fable” explicitly stores <code>"fable"</code>; choosing “Platform default” stores nothing (NULL) — the trigger then reads <span style="color:var(--muted-fg)">Fable (default)</span> in muted foreground, while an explicit choice reads <span style="color:var(--fg)">Fable</span> in full foreground <em>plus</em> the missing “(default)” suffix, so set-vs-unset is never colour-only. Option order matches capability descending; same two-line name+gloss layout as P2's tier options — one learned pattern, reused.</p>
+
+  <h3>Changed state — explicit override staged, Save enabled</h3>
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Frontier remapped to Opus — dirty, Save active</span></div>
+    <div class="stage">
+      <div class="dialog">
+        <div style="margin-top:2px">
+          <label class="lbl">Frontier <span class="sub">— decisions &amp; design</span></label>
+          <div class="sel"><span>Opus</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+        </div>
+        <div style="margin-top:14px">
+          <label class="lbl">Standard <span class="sub">— most build steps</span></label>
+          <div class="sel"><span class="dflt">Sonnet (default)</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+        </div>
+        <div style="margin-top:14px">
+          <label class="lbl">Cheap <span class="sub">— mechanical steps</span></label>
+          <div class="sel"><span class="dflt">Haiku (default)</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+        </div>
+        <p class="helper" style="margin-top:14px">Workflow steps with a tier run on that tier's model. If a model isn't available on your plan or session, the orchestrator substitutes the next tier up and notes it in the step output.</p>
+        <div style="display:flex;align-items:center;gap:8px;margin-top:18px">
+          <span class="btn ghost" style="padding-left:0"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>Reset to defaults</span>
+          <span style="flex:1"></span>
+          <span class="btn outline">Cancel</span>
+          <span class="btn primary">Save</span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Persistence (FR-13):</b> Save calls <code>updateModelTierMap</code> (self-only server action in <code>src/actions/profile.ts</code>) with the full 0–3-key map; NULL/absent keys mean platform default. Reset stages <code>{}</code> and Save persists NULL — matching AC-14's “reset works”. Cancel (or Esc / overlay click) discards staged changes, same as the API-key dialog.</p>
+</section>
+
+<!-- ══════════════════════ 3. ALL STATES ══════════════════════ -->
+<section id="s3">
+  <h2><span class="num">03</span>All states — loading, saving, saved, error, unchanged</h2>
+  <p>Per AC-14 and the states contract. Sonner toasts (bottom-right, as everywhere in the app) carry the outcome; the dialog closes on success and <strong>stays open on error</strong> so staged values are never lost.</p>
+
+  <div class="cols">
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Loading — skeleton mirrors final layout (no spinner)</span></div>
+      <div class="stage">
+        <div class="dialog">
+          <div class="dlg-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg>Model tier mapping</div>
+          <p class="dlg-desc">Choose which Claude model runs each workflow tier. Tiers you leave unset use the platform default.</p>
+          <div style="margin-top:18px"><div class="sk" style="width:120px;height:13px;margin-bottom:8px"></div><div class="sk" style="height:36px"></div></div>
+          <div style="margin-top:14px"><div class="sk" style="width:140px;height:13px;margin-bottom:8px"></div><div class="sk" style="height:36px"></div></div>
+          <div style="margin-top:14px"><div class="sk" style="width:130px;height:13px;margin-bottom:8px"></div><div class="sk" style="height:36px"></div></div>
+          <div style="display:flex;justify-content:flex-end;gap:8px;margin-top:18px"><div class="sk" style="width:76px;height:32px"></div><div class="sk" style="width:64px;height:32px"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Saving — pending transition, controls locked</span></div>
+      <div class="stage">
+        <div class="dialog">
+          <div style="margin-top:2px">
+            <label class="lbl">Frontier <span class="sub">— decisions &amp; design</span></label>
+            <div class="sel" style="opacity:.55" aria-disabled="true"><span>Opus</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          </div>
+          <div style="margin-top:14px">
+            <label class="lbl">Standard <span class="sub">— most build steps</span></label>
+            <div class="sel" style="opacity:.55" aria-disabled="true"><span class="dflt">Sonnet (default)</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          </div>
+          <div style="margin-top:14px">
+            <label class="lbl">Cheap <span class="sub">— mechanical steps</span></label>
+            <div class="sel" style="opacity:.55" aria-disabled="true"><span class="dflt">Haiku (default)</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;margin-top:18px">
+            <span class="btn ghost" style="padding-left:0;opacity:.5">Reset to defaults</span>
+            <span style="flex:1"></span>
+            <span class="btn outline" style="opacity:.5">Cancel</span>
+            <span class="btn primary busy">Saving…</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Saved — dialog closes, success toast</span></div>
+      <div class="stage" style="display:flex;justify-content:flex-end;align-items:flex-end;min-height:130px">
+        <div class="toast ok" role="status">
+          <span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg></span>
+          Model tiers saved
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Error — dialog stays open, staged values kept, error toast</span></div>
+      <div class="stage" style="display:flex;justify-content:flex-end;align-items:flex-end;min-height:130px">
+        <div class="toast err" role="alert">
+          <span class="ic"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg></span>
+          Failed to save model tiers — try again
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>State</th><th>Trigger</th><th>Behaviour</th><th>Exact copy</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Loading</strong></td><td>Map not yet available (refetch / lazy mount)</td><td>Three label+select skeletons matching final dimensions — zero layout shift on resolve. Footer buttons skeletoned too.</td><td>—</td></tr>
+        <tr><td><strong>Unchanged</strong></td><td>Staged map deep-equals stored map</td><td>Save rendered disabled <em>with adjacent explanation</em> (constraint: never disabled without a why); Reset remains enabled if any override exists.</td><td><code>Save enables when you change a tier.</code></td></tr>
+        <tr><td><strong>Saving</strong></td><td>Save pressed → <code>useTransition</code> pending</td><td>All selects + footer disabled; primary button label swaps.</td><td><code>Saving…</code></td></tr>
+        <tr><td><strong>Saved</strong></td><td>Action resolves</td><td>Dialog closes; success toast; button in settings row unchanged (no persistent badge — this is a set-and-forget preference).</td><td><code>toast.success("Model tiers saved")</code></td></tr>
+        <tr><td><strong>Error</strong></td><td>Action throws</td><td>Dialog stays open with staged values intact; error toast (never silent — house rule).</td><td><code>toast.error(err.message ?? "Failed to save model tiers — try again")</code></td></tr>
+        <tr><td><strong>Reset staged</strong></td><td>“Reset to defaults” pressed</td><td>All three selects return to “(default)” display locally; Save enables (if anything was set); nothing persisted until Save.</td><td>Trigger text: <code>Fable (default)</code> · <code>Sonnet (default)</code> · <code>Haiku (default)</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption"><b>Empty state?</b> Not applicable as a distinct screen — “nothing set” <em>is</em> the default state (§02, left) and is fully functional. That framing is deliberate: the feature works with zero configuration, and the UI says so by showing live defaults rather than blanks.</p>
+</section>
+
+<!-- ══════════════════════ 4. COPY CHANGES ══════════════════════ -->
+<section id="s4">
+  <h2><span class="num">04</span>Copy changes — the 5 <code>ModelTierSelect</code> mounts (FR-16/17)</h2>
+  <p>The directive is now mandatory, so every string that said “advisory / can override” becomes “runs on” language. One constant swap covers both variants (compact template rows + full step-edit dialog) across all five mounts — the P2 layout is untouched; only words change. <code>MODEL_TIER_AUTO_GLOSS</code> stays byte-identical per FR-16.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>String</th><th>Before (P2)</th><th>After (P2b) — exact copy</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><strong>Helper</strong><br><span style="font-size:11px;color:var(--faint-fg)"><code>MODEL_TIER_ADVISORY_HELPER</code> → rename <code>MODEL_TIER_RUNS_ON_HELPER</code></span></td>
+          <td>Advisory — helps stretch your Claude usage; the orchestrator can override.</td>
+          <td><code>Steps run on the tier's mapped model — change your mapping in Profile → Model Tiers.</code></td>
+        </tr>
+        <tr>
+          <td><strong>Frontier gloss</strong></td>
+          <td>Highest quality — decisions &amp; design</td>
+          <td><code>Runs on Fable · decisions &amp; design</code></td>
+        </tr>
+        <tr>
+          <td><strong>Standard gloss</strong></td>
+          <td>Balanced — most build steps</td>
+          <td><code>Runs on Sonnet · most build steps</code></td>
+        </tr>
+        <tr>
+          <td><strong>Cheap gloss</strong></td>
+          <td>Fast &amp; low-cost — mechanical steps</td>
+          <td><code>Runs on Haiku · mechanical steps</code></td>
+        </tr>
+        <tr>
+          <td><strong>Auto label + gloss</strong></td>
+          <td>Auto (recommended) · “Orchestrator picks the best model”</td>
+          <td><strong>Unchanged</strong> — Auto emits no directive; the orchestrator keeps full discretion, which is exactly what this gloss already says.</td>
+        </tr>
+        <tr>
+          <td><strong>Tool schemas</strong><br><span style="font-size:11px;color:var(--faint-fg)"><code>workflows.ts:46</code>, <code>:1195</code>; <code>register-tools.ts:1091/1105/1224</code></span></td>
+          <td>“Advisory model tier hint … Never blocks execution.”</td>
+          <td><code>Model tier (frontier | standard | cheap). Steps with a tier run on the tier's mapped model (defaults: frontier→fable, standard→sonnet, cheap→haiku). Omit for Auto — the orchestrator picks.</code></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <ul class="notes">
+    <li><strong>Glosses show the viewer's resolved model.</strong> The model names above are the platform defaults; when the viewer has an override, the gloss reflects it (e.g. “Runs on Opus · decisions &amp; design”). Implemented as <code>modelTierGloss(tier, resolvedModel)</code> with the static platform-default string as the zero-plumbing fallback — if threading the map to all five mounts proves heavy for P2b, shipping the static defaults is acceptable and honest for the dominant (unconfigured) case.</li>
+    <li><strong>Why this is safe despite Q3:</strong> the select mounts are <em>choice-time, per-user</em> surfaces — “what will happen if <em>I</em> pick this” — unlike the shared read-only badges, which stay tier-only. Resolution at claim time uses the claiming user's map, which for the solo-builder majority is the viewer.</li>
+    <li><strong>Helper length check:</strong> 86 characters — fits the compact row's flexible remainder at the same 10px size the P2 helper occupies today; wraps to two lines below ~560px, as the current helper already does.</li>
+  </ul>
+
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Tier listbox after copy refresh — any of the 5 mounts</span></div>
+    <div class="stage">
+      <div class="listbox" style="margin:0 auto" role="listbox" aria-label="Model tier">
+        <div class="opt selected" role="option" aria-selected="true">
+          <div><div class="name">Auto <span style="color:var(--faint-fg);font-weight:400">(recommended)</span></div><div class="gloss">Orchestrator picks the best model</div></div>
+          <span class="chk"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+        </div>
+        <div class="opt" role="option"><div><div class="name">Frontier</div><div class="gloss">Runs on Fable · decisions &amp; design</div></div><span class="chk"></span></div>
+        <div class="opt" role="option"><div><div class="name">Standard</div><div class="gloss">Runs on Sonnet · most build steps</div></div><span class="chk"></span></div>
+        <div class="opt" role="option"><div><div class="name">Cheap</div><div class="gloss">Runs on Haiku · mechanical steps</div></div><span class="chk"></span></div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Q3 restated for badges:</b> the read-only <code>tier:</code> badge on step cards, template previews, and the step-detail header keeps its P2 form — <span class="badge tier"><span class="tk">tier:</span>Frontier</span> — with no model name. Its tooltip copy updates from “Advisory… may override” to: <code>Runs on the model mapped to this tier — see Profile → Model Tiers.</code></p>
+</section>
+
+<!-- ══════════════════════ 5. DIRECTIVE STORY ══════════════════════ -->
+<section id="s5">
+  <h2><span class="num">05</span>The directive — before / after (the behavioural guarantee)</h2>
+  <p>What the orchestrator actually receives when it claims a step with <code>model_tier: "standard"</code> for a user whose map is empty (standard → Sonnet, fallback → Opus). This is the invisible core of P2b; it's shown here so Design Review can verify the user-visible promise the settings dialog makes (“steps run on the tier's mapped model”) matches the machine instruction word for word.</p>
+
+  <div class="tag now" style="margin:18px 0 0">Before — P2, appended at the end of the instruction (<code>workflows.ts:57</code>)</div>
+  <div class="direc bad"><span class="dim">…step context, deliverables, prior outputs…</span><br><br>RECOMMENDED MODEL TIER for this step: `standard` — spawn this step's subagent on a `standard`-tier model if available. Advisory only; does not change any other instruction.</div>
+  <p class="caption">Two failure modes observed in P2: (1) “if available / advisory only” invites the orchestrator to skip it; (2) “standard-tier model” names no concrete parameter value, so even a willing orchestrator must guess.</p>
+
+  <div class="tag new" style="margin:22px 0 0">After — P2b, FR-10 verbatim, placed FIRST in the instruction</div>
+  <div class="direc good"><span class="hl">MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "sonnet". If "sonnet" is unavailable on this plan/session, use model: "opus" and state the substitution in your step output. Do not run this step inline and do not inherit your session model.</span><br><br><span class="dim">…step context, deliverables, prior outputs…</span></div>
+
+  <ul class="notes">
+    <li><strong>First position</strong> — primacy: the model choice must be made <em>before</em> the orchestrator starts planning the spawn, not remembered after reading the task.</li>
+    <li><strong>Exact parameter value</strong> — <code>model: "sonnet"</code> is the literal Task-tool argument; nothing left to interpret. Resolution: platform default (frontier→fable, standard→sonnet, cheap→haiku) overridden by the user's map from §02.</li>
+    <li><strong>Fallback substitution is visible to the user</strong> — “state the substitution in your step output” means a substituted run says so in the step's recorded output, which the user reads in the step-detail dialog. No silent downgrades/upgrades. Chain: haiku→sonnet, sonnet→opus, fable→opus, opus→fable.</li>
+    <li><strong>Auto is untouched</strong> — <code>model_tier = null</code> emits no clause; the instruction is byte-for-byte identical to today (FR-10). The tier control's Auto option therefore keeps its P2 meaning exactly.</li>
+    <li><strong>Ceiling, not hard enforcement</strong> — per Requirements scope, the directive is the strongest instruction we can issue without deploy-side verification; P2c owns verification.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════ 6. MOBILE 375px ══════════════════════ -->
+<section id="s6">
+  <h2><span class="num">06</span>Mobile — 375px</h2>
+  <p>The dialog is already a single column, so 375px is a spacing exercise, not a re-layout: selects and buttons grow to ≥44px (<code>min-h-11</code> under <code>pointer: coarse</code>), the footer wraps to two rows — Reset on its own line first, then Cancel/Save full-width in a 2-col grid with <strong>Save in the thumb-nearest bottom-right position</strong> — and the fallback helper wraps to three lines without truncation.</p>
+
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">iPhone SE / small Android — 375 × content, dialog open via ⚙ menu</span></div>
+    <div class="stage">
+      <div class="phone">
+        <div class="notch"><i></i></div>
+        <div class="screen">
+          <div class="dlg-title" style="font-size:15px"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M15 2v2M15 20v2M2 15h2M2 9h2M20 15h2M20 9h2M9 2v2M9 20v2"/></svg>Model tier mapping</div>
+          <p class="dlg-desc">Choose which Claude model runs each workflow tier. Tiers you leave unset use the platform default.</p>
+          <div style="margin-top:16px">
+            <label class="lbl">Frontier <span class="sub">— decisions &amp; design</span></label>
+            <div class="sel"><span>Opus</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          </div>
+          <div style="margin-top:14px">
+            <label class="lbl">Standard <span class="sub">— most build steps</span></label>
+            <div class="sel"><span class="dflt">Sonnet (default)</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          </div>
+          <div style="margin-top:14px">
+            <label class="lbl">Cheap <span class="sub">— mechanical steps</span></label>
+            <div class="sel"><span class="dflt">Haiku (default)</span><span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          </div>
+          <p class="helper" style="margin-top:14px">Workflow steps with a tier run on that tier's model. If a model isn't available on your plan or session, the orchestrator substitutes the next tier up and notes it in the step output.</p>
+          <div style="margin-top:16px">
+            <span class="btn ghost" style="padding-left:0;min-height:44px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>Reset to defaults</span>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:6px">
+              <span class="btn outline" style="justify-content:center">Cancel</span>
+              <span class="btn primary" style="justify-content:center">Save</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Listbox on touch:</b> the model options keep the two-line name+gloss layout with each option row ≥44px — the same coarse-pointer treatment <code>ModelTierSelect</code> already ships (<code>[@media(pointer:coarse)]:min-h-11</code>). Nothing scrolls horizontally; the longest trigger text (“Sonnet (default)”) fits at 375px with 24px to spare.</p>
+</section>
+
+<!-- ══════════════════════ 7. ACCESSIBILITY ══════════════════════ -->
+<section id="s7">
+  <h2><span class="num">07</span>Accessibility — WCAG 2.1 AA</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Concern</th><th>Treatment</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Visible labels</strong></td><td>Each select has a permanent <code>&lt;Label htmlFor&gt;</code> (“Frontier — decisions &amp; design”, …) — never placeholder-as-label. The “(default)” suffix is real trigger text, not a placeholder, so it is announced.</td></tr>
+        <tr><td><strong>Programmatic relationships</strong></td><td>All three selects carry <code>aria-describedby</code> → the shared fallback helper (<code>#fallback-help</code>); the disabled Save carries <code>aria-describedby</code> → its adjacent explanation (<code>#save-why</code>). Dialog uses shadcn's <code>DialogTitle</code>/<code>DialogDescription</code> wiring.</td></tr>
+        <tr><td><strong>Keyboard</strong></td><td>Full path with zero pointer use: settings-row button → <span class="kbd" style="font-family:ui-monospace,monospace;font-size:11px;border:1px solid #3f3f46;border-radius:5px;padding:0 5px">Enter</span> opens dialog (focus → first select) → arrow keys change value, <code>Esc</code> closes listbox then dialog → <code>Tab</code> order: Frontier → Standard → Cheap → Reset → Cancel → Save. Radix handles the focus trap and restore-on-close.</td></tr>
+        <tr><td><strong>Contrast</strong></td><td>Trigger text <code>zinc-50</code> on <code>zinc-950</code> ≈ 18:1; muted “(default)” and helpers use <code>zinc-400</code> (#a1a1aa) ≈ 7.5:1 — both clear 4.5:1. Disabled Save at 50% opacity is exempt (inactive control) but its explanation text is full-contrast <code>zinc-400</code>. Focus ring <code>zinc-300</code> at 2px offset ≥ 3:1 against background.</td></tr>
+        <tr><td><strong>Not colour-only</strong></td><td>Set vs unset = presence/absence of the literal “(default)” suffix, not tint alone. Selected option = check icon + <code>aria-selected</code>. Toast outcomes = icon + text, announced via sonner's live region (<code>role="status"</code> success, <code>role="alert"</code> error).</td></tr>
+        <tr><td><strong>Target size</strong></td><td>36px triggers on fine pointers; ≥44px triggers, options, and footer buttons under <code>pointer: coarse</code>. Primary action (Save) sits bottom-right adjacent to the fields it commits (Fitts).</td></tr>
+        <tr><td><strong>No disabled mystery</strong></td><td>Constraint honoured: the only disabled control (Save when unchanged) has an always-visible adjacent explanation — “Save enables when you change a tier.”</td></tr>
+        <tr><td><strong>Motion</strong></td><td>Skeleton shimmer respects <code>prefers-reduced-motion: reduce</code> → static <code>muted-30</code> blocks.</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="caption"><b>Why a dialog and not inline?</b> The no-modals-for-inlineable-content constraint is weighed against Jakob's Law here: every sibling setting on this page (API key, notifications, board columns, MCP keys) is a dialog behind a row button. A lone inline card would be the inconsistent — and therefore harder-to-find — choice; the dialog is a short, self-contained transaction (3 fields, one Save), which is the case dialogs are for.</p>
+</section>
+
+<!-- ══════════════════════ 8. REVIEW CHECKLIST ══════════════════════ -->
+<section id="s8">
+  <h2><span class="num">08</span>Design-review checklist</h2>
+  <p>For the Design Review step — each item maps to a Requirements clause or a decision above.</p>
+  <ul class="check">
+    <li><span class="box"></span><span><strong>Q1:</strong> “Model Tiers” button placement in the own-profile settings row (after AI API Key) + ProfileSettingsMenu item on mobile — approve or relocate. (§01)</span></li>
+    <li><span class="box"></span><span><strong>Q2:</strong> inline “Fable (default)” trigger text + “Platform default” first option with separator — approve the unset model. (§02)</span></li>
+    <li><span class="box"></span><span><strong>Q3:</strong> tier-only badges on shared surfaces; resolved model only in per-user glosses and the mapping dialog — approve the split. (§00, §04)</span></li>
+    <li><span class="box"></span><span><strong>FR-13/14 / AC-14:</strong> three selects, staged Reset-then-Save, defaults shown for unset, success/error toasts, unchanged-Save explanation — confirm all six states in §03 are complete and correctly copy'd.</span></li>
+    <li><span class="box"></span><span><strong>FR-16 exact strings:</strong> new helper (“Steps run on the tier's mapped model — change your mapping in Profile → Model Tiers.”), three “Runs on &lt;model&gt; · …” glosses, Auto untouched — sign off copy table in §04, including the noted deviation from the Requirements sample gloss.</span></li>
+    <li><span class="box"></span><span><strong>Gloss resolution:</strong> viewer-resolved model in glosses with static-default fallback — accept, or downgrade to static defaults for P2b if plumbing cost bites. (§04, notes)</span></li>
+    <li><span class="box"></span><span><strong>FR-10 story:</strong> directive-first placement, exact parameter value, and user-visible substitution line match the settings dialog's promise verbatim. (§05)</span></li>
+    <li><span class="box"></span><span><strong>Mobile:</strong> 375px dialog — 44px targets, footer wrap order (Reset / Cancel+Save), no horizontal scroll. (§06)</span></li>
+    <li><span class="box"></span><span><strong>A11y:</strong> label/describedby wiring, keyboard path, contrast table, non-colour state encoding. (§07)</span></li>
+    <li><span class="box"></span><span><strong>Out of scope guard:</strong> nothing here implies hard enforcement, per-idea maps, or admin maps — flag if any mockup accidentally suggests otherwise.</span></li>
+  </ul>
+</section>
+
+<footer>
+  P2b · Enforce Model Tiers — UX Design · card <code>963a8c64</code> · builds on “P2b Requirements” (ProdOwner) and the approved P2 design (<code>docs/spikes/p2-model-tier-design.html</code>) · Compass, UX
+</footer>
+
+</div>
+</body>
+</html>

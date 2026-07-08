@@ -276,8 +276,8 @@ export function validateWorkflowTemplateSteps(
       throw new ValidationError(`Step ${i + 1}: role must be ${MAX_WORKFLOW_ROLE_LENGTH} characters or less`);
     }
 
-    // model_tier is advisory: pass valid tiers through, omit absent/null, and
-    // reject any other value so a bad hand-edited JSON never persists silently.
+    // model_tier: pass valid tiers through, omit absent/null, and reject any
+    // other value so a bad hand-edited JSON never persists silently.
     let model_tier: string | undefined;
     if (step.model_tier !== undefined && step.model_tier !== null) {
       if (!VALID_MODEL_TIERS.includes(step.model_tier)) {

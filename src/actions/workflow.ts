@@ -100,7 +100,7 @@ export async function updateWorkflowStep(
   if (updates.expected_deliverables !== undefined) patch.expected_deliverables = validateDeliverables(updates.expected_deliverables);
   if (updates.bot_id !== undefined) patch.bot_id = updates.bot_id;
   if (updates.model_tier !== undefined) {
-    // Advisory hint: accept a valid tier or null (Auto); reject anything else.
+    // Model tier: accept a valid tier or null (Auto); reject anything else.
     if (updates.model_tier !== null && !MODEL_TIER_VALUES.has(updates.model_tier)) {
       throw new Error("Invalid model tier — expected frontier, standard, or cheap");
     }

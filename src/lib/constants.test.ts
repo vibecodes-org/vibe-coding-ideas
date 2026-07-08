@@ -10,6 +10,8 @@ import {
   BOT_ROLE_TEMPLATES,
   SUGGESTED_TAGS,
   defaultTierForRole,
+  modelTierGloss,
+  MODEL_TIER_RUNS_ON_HELPER,
 } from "./constants";
 import type { IdeaStatus, CommentType } from "@/types";
 
@@ -257,5 +259,36 @@ describe("defaultTierForRole", () => {
     expect(defaultTierForRole("Wizard")).toBeNull();
     expect(defaultTierForRole("")).toBeNull();
     expect(defaultTierForRole("Community Manager")).toBeNull();
+  });
+});
+
+// ── modelTierGloss (P2b Design-Review CONDITION 3 / CONDITION 4) ──────
+
+describe("modelTierGloss", () => {
+  it("falls back to the platform-default model name when no resolved model is passed", () => {
+    expect(modelTierGloss("frontier")).toBe("Runs on Fable · decisions & design");
+    expect(modelTierGloss("standard")).toBe("Runs on Sonnet · most build steps");
+    expect(modelTierGloss("cheap")).toBe("Runs on Haiku · mechanical steps");
+  });
+
+  it("falls back to the platform default for null/undefined (loading/unknown viewer map)", () => {
+    expect(modelTierGloss("frontier", null)).toBe("Runs on Fable · decisions & design");
+    expect(modelTierGloss("frontier", undefined)).toBe("Runs on Fable · decisions & design");
+  });
+
+  // CONDITION 3: a user mapped frontier→opus must read "Runs on Opus", never "Runs on Fable".
+  it("reflects the viewer's resolved override instead of the platform default", () => {
+    expect(modelTierGloss("frontier", "opus")).toBe("Runs on Opus · decisions & design");
+    expect(modelTierGloss("standard", "haiku")).toBe("Runs on Haiku · most build steps");
+  });
+});
+
+// ── MODEL_TIER_RUNS_ON_HELPER (P2b CONDITION 4 — no "next tier up") ───
+
+describe("MODEL_TIER_RUNS_ON_HELPER", () => {
+  it("does not describe the fallback as a directional tier shift", () => {
+    // Fable -> Opus is a downgrade, so wording implying "up"/"next tier" would be false.
+    expect(MODEL_TIER_RUNS_ON_HELPER.toLowerCase()).not.toContain("next tier");
+    expect(MODEL_TIER_RUNS_ON_HELPER.toLowerCase()).not.toContain("tier up");
   });
 });

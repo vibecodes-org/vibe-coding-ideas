@@ -1088,7 +1088,7 @@ export function registerTools(
 
   server.tool(
     "create_workflow_template",
-    "Create a workflow template with ordered steps. Each step has a title, role (BA, UX, Dev, QA, Human), an optional approval gate, and an optional advisory model_tier hint (frontier | standard | cheap; omit for Auto) telling the orchestrator which model to run that step on.",
+    "Create a workflow template with ordered steps. Each step has a title, role (BA, UX, Dev, QA, Human), an optional approval gate, and an optional model_tier (frontier | standard | cheap; omit for Auto). Steps with a tier run on the tier's mapped model (frontier→fable, standard→sonnet, cheap→haiku by default, per-user overridable) via a mandatory directive at claim time.",
     createWorkflowTemplateSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1102,7 +1102,7 @@ export function registerTools(
 
   server.tool(
     "update_workflow_template",
-    "Update a workflow template's name, description, or steps. Only changed fields need to be provided. Each step may carry an optional advisory model_tier (frontier | standard | cheap; omit for Auto). When steps are updated, changes (including model_tier) are automatically propagated to pending steps in active workflow runs (structural changes with different step counts are skipped).",
+    "Update a workflow template's name, description, or steps. Only changed fields need to be provided. Each step may carry an optional model_tier (frontier | standard | cheap; omit for Auto) — steps with a tier run on the tier's mapped model. When steps are updated, changes (including model_tier) are automatically propagated to pending steps in active workflow runs (structural changes with different step counts are skipped).",
     updateWorkflowTemplateSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1221,7 +1221,7 @@ export function registerTools(
 
   server.tool(
     "update_step",
-    "Edit a workflow step that is still in pending status. Use this to customise step titles, descriptions, roles, deliverables, approval gates, or the advisory model_tier (frontier | standard | cheap, or null to clear back to Auto) for a specific task. Only pending steps can be edited.",
+    "Edit a workflow step that is still in pending status. Use this to customise step titles, descriptions, roles, deliverables, approval gates, or the model_tier (frontier | standard | cheap, or null to clear back to Auto) for a specific task — steps with a tier run on the tier's mapped model. Only pending steps can be edited.",
     updateStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
