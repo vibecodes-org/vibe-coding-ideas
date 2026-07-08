@@ -215,11 +215,12 @@ export class TerminalRelay {
       return new Response(null, { status: 101, webSocket: client });
     }
 
-    // 2b) Same-owner browser PREEMPTION (fix/terminal-dock-heartbeat): decideAttach
-    //     accepted this leg OVER a still-registered browser socket — after a silent
-    //     link death (wifi off; macOS never RSTs) the dead socket lingers OPEN
-    //     forever and used to block every reattach with DUP_BROWSER. Close the
-    //     stale leg(s) BEFORE accepting the new one so single-attach holds
+    // 2b) Same-owner PREEMPTION (browser: fix/terminal-dock-heartbeat; bridge:
+    //     fix/terminal-bridge-zombie-preemption): decideAttach accepted this leg
+    //     OVER a still-registered socket of the same role — after a silent link
+    //     death (wifi off; macOS never RSTs) the dead socket lingers OPEN forever
+    //     and used to block every reattach with DUP_BROWSER / DUP_BRIDGE. Close
+    //     the stale leg(s) BEFORE accepting the new one so single-attach holds
     //     post-swap; handleDetach sees the pair still whole and skips the grace
     //     hold. Foreign owners never reach here (owner check above).
     if (decision.preempt) {
@@ -228,7 +229,7 @@ export class TerminalRelay {
           stale.close(CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason);
         } catch { /* already closing */ }
       }
-      this.log("stale browser leg preempted", { session, role });
+      this.log("stale leg preempted", { session, role });
     }
 
     // 3) Accept into HIBERNATION. Tag by role (+ sub) so the peer is findable and
