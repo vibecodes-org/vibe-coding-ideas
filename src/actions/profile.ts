@@ -1,9 +1,11 @@
 "use server";
 
+import { z } from "zod";
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { validateBio, validateAvatarUrl } from "@/lib/validation";
 import { encrypt } from "@/lib/encryption";
+import { MODEL_ALIASES, type ModelTierMap } from "@/lib/constants";
 
 export async function updateProfile(formData: FormData) {
   const supabase = await createClient();
@@ -122,4 +124,62 @@ export async function removeApiKey() {
   if (error) throw new Error(error.message);
 
   revalidatePath(`/profile/${user.id}`);
+}
+
+// ── Model Tier Mapping (P2b) ────────────────────────────────────────────
+// Per-user override of the platform model-tier defaults (users.model_tier_map).
+// Self-only: both actions operate on the authenticated user's own row.
+
+const ModelTierMapSchema = z
+  .object({
+    frontier: z.enum(MODEL_ALIASES).optional(),
+    standard: z.enum(MODEL_ALIASES).optional(),
+    cheap: z.enum(MODEL_ALIASES).optional(),
+  })
+  .strict();
+
+export async function getModelTierMap(): Promise<ModelTierMap | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("model_tier_map")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return data?.model_tier_map ?? null;
+}
+
+export async function updateModelTierMap(map: ModelTierMap): Promise<ModelTierMap | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const parsed = ModelTierMapSchema.safeParse(map);
+  if (!parsed.success) {
+    throw new Error("Invalid model tier map — keys must be frontier/standard/cheap and values fable/opus/sonnet/haiku");
+  }
+
+  // Empty map (all tiers reset to platform default) is stored as NULL, not "{}".
+  const toStore = Object.keys(parsed.data).length > 0 ? parsed.data : null;
+
+  const { error } = await supabase
+    .from("users")
+    .update({ model_tier_map: toStore })
+    .eq("id", user.id);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/profile/${user.id}`);
+  return toStore;
 }

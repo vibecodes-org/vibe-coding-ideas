@@ -23,6 +23,7 @@ import {
   updateStepSchema,
   applyWorkflowTemplate,
   modelTierClause,
+  resolveModelTier,
 } from "./workflows";
 
 // ---------------------------------------------------------------------------
@@ -204,16 +205,23 @@ describe("workflow schemas", () => {
  *   2. Update/claim step (maybeSingle → single row)
  *   3. Context query — prior completed steps (thenable → array)
  * Plus from("workflow_runs") once and from("idea_agents") once,
+ * from("users") once IFF the claimed step has a model_tier set (P2b),
  * and optionally from("workflow_step_comments") for rework instructions.
  */
 function makeClaimContext(opts: {
   pendingStep: ReturnType<typeof makeStepRow>;
   updatedStep: Record<string, unknown>;
   priorSteps: { id: string; title: string; step_order: number; output: string | null }[];
+  /** users.model_tier_map row returned for the P2b directive-resolution lookup. */
+  userModelTierMap?: Record<string, unknown> | null;
+  /** Sets ctx.ownerUserId (bot-identity mode) alongside the fixed ctx.userId. */
+  ownerUserId?: string;
+  /** Test-owned array; pushed the `id` filter value on every from("users").eq("id", …) call. */
+  usersQueryIds?: string[];
 }) {
   const tableCounts: Record<string, number> = {};
 
-  return makeContext(((table: string) => {
+  const ctx = makeContext(((table: string) => {
     tableCounts[table] = (tableCounts[table] ?? 0) + 1;
     const callNum = tableCounts[table];
 
@@ -255,8 +263,21 @@ function makeClaimContext(opts: {
       return createChain([]).chain;
     }
 
+    if (table === "users") {
+      const { chain } = createChain({ model_tier_map: opts.userModelTierMap ?? null });
+      const originalEq = chain.eq as (col: string, val: unknown) => unknown;
+      chain.eq = vi.fn((col: string, val: unknown) => {
+        if (col === "id") opts.usersQueryIds?.push(val as string);
+        return originalEq(col, val);
+      });
+      return chain;
+    }
+
     return createChain(null).chain;
   }) as unknown as McpContext["supabase"]["from"]);
+
+  if (opts.ownerUserId) ctx.ownerUserId = opts.ownerUserId;
+  return ctx;
 }
 
 describe("claimNextStep", () => {
@@ -2882,11 +2903,36 @@ describe("claimNextStep — subagent instruction (only mode)", () => {
 });
 
 // ---------------------------------------------------------------------------
-// modelTierClause — advisory spawn clause (P2)
+// modelTierClause / resolveModelTier — MANDATORY MODEL directive (P2b)
 // ---------------------------------------------------------------------------
 
+describe("resolveModelTier", () => {
+  it("resolves each tier to its platform default and single-hop fallback", () => {
+    expect(resolveModelTier("frontier")).toEqual({ resolved: "fable", fallback: "opus" });
+    expect(resolveModelTier("standard")).toEqual({ resolved: "sonnet", fallback: "opus" });
+    expect(resolveModelTier("cheap")).toEqual({ resolved: "haiku", fallback: "sonnet" });
+  });
+
+  it("uses the caller's override when the tier is present and valid", () => {
+    expect(resolveModelTier("frontier", { frontier: "opus" })).toEqual({ resolved: "opus", fallback: "fable" });
+  });
+
+  it("ignores an override for a different tier and falls back to the platform default", () => {
+    expect(resolveModelTier("standard", { frontier: "opus" })).toEqual({ resolved: "sonnet", fallback: "opus" });
+  });
+
+  it("ignores an invalid/unrecognised override value and falls back to the platform default", () => {
+    expect(resolveModelTier("cheap", { cheap: "gpt-4" })).toEqual({ resolved: "haiku", fallback: "sonnet" });
+  });
+
+  it("treats a null/undefined map the same as no override", () => {
+    expect(resolveModelTier("frontier", null)).toEqual({ resolved: "fable", fallback: "opus" });
+    expect(resolveModelTier("frontier", undefined)).toEqual({ resolved: "fable", fallback: "opus" });
+  });
+});
+
 describe("modelTierClause", () => {
-  it("returns empty string for null (byte-for-byte no-op)", () => {
+  it("returns empty string for null (byte-for-byte no-op, FR-12)", () => {
     expect(modelTierClause(null)).toBe("");
   });
 
@@ -2894,34 +2940,51 @@ describe("modelTierClause", () => {
     expect(modelTierClause(undefined)).toBe("");
   });
 
-  it("returns an advisory clause naming the tier when set", () => {
-    for (const tier of ["frontier", "standard", "cheap"]) {
+  // Design-Review CONDITION 1 — exact directive string, verbatim.
+  it("produces the exact MANDATORY MODEL directive string for the platform default (standard)", () => {
+    expect(modelTierClause("standard")).toBe(
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "sonnet". If "sonnet" is unavailable on this plan/session, use model: "opus" and state the substitution in your step output. Do not run this step inline and do not inherit your session model.'
+    );
+  });
+
+  it("produces the exact directive string for a user-overridden tier", () => {
+    expect(modelTierClause("frontier", { frontier: "opus" })).toBe(
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus". If "opus" is unavailable on this plan/session, use model: "fable" and state the substitution in your step output. Do not run this step inline and do not inherit your session model.'
+    );
+  });
+
+  it("names the resolved model and its fallback for every tier", () => {
+    for (const tier of ["frontier", "standard", "cheap"] as const) {
+      const { resolved, fallback } = resolveModelTier(tier)!;
       const clause = modelTierClause(tier);
-      expect(clause).toContain("RECOMMENDED MODEL TIER");
-      expect(clause).toContain(`\`${tier}\``);
-      expect(clause).toContain("Advisory only");
+      expect(clause).toContain("MANDATORY MODEL");
+      expect(clause).toContain(`model: "${resolved}"`);
+      expect(clause).toContain(`model: "${fallback}"`);
+      expect(clause).not.toContain("Advisory");
     }
   });
 });
 
 // ---------------------------------------------------------------------------
-// claimNextStep — model_tier advisory in the instruction (P2)
+// claimNextStep — MANDATORY MODEL directive in the instruction (P2b)
 // ---------------------------------------------------------------------------
 
-describe("claimNextStep — model_tier advisory", () => {
-  it("null model_tier leaves the instruction free of the tier clause", async () => {
+describe("claimNextStep — model_tier directive", () => {
+  it("null model_tier leaves the instruction free of the directive and queries no users row (FR-12)", async () => {
     const step = makeStepRow({ step_order: 1 });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: null };
+    const usersQueryIds: string[] = [];
 
-    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [], usersQueryIds });
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
     const r = result as { instruction: string; step: { model_tier: string | null } };
-    expect(r.instruction).not.toContain("RECOMMENDED MODEL TIER");
+    expect(r.instruction).not.toContain("MANDATORY MODEL");
     expect(r.step.model_tier).toBeNull();
+    expect(usersQueryIds).toEqual([]); // no lookup at all on the Auto path
   });
 
-  it("a set model_tier appends the advisory clause and surfaces on the step", async () => {
+  it("a set model_tier prepends the MANDATORY MODEL directive and surfaces the tier on the step", async () => {
     const step = makeStepRow({ step_order: 1 });
     const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: "cheap" };
 
@@ -2929,12 +2992,63 @@ describe("claimNextStep — model_tier advisory", () => {
     const result = await claimNextStep(ctx, { task_id: TASK_ID });
 
     const r = result as { instruction: string; step: { model_tier: string | null } };
-    expect(r.instruction).toContain("RECOMMENDED MODEL TIER for this step: `cheap`");
-    expect(r.instruction).toContain("Advisory only");
+    expect(r.instruction).toContain('MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "haiku"');
+    expect(r.instruction).toContain('use model: "sonnet"');
     expect(r.step.model_tier).toBe("cheap");
   });
 
-  it("the null path is byte-for-byte identical to omitting model_tier entirely", async () => {
+  // Design-Review CONDITION 2 — directive is the FIRST element of the join.
+  it("places the directive FIRST in the instruction, before the identity instruction", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: "frontier" };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const r = result as { instruction: string };
+
+    expect(r.instruction.startsWith("MANDATORY MODEL:")).toBe(true);
+    expect(r.instruction.indexOf("MANDATORY MODEL")).toBeLessThan(r.instruction.indexOf("FRESH SUBAGENT"));
+  });
+
+  it("resolves the directive through the claiming user's model_tier_map override", async () => {
+    const step = makeStepRow({ step_order: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: "frontier" };
+
+    const ctx = makeClaimContext({
+      pendingStep: step,
+      updatedStep,
+      priorSteps: [],
+      userModelTierMap: { frontier: "opus" },
+    });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const r = result as { instruction: string };
+
+    expect(r.instruction).toContain('model: "opus"');
+    expect(r.instruction).toContain('use model: "fable"');
+  });
+
+  it("looks up the owner user's map (bot-identity mode), not the calling identity's", async () => {
+    const OWNER_ID = "00000000-0000-4000-a000-000000000099";
+    const step = makeStepRow({ step_order: 1 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID, model_tier: "standard" };
+    const usersQueryIds: string[] = [];
+
+    const ctx = makeClaimContext({
+      pendingStep: step,
+      updatedStep,
+      priorSteps: [],
+      ownerUserId: OWNER_ID,
+      userModelTierMap: { standard: "opus" },
+      usersQueryIds,
+    });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const r = result as { instruction: string };
+
+    expect(usersQueryIds).toEqual([OWNER_ID]);
+    expect(r.instruction).toContain('model: "opus"');
+  });
+
+  it("the null path is byte-for-byte identical to omitting model_tier entirely (FR-12)", async () => {
     const stepA = makeStepRow({ step_order: 1 });
     const nullCtx = makeClaimContext({
       pendingStep: stepA,

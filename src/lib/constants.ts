@@ -2,19 +2,47 @@ import type { IdeaStatus, CommentType, SortOption } from "@/types";
 
 export const VIBECODES_USER_ID = "a0000000-0000-4000-a000-000000000001";
 
-// ─── Per-step model tiering (P2) ───
-// Advisory hint on workflow steps telling the orchestrator which Claude model to
-// run a step's subagent on. Auto = null (absent) = orchestrator decides — never
-// stored as a literal "auto".
+// ─── Per-step model tiering (P2 / P2b) ───
+// Mandatory hint on workflow steps naming which Claude model runs a step's
+// subagent. Auto = null (absent) = orchestrator decides — never stored as a
+// literal "auto". P2b (mcp-server/src/tools/workflows.ts) turns a set tier
+// into a MANDATORY MODEL directive at claim time, resolved through the
+// platform-default map plus a per-user override (users.model_tier_map).
 
 export type ModelTierValue = "frontier" | "standard" | "cheap";
 
-/** Selectable tiers with their labels + one-line glosses (fixed order = cost gradient). */
-export const MODEL_TIERS: { value: ModelTierValue; label: string; gloss: string }[] = [
-  { value: "frontier", label: "Frontier", gloss: "Highest quality — decisions & design" },
-  { value: "standard", label: "Standard", gloss: "Balanced — most build steps" },
-  { value: "cheap", label: "Cheap", gloss: "Fast & low-cost — mechanical steps" },
+/** Task-tool `model` parameter aliases a tier can resolve to. */
+export const MODEL_ALIASES = ["fable", "opus", "sonnet", "haiku"] as const;
+export type ModelAlias = (typeof MODEL_ALIASES)[number];
+
+/** Per-user override map (users.model_tier_map). Partial — unset tiers use the platform default. */
+export type ModelTierMap = Partial<Record<ModelTierValue, string>>;
+
+/** Selectable tiers with their labels (fixed order = cost gradient). */
+export const MODEL_TIERS: { value: ModelTierValue; label: string }[] = [
+  { value: "frontier", label: "Frontier" },
+  { value: "standard", label: "Standard" },
+  { value: "cheap", label: "Cheap" },
 ];
+
+/** "When to use" tail of each tier's gloss (design §04). */
+export const MODEL_TIER_WHEN_TO_USE: Record<ModelTierValue, string> = {
+  frontier: "decisions & design",
+  standard: "most build steps",
+  cheap: "mechanical steps",
+};
+
+/**
+ * Display name for the platform-default model of each tier. UI-only mirror of
+ * the canonical MODEL_TIER_TO_SUBAGENT_MODEL map in
+ * mcp-server/src/tools/workflows.ts (the backend law for directive
+ * resolution) — keep in sync if the platform defaults ever change.
+ */
+export const MODEL_TIER_PLATFORM_DEFAULT_MODEL: Record<ModelTierValue, string> = {
+  frontier: "Fable",
+  standard: "Sonnet",
+  cheap: "Haiku",
+};
 
 /** Gloss shown for the Auto (null) default option. */
 export const MODEL_TIER_AUTO_GLOSS = "Orchestrator picks the best model";
@@ -24,17 +52,34 @@ export const MODEL_TIER_VALUES: ReadonlySet<string> = new Set(
   MODEL_TIERS.map((t) => t.value),
 );
 
-/** Always-visible helper text shown beneath the tier control. */
-export const MODEL_TIER_ADVISORY_HELPER =
-  "Advisory — helps stretch your Claude usage; the orchestrator can override.";
+/** Always-visible helper text shown beneath the tier control (P2b — mandatory, not advisory). */
+export const MODEL_TIER_RUNS_ON_HELPER =
+  "Steps run on the tier's mapped model — change your mapping in Profile → Model Tiers.";
 
 /** Human label for a stored tier value; falls back to the raw value if unknown. */
 export function modelTierLabel(tier: string): string {
   return MODEL_TIERS.find((t) => t.value === tier)?.label ?? tier;
 }
 
+function capitalizeModelName(model: string): string {
+  return model.charAt(0).toUpperCase() + model.slice(1);
+}
+
 /**
- * Default advisory tier for a step's role (design §06). Tolerant of role-name
+ * "Runs on <model> · <when-to-use>" gloss for a tier option (design §04,
+ * Design-Review CONDITION 3). `resolvedModel` MUST be the viewer's resolved
+ * model for this tier (their model_tier_map override) — pass undefined/null
+ * only while the viewer's map is loading/unknown, which falls back to the
+ * platform-default display name. Never pass a platform-wide constant here:
+ * a user mapped frontier→opus must read "Runs on Opus", not "Runs on Fable".
+ */
+export function modelTierGloss(tier: ModelTierValue, resolvedModel?: string | null): string {
+  const modelLabel = resolvedModel ? capitalizeModelName(resolvedModel) : MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier];
+  return `Runs on ${modelLabel} · ${MODEL_TIER_WHEN_TO_USE[tier]}`;
+}
+
+/**
+ * Default tier suggestion for a step's role (design §06). Tolerant of role-name
  * variants and case. Returns null for unknown/custom roles — never guess, let the
  * orchestrator decide. Shared by the library-seeding reference and any UI reuse.
  */

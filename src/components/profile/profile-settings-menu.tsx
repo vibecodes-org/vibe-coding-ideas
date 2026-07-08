@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Bell, Columns, Key, Settings, Terminal } from "lucide-react";
+import { Bell, Columns, Cpu, Key, Settings, Terminal } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -12,23 +12,28 @@ import {
 import { NotificationSettings } from "./notification-settings";
 import { BoardColumnSettings } from "./board-column-settings";
 import { ApiKeySettings } from "./api-key-settings";
+import { ModelTierSettings } from "./model-tier-settings";
 import { McpApiKeys } from "./mcp-api-keys";
 import type { NotificationPreferences } from "@/types";
+import type { ModelTierMap } from "@/lib/constants";
 
 interface ProfileSettingsMenuProps {
   preferences: NotificationPreferences;
   columns: { title: string; is_done_column: boolean }[] | null;
   hasApiKey: boolean;
+  modelTierMap: ModelTierMap | null;
 }
 
 export function ProfileSettingsMenu({
   preferences,
   columns,
   hasApiKey,
+  modelTierMap,
 }: ProfileSettingsMenuProps) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
+  const [showModelTiers, setShowModelTiers] = useState(false);
   const [showMcpKeys, setShowMcpKeys] = useState(false);
 
   return (
@@ -53,6 +58,10 @@ export function ProfileSettingsMenu({
             <Key className="mr-2 h-4 w-4" />
             API Key
           </DropdownMenuItem>
+          <DropdownMenuItem onClick={() => setShowModelTiers(true)}>
+            <Cpu className="mr-2 h-4 w-4" />
+            Model Tiers
+          </DropdownMenuItem>
           <DropdownMenuItem onClick={() => setShowMcpKeys(true)}>
             <Terminal className="mr-2 h-4 w-4" />
             MCP API Keys
@@ -75,6 +84,11 @@ export function ProfileSettingsMenu({
         hasKey={hasApiKey}
         open={showApiKey}
         onOpenChange={setShowApiKey}
+      />
+      <ModelTierSettings
+        map={modelTierMap}
+        open={showModelTiers}
+        onOpenChange={setShowModelTiers}
       />
       <McpApiKeys
         open={showMcpKeys}

@@ -43,20 +43,49 @@ const templateStepSchema = z.object({
   deliverables: z.array(z.string().max(100)).max(10).optional()
     .describe("Expected deliverables this step should produce (e.g. 'HTML mockups', 'requirements doc')"),
   model_tier: z.enum(["frontier", "standard", "cheap"]).optional()
-    .describe("Advisory model tier hint (frontier | standard | cheap). Omit for Auto — the orchestrator picks the model. Never blocks execution."),
+    .describe("Model tier (frontier | standard | cheap). Steps with a tier run on the tier's mapped model (defaults: frontier→fable, standard→sonnet, cheap→haiku). Omit for Auto — the orchestrator picks."),
 });
 
+// P2b: platform-default Task-tool `model` parameter per tier, and the
+// single-hop fallback chain used when the resolved model is unavailable on
+// the caller's plan/session. These are Task-tool aliases, NOT API model ids.
+export const MODEL_TIER_TO_SUBAGENT_MODEL = { frontier: "fable", standard: "sonnet", cheap: "haiku" } as const;
+export const MODEL_TIER_FALLBACK = { fable: "opus", opus: "fable", sonnet: "opus", haiku: "sonnet" } as const;
+
+type UserModelTierMap = { frontier?: string; standard?: string; cheap?: string } | null | undefined;
+
 /**
- * Advisory model-tier clause appended to a claimed step's spawn instruction.
- * Returns "" for null/undefined so callers can add it unconditionally without
- * changing the instruction byte-for-byte when no tier is set.
+ * Resolves a step's tier to a concrete Task-tool model + its fallback: the
+ * caller's model_tier_map override for this tier if set and valid, else the
+ * platform default; fallback is always MODEL_TIER_FALLBACK[resolved]. Returns
+ * null for an unrecognised tier (defensive — the enum already constrains
+ * stored values).
  */
-export function modelTierClause(tier: string | null | undefined): string {
+export function resolveModelTier(
+  tier: "frontier" | "standard" | "cheap",
+  userModelTierMap?: UserModelTierMap
+): { resolved: string; fallback: string } | null {
+  const platformDefault = MODEL_TIER_TO_SUBAGENT_MODEL[tier];
+  if (!platformDefault) return null;
+
+  const override = userModelTierMap?.[tier];
+  const resolved = override && override in MODEL_TIER_FALLBACK ? override : platformDefault;
+  const fallback = MODEL_TIER_FALLBACK[resolved as keyof typeof MODEL_TIER_FALLBACK];
+  return { resolved, fallback };
+}
+
+/**
+ * Mandatory model directive for a claimed step's spawn instruction — placed
+ * FIRST in the join (Design-Review CONDITION 2), not appended. Returns "" for
+ * null/undefined tier so callers can add it unconditionally without changing
+ * the instruction byte-for-byte on the Auto path (FR-12).
+ */
+export function modelTierClause(tier: string | null | undefined, userModelTierMap?: UserModelTierMap): string {
   if (!tier) return "";
-  return (
-    `RECOMMENDED MODEL TIER for this step: \`${tier}\` — spawn this step's subagent on a \`${tier}\`-tier model if available. ` +
-    `Advisory only; does not change any other instruction.`
-  );
+  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", userModelTierMap);
+  if (!resolution) return "";
+  const { resolved, fallback } = resolution;
+  return `MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" and state the substitution in your step output. Do not run this step inline and do not inherit your session model.`;
 }
 
 // ============================================================
@@ -846,11 +875,26 @@ export async function claimNextStep(
     `TASK DESCRIPTION: After calling complete_step, call update_task to append a summary of your deliverable to the task description under a markdown heading.`
   );
 
-  // Advisory model-tier clause — "" when model_tier is null, so .filter(Boolean)
-  // drops it and the instruction stays byte-for-byte identical to the Auto path.
-  const modelTierInstruction = modelTierClause(updated.model_tier);
+  // P2b: MANDATORY MODEL directive, resolved via the claiming user's
+  // model_tier_map override. The lookup only runs when a tier is set — Auto
+  // steps (model_tier null) add no query and no clause (FR-12). ownerUserId
+  // (bot-identity mode) takes precedence over userId so a bot acting for a
+  // human resolves against the human's map, not the bot's.
+  let userModelTierMap: { frontier?: string; standard?: string; cheap?: string } | null = null;
+  if (updated.model_tier) {
+    const { data: userRow } = await ctx.supabase
+      .from("users")
+      .select("model_tier_map")
+      .eq("id", ctx.ownerUserId ?? ctx.userId)
+      .maybeSingle();
+    userModelTierMap = userRow?.model_tier_map ?? null;
+  }
+  const modelTierInstruction = modelTierClause(updated.model_tier, userModelTierMap);
 
-  const instruction = [identityInstruction, modelTierInstruction, skillsInstruction, ...contextParts].filter(Boolean).join("\n\n");
+  // modelTierInstruction is placed FIRST (Design-Review CONDITION 2) — "" on
+  // the Auto path so .filter(Boolean) drops it and the instruction stays
+  // byte-for-byte identical to today.
+  const instruction = [modelTierInstruction, identityInstruction, skillsInstruction, ...contextParts].filter(Boolean).join("\n\n");
 
   return {
     done: false,
@@ -1192,7 +1236,7 @@ export const updateStepSchema = z.object({
   expected_deliverables: z.array(z.string().max(200)).max(20).nullable().optional()
     .describe("Expected deliverables (null to clear)"),
   model_tier: z.enum(["frontier", "standard", "cheap"]).nullish()
-    .describe("Advisory model tier hint (frontier | standard | cheap, or null to clear back to Auto). Applied to pending steps only."),
+    .describe("Model tier (frontier | standard | cheap, or null to clear back to Auto). Steps with a tier run on the tier's mapped model. Applied to pending steps only."),
 });
 
 export async function updateStep(

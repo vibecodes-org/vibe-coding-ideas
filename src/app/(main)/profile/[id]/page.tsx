@@ -8,6 +8,7 @@ import { DeleteUserButton } from "@/components/profile/delete-user-button";
 import { EditProfileDialog } from "@/components/profile/edit-profile-dialog";
 import { NotificationSettings } from "@/components/profile/notification-settings";
 import { ApiKeySettings } from "@/components/profile/api-key-settings";
+import { ModelTierSettings } from "@/components/profile/model-tier-settings";
 import { BoardColumnSettings } from "@/components/profile/board-column-settings";
 import { McpApiKeys } from "@/components/profile/mcp-api-keys";
 import { GithubConnection } from "@/components/profile/github-connection";
@@ -204,6 +205,7 @@ export default async function ProfilePage({ params }: PageProps) {
                 <NotificationSettings preferences={profileUser.notification_preferences} />
                 <BoardColumnSettings columns={profileUser.default_board_columns} />
                 <ApiKeySettings hasKey={!!profileUser.encrypted_anthropic_key} />
+                <ModelTierSettings map={profileUser.model_tier_map} />
                 <McpApiKeys />
                 <GithubConnection />
               </div>
@@ -214,6 +216,7 @@ export default async function ProfilePage({ params }: PageProps) {
                   preferences={profileUser.notification_preferences}
                   columns={profileUser.default_board_columns}
                   hasApiKey={!!profileUser.encrypted_anthropic_key}
+                  modelTierMap={profileUser.model_tier_map}
                 />
               </div>
             </>
