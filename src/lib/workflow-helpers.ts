@@ -532,6 +532,7 @@ export async function propagateTemplateEdits(
           agent_role: templateStep.role,
           human_check_required: templateStep.requires_approval ?? false,
           expected_deliverables: templateStep.deliverables ?? [],
+          model_tier: templateStep.model_tier ?? null,
         })
         .eq("id", step.id)
         .eq("status", "pending");

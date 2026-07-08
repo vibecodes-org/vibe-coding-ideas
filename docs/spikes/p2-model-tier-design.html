@@ -1,0 +1,730 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P2 · Per-step Model Tiering — UX Design</title>
+<style>
+  /* ── Tokens (VibeCodes dark theme: Tailwind Zinc, shadcn New York) ── */
+  :root{
+    --bg:#09090b;            /* zinc-950 — app background            */
+    --card:#101013;          /* doc section card                     */
+    --popover:#18181b;       /* zinc-900 — popover / dropdown        */
+    --border:#27272a;        /* zinc-800 — border / input            */
+    --muted:#27272a;         /* zinc-800                             */
+    --muted-20:rgba(39,39,42,.20);
+    --muted-30:rgba(39,39,42,.30);
+    --muted-60:rgba(39,39,42,.60);
+    --fg:#fafafa;            /* zinc-50                              */
+    --muted-fg:#a1a1aa;      /* zinc-400                             */
+    --faint-fg:#71717a;      /* zinc-500 — placeholders              */
+    --ring:#d4d4d8;          /* zinc-300 — focus ring                */
+    --emerald:#34d399; --emerald-b:rgba(16,185,129,.35); --emerald-bg:rgba(16,185,129,.08);
+    --violet:#a78bfa;  --violet-b:rgba(139,92,246,.25);  --violet-bg:rgba(139,92,246,.15);
+    --pink:#f472b6;    --pink-b:rgba(236,72,153,.25);    --pink-bg:rgba(236,72,153,.15);
+    --blue:#60a5fa;    --blue-b:rgba(59,130,246,.25);    --blue-bg:rgba(59,130,246,.15);
+    --cyan:#22d3ee;    --cyan-b:rgba(6,182,212,.25);     --cyan-bg:rgba(6,182,212,.15);
+    --amber:#fbbf24;   --amber-b:rgba(245,158,11,.25);   --amber-bg:rgba(245,158,11,.15);
+    --zincbadge:#a1a1aa; --zincbadge-b:rgba(113,113,122,.25); --zincbadge-bg:rgba(113,113,122,.15);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);color:var(--fg);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--fg)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85em;background:var(--muted-30);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:#e4e4e7}
+
+  /* ── Page chrome ── */
+  .wrap{max-width:980px;margin:0 auto;padding:0 24px 120px}
+  header.hero{padding:56px 0 28px;border-bottom:1px solid var(--border)}
+  .kicker{display:inline-flex;gap:8px;align-items:center;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--emerald);margin-bottom:14px}
+  .kicker .dot{width:6px;height:6px;border-radius:99px;background:var(--emerald)}
+  h1{font-size:32px;line-height:1.2;font-weight:700;letter-spacing:-.02em}
+  .sub{margin-top:12px;color:var(--muted-fg);max-width:64ch}
+  .meta{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+  .meta span{font-size:11px;color:var(--muted-fg);border:1px solid var(--border);border-radius:99px;padding:3px 10px;background:var(--muted-20)}
+
+  nav.toc{position:sticky;top:0;z-index:50;background:rgba(9,9,11,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);margin:0 -24px;padding:10px 24px;display:flex;gap:4px;overflow-x:auto;white-space:nowrap}
+  nav.toc a{font-size:12px;color:var(--muted-fg);text-decoration:none;padding:5px 10px;border-radius:6px}
+  nav.toc a:hover{color:var(--fg);background:var(--muted-30)}
+  nav.toc a b{color:var(--emerald);font-weight:600;margin-right:5px}
+
+  section{margin-top:56px;scroll-margin-top:64px}
+  h2{font-size:21px;font-weight:650;letter-spacing:-.01em;display:flex;align-items:baseline;gap:12px}
+  h2 .num{color:var(--emerald);font-size:14px;font-weight:700}
+  h3{font-size:14px;font-weight:600;margin:26px 0 10px;color:#e4e4e7}
+  section>p{margin-top:10px;color:var(--muted-fg);max-width:70ch}
+  section>p strong, li strong{color:var(--fg);font-weight:600}
+  ul.notes{margin:12px 0 0 18px;color:var(--muted-fg)}
+  ul.notes li{margin-top:7px;max-width:72ch}
+  ul.notes li::marker{color:var(--faint-fg)}
+
+  /* ── Mockup frames ── */
+  .frame{margin-top:16px;border:1px solid var(--border);border-radius:12px;background:var(--card);overflow:hidden}
+  .frame .bar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--muted-20)}
+  .frame .bar .fdot{width:9px;height:9px;border-radius:99px;background:var(--border)}
+  .frame .bar .flabel{font-size:11px;color:var(--muted-fg);margin-left:6px}
+  .frame .stage{padding:26px;background:
+    radial-gradient(circle at 1px 1px,rgba(255,255,255,.035) 1px,transparent 0) 0 0/22px 22px, var(--bg)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  @media(max-width:760px){.cols{grid-template-columns:1fr}}
+  .tag{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;border-radius:99px;padding:3px 10px;margin-bottom:12px}
+  .tag.now{color:var(--muted-fg);border:1px solid var(--border);background:var(--muted-20)}
+  .tag.new{color:var(--emerald);border:1px solid var(--emerald-b);background:var(--emerald-bg)}
+  .caption{font-size:12px;color:var(--faint-fg);margin-top:12px;max-width:70ch}
+  .caption b{color:var(--muted-fg);font-weight:600}
+
+  /* ── shadcn-style primitives (mock) ── */
+  .dialog{background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 50px rgba(0,0,0,.55);padding:20px;max-width:512px;margin:0 auto}
+  .dlg-title{font-size:16px;font-weight:600;margin-bottom:16px}
+  .lbl{display:block;font-size:12px;font-weight:500;margin-bottom:6px}
+  .inp{display:flex;align-items:center;height:28px;padding:0 8px;flex:1 1 auto;min-width:0;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:12px;color:var(--fg);white-space:nowrap;overflow:hidden}
+  .inp.ph{color:var(--faint-fg)}
+  .inp.h8{height:32px;font-size:13px}
+  .flab{font-size:10px;color:var(--muted-fg);white-space:nowrap}
+  .steprow{display:flex;align-items:flex-start;gap:8px;border:1px solid var(--border);background:var(--muted-20);border-radius:6px;padding:8px}
+  .arrows{display:flex;flex-direction:column;gap:2px;padding-top:4px;color:var(--muted-fg)}
+  .arrows svg{display:block;padding:2px}
+  .r{display:flex;align-items:center;gap:8px;min-width:0}
+  .r+.r{margin-top:6px}
+  .r.cont{padding-left:28px;gap:12px}
+  .grow{flex:1 1 auto;min-width:0;display:flex;align-items:center;gap:8px}
+  .numchip{display:flex;height:20px;width:20px;flex:none;align-items:center;justify-content:center;border-radius:99px;background:var(--muted);font-size:10px;font-weight:600;color:var(--muted-fg)}
+  .numchip.lg{height:24px;width:24px;font-size:12px}
+  .trash{color:var(--muted-fg);padding:4px;margin-top:4px}
+  .sw{position:relative;width:24px;height:14px;flex:none;border-radius:99px;background:var(--muted);border:1px solid var(--border)}
+  .sw::after{content:"";position:absolute;top:1px;left:1px;width:10px;height:10px;border-radius:99px;background:var(--faint-fg)}
+  .sw.on{background:var(--fg)}
+  .sw.on::after{left:auto;right:1px;background:var(--bg)}
+
+  /* select trigger */
+  .sel{display:inline-flex;align-items:center;justify-content:space-between;gap:6px;height:28px;padding:0 8px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:12px;color:var(--fg);flex:none;white-space:nowrap}
+  .sel .cue{color:var(--faint-fg);display:flex}
+  .sel.big{height:36px;padding:0 12px;font-size:13px;width:260px}
+  .sel.focus{outline:2px solid var(--ring);outline-offset:2px}
+  .helper{font-size:10px;color:var(--muted-fg);line-height:1.45}
+  .helper.big{font-size:12px;margin-top:6px}
+
+  /* listbox */
+  .listbox{width:300px;margin-top:6px;background:var(--popover);border:1px solid var(--border);border-radius:8px;box-shadow:0 12px 32px rgba(0,0,0,.5);padding:4px}
+  .opt{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;padding:8px 10px;border-radius:6px}
+  .opt .name{font-size:13px;font-weight:500}
+  .opt .gloss{font-size:11px;color:var(--muted-fg);margin-top:1px}
+  .opt.active{background:var(--muted-60)}
+  .opt .chk{color:var(--fg);flex:none;margin-top:3px;visibility:hidden}
+  .opt.selected .chk{visibility:visible}
+
+  /* badges */
+  .badge{display:inline-flex;align-items:center;gap:4px;flex:none;border-radius:99px;border:1px solid var(--border);padding:1px 8px;font-size:10px;font-weight:500;line-height:1.6;color:var(--fg);white-space:nowrap}
+  .badge.role-v{background:var(--violet-bg);color:var(--violet);border-color:var(--violet-b)}
+  .badge.role-p{background:var(--pink-bg);color:var(--pink);border-color:var(--pink-b)}
+  .badge.role-b{background:var(--blue-bg);color:var(--blue);border-color:var(--blue-b)}
+  .badge.role-c{background:var(--cyan-bg);color:var(--cyan);border-color:var(--cyan-b)}
+  .badge.st-zinc{background:var(--zincbadge-bg);color:var(--zincbadge);border-color:var(--zincbadge-b)}
+  .badge.st-blue{background:var(--blue-bg);color:var(--blue);border-color:var(--blue-b)}
+  .badge.st-green{background:var(--emerald-bg);color:var(--emerald);border-color:var(--emerald-b)}
+  .badge.st-amber{background:var(--amber-bg);color:var(--amber);border-color:var(--amber-b)}
+  .badge.tier{background:transparent;color:#e4e4e7;border-color:#3f3f46}
+  .badge.tier .tk{color:var(--faint-fg);font-weight:400}
+
+  /* board step card */
+  .stepcard{display:flex;align-items:center;gap:12px;border:1px solid var(--border);background:var(--muted-30);border-radius:6px;padding:10px 12px}
+  .stepcard+.stepcard{margin-top:6px}
+  .stepcard .title{flex:1 1 auto;min-width:0;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .stepcard .chev{color:var(--faint-fg);flex:none;opacity:.5}
+
+  /* annotation */
+  .annot{position:relative;border:1.5px dashed var(--emerald-b);border-radius:8px;padding:6px;margin:6px -6px -6px}
+  .annot .pin{position:absolute;top:-9px;left:10px;font-size:9px;font-weight:700;letter-spacing:.08em;background:var(--emerald);color:#04231a;border-radius:99px;padding:1px 8px}
+
+  /* phone frame */
+  .phone{width:375px;max-width:100%;margin:0 auto;border:1px solid #3f3f46;border-radius:24px;background:var(--bg);box-shadow:0 24px 60px rgba(0,0,0,.5);overflow:hidden}
+  .phone .notch{height:26px;display:flex;align-items:center;justify-content:center}
+  .phone .notch i{display:block;width:110px;height:16px;border-radius:99px;background:#18181b}
+  .phone .screen{padding:14px 12px 22px}
+  .phone .r,.phone .r.cont{flex-wrap:wrap;row-gap:6px;padding-left:0}
+  .phone .r.cont{gap:8px}
+  .phone .full{flex:1 1 100%}
+  .phone .sel.mob{width:100%;height:36px;justify-content:space-between}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint-fg);text-align:left;font-weight:600;padding:8px 12px;border-bottom:1px solid var(--border)}
+  td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--muted-fg);vertical-align:top}
+  td:first-child{color:var(--fg)}
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--card);padding:0 4px 4px;margin-top:16px}
+  .tablewrap table{margin-top:0}
+  .tablewrap tr:last-child td{border-bottom:0}
+
+  .note{margin-top:16px;border:1px solid var(--amber-b);background:var(--amber-bg);border-radius:8px;padding:12px 14px;font-size:13px;color:var(--muted-fg)}
+  .note b{color:var(--amber)}
+  .note.green{border-color:var(--emerald-b);background:var(--emerald-bg)}
+  .note.green b{color:var(--emerald)}
+
+  /* mock buttons + textarea (task step edit dialog) */
+  .btn{display:inline-flex;align-items:center;gap:6px;height:28px;padding:0 12px;border-radius:6px;font-size:12px;font-weight:500;border:1px solid transparent}
+  .btn.primary{background:var(--fg);color:var(--bg)}
+  .btn.ghost{background:transparent;color:var(--fg)}
+  .ta{display:block;min-height:60px;padding:6px 8px;border:1px solid var(--border);border-radius:6px;background:transparent;font-size:12px;color:var(--fg);line-height:1.5}
+  .ta.ph{color:var(--faint-fg)}
+
+  /* propagation diagram */
+  .flowrow{display:flex;align-items:stretch;gap:12px;flex-wrap:wrap}
+  .flowcard{border:1px solid var(--border);background:var(--muted-30);border-radius:8px;padding:10px 12px;font-size:12px;min-width:0}
+  .flowcard .fc-t{font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--faint-fg);margin-bottom:5px}
+  .flowcard.src{border-color:var(--emerald-b);background:var(--emerald-bg)}
+  .flowcard.hit{border-color:var(--emerald-b)}
+  .flowcol{display:flex;flex-direction:column;gap:8px;flex:1 1 240px;min-width:220px}
+  .flowarrow{align-self:center;color:var(--faint-fg);flex:none}
+  .fc-note{font-size:11px;color:var(--muted-fg);margin-top:3px}
+  .fc-note.ok{color:var(--emerald)}
+
+  .kbd{display:inline-block;font-family:ui-monospace,monospace;font-size:11px;border:1px solid #3f3f46;border-bottom-width:2px;border-radius:5px;padding:0 6px;background:var(--popover);color:#e4e4e7}
+  footer{margin-top:72px;padding-top:20px;border-top:1px solid var(--border);font-size:12px;color:var(--faint-fg)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker"><span class="dot"></span>Feature Development · Step 2 — UX Design (Rework)</div>
+  <h1>Per-step Model Tiering</h1>
+  <p class="sub">A per-step <strong style="color:var(--fg)">Model tier</strong> hint on workflow templates — <em>Auto / Frontier / Standard / Cheap</em> — that the orchestrator uses to pick which Claude model runs each step's agent — plus a per-task override on any task's still-pending steps. Cheap steps on cheap models stretch Claude usage roughly 2.5×. This document shows the full UI: the shared control, all five mounts (four template editors + the per-task step edit dialog), the read-only badge, edit-propagation rules, mobile, and accessibility.</p>
+  <div class="meta">
+    <span>P2 · Advisory hint — never blocks execution</span>
+    <span>Default: Auto (stored as <code style="border:none;background:none;padding:0">null</code>)</span>
+    <span>5 mounts — 4 template editors + 1 per-task dialog · 2 badge surfaces</span>
+    <span>Dark-first · matches shadcn New York / Zinc</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Sections">
+  <a href="#s1"><b>1</b>Control</a>
+  <a href="#s2"><b>2</b>Editor before/after</a>
+  <a href="#s3"><b>3</b>Board badge</a>
+  <a href="#s4"><b>4</b>Task step edit</a>
+  <a href="#s5"><b>5</b>Mobile 375px</a>
+  <a href="#s6"><b>6</b>Tier seeding</a>
+  <a href="#s7"><b>7</b>Editing a tier</a>
+  <a href="#s8"><b>8</b>Interaction &amp; flow</a>
+  <a href="#s9"><b>9</b>Accessibility</a>
+  <a href="#s10"><b>10</b>Rationale</a>
+</nav>
+
+<!-- ══════════════════════ 1. SHARED CONTROL ══════════════════════ -->
+<section id="s1">
+  <h2><span class="num">01</span>The shared <code>ModelTierSelect</code> control</h2>
+  <p>One component, mounted identically in five places — the four template editors plus the task-view step edit dialog (§04). It is a standard shadcn <code>Select</code> — same trigger chrome as every other select in the app — with a two-line option layout (name + gloss) so users never have to recall what a tier means. The helper line is <strong>always visible</strong>, not a tooltip.</p>
+
+  <div class="cols">
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Closed — default value</span></div>
+      <div class="stage">
+        <label class="lbl" for="m1">Model tier</label>
+        <div class="sel big" role="combobox" aria-expanded="false" id="m1">
+          <span>Auto <span style="color:var(--faint-fg)">(recommended)</span></span>
+          <span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span>
+        </div>
+        <p class="helper big" id="tier-help">Advisory — helps stretch your Claude usage; the orchestrator can override.</p>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Open — listbox, “Standard” highlighted</span></div>
+      <div class="stage">
+        <label class="lbl">Model tier</label>
+        <div class="sel big focus" role="combobox" aria-expanded="true">
+          <span>Auto <span style="color:var(--faint-fg)">(recommended)</span></span>
+          <span class="cue"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span>
+        </div>
+        <div class="listbox" role="listbox" aria-label="Model tier">
+          <div class="opt selected" role="option" aria-selected="true">
+            <div><div class="name">Auto <span style="color:var(--faint-fg);font-weight:400">(recommended)</span></div><div class="gloss">Orchestrator picks the best model</div></div>
+            <span class="chk"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          </div>
+          <div class="opt" role="option">
+            <div><div class="name">Frontier</div><div class="gloss">Highest quality — decisions &amp; review</div></div>
+            <span class="chk"></span>
+          </div>
+          <div class="opt active" role="option">
+            <div><div class="name">Standard</div><div class="gloss">Balanced — most build steps</div></div>
+            <span class="chk"></span>
+          </div>
+          <div class="opt" role="option">
+            <div><div class="name">Cheap</div><div class="gloss">Fast &amp; low-cost — mechanical steps</div></div>
+            <span class="chk"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Touch target:</b> the trigger renders <code>h-9</code> (36px) on desktop pointer and <code>min-h-11</code> (44px) under <code>@media (pointer: coarse)</code>; in compact step rows the visual is <code>h-7</code> to match sibling inputs, with the hit area extended to 44px via an invisible <code>before:-inset-y-2</code> overlay on touch devices. <b>Selection cue:</b> check icon + text, never colour alone. Fixed option order (Auto → Frontier → Standard → Cheap) matches the cost gradient, so position is meaningful and learnable.</p>
+</section>
+
+<!-- ══════════════════════ 2. EDITOR BEFORE / AFTER ══════════════════════ -->
+<section id="s2">
+  <h2><span class="num">02</span>Template step editor — before / after</h2>
+  <p>The Create Workflow Template dialog (<code>create-template-dialog.tsx</code>). Each step row currently has three field rows: <em>Title + Role</em>, <em>Description + Approval</em>, <em>Deliverables</em>. The tier control becomes a <strong>fourth row in the same pattern</strong> — 10px inline label, <code>h-7</code> compact select, helper text filling the remaining width. Nothing else moves; existing muscle memory is untouched.</p>
+
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Create Workflow Template — dialog (current → proposed)</span></div>
+    <div class="stage">
+      <div class="dialog">
+        <div class="dlg-title">Create Workflow Template</div>
+
+        <label class="lbl">Template Name</label>
+        <div class="inp h8" style="margin-bottom:14px">Feature Development</div>
+
+        <label class="lbl">Steps</label>
+
+        <div class="tag now" style="margin:2px 0 8px">Before — current step row</div>
+        <div class="steprow">
+          <div class="arrows">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div class="r"><span class="numchip">3</span><span class="flab">Title</span><div class="inp">Implement feature</div><span class="flab">Role</span><div class="sel" style="width:128px"><span style="overflow:hidden;text-overflow:ellipsis">Full Stack Dev…</span><span class="cue"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div></div>
+            <div class="r cont"><span class="flab">Description</span><div class="inp ph">Description (optional)</div><span class="sw"></span><span class="flab">Approval</span></div>
+            <div class="r cont"><span class="flab">Deliverables</span><div class="inp ph">Deliverables (optional) — e.g. HTML mockups, API spec</div></div>
+          </div>
+          <span class="trash"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
+        </div>
+
+        <div class="tag new" style="margin:18px 0 8px">After — Model tier as fourth field row</div>
+        <div class="steprow">
+          <div class="arrows">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div class="r"><span class="numchip">3</span><span class="flab">Title</span><div class="inp">Implement feature</div><span class="flab">Role</span><div class="sel" style="width:128px"><span style="overflow:hidden;text-overflow:ellipsis">Full Stack Dev…</span><span class="cue"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div></div>
+            <div class="r cont"><span class="flab">Description</span><div class="inp ph">Description (optional)</div><span class="sw"></span><span class="flab">Approval</span></div>
+            <div class="r cont"><span class="flab">Deliverables</span><div class="inp ph">Deliverables (optional) — e.g. HTML mockups, API spec</div></div>
+            <div class="annot"><span class="pin">New</span>
+              <div class="r cont" style="margin-top:0">
+                <span class="flab">Model tier</span>
+                <div class="sel" style="width:150px"><span>Auto <span style="color:var(--faint-fg)">(rec.)</span></span><span class="cue"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+                <span class="helper" style="flex:1;min-width:0">Advisory — helps stretch your Claude usage; the orchestrator can override.</span>
+              </div>
+            </div>
+          </div>
+          <span class="trash"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Placement rationale:</b> row 1 (Title + Role) is already full; squeezing a third select there shrinks the title input below usability. A fourth <code>pl-7</code> row keeps the established label-left / control-right rhythm, keeps Role and Tier vertically adjacent (they're read together), and gives the mandatory helper line a natural home in the leftover width.</p>
+
+  <h3>State: a chosen tier (Standard)</h3>
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Step row — tier explicitly set</span></div>
+    <div class="stage">
+      <div class="dialog" style="padding:14px">
+        <div class="steprow">
+          <div class="arrows">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+          </div>
+          <div style="flex:1;min-width:0">
+            <div class="r"><span class="numchip">3</span><span class="flab">Title</span><div class="inp">Implement feature</div><span class="flab">Role</span><div class="sel" style="width:128px"><span style="overflow:hidden;text-overflow:ellipsis">Full Stack Dev…</span><span class="cue"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div></div>
+            <div class="r cont"><span class="flab">Description</span><div class="inp">Build endpoint + UI per the approved design</div><span class="sw on"></span><span class="flab">Approval</span></div>
+            <div class="r cont"><span class="flab">Deliverables</span><div class="inp">PR link, migration file</div></div>
+            <div class="r cont">
+              <span class="flab">Model tier</span>
+              <div class="sel" style="width:150px"><span>Standard</span><span class="cue"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+              <span class="helper" style="flex:1;min-width:0">Advisory — helps stretch your Claude usage; the orchestrator can override.</span>
+            </div>
+          </div>
+          <span class="trash"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <h3>State: read-only preview (platform template, “Add Template” dialog)</h3>
+  <p>Where steps are shown read-only — the expanded platform-template card and the template detail panel (<code>StepRow</code>) — the tier renders as the <strong>static badge</strong>, never a disabled select. Auto shows nothing.</p>
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Platform template preview — read-only step list</span></div>
+    <div class="stage">
+      <div class="dialog" style="padding:14px;max-width:460px">
+        <div class="stepcard"><span class="numchip lg">1</span><span class="title">Requirements &amp; acceptance criteria</span><span class="badge tier"><span class="tk">tier:</span>Frontier</span><span class="badge role-b">Business Analyst</span></div>
+        <div class="stepcard"><span class="numchip lg">2</span><span class="title">UX design</span><span class="badge tier"><span class="tk">tier:</span>Frontier</span><span class="badge role-p">UX Designer</span></div>
+        <div class="stepcard"><span class="numchip lg">3</span><span class="title">Implement feature</span><span class="badge tier"><span class="tk">tier:</span>Standard</span><span class="badge role-v">Full Stack Developer</span></div>
+        <div class="stepcard"><span class="numchip lg">4</span><span class="title">Verify build &amp; tests</span><span class="badge tier"><span class="tk">tier:</span>Cheap</span><span class="badge role-c">QA Engineer</span></div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">All four steps ship seeded per the map in §06 — note <b>UX design carries Frontier</b>: design is judgement-heavy work. A step left on <b>Auto (null)</b> renders no badge at all, exactly as on the board (§03, row 1). The tier badge sits immediately left of the role badge in every read-only surface, so the pair always reads “<i>tier, then who</i>”.</p>
+</section>
+
+<!-- ══════════════════════ 3. BOARD BADGE ══════════════════════ -->
+<section id="s3">
+  <h2><span class="num">03</span>Step-card badge on the board</h2>
+  <p>Board task → workflow section (<code>task-workflow-section.tsx</code>). Step rows already carry role + status badges (<code>text-[10px]</code>, outline variant). The tier badge joins the cluster <strong>before the role badge</strong>, monochrome outline (<code>border-zinc-700 text-zinc-200</code>) so it never competes with the colour-coded role and status badges. The literal prefix <code>tier:</code> disambiguates it from a role at a glance. <strong>Auto/null renders no badge at all</strong> — silence is the default, so the badge only appears when someone made a deliberate choice.</p>
+
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Task card → Workflow section — step rows</span></div>
+    <div class="stage">
+      <div style="max-width:560px;margin:0 auto">
+        <div class="stepcard" style="border-color:rgba(16,185,129,.3)">
+          <span class="numchip lg" style="background:rgba(16,185,129,.2);color:var(--emerald)"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          <span class="title">UX design</span>
+          <span class="badge role-p">UX Designer</span>
+          <span class="badge st-green"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Done</span>
+          <span class="chev"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="stepcard">
+          <span class="numchip lg">3</span>
+          <span class="title">Implement feature</span>
+          <span class="badge tier" aria-label="Model tier: Standard"><span class="tk">tier:</span>Standard</span>
+          <span class="badge role-v">Full Stack Developer</span>
+          <span class="badge st-zinc">Pending</span>
+          <span class="chev"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+        <div class="stepcard">
+          <span class="numchip lg">4</span>
+          <span class="title">Verify build &amp; tests</span>
+          <span class="badge tier" aria-label="Model tier: Cheap"><span class="tk">tier:</span>Cheap</span>
+          <span class="badge role-c">QA Engineer</span>
+          <span class="badge st-zinc">Pending</span>
+          <span class="chev"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg></span>
+        </div>
+      </div>
+      <p class="caption" style="max-width:560px;margin:12px auto 0">Row 1 (“UX design”) was set back to <b>Auto</b> for this task (a per-task override — §04, §07) → no tier badge; the row is identical to today. On narrow cards the tier badge is the first badge to truncate-collapse into the step-detail dialog (title keeps priority) — it is informational, and the full cluster is always available one click away.</p>
+    </div>
+  </div>
+
+  <h3>Step detail dialog — header badge cluster</h3>
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Step Detail — header (step-detail-dialog.tsx)</span></div>
+    <div class="stage">
+      <div class="dialog" style="max-width:448px;padding:20px 20px 24px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span class="numchip" style="height:32px;width:32px;font-size:14px;font-weight:700">3</span>
+          <div style="min-width:0;flex:1">
+            <p style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Implement feature</p>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap">
+              <span class="badge st-zinc">Pending</span>
+              <span class="badge">Full Stack Developer</span>
+              <span class="badge tier" aria-label="Model tier: Standard"><span class="tk">tier:</span>Standard</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted-fg)"><span style="width:16px;height:16px;border-radius:99px;background:var(--violet-bg);color:var(--violet);display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:700">D</span>DevBot</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption">Header order: <b>status → role → tier → agent</b> (status and role already exist in this order at <code>step-detail-dialog.tsx:390-402</code>; tier slots after role). Hovering/focusing the tier badge shows a tooltip: “Advisory model tier for this step. The orchestrator may override.” On <b>pending</b> steps this dialog's pencil icon opens edit mode, where the tier becomes editable per task — §04.</p>
+</section>
+
+<!-- ══════════════════════ 4. TASK-VIEW STEP EDIT DIALOG ══════════════════════ -->
+<section id="s4">
+  <h2><span class="num">04</span>Task view — step edit dialog (per-task override)</h2>
+  <p>The fifth mount of the shared control. In a task's Workflow section, opening a step and pressing the pencil icon (shown on <strong>pending</strong> steps only) flips <code>step-detail-dialog.tsx</code> into edit mode: stacked full-width fields — Title, Description, Agent Role, Expected Deliverables, approval toggle — with Save / Cancel and Comments below. The tier select is inserted <strong>between Agent Role and Expected Deliverables</strong>: it is the same <code>ModelTierSelect</code> — same four options, same glosses, same always-visible helper — rendered full-width in this dialog's stacked layout rather than the compact template-editor row.</p>
+
+  <div class="cols">
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Step Detail — edit mode, tier at Auto (default)</span></div>
+      <div class="stage">
+        <div class="dialog" style="max-width:420px;padding:20px">
+          <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+            <span class="numchip" style="height:32px;width:32px;font-size:14px;font-weight:700">3</span>
+            <div style="min-width:0;flex:1">
+              <p style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Implement feature</p>
+              <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap">
+                <span class="badge st-zinc">Pending</span>
+                <span class="badge">Full Stack Developer</span>
+              </div>
+            </div>
+          </div>
+
+          <label class="lbl">Title</label>
+          <div class="inp h8" style="margin-bottom:12px">Implement feature</div>
+
+          <label class="lbl">Description</label>
+          <div class="ta" style="margin-bottom:12px">Build endpoint + UI per the approved design</div>
+
+          <label class="lbl">Agent Role</label>
+          <div class="sel" style="width:100%;height:32px;font-size:13px;display:flex"><span>Full Stack Developer</span><span class="cue"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          <p class="helper" style="font-size:11px;margin:5px 0 12px">Matched against agents when template is applied</p>
+
+          <div class="annot" style="margin:0 0 12px"><span class="pin">New</span>
+            <label class="lbl">Model tier</label>
+            <div class="sel" style="width:100%;height:32px;font-size:13px;display:flex"><span>Auto <span style="color:var(--faint-fg)">(recommended)</span></span><span class="cue"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+            <p class="helper" style="font-size:11px;margin-top:5px">Advisory — helps stretch your Claude usage; the orchestrator can override.</p>
+          </div>
+
+          <label class="lbl">Expected Deliverables</label>
+          <div class="inp h8 ph" style="margin-bottom:12px">Comma-separated, e.g. Design doc, API schema</div>
+
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px">
+            <span class="sw"></span><span class="lbl" style="margin:0">Requires human approval</span>
+          </div>
+
+          <div style="display:flex;gap:8px">
+            <span class="btn primary">Save</span>
+            <span class="btn ghost">Cancel</span>
+          </div>
+
+          <div style="border-top:1px solid var(--border);margin-top:16px;padding-top:12px;display:flex;align-items:center;gap:8px;font-size:12px;color:var(--muted-fg)">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+            Comments (2)
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Edit mode — tier chosen (Frontier) · cropped</span></div>
+      <div class="stage">
+        <div class="dialog" style="max-width:420px;padding:20px">
+          <p style="font-size:11px;color:var(--faint-fg);text-align:center;margin-bottom:12px">⋯ Title · Description ⋯</p>
+
+          <label class="lbl">Agent Role</label>
+          <div class="sel" style="width:100%;height:32px;font-size:13px;display:flex"><span>UX Designer</span><span class="cue"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          <p class="helper" style="font-size:11px;margin:5px 0 12px">Matched against agents when template is applied</p>
+
+          <label class="lbl">Model tier</label>
+          <div class="sel" style="width:100%;height:32px;font-size:13px;display:flex"><span>Frontier</span><span class="cue"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+          <p class="helper" style="font-size:11px;margin:5px 0 12px">Advisory — helps stretch your Claude usage; the orchestrator can override.</p>
+
+          <label class="lbl">Expected Deliverables</label>
+          <div class="inp h8" style="margin-bottom:12px">HTML mockups, design doc</div>
+
+          <p style="font-size:11px;color:var(--faint-fg);text-align:center;margin-top:4px">⋯ Approval toggle · Save / Cancel · Comments ⋯</p>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Semantics — per-task override:</b> changes made here apply to <b>this task's step only, not the template</b>. <b>Persistence:</b> the existing <code>update_step</code> server action / MCP tool gains <code>model_tier</code> (<code>frontier</code> / <code>standard</code> / <code>cheap</code> or <code>null</code> for Auto), accepted on <b>pending steps only</b> — the same guard the rest of this edit form already has. Field order, label sizes (<code>text-xs</code>), input heights, and helper styling all match the dialog's current edit mode; the tier field is the only addition.</p>
+
+  <h3>State: in-progress / completed steps — no select, badge only</h3>
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Step Detail — step in progress (read-only tier)</span></div>
+    <div class="stage">
+      <div class="dialog" style="max-width:420px;padding:20px">
+        <div style="display:flex;align-items:center;gap:12px">
+          <span class="numchip" style="height:32px;width:32px;font-size:14px;font-weight:700;background:var(--blue-bg);color:var(--blue)">3</span>
+          <div style="min-width:0;flex:1">
+            <p style="font-size:15px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Implement feature</p>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px;flex-wrap:wrap">
+              <span class="badge st-blue">In Progress</span>
+              <span class="badge">Full Stack Developer</span>
+              <span class="badge tier" aria-label="Model tier: Standard"><span class="tk">tier:</span>Standard</span>
+              <span style="display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--muted-fg)"><span style="width:16px;height:16px;border-radius:99px;background:var(--violet-bg);color:var(--violet);display:inline-flex;align-items:center;justify-content:center;font-size:8px;font-weight:700">D</span>DevBot</span>
+            </div>
+          </div>
+        </div>
+        <p style="font-size:13px;color:var(--muted-fg);margin-top:14px">Build endpoint + UI per the approved design</p>
+      </div>
+    </div>
+  </div>
+  <p class="caption">Once a step is <b>in progress, completed, failed, or awaiting approval</b>, the pencil icon is not rendered (today's behaviour — edit is pending-only), so the tier select never appears; the tier surfaces only as the read-only <code>tier:</code> badge in the header. No disabled control, no dead-looking form — the absence of the pencil already communicates “this step has started” everywhere in the dialog.</p>
+</section>
+
+<!-- ══════════════════════ 5. MOBILE 375px ══════════════════════ -->
+<section id="s5">
+  <h2><span class="num">05</span>Mobile — 375px</h2>
+  <p>Inside the dialog at 375px the step row's flex rows gain <code>flex-wrap</code>. Title and Role already share a line uncomfortably at this width; with tier added we let each control take the full row: labels sit above their control, selects go full-width (<code>w-full</code>), and the helper wraps beneath the select. Touch targets grow to 44px (<code>min-h-11</code> via <code>pointer: coarse</code>). Nothing overflows horizontally.</p>
+
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">iPhone SE / small Android — 375 × content</span></div>
+    <div class="stage">
+      <div class="phone">
+        <div class="notch"><i></i></div>
+        <div class="screen">
+          <div class="dlg-title" style="font-size:15px">Create Workflow Template</div>
+          <label class="lbl">Steps</label>
+          <div class="steprow" style="flex-direction:column;gap:8px">
+            <div style="display:flex;align-items:center;gap:8px;width:100%">
+              <span class="numchip">3</span>
+              <span class="flab" style="font-size:11px">Step 3</span>
+              <span style="flex:1"></span>
+              <span class="arrows" style="flex-direction:row;padding-top:0;gap:6px">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+              </span>
+              <span class="trash" style="margin-top:0;padding:2px"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg></span>
+            </div>
+            <div class="full"><span class="flab">Title</span><div class="inp" style="height:36px;margin-top:4px">Implement feature</div></div>
+            <div class="full"><span class="flab">Role</span><div class="sel mob" style="margin-top:4px;display:flex"><span>Full Stack Developer</span><span class="cue"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div></div>
+            <div class="full"><span class="flab">Description</span><div class="inp ph" style="height:36px;margin-top:4px">Description (optional)</div></div>
+            <div class="full" style="display:flex;align-items:center;gap:8px"><span class="sw on"></span><span class="flab">Approval required</span></div>
+            <div class="full"><span class="flab">Deliverables</span><div class="inp ph" style="height:36px;margin-top:4px">Deliverables (optional)</div></div>
+            <div class="annot" style="margin:0;width:100%"><span class="pin">New</span>
+              <div class="full"><span class="flab">Model tier</span>
+                <div class="sel mob" style="margin-top:4px;display:flex"><span>Standard</span><span class="cue"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg></span></div>
+                <p class="helper" style="margin-top:5px">Advisory — helps stretch your Claude usage; the orchestrator can override.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Breakpoint behaviour:</b> the stacked layout applies below <code>sm</code> (640px) via the same responsive classes the dialog already uses. The 375px frame above is worst-case; at 640px+ the compact four-row desktop layout from §02 applies. The select popover renders as a full-width sheet-style dropdown anchored to the trigger — options keep their two-line name+gloss layout, each option row ≥44px.</p>
+</section>
+
+<!-- ══════════════════════ 6. SEEDING TABLE ══════════════════════ -->
+<section id="s6">
+  <h2><span class="num">06</span>Default role → tier seeding</h2>
+  <p>When platform library templates ship tier values, defaults come from the step's role using the same regex families as <code>getRoleBadgeClasses</code>. Seeding is a one-time fill of the select — the user can change any value; it never overwrites an explicit choice. <strong>Scope (v1): platform library templates only.</strong> A “suggest tiers” affordance for user-authored templates was considered and cut in Design Review as over-reach — user templates simply default every step to Auto.</p>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Role family</th><th>Example roles</th><th>Seeded tier</th><th>Why</th></tr></thead>
+      <tbody>
+        <tr>
+          <td><span class="badge role-b">Product / Analysis</span></td>
+          <td>Product Owner, Business Analyst, PM — plus any step gated by <em>review</em> / <em>approval</em> / decision-making</td>
+          <td><span class="badge tier"><span class="tk">tier:</span>Frontier</span></td>
+          <td>Judgement-heavy; errors compound downstream</td>
+        </tr>
+        <tr>
+          <td><span class="badge role-p">Design</span></td>
+          <td>UX Designer — plus design and design-review steps</td>
+          <td><span class="badge tier"><span class="tk">tier:</span>Frontier</span></td>
+          <td>Design work is judgement-heavy; a weak design compounds through every build step after it</td>
+        </tr>
+        <tr>
+          <td><span class="badge role-v">Build</span></td>
+          <td>Full Stack Developer, Front End Developer, Back End Developer (build steps)</td>
+          <td><span class="badge tier"><span class="tk">tier:</span>Standard</span></td>
+          <td>Balanced quality/cost for most implementation work</td>
+        </tr>
+        <tr>
+          <td><span class="badge role-c">QA / Mechanical</span></td>
+          <td>QA Engineer (verify steps), lint/format passes, changelog &amp; docs housekeeping</td>
+          <td><span class="badge tier"><span class="tk">tier:</span>Cheap</span></td>
+          <td>Deterministic, checkable work — biggest usage win</td>
+        </tr>
+        <tr>
+          <td><span class="badge st-zinc">Unknown / custom</span></td>
+          <td>Any role that matches no family</td>
+          <td><span class="badge st-zinc" style="background:transparent">Auto (no badge)</span></td>
+          <td>Never guess — let the orchestrator decide</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note green"><b>Usage story:</b> a typical 4-step Feature Development run seeded this way sends two steps to Frontier (requirements, UX design), one to Standard, one to Cheap — the judgement-heavy steps keep the best model while build and verify still run markedly more workflow cycles per Claude usage window than everything on Frontier.</div>
+</section>
+
+<!-- ══════════════════════ 7. EDIT PROPAGATION ══════════════════════ -->
+<section id="s7">
+  <h2><span class="num">07</span>What happens when you edit a tier</h2>
+  <p>Two edit surfaces, two blast radii. The rules are the same ones role and description edits already follow — no new mental model to learn.</p>
+
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Propagation — template edit vs. per-task edit</span></div>
+    <div class="stage">
+      <div class="flowrow">
+        <div class="flowcol">
+          <div class="flowcard src">
+            <div class="fc-t">Edit on a template step</div>
+            Step 3 · Model tier: <span class="badge tier"><span class="tk">tier:</span>Standard</span> → <span class="badge tier"><span class="tk">tier:</span>Frontier</span>
+            <div class="fc-note">via <code>propagateTemplateEdits</code> — same path as role edits</div>
+          </div>
+          <span class="flowarrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg></span>
+          <div class="flowcard hit">Task A · step 3 <span class="badge st-zinc">Pending</span><div class="fc-note ok">✓ updated → Frontier</div></div>
+          <div class="flowcard">Task B · step 3 <span class="badge st-blue">In Progress</span><div class="fc-note">untouched — never rewritten</div></div>
+          <div class="flowcard">Task C · step 3 <span class="badge st-green">Completed</span><div class="fc-note">untouched — never rewritten</div></div>
+        </div>
+        <div class="flowcol">
+          <div class="flowcard src">
+            <div class="fc-t">Edit on a task's step (§04 dialog)</div>
+            Task A · step 3 · Model tier → <span class="badge tier"><span class="tk">tier:</span>Cheap</span>
+            <div class="fc-note">per-task override</div>
+          </div>
+          <span class="flowarrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg></span>
+          <div class="flowcard hit">Task A · step 3<div class="fc-note ok">✓ this task's step only</div></div>
+          <div class="flowcard">The template<div class="fc-note">untouched</div></div>
+          <div class="flowcard">Every other task<div class="fc-note">untouched</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li><strong>Edit on a template step</strong> flows through to workflows already attached to tasks — but <strong>only to steps still pending</strong>, on the same propagation path role and description edits use today (<code>propagateTemplateEdits</code>). In-progress, completed, failed, and awaiting-approval steps are never rewritten: what ran is what history shows.</li>
+    <li><strong>Edit on a task's step</strong> (the §04 dialog) is a <strong>per-task override</strong> — it changes that one task's step and nothing else. The template is never modified from the task view.</li>
+    <li><strong>Overrides vs. later template edits — the simple rule:</strong> template edits propagate to pending steps exactly as today, <strong>last write wins</strong> — consistent with how role edits behave. So if you override a tier on a still-pending step and someone later edits that step on the template, the template value replaces your override. Once the step starts, nothing rewrites it either way. No merge logic, no “locked” flags — one rule, stated plainly.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════ 8. INTERACTION & FLOW ══════════════════════ -->
+<section id="s8">
+  <h2><span class="num">08</span>Interaction &amp; flow notes</h2>
+
+  <h3>Where the control appears — one shared component, five mounts</h3>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Surface</th><th>File</th><th>Mount point</th></tr></thead>
+      <tbody>
+        <tr><td>Create Workflow Template dialog</td><td><code>src/components/board/create-template-dialog.tsx</code></td><td>Fourth <code>pl-7</code> row of each step row (after Deliverables, ~L295)</td></tr>
+        <tr><td>Add Template → “Create New” tab</td><td><code>src/components/board/add-template-dialog.tsx</code></td><td>Same fourth row inside <code>renderCreateForm()</code> (~L812)</td></tr>
+        <tr><td>Workflows sidebar — inline edit</td><td><code>src/components/board/workflows-tab.tsx</code></td><td>Same fourth row in <code>StepEditor</code> (~L243); read-only <code>StepRow</code> gains the static badge</td></tr>
+        <tr><td>Admin platform library editor</td><td><code>src/components/admin/template-editor-dialog.tsx</code></td><td>Same fourth row (~L324) — identical layout, so platform authors see what users see</td></tr>
+        <tr><td>Task view — step edit dialog (per-task override, §04)</td><td><code>src/components/board/step-detail-dialog.tsx</code></td><td>Full-width field between Agent Role and Expected Deliverables (~L490) — pending steps only; edit saves via <code>update_step</code></td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p>The four template editors are copies of the same compact-row layout today; the tier row is added identically in each. The step-detail dialog is the one stacked-layout mount (§04). The control itself lives once in <code>src/components/ui/model-tier-select.tsx</code> and adapts to both layouts.</p>
+
+  <h3>Keyboard &amp; focus order</h3>
+  <ul class="notes">
+    <li><strong>Tab order per step row:</strong> move-up → move-down → Title → Role → Description → Approval switch → Deliverables → <strong>Model tier</strong> → Delete step. The tier select is appended, so existing users' tab rhythm is unchanged.</li>
+    <li><strong>Open:</strong> <span class="kbd">Enter</span> / <span class="kbd">Space</span> / <span class="kbd">↓</span> on the trigger. <strong>Navigate:</strong> <span class="kbd">↑</span><span class="kbd">↓</span>; type-ahead by first letter (<span class="kbd">c</span> → Cheap). <strong>Commit:</strong> <span class="kbd">Enter</span>. <strong>Dismiss:</strong> <span class="kbd">Esc</span> restores prior value and returns focus to the trigger (Radix Select default behaviour — no custom key handling).</li>
+    <li><strong>Board badge:</strong> not focusable in the step row (whole row is the button, as today); in the step-detail header its tooltip is reachable by keyboard focus per the existing <code>Tooltip</code> pattern.</li>
+  </ul>
+
+  <h3>States</h3>
+  <ul class="notes">
+    <li><strong>Default / empty:</strong> new steps start at <em>Auto</em>; stored as <code>null</code> (no migration back-fill needed; absent key = Auto). No badge anywhere while Auto.</li>
+    <li><strong>Error — invalid value from API:</strong> if a template's <code>model_tier</code> is not one of the four values (hand-edited JSON, older client), the select renders <em>Auto</em> and behaves normally. On save, the normalised value is written and a single toast explains: <em>“Model tier reset to Auto — the saved value wasn't recognised.”</em> Never a blocking validation error; the field is advisory.</li>
+    <li><strong>Loading:</strong> template editors receive steps synchronously from already-loaded template JSON, so the select never shows an indeterminate state. In the workflows sidebar detail panel, the existing step-list skeleton simply gains a third 40px pill placeholder where the tier badge will sit.</li>
+    <li><strong>Read-only contexts</strong> (platform preview, read-only board): static badge only — a disabled select would imply an action that isn't available and would need adjacent explanation; the badge doesn't.</li>
+    <li><strong>Partial:</strong> mixed templates (some steps tiered, some Auto) are the expected steady state — no warning, no nudge to “complete” tiering.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════ 9. ACCESSIBILITY ══════════════════════ -->
+<section id="s9">
+  <h2><span class="num">09</span>Accessibility (WCAG 2.1 AA)</h2>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Element</th><th>Colours (dark)</th><th>Contrast</th><th>Requirement</th></tr></thead>
+      <tbody>
+        <tr><td>Select value / option names</td><td>zinc-50 <code>#fafafa</code> on zinc-950</td><td>≈ 18.6 : 1</td><td>4.5 : 1 ✓</td></tr>
+        <tr><td>Helper line, field labels, glosses</td><td>zinc-400 <code>#a1a1aa</code> on zinc-950 / zinc-900</td><td>≈ 7.6 : 1 / 7.0 : 1</td><td>4.5 : 1 ✓</td></tr>
+        <tr><td>Tier badge text</td><td>zinc-200 <code>#e4e4e7</code> on zinc-950, border zinc-700</td><td>≈ 15.4 : 1</td><td>4.5 : 1 ✓</td></tr>
+        <tr><td>Focus ring</td><td>zinc-300 <code>#d4d4d8</code> ring on zinc-950</td><td>≈ 13 : 1</td><td>3 : 1 (non-text) ✓</td></tr>
+        <tr><td>Role badges (existing)</td><td>e.g. violet-400 on zinc-950</td><td>≈ 7.3 : 1</td><td>4.5 : 1 ✓ (unchanged)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <ul class="notes">
+    <li><strong>Visible label:</strong> “Model tier” is a real <code>&lt;Label htmlFor&gt;</code> in the full control and a visible 10px inline label in compact rows (same as Title/Role/Deliverables today) — never placeholder-only.</li>
+    <li><strong>Programmatic wiring:</strong> trigger has <code>aria-describedby</code> → the helper line; listbox options expose name + gloss as the accessible name/description; selection is announced via <code>aria-selected</code>.</li>
+    <li><strong>Badge screen-reader text:</strong> <code>aria-label="Model tier: Standard"</code> on the badge, so “Standard” is never announced as a bare mystery word next to the role.</li>
+    <li><strong>Keyboard:</strong> fully operable (Radix Select) — see §08. No pointer-only or hover-only behaviour: the badge is always rendered, the helper is always visible, tooltips are focus-triggered too.</li>
+    <li><strong>No colour-only meaning:</strong> the tier is conveyed by the word itself (badge and select value). Tier badges are deliberately monochrome — colour is reserved for role/status where it already carries redundant-coded meaning.</li>
+    <li><strong>Touch:</strong> 44px minimum target on coarse pointers for the trigger and every option row (§01, §05).</li>
+  </ul>
+  <div class="note"><b>Light theme:</b> all tokens are semantic (<code>border-border</code>, <code>text-muted-foreground</code>, <code>bg-muted/20</code>…), so the light variant is automatic: white background, zinc-200 borders, zinc-950 text, tier badge <code>border-zinc-300 text-zinc-700</code> (≈ 6.4 : 1 on white). No bespoke light styles are needed beyond the badge border token.</div>
+</section>
+
+<!-- ══════════════════════ 10. RATIONALE ══════════════════════ -->
+<section id="s10">
+  <h2><span class="num">10</span>Design rationale</h2>
+  <p>Four options is the ceiling for a scan-and-pick decision (<strong>Hick's law</strong>) — each option carries a one-line gloss so choosing takes seconds and requires no documentation. The control deliberately mirrors the existing Role select in the same step row (<strong>Jakob's law</strong> — internal consistency): same compact height, same inline-label pattern, same popover chrome, so it reads as a native part of a form users already know. Downstream, the <code>tier:</code> badge on step cards means the choice is visible where its consequence plays out (<strong>recognition over recall</strong>) — nobody has to reopen the template editor to remember what a step will cost — while rendering nothing for Auto keeps the default state exactly as quiet as today. Because the whole feature is advisory, the UI never blocks, warns, or demands completeness: it is a hint you can sprinkle onto expensive workflows and ignore everywhere else.</p>
+  <footer>P2 · Per-step Model Tiering — UX Design (Step 2, rework) · VibeCodes · Prepared for founder review · docs/spikes/p2-model-tier-design.html</footer>
+</section>
+
+</div>
+</body>
+</html>

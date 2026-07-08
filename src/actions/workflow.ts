@@ -8,6 +8,7 @@ import {
   validateDeliverables,
   MAX_WORKFLOW_ROLE_LENGTH,
 } from "@/lib/validation";
+import { MODEL_TIER_VALUES } from "@/lib/constants";
 
 // ─── Workflow Steps ───
 
@@ -66,6 +67,7 @@ export async function updateWorkflowStep(
     human_check_required?: boolean;
     expected_deliverables?: string[];
     bot_id?: string | null;
+    model_tier?: string | null;
   }
 ) {
   const supabase = await createClient();
@@ -97,6 +99,13 @@ export async function updateWorkflowStep(
   if (updates.human_check_required !== undefined) patch.human_check_required = updates.human_check_required;
   if (updates.expected_deliverables !== undefined) patch.expected_deliverables = validateDeliverables(updates.expected_deliverables);
   if (updates.bot_id !== undefined) patch.bot_id = updates.bot_id;
+  if (updates.model_tier !== undefined) {
+    // Advisory hint: accept a valid tier or null (Auto); reject anything else.
+    if (updates.model_tier !== null && !MODEL_TIER_VALUES.has(updates.model_tier)) {
+      throw new Error("Invalid model tier — expected frontier, standard, or cheap");
+    }
+    patch.model_tier = updates.model_tier;
+  }
 
   const { data, error } = await supabase
     .from("task_workflow_steps")

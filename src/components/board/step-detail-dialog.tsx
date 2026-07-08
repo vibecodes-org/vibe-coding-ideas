@@ -32,6 +32,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { RoleCombobox } from "@/components/ui/role-combobox";
+import { ModelTierSelect, ModelTierBadge } from "@/components/shared/model-tier-select";
 import { Textarea } from "@/components/ui/textarea";
 import { Separator } from "@/components/ui/separator";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -143,6 +144,7 @@ export function StepDetailDialog({
   const [editDescription, setEditDescription] = useState("");
   const [editRole, setEditRole] = useState("");
   const [editDeliverables, setEditDeliverables] = useState("");
+  const [editModelTier, setEditModelTier] = useState<string | null>(null);
   const [editHumanCheck, setEditHumanCheck] = useState(false);
   const [saving, setSaving] = useState(false);
   const [assignedAgent, setAssignedAgent] = useState<{ name: string; avatar_url: string | null; role: string | null } | null>(null);
@@ -256,6 +258,7 @@ export function StepDetailDialog({
     setEditDescription(step.description ?? "");
     setEditRole(step.agent_role ?? "");
     setEditDeliverables((step.expected_deliverables ?? []).join(", "));
+    setEditModelTier(step.model_tier ?? null);
     setEditHumanCheck(step.human_check_required);
     setIsEditing(true);
   }
@@ -271,6 +274,7 @@ export function StepDetailDialog({
         title: editTitle,
         description: editDescription || null,
         agent_role: editRole || null,
+        model_tier: editModelTier,
         human_check_required: editHumanCheck,
         expected_deliverables: deliverables,
       });
@@ -401,6 +405,7 @@ export function StepDetailDialog({
                     {step.agent_role}
                   </Badge>
                 )}
+                <ModelTierBadge tier={step.model_tier} />
                 {step.bot_id && assignedAgent ? (
                   <span className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
                     <Avatar className="h-4 w-4">
@@ -487,6 +492,11 @@ export function StepDetailDialog({
                   helperText="Matched against agents when template is applied"
                 />
               </div>
+              <ModelTierSelect
+                variant="full"
+                value={editModelTier}
+                onChange={setEditModelTier}
+              />
               <div className="space-y-1.5">
                 <Label htmlFor="edit-deliverables" className="text-xs">Expected Deliverables</Label>
                 <Input

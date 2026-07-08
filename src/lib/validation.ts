@@ -27,6 +27,8 @@ const VALID_LABEL_COLORS = [
   "rose", "zinc",
 ];
 
+const VALID_MODEL_TIERS = ["frontier", "standard", "cheap"];
+
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 const GITHUB_URL_PATTERN = /^https:\/\/github\.com\/.+/;
@@ -238,9 +240,27 @@ export function validateDeliverables(deliverables: string[]): string[] {
   return unique;
 }
 
+type WorkflowTemplateStepInput = {
+  title: string;
+  description?: string;
+  role: string;
+  requires_approval?: boolean;
+  deliverables?: string[];
+  model_tier?: string | null;
+};
+
+type WorkflowTemplateStepOutput = {
+  title: string;
+  description?: string;
+  role: string;
+  requires_approval?: boolean;
+  deliverables?: string[];
+  model_tier?: string;
+};
+
 export function validateWorkflowTemplateSteps(
-  steps: { title: string; description?: string; role: string; requires_approval?: boolean; deliverables?: string[] }[]
-): { title: string; description?: string; role: string; requires_approval?: boolean; deliverables?: string[] }[] {
+  steps: WorkflowTemplateStepInput[]
+): WorkflowTemplateStepOutput[] {
   if (!steps || steps.length === 0) {
     throw new ValidationError("At least one step is required");
   }
@@ -255,12 +275,26 @@ export function validateWorkflowTemplateSteps(
     if (role.length > MAX_WORKFLOW_ROLE_LENGTH) {
       throw new ValidationError(`Step ${i + 1}: role must be ${MAX_WORKFLOW_ROLE_LENGTH} characters or less`);
     }
+
+    // model_tier is advisory: pass valid tiers through, omit absent/null, and
+    // reject any other value so a bad hand-edited JSON never persists silently.
+    let model_tier: string | undefined;
+    if (step.model_tier !== undefined && step.model_tier !== null) {
+      if (!VALID_MODEL_TIERS.includes(step.model_tier)) {
+        throw new ValidationError(
+          `Step ${i + 1}: invalid model tier "${step.model_tier}" (expected frontier, standard, or cheap)`
+        );
+      }
+      model_tier = step.model_tier;
+    }
+
     return {
       title,
       description: step.description?.trim() || undefined,
       role,
       requires_approval: step.requires_approval ?? false,
       deliverables: step.deliverables ? validateDeliverables(step.deliverables) : undefined,
+      ...(model_tier !== undefined ? { model_tier } : {}),
     };
   });
 }
