@@ -129,12 +129,34 @@ test("preemption: a foreign owner is still rejected OWNER_MISMATCH, never preemp
   assert.equal(d.code, CLOSE.OWNER_MISMATCH.code);
 });
 
-test("preemption: never applies to the bridge role — a live 2nd bridge is a real conflict", () => {
+// ── same-owner bridge preemption (fix/terminal-bridge-zombie-preemption) ──────
+// The bridge's keepalive terminate() after a SILENT link death never reaches
+// Cloudflare (interface/NAT changed — no RST delivered), so the relay keeps
+// counting the zombie leg and the bridge's own grace-window reattach bounced off
+// DUP_BRIDGE — a terminal code for the bridge, which then reaped the PTY child.
+// Bridge reattach now preempts exactly like the browser leg.
+
+test("preemption: an owner-verified 2nd bridge is accepted with the preempt flag", () => {
   let s = emptyState();
-  s = attach(s, "bridge", "user-A");
+  s = attach(s, "bridge", "user-A"); // possibly a silently-dead zombie leg
+  s = attach(s, "browser", "user-A");
   const d = decideAttach(s, "bridge", "user-A");
+  assert.deepEqual(d, { ok: true, preempt: true }, "the newer same-owner bridge wins");
+});
+
+test("preemption: a sub-less 2nd bridge keeps the old DUP_BRIDGE rejection", () => {
+  const s = attach(emptyState(), "bridge");
+  const d = decideAttach(s, "bridge");
   assert.equal(d.ok, false);
   assert.equal(d.code, CLOSE.DUP_BRIDGE.code);
+});
+
+test("preemption: a foreign owner bridge is still rejected OWNER_MISMATCH, never preempts", () => {
+  let s = emptyState();
+  s = attach(s, "bridge", "user-A");
+  const d = decideAttach(s, "bridge", "user-B");
+  assert.equal(d.ok, false);
+  assert.equal(d.code, CLOSE.OWNER_MISMATCH.code);
 });
 
 test("preemption: the stale-leg close reuses the DUP_BROWSER code with a distinct reason", () => {

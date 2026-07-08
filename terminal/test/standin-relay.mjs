@@ -154,8 +154,9 @@ export function startStandinRelay(opts = {}) {
       return;
     }
 
-    // Same-owner browser PREEMPTION (fix/terminal-dock-heartbeat) — mirrors the
-    // Cloudflare DO: the stale browser leg (possibly silently dead) is closed 4001
+    // Same-owner PREEMPTION (browser: fix/terminal-dock-heartbeat; bridge:
+    // fix/terminal-bridge-zombie-preemption) — mirrors the Cloudflare DO: the
+    // stale leg of the same role (possibly silently dead) is closed 4001
     // "preempted" and this attach takes its slot. Nulling the slot FIRST makes the
     // stale socket's teardown a no-op (superseded), so no grace window opens for a
     // swap that leaves the pair whole.
@@ -163,7 +164,7 @@ export function startStandinRelay(opts = {}) {
       const stale = legs[role];
       legs[role] = null;
       try { stale.close(CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason); } catch { /* closing */ }
-      log("stale browser leg preempted", { session, role });
+      log("stale leg preempted", { session, role });
     }
 
     const firstLeg = legs.bridge === null && legs.browser === null;

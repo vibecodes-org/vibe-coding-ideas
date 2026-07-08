@@ -178,7 +178,15 @@ const BRIDGE_RECONNECT_MS = Number(process.env.BRIDGE_RECONNECT_MS || 90000);
 const RECONNECT_ATTEMPT_TIMEOUT_MS = Number(process.env.BRIDGE_RECONNECT_ATTEMPT_TIMEOUT_MS || 10000);
 // Relay close codes that are TERMINAL for the bridge — never reconnect on these
 // (auth / duplicate failures cannot succeed on retry). Mirrors pairing.js → CLOSE.
-const TERMINAL_CLOSE_CODES = new Set([4002 /* DUP_BRIDGE */, 4005 /* OWNER_MISMATCH */, 4006 /* BAD_TOKEN */]);
+// 4001 (PREEMPTED) is terminal too (fix/terminal-bridge-zombie-preemption): a
+// newer same-owner bridge attach replaced this leg — reconnecting would only
+// steal the session back and flap, so the losing helper shuts down cleanly.
+const TERMINAL_CLOSE_CODES = new Set([
+  4001 /* PREEMPTED */,
+  4002 /* DUP_BRIDGE */,
+  4005 /* OWNER_MISMATCH */,
+  4006 /* BAD_TOKEN */,
+]);
 const NORMAL_CLOSURE = 1000;
 
 const [file, ...cmdArgs] = shellSplit(CMD);
