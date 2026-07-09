@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { McpContext } from "../context";
 import { mintClaimToken, hashClaimToken } from "../claim-token";
+import { TIER_ADHERENCE_DISCLOSURE } from "../../../src/lib/constants";
 
 // AI role matching hits the network — stub it so applyWorkflowTemplate can run
 // against pure Supabase mocks. Only applyWorkflowTemplate uses it in this file.
@@ -24,6 +25,7 @@ import {
   applyWorkflowTemplate,
   modelTierClause,
   resolveModelTier,
+  resolveTierAdherence,
 } from "./workflows";
 
 // ---------------------------------------------------------------------------
@@ -182,6 +184,42 @@ describe("workflow schemas", () => {
     it("rejects invalid UUID", () => {
       expect(() =>
         completeStepSchema.parse({ step_id: "not-a-uuid" })
+      ).toThrow();
+    });
+
+    // P2c FR-1: model_used is optional (backward compatible) and constrained
+    // to the known Task-tool aliases + the "other"/"unknown" sentinels.
+    it("accepts a valid model_used alias", () => {
+      const result = completeStepSchema.parse({ step_id: STEP_ID, model_used: "fable" });
+      expect(result.model_used).toBe("fable");
+    });
+
+    it("accepts model_used omitted (backward compatible)", () => {
+      const result = completeStepSchema.parse({ step_id: STEP_ID });
+      expect(result.model_used).toBeUndefined();
+    });
+
+    it("rejects an unrecognised model_used value (e.g. 'gpt-4')", () => {
+      expect(() =>
+        completeStepSchema.parse({ step_id: STEP_ID, model_used: "gpt-4" })
+      ).toThrow();
+    });
+  });
+
+  describe("failStepSchema", () => {
+    it("accepts a valid model_used alias", () => {
+      const result = failStepSchema.parse({ step_id: STEP_ID, model_used: "opus" });
+      expect(result.model_used).toBe("opus");
+    });
+
+    it("accepts model_used omitted (backward compatible)", () => {
+      const result = failStepSchema.parse({ step_id: STEP_ID });
+      expect(result.model_used).toBeUndefined();
+    });
+
+    it("rejects an unrecognised model_used value (e.g. 'gpt-4')", () => {
+      expect(() =>
+        failStepSchema.parse({ step_id: STEP_ID, model_used: "gpt-4" })
       ).toThrow();
     });
   });
@@ -1088,6 +1126,185 @@ describe("completeStep", () => {
     await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID });
 
     expect(commentInserted).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// completeStep — tier adherence (P2c FR-6/7/8/12)
+// ---------------------------------------------------------------------------
+
+describe("completeStep — tier adherence (P2c)", () => {
+  /** run_id: null throughout so checkAndCompleteRun never fires — keeps these
+   * tests focused on the tier-adherence write path only. */
+  function ctxFor(opts: {
+    stepData: Record<string, unknown>;
+    updatedStep: Record<string, unknown>;
+    userModelTierMap?: Record<string, unknown> | null;
+  }) {
+    let commentInserted: unknown = null;
+    let usersQueried = 0;
+    let lastStepChain: ReturnType<typeof createChain> | null = null;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() => Promise.resolve({ data: opts.stepData, error: null }));
+        chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: opts.updatedStep, error: null }));
+        lastStepChain = chain;
+        return chain.chain;
+      }
+      if (table === "users") {
+        usersQueried++;
+        return createChain({ model_tier_map: opts.userModelTierMap ?? null }).chain;
+      }
+      if (table === "workflow_step_comments") {
+        const chain = createChain(null);
+        chain.chain.insert = vi.fn((data: unknown) => {
+          commentInserted = data;
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    return {
+      ctx,
+      getUpdate: () => lastStepChain!.captured.updated as Record<string, unknown>,
+      getComment: () => commentInserted,
+      getUsersQueried: () => usersQueried,
+    };
+  }
+
+  const baseStep = {
+    claim_token_hash: TCT.hash,
+    id: STEP_ID,
+    run_id: null,
+    idea_id: IDEA_ID,
+    human_check_required: false,
+    status: "in_progress",
+    bot_id: null,
+  };
+  const baseUpdatedStep = {
+    id: STEP_ID,
+    task_id: TASK_ID,
+    run_id: null,
+    title: "Test Step",
+    agent_role: "developer",
+    status: "completed",
+    output: null,
+    completed_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("model_used = resolved model -> executed_model set, tier_honored=true, no comment", async () => {
+    const { ctx, getUpdate, getComment } = ctxFor({
+      stepData: { ...baseStep, model_tier: "frontier" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "fable" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("fable");
+    expect(update.tier_honored).toBe(true);
+    expect(getComment()).toBeNull();
+  });
+
+  it("model_used = the tier's allowed fallback -> tier_honored=true (fallback counts as honored)", async () => {
+    const { ctx, getUpdate, getComment } = ctxFor({
+      stepData: { ...baseStep, model_tier: "frontier" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("opus");
+    expect(update.tier_honored).toBe(true);
+    expect(getComment()).toBeNull();
+  });
+
+  it("model_used = an unrelated concrete model -> tier_honored=false and posts a 'comment' (not 'failure') mismatch comment", async () => {
+    const { ctx, getUpdate, getComment } = ctxFor({
+      stepData: { ...baseStep, model_tier: "frontier" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "sonnet" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("sonnet");
+    expect(update.tier_honored).toBe(false);
+
+    const comment = getComment() as Record<string, unknown>;
+    expect(comment).not.toBeNull();
+    expect(comment.type).toBe("comment"); // NOT "failure" (Design-Review CONDITION 4)
+    expect(comment.step_id).toBe(STEP_ID);
+    expect(comment.idea_id).toBe(IDEA_ID);
+    expect(comment.author_id).toBe(USER_ID);
+    expect(comment.content as string).toContain("Tier not honored");
+    expect(comment.content as string).toContain(TIER_ADHERENCE_DISCLOSURE);
+    expect((comment.content as string).toLowerCase()).not.toContain("maps to");
+  });
+
+  it("model_used omitted -> executed_model=NULL, tier_honored=NULL (never false), no comment, no users query", async () => {
+    const { ctx, getUpdate, getComment, getUsersQueried } = ctxFor({
+      stepData: { ...baseStep, model_tier: "frontier" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBeNull();
+    expect(update.tier_honored).toBeNull();
+    expect(getComment()).toBeNull();
+    expect(getUsersQueried()).toBe(0);
+  });
+
+  it("model_used='unknown' -> executed_model='unknown', tier_honored=NULL (never false), no comment, no users query", async () => {
+    const { ctx, getUpdate, getComment, getUsersQueried } = ctxFor({
+      stepData: { ...baseStep, model_tier: "frontier" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "unknown" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("unknown");
+    expect(update.tier_honored).toBeNull();
+    expect(getComment()).toBeNull();
+    expect(getUsersQueried()).toBe(0);
+  });
+
+  it("Auto step (model_tier null) -> tier_honored stays NULL regardless of model_used, no users query", async () => {
+    const { ctx, getUpdate, getComment, getUsersQueried } = ctxFor({
+      stepData: { ...baseStep, model_tier: null },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "sonnet" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("sonnet");
+    expect(update.tier_honored).toBeNull();
+    expect(getComment()).toBeNull();
+    expect(getUsersQueried()).toBe(0);
+  });
+
+  it("resolves via the caller's model_tier_map override, not just the platform default", async () => {
+    const { ctx, getUpdate, getUsersQueried } = ctxFor({
+      stepData: { ...baseStep, model_tier: "frontier" },
+      updatedStep: baseUpdatedStep,
+      userModelTierMap: { frontier: "opus" },
+    });
+
+    // Override maps frontier -> opus, so opus is now the *resolved* model (not the fallback).
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus" });
+
+    const update = getUpdate();
+    expect(update.tier_honored).toBe(true);
+    expect(getUsersQueried()).toBe(1);
   });
 });
 
@@ -2008,6 +2225,169 @@ describe("failStep", () => {
       type: "changes_requested",
       content: "Validation logic is wrong",
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// failStep — tier adherence (P2c FR-6/7/8/12)
+// ---------------------------------------------------------------------------
+
+describe("failStep — tier adherence (P2c)", () => {
+  /** run_id: null throughout so the cascade/run-status paths never fire —
+   * keeps these tests focused on the tier-adherence write path only. */
+  function ctxFor(opts: {
+    stepData: Record<string, unknown>;
+    updatedStep: Record<string, unknown>;
+    userModelTierMap?: Record<string, unknown> | null;
+  }) {
+    const commentsInserted: Record<string, unknown>[] = [];
+    let usersQueried = 0;
+    let lastStepChain: ReturnType<typeof createChain> | null = null;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() => Promise.resolve({ data: opts.stepData, error: null }));
+        chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: opts.updatedStep, error: null }));
+        lastStepChain = chain;
+        return chain.chain;
+      }
+      if (table === "users") {
+        usersQueried++;
+        return createChain({ model_tier_map: opts.userModelTierMap ?? null }).chain;
+      }
+      if (table === "workflow_step_comments") {
+        const chain = createChain(null);
+        chain.chain.insert = vi.fn((data: unknown) => {
+          commentsInserted.push(data as Record<string, unknown>);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    return {
+      ctx,
+      getUpdate: () => lastStepChain!.captured.updated as Record<string, unknown>,
+      getComments: () => commentsInserted,
+      getUsersQueried: () => usersQueried,
+    };
+  }
+
+  const baseStep = {
+    claim_token_hash: TCT.hash,
+    id: STEP_ID,
+    run_id: null,
+    step_order: 3,
+    idea_id: IDEA_ID,
+    bot_id: null,
+    agent_role: "developer",
+    status: "in_progress",
+  };
+  const baseUpdatedStep = {
+    id: STEP_ID,
+    task_id: TASK_ID,
+    run_id: null,
+    title: "Test Step",
+    agent_role: "developer",
+    status: "failed",
+    output: null,
+  };
+
+  it("model_used = an unrelated concrete model -> tier_honored=false and posts a 'comment' (not 'failure') mismatch comment", async () => {
+    const { ctx, getUpdate, getComments } = ctxFor({
+      stepData: { ...baseStep, model_tier: "standard" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "haiku" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("haiku");
+    expect(update.tier_honored).toBe(false);
+
+    const mismatchComment = getComments().find((c) => c.type === "comment");
+    expect(mismatchComment).toBeDefined();
+    expect(mismatchComment!.author_id).toBe(USER_ID);
+    expect(mismatchComment!.content as string).toContain("Tier not honored");
+    expect(mismatchComment!.content as string).toContain(TIER_ADHERENCE_DISCLOSURE);
+  });
+
+  it("does not confuse the mismatch comment with the separate failure-output comment", async () => {
+    const { ctx, getComments } = ctxFor({
+      stepData: { ...baseStep, model_tier: "standard" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await failStep(ctx, {
+      claim_token: TCT.token,
+      step_id: STEP_ID,
+      output: "Build failed",
+      model_used: "haiku",
+    });
+
+    const comments = getComments();
+    expect(comments).toHaveLength(2);
+    expect(comments.find((c) => c.type === "failure")).toMatchObject({ content: "Build failed" });
+    expect(comments.find((c) => c.type === "comment")?.content).toContain("Tier not honored");
+  });
+
+  it("model_used omitted -> executed_model=NULL, tier_honored=NULL (never false), no mismatch comment, no users query", async () => {
+    const { ctx, getUpdate, getComments, getUsersQueried } = ctxFor({
+      stepData: { ...baseStep, model_tier: "standard" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBeNull();
+    expect(update.tier_honored).toBeNull();
+    expect(getComments()).toHaveLength(0);
+    expect(getUsersQueried()).toBe(0);
+  });
+
+  it("model_used='unknown' -> executed_model='unknown', tier_honored=NULL (never false), no mismatch comment", async () => {
+    const { ctx, getUpdate, getComments } = ctxFor({
+      stepData: { ...baseStep, model_tier: "standard" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "unknown" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("unknown");
+    expect(update.tier_honored).toBeNull();
+    expect(getComments()).toHaveLength(0);
+  });
+
+  it("Auto step (model_tier null) -> tier_honored stays NULL regardless of model_used", async () => {
+    const { ctx, getUpdate, getComments } = ctxFor({
+      stepData: { ...baseStep, model_tier: null },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "sonnet" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("sonnet");
+    expect(update.tier_honored).toBeNull();
+    expect(getComments()).toHaveLength(0);
+  });
+
+  it("model_used = resolved model -> tier_honored=true, no mismatch comment", async () => {
+    const { ctx, getUpdate, getComments } = ctxFor({
+      stepData: { ...baseStep, model_tier: "standard" },
+      updatedStep: baseUpdatedStep,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "sonnet" });
+
+    const update = getUpdate();
+    expect(update.executed_model).toBe("sonnet");
+    expect(update.tier_honored).toBe(true);
+    expect(getComments()).toHaveLength(0);
   });
 });
 
@@ -2943,13 +3323,19 @@ describe("modelTierClause", () => {
   // Design-Review CONDITION 1 — exact directive string, verbatim.
   it("produces the exact MANDATORY MODEL directive string for the platform default (standard)", () => {
     expect(modelTierClause("standard")).toBe(
-      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "sonnet". If "sonnet" is unavailable on this plan/session, use model: "opus" and state the substitution in your step output. Do not run this step inline and do not inherit your session model.'
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "sonnet". If "sonnet" is unavailable on this plan/session, use model: "opus" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it).'
     );
   });
 
   it("produces the exact directive string for a user-overridden tier", () => {
     expect(modelTierClause("frontier", { frontier: "opus" })).toBe(
-      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus". If "opus" is unavailable on this plan/session, use model: "fable" and state the substitution in your step output. Do not run this step inline and do not inherit your session model.'
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus". If "opus" is unavailable on this plan/session, use model: "fable" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it).'
+    );
+  });
+
+  it("includes the model_used capture sentence (P2c FR-1/2/3)", () => {
+    expect(modelTierClause("cheap")).toContain(
+      "pass model_used = the model you actually ran the subagent on"
     );
   });
 
@@ -2962,6 +3348,78 @@ describe("modelTierClause", () => {
       expect(clause).toContain(`model: "${fallback}"`);
       expect(clause).not.toContain("Advisory");
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveTierAdherence — P2c FR-6/7/8 (exact cases, NULL ≠ false)
+// ---------------------------------------------------------------------------
+
+describe("resolveTierAdherence", () => {
+  it("model_used omitted -> executed=NULL, honored=NULL (never false)", () => {
+    expect(resolveTierAdherence("frontier", undefined)).toEqual({
+      executedModel: null,
+      tierHonored: null,
+    });
+  });
+
+  it("model_used='unknown' -> executed='unknown', honored=NULL (never false), regardless of tier", () => {
+    expect(resolveTierAdherence("frontier", "unknown")).toEqual({
+      executedModel: "unknown",
+      tierHonored: null,
+    });
+    expect(resolveTierAdherence(null, "unknown")).toEqual({
+      executedModel: "unknown",
+      tierHonored: null,
+    });
+  });
+
+  it("tier is null (Auto) -> executed=model_used, honored=NULL", () => {
+    expect(resolveTierAdherence(null, "sonnet")).toEqual({
+      executedModel: "sonnet",
+      tierHonored: null,
+    });
+    expect(resolveTierAdherence(undefined, "opus")).toEqual({
+      executedModel: "opus",
+      tierHonored: null,
+    });
+  });
+
+  it("tier set, model_used = platform-resolved model -> honored=true", () => {
+    expect(resolveTierAdherence("frontier", "fable")).toEqual({
+      executedModel: "fable",
+      tierHonored: true,
+    });
+  });
+
+  it("tier set, model_used = the tier's allowed fallback -> honored=true", () => {
+    // frontier resolves to fable, whose fallback is opus.
+    expect(resolveTierAdherence("frontier", "opus")).toEqual({
+      executedModel: "opus",
+      tierHonored: true,
+    });
+  });
+
+  it("tier set, model_used = a user's overridden resolved model -> honored=true", () => {
+    expect(resolveTierAdherence("frontier", "opus", { frontier: "opus" })).toEqual({
+      executedModel: "opus",
+      tierHonored: true,
+    });
+  });
+
+  it("tier set, model_used = an unrelated concrete alias -> honored=false (never NULL)", () => {
+    // frontier resolves to fable/opus — sonnet is neither.
+    expect(resolveTierAdherence("frontier", "sonnet")).toEqual({
+      executedModel: "sonnet",
+      tierHonored: false,
+    });
+  });
+
+  it("tier set, model_used='other' -> honored=false", () => {
+    expect(resolveTierAdherence("standard", "other")).toEqual({
+      executedModel: "other",
+      tierHonored: false,
+    });
   });
 });
 

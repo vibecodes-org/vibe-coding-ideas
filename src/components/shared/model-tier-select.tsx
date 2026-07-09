@@ -1,13 +1,14 @@
 "use client";
 
 import * as React from "react";
-import { CheckIcon, ChevronDownIcon } from "lucide-react";
+import { CheckIcon, ChevronDownIcon, TriangleAlert } from "lucide-react";
 import { Select as SelectPrimitive } from "radix-ui";
 
 import { cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import { SelectContent } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useViewerModelTierMap } from "@/hooks/use-viewer-model-tier-map";
 import {
   MODEL_TIERS,
@@ -15,6 +16,8 @@ import {
   MODEL_TIER_RUNS_ON_HELPER,
   modelTierLabel,
   modelTierGloss,
+  capitalizeModelName,
+  tierMismatchSentence,
   type ModelTierMap,
 } from "@/lib/constants";
 
@@ -192,27 +195,64 @@ export function ModelTierSelect({
  * Read-only tier badge for step cards and dialog headers. Renders nothing for
  * Auto (null) — silence is the default. Monochrome outline so it never competes
  * with the colour-coded role/status badges.
+ *
+ * P2c (design §03, exception-only row indicator): pass `executedModel` +
+ * `tierHonored` to surface adherence — but ONLY `tierHonored === false`
+ * changes anything (an amber triangle + "ran on <model>" suffix, wrapped in a
+ * tooltip carrying the full self-reported disclosure). Honored and unknown
+ * (tierHonored true/null/undefined) render exactly as before — row-level
+ * silence is deliberate; the full three-state detail lives in the step-detail
+ * dialog's Execution line, not here.
  */
 export function ModelTierBadge({
   tier,
+  executedModel,
+  tierHonored,
   className,
 }: {
   tier: string | null | undefined;
+  executedModel?: string | null;
+  tierHonored?: boolean | null;
   className?: string;
 }) {
   if (!tier) return null;
   const label = modelTierLabel(tier);
-  return (
+  const dishonored = tierHonored === false;
+  const executedLabel = capitalizeModelName(executedModel ?? "unknown");
+
+  const badge = (
     <Badge
       variant="outline"
-      aria-label={`Model tier: ${label}`}
+      aria-label={
+        dishonored
+          ? `Model tier ${label} — not honored: orchestrator reported ${executedLabel}`
+          : `Model tier: ${label}`
+      }
       className={cn(
-        "shrink-0 gap-0.5 text-[10px] font-normal border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-200",
+        "shrink-0 gap-1 text-[10px] font-normal border-zinc-300 text-zinc-700 dark:border-zinc-700 dark:text-zinc-200",
+        dishonored && "cursor-help border-amber-500/40 text-amber-700 dark:border-amber-500/40 dark:text-amber-400",
         className,
       )}
     >
       <span className="text-muted-foreground">tier:</span>
       {label}
+      {dishonored && (
+        <span className="inline-flex items-center gap-0.5">
+          <TriangleAlert className="size-2.5" />
+          {`ran on ${executedLabel}`}
+        </span>
+      )}
     </Badge>
+  );
+
+  if (!dishonored) return badge;
+
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{badge}</TooltipTrigger>
+      <TooltipContent className="max-w-72 text-xs">
+        {tierMismatchSentence(tier, executedModel ?? "unknown")}
+      </TooltipContent>
+    </Tooltip>
   );
 }

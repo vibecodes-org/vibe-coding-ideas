@@ -19,6 +19,9 @@ import {
   X,
   SkipForward,
   Pencil,
+  TriangleAlert,
+  CircleHelp,
+  Info,
 } from "lucide-react";
 import {
   Dialog,
@@ -60,8 +63,92 @@ import {
   addStepComment,
 } from "@/actions/workflow";
 import { getInitials } from "@/lib/utils";
+import {
+  modelTierLabel,
+  capitalizeModelName,
+  tierDefaultsToCopy,
+  TIER_ADHERENCE_DISCLOSURE,
+} from "@/lib/constants";
 import type { TaskWorkflowStep, WorkflowStepComment } from "@/types";
 import { ApprovalLockIcon } from "./approval-lock-icon";
+
+/**
+ * P2c — the step-detail dialog's "Execution" line (design §02): the only
+ * place that shows all three tier-adherence states (honored / not honored /
+ * not reported). Only rendered for tiered, terminal (completed/failed) steps
+ * — Auto steps made no promise, and in-flight steps have nothing to report
+ * yet. Unknown is deliberately built to differ from dishonored on icon,
+ * border, tint, AND words (never colour alone) so it can never read as a
+ * failure — most legacy/non-reporting completions land here.
+ */
+function StepExecutionLine({ step }: { step: TaskWorkflowStep }) {
+  if (!step.model_tier) return null;
+  if (step.status !== "completed" && step.status !== "failed") return null;
+
+  const tierLabel = modelTierLabel(step.model_tier);
+
+  if (step.tier_honored === true) {
+    const modelLabel = capitalizeModelName(step.executed_model ?? "unknown");
+    return (
+      <div
+        className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs"
+        aria-label={`Execution: ran on ${modelLabel}, tier honored`}
+      >
+        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+        <span className="min-w-0">
+          <span className="font-medium">Ran on {modelLabel}</span>{" "}
+          <span className="text-muted-foreground">· tier honored</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Info className="ml-1 inline h-3 w-3 cursor-help align-middle text-muted-foreground" />
+            </TooltipTrigger>
+            <TooltipContent className="max-w-72 text-xs">
+              {`The orchestrator reported running this step on ${modelLabel} — the model ${tierLabel} defaults to, or that tier's allowed fallback. ${TIER_ADHERENCE_DISCLOSURE}`}
+            </TooltipContent>
+          </Tooltip>
+        </span>
+      </div>
+    );
+  }
+
+  if (step.tier_honored === false) {
+    const modelLabel = capitalizeModelName(step.executed_model ?? "unknown");
+    return (
+      <div
+        className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs"
+        aria-label={`Execution: ran on ${modelLabel}, tier not honored`}
+      >
+        <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+        <span className="min-w-0">
+          <span className="font-medium">
+            Ran on <em className="not-italic text-amber-500">{modelLabel}</em>
+          </span>{" "}
+          <span className="text-muted-foreground">· tier not honored</span>
+          <span className="block text-[11px] text-muted-foreground">
+            {tierDefaultsToCopy(step.model_tier)}. Self-reported — not verified.
+          </span>
+        </span>
+      </div>
+    );
+  }
+
+  // Unknown (tier_honored IS NULL): must never read as failure — different
+  // icon, border style, fill, AND wording from the dishonored state above.
+  return (
+    <div
+      className="flex items-start gap-2 rounded-md border border-dashed border-border px-3 py-2 text-xs"
+      aria-label="Execution: model not reported"
+    >
+      <CircleHelp className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+      <span className="min-w-0">
+        <span className="font-medium text-muted-foreground">Model not reported</span>
+        <span className="block text-[11px] text-muted-foreground">
+          Not a failure — the orchestrator completed this step without saying which model ran it. {TIER_ADHERENCE_DISCLOSURE}
+        </span>
+      </span>
+    </div>
+  );
+}
 
 const STATUS_CONFIG = {
   pending: {
@@ -563,6 +650,9 @@ export function StepDetailDialog({
                   </div>
                 </div>
               )}
+
+              {/* Execution — P2c self-reported tier adherence (design §02) */}
+              <StepExecutionLine step={step} />
 
               {/* Output */}
               {step.output && (

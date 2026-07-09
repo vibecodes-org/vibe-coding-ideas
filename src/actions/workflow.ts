@@ -196,6 +196,10 @@ export async function completeWorkflowStep(stepId: string, output?: string) {
   const newStatus =
     existing?.human_check_required ? "awaiting_approval" : "completed";
 
+  // P2c: intentionally no model_used/executed_model/tier_honored here — this is
+  // the human UI completion path, not the MCP orchestrator path. UI completions
+  // have no self-reported model, so they land in the unknown bucket (NULL) by
+  // design, same as any pre-P2c row.
   const updateFields: Record<string, unknown> = {
     status: newStatus,
     completed_at: newStatus === "completed" ? new Date().toISOString() : null,
@@ -267,7 +271,11 @@ export async function failWorkflowStep(
   // Identity (bot_id) enforcement lives in the MCP `fail_step` tool, not here —
   // this server action is only called from the UI by humans manually failing
   // or rejecting a step. RLS restricts callers to idea team members.
-
+  //
+  // P2c: intentionally no model_used/executed_model/tier_honored here — this is
+  // the human UI failure path, not the MCP orchestrator path. UI failures have
+  // no self-reported model, so they land in the unknown bucket (NULL) by
+  // design, same as any pre-P2c row.
   const { data, error } = await supabase
     .from("task_workflow_steps")
     .update({

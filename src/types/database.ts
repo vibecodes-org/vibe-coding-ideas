@@ -872,6 +872,8 @@ export type Database = {
           expected_deliverables: string[];
           match_tier: string | null;
           model_tier: string | null;
+          executed_model: string | null;
+          tier_honored: boolean | null;
           updated_at: string;
         };
         Insert: {
@@ -893,6 +895,8 @@ export type Database = {
           expected_deliverables?: string[];
           match_tier?: string | null;
           model_tier?: string | null;
+          executed_model?: string | null;
+          tier_honored?: boolean | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
@@ -918,6 +922,8 @@ export type Database = {
           expected_deliverables?: string[];
           match_tier?: string | null;
           model_tier?: string | null;
+          executed_model?: string | null;
+          tier_honored?: boolean | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
@@ -2693,7 +2699,42 @@ export type Database = {
     };
     };
     Views: {
-      [_ in never]: never;
+      // P2c — self-reported tier-adherence reporting views (migration 00135).
+      // Read-only aggregates/drill-down over task_workflow_steps; not
+      // updatable, so no Insert/Update (Relationships required as `[]` —
+      // GenericNonUpdatableView needs it even for plain views).
+      workflow_tier_adherence: {
+        Row: {
+          week: string | null;
+          user_id: string | null;
+          user_email: string | null;
+          run_id: string | null;
+          tier: string | null;
+          honored: number;
+          dishonored: number;
+          unknown: number;
+          total: number;
+        };
+        Relationships: [];
+      };
+      workflow_tier_adherence_steps: {
+        Row: {
+          step_id: string;
+          task_id: string;
+          task_title: string | null;
+          step_title: string;
+          run_id: string | null;
+          idea_id: string;
+          tier: string | null;
+          executed_model: string | null;
+          tier_honored: boolean | null;
+          status: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval" | "skipped";
+          claimed_by: string | null;
+          bot_name: string | null;
+          completed_at: string | null;
+        };
+        Relationships: [];
+      };
     };
     Functions: {
       admin_delete_user: {

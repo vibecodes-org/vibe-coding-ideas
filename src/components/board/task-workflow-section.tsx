@@ -573,7 +573,11 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
                   </span>
                 )}
 
-                <ModelTierBadge tier={step.model_tier} />
+                <ModelTierBadge
+                  tier={step.model_tier}
+                  executedModel={step.executed_model}
+                  tierHonored={step.tier_honored}
+                />
                 {step.agent_role && (
                   <Badge
                     variant="outline"

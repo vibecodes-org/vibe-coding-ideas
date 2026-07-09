@@ -1174,7 +1174,7 @@ export function registerTools(
 
   server.tool(
     "complete_step",
-    "Mark a workflow step as completed with optional output/deliverable. Pass the `claim_token` you received from claim_next_step — it proves you are the claimer; you must also be acting as the step's assigned bot (set_agent_identity). If the token is lost, call claim_next_step to re-claim and get a fresh one. The output is stored on the step's `output` column (primary source for context chaining to subsequent steps) and also as a step comment for UI display. If the step requires human approval, it moves to awaiting_approval instead.",
+    "Mark a workflow step as completed with optional output/deliverable. Pass the `claim_token` you received from claim_next_step — it proves you are the claimer; you must also be acting as the step's assigned bot (set_agent_identity). If the token is lost, call claim_next_step to re-claim and get a fresh one. The output is stored on the step's `output` column (primary source for context chaining to subsequent steps) and also as a step comment for UI display. If the step requires human approval, it moves to awaiting_approval instead. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it).",
     completeStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1188,7 +1188,7 @@ export function registerTools(
 
   server.tool(
     "fail_step",
-    "Mark a workflow step as failed. Pass the `claim_token` from claim_next_step (not needed when rejecting an awaiting_approval step — human gate). Pass the failure reason in the `output` parameter (NOT `reason`). Use `reset_to_step_id` for cascade rejection — resets that step and all subsequent steps back to pending (and invalidates their claim tokens) so the workflow can be reworked from that point (the run stays 'running'). Without `reset_to_step_id`, the entire workflow run is marked as failed and stops. The `output` text is saved as a 'failure' comment on the step and becomes rework context when the step is later re-claimed via `claim_next_step`.",
+    "Mark a workflow step as failed. Pass the `claim_token` from claim_next_step (not needed when rejecting an awaiting_approval step — human gate). Pass the failure reason in the `output` parameter (NOT `reason`). Use `reset_to_step_id` for cascade rejection — resets that step and all subsequent steps back to pending (and invalidates their claim tokens) so the workflow can be reworked from that point (the run stays 'running'). Without `reset_to_step_id`, the entire workflow run is marked as failed and stops. The `output` text is saved as a 'failure' comment on the step and becomes rework context when the step is later re-claimed via `claim_next_step`. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it).",
     failStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
