@@ -215,7 +215,12 @@ export function WorkflowSuggestionPanel({
   }
 
   async function handleReplace(templateId?: string) {
-    const targetId = templateId ?? selectedTemplateId;
+    // Guard against a caller wiring this straight to onClick, which would pass a
+    // React event object as `templateId` — that event is unserializable and
+    // crashes the server action with "cannot dot into a temporary client
+    // reference". Only accept an explicit string id.
+    const explicitId = typeof templateId === "string" ? templateId : undefined;
+    const targetId = explicitId ?? selectedTemplateId;
     if (!suggestion || !targetId || working) return;
     setWorking("replace");
     const result = await replaceWorkflowSuggestion(suggestion.id, targetId);
@@ -698,7 +703,7 @@ function ReplacePicker({
       <div className="mt-3 flex flex-col gap-2 sm:flex-row">
         <Button
           size="sm"
-          onClick={onAttach}
+          onClick={() => onAttach()}
           disabled={!selectedTemplateId || disabled}
           className="min-h-[44px] gap-1.5 bg-emerald-600 text-white hover:bg-emerald-600/90 sm:min-h-9"
         >

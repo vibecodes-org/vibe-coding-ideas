@@ -235,6 +235,40 @@ describe("WorkflowSuggestionPanel", () => {
     expect(await screen.findByText("Competitor analysis")).toBeInTheDocument();
   });
 
+  it("Replace picker Attach passes a string template id (not the click event) to the server action", async () => {
+    // Regression: the Attach button was wired `onClick={onAttach}`, so React
+    // handed the synthetic click event to handleReplace as its `templateId`
+    // arg. That event then got passed to the `replaceWorkflowSuggestion` server
+    // action, which crashed with "Cannot access toString on the server … you
+    // cannot dot into a temporary client reference". Attach must send the
+    // selected string id instead.
+    listWorkflowTemplates.mockResolvedValue([
+      tmpl("tmpl-labelled", "Idea Validation"),
+      tmpl("tmpl-ai", "Technical Spike", 4),
+    ]);
+    replaceWorkflowSuggestion.mockResolvedValue({ success: true });
+    const onResolved = vi.fn();
+
+    render(
+      <WorkflowSuggestionPanel taskId="task-1" ideaId="idea-1" onResolved={onResolved} />,
+    );
+
+    // Open the picker, select the Technical Spike template, then Attach.
+    fireEvent.click(await screen.findByRole("button", { name: /Replace/i }));
+    fireEvent.click(
+      await screen.findByRole("option", { name: /Technical Spike/i }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: /Attach .*Technical Spike/i }),
+    );
+
+    expect(replaceWorkflowSuggestion).toHaveBeenCalledTimes(1);
+    const [, secondArg] = replaceWorkflowSuggestion.mock.calls[0];
+    expect(typeof secondArg).toBe("string");
+    expect(secondArg).toBe("tmpl-ai");
+    await waitFor(() => expect(onResolved).toHaveBeenCalled());
+  });
+
   it("Replace picker shows the create-template hint when only the labelled template exists", async () => {
     listWorkflowTemplates.mockResolvedValue([tmpl("tmpl-labelled", "Labelled Only")]);
 
