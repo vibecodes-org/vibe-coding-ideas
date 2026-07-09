@@ -61,7 +61,8 @@ export function modelTierLabel(tier: string): string {
   return MODEL_TIERS.find((t) => t.value === tier)?.label ?? tier;
 }
 
-function capitalizeModelName(model: string): string {
+/** Display-cased model alias, e.g. "sonnet" -> "Sonnet". Exported for P2c adherence copy (executed model names, which arrive as raw aliases). */
+export function capitalizeModelName(model: string): string {
   return model.charAt(0).toUpperCase() + model.slice(1);
 }
 
@@ -76,6 +77,48 @@ function capitalizeModelName(model: string): string {
 export function modelTierGloss(tier: ModelTierValue, resolvedModel?: string | null): string {
   const modelLabel = resolvedModel ? capitalizeModelName(resolvedModel) : MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier];
   return `Runs on ${modelLabel} · ${MODEL_TIER_WHEN_TO_USE[tier]}`;
+}
+
+// ─── P2c — tier adherence (self-reported telemetry) ───
+// Records what model the orchestrator SAYS it ran a tiered step's subagent on
+// (executed_model) and whether that honoured the step's directed tier
+// (tier_honored) — never hard verification. Vocabulary is strictly
+// reported / honored / not honored / not reported; never "verify(ied)" or
+// "enforced" outside a negation. See docs/spikes/p2c-tier-adherence-design.html.
+
+/**
+ * The canonical disclosure sentence (design §01/§07) — reused verbatim on
+ * every surface that shows adherence data: the step-detail dialog, the row
+ * badge tooltip, the auto-posted mismatch comment, and the admin dashboard
+ * card's caption.
+ */
+export const TIER_ADHERENCE_DISCLOSURE =
+  "Self-reported by the orchestrator — VibeCodes records what the agent says it ran, and does not verify it.";
+
+/**
+ * "<Tier> defaults to <Model>" — the override-safe phrasing for tier→model
+ * correspondence (Design-Review CONDITION 1). Never "maps to": a user's
+ * model_tier_map override changes what a tier defaults to for them, and
+ * adherence data is never re-resolved against that map after the fact — this
+ * always names the stable platform default, which is what every surface
+ * displays.
+ */
+export function tierDefaultsToCopy(tier: string): string {
+  const label = modelTierLabel(tier);
+  const model = MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier as ModelTierValue] ?? tier;
+  return `${label} defaults to ${model}`;
+}
+
+/**
+ * Full mismatch sentence (tier not honored) + disclosure — shared verbatim by
+ * the row badge's tooltip (model-tier-select.tsx) and the MCP auto-posted
+ * step comment (mcp-server/src/tools/workflows.ts), so the wording never
+ * drifts between the two surfaces (design §04/§07).
+ */
+export function tierMismatchSentence(tier: string, executedModel: string): string {
+  const label = modelTierLabel(tier);
+  const defaultModel = MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier as ModelTierValue] ?? tier;
+  return `Tier not honored — this ${label} step defaults to ${defaultModel}, but the orchestrator reported running on ${capitalizeModelName(executedModel)}. ${TIER_ADHERENCE_DISCLOSURE}`;
 }
 
 /**

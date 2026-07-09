@@ -1,0 +1,521 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>P2c · Tier Adherence — UX Design</title>
+<style>
+  /* ── Tokens (VibeCodes dark theme: Tailwind Zinc, shadcn New York) ── */
+  :root{
+    --bg:#09090b;            /* zinc-950 — app background            */
+    --card:#101013;          /* doc section card                     */
+    --popover:#18181b;       /* zinc-900 — popover / dropdown        */
+    --border:#27272a;        /* zinc-800 — border / input            */
+    --muted:#27272a;         /* zinc-800                             */
+    --muted-20:rgba(39,39,42,.20);
+    --muted-30:rgba(39,39,42,.30);
+    --muted-60:rgba(39,39,42,.60);
+    --fg:#fafafa;            /* zinc-50                              */
+    --muted-fg:#a1a1aa;      /* zinc-400                             */
+    --faint-fg:#71717a;      /* zinc-500 — placeholders              */
+    --ring:#d4d4d8;          /* zinc-300 — focus ring                */
+    --emerald:#34d399; --emerald-b:rgba(16,185,129,.35); --emerald-bg:rgba(16,185,129,.08);
+    --red:#f87171;     --red-b:rgba(239,68,68,.35);      --red-bg:rgba(239,68,68,.10);
+    --amber:#fbbf24;   --amber-b:rgba(245,158,11,.35);   --amber-bg:rgba(245,158,11,.12);
+    --blue:#60a5fa;    --blue-b:rgba(59,130,246,.25);    --blue-bg:rgba(59,130,246,.15);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{
+    background:var(--bg);color:var(--fg);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--fg)}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85em;background:var(--muted-30);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:#e4e4e7}
+
+  .wrap{max-width:980px;margin:0 auto;padding:0 24px 120px}
+  header.hero{padding:56px 0 28px;border-bottom:1px solid var(--border)}
+  .kicker{display:inline-flex;gap:8px;align-items:center;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--emerald);margin-bottom:14px}
+  .kicker .dot{width:6px;height:6px;border-radius:99px;background:var(--emerald)}
+  h1{font-size:32px;line-height:1.2;font-weight:700;letter-spacing:-.02em}
+  .sub{margin-top:12px;color:var(--muted-fg);max-width:66ch}
+  .meta{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+  .meta span{font-size:11px;color:var(--muted-fg);border:1px solid var(--border);border-radius:99px;padding:3px 10px;background:var(--muted-20)}
+
+  nav.toc{position:sticky;top:0;z-index:50;background:rgba(9,9,11,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);margin:0 -24px;padding:10px 24px;display:flex;gap:4px;overflow-x:auto;white-space:nowrap}
+  nav.toc a{font-size:12px;color:var(--muted-fg);text-decoration:none;padding:5px 10px;border-radius:6px}
+  nav.toc a:hover{color:var(--fg);background:var(--muted-30)}
+  nav.toc a b{color:var(--emerald);font-weight:600;margin-right:5px}
+
+  section{margin-top:56px;scroll-margin-top:64px}
+  h2{font-size:21px;font-weight:650;letter-spacing:-.01em;display:flex;align-items:baseline;gap:12px}
+  h2 .num{color:var(--emerald);font-size:14px;font-weight:700}
+  h3{font-size:14px;font-weight:600;margin:26px 0 10px;color:#e4e4e7}
+  section>p{margin-top:10px;color:var(--muted-fg);max-width:70ch}
+  section>p strong, li strong, td strong{color:var(--fg);font-weight:600}
+  ul.notes{margin:12px 0 0 18px;color:var(--muted-fg)}
+  ul.notes li{margin-top:7px;max-width:72ch}
+  ul.notes li::marker{color:var(--faint-fg)}
+
+  /* ── Mockup frames ── */
+  .frame{margin-top:16px;border:1px solid var(--border);border-radius:12px;background:var(--card);overflow:hidden}
+  .frame .bar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--muted-20)}
+  .frame .bar .fdot{width:9px;height:9px;border-radius:99px;background:var(--border)}
+  .frame .bar .flabel{font-size:11px;color:var(--muted-fg);margin-left:6px}
+  .frame .stage{padding:26px;background:
+    radial-gradient(circle at 1px 1px,rgba(255,255,255,.035) 1px,transparent 0) 0 0/22px 22px, var(--bg)}
+  .cols{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+  @media(max-width:760px){.cols{grid-template-columns:1fr}}
+  .tag{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;border-radius:99px;padding:3px 10px;margin-bottom:12px}
+  .tag.now{color:var(--muted-fg);border:1px solid var(--border);background:var(--muted-20)}
+  .tag.new{color:var(--emerald);border:1px solid var(--emerald-b);background:var(--emerald-bg)}
+  .caption{font-size:12px;color:var(--faint-fg);margin-top:12px;max-width:70ch}
+  .caption b{color:var(--muted-fg);font-weight:600}
+
+  /* ── shadcn-style primitives (mock) ── */
+  .badge{display:inline-flex;align-items:center;gap:4px;flex:none;border-radius:99px;border:1px solid #3f3f46;padding:1px 8px;font-size:10px;font-weight:500;line-height:1.6;color:#e4e4e7;white-space:nowrap}
+  .badge .tk{color:var(--faint-fg);font-weight:400}
+  .badge.status-ok{color:var(--emerald);border-color:var(--emerald-b);background:var(--emerald-bg)}
+  .badge.role{color:var(--blue);border-color:var(--blue-b)}
+  .badge.warnfx{border-color:var(--amber-b)}
+  .badge.warnfx .fx{color:var(--amber);display:inline-flex;align-items:center;gap:3px}
+
+  /* step row */
+  .steprow{display:flex;align-items:center;gap:10px;border:1px solid var(--border);border-radius:8px;background:var(--muted-20);padding:9px 12px;margin-top:8px}
+  .steprow .n{flex:none;width:24px;height:24px;border-radius:99px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:600;background:var(--emerald-bg);color:var(--emerald)}
+  .steprow .t{min-width:0;flex:1;font-size:13px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .steprow .ic{color:var(--blue);display:flex;flex:none}
+
+  /* dialog mock */
+  .dialog{background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 50px rgba(0,0,0,.55);padding:20px;max-width:448px;margin:0 auto}
+  .dlg-num{flex:none;width:32px;height:32px;border-radius:99px;display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;background:var(--emerald-bg);color:var(--emerald)}
+  .dlg-head{display:flex;gap:12px;align-items:flex-start}
+  .dlg-title{font-size:15px;font-weight:600;line-height:1.3}
+  .badges{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;align-items:center}
+
+  /* adherence line (the new element) */
+  .adh{display:flex;align-items:flex-start;gap:8px;margin-top:12px;border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:12.5px;background:var(--muted-20)}
+  .adh .aic{flex:none;display:flex;margin-top:2px}
+  .adh .amain{color:var(--fg);font-weight:500}
+  .adh .asub{color:var(--muted-fg);font-weight:400}
+  .adh .adis{display:block;font-size:11px;color:var(--faint-fg);margin-top:2px}
+  .adh.ok{border-color:var(--emerald-b)}
+  .adh.ok .aic{color:var(--emerald)}
+  .adh.bad{border-color:var(--amber-b);background:var(--amber-bg)}
+  .adh.bad .aic{color:var(--amber)}
+  .adh.bad .amain em{font-style:normal;color:var(--amber)}
+  .adh.unk{border-style:dashed}
+  .adh.unk .aic{color:var(--faint-fg)}
+  .adh.unk .amain{color:var(--muted-fg)}
+
+  /* comment mock */
+  .cmt{display:flex;gap:10px;margin-top:12px}
+  .cmt .av{flex:none;width:26px;height:26px;border-radius:99px;background:var(--muted-60);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:var(--muted-fg)}
+  .cmt .body{flex:1;border:1px solid var(--border);border-radius:8px;padding:9px 12px;font-size:12.5px;background:var(--popover)}
+  .cmt .who{font-size:11px;color:var(--muted-fg);margin-bottom:4px}
+  .cmt .who b{color:var(--fg);font-weight:600}
+  .cmt.warn .body{border-color:var(--amber-b)}
+  .cmt.warn .body .lead{color:var(--amber);font-weight:600}
+
+  /* terminal / sql */
+  .term{margin-top:12px;border:1px solid var(--border);border-radius:8px;background:var(--popover);padding:14px 16px;font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:12px;line-height:1.7;color:#d4d4d8;overflow-x:auto}
+  .term .hl{color:var(--emerald)}
+  .term .dim{color:var(--faint-fg)}
+  .term .warn{color:var(--amber)}
+  .term table{margin:6px 0 0;border-collapse:collapse;font-size:12px;font-family:inherit}
+  .term th,.term td{border:1px solid #3f3f46;padding:3px 10px;text-align:left;color:#d4d4d8;font-weight:400;text-transform:none;letter-spacing:0;font-size:12px}
+  .term th{color:var(--faint-fg)}
+
+  /* tooltip mock */
+  .tipwrap{position:relative;display:inline-block}
+  .tip{margin-top:8px;background:var(--fg);color:var(--bg);border-radius:6px;padding:7px 10px;font-size:11.5px;line-height:1.45;max-width:300px;box-shadow:0 8px 24px rgba(0,0,0,.4)}
+
+  /* tables */
+  table{width:100%;border-collapse:collapse;margin-top:16px;font-size:13px}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint-fg);text-align:left;font-weight:600;padding:8px 12px;border-bottom:1px solid var(--border)}
+  td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--muted-fg);vertical-align:top}
+  td:first-child{color:var(--fg)}
+  .tablewrap{overflow-x:auto;border:1px solid var(--border);border-radius:10px;background:var(--card);padding:0 4px 4px;margin-top:16px}
+  .tablewrap table{margin-top:0}
+  .tablewrap tr:last-child td{border-bottom:0}
+  td code{white-space:normal}
+
+  .note{margin-top:16px;border:1px solid var(--amber-b);background:var(--amber-bg);border-radius:8px;padding:12px 14px;font-size:13px;color:var(--muted-fg);max-width:none}
+  .note b{color:var(--amber)}
+  .note.green{border-color:var(--emerald-b);background:var(--emerald-bg)}
+  .note.green b{color:var(--emerald)}
+
+  /* decision cards */
+  .dgrid{display:grid;grid-template-columns:1fr 1fr 1fr;gap:14px;margin-top:18px}
+  @media(max-width:820px){.dgrid{grid-template-columns:1fr}}
+  .dcard{border:1px solid var(--emerald-b);background:var(--card);border-radius:10px;padding:16px}
+  .dcard .q{font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--emerald)}
+  .dcard .a{font-size:14px;font-weight:600;margin-top:6px;line-height:1.4}
+  .dcard .why{font-size:12px;color:var(--muted-fg);margin-top:8px;line-height:1.5}
+
+  .check{margin-top:14px}
+  .check li{display:flex;gap:10px;align-items:flex-start;padding:9px 0;border-bottom:1px solid var(--border);color:var(--muted-fg);font-size:13.5px;list-style:none;max-width:none}
+  .check li:last-child{border-bottom:0}
+  .check .box{flex:none;width:16px;height:16px;border:1.5px solid var(--faint-fg);border-radius:4px;margin-top:3px}
+  footer{margin-top:72px;padding-top:20px;border-top:1px solid var(--border);font-size:12px;color:var(--faint-fg)}
+
+  /* phone frame */
+  .phone{width:375px;max-width:100%;margin:0 auto;border:1px solid #3f3f46;border-radius:24px;background:var(--bg);box-shadow:0 24px 60px rgba(0,0,0,.5);overflow:hidden}
+  .phone .notch{height:26px;display:flex;align-items:center;justify-content:center}
+  .phone .notch i{display:block;width:110px;height:16px;border-radius:99px;background:#18181b}
+  .phone .screen{padding:16px 14px 24px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker"><span class="dot"></span>Feature Development · Step 2 — UX Design</div>
+  <h1>P2c — Capture Executed Model &amp; Tier Adherence</h1>
+  <p class="sub">P2b made the model directive mandatory; P2c closes the loop by recording what the orchestrator <em>says</em> it ran (<code>executed_model</code>) and whether that honoured the step's tier (<code>tier_honored</code>). Almost all of P2c is backend — schema, capture params, <code>resolveModelTier</code> reuse, the <code>workflow_tier_adherence</code> view. This document designs the small user-visible surface that telemetry deserves, and decides the three open questions from the P2c Requirements deliverable. The governing principle throughout: <strong style="color:var(--fg)">this is self-reported data</strong> — every surface that shows adherence must say so, and <strong style="color:var(--fg)">unknown must never read as failure</strong> (NULL ≠ false is load-bearing in the schema; it is load-bearing in the UI too).</p>
+  <div class="meta">
+    <span>executed_model + tier_honored — both nullable (migration 00135)</span>
+    <span>NULL = unknown, never rendered as failure</span>
+    <span>Self-reported — not hard enforcement</span>
+    <span>Dark-first · shadcn New York / Zinc</span>
+  </div>
+</header>
+
+<nav class="toc" aria-label="Sections">
+  <a href="#s0"><b>0</b>Decisions</a>
+  <a href="#s1"><b>1</b>Surface map</a>
+  <a href="#s2"><b>2</b>Step detail — 3 states</a>
+  <a href="#s3"><b>3</b>Step row</a>
+  <a href="#s4"><b>4</b>Dishonored comment</a>
+  <a href="#s5"><b>5</b>Report — SQL view</a>
+  <a href="#s6"><b>6</b>All states</a>
+  <a href="#s7"><b>7</b>Copy strings</a>
+  <a href="#s8"><b>8</b>Mobile &amp; A11y</a>
+  <a href="#s9"><b>9</b>Review checklist</a>
+</nav>
+
+<!-- ══════════════════════ 0. DECISIONS ══════════════════════ -->
+<section id="s0">
+  <h2><span class="num">00</span>The three open questions — decided</h2>
+  <div class="dgrid">
+    <div class="dcard">
+      <div class="q">Q1 · v1 report surface</div>
+      <div class="a">SQL view + documented queries only. The admin “Tier adherence” card is a fast follow, not this card.</div>
+      <div class="why">Nick's intent — “so we'll be able to check it and run reports” — is fully satisfied by the view: he operates through Claude Code with direct Supabase access, and <code>select * from workflow_tier_adherence</code> is a one-liner there. Shipping an admin card <em>with</em> the capture would guarantee it launches into a permanent empty state (zero adherence rows exist until orchestrators adopt the new params). Requirements already marked the card a follow-up; agreeing keeps this card honest. Query shapes mocked in §05 so the view's columns are designed for the card that will consume them.</div>
+    </div>
+    <div class="dcard">
+      <div class="q">Q2 · Step-card indicator</div>
+      <div class="a">Yes — exception-only on the row, full three-state display in the step-detail dialog.</div>
+      <div class="why">Management by exception: the row (already carrying up to six chips) gains something <em>only</em> when <code>tier_honored = false</code> — an amber suffix inside the existing tier badge (§03). Honored and unknown rows look identical to today, matching <code>ModelTierBadge</code>'s silence-is-default philosophy. The step-detail dialog, where there is room, shows all three states with unknown rendered as a dashed, muted “Model not reported” — different icon, border style, <em>and</em> words from dishonored, so unknown can never be mistaken for failure (§02).</div>
+    </div>
+    <div class="dcard">
+      <div class="q">Q3 · Mismatch visibility</div>
+      <div class="a">Both: <code>logger.warn</code> <em>and</em> an auto step comment on dishonored completion.</div>
+      <div class="why"><code>logger.warn</code> lands in Vercel logs nobody reads in-product; Nick's “check it” happens on the board. <code>fail_step</code> already auto-posts a failure comment — reusing that exact machinery (plain <code>comment</code> type, no enum migration) gives free in-product visibility: the comment increments the row's existing comment-count chip and appears in the dialog's timeline (§04). Cost is one insert on a rare path. Dishonored only — honored and unknown post nothing (no noise).</div>
+    </div>
+  </div>
+  <p class="caption"><b>Scope deviation:</b> none pulled in, one nudged out — Q1 keeps the admin card <em>out</em> (agreeing with Requirements, against a maximal reading of Nick's quote); Q2/Q3 add two deliberately small in-product surfaces that reuse existing components (<code>ModelTierBadge</code>, step comments) rather than new ones. A follow-up board card for the admin “Tier adherence” tab section should be created at implementation time.</p>
+</section>
+
+<!-- ══════════════════════ 1. SURFACE MAP ══════════════════════ -->
+<section id="s1">
+  <h2><span class="num">01</span>Surface map — where adherence appears, and the honesty rule</h2>
+  <p>Four surfaces, in descending order of detail. Every one carries the self-reported disclosure — as visible caption where there is room (dialog, comment, SQL doc), as tooltip where there isn't (badges). No surface may use verification language (“verified”, “confirmed”, “enforced”); the vocabulary is <strong>reported / honored / not honored / not reported</strong>.</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Surface</th><th>Shows</th><th>Disclosure form</th><th>Section</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Step-detail dialog</strong></td><td>All three states — honored / not honored / not reported — with executed model name</td><td>Tooltip on the info affordance + one-line sub-text on the not-honored state</td><td>§02</td></tr>
+        <tr><td><strong>Step row</strong> (workflow section + workflows tab)</td><td>Dishonored only — amber suffix in the tier badge</td><td>Tooltip (full sentence incl. “self-reported”)</td><td>§03</td></tr>
+        <tr><td><strong>Auto step comment</strong></td><td>Dishonored only — posted at completion</td><td>In the comment body itself</td><td>§04</td></tr>
+        <tr><td><strong><code>workflow_tier_adherence</code> view</strong></td><td>Counts by user · tier · workflow · week + frontier drill-down</td><td>Header comment in the view's migration + documented queries</td><td>§05</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <div class="note"><b>The canonical disclosure string</b> — one sentence, reused verbatim on every surface (a single constant, <code>TIER_ADHERENCE_DISCLOSURE</code>): <code style="white-space:normal">Self-reported by the orchestrator — VibeCodes records what the agent says it ran, and does not verify it.</code></div>
+</section>
+
+<!-- ══════════════════════ 2. STEP DETAIL — 3 STATES ══════════════════════ -->
+<section id="s2">
+  <h2><span class="num">02</span>Step-detail dialog — the three-state “Execution” line</h2>
+  <p>A single new element in <code>step-detail-dialog.tsx</code>: an <strong>Execution line</strong> rendered in the content area, above Output. It appears only when the step has a tier (Auto steps are exempt — <code>tier_honored</code> is NULL by design and showing anything would imply a promise Auto never made) <em>and</em> the step is <code>completed</code> or <code>failed</code>. Pending / in-progress steps show nothing — there is no execution to report yet.</p>
+
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">State 1 of 3 — honored (tier_honored = true)</span></div>
+    <div class="stage">
+      <div class="dialog">
+        <div class="dlg-head">
+          <span class="dlg-num"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          <div style="min-width:0;flex:1">
+            <p class="dlg-title">Design the settings dialog</p>
+            <div class="badges">
+              <span class="badge status-ok"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Completed</span>
+              <span class="badge role">designer</span>
+              <span class="badge"><span class="tk">tier:</span>Frontier</span>
+            </div>
+          </div>
+        </div>
+        <div class="adh ok">
+          <span class="aic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          <span>
+            <span class="amain">Ran on Fable</span> <span class="asub">· tier honored</span>
+            <span class="tipwrap" style="margin-left:4px;vertical-align:middle"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#71717a" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span>
+          </span>
+        </div>
+        <div class="tip" style="margin-left:32px">The orchestrator reported running this step on Fable — the model mapped to its Frontier tier, or that tier's allowed fallback. Self-reported by the orchestrator — VibeCodes records what the agent says it ran, and does not verify it.</div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Fallback counts as honored</b> — by Requirements, fallback-honored folds into <code>true</code>. The line always names the <em>executed</em> model, so a Frontier step that fell back reads “Ran on Opus · tier honored”, and the tooltip's “or that tier's allowed fallback” explains why the check is still green. The UI never recomputes exact-vs-fallback post hoc: the completing user's map at completion time isn't stored, so any recomputation could lie. Display what was stored, explain the rule.</p>
+
+  <div class="cols">
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">State 2 of 3 — not honored (tier_honored = false)</span></div>
+      <div class="stage">
+        <div class="dialog" style="max-width:400px">
+          <div class="badges" style="margin-top:0">
+            <span class="badge status-ok"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Completed</span>
+            <span class="badge"><span class="tk">tier:</span>Frontier</span>
+          </div>
+          <div class="adh bad">
+            <span class="aic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg></span>
+            <span>
+              <span class="amain">Ran on <em>Sonnet</em></span> <span class="asub">· tier not honored</span>
+              <span class="adis">Frontier maps to Fable. Self-reported — not verified.</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="frame">
+      <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">State 3 of 3 — unknown (tier_honored = NULL)</span></div>
+      <div class="stage">
+        <div class="dialog" style="max-width:400px">
+          <div class="badges" style="margin-top:0">
+            <span class="badge status-ok"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>Completed</span>
+            <span class="badge"><span class="tk">tier:</span>Frontier</span>
+          </div>
+          <div class="adh unk">
+            <span class="aic"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><path d="M12 17h.01"/></svg></span>
+            <span>
+              <span class="amain">Model not reported</span>
+              <span class="adis">Not a failure — the orchestrator completed this step without saying which model ran it.</span>
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Why unknown can never read as failure</b> — the two states differ on every channel at once: icon (help-circle vs warning-triangle), border (dashed zinc vs solid amber), fill (none vs amber tint), headline (“Model not reported” vs “Ran on Sonnet · tier not honored”), and sub-text (“Not a failure…” says it outright). Colour is the <em>least</em> load-bearing of the five. Every pre-P2c completion and every orchestrator that hasn't adopted the new params lands in unknown — which is most steps for months — so this state is calm, muted, and judgment-free by construction.</p>
+</section>
+
+<!-- ══════════════════════ 3. STEP ROW ══════════════════════ -->
+<section id="s3">
+  <h2><span class="num">03</span>Step row — exception-only amber suffix</h2>
+  <p>The compact rows in <code>task-workflow-section.tsx</code> and <code>workflows-tab.tsx</code> gain nothing for honored or unknown steps — they render exactly as today. Only <code>tier_honored = false</code> changes the row: <code>ModelTierBadge</code> grows optional <code>executedModel</code> / <code>tierHonored</code> props and, when dishonored, appends an amber triangle + “ran on &lt;Model&gt;” inside the existing badge (one chip, not two). Clicking the row opens the dialog with the full §02 line, per the section's existing behaviour.</p>
+
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Workflow step list — honored, dishonored, unknown rows side by side</span></div>
+    <div class="stage">
+      <div style="max-width:640px;margin:0 auto">
+        <div class="steprow">
+          <span class="n"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          <span class="t">Write the requirements document</span>
+          <span class="badge"><span class="tk">tier:</span>Frontier</span>
+          <span class="badge role">product owner</span>
+          <span class="badge status-ok">Completed</span>
+        </div>
+        <div class="steprow">
+          <span class="n"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          <span class="t">Design the settings dialog</span>
+          <span class="ic" title="Has output"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/></svg></span>
+          <span class="badge warnfx"><span class="tk">tier:</span>Frontier <span class="fx"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg>ran on Sonnet</span></span>
+          <span class="badge role">designer</span>
+          <span class="badge status-ok">Completed</span>
+        </div>
+        <div class="steprow">
+          <span class="n"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+          <span class="t">Implement the schema migration</span>
+          <span class="badge"><span class="tk">tier:</span>Standard</span>
+          <span class="badge role">developer</span>
+          <span class="badge status-ok">Completed</span>
+        </div>
+        <div class="tip" style="margin-left:44px;margin-top:10px">Tier not honored — this Frontier step maps to Fable, but the orchestrator reported running on Sonnet. Self-reported by the orchestrator — VibeCodes records what the agent says it ran, and does not verify it.</div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Row 1 vs row 3:</b> row 1 is honored, row 3 is unknown — and they are deliberately indistinguishable at row level. The row answers “does anything need my attention?”, and for both the answer is no; the dialog carries the distinction (§02). <b>Amber, not red:</b> the tier badge suffix uses amber (warning) because a dishonored report is drift to investigate, not an execution failure — red stays reserved for the <code>Failed</code> status. The suffix is icon + words (“ran on Sonnet”), never a bare coloured dot. Full disclosure sentence lives in the badge's tooltip (shown above) and in <code>aria-label</code>: <code>Model tier Frontier — not honored: orchestrator reported Sonnet</code>.</p>
+</section>
+
+<!-- ══════════════════════ 4. DISHONORED COMMENT ══════════════════════ -->
+<section id="s4">
+  <h2><span class="num">04</span>Auto comment on dishonored completion (Q3)</h2>
+  <p>Mirrors <code>fail_step</code>'s auto-posted failure comment: when <code>complete_step</code> computes <code>tier_honored = false</code>, it inserts one step comment (existing <code>comment</code> type — no enum migration) attributed to the completing bot, then proceeds normally. The completion itself is <strong>never blocked or failed</strong> — this is telemetry, not enforcement. <code>logger.warn</code> fires alongside for ops-side aggregation.</p>
+
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Step-detail dialog — comments timeline after a dishonored completion</span></div>
+    <div class="stage">
+      <div class="dialog">
+        <div class="cmt">
+          <span class="av">CD</span>
+          <div class="body">
+            <div class="who"><b>Compass</b> · designer · 2m ago</div>
+            Design doc delivered at docs/spikes/p2c-tier-adherence-design.html — three decisions inside.
+          </div>
+        </div>
+        <div class="cmt warn">
+          <span class="av">CD</span>
+          <div class="body">
+            <div class="who"><b>Compass</b> · designer · 2m ago</div>
+            <span class="lead">Tier not honored</span> — this step is set to Frontier but the orchestrator reported running on Sonnet. Self-reported by the orchestrator — VibeCodes records what the agent says it ran, and does not verify it.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption"><b>Why this beats logs alone:</b> the comment increments the step row's existing comment-count chip — so even without the §03 badge, a dishonored step already looks different on the board — and it survives in the step's permanent record for the Verify pass to read. Copy is generated server-side from one template (§07) so the wording matches the dialog and badge verbatim. Honored and unknown completions post <em>nothing</em>: a comment per completion would be pure noise, and unknown-as-comment would nag every legacy orchestrator.</p>
+</section>
+
+<!-- ══════════════════════ 5. REPORT — SQL VIEW ══════════════════════ -->
+<section id="s5">
+  <h2><span class="num">05</span>The report — <code>workflow_tier_adherence</code> + documented queries (Q1)</h2>
+  <p>v1's report surface <em>is</em> the view. Two documented queries — a summary and the frontier drill-down — live as a header comment in migration 00135 and a short “Checking tier adherence” subsection in <code>docs/release-process.md</code>'s monitoring area (or CLAUDE.md's AI section — implementer's choice, one place only). The shapes below are the design contract: the fast-follow admin card must be buildable from these two queries alone, with no further schema work.</p>
+
+  <h3>Query 1 — adherence summary (what Nick runs weekly)</h3>
+  <div class="term"><span class="dim">-- Tier adherence, last 30 days, by user and tier</span><br><span class="hl">select</span> week, user_email, tier, honored, dishonored, unknown, total<br><span class="hl">from</span> workflow_tier_adherence<br><span class="hl">where</span> week &gt;= now() - <span class="hl">interval</span> '30 days'<br><span class="hl">order by</span> week <span class="hl">desc</span>, dishonored <span class="hl">desc</span>;
+    <table>
+      <thead><tr><th>week</th><th>user_email</th><th>tier</th><th>honored</th><th>dishonored</th><th>unknown</th><th>total</th></tr></thead>
+      <tbody>
+        <tr><td>2026-07-06</td><td>ballathesenior@…</td><td>frontier</td><td>11</td><td class="warn">2</td><td>4</td><td>17</td></tr>
+        <tr><td>2026-07-06</td><td>ballathesenior@…</td><td>standard</td><td>23</td><td>0</td><td>9</td><td>32</td></tr>
+        <tr><td>2026-06-29</td><td>ballathesenior@…</td><td>frontier</td><td>8</td><td>0</td><td>12</td><td>20</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h3>Query 2 — frontier drill-down (“which steps didn't run on Fable?”)</h3>
+  <div class="term"><span class="dim">-- Frontier steps whose reported model was not fable (excludes unknown)</span><br><span class="hl">select</span> completed_at, task_title, step_title, executed_model, bot_name<br><span class="hl">from</span> workflow_tier_adherence_steps  <span class="dim">-- row-level companion of the view</span><br><span class="hl">where</span> tier = 'frontier' <span class="hl">and</span> tier_honored = <span class="hl">false</span><br><span class="hl">order by</span> completed_at <span class="hl">desc limit</span> 20;
+    <table>
+      <thead><tr><th>completed_at</th><th>task_title</th><th>step_title</th><th>executed_model</th><th>bot_name</th></tr></thead>
+      <tbody>
+        <tr><td>2026-07-07 14:02</td><td>P2c: Capture executed model…</td><td>UX Design</td><td class="warn">sonnet</td><td>Compass</td></tr>
+        <tr><td>2026-07-06 09:41</td><td>Fix relay session mint</td><td>Code Review</td><td class="warn">opus*</td><td>Sentinel</td></tr>
+      </tbody>
+    </table>
+  <span class="dim">* opus on frontier is dishonored only when it wasn't the allowed fallback at completion — the stored boolean is authoritative; never re-derive it in the query.</span></div>
+
+  <h3>Empty result — the documented interpretation</h3>
+  <div class="term"><span class="hl">select</span> * <span class="hl">from</span> workflow_tier_adherence;<br><span class="dim">(0 rows)</span><br><br><span class="dim">-- Doc note beside the query, verbatim:</span><br><span class="dim">-- 0 rows = no tiered steps completed yet. Rows appear after the first</span><br><span class="dim">-- completion of a step that has a model tier. All-unknown counts mean</span><br><span class="dim">-- steps are completing but orchestrators aren't reporting model_used yet.</span></div>
+
+  <ul class="notes">
+    <li><strong>Counts must be filterable to unknown-heavy.</strong> The summary always carries the <code>unknown</code> column next to honored/dishonored — an adherence rate quoted without its unknown denominator would be the numeric version of the colour-only sin. The doc'd note tells the reader how to interpret an all-unknown week.</li>
+    <li><strong>Fast-follow admin card (out of scope, shape agreed):</strong> a “Tier Adherence” section on the existing AI Usage tab — three <code>StatCard</code>s (Honored / Not honored / Not reported, each “n of total”), the frontier drill-down as a table, reusing the tab's existing From/To/user filter bar, with the canonical disclosure as the section's caption. It consumes Query 1 + Query 2 as-is.</li>
+    <li><strong>Disclosure in the doc:</strong> the documented-query section opens with the canonical disclosure sentence, so even the SQL surface carries it.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════ 6. ALL STATES ══════════════════════ -->
+<section id="s6">
+  <h2><span class="num">06</span>All states</h2>
+  <p>The in-product surface piggybacks entirely on data already loaded with the step row (<code>executed_model</code>, <code>tier_honored</code> ride the same select), so it introduces <strong>no new fetch, and therefore no new loading or error state</strong> — the workflow section's existing skeleton and error toast cover it. The states that do exist:</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>State</th><th>Condition</th><th>Rendering</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Not applicable</strong></td><td>Step has no tier (Auto), or status is pending / in progress / awaiting approval</td><td>Nothing — no Execution line, no badge suffix. Auto made no promise; unstarted steps have nothing to report.</td></tr>
+        <tr><td><strong>Honored</strong></td><td><code>tier_honored = true</code>, completed/failed</td><td>Dialog: emerald check line “Ran on &lt;Model&gt; · tier honored”. Row: unchanged.</td></tr>
+        <tr><td><strong>Not honored</strong></td><td><code>tier_honored = false</code></td><td>Dialog: amber triangle line + sub-text. Row: amber badge suffix “ran on &lt;Model&gt;”. Plus the auto comment (§04).</td></tr>
+        <tr><td><strong>Unknown</strong></td><td><code>tier_honored IS NULL</code> on a tiered, completed step (legacy or non-reporting orchestrator)</td><td>Dialog: dashed muted “Model not reported” + “Not a failure” sub-text. Row: unchanged. Never amber, never red.</td></tr>
+        <tr><td><strong>Loading</strong></td><td>Workflow section fetching</td><td>Existing section skeleton — the Execution line renders only with resolved data, so no flash-of-wrong-state.</td></tr>
+        <tr><td><strong>Error</strong></td><td>Section fetch fails</td><td>Existing section error handling (toast, house rule: never silent). No adherence-specific error UI.</td></tr>
+        <tr><td><strong>Report empty</strong></td><td>View returns 0 rows</td><td>Documented interpretation beside the query (§05): “No tiered steps completed yet…”.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════ 7. COPY STRINGS ══════════════════════ -->
+<section id="s7">
+  <h2><span class="num">07</span>Exact copy strings</h2>
+  <p>All adherence copy derives from one vocabulary — <strong>reported / honored / not honored / not reported</strong> — and one disclosure constant. <code>&lt;Model&gt;</code> is the display-cased executed model; <code>&lt;Tier&gt;</code> the step's tier label; <code>&lt;Mapped&gt;</code> the tier's platform-default model name (defaults are stable copy; per-user maps are not re-resolved post hoc).</p>
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>String</th><th>Exact copy</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Disclosure (canonical constant)</strong></td><td><code>Self-reported by the orchestrator — VibeCodes records what the agent says it ran, and does not verify it.</code></td></tr>
+        <tr><td><strong>Execution line · honored</strong></td><td><code>Ran on &lt;Model&gt; · tier honored</code> — tooltip: <code>The orchestrator reported running this step on &lt;Model&gt; — the model mapped to its &lt;Tier&gt; tier, or that tier's allowed fallback.</code> + disclosure.</td></tr>
+        <tr><td><strong>Execution line · not honored</strong></td><td><code>Ran on &lt;Model&gt; · tier not honored</code> — sub-text: <code>&lt;Tier&gt; maps to &lt;Mapped&gt;. Self-reported — not verified.</code></td></tr>
+        <tr><td><strong>Execution line · unknown</strong></td><td><code>Model not reported</code> — sub-text: <code>Not a failure — the orchestrator completed this step without saying which model ran it.</code></td></tr>
+        <tr><td><strong>Row badge suffix (dishonored only)</strong></td><td><code>ran on &lt;Model&gt;</code> — tooltip: <code>Tier not honored — this &lt;Tier&gt; step maps to &lt;Mapped&gt;, but the orchestrator reported running on &lt;Model&gt;.</code> + disclosure. <code>aria-label</code>: <code>Model tier &lt;Tier&gt; — not honored: orchestrator reported &lt;Model&gt;</code>.</td></tr>
+        <tr><td><strong>Auto comment body</strong></td><td><code>Tier not honored — this step is set to &lt;Tier&gt; but the orchestrator reported running on &lt;Model&gt;.</code> + disclosure sentence.</td></tr>
+        <tr><td><strong>Report · empty interpretation</strong></td><td><code>0 rows = no tiered steps completed yet. Rows appear after the first completion of a step that has a model tier.</code></td></tr>
+        <tr><td><strong><code>logger.warn</code> event</strong></td><td><code>"model tier not honored"</code> with <code>{ stepId, tier, executedModel, resolvedModel, botId }</code> — greppable constant string, details structured.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════ 8. MOBILE & A11Y ══════════════════════ -->
+<section id="s8">
+  <h2><span class="num">08</span>Mobile (375px) &amp; accessibility — WCAG 2.1 AA</h2>
+  <p>No admin card in v1, so mobile work is confined to the step row and dialog. Below <code>sm</code>, the dishonored badge suffix drops its text and keeps the amber triangle — the row's chips already compete for 375px, and the triangle is a <em>shape</em>, not a colour, so the reduction stays non-colour-coded; the full wording is one tap away in the dialog, which the whole row already opens. The Execution line in the dialog wraps naturally (it is a flex row of text) and its tap targets (info tooltip trigger) get <code>min-h-11</code> under coarse pointers, matching <code>ModelTierSelect</code>'s existing treatment.</p>
+
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">375px — dishonored row, icon-only suffix</span></div>
+    <div class="stage">
+      <div class="phone">
+        <div class="notch"><i></i></div>
+        <div class="screen">
+          <div class="steprow" style="min-height:44px">
+            <span class="n"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+            <span class="t">Design the settings dialog</span>
+            <span class="badge warnfx"><span class="tk">tier:</span>Frontier <span class="fx"><svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg></span></span>
+            <span class="badge status-ok">Done</span>
+          </div>
+          <p class="caption" style="margin-top:10px">Tap opens the step-detail dialog → full Execution line with wording and disclosure (§02).</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="tablewrap">
+    <table>
+      <thead><tr><th>Concern</th><th>Treatment</th></tr></thead>
+      <tbody>
+        <tr><td><strong>Not colour-only</strong></td><td>Honored / not honored / unknown differ by icon shape (check / triangle / help-circle), border style (solid / solid / dashed), and — decisively — words (“tier honored” / “tier not honored” / “Model not reported”). The mobile icon-only suffix is a shape distinction, with full text in <code>aria-label</code> and one tap away.</td></tr>
+        <tr><td><strong>Programmatic names</strong></td><td>Execution line is a labelled group: <code>aria-label="Execution: ran on Sonnet, tier not honored"</code> etc. Row badge suffix carried in the badge's single <code>aria-label</code> (§07) — one announcement, not fragments. Tooltip content duplicated via <code>aria-describedby</code>, not hover-only.</td></tr>
+        <tr><td><strong>Tooltips accessible</strong></td><td>Info affordances follow the existing <code>match_tier</code> badge pattern (<code>cursor-help</code> + Radix Tooltip): keyboard-focusable trigger, tooltip on focus as well as hover, dismiss on Esc (WCAG 1.4.13).</td></tr>
+        <tr><td><strong>Contrast</strong></td><td>Amber <code>#fbbf24</code> on zinc-950 ≈ 10.9:1; emerald <code>#34d399</code> ≈ 9.9:1; muted <code>zinc-400</code> ≈ 7.5:1 — all clear 4.5:1 for text; icons clear 3:1 (non-text).</td></tr>
+        <tr><td><strong>Target size</strong></td><td>Row stays a single ≥44px tap target on coarse pointers (whole row opens dialog — the badge itself is not the target on mobile). Tooltip trigger in dialog ≥44px coarse.</td></tr>
+        <tr><td><strong>No new live regions</strong></td><td>Adherence is historical record, not a live event — nothing announces on render. The auto comment inherits the comment list's existing semantics.</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ══════════════════════ 9. REVIEW CHECKLIST ══════════════════════ -->
+<section id="s9">
+  <h2><span class="num">09</span>Design-review checklist</h2>
+  <p>For the Design Review step — each item maps to a decision or a Requirements clause.</p>
+  <ul class="check">
+    <li><span class="box"></span><span><strong>Q1:</strong> SQL view + documented queries as the v1 report; admin “Tier adherence” section deferred as a fast-follow card consuming Query 1 + Query 2 unchanged — approve the deferral and the two query shapes. (§00, §05)</span></li>
+    <li><span class="box"></span><span><strong>Q2:</strong> exception-only row suffix + full three-state Execution line in the dialog — approve the split, and specifically that honored and unknown rows are identical at row level. (§02, §03)</span></li>
+    <li><span class="box"></span><span><strong>Q3:</strong> auto comment on dishonored completion (plain <code>comment</code> type, completing-bot attribution, completion never blocked) alongside <code>logger.warn</code> — approve. (§04)</span></li>
+    <li><span class="box"></span><span><strong>NULL ≠ false in UI:</strong> unknown differs from dishonored on icon, border, tint, and words; “Not a failure” stated verbatim — confirm no surface lets unknown read as failure. (§02)</span></li>
+    <li><span class="box"></span><span><strong>Honesty framing:</strong> canonical disclosure constant appears on every surface (dialog tooltip/sub-text, badge tooltip, comment body, SQL doc header) and no string uses verification language — audit §07 copy table.</span></li>
+    <li><span class="box"></span><span><strong>Fallback display:</strong> “Ran on Opus · tier honored” for a fallback-honored Frontier step, with the tooltip's “or that tier's allowed fallback” — confirm this reads as correct, not contradictory. (§02)</span></li>
+    <li><span class="box"></span><span><strong>Amber not red:</strong> dishonored uses warning amber everywhere; red remains exclusive to the Failed status — confirm. (§03)</span></li>
+    <li><span class="box"></span><span><strong>States:</strong> not-applicable gating (Auto steps, pre-completion statuses show nothing), no new fetch/loading/error surface, report empty-interpretation — confirm the table in §06 is complete.</span></li>
+    <li><span class="box"></span><span><strong>Mobile:</strong> icon-only suffix below <code>sm</code> with full text in dialog + aria — accept, or require text at all widths. (§08)</span></li>
+    <li><span class="box"></span><span><strong>Out-of-scope guard:</strong> nothing here implies hard enforcement, external cross-check, backfill, or blocking completions — flag if any mockup or string suggests otherwise.</span></li>
+  </ul>
+</section>
+
+<footer>
+  P2c · Capture Executed Model &amp; Tier Adherence — UX Design · card <code>cc099a5a</code> · builds on “P2c Requirements” (self-reported telemetry, migration 00135, <code>workflow_tier_adherence</code>) and the approved P2b design (<code>docs/spikes/p2b-model-tier-enforcement-design.html</code>) · Compass, UX
+</footer>
+
+</div>
+</body>
+</html>

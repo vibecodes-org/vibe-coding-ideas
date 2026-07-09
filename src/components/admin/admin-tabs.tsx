@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { AiUsageDashboard } from "./ai-usage-dashboard";
+import { TierAdherenceDashboard } from "./tier-adherence-dashboard";
 import { FeedbackDashboard } from "./feedback-dashboard";
 import { AdminAgentsDashboard } from "./admin-agents-dashboard";
 import { AdminTeamsDashboard } from "./admin-teams-dashboard";
@@ -80,8 +81,12 @@ export function AdminTabs({
         <TabsTrigger value="templates">Workflows</TabsTrigger>
         <TabsTrigger value="mcp-tools">MCP Tools</TabsTrigger>
       </TabsList>
-      <TabsContent value="ai-usage" className="mt-6">
+      <TabsContent value="ai-usage" className="mt-6 space-y-10">
         <AiUsageDashboard usageLogs={usageLogs} filters={usageFilters} userCredits={userCredits} allPlatformLogs={allPlatformLogs} isSuperAdmin={isSuperAdmin} />
+        <div>
+          <h2 className="mb-3 text-lg font-semibold">Tier Adherence</h2>
+          <TierAdherenceDashboard />
+        </div>
       </TabsContent>
       <TabsContent value="feedback" className="mt-6">
         <FeedbackDashboard feedback={feedback} filters={feedbackFilters} />

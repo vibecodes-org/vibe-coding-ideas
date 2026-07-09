@@ -12,6 +12,10 @@ import {
   defaultTierForRole,
   modelTierGloss,
   MODEL_TIER_RUNS_ON_HELPER,
+  TIER_ADHERENCE_DISCLOSURE,
+  tierDefaultsToCopy,
+  tierMismatchSentence,
+  capitalizeModelName,
 } from "./constants";
 import type { IdeaStatus, CommentType } from "@/types";
 
@@ -290,5 +294,47 @@ describe("MODEL_TIER_RUNS_ON_HELPER", () => {
     // Fable -> Opus is a downgrade, so wording implying "up"/"next tier" would be false.
     expect(MODEL_TIER_RUNS_ON_HELPER.toLowerCase()).not.toContain("next tier");
     expect(MODEL_TIER_RUNS_ON_HELPER.toLowerCase()).not.toContain("tier up");
+  });
+});
+
+// ── P2c tier adherence copy (Design-Review CONDITION 1) ────────────────
+
+describe("TIER_ADHERENCE_DISCLOSURE", () => {
+  it("is the canonical self-reported disclosure and never claims verification", () => {
+    expect(TIER_ADHERENCE_DISCLOSURE).toContain("Self-reported");
+    expect(TIER_ADHERENCE_DISCLOSURE.toLowerCase()).toContain("does not verify");
+  });
+});
+
+describe("capitalizeModelName", () => {
+  it("capitalizes the first letter of a raw model alias", () => {
+    expect(capitalizeModelName("sonnet")).toBe("Sonnet");
+    expect(capitalizeModelName("unknown")).toBe("Unknown");
+  });
+});
+
+describe("tierDefaultsToCopy", () => {
+  it("says '<Tier> defaults to <Model>', never 'maps to'", () => {
+    expect(tierDefaultsToCopy("frontier")).toBe("Frontier defaults to Fable");
+    expect(tierDefaultsToCopy("standard")).toBe("Standard defaults to Sonnet");
+    expect(tierDefaultsToCopy("cheap")).toBe("Cheap defaults to Haiku");
+  });
+
+  it("never uses 'maps to' wording (CONDITION 1)", () => {
+    for (const tier of ["frontier", "standard", "cheap"]) {
+      expect(tierDefaultsToCopy(tier).toLowerCase()).not.toContain("maps to");
+    }
+  });
+});
+
+describe("tierMismatchSentence", () => {
+  it("states the mismatch, uses 'defaults to', and includes the disclosure verbatim", () => {
+    const sentence = tierMismatchSentence("frontier", "sonnet");
+    expect(sentence).toContain("Tier not honored");
+    expect(sentence).toContain("Frontier step defaults to Fable");
+    expect(sentence).toContain("reported running on Sonnet");
+    expect(sentence).toContain(TIER_ADHERENCE_DISCLOSURE);
+    expect(sentence.toLowerCase()).not.toContain("maps to");
+    expect(sentence.toLowerCase()).not.toContain("verified");
   });
 });

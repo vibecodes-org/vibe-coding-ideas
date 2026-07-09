@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
+import { tierMismatchSentence } from "../../../src/lib/constants";
 import type { McpContext } from "../context";
 import { mintClaimToken, verifyClaimToken } from "../claim-token";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
@@ -85,7 +86,44 @@ export function modelTierClause(tier: string | null | undefined, userModelTierMa
   const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", userModelTierMap);
   if (!resolution) return "";
   const { resolved, fallback } = resolution;
-  return `MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" and state the substitution in your step output. Do not run this step inline and do not inherit your session model.`;
+  return `MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it).`;
+}
+
+// ============================================================
+// P2c — tier adherence (self-reported telemetry, never hard verification)
+// ============================================================
+
+/** Resolved adherence outcome for a step's completion/failure (FR-6/7/8). */
+export type TierAdherenceResult = { executedModel: string | null; tierHonored: boolean | null };
+
+/**
+ * Computes `executed_model`/`tier_honored` from the orchestrator's self-reported
+ * `model_used` for a step. Reuses `resolveModelTier` (same fallback rules as the
+ * MANDATORY MODEL directive) — never re-derives its own notion of "honored".
+ *
+ * Exact cases (P2c FR-7):
+ *  - model_used omitted            -> executed=NULL,      honored=NULL   (never false)
+ *  - model_used="unknown"          -> executed="unknown",  honored=NULL   (never false)
+ *  - tier is NULL (Auto)           -> executed=model_used, honored=NULL   (Auto made no promise)
+ *  - tier set, model_used=resolved -> executed=model_used, honored=true
+ *  - tier set, model_used=fallback -> executed=model_used, honored=true  (fallback counts as honored)
+ *  - tier set, model_used=other/"other" -> executed=model_used, honored=false
+ */
+export function resolveTierAdherence(
+  tier: string | null | undefined,
+  modelUsed: string | undefined,
+  userModelTierMap?: UserModelTierMap
+): TierAdherenceResult {
+  if (modelUsed === undefined) return { executedModel: null, tierHonored: null };
+  if (modelUsed === "unknown") return { executedModel: "unknown", tierHonored: null };
+  if (!tier) return { executedModel: modelUsed, tierHonored: null };
+
+  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", userModelTierMap);
+  if (!resolution) return { executedModel: modelUsed, tierHonored: null };
+
+  const { resolved, fallback } = resolution;
+  const tierHonored = modelUsed === resolved || modelUsed === fallback;
+  return { executedModel: modelUsed, tierHonored };
 }
 
 // ============================================================
@@ -920,16 +958,19 @@ export const completeStepSchema = z.object({
       "The one-time claim token returned by claim_next_step for this step. Proves you are the claimer. If lost, call claim_next_step to re-claim and receive a fresh token."
     ),
   output: z.string().max(50000).optional().describe("Step output or deliverable. This is stored on the step's `output` column and is how subsequent steps receive context — when the next step is claimed, all prior completed steps' outputs are passed in the `context` array. Also posted as a step comment for UI display."),
+  model_used: z.enum(["fable", "opus", "sonnet", "haiku", "other", "unknown"]).optional()
+    .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it). Omit if you don't know. VibeCodes records this to report tier adherence — it is not verified."),
 });
 
 export async function completeStep(
   ctx: McpContext,
   params: z.infer<typeof completeStepSchema>
 ) {
-  // Fetch current step (include claim_token_hash + bot_id for the two-layer check)
+  // Fetch current step (include claim_token_hash + bot_id for the two-layer check;
+  // model_tier for P2c tier-adherence computation below)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, idea_id, human_check_required, status, bot_id, agent_role, claim_token_hash")
+    .select("id, run_id, idea_id, human_check_required, status, bot_id, agent_role, claim_token_hash, model_tier")
     .eq("id", params.step_id)
     .single();
 
@@ -971,8 +1012,29 @@ export async function completeStep(
   // Determine new status: awaiting_approval if human check required, else completed
   const newStatus = step.human_check_required ? "awaiting_approval" : "completed";
 
+  // P2c: resolve executed_model/tier_honored from the self-reported model_used.
+  // Only query the user's model_tier_map override when it's actually needed for
+  // resolution — a tier is set AND a concrete (non-"unknown") model_used was
+  // passed. No query on the Auto path or when model_used is omitted/"unknown".
+  let userModelTierMap: UserModelTierMap = null;
+  if (step.model_tier && params.model_used && params.model_used !== "unknown") {
+    const { data: userRow } = await ctx.supabase
+      .from("users")
+      .select("model_tier_map")
+      .eq("id", ctx.ownerUserId ?? ctx.userId)
+      .maybeSingle();
+    userModelTierMap = userRow?.model_tier_map ?? null;
+  }
+  const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap);
+
   // Token is single-use: clear the hash as part of completion.
-  const updateFields: Record<string, unknown> = { status: newStatus, claimed_by: attributedTo, claim_token_hash: null };
+  const updateFields: Record<string, unknown> = {
+    status: newStatus,
+    claimed_by: attributedTo,
+    claim_token_hash: null,
+    executed_model: executedModel,
+    tier_honored: tierHonored,
+  };
   if (params.output !== undefined) updateFields.output = params.output;
   if (newStatus === "completed") updateFields.completed_at = new Date().toISOString();
 
@@ -981,7 +1043,7 @@ export async function completeStep(
     .update(updateFields)
     .eq("id", params.step_id)
     .eq("status", "in_progress")
-    .select("id, task_id, run_id, title, agent_role, status, output, completed_at")
+    .select("id, task_id, run_id, title, agent_role, status, output, completed_at, model_tier, executed_model, tier_honored")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to complete step: ${updateError.message}`);
@@ -989,6 +1051,29 @@ export async function completeStep(
 
   // Touch board_tasks so Realtime fires before denormalized counts arrive
   await touchBoardTask(ctx, updated.task_id);
+
+  // P2c FR-12 (Design-Review CONDITION 4): dishonored tiers are signalled, never
+  // blocked — a logger.warn for ops-side aggregation, AND an auto step comment
+  // (plain 'comment' type, not 'failure') so the mismatch is visible in-product.
+  // Honored/unknown completions post nothing.
+  if (tierHonored === false) {
+    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", userModelTierMap);
+    logger.warn("workflow step tier dishonored", {
+      stepId: params.step_id,
+      tier: step.model_tier,
+      directed: resolution?.resolved,
+      fallback: resolution?.fallback,
+      executed: executedModel,
+      ownerUserId: ctx.ownerUserId,
+    });
+    await ctx.supabase.from("workflow_step_comments").insert({
+      step_id: params.step_id,
+      idea_id: step.idea_id,
+      author_id: attributedTo,
+      type: "comment",
+      content: tierMismatchSentence(step.model_tier as string, executedModel as string),
+    });
+  }
 
   // Check if all steps in the run are done
   let runComplete = false;
@@ -1019,6 +1104,8 @@ export const failStepSchema = z.object({
   output: z.string().max(10000).optional().describe(
     "Failure reason or error details (use `output`, not `reason`). Stored on the step's `output` column and auto-posted as a 'failure' comment. When cascade rejection is used and this step is re-claimed, this text is returned as `rework_instructions` to give the next agent context for retry."
   ),
+  model_used: z.enum(["fable", "opus", "sonnet", "haiku", "other", "unknown"]).optional()
+    .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it). Omit if you don't know. VibeCodes records this to report tier adherence — it is not verified."),
   reset_to_step_id: z
     .string()
     .uuid()
@@ -1032,10 +1119,11 @@ export async function failStep(
   ctx: McpContext,
   params: z.infer<typeof failStepSchema>
 ) {
-  // Fetch current step (include claim_token_hash + bot_id for the two-layer check)
+  // Fetch current step (include claim_token_hash + bot_id for the two-layer check;
+  // model_tier for P2c tier-adherence computation below)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash")
+    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier")
     .eq("id", params.step_id)
     .single();
 
@@ -1073,10 +1161,27 @@ export async function failStep(
   // may still be set but the human gate owns the decision).
   const attributedTo = step.status !== "awaiting_approval" && step.bot_id ? step.bot_id : ctx.userId;
 
+  // P2c: resolve executed_model/tier_honored from the self-reported model_used
+  // (same rules as complete_step — see resolveTierAdherence). Only query the
+  // user's model_tier_map override when a tier is set AND a concrete
+  // (non-"unknown") model_used was passed.
+  let userModelTierMap: UserModelTierMap = null;
+  if (step.model_tier && params.model_used && params.model_used !== "unknown") {
+    const { data: userRow } = await ctx.supabase
+      .from("users")
+      .select("model_tier_map")
+      .eq("id", ctx.ownerUserId ?? ctx.userId)
+      .maybeSingle();
+    userModelTierMap = userRow?.model_tier_map ?? null;
+  }
+  const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap);
+
   const updateFields: Record<string, unknown> = {
     status: "failed",
     completed_at: new Date().toISOString(),
     claim_token_hash: null,
+    executed_model: executedModel,
+    tier_honored: tierHonored,
   };
   if (params.output !== undefined) updateFields.output = params.output;
 
@@ -1085,7 +1190,7 @@ export async function failStep(
     .update(updateFields)
     .eq("id", params.step_id)
     .in("status", ["in_progress", "awaiting_approval"])
-    .select("id, task_id, run_id, title, agent_role, status, output")
+    .select("id, task_id, run_id, title, agent_role, status, output, model_tier, executed_model, tier_honored")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to fail step: ${updateError.message}`);
@@ -1103,6 +1208,28 @@ export async function failStep(
       author_id: attributedTo,
       type: "failure",
       content: params.output,
+    });
+  }
+
+  // P2c FR-12 (Design-Review CONDITION 4): dishonored tiers are signalled, never
+  // blocked — mirrors complete_step. Plain 'comment' type (not 'failure') so it
+  // reads distinctly from the failure comment above. Honored/unknown post nothing.
+  if (tierHonored === false) {
+    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", userModelTierMap);
+    logger.warn("workflow step tier dishonored", {
+      stepId: params.step_id,
+      tier: step.model_tier,
+      directed: resolution?.resolved,
+      fallback: resolution?.fallback,
+      executed: executedModel,
+      ownerUserId: ctx.ownerUserId,
+    });
+    await ctx.supabase.from("workflow_step_comments").insert({
+      step_id: params.step_id,
+      idea_id: step.idea_id,
+      author_id: attributedTo,
+      type: "comment",
+      content: tierMismatchSentence(step.model_tier as string, executedModel as string),
     });
   }
 
