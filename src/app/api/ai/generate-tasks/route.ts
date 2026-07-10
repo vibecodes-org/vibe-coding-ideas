@@ -120,19 +120,21 @@ export async function POST(req: Request) {
 
     const hasAgent = !!(personaPrompt || agentRole || agentSkills?.length);
 
-    // Hard bound on the OUTPUT size. A large, detailed idea (long description with
-    // acceptance criteria, tables, epics) otherwise leads the model to mirror that
-    // density and generate one enormous task description — it can spend the whole
-    // generation on a single task and never advance, which manifests as the dock
-    // showing one task and then timing out. Keeping each task terse makes the model
-    // move through tasks quickly and keeps total output well within budget.
+    // Bound the OUTPUT. A large, detailed idea (long description with acceptance
+    // criteria, tables, epics) leads the model to reproduce that density into a
+    // single task's description — it can spend the whole token budget on ONE task
+    // (confirmed by telemetry: maxTasksSeen=1, ~76s, one task with a giant
+    // description). Forcing DECOMPOSITION into many small tasks with tiny
+    // descriptions spreads the budget and produces an actual board. Note: we do NOT
+    // tell the model to "include implementation steps as a markdown task list" —
+    // that instruction actively invites the long descriptions we're preventing.
     const OUTPUT_CONSTRAINTS =
-      " Produce a FOCUSED board of the most important, well-scoped tasks (aim for 12-24 tasks, not an exhaustive enumeration). Each task's description MUST be short — at most 3-5 markdown checklist items (\"- [ ] step\"). Summarize the idea into concrete, actionable steps; do NOT copy long acceptance criteria, RICE tables, user stories, or prose from the idea into descriptions.";
+      " Decompose the work into 15-25 small, separate tasks — never combine several work areas into one task. Keep each task's description to ONE short sentence, or at most 3 brief checklist items (~30 words max). Do NOT reproduce acceptance criteria, tables, RICE scores, user stories, or long prose from the idea in a description — summarize into short, actionable tasks. If a description is getting long, that is a signal to split it into several tasks.";
 
     const systemPrompt =
       (hasAgent
-        ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. Include any scaffolding or setup tasks relevant to your domain (e.g. a DevOps agent should include CI/CD and deployment setup). If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
-        : "You are an expert project manager generating a structured task board for a project on a kanban-style project management platform. Include foundational/setup tasks where relevant (e.g. for software: repo setup, dev environment, CI/CD) — not just feature work. Order tasks so foundational/setup tasks come first. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").") +
+        ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. Include any scaffolding or setup tasks relevant to your domain (e.g. a DevOps agent should include CI/CD and deployment setup).`
+        : "You are an expert project manager generating a structured task board for a project on a kanban-style project management platform. Include foundational/setup tasks where relevant (e.g. for software: repo setup, dev environment, CI/CD) — not just feature work. Order tasks so foundational/setup tasks come first.") +
       OUTPUT_CONSTRAINTS;
 
     const contextParts = buildPromptContextParts({
@@ -146,6 +148,19 @@ export async function POST(req: Request) {
       agentSkills,
       agentBio,
     });
+
+    // Repeat the decomposition rules as the LAST thing the model reads before it
+    // generates — recency weighting. This directly counters the pull of a long,
+    // detailed idea description (which implicitly says "reproduce all this detail").
+    // Belt-and-braces with OUTPUT_CONSTRAINTS in the system prompt above.
+    contextParts.push(
+      "---",
+      "OUTPUT RULES (follow exactly):\n" +
+        "- Break the work above into 15-25 small, SEPARATE tasks. Do not combine multiple areas of work into one task.\n" +
+        "- Each task's description: ONE short sentence, or up to 3 brief checklist items. ~30 words maximum.\n" +
+        "- Do NOT copy acceptance criteria, tables, RICE scores, user stories, or long prose from the idea into a description — summarize.\n" +
+        "- A single task with a long description is wrong; split it into several tasks instead."
+    );
 
     // Charge upfront BEFORE the AI call — prevents "use now, pay never" when the
     // post-stream step fails due to expired auth context. Usage logged after.
