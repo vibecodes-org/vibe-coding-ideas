@@ -34,6 +34,11 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Markdown } from "@/components/ui/markdown";
 import { PromptTemplateSelector } from "@/components/ai/prompt-template-selector";
 import { AiProgressSteps } from "@/components/ai/ai-progress-steps";
+import {
+  AttachmentUsageLine,
+  parseAttachmentUsageHeader,
+  type ParsedAttachmentUsage,
+} from "@/components/ideas/attachment-usage-line";
 import type { ClarifyingQuestion } from "@/actions/ai";
 
 type DialogPhase = "configure" | "questions" | "result" | "refine";
@@ -155,6 +160,10 @@ export function EnhanceDialogShell({
   const [refinementInput, setRefinementInput] = useState("");
   const [truncated, setTruncated] = useState(false);
 
+  // Attachment usage receipt (from the X-Attachment-Usage response header)
+  const [attachmentUsage, setAttachmentUsage] = useState<ParsedAttachmentUsage | null>(null);
+  const [lastRunUsedAnswers, setLastRunUsedAnswers] = useState(false);
+
   // Result phase: collapsible Original on mobile
   const [originalExpanded, setOriginalExpanded] = useState(true);
 
@@ -235,6 +244,8 @@ export function EnhanceDialogShell({
     setLoading(true);
     setEnhancedText("");
     setTruncated(false);
+    setAttachmentUsage(null);
+    setLastRunUsedAnswers(!!options?.answers && Object.keys(options.answers).length > 0);
     setPhase("result");
     try {
       const body = buildStreamBody({
@@ -255,6 +266,10 @@ export function EnhanceDialogShell({
         const data = await res.json().catch(() => null);
         throw new Error(data?.error ?? `Request failed (${res.status})`);
       }
+
+      // Header flushes before the stream body, so the receipt renders at
+      // stream start. Defensive — a bad/absent header just shows nothing.
+      setAttachmentUsage(parseAttachmentUsageHeader(res.headers.get("X-Attachment-Usage")));
 
       const reader = res.body?.getReader();
       if (!reader) throw new Error("No response stream");
@@ -357,6 +372,8 @@ export function EnhanceDialogShell({
     setAnswers({});
     setEnhancedText(null);
     setTruncated(false);
+    setAttachmentUsage(null);
+    setLastRunUsedAnswers(false);
     setRefinementInput("");
     setOriginalExpanded(true);
   }
@@ -605,6 +622,8 @@ export function EnhanceDialogShell({
           {/* ── Result Phase ─────────────────────────────────────── */}
           {phase === "result" && enhancedText !== null && (
             <div className="space-y-4">
+              <AttachmentUsageLine usage={attachmentUsage} hadAnswers={lastRunUsedAnswers} />
+
               {truncated && !loading && (
                 <div className="flex items-center justify-between gap-3 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
                   <span>The output was truncated due to length limits.</span>
