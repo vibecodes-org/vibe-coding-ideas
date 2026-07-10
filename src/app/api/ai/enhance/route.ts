@@ -7,6 +7,7 @@ import {
   chargeAiUpfront,
   resolveAiProvider,
 } from "@/lib/ai-helpers";
+import { getAttachmentContext, encodeAttachmentUsageHeader } from "@/lib/attachment-context";
 
 export const maxDuration = 300; // Streaming keeps the connection alive; allow generous time
 
@@ -57,6 +58,12 @@ export async function POST(req: Request) {
       );
     }
 
+    // Read the idea's text-bearing attachments (md/html/text-layer PDFs) for prompt
+    // context. getAttachmentContext never throws — a helper failure degrades to no
+    // attachment context rather than 500ing the route (N1).
+    const { promptBlock: attachmentPromptBlock, usage: attachmentUsage } =
+      await getAttachmentContext(supabase, ideaId);
+
     // Build prompts (same logic as enhanceIdeaWithContext server action)
     const isRefinement = previousEnhanced && refinementFeedback;
 
@@ -105,6 +112,10 @@ Use the answers above to inform your enhanced description. Make the enhancement 
       userPrompt = `${prompt}\n\n---\n\n**Idea Title:** ${idea.title}\n\n**Current Description:**\n${idea.description}`;
     }
 
+    // Appends "" when there's no attachment context — byte parity for ideas with
+    // no (eligible) attachments (AC-6).
+    userPrompt += attachmentPromptBlock;
+
     // Charge upfront BEFORE the AI call — prevents "use now, pay never" if the
     // serverless function is killed mid-stream. Token usage is logged after.
     await chargeAiUpfront(supabase, { userId: user.id, keyType });
@@ -147,9 +158,15 @@ Use the answers above to inform your enhanced description. Make the enhancement 
       },
     });
 
-    return new Response(stream, {
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-    });
+    // Encoded header is null when the idea has zero attachments — omit the
+    // header entirely rather than send an empty-but-present one (AC-6).
+    const attachmentUsageHeader = encodeAttachmentUsageHeader(attachmentUsage);
+    const headers: Record<string, string> = { "Content-Type": "text/plain; charset=utf-8" };
+    if (attachmentUsageHeader) {
+      headers["X-Attachment-Usage"] = attachmentUsageHeader;
+    }
+
+    return new Response(stream, { headers });
   } catch (err) {
     logger.error("AI enhance API error", { error: err instanceof Error ? err.message : String(err) });
     return Response.json(

@@ -10,6 +10,8 @@ import {
   resolveAiProvider,
 } from "@/lib/ai-helpers";
 import type { AiAccess } from "@/lib/ai-helpers";
+import { getAttachmentContext } from "@/lib/attachment-context";
+import type { EnhanceAttachmentUsage } from "@/lib/attachment-context";
 
 const AI_TIMEOUT_MS = 90_000; // 90s — fail gracefully before Vercel's 120s function timeout
 
@@ -212,9 +214,13 @@ export async function enhanceIdeaDescription(
     throw new Error("Only the idea author can enhance the description");
   }
 
+  const { promptBlock: attachmentPromptBlock } = await getAttachmentContext(supabase, ideaId);
+
   const systemPrompt = personaPrompt
     ? `${personaPrompt}\n\nYou are helping to enhance an idea description on a project management platform.`
     : "You are an expert product manager and technical writer helping to enhance idea descriptions on a project management platform.";
+
+  const userPrompt = `${prompt}\n\n---\n\n**Idea Title:** ${idea.title}\n\n**Current Description:**\n${idea.description}${attachmentPromptBlock}`;
 
   let text: string;
   let usage: { inputTokens?: number; outputTokens?: number };
@@ -223,7 +229,7 @@ export async function enhanceIdeaDescription(
     ({ text, usage, finishReason } = await generateText({
       model: anthropic(AI_MODEL),
       system: systemPrompt,
-      prompt: `${prompt}\n\n---\n\n**Idea Title:** ${idea.title}\n\n**Current Description:**\n${idea.description}`,
+      prompt: userPrompt,
       maxOutputTokens: 8000,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
@@ -250,7 +256,7 @@ export async function generateClarifyingQuestions(
   ideaId: string,
   prompt: string,
   personaPrompt?: string | null
-) {
+): Promise<{ questions: ClarifyingQuestion[]; attachmentUsage?: EnhanceAttachmentUsage }> {
   const { supabase, user, anthropic, keyType } = await requireAiAccess();
 
   const { data: idea } = await supabase
@@ -264,6 +270,11 @@ export async function generateClarifyingQuestions(
     throw new Error("Only the idea author can enhance the description");
   }
 
+  const { promptBlock: attachmentPromptBlock, usage: attachmentUsage } = await getAttachmentContext(
+    supabase,
+    ideaId
+  );
+
   const kitType = (idea as unknown as { project_kit: { name: string } | null }).project_kit?.name;
   const kitContext = kitType
     ? `\nThis is a **${kitType}** project — ask questions relevant to ${kitType.toLowerCase()} projects (e.g. architecture, deployment, tooling).`
@@ -273,13 +284,7 @@ export async function generateClarifyingQuestions(
     ? `${personaPrompt}\n\nYou are helping to enhance an idea description. Before enhancing, you need to ask 2-4 focused clarifying questions to produce a better result.${kitContext}`
     : `You are an expert product manager helping to enhance an idea description. Before enhancing, you need to ask 2-4 focused clarifying questions to produce a better result.${kitContext}`;
 
-  let object: z.infer<typeof ClarifyingQuestionsSchema>;
-  let usage: { inputTokens?: number; outputTokens?: number };
-  try {
-    ({ object, usage } = await generateObject({
-      model: anthropic(AI_MODEL),
-      system: systemPrompt,
-      prompt: `The user wants to enhance the following idea. Read the idea and the user's enhancement prompt, then generate 2-4 targeted clarifying questions that would help you produce a much better enhancement. Focus on questions about target users, technical scope, project goals, success criteria, or any gaps in the current description.
+  const userPrompt = `The user wants to enhance the following idea. Read the idea and the user's enhancement prompt, then generate 2-4 targeted clarifying questions that would help you produce a much better enhancement. Focus on questions about target users, technical scope, project goals, success criteria, or any gaps in the current description.
 
 **Enhancement Prompt:** ${prompt}
 
@@ -288,7 +293,15 @@ export async function generateClarifyingQuestions(
 **Idea Title:** ${idea.title}
 
 **Current Description:**
-${idea.description}`,
+${idea.description}${attachmentPromptBlock}`;
+
+  let object: z.infer<typeof ClarifyingQuestionsSchema>;
+  let usage: { inputTokens?: number; outputTokens?: number };
+  try {
+    ({ object, usage } = await generateObject({
+      model: anthropic(AI_MODEL),
+      system: systemPrompt,
+      prompt: userPrompt,
       schema: ClarifyingQuestionsSchema,
       maxOutputTokens: 1000,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
@@ -307,7 +320,7 @@ ${idea.description}`,
     keyType,
   });
 
-  return { questions: object.questions };
+  return { questions: object.questions, attachmentUsage };
 }
 
 // ── Enhance Idea with Context (Multi-Turn) ──────────────────────────────
@@ -334,6 +347,8 @@ export async function enhanceIdeaWithContext(
   if (idea.author_id !== user.id) {
     throw new Error("Only the idea author can enhance the description");
   }
+
+  const { promptBlock: attachmentPromptBlock } = await getAttachmentContext(supabase, ideaId);
 
   const personaPrompt = options?.personaPrompt;
   const isRefinement = options?.previousEnhanced && options?.refinementFeedback;
@@ -377,6 +392,11 @@ Use the answers above to inform your enhanced description. Make the enhancement 
   } else {
     userPrompt = `${prompt}\n\n---\n\n**Idea Title:** ${idea.title}\n\n**Current Description:**\n${idea.description}`;
   }
+
+  // Appends "" when there's no attachment context — byte parity for ideas with
+  // no (eligible) attachments (AC-6). Kept in lockstep with the identical
+  // append in src/app/api/ai/enhance/route.ts (AC-8).
+  userPrompt += attachmentPromptBlock;
 
   let text: string;
   let usage: { inputTokens?: number; outputTokens?: number };

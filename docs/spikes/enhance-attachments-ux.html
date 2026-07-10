@@ -1,0 +1,474 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Enhance-with-AI · Attachment Usage Indicator — UX Design</title>
+<style>
+  /* ── Tokens (VibeCodes dark theme: Tailwind Zinc, shadcn New York) ── */
+  :root{
+    --bg:#09090b;            /* zinc-950 — app background            */
+    --card:#101013;          /* doc section card                     */
+    --popover:#18181b;       /* zinc-900                             */
+    --border:#27272a;        /* zinc-800                             */
+    --muted-20:rgba(39,39,42,.20);
+    --muted-30:rgba(39,39,42,.30);
+    --fg:#fafafa;            /* zinc-50                              */
+    --muted-fg:#a1a1aa;      /* zinc-400                             */
+    --faint-fg:#71717a;      /* zinc-500                             */
+    --emerald:#34d399; --emerald-b:rgba(16,185,129,.35); --emerald-bg:rgba(16,185,129,.08);
+    --amber:#fbbf24;   --amber-b:rgba(245,158,11,.30);   --amber-bg:rgba(245,158,11,.10);
+    --violet:#a78bfa;  --violet-b:rgba(139,92,246,.25);  --violet-bg:rgba(139,92,246,.06);
+    --blue:#60a5fa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--fg);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85em;background:var(--muted-30);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:#e4e4e7}
+  pre{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 18px;overflow-x:auto;margin-top:14px}
+  pre code{background:none;border:none;padding:0;font-size:12.5px;line-height:1.65;color:#d4d4d8}
+  .wrap{max-width:980px;margin:0 auto;padding:0 24px 120px}
+  header.hero{padding:56px 0 28px;border-bottom:1px solid var(--border)}
+  .kicker{display:inline-flex;gap:8px;align-items:center;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--emerald);margin-bottom:14px}
+  .kicker .dot{width:6px;height:6px;border-radius:99px;background:var(--emerald)}
+  h1{font-size:30px;line-height:1.2;font-weight:700;letter-spacing:-.02em}
+  .sub{margin-top:12px;color:var(--muted-fg);max-width:68ch}
+  .meta{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+  .meta span{font-size:11px;color:var(--muted-fg);border:1px solid var(--border);border-radius:99px;padding:3px 10px;background:var(--muted-20)}
+
+  nav.toc{position:sticky;top:0;z-index:50;background:rgba(9,9,11,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);margin:0 -24px;padding:10px 24px;display:flex;gap:4px;overflow-x:auto;white-space:nowrap}
+  nav.toc a{font-size:12px;color:var(--muted-fg);text-decoration:none;padding:5px 10px;border-radius:6px}
+  nav.toc a:hover{color:var(--fg);background:var(--muted-30)}
+  nav.toc a b{color:var(--emerald);font-weight:600;margin-right:5px}
+
+  section{margin-top:56px;scroll-margin-top:64px}
+  h2{font-size:21px;font-weight:650;letter-spacing:-.01em;display:flex;align-items:baseline;gap:12px}
+  h2 .num{color:var(--emerald);font-size:14px;font-weight:700}
+  h3{font-size:14px;font-weight:600;margin:26px 0 10px;color:#e4e4e7}
+  section>p{margin-top:10px;color:var(--muted-fg);max-width:70ch}
+  section>p strong,li strong,td strong{color:var(--fg);font-weight:600}
+  ul.notes{margin:12px 0 0 18px;color:var(--muted-fg)}
+  ul.notes li{margin-top:7px;max-width:72ch}
+  ul.notes li::marker{color:var(--faint-fg)}
+
+  table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
+  th{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint-fg);text-align:left;font-weight:600;padding:8px 12px;border-bottom:1px solid var(--border)}
+  td{padding:10px 12px;border-bottom:1px solid var(--border);color:var(--muted-fg);vertical-align:top}
+  td:first-child{white-space:nowrap}
+
+  /* ── Decision cards ── */
+  .decision{margin-top:16px;border:1px solid var(--border);border-left:3px solid var(--emerald);border-radius:10px;background:var(--card);padding:18px 20px}
+  .decision .q{font-size:11px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--faint-fg)}
+  .decision .a{margin-top:6px;font-size:15px;font-weight:600}
+  .decision p{margin-top:8px;font-size:13.5px;color:var(--muted-fg);max-width:72ch}
+
+  /* ── Mockup frames ── */
+  .frame{margin-top:16px;border:1px solid var(--border);border-radius:12px;background:var(--card);overflow:hidden}
+  .frame .bar{display:flex;align-items:center;gap:8px;padding:8px 14px;border-bottom:1px solid var(--border);background:var(--muted-20)}
+  .frame .bar .fdot{width:9px;height:9px;border-radius:99px;background:var(--border)}
+  .frame .bar .flabel{font-size:11px;color:var(--muted-fg);margin-left:6px}
+  .frame .stage{padding:26px;background:
+    radial-gradient(circle at 1px 1px,rgba(255,255,255,.035) 1px,transparent 0) 0 0/22px 22px, var(--bg)}
+  .caption{font-size:12px;color:var(--faint-fg);margin-top:12px;max-width:72ch}
+  .caption b{color:var(--muted-fg);font-weight:600}
+  .tag{display:inline-flex;align-items:center;gap:6px;font-size:10px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;border-radius:99px;padding:3px 10px;margin-bottom:12px}
+  .tag.new{color:var(--emerald);border:1px solid var(--emerald-b);background:var(--emerald-bg)}
+  .tag.now{color:var(--muted-fg);border:1px solid var(--border);background:var(--muted-20)}
+
+  /* ── Dialog mock (mirrors EnhanceDialogShell result phase, sm:max-w-4xl) ── */
+  .dialog{background:var(--bg);border:1px solid var(--border);border-radius:10px;box-shadow:0 20px 50px rgba(0,0,0,.55);max-width:720px;margin:0 auto;overflow:hidden}
+  .dlg-head{border-bottom:1px solid var(--border);padding:16px 22px}
+  .dlg-title{font-size:16px;font-weight:600;display:flex;align-items:center;gap:8px}
+  .dlg-desc{font-size:13px;color:var(--muted-fg);margin-top:4px}
+  .dlg-body{padding:18px 22px}
+  .dlg-foot{border-top:1px solid var(--border);padding:12px 22px;display:flex;align-items:center;gap:8px;font-size:13px}
+  .icon{width:18px;height:18px;flex:none}
+  .icon.sm{width:14px;height:14px}
+  .icon.xs{width:12px;height:12px}
+  .v{color:var(--violet)}
+
+  /* receipt line (NEW component) */
+  .receipt{display:flex;flex-direction:column;gap:4px;border:1px solid var(--border);border-radius:8px;background:var(--muted-20);padding:8px 12px;font-size:12px;color:var(--muted-fg);margin-bottom:14px}
+  .receipt .row{display:flex;align-items:flex-start;gap:8px;min-width:0}
+  .receipt .row svg{margin-top:2px;color:var(--faint-fg)}
+  .receipt .fname{color:#e4e4e7;font-weight:500;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+  .receipt .note{color:var(--faint-fg)}
+  .receipt.compact{flex-direction:row}
+
+  /* amber banner (matches existing truncation-banner styling in shell) */
+  .warnbanner{display:flex;align-items:flex-start;gap:10px;border:1px solid var(--amber-b);background:var(--amber-bg);border-radius:8px;padding:10px 12px;font-size:12px;color:var(--amber);margin-bottom:14px}
+  .warnbanner .body{min-width:0}
+  .warnbanner .bt{font-weight:600}
+  .warnbanner .bd{margin-top:2px;color:rgba(251,191,36,.85)}
+  .warnbanner .fname{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11.5px}
+
+  /* heading chips (existing) */
+  .chips{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px}
+  .chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--violet-b);background:var(--violet-bg);color:var(--violet);border-radius:99px;padding:2px 10px;font-size:11px;font-weight:500}
+
+  /* original/enhanced columns (existing) */
+  .grid2{display:grid;grid-template-columns:220px 1fr;gap:16px}
+  @media(max-width:680px){.grid2{grid-template-columns:1fr}}
+  .collabel{display:flex;align-items:center;gap:8px;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;margin-bottom:6px}
+  .collabel .cdot{width:6px;height:6px;border-radius:99px}
+  .colbox{border:1px solid var(--border);border-radius:8px;background:var(--muted-20);padding:12px;font-size:12.5px;line-height:1.6;color:var(--muted-fg);max-height:180px;overflow:hidden}
+  .colbox.enh{border-color:var(--violet-b);background:linear-gradient(135deg,rgba(139,92,246,.06),transparent);color:#d4d4d8}
+  .colbox h5{font-size:12.5px;color:var(--fg);margin-bottom:4px}
+  .skel{height:9px;border-radius:4px;background:var(--muted-30);margin-top:8px;animation:pulse 1.6s ease-in-out infinite}
+  @keyframes pulse{0%,100%{opacity:.5}50%{opacity:1}}
+  .btn{display:inline-flex;align-items:center;gap:6px;border-radius:6px;font-size:12.5px;font-weight:500;padding:6px 12px;border:1px solid transparent;white-space:nowrap}
+  .btn.primary{background:var(--fg);color:var(--bg);font-weight:600}
+  .btn.outline{border-color:var(--border);color:var(--fg)}
+  .btn.ghost{color:var(--muted-fg)}
+  .spacer{flex:1}
+  .dots{display:inline-flex;gap:3px}
+  .dots span{width:4px;height:4px;border-radius:99px;background:var(--violet);animation:pulse 1.2s ease-in-out infinite}
+  .dots span:nth-child(2){animation-delay:.2s}.dots span:nth-child(3){animation-delay:.4s}
+
+  .copytable td:nth-child(2){font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12px;color:#e4e4e7}
+  .check{margin-top:14px;border:1px solid var(--border);border-radius:10px;background:var(--card)}
+  .check li{list-style:none;display:flex;gap:10px;padding:10px 16px;border-bottom:1px solid var(--border);font-size:13px;color:var(--muted-fg)}
+  .check li:last-child{border-bottom:none}
+  .check li::before{content:"☐";color:var(--faint-fg);flex:none}
+  footer{margin-top:72px;border-top:1px solid var(--border);padding-top:18px;font-size:12px;color:var(--faint-fg)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="hero">
+  <div class="kicker"><span class="dot"></span>UX Design · Feature Development step 2 · revised pass (Requirements v2)</div>
+  <h1>Enhance-with-AI reads idea attachments<br><span style="color:var(--muted-fg)">the attachment-usage indicator</span></h1>
+  <p class="sub">The backend now feeds text attachments (md/html <strong>and text-layer PDFs</strong>) into the three idea-enhance AI calls. This doc designs the single new UI element: a passive, honest “receipt” telling the author which attached files were actually read — and a warning when none were. Builds on the <strong>Requirements v2</strong> deliverable (card <code>d8841bbb</code>): PDF text extraction is now in scope for v1, and the live UI path is the streaming route <code>src/app/api/ai/enhance/route.ts</code>.</p>
+  <div class="meta">
+    <span>Card d8841bbb</span><span>Requirements v2 · PDFs (text-layer) in scope</span><span>Scope: indicator-only v1</span><span>Surface: EnhanceDialogShell (result phase)</span><span>No new pages · no opt-out toggle in v1</span>
+  </div>
+</header>
+
+<nav class="toc">
+  <a href="#context"><b>0</b>Context</a>
+  <a href="#decisions"><b>1</b>Decisions</a>
+  <a href="#anatomy"><b>2</b>Anatomy &amp; copy</a>
+  <a href="#mockups"><b>3</b>Mockups</a>
+  <a href="#contract"><b>4</b>Metadata contract</a>
+  <a href="#states"><b>5</b>States &amp; a11y</a>
+  <a href="#future"><b>6</b>Future</a>
+  <a href="#checklist"><b>7</b>Review checklist</a>
+</nav>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="context">
+  <h2><span class="num">0</span>Context — what exists, what changes</h2>
+  <p>The enhance flow lives in <code>src/components/ideas/enhance-dialog-shell.tsx</code>: <strong>configure → (optional) questions → result → apply/refine</strong>. The result streams from the <strong>streaming route</strong> <code>src/app/api/ai/enhance/route.ts</code> (prompt build at lines 60–106, response headers at 150–152) as plain text; clarifying questions call the <code>generateClarifyingQuestions</code> server action directly (<code>src/actions/ai.ts:249</code>). Attachments render in <code>idea-attachments-section.tsx</code> (paperclip header, per-file rows with type-coloured icons).</p>
+  <ul class="notes">
+    <li><strong>From Requirements v2:</strong> per-file 8k / total 24k char caps, newest-first, size &gt; 1 MB pre-skipped. Readable types: md/html <strong>and PDFs with a text layer</strong> (server-side text extraction, no OCR) — extracted PDFs behave like any other text file, including the 8k truncation cap. Scanned / image-only PDFs (no extractable text) fail extraction and are omitted as <code>read_error</code>; images and SVG are the only remaining <code>unsupported_type</code>. Byte-for-byte parity when an idea has no attachments.</li>
+    <li><strong>UI scope is one element:</strong> a passive usage indicator. No file pickers, no toggles, no new phases.</li>
+    <li><strong>Out of scope surfaces:</strong> the create-flow dialog (<code>create-enhance-dialog.tsx</code>) — no saved idea yet, so no attachments; it never renders the indicator. Task/discussion enhance are separate cards.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="decisions">
+  <h2><span class="num">1</span>The three open questions — decided</h2>
+
+  <div class="decision">
+    <div class="q">Q1 · Indicator timing: before enhance, after the result, or both?</div>
+    <div class="a">After — actual usage from server metadata, visible from the first streamed token.</div>
+    <p><strong>Why:</strong> a pre-enhance “will include 2 attachments” either duplicates the server’s skip logic client-side (size cap, type check, budget ordering — four ways to drift and lie) or is a guess. The server knows the truth the moment it builds the prompt (route.ts lines 60–106), which is <em>before</em> streaming begins — so the metadata rides the <code>X-Attachment-Usage</code> response header (route.ts 150–152) and the client can render it as soon as the fetch resolves, before the first chunk. Users get the pre-enhance reassurance (“it’s reading my files”) with post-enhance accuracy, from one source of truth. No second mechanism needed.</p>
+  </div>
+
+  <div class="decision">
+    <div class="q">Q2 · All text attachments skipped: warn or stay silent?</div>
+    <div class="a">Warn — an inline amber note in the result phase (not a toast, not silent).</div>
+    <p><strong>Why:</strong> the user attached files and paid credits; silence lets them believe the files informed the result. That’s the one dishonest outcome this feature must not allow. But it’s a degraded-input note, not a failure — the enhancement itself succeeded — so it reuses the existing amber inline-banner pattern (the “output was truncated” banner already in the shell) rather than an interruptive toast. Ideas with <em>zero</em> attachments show nothing at all: unchanged behaviour, no noise.</p>
+  </div>
+
+  <div class="decision">
+    <div class="q">Q3 · Does the clarifying-questions step need its own indicator?</div>
+    <div class="a">No — one indicator per flow, shown in the result phase.</div>
+    <p><strong>Why:</strong> the questions step is transient input-gathering inside the same enhance run; a banner there plus one at the result would announce the same background behaviour twice per credit-spend. The result phase is the receipt moment — where users judge what they paid for. <code>generateClarifyingQuestions</code> (<code>src/actions/ai.ts:249</code>) should still <em>return</em> the usage metadata (it’s the same server-side change, near-free), so if “how did the AI know that?” confusion appears, a one-line muted caption under the questions is a fast-follow — data already plumbed, no signature change.</p>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="anatomy">
+  <h2><span class="num">2</span>Anatomy &amp; exact copy</h2>
+  <p>One new component, <code>AttachmentUsageLine</code>, rendered as the <strong>first block of the result phase</strong> (above the existing output-truncated banner and heading chips). It is a quiet bordered row in <code>bg-muted/20</code> — receipt, not celebration. Two visual modes: <strong>neutral receipt</strong> (≥1 file read) and <strong>amber warning</strong> (files attached, none read). Never colour-only: paperclip / alert-triangle icon + full sentences.</p>
+
+  <h3>Copy strings (exact)</h3>
+  <table class="copytable">
+    <thead><tr><th style="width:220px">Case</th><th>String</th></tr></thead>
+    <tbody>
+      <tr><td>1 file, fully read</td><td>Considered 1 attached file: spec.md</td></tr>
+      <tr><td>N files, fully read (incl. PDF)</td><td>Considered 2 attached files: spec.md, product-brief.pdf</td></tr>
+      <tr><td>Truncated file (suffix)</td><td>competitive-analysis-2026.pdf (shortened to fit the reading limit)</td></tr>
+      <tr><td>Omitted file (second line)</td><td>Not read: scanned-contract-signed.pdf — couldn’t be read</td></tr>
+      <tr><td>All omitted — title</td><td>Your attached files weren’t used</td></tr>
+      <tr><td>All omitted — body (2 files)</td><td>Both attachments were skipped: scanned-brand-guidelines.pdf (couldn’t be read) and research-data-export.md (over the 1 MB size limit). This enhancement used your description and answers only.</td></tr>
+      <tr><td>All omitted — body (1 file)</td><td>research-data-export.md was skipped (over the 1 MB size limit). This enhancement used your description and answers only.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Omission-reason copy map</h3>
+  <table class="copytable">
+    <thead><tr><th style="width:220px"><code>reason</code></th><th>User-facing string</th></tr></thead>
+    <tbody>
+      <tr><td><code>too_large</code></td><td>over the 1 MB size limit</td></tr>
+      <tr><td><code>unsupported_type</code> (image)</td><td>images can’t be read</td></tr>
+      <tr><td><code>unsupported_type</code> (svg)</td><td>SVG files can’t be read</td></tr>
+      <tr><td><code>over_budget</code></td><td>skipped to stay within the combined reading limit</td></tr>
+      <tr><td><code>read_error</code></td><td>couldn’t be read <span class="note">— covers fetch/extraction failures, including scanned / image-only PDFs with no text layer</span></td></tr>
+    </tbody>
+  </table>
+  <ul class="notes">
+    <li><strong>PDFs are readable now (Requirements v2):</strong> a PDF with a text layer is extracted server-side and appears in the “Considered” line like any md/html file — with the same “(shortened…)” suffix when cut at the 8k cap. There is <em>no</em> PDF-specific copy anywhere; <code>unsupported_type</code> is images/SVG only. Scanned / image-only PDFs fall to <code>read_error</code> → “couldn’t be read” — this is <strong>expected</strong> (neutral zinc, not amber); OCR is a future follow-up, out of scope for v1.</li>
+    <li><strong>Verb honesty:</strong> “Considered” for files placed in the prompt; “shortened” when partially included; “not read / skipped” when excluded; “couldn’t be read” for extraction failures. Never claim a skipped file was read. The all-omitted body explicitly states what <em>was</em> used (“description and answers only”) so credit-spend expectations are exact.</li>
+    <li><strong>Answers clause:</strong> when the user skipped clarifying questions, drop “and answers”: “…used your description only.”</li>
+    <li>Filenames render in the UI mono style (matching attachment rows), truncate with CSS ellipsis + <code>title</code> attribute; full name stays in the DOM for screen readers.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="mockups">
+  <h2><span class="num">3</span>Mockups — in the real result phase</h2>
+
+  <h3>A · While streaming — receipt already visible</h3>
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Enhance with AI · result phase (streaming)</span></div>
+    <div class="stage">
+      <span class="tag new">New: receipt renders at stream start (header metadata)</span>
+      <div class="dialog">
+        <div class="dlg-head">
+          <div class="dlg-title"><svg class="icon v" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.2 11 2l1.1 2.2a5 5 0 0 0 2.2 2.2L16.5 7.5l-2.2 1.1a5 5 0 0 0-2.2 2.2L11 13l-1.1-2.2a5 5 0 0 0-2.2-2.2L5.5 7.5l2.2-1.1a5 5 0 0 0 2.2-2.2ZM18 13l.6 1.2a3 3 0 0 0 1.2 1.2L21 16l-1.2.6a3 3 0 0 0-1.2 1.2L18 19l-.6-1.2a3 3 0 0 0-1.2-1.2L15 16l1.2-.6a3 3 0 0 0 1.2-1.2ZM6 17l.5 1a2 2 0 0 0 1 1l1 .5-1 .5a2 2 0 0 0-1 1L6 22l-.5-1a2 2 0 0 0-1-1l-1-.5 1-.5a2 2 0 0 0 1-1Z"/></svg>Enhance with AI</div>
+          <div class="dlg-desc">Generating enhanced description...</div>
+        </div>
+        <div class="dlg-body">
+          <div class="receipt compact">
+            <div class="row">
+              <svg class="icon xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              <span>Considered 2 attached files: <span class="fname">spec.md</span>, <span class="fname">meeting-notes.md</span></span>
+            </div>
+          </div>
+          <div class="grid2">
+            <div>
+              <div class="collabel" style="color:var(--muted-fg)"><span class="cdot" style="background:var(--faint-fg)"></span>Original</div>
+              <div class="colbox">A tool for tracking plant watering schedules. Users add their plants and get reminders when each one needs water.</div>
+            </div>
+            <div>
+              <div class="collabel" style="color:var(--violet)"><span class="cdot" style="background:var(--violet)"></span>Enhanced <span class="dots" style="margin-left:2px"><span></span><span></span><span></span></span></div>
+              <div class="colbox enh">
+                <h5>Overview</h5>
+                PlantPal is a smart plant-care companion that tracks per-species watering schedules, per the cadence rules defined in spec.md, and sends adaptive remind
+                <div class="skel" style="width:100%"></div>
+                <div class="skel" style="width:88%"></div>
+                <div class="skel" style="width:72%"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dlg-foot">
+          <span class="dots"><span></span><span></span><span></span></span>
+          <span style="color:var(--muted-fg)">Writing enhanced description...</span>
+        </div>
+      </div>
+      <p class="caption"><b>Why it shows now:</b> the <code>X-Attachment-Usage</code> header arrives before the first chunk, so the receipt renders the moment streaming starts — reassurance at the exact moment credits are being spent. It renders once and does not update mid-stream (no live-region churn).</p>
+    </div>
+  </div>
+
+  <h3>B · Success — all files fully read</h3>
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Enhance with AI · result phase (done)</span></div>
+    <div class="stage">
+      <span class="tag new">New: neutral receipt above existing heading chips</span>
+      <div class="dialog">
+        <div class="dlg-head">
+          <div class="dlg-title"><svg class="icon v" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.2 11 2l1.1 2.2a5 5 0 0 0 2.2 2.2L16.5 7.5l-2.2 1.1a5 5 0 0 0-2.2 2.2L11 13l-1.1-2.2a5 5 0 0 0-2.2-2.2L5.5 7.5l2.2-1.1a5 5 0 0 0 2.2-2.2ZM18 13l.6 1.2a3 3 0 0 0 1.2 1.2L21 16l-1.2.6a3 3 0 0 0-1.2 1.2L18 19l-.6-1.2a3 3 0 0 0-1.2-1.2L15 16l1.2-.6a3 3 0 0 0 1.2-1.2ZM6 17l.5 1a2 2 0 0 0 1 1l1 .5-1 .5a2 2 0 0 0-1 1L6 22l-.5-1a2 2 0 0 0-1-1l-1-.5 1-.5a2 2 0 0 0 1-1Z"/></svg>Enhance with AI</div>
+          <div class="dlg-desc">Compare the original and enhanced descriptions.</div>
+        </div>
+        <div class="dlg-body">
+          <div class="receipt compact">
+            <div class="row">
+              <svg class="icon xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              <span>Considered 2 attached files: <span class="fname">spec.md</span>, <span class="fname">meeting-notes.md</span></span>
+            </div>
+          </div>
+          <div class="chips">
+            <span class="chip">+ User Stories</span><span class="chip">+ Technical Scope</span><span class="chip">+ Watering Algorithm</span><span class="chip">+ MVP Milestones</span>
+          </div>
+          <div class="grid2">
+            <div>
+              <div class="collabel" style="color:var(--muted-fg)"><span class="cdot" style="background:var(--faint-fg)"></span>Original</div>
+              <div class="colbox">A tool for tracking plant watering schedules. Users add their plants and get reminders when each one needs water.</div>
+            </div>
+            <div>
+              <div class="collabel" style="color:var(--violet)"><span class="cdot" style="background:var(--violet)"></span>Enhanced</div>
+              <div class="colbox enh">
+                <h5>Overview</h5>
+                PlantPal is a smart plant-care companion. Per the cadence rules in spec.md, watering intervals adapt to species, pot size, and season; the reminder tiers agreed in the March planning notes (meeting-notes.md) map to push, email, and digest…
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="dlg-foot">
+          <span class="btn ghost">↺ Regenerate</span><span class="btn ghost">Cancel</span>
+          <span class="spacer"></span>
+          <span class="btn outline">✎ Refine</span><span class="btn primary">Apply Enhancement</span>
+        </div>
+      </div>
+      <p class="caption"><b>Placement:</b> receipt first, then heading chips, then the Original/Enhanced grid — everything below the receipt is today’s UI, untouched. Footer unchanged.</p>
+    </div>
+  </div>
+
+  <h3>C · Mixed — a text-layer PDF read &amp; shortened, a scanned PDF not read (long filenames)</h3>
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Enhance with AI · result phase (done) — dialog body top, columns unchanged below</span></div>
+    <div class="stage">
+      <span class="tag new">New: PDF in the Considered line (text extraction) + “Not read” second line</span>
+      <div class="dialog">
+        <div class="dlg-head">
+          <div class="dlg-title"><svg class="icon v" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.2 11 2l1.1 2.2a5 5 0 0 0 2.2 2.2L16.5 7.5l-2.2 1.1a5 5 0 0 0-2.2 2.2L11 13l-1.1-2.2a5 5 0 0 0-2.2-2.2L5.5 7.5l2.2-1.1a5 5 0 0 0 2.2-2.2ZM18 13l.6 1.2a3 3 0 0 0 1.2 1.2L21 16l-1.2.6a3 3 0 0 0-1.2 1.2L18 19l-.6-1.2a3 3 0 0 0-1.2-1.2L15 16l1.2-.6a3 3 0 0 0 1.2-1.2ZM6 17l.5 1a2 2 0 0 0 1 1l1 .5-1 .5a2 2 0 0 0-1 1L6 22l-.5-1a2 2 0 0 0-1-1l-1-.5 1-.5a2 2 0 0 0 1-1Z"/></svg>Enhance with AI</div>
+          <div class="dlg-desc">Compare the original and enhanced descriptions.</div>
+        </div>
+        <div class="dlg-body" style="padding-bottom:6px">
+          <div class="receipt">
+            <div class="row">
+              <svg class="icon xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.4 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+              <span>Considered 2 attached files: <span class="fname">spec.md</span>, <span class="fname">competitive-analysis-and-market-research-notes-2026-final-v2.pdf</span> <span class="note">(shortened to fit the reading limit)</span></span>
+            </div>
+            <div class="row">
+              <svg class="icon xs" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+              <span class="note">Not read: <span class="fname" style="color:var(--muted-fg)">scanned-partnership-contract-signed-copy.pdf</span> — couldn’t be read</span>
+            </div>
+          </div>
+          <div style="border:1px dashed var(--border);border-radius:8px;padding:14px;text-align:center;font-size:11px;color:var(--faint-fg)">heading chips + Original / Enhanced columns — unchanged, cropped</div>
+        </div>
+        <div class="dlg-foot">
+          <span class="btn ghost">↺ Regenerate</span><span class="btn ghost">Cancel</span>
+          <span class="spacer"></span>
+          <span class="btn outline">✎ Refine</span><span class="btn primary">Apply Enhancement</span>
+        </div>
+      </div>
+      <p class="caption"><b>PDFs now work — and the receipt proves it:</b> the long PDF has a text layer, so it was extracted server-side and <em>considered</em> like any markdown file (shortened at the 8k cap). The scanned PDF has no extractable text, so it falls to <code>read_error</code> → “couldn’t be read”. <b>Wrapping, not truncating the message:</b> the receipt grows to two rows; the long filename wraps (word-break) rather than hiding the “(shortened…)” suffix. The “Not read” row uses the info-circle icon and stays in muted zinc — an image-only PDF failing extraction is expected behaviour, not an error, so no amber here. Only the <em>all-omitted</em> case escalates.</p>
+    </div>
+  </div>
+
+  <h3>D · All attachments skipped — the honest warning</h3>
+  <div class="frame">
+    <div class="bar"><span class="fdot"></span><span class="fdot"></span><span class="fdot"></span><span class="flabel">Enhance with AI · result phase (done) — dialog body top</span></div>
+    <div class="stage">
+      <span class="tag new">New: amber banner replaces the receipt (role="status")</span>
+      <div class="dialog">
+        <div class="dlg-head">
+          <div class="dlg-title"><svg class="icon v" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.9 4.2 11 2l1.1 2.2a5 5 0 0 0 2.2 2.2L16.5 7.5l-2.2 1.1a5 5 0 0 0-2.2 2.2L11 13l-1.1-2.2a5 5 0 0 0-2.2-2.2L5.5 7.5l2.2-1.1a5 5 0 0 0 2.2-2.2ZM18 13l.6 1.2a3 3 0 0 0 1.2 1.2L21 16l-1.2.6a3 3 0 0 0-1.2 1.2L18 19l-.6-1.2a3 3 0 0 0-1.2-1.2L15 16l1.2-.6a3 3 0 0 0 1.2-1.2ZM6 17l.5 1a2 2 0 0 0 1 1l1 .5-1 .5a2 2 0 0 0-1 1L6 22l-.5-1a2 2 0 0 0-1-1l-1-.5 1-.5a2 2 0 0 0 1-1Z"/></svg>Enhance with AI</div>
+          <div class="dlg-desc">Compare the original and enhanced descriptions.</div>
+        </div>
+        <div class="dlg-body" style="padding-bottom:6px">
+          <div class="warnbanner" role="status">
+            <svg class="icon sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"/><path d="M12 9v4M12 17h.01"/></svg>
+            <div class="body">
+              <div class="bt">Your attached files weren’t used</div>
+              <div class="bd">Both attachments were skipped: <span class="fname">scanned-brand-guidelines.pdf</span> (couldn’t be read) and <span class="fname">research-data-export.md</span> (over the 1 MB size limit). This enhancement used your description and answers only.</div>
+            </div>
+          </div>
+          <div style="border:1px dashed var(--border);border-radius:8px;padding:14px;text-align:center;font-size:11px;color:var(--faint-fg)">heading chips + Original / Enhanced columns — unchanged, cropped</div>
+        </div>
+        <div class="dlg-foot">
+          <span class="btn ghost">↺ Regenerate</span><span class="btn ghost">Cancel</span>
+          <span class="spacer"></span>
+          <span class="btn outline">✎ Refine</span><span class="btn primary">Apply Enhancement</span>
+        </div>
+      </div>
+      <p class="caption"><b>Same visual grammar</b> as the existing “output was truncated” amber banner in the shell (border <code>amber-500/30</code>, bg <code>amber-500/10</code>, text <code>amber-400</code> dark). Triangle icon + written title — never colour alone. The enhancement is still valid and applicable; the banner informs, it doesn’t block. No action button in v1 (nothing the user can do inline yet — the fix is uploading a text-based version: a text-layer PDF export or .md for the scanned file, a smaller file for the over-limit one).</p>
+    </div>
+  </div>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="contract">
+  <h2><span class="num">4</span>Metadata contract for Implementation</h2>
+  <p>One shape, two transports. Compute it server-side at prompt-build time (the server already knows exactly what it included). Per Requirements v2, the live UI path is the <strong>streaming route</strong> <code>src/app/api/ai/enhance/route.ts</code> — attachment injection happens where the prompt is built (route.ts 60–106) and the header is emitted with the response headers (route.ts 150–152), which flush before the stream body.</p>
+<pre><code>// src/lib/ai-helpers.ts (or wherever attachment reading lands)
+export interface EnhanceAttachmentUsage {
+  /** Files whose content was placed in the prompt (order = prompt order, newest-first).
+      Now may include PDFs — text-layer PDFs are extracted server-side (no OCR). */
+  used: Array&lt;{ id: string; name: string; truncated: boolean }&gt;;
+  /** Files that were skipped entirely */
+  omitted: Array&lt;{
+    id: string;
+    name: string;
+    // unsupported_type = images/SVG ONLY.
+    // read_error = fetch/extraction failure, INCLUDING scanned / no-text-layer PDFs.
+    reason: "too_large" | "unsupported_type" | "over_budget" | "read_error";
+  }&gt;;
+}</code></pre>
+  <ul class="notes">
+    <li><strong>ids included</strong> (small delta from the Requirements sketch of <code>{name, truncated}</code>): they cost nothing and are required by the deferred <code>excludeAttachmentIds</code> opt-out — the UI can pass ids back without a second lookup.</li>
+    <li><strong>Revised semantics (Requirements v2):</strong> <code>unsupported_type</code> now means images/SVG <em>only</em>. Text-layer PDFs go to <code>used</code> (with <code>truncated: true</code> when cut at 8k); scanned / image-only PDFs go to <code>omitted</code> with <code>read_error</code> — expected, not exceptional. The UI still needs <code>omitted</code> entries for the honesty line in mock C and the all-omitted case; “all omitted” is computed as <code>used.length === 0 &amp;&amp; omitted.length &gt; 0</code>.</li>
+    <li><strong>Transport 1 — streaming route</strong> <code>src/app/api/ai/enhance/route.ts</code>: response header <code>X-Attachment-Usage: encodeURIComponent(JSON.stringify(usage))</code> (headers are latin-1; filenames can be unicode, so URI-encode). Headers flush before the body → indicator renders at stream start. Omit the header when the idea has zero attachments. Keep the payload clamped — filenames only, no content — so the header stays well under proxy size limits.</li>
+    <li><strong>Transport 2 — server action</strong> <code>generateClarifyingQuestions</code> (<code>src/actions/ai.ts:249</code>): return <code>{ questions, attachmentUsage? }</code>. Optional field — additive, no signature break. Returned but unused by UI in v1 (Decision 3), plumbed for the fast-follow caption.</li>
+    <li><strong>Client parsing is defensive:</strong> missing header, malformed JSON, or unknown <code>reason</code> → render nothing / fall back to “couldn’t be read”. A metadata bug must never break the enhance result.</li>
+    <li><strong>Refine / regenerate / continue runs</strong> re-send attachments per Requirements, and each response carries a fresh header — the receipt always reflects the run currently on screen, replacing the previous one.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="states">
+  <h2><span class="num">5</span>State matrix &amp; accessibility</h2>
+  <table>
+    <thead><tr><th style="width:260px">State</th><th>What shows</th></tr></thead>
+    <tbody>
+      <tr><td>Idea has no attachments</td><td>Nothing. Zero UI change anywhere in the flow (parity with the null backend path). Also: create-flow dialog, always nothing.</td></tr>
+      <tr><td>Configure / questions phases</td><td>Nothing (Decision 3). Progress-step copy unchanged.</td></tr>
+      <tr><td>Streaming (loading)</td><td>Receipt or amber banner, rendered once from the response header as the stream opens (mock A).</td></tr>
+      <tr><td>Success, ≥1 file read</td><td>Neutral receipt; truncated files get the “(shortened to fit the reading limit)” suffix; skipped files get the “Not read: …” second row (mocks B, C).</td></tr>
+      <tr><td>Success, all files skipped</td><td>Amber warning banner with per-file reasons (mock D). Stacks above the existing output-truncated banner if both occur.</td></tr>
+      <tr><td>Enhance failed / metadata missing</td><td>Existing error toast + return to configure; no indicator. Malformed metadata → indicator suppressed, result unaffected.</td></tr>
+      <tr><td>After Refine / Regenerate</td><td>Receipt replaces itself from the new run’s header — never shows stale usage.</td></tr>
+    </tbody>
+  </table>
+
+  <h3>Accessibility (WCAG 2.1 AA)</h3>
+  <ul class="notes">
+    <li><strong>Not colour-only:</strong> receipt = paperclip icon + sentence; omitted row = info-circle icon + “Not read:” prefix; warning = triangle icon + written title. Every state is fully legible in grayscale.</li>
+    <li><strong>Contrast:</strong> receipt body uses <code>text-muted-foreground</code> (zinc-400 ≈ 7.9:1 on zinc-950); filenames in zinc-200. Amber banner text <code>amber-400</code> on <code>amber-500/10</code> ≈ 10:1. All ≥ 4.5:1.</li>
+    <li><strong>Announcement:</strong> <code>role="status"</code> on the all-omitted banner only — announced once when the result arrives. The neutral receipt is static text discovered in reading order (announcing routine success would be noise). No mid-stream re-renders, so no live-region churn.</li>
+    <li><strong>Keyboard:</strong> no interactive elements inside the indicator in v1 — nothing to trap or skip. All information is in-text, not tooltip-gated.</li>
+    <li><strong>Long filenames:</strong> <code>break-words</code> wrapping inside the receipt (screen readers get the full name); the reason suffix always remains visible — never ellipsized away.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="future">
+  <h2><span class="num">6</span>Deferred (noted for later, not v1)</h2>
+  <ul class="notes">
+    <li><strong>Opt-out toggle:</strong> lives in the <em>configure phase</em>, as a checkbox row directly below “Ask clarifying questions first (recommended)” — e.g. <code>☑ Include attached files (2)</code> — with per-file exclusion via a small popover feeding <code>excludeAttachmentIds</code>. The metadata ids in §4 make this a UI-only change.</li>
+    <li><strong>Questions-phase caption:</strong> one muted line under the questions list — “Questions informed by 2 attached files.” — using the already-returned <code>attachmentUsage</code>. Ship only if user confusion is observed.</li>
+    <li><strong>PDF OCR:</strong> text-layer extraction shipped in v1 (Requirements v2); scanned / image-only PDFs currently fall to <code>read_error</code> → “couldn’t be read”, which is expected. If OCR lands later, those files simply move into the “Considered” line — no UI redesign needed.</li>
+  </ul>
+</section>
+
+<!-- ══════════════════════════════════════════════════════════ -->
+<section id="checklist">
+  <h2><span class="num">7</span>Design-review checklist</h2>
+  <ul class="check">
+    <li>Copy never claims a skipped or truncated file was fully read; all-omitted banner states what <em>was</em> used.</li>
+    <li>Text-layer PDFs appear in the “Considered” line like any md/html file; scanned PDFs show “couldn’t be read” (<code>read_error</code>, neutral zinc). No copy anywhere claims PDFs are unsupported.</li>
+    <li>Indicator appears only when the idea has ≥1 attachment; create-flow dialog and no-attachment ideas are pixel-identical to today.</li>
+    <li>Receipt visible during streaming (header parsed before first chunk) and correct after Refine / Regenerate / Continue re-runs.</li>
+    <li>All-omitted case uses the amber banner with triangle icon + title and <code>role="status"</code>; partial omission stays neutral zinc.</li>
+    <li>No colour-only signalling; contrast ≥ 4.5:1 in dark and light themes; no tooltip-gated information.</li>
+    <li>60+ character filenames wrap without pushing the “(shortened…)” / reason text out of view; dialog never scrolls horizontally.</li>
+    <li>Malformed or missing metadata suppresses the indicator without affecting the enhance result (no crash, no toast).</li>
+    <li>Server action return stays additive (<code>attachmentUsage?</code> optional) and includes attachment ids for the deferred opt-out.</li>
+  </ul>
+</section>
+
+<footer>
+  Compass · UX Design · card d8841bbb — <strong>revised pass against Requirements v2</strong>: PDF text-layer extraction now in scope (scanned PDFs → <code>read_error</code>; <code>unsupported_type</code> = images/SVG only); live path confirmed as the streaming route <code>src/app/api/ai/enhance/route.ts</code>. Caps 8k/24k, newest-first, 1 MB pre-skip, indicator-only v1 unchanged. Mocks reference <code>src/components/ideas/enhance-dialog-shell.tsx</code> and <code>idea-attachments-section.tsx</code>.
+</footer>
+
+</div>
+</body>
+</html>
