@@ -229,13 +229,20 @@ export function AiGenerateDialog({
 
         for (const line of lines) {
           if (!line.trim()) continue;
+          let parsed: { tasks?: ImportTask[]; error?: string } | null = null;
           try {
-            lastParsed = JSON.parse(line);
-            const streamedTasks = (lastParsed!.tasks ?? []).slice(0, 50) as ImportTask[];
-            setGeneratedTasks(streamedTasks);
+            parsed = JSON.parse(line);
           } catch {
             // Incomplete JSON line — skip
+            continue;
           }
+          // Server-emitted failure sentinel — a stalled/aborted generation. Throw
+          // so a truncated partial isn't mistaken for a complete result; the outer
+          // catch turns it into a retryable toast.
+          if (parsed?.error) throw new Error(parsed.error);
+          lastParsed = parsed as { tasks: ImportTask[] };
+          const streamedTasks = (lastParsed.tasks ?? []).slice(0, 50) as ImportTask[];
+          setGeneratedTasks(streamedTasks);
         }
       }
 

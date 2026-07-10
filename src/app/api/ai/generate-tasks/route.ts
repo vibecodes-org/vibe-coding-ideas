@@ -12,6 +12,12 @@ import { buildPromptContextParts, buildAutoRuleMappings } from "@/lib/ai-prompt-
 
 export const maxDuration = 300;
 
+// Hard bound on the streaming generation. Without it, a provider-side stall (the
+// stream stops emitting tokens but never sends a `finish` chunk) leaves the dock
+// spinning until Vercel's 300s function kill. 120s is generous for 15-20 tasks
+// while still failing fast enough to show a retryable error.
+const GENERATE_TIMEOUT_MS = 120_000;
+
 const GeneratedTaskSchema = z.object({
   title: z.string(),
   description: z.string().optional(),
@@ -134,39 +140,93 @@ export async function POST(req: Request) {
     // post-stream step fails due to expired auth context. Usage logged after.
     await chargeAiUpfront(supabase, { userId: user.id, keyType });
 
+    // `streamError` captures a provider/stream failure. streamObject's default
+    // onError only console.error's, and its `partialObjectStream` iterator SWALLOWS
+    // error chunks (`case "error": break`), so without this hook a mid-stream
+    // failure is invisible to us. Critically, ai@6 resolves `result.usage` ONLY in
+    // its `case "finish"` branch — an errored/aborted stream never resolves it, so
+    // `await result.usage` below would hang forever, the ReadableStream would never
+    // close, and the dock would spin indefinitely (the reported bug).
+    let streamError: unknown = null;
     const result = streamObject({
       model: anthropic(AI_MODEL),
       system: systemPrompt,
       prompt: contextParts.join("\n\n"),
       schema: GeneratedBoardSchema,
       maxOutputTokens: 8000,
+      // A stall that emits no tokens (and no error) is bounded here rather than by
+      // the 300s function timeout — the abort surfaces through onError below.
+      abortSignal: AbortSignal.timeout(GENERATE_TIMEOUT_MS),
+      onError: ({ error }) => {
+        streamError = error;
+        logger.error("AI generate tasks stream error", {
+          ideaId,
+          error: error instanceof Error ? error.message : String(error),
+        });
+      },
     });
 
     // Stream partial objects as newline-delimited JSON
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        for await (const partialObject of result.partialObjectStream) {
-          const taskCount = partialObject.tasks?.length ?? 0;
-          // Only emit when we have at least one task with a title
-          if (taskCount > 0 && partialObject.tasks![taskCount - 1]?.title) {
-            controller.enqueue(
-              encoder.encode(JSON.stringify(partialObject) + "\n")
-            );
+        try {
+          for await (const partialObject of result.partialObjectStream) {
+            const taskCount = partialObject.tasks?.length ?? 0;
+            // Only emit when we have at least one task with a title
+            if (taskCount > 0 && partialObject.tasks![taskCount - 1]?.title) {
+              controller.enqueue(
+                encoder.encode(JSON.stringify(partialObject) + "\n")
+              );
+            }
           }
+        } catch (err) {
+          // partialObjectStream can also reject outright (not just emit an error
+          // chunk); treat both the same.
+          streamError = streamError ?? err;
         }
-        const usage = await result.usage;
-        // Log only — the credit was already charged upfront (free: true here).
-        await chargeAiUsage(supabase, {
-          userId: user.id,
-          actionType: "generate_board_tasks",
-          inputTokens: usage.inputTokens ?? 0,
-          outputTokens: usage.outputTokens ?? 0,
-          model: AI_MODEL,
-          ideaId,
-          keyType,
-          free: true,
-        });
+
+        // If the stream failed, tell the client explicitly. The dock keys off this
+        // sentinel to show a retryable toast instead of treating a truncated
+        // partial (e.g. a single task) as a complete result.
+        if (streamError) {
+          controller.enqueue(
+            encoder.encode(
+              JSON.stringify({
+                error: "Task generation was interrupted — please try again.",
+              }) + "\n"
+            )
+          );
+          controller.close();
+          return;
+        }
+
+        // Usage is best-effort billing/telemetry only (the credit was charged
+        // upfront, free: true here) — NEVER let it block closing the response.
+        // Guarded so a never-resolving `result.usage` can't hang the stream.
+        try {
+          const usage = await Promise.race([
+            result.usage.catch(() => null),
+            new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
+          ]);
+          if (usage) {
+            await chargeAiUsage(supabase, {
+              userId: user.id,
+              actionType: "generate_board_tasks",
+              inputTokens: usage.inputTokens ?? 0,
+              outputTokens: usage.outputTokens ?? 0,
+              model: AI_MODEL,
+              ideaId,
+              keyType,
+              free: true,
+            });
+          }
+        } catch (err) {
+          logger.warn("AI generate tasks usage logging failed", {
+            ideaId,
+            error: err instanceof Error ? err.message : String(err),
+          });
+        }
         controller.close();
       },
     });
