@@ -120,9 +120,20 @@ export async function POST(req: Request) {
 
     const hasAgent = !!(personaPrompt || agentRole || agentSkills?.length);
 
-    const systemPrompt = hasAgent
-      ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a software project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. Include any scaffolding or setup tasks relevant to your domain (e.g. a DevOps agent should include CI/CD and deployment setup). If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
-      : "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. Include project scaffolding and setup tasks (e.g. repo setup, dev environment, CI/CD, deployment config) — not just feature work. Order tasks so foundational/setup tasks come first. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").";
+    // Hard bound on the OUTPUT size. A large, detailed idea (long description with
+    // acceptance criteria, tables, epics) otherwise leads the model to mirror that
+    // density and generate one enormous task description — it can spend the whole
+    // generation on a single task and never advance, which manifests as the dock
+    // showing one task and then timing out. Keeping each task terse makes the model
+    // move through tasks quickly and keeps total output well within budget.
+    const OUTPUT_CONSTRAINTS =
+      " Produce a FOCUSED board of the most important, well-scoped tasks (aim for 12-24 tasks, not an exhaustive enumeration). Each task's description MUST be short — at most 3-5 markdown checklist items (\"- [ ] step\"). Summarize the idea into concrete, actionable steps; do NOT copy long acceptance criteria, RICE tables, user stories, or prose from the idea into descriptions.";
+
+    const systemPrompt =
+      (hasAgent
+        ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. Include any scaffolding or setup tasks relevant to your domain (e.g. a DevOps agent should include CI/CD and deployment setup). If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
+        : "You are an expert project manager generating a structured task board for a project on a kanban-style project management platform. Include foundational/setup tasks where relevant (e.g. for software: repo setup, dev environment, CI/CD) — not just feature work. Order tasks so foundational/setup tasks come first. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").") +
+      OUTPUT_CONSTRAINTS;
 
     const contextParts = buildPromptContextParts({
       prompt,
@@ -170,11 +181,18 @@ export async function POST(req: Request) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
+        // Progress telemetry — lets us tell a genuine stall ("stuck at 1 task")
+        // apart from a slow-but-advancing generation when a run is aborted.
+        const startedAt = Date.now();
+        let maxTasksSeen = 0;
+        let chunksEmitted = 0;
         try {
           for await (const partialObject of result.partialObjectStream) {
             const taskCount = partialObject.tasks?.length ?? 0;
+            maxTasksSeen = Math.max(maxTasksSeen, taskCount);
             // Only emit when we have at least one task with a title
             if (taskCount > 0 && partialObject.tasks![taskCount - 1]?.title) {
+              chunksEmitted += 1;
               controller.enqueue(
                 encoder.encode(JSON.stringify(partialObject) + "\n")
               );
@@ -190,6 +208,12 @@ export async function POST(req: Request) {
         // sentinel to show a retryable toast instead of treating a truncated
         // partial (e.g. a single task) as a complete result.
         if (streamError) {
+          logger.error("AI generate tasks stream ended in error", {
+            ideaId,
+            maxTasksSeen,
+            chunksEmitted,
+            elapsedMs: Date.now() - startedAt,
+          });
           controller.enqueue(
             encoder.encode(
               JSON.stringify({
@@ -200,6 +224,13 @@ export async function POST(req: Request) {
           controller.close();
           return;
         }
+
+        logger.info("AI generate tasks stream completed", {
+          ideaId,
+          maxTasksSeen,
+          chunksEmitted,
+          elapsedMs: Date.now() - startedAt,
+        });
 
         // Usage is best-effort billing/telemetry only (the credit was charged
         // upfront, free: true here) — NEVER let it block closing the response.
