@@ -153,13 +153,22 @@ export async function POST(req: Request) {
     // generates — recency weighting. This directly counters the pull of a long,
     // detailed idea description (which implicitly says "reproduce all this detail").
     // Belt-and-braces with OUTPUT_CONSTRAINTS in the system prompt above.
+    // Positive few-shot example of the target size/shape. Anthropic's own guidance
+    // for this model: a concrete example of the desired concision moves the model
+    // far more than repeated "keep it short" instructions. Telemetry showed the
+    // rules alone got tasks from 1 → 6 but descriptions stayed long (budget filled
+    // at ~6 tasks); the example is what pushes them terse enough to fit 15-25.
     contextParts.push(
       "---",
       "OUTPUT RULES (follow exactly):\n" +
         "- Break the work above into 15-25 small, SEPARATE tasks. Do not combine multiple areas of work into one task.\n" +
-        "- Each task's description: ONE short sentence, or up to 3 brief checklist items. ~30 words maximum.\n" +
-        "- Do NOT copy acceptance criteria, tables, RICE scores, user stories, or long prose from the idea into a description — summarize.\n" +
-        "- A single task with a long description is wrong; split it into several tasks instead."
+        "- Each task's description: ONE short sentence (~30 words max). No acceptance criteria, tables, RICE scores, user stories, or multi-line prose — summarize.\n" +
+        "- A single task with a long description is wrong; split it into several tasks instead.\n" +
+        "\n" +
+        "Match the size and shape of these examples exactly (note how short each description is):\n" +
+        '- {"title": "Set up the project repository and CI", "description": "Create the repo and add a lint/test/build pipeline that runs on every PR.", "columnName": "To Do", "labels": ["infrastructure"]}\n' +
+        '- {"title": "Design the sign-up flow", "description": "Wireframe the 3-step onboarding and get sign-off before build.", "columnName": "To Do", "labels": ["design"]}\n' +
+        '- {"title": "Draft the pricing page copy", "description": "Write first-pass copy for the three tiers; flag any claims needing review.", "columnName": "Backlog", "labels": ["content"]}'
     );
 
     // Charge upfront BEFORE the AI call — prevents "use now, pay never" when the
