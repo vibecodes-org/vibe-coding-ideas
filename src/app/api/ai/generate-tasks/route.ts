@@ -120,22 +120,21 @@ export async function POST(req: Request) {
 
     const hasAgent = !!(personaPrompt || agentRole || agentSkills?.length);
 
-    // Bound the OUTPUT. A large, detailed idea (long description with acceptance
-    // criteria, tables, epics) leads the model to reproduce that density into a
-    // single task's description — it can spend the whole token budget on ONE task
-    // (confirmed by telemetry: maxTasksSeen=1, ~76s, one task with a giant
-    // description). Forcing DECOMPOSITION into many small tasks with tiny
-    // descriptions spreads the budget and produces an actual board. Note: we do NOT
-    // tell the model to "include implementation steps as a markdown task list" —
-    // that instruction actively invites the long descriptions we're preventing.
-    const OUTPUT_CONSTRAINTS =
-      " Decompose the work into 15-25 small, separate tasks — never combine several work areas into one task. Keep each task's description to ONE short sentence, or at most 3 brief checklist items (~30 words max). Do NOT reproduce acceptance criteria, tables, RICE scores, user stories, or long prose from the idea in a description — summarize into short, actionable tasks. If a description is getting long, that is a signal to split it into several tasks.";
+    // ORIGINAL prompt — unchanged behaviour for normal ideas (incl. the markdown
+    // subtask-checklist feature). This is what runs for the vast majority of ideas.
+    const systemPrompt = hasAgent
+      ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a software project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. Include any scaffolding or setup tasks relevant to your domain (e.g. a DevOps agent should include CI/CD and deployment setup). If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. "- [ ] Step one\\n- [ ] Step two").`
+      : "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. Include project scaffolding and setup tasks (e.g. repo setup, dev environment, CI/CD, deployment config) — not just feature work. Order tasks so foundational/setup tasks come first. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").";
 
-    const systemPrompt =
-      (hasAgent
-        ? `${personaPrompt ?? "You are a specialist AI agent."}\n\nYou are generating a structured task board for a project on a kanban-style project management platform. Focus your task generation on your area of expertise — prioritize tasks you would own or contribute to. Include any scaffolding or setup tasks relevant to your domain (e.g. a DevOps agent should include CI/CD and deployment setup).`
-        : "You are an expert project manager generating a structured task board for a project on a kanban-style project management platform. Include foundational/setup tasks where relevant (e.g. for software: repo setup, dev environment, CI/CD) — not just feature work. Order tasks so foundational/setup tasks come first.") +
-      OUTPUT_CONSTRAINTS;
+    // Only very large, dense idea descriptions trigger the "everything in one giant
+    // task" pathology (the model reproduces the idea's density into a single task
+    // and fills the token budget before making a second — confirmed by telemetry).
+    // Normal ideas never hit this, so they keep the ORIGINAL prompt above untouched;
+    // only large ideas get an added decomposition nudge. Threshold in characters:
+    // ~5000 chars ≈ 1200 tokens — well above a normal idea, well below YCS TEST's
+    // ~20000-char programme spec.
+    const LARGE_IDEA_CHARS = 5000;
+    const isLargeIdea = (idea.description?.length ?? 0) > LARGE_IDEA_CHARS;
 
     const contextParts = buildPromptContextParts({
       prompt,
@@ -149,27 +148,17 @@ export async function POST(req: Request) {
       agentBio,
     });
 
-    // Repeat the decomposition rules as the LAST thing the model reads before it
-    // generates — recency weighting. This directly counters the pull of a long,
-    // detailed idea description (which implicitly says "reproduce all this detail").
-    // Belt-and-braces with OUTPUT_CONSTRAINTS in the system prompt above.
-    // Positive few-shot example of the target size/shape. Anthropic's own guidance
-    // for this model: a concrete example of the desired concision moves the model
-    // far more than repeated "keep it short" instructions. Telemetry showed the
-    // rules alone got tasks from 1 → 6 but descriptions stayed long (budget filled
-    // at ~6 tasks); the example is what pushes them terse enough to fit 15-25.
-    contextParts.push(
-      "---",
-      "OUTPUT RULES (follow exactly):\n" +
-        "- Break the work above into 15-25 small, SEPARATE tasks. Do not combine multiple areas of work into one task.\n" +
-        "- Each task's description: ONE short sentence (~30 words max). No acceptance criteria, tables, RICE scores, user stories, or multi-line prose — summarize.\n" +
-        "- A single task with a long description is wrong; split it into several tasks instead.\n" +
-        "\n" +
-        "Match the size and shape of these examples exactly (note how short each description is):\n" +
-        '- {"title": "Set up the project repository and CI", "description": "Create the repo and add a lint/test/build pipeline that runs on every PR.", "columnName": "To Do", "labels": ["infrastructure"]}\n' +
-        '- {"title": "Design the sign-up flow", "description": "Wireframe the 3-step onboarding and get sign-off before build.", "columnName": "To Do", "labels": ["design"]}\n' +
-        '- {"title": "Draft the pricing page copy", "description": "Write first-pass copy for the three tiers; flag any claims needing review.", "columnName": "Backlog", "labels": ["content"]}'
-    );
+    // Large ideas ONLY: append decomposition guidance as the last thing the model
+    // reads (recency), with a positive few-shot example — the lever that actually
+    // gets this model to keep descriptions short so many tasks fit in the budget.
+    if (isLargeIdea) {
+      contextParts.push(
+        "---",
+        "This idea is large and detailed. Decompose it into MANY small, separate tasks (aim for 15-25) — do not pack multiple areas of work into one task. Summarize the detail into short descriptions (roughly one sentence each) rather than reproducing acceptance criteria, tables, RICE scores, user stories, or long prose; a single task with a very long description should be split into several tasks. Match the size of these examples:\n" +
+          '- {"title": "Set up the project repository and CI", "description": "Create the repo and add a lint/test/build pipeline that runs on every PR.", "columnName": "To Do", "labels": ["infrastructure"]}\n' +
+          '- {"title": "Design the sign-up flow", "description": "Wireframe the 3-step onboarding and get sign-off before build.", "columnName": "To Do", "labels": ["design"]}'
+      );
+    }
 
     // Charge upfront BEFORE the AI call — prevents "use now, pay never" when the
     // post-stream step fails due to expired auth context. Usage logged after.
@@ -234,6 +223,7 @@ export async function POST(req: Request) {
         if (streamError) {
           logger.error("AI generate tasks stream ended in error", {
             ideaId,
+            isLargeIdea,
             maxTasksSeen,
             chunksEmitted,
             elapsedMs: Date.now() - startedAt,
@@ -251,6 +241,7 @@ export async function POST(req: Request) {
 
         logger.info("AI generate tasks stream completed", {
           ideaId,
+          isLargeIdea,
           maxTasksSeen,
           chunksEmitted,
           elapsedMs: Date.now() - startedAt,
