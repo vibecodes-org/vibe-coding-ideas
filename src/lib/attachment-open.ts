@@ -3,35 +3,44 @@
  * (`task-attachments-section.tsx`) and the clickable attachment links
  * rendered by `Markdown` (`markdown.tsx`).
  *
- * Both callers mint a short-lived signed URL from the `task-attachments`
- * bucket and open it in a new tab. They differ only in intent:
- *   - `downloadAttachment` always forces a download (Files tab behaviour,
- *     unchanged since before this module existed).
- *   - `openAttachment` opens inline-viewable types (images, PDF, HTML,
- *     plain text) in the browser, and falls back to a forced download for
- *     everything else — used by the new attachment links.
+ * `downloadAttachment` always forces a download (Files tab behaviour,
+ * unchanged since before this module existed) via a short-lived signed URL.
  *
- * `window.open` is called only after the signed URL resolves (mirrors the
- * pre-existing `handleDownload` pattern) — calling it synchronously inside
- * the click handler before the await would be blocked as a popup by some
- * browsers, and this keeps both code paths identical in that respect.
+ * `openAttachment` picks one of three strategies per content type (see
+ * `attachmentOpenStrategy`):
+ *   - "proxy": text/* (including text/html) — Supabase Storage intentionally
+ *     serves `text/html` objects as plain/raw text on the shared storage
+ *     domain (anti-phishing), so a signed URL can never inline-render HTML.
+ *     Instead we open `/api/attachments/view?id=` — our own route that
+ *     downloads the object server-side (RLS-checked) and re-serves it with
+ *     an explicit Content-Type. Opened synchronously (no await) so it can't
+ *     be blocked as a popup.
+ *   - "inline": images and PDF — mint a 5-minute signed URL and open it
+ *     directly; the browser renders these natively regardless of Storage's
+ *     text/* restriction.
+ *   - "download": everything else — forced download via a signed URL, same
+ *     as `downloadAttachment`.
  */
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
 const TASK_ATTACHMENTS_BUCKET = "task-attachments";
 
-/** Content types opened inline (viewable in a browser tab) rather than downloaded. */
-function isInlineContentType(contentType: string): boolean {
-  return (
-    contentType.startsWith("image/") ||
-    contentType === "application/pdf" ||
-    contentType === "text/html" ||
-    contentType === "text/plain"
-  );
+export type AttachmentOpenStrategy = "proxy" | "inline" | "download";
+
+/**
+ * Pure decision function: which strategy `openAttachment` uses for a given
+ * content type. Exported standalone so it's testable without mocking
+ * `window.open`/Supabase.
+ */
+export function attachmentOpenStrategy(contentType: string): AttachmentOpenStrategy {
+  if (contentType.startsWith("text/")) return "proxy";
+  if (contentType.startsWith("image/") || contentType === "application/pdf") return "inline";
+  return "download";
 }
 
 export interface OpenableAttachment {
+  id: string;
   storage_path: string;
   file_name: string;
   content_type: string;
@@ -56,16 +65,30 @@ async function mintSignedUrl(
 }
 
 /**
- * Opens an attachment in a new tab. Inline-viewable types (image/*, PDF,
- * HTML, plain text) open in the browser; everything else forces a download.
- * Throws on failure so callers can surface a toast.
+ * Opens an attachment in a new tab, picking the strategy from
+ * `attachmentOpenStrategy`: text/* attachments open our inline-viewer proxy
+ * route (synchronously, no signed URL needed); images/PDF open a 5-minute
+ * inline signed URL; everything else forces a download.
+ * Throws on failure (signed-URL branches only) so callers can surface a toast.
  */
 export async function openAttachment(
   supabase: SupabaseClient<Database>,
   attachment: OpenableAttachment
 ): Promise<void> {
-  const forceDownload = !isInlineContentType(attachment.content_type);
-  const url = await mintSignedUrl(supabase, attachment, forceDownload);
+  const strategy = attachmentOpenStrategy(attachment.content_type);
+
+  if (strategy === "proxy") {
+    // Synchronous — no await before window.open, so popup blockers can't
+    // intervene. The route itself performs the RLS-checked download.
+    window.open(
+      `/api/attachments/view?id=${encodeURIComponent(attachment.id)}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+    return;
+  }
+
+  const url = await mintSignedUrl(supabase, attachment, strategy === "download");
   window.open(url, "_blank", "noopener,noreferrer");
 }
 

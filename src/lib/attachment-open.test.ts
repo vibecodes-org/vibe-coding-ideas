@@ -1,5 +1,10 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { openAttachment, downloadAttachment, type OpenableAttachment } from "./attachment-open";
+import {
+  openAttachment,
+  downloadAttachment,
+  attachmentOpenStrategy,
+  type OpenableAttachment,
+} from "./attachment-open";
 
 function createStorageMock(signedUrl: string | null, error: { message: string } | null = null) {
   const createSignedUrl = vi.fn().mockResolvedValue({
@@ -15,6 +20,22 @@ function createStorageMock(signedUrl: string | null, error: { message: string } 
   return { supabase, createSignedUrl };
 }
 
+describe("attachmentOpenStrategy", () => {
+  it.each([
+    ["text/html", "proxy"],
+    ["text/plain", "proxy"],
+    ["text/markdown", "proxy"],
+    ["image/png", "inline"],
+    ["image/jpeg", "inline"],
+    ["application/pdf", "inline"],
+    ["application/zip", "download"],
+    ["application/msword", "download"],
+    ["application/octet-stream", "download"],
+  ])("classifies %s as %s", (contentType, expected) => {
+    expect(attachmentOpenStrategy(contentType)).toBe(expected);
+  });
+});
+
 describe("openAttachment / downloadAttachment", () => {
   let openSpy: ReturnType<typeof vi.spyOn>;
 
@@ -27,36 +48,45 @@ describe("openAttachment / downloadAttachment", () => {
   });
 
   const imageAttachment: OpenableAttachment = {
+    id: "id-image",
     storage_path: "idea/task/photo.png",
     file_name: "photo.png",
     content_type: "image/png",
   };
   const pdfAttachment: OpenableAttachment = {
+    id: "id-pdf",
     storage_path: "idea/task/report.pdf",
     file_name: "report.pdf",
     content_type: "application/pdf",
   };
   const htmlAttachment: OpenableAttachment = {
+    id: "id-html",
     storage_path: "idea/task/page.html",
     file_name: "page.html",
     content_type: "text/html",
   };
   const textAttachment: OpenableAttachment = {
+    id: "id-text",
     storage_path: "idea/task/notes.txt",
     file_name: "notes.txt",
     content_type: "text/plain",
   };
   const zipAttachment: OpenableAttachment = {
+    id: "id-zip",
     storage_path: "idea/task/bundle.zip",
     file_name: "bundle.zip",
     content_type: "application/zip",
+  };
+  const docxAttachment: OpenableAttachment = {
+    id: "id-docx",
+    storage_path: "idea/task/plan.docx",
+    file_name: "plan.docx",
+    content_type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   };
 
   it.each([
     ["image/*", imageAttachment],
     ["application/pdf", pdfAttachment],
-    ["text/html", htmlAttachment],
-    ["text/plain", textAttachment],
   ])("openAttachment mints a 5-minute inline signed URL for %s", async (_label, attachment) => {
     const { supabase, createSignedUrl } = createStorageMock("https://signed.example/inline");
     await openAttachment(supabase, attachment);
@@ -65,7 +95,37 @@ describe("openAttachment / downloadAttachment", () => {
     expect(window.open).toHaveBeenCalledWith("https://signed.example/inline", "_blank", "noopener,noreferrer");
   });
 
-  it("openAttachment forces a download for non-inline content types", async () => {
+  it.each([
+    ["text/html", htmlAttachment],
+    ["text/plain", textAttachment],
+  ])("openAttachment opens the inline-viewer proxy route for %s, without minting a signed URL", (_label, attachment) => {
+    const { supabase, createSignedUrl } = createStorageMock("https://signed.example/unused");
+
+    // No await: the proxy branch is synchronous so popup blockers can't intervene.
+    openAttachment(supabase, attachment);
+
+    expect(createSignedUrl).not.toHaveBeenCalled();
+    expect(window.open).toHaveBeenCalledWith(
+      `/api/attachments/view?id=${attachment.id}`,
+      "_blank",
+      "noopener,noreferrer"
+    );
+  });
+
+  it("openAttachment encodes the attachment id in the proxy URL", () => {
+    const { supabase } = createStorageMock("https://signed.example/unused");
+    const attachment: OpenableAttachment = { ...htmlAttachment, id: "id with spaces/slash" };
+
+    openAttachment(supabase, attachment);
+
+    expect(window.open).toHaveBeenCalledWith(
+      "/api/attachments/view?id=id%20with%20spaces%2Fslash",
+      "_blank",
+      "noopener,noreferrer"
+    );
+  });
+
+  it("openAttachment forces a download for non-inline, non-text content types", async () => {
     const { supabase, createSignedUrl } = createStorageMock("https://signed.example/zip");
     await openAttachment(supabase, zipAttachment);
 
@@ -73,6 +133,16 @@ describe("openAttachment / downloadAttachment", () => {
       download: zipAttachment.file_name,
     });
     expect(window.open).toHaveBeenCalledWith("https://signed.example/zip", "_blank", "noopener,noreferrer");
+  });
+
+  it("openAttachment forces a download for docx", async () => {
+    const { supabase, createSignedUrl } = createStorageMock("https://signed.example/docx");
+    await openAttachment(supabase, docxAttachment);
+
+    expect(createSignedUrl).toHaveBeenCalledWith(docxAttachment.storage_path, 60, {
+      download: docxAttachment.file_name,
+    });
+    expect(window.open).toHaveBeenCalledWith("https://signed.example/docx", "_blank", "noopener,noreferrer");
   });
 
   it("downloadAttachment always forces a download, even for inline-eligible types", async () => {
@@ -85,7 +155,17 @@ describe("openAttachment / downloadAttachment", () => {
     expect(window.open).toHaveBeenCalledWith("https://signed.example/pdf-download", "_blank", "noopener,noreferrer");
   });
 
-  it("calls window.open only after the signed URL resolves", async () => {
+  it("downloadAttachment forces a download for text/html too (Files tab download button)", async () => {
+    const { supabase, createSignedUrl } = createStorageMock("https://signed.example/html-download");
+    await downloadAttachment(supabase, htmlAttachment);
+
+    expect(createSignedUrl).toHaveBeenCalledWith(htmlAttachment.storage_path, 60, {
+      download: htmlAttachment.file_name,
+    });
+    expect(window.open).toHaveBeenCalledWith("https://signed.example/html-download", "_blank", "noopener,noreferrer");
+  });
+
+  it("calls window.open only after the signed URL resolves (inline branch)", async () => {
     const order: string[] = [];
     const createSignedUrl = vi.fn().mockImplementation(async () => {
       order.push("mint");
