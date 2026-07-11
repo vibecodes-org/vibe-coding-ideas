@@ -994,7 +994,7 @@ export const completeStepSchema = z.object({
     .describe(
       "The one-time claim token returned by claim_next_step for this step. Proves you are the claimer. If lost, call claim_next_step to re-claim and receive a fresh token."
     ),
-  output: z.string().max(50000).optional().describe("Step output or deliverable. This is stored on the step's `output` column and is how subsequent steps receive context — when the next step is claimed, all prior completed steps' outputs are passed in the `context` array. Also posted as a step comment for UI display."),
+  output: z.string().max(50000).optional().describe("Step output or deliverable. This is stored on the step's `output` column and is how subsequent steps receive context — when the next step is claimed, all prior completed steps' outputs are passed in the `context` array. Also posted as a step comment for UI display. Reference uploaded attachments by their exact filename — the UI renders them as clickable links."),
   model_used: z.enum(["fable", "opus", "sonnet", "haiku", "other", "unknown"]).optional()
     .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it). Omit if you don't know. VibeCodes records this to report tier adherence — it is not verified."),
 });

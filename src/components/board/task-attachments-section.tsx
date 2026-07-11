@@ -21,6 +21,7 @@ import { createClient } from "@/lib/supabase/client";
 import { logger } from "@/lib/logger";
 import { formatRelativeTime } from "@/lib/utils";
 import { logTaskActivity } from "@/lib/activity";
+import { downloadAttachment } from "@/lib/attachment-open";
 import type { BoardTaskAttachment } from "@/types";
 
 interface TaskAttachmentsSectionProps {
@@ -252,12 +253,14 @@ export function TaskAttachmentsSection({
 
   async function handleDownload(attachment: BoardTaskAttachment) {
     const supabase = createClient();
-    const { data } = await supabase.storage.from("task-attachments").createSignedUrl(attachment.storage_path, 60, {
-      download: attachment.file_name,
-    });
-
-    if (data?.signedUrl) {
-      window.open(data.signedUrl, "_blank");
+    try {
+      await downloadAttachment(supabase, attachment);
+    } catch (error) {
+      logger.error("Failed to download attachment", {
+        error: error instanceof Error ? error.message : String(error),
+        taskId,
+        fileName: attachment.file_name,
+      });
     }
   }
 

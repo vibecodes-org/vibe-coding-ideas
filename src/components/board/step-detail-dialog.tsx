@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useMemo } from "react";
-import { Markdown } from "@/components/ui/markdown";
+import { Markdown, type MarkdownAttachment } from "@/components/ui/markdown";
 import { toast } from "sonner";
 import {
   Check,
@@ -235,6 +235,7 @@ export function StepDetailDialog({
   const [editHumanCheck, setEditHumanCheck] = useState(false);
   const [saving, setSaving] = useState(false);
   const [assignedAgent, setAssignedAgent] = useState<{ name: string; avatar_url: string | null; role: string | null } | null>(null);
+  const [attachments, setAttachments] = useState<MarkdownAttachment[]>([]);
   const supabaseRef = useRef(createClient());
   const commentsEndRef = useRef<HTMLDivElement>(null);
 
@@ -254,6 +255,21 @@ export function StepDetailDialog({
         setAssignedAgent(data ? { name: data.name ?? "Unknown", avatar_url: data.avatar_url, role: data.role } : null);
       });
   }, [step.bot_id]);
+
+  // Fetch task attachments — used to linkify attachment filenames referenced
+  // in the step output/comments (see Markdown's `attachments` prop).
+  useEffect(() => {
+    if (!open) return;
+
+    const supabase = supabaseRef.current;
+    supabase
+      .from("board_task_attachments")
+      .select("id, file_name, content_type, storage_path")
+      .eq("task_id", step.task_id)
+      .then(({ data }) => {
+        setAttachments(data ?? []);
+      });
+  }, [open, step.task_id]);
 
   // Earlier completed/in_progress steps that can be targeted for cascade rejection
   const earlierSteps = allSteps.filter(
@@ -659,7 +675,7 @@ export function StepDetailDialog({
                 <div className="space-y-1">
                   <p className="text-xs font-medium text-muted-foreground">Output</p>
                   <div className="rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-sm prose-sm">
-                    <Markdown>{step.output}</Markdown>
+                    <Markdown attachments={attachments}>{step.output}</Markdown>
                   </div>
                 </div>
               )}
@@ -940,7 +956,7 @@ export function StepDetailDialog({
                         {new Date(comment.created_at).toLocaleString()}
                       </span>
                     </div>
-                    <div className="text-xs"><Markdown>{comment.content}</Markdown></div>
+                    <div className="text-xs"><Markdown attachments={attachments}>{comment.content}</Markdown></div>
                   </div>
                 ))}
                 <div ref={commentsEndRef} />

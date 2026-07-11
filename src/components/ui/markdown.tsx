@@ -1,15 +1,29 @@
 "use client";
 
-import React from "react";
+import React, { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import Link from "next/link";
+import { Paperclip, Loader2 } from "lucide-react";
+import { toast } from "sonner";
+import { createClient } from "@/lib/supabase/client";
+import { openAttachment } from "@/lib/attachment-open";
 import type { User } from "@/types";
+
+/** The subset of a `board_task_attachments` row the attachment-link matcher and opener need. */
+export interface MarkdownAttachment {
+  id: string;
+  file_name: string;
+  content_type: string;
+  storage_path: string;
+}
 
 interface MarkdownProps {
   children: string;
   className?: string;
   teamMembers?: User[];
+  /** Task attachments to linkify by filename. Omit for zero behaviour change. */
+  attachments?: MarkdownAttachment[];
 }
 
 function renderMentions(text: string, teamMembers?: User[]): React.ReactNode[] {
@@ -82,21 +96,161 @@ function renderMentions(text: string, teamMembers?: User[]): React.ReactNode[] {
   return parts.length > 0 ? parts : [text];
 }
 
-/** Recursively process React children, replacing string nodes containing @ with mention elements */
-function processMentionChildren(
+export type AttachmentSegment =
+  | { type: "text"; value: string }
+  | { type: "attachment"; value: string; attachment: MarkdownAttachment };
+
+/** Char immediately before/after a match must be absent or not one of these to count as a word boundary. */
+const WORD_CHAR_RE = /[\w-]/;
+
+/**
+ * Pure matcher: splits `text` into plain-text and attachment segments by
+ * matching known attachment filenames — longest-first (so "my-report.html"
+ * wins over "report.html" when both are present), case-insensitive, with a
+ * word-boundary rule so "shortlist.html" doesn't match inside
+ * "old-shortlist-DRAFT.html" or "(shortlist.html)." keeps the punctuation
+ * outside the link. Exported standalone so it's testable without rendering.
+ */
+export function matchAttachmentSegments(
+  text: string,
+  attachments: MarkdownAttachment[] | undefined
+): AttachmentSegment[] {
+  if (!attachments || attachments.length === 0 || !text) {
+    return [{ type: "text", value: text }];
+  }
+
+  const candidates = attachments
+    .filter((a) => a.file_name.length > 0)
+    .sort((a, b) => b.file_name.length - a.file_name.length);
+
+  if (candidates.length === 0) {
+    return [{ type: "text", value: text }];
+  }
+
+  const isBoundary = (ch: string | undefined) => ch === undefined || !WORD_CHAR_RE.test(ch);
+
+  const segments: AttachmentSegment[] = [];
+  let plainStart = 0;
+  let i = 0;
+
+  while (i < text.length) {
+    if (!isBoundary(text[i - 1])) {
+      i++;
+      continue;
+    }
+
+    let matchedAttachment: MarkdownAttachment | null = null;
+    for (const attachment of candidates) {
+      const name = attachment.file_name;
+      const slice = text.slice(i, i + name.length);
+      if (slice.length === name.length && slice.toLowerCase() === name.toLowerCase() && isBoundary(text[i + name.length])) {
+        matchedAttachment = attachment;
+        break; // candidates sorted longest-first
+      }
+    }
+
+    if (matchedAttachment) {
+      if (i > plainStart) {
+        segments.push({ type: "text", value: text.slice(plainStart, i) });
+      }
+      const value = text.slice(i, i + matchedAttachment.file_name.length);
+      segments.push({ type: "attachment", value, attachment: matchedAttachment });
+      i += matchedAttachment.file_name.length;
+      plainStart = i;
+    } else {
+      i++;
+    }
+  }
+
+  if (plainStart < text.length || segments.length === 0) {
+    segments.push({ type: "text", value: text.slice(plainStart) });
+  }
+
+  return segments;
+}
+
+/**
+ * Clickable inline reference to a task attachment, rendered in place of its
+ * filename in step outputs/comments. Mints a short-lived signed URL on
+ * click (no href available up front) and opens it in a new tab — inline
+ * types (image/pdf/html/text) open in-browser, everything else downloads.
+ */
+function AttachmentLink({ attachment, text }: { attachment: MarkdownAttachment; text: string }) {
+  const [isMinting, setIsMinting] = useState(false);
+
+  async function handleClick() {
+    if (isMinting) return;
+    setIsMinting(true);
+    try {
+      const supabase = createClient();
+      await openAttachment(supabase, attachment);
+    } catch {
+      toast.error("Failed to open attachment — please try again.");
+    } finally {
+      setIsMinting(false);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      title={`Open attachment ${attachment.file_name}`}
+      aria-busy={isMinting}
+      disabled={isMinting}
+      onClick={handleClick}
+      className="inline-flex max-w-full items-baseline gap-1 rounded-sm text-left align-baseline font-medium text-blue-400 underline decoration-blue-400/40 underline-offset-2 hover:text-blue-300 hover:decoration-blue-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1 disabled:cursor-wait disabled:opacity-60 cursor-pointer"
+    >
+      <Paperclip className="h-3 w-3 shrink-0 translate-y-px self-center" aria-hidden="true" />
+      <span className="break-all">{text}</span>
+      {isMinting && <Loader2 className="h-3 w-3 shrink-0 animate-spin self-center" aria-hidden="true" />}
+    </button>
+  );
+}
+
+/** Recursively process React children: replace string nodes with mention links and/or attachment links. */
+function processInlineChildren(
   children: React.ReactNode,
-  teamMembers?: User[]
+  teamMembers?: User[],
+  attachments?: MarkdownAttachment[]
 ): React.ReactNode {
   return React.Children.map(children, (child) => {
-    if (typeof child === "string" && child.includes("@")) {
-      return <>{renderMentions(child, teamMembers)}</>;
+    if (typeof child !== "string") return child;
+
+    const hasMention = child.includes("@");
+    const hasAttachments = !!attachments && attachments.length > 0;
+    if (!hasMention && !hasAttachments) return child;
+
+    // Mentions run first — "@Name" is consumed before attachment matching
+    // sees the remaining text, so a filename glued to "@" doesn't steal a
+    // mention match (mentions win on their own token; attachments only
+    // apply to what's left).
+    const mentionParts = hasMention ? renderMentions(child, teamMembers) : [child];
+
+    const finalParts: React.ReactNode[] = [];
+    let key = 0;
+    for (const part of mentionParts) {
+      if (typeof part !== "string") {
+        finalParts.push(part);
+        continue;
+      }
+      const segments = matchAttachmentSegments(part, attachments);
+      for (const segment of segments) {
+        if (segment.type === "text") {
+          if (segment.value) finalParts.push(segment.value);
+        } else {
+          finalParts.push(
+            <AttachmentLink key={`attachment-${key++}`} attachment={segment.attachment} text={segment.value} />
+          );
+        }
+      }
     }
-    return child;
+
+    return <>{finalParts}</>;
   });
 }
 
-export function Markdown({ children, className, teamMembers }: MarkdownProps) {
-  const m = (c: React.ReactNode) => processMentionChildren(c, teamMembers);
+export function Markdown({ children, className, teamMembers, attachments }: MarkdownProps) {
+  const m = (c: React.ReactNode) => processInlineChildren(c, teamMembers, attachments);
 
   return (
     <div className={`min-w-0 overflow-hidden break-words ${className ?? ""}`}>
@@ -172,6 +326,9 @@ export function Markdown({ children, className, teamMembers }: MarkdownProps) {
         ),
         strong: ({ children }) => (
           <strong className="font-semibold">{m(children)}</strong>
+        ),
+        em: ({ children }) => (
+          <em>{m(children)}</em>
         ),
       }}
     >

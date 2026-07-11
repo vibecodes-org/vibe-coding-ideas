@@ -1,0 +1,359 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UX Design — Clickable Attachment References in Step Outputs</title>
+<style>
+  /* ===== VibeCodes dark theme approximation (Tailwind v4 / shadcn Zinc) ===== */
+  :root {
+    --background: #09090b;        /* zinc-950 */
+    --foreground: #fafafa;        /* zinc-50 */
+    --card: #18181b;              /* zinc-900 */
+    --muted: #27272a;             /* zinc-800 */
+    --muted-fg: #a1a1aa;          /* zinc-400 */
+    --border: #27272a;
+    --primary: #fafafa;           /* shadcn Zinc dark primary = near-white */
+    --ring: #d4d4d8;              /* zinc-300 */
+    --blue-400: #60a5fa;
+    --blue-500: #3b82f6;
+    --emerald-400: #34d399;
+    --red-400: #f87171;
+    --amber-400: #fbbf24;
+    --violet-400: #a78bfa;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 960px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
+  h2 { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; margin: 48px 0 12px; padding-top: 24px; border-top: 1px solid var(--border); }
+  h3 { font-size: 14px; font-weight: 600; margin: 24px 0 8px; }
+  p  { font-size: 14px; color: var(--muted-fg); margin: 0 0 12px; }
+  p strong, li strong { color: var(--foreground); font-weight: 600; }
+  .subtitle { font-size: 14px; color: var(--muted-fg); margin-bottom: 8px; }
+  .meta { font-size: 12px; color: #71717a; }
+  code, .code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    background: var(--muted);
+    border-radius: 4px;
+    padding: 1.5px 6px;
+    color: #e4e4e7;
+    word-break: break-all;
+  }
+  pre.codeblock {
+    background: #101012;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: #e4e4e7;
+  }
+  pre.codeblock code { background: none; padding: 0; }
+  .cm { color: #6b7280; }              /* comment */
+  .tag { color: #7dd3fc; }             /* jsx tag */
+  .attr { color: #c4b5fd; }            /* attr name */
+  .str { color: #86efac; }             /* string */
+
+  /* ===== Mock chrome ===== */
+  .mock {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 12px 0 4px;
+  }
+  .mock-label {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #71717a;
+    margin: 20px 0 0;
+  }
+  .mock-label.before { color: var(--red-400); }
+  .mock-label.after  { color: var(--emerald-400); }
+  .caption { font-size: 12px; color: #71717a; margin: 6px 0 0; }
+
+  /* Step-output panel — mirrors step-detail-dialog.tsx exactly:
+     rounded-md border border-blue-500/20 bg-blue-500/5 px-3 py-2 text-sm */
+  .section-label { font-size: 12px; font-weight: 500; color: var(--muted-fg); margin-bottom: 4px; }
+  .output-panel {
+    border-radius: 6px;
+    border: 1px solid rgba(59,130,246,0.20);
+    background: rgba(59,130,246,0.05);
+    padding: 8px 12px;
+    font-size: 14px;
+  }
+  .output-panel p { color: var(--foreground); font-size: 14px; margin: 0 0 12px; }
+  .output-panel p:last-child { margin-bottom: 0; }
+  .comment-panel {
+    border-radius: 6px;
+    background: rgba(39,39,42,0.30);
+    padding: 8px 12px;
+    font-size: 12px;
+  }
+  .comment-panel p { color: var(--foreground); font-size: 12px; margin: 0; }
+  .comment-head { display:flex; align-items:center; gap:8px; margin-bottom:4px; }
+  .avatar { width:16px; height:16px; border-radius:9999px; background: var(--muted); display:inline-flex; align-items:center; justify-content:center; font-size:8px; color:var(--muted-fg); }
+  .comment-author { font-size:12px; font-weight:500; }
+  .comment-time { margin-left:auto; font-size:10px; color:var(--muted-fg); }
+
+  /* ===== THE ATTACHMENT LINK (the design) =====
+     Rendered as an inline <button> styled like the product's existing links. */
+  .attn-link {
+    display: inline-flex;
+    align-items: baseline;
+    gap: 4px;
+    max-width: 100%;
+    vertical-align: baseline;
+    font: inherit;
+    font-weight: 500;
+    color: var(--blue-400);
+    background: none;
+    border: none;
+    border-radius: 2px;
+    padding: 0;
+    margin: 0;
+    text-align: left;
+    text-decoration: underline;
+    text-decoration-color: rgba(96,165,250,0.4);
+    text-underline-offset: 2px;
+    cursor: pointer;
+    word-break: break-all;
+  }
+  .attn-link svg { width: 12px; height: 12px; flex-shrink: 0; transform: translateY(1px); align-self: baseline; }
+  .attn-link:hover { color: #93c5fd; text-decoration-color: #93c5fd; }
+  .attn-link:focus-visible { outline: none; box-shadow: 0 0 0 1px var(--background), 0 0 0 3px var(--ring); }
+  .attn-link.minting { opacity: 0.6; cursor: wait; pointer-events: none; }
+  .attn-link .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* forced-state demos */
+  .force-hover { color: #93c5fd !important; text-decoration-color: #93c5fd !important; }
+  .force-focus { outline: none; box-shadow: 0 0 0 1px var(--card), 0 0 0 3px var(--ring); }
+
+  /* annotation callouts */
+  .anno { display:flex; gap:8px; align-items:flex-start; margin-top:10px; }
+  .anno-dot { flex-shrink:0; width:18px; height:18px; border-radius:9999px; background:rgba(96,165,250,0.15); border:1px solid rgba(96,165,250,0.4); color:var(--blue-400); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; margin-top:1px; }
+  .anno p { font-size: 12.5px; margin: 0; }
+
+  /* toast mock (sonner dark) */
+  .toast {
+    display: flex; align-items: center; gap: 10px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px 16px;
+    max-width: 356px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.4);
+    font-size: 13px;
+  }
+  .toast svg { flex-shrink: 0; color: var(--red-400); }
+
+  /* states table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin-top: 8px; }
+  th, td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; vertical-align: top; }
+  th { background: var(--muted); font-weight: 600; font-size: 12px; }
+  td { color: var(--muted-fg); }
+  td:first-child { color: var(--foreground); font-weight: 500; white-space: nowrap; }
+  .table-wrap { overflow-x: auto; }
+
+  ul.spec { font-size: 14px; color: var(--muted-fg); padding-left: 20px; margin: 0 0 12px; }
+  ul.spec li { margin-bottom: 6px; }
+
+  .pill { display:inline-block; font-size:10px; font-weight:600; padding:2px 8px; border-radius:9999px; border:1px solid; margin-right: 6px;}
+  .pill.keep { color: var(--emerald-400); border-color: rgba(52,211,153,0.3); background: rgba(52,211,153,0.08); }
+  .note {
+    border-left: 2px solid rgba(96,165,250,0.5);
+    background: rgba(59,130,246,0.05);
+    border-radius: 0 6px 6px 0;
+    padding: 10px 14px;
+    font-size: 13px;
+    color: var(--muted-fg);
+    margin: 12px 0;
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Clickable Attachment References in Step Outputs</h1>
+  <p class="subtitle">UX Design — step 2 of Feature Development · builds on the Requirements step</p>
+  <p class="meta">Surfaces: step <strong>Output</strong> panel + step <strong>comments</strong> in <code>step-detail-dialog.tsx</code> · rendered via optional <code>attachments</code> prop on the shared <code>Markdown</code> component</p>
+
+  <!-- ============================================================ -->
+  <h2>01 · Design rationale — match what already reads as “clickable” here</h2>
+  <p>
+    In this product, inline clickables are <strong>colored text runs, not chips</strong>:
+    @mentions render as <code>font-medium text-blue-400 hover:text-blue-300 hover:underline</code>,
+    and markdown links as <code>text-primary underline</code>. A chip/badge treatment would collide with
+    the Deliverables badges two sections above the Output panel (which are <em>not</em> clickable) and
+    would swell multi-reference paragraphs. So the attachment reference is an
+    <strong>inline link-styled button</strong> in the mention blue family, differentiated from a
+    person-mention by a leading <strong><code>Paperclip</code> icon</strong> — the exact icon that already
+    heads the Files tab, giving instant information scent: “this opens a file”, not a profile.
+  </p>
+  <p>
+    It is a <code>&lt;button&gt;</code>, not an <code>&lt;a&gt;</code>, because there is no
+    <code>href</code> at render time — the signed URL is minted on click. Native button semantics give
+    Enter/Space activation and correct screen-reader announcement for free.
+  </p>
+
+  <!-- ============================================================ -->
+  <h2>02 · Annotated mockup — the screenshot scenario</h2>
+
+  <span class="mock-label before">Before (current)</span>
+  <div class="mock">
+    <div class="section-label">Output</div>
+    <div class="output-panel">
+      <p>Full decision pack: task attachment E1.3-Decision-Pack-Name-Shortlist.html</p>
+      <p>Top three names scored on memorability, domain availability, and trademark risk. Recommend proceeding with option 2.</p>
+    </div>
+  </div>
+  <p class="caption">The filename is inert text. The user must open the task, find the Files tab, and visually re-match the filename.</p>
+
+  <span class="mock-label after">After (this design)</span>
+  <div class="mock">
+    <div class="section-label">Output</div>
+    <div class="output-panel">
+      <p>Full decision pack: task attachment
+        <button class="attn-link" type="button" title="Open attachment E1.3-Decision-Pack-Name-Shortlist.html">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span>E1.3-Decision-Pack-Name-Shortlist.html</span></button>
+      </p>
+      <p>Top three names scored on memorability, domain availability, and trademark risk. Recommend proceeding with option 2.</p>
+    </div>
+    <div class="anno"><span class="anno-dot">1</span><p><strong>Paperclip, 12px (h-3 w-3)</strong>, baseline-aligned, <code>aria-hidden</code> — matches the Files-tab attachment glyph. One icon for every content type; the type only matters after opening (inline vs download), so we don’t leak that complexity into the prose.</p></div>
+    <div class="anno"><span class="anno-dot">2</span><p><strong>Mention-blue link run</strong> (<code>text-blue-400</code>, 40%-alpha underline at rest) — reads as clickable by the same convention @mentions established, but the icon prevents “is this a person?” confusion.</p></div>
+    <div class="anno"><span class="anno-dot">3</span><p><strong>Exact filename preserved</strong>, case as written by the author (match is case-insensitive, display is author’s text). Surrounding prose untouched.</p></div>
+  </div>
+
+  <h3>Same treatment in a step comment (text-xs context)</h3>
+  <div class="mock">
+    <div class="comment-panel">
+      <div class="comment-head">
+        <span class="avatar">NB</span>
+        <span class="comment-author">Naming Bot</span>
+        <span class="comment-time">11/07/2026, 09:14</span>
+      </div>
+      <p>Compared <button class="attn-link" type="button" style="font-size:12px" title="Open attachment E1.3-Decision-Pack-Name-Shortlist.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span>E1.3-Decision-Pack-Name-Shortlist.html</span></button> against <button class="attn-link" type="button" style="font-size:12px" title="Open attachment logo-moodboard-v2.png"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:11px;height:11px"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span>logo-moodboard-v2.png</span></button> — the shortlist wins on clarity.</p>
+    </div>
+    <div class="anno"><span class="anno-dot">4</span><p><strong>Multiple adjacent references</strong>: each filename linkifies independently; icon + 4px internal gap keeps two neighbouring links visually separable without any wrapper chrome. Font size inherits from context (<code>text-xs</code> here, <code>text-sm</code> in Output) — no hardcoded size on the link.</p></div>
+  </div>
+
+  <h3>Edge cases with realistic data</h3>
+  <div class="mock">
+    <div class="output-panel">
+      <p><em style="color:var(--muted-fg);font-style:normal;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Long filename — wraps, never truncates</em></p>
+      <p>Evidence bundle: <button class="attn-link" type="button" title="Open attachment 2026-07-Q3-competitive-landscape-analysis-and-naming-trademark-clearance-search-EMEA-final-v3.2-APPROVED.pdf"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span>2026-07-Q3-competitive-landscape-analysis-and-naming-trademark-clearance-search-EMEA-final-v3.2-APPROVED.pdf</span></button> covers all markets.</p>
+      <p><em style="color:var(--muted-fg);font-style:normal;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Inside bold — link nests inside, bold wins on weight</em></p>
+      <p><strong>Key deliverable: <button class="attn-link" type="button" style="font-weight:600" title="Open attachment E1.3-Decision-Pack-Name-Shortlist.html"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span>E1.3-Decision-Pack-Name-Shortlist.html</span></button> — review before Friday.</strong></p>
+      <p><em style="color:var(--muted-fg);font-style:normal;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Deleted attachment — stays plain text, indistinguishable from prose</em></p>
+      <p>Earlier draft in old-shortlist-DRAFT.html was superseded.</p>
+      <p><em style="color:var(--muted-fg);font-style:normal;font-size:11px;text-transform:uppercase;letter-spacing:.06em">Inside code — never linkified</em></p>
+      <p><code>cp E1.3-Decision-Pack-Name-Shortlist.html ./dist/</code></p>
+    </div>
+    <div class="anno"><span class="anno-dot">5</span><p><strong>Wrap, don’t truncate</strong>: <code>break-all</code> on the label span. Middle-truncation would hide version suffixes (<code>…v3.2-APPROVED.pdf</code> vs <code>…v3.1-DRAFT.pdf</code>) — exactly the part users need to tell similar files apart. The Output panel is narrow (<code>sm:max-w-md</code> dialog); wrapping matches how inline <code>code</code> already behaves here (<code>break-all</code>).</p></div>
+    <div class="anno"><span class="anno-dot">6</span><p><strong>Deleted state = nothing</strong>: no tooltip, no dashed underline, no <code>title</code>. Matching runs against the task’s <em>live</em> attachment list, so a deleted file simply never matches — the renderer cannot distinguish “deleted attachment” from “ordinary text that looks like a filename”, and any ghost affordance would produce false positives.</p></div>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>03 · States</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>State</th><th>Visual</th><th>Behaviour</th></tr>
+    <tr>
+      <td>Rest</td>
+      <td><button class="attn-link" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span>shortlist.html</span></button></td>
+      <td><code>text-blue-400</code>, underline at 40% alpha (<code>decoration-blue-400/40</code>), <code>underline-offset-2</code>. <code>title="Open attachment {name}"</code> for hover scent. No external-open arrow icon — the paperclip already carries the “opens a file” signal, and a second trailing glyph doubles visual noise on multi-reference lines.</td>
+    </tr>
+    <tr>
+      <td>Hover</td>
+      <td><button class="attn-link force-hover" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span>shortlist.html</span></button></td>
+      <td>Lightens to <code>text-blue-300</code>, underline goes solid (<code>decoration-blue-300</code>) — same shift as @mention hover. <code>cursor-pointer</code>.</td>
+    </tr>
+    <tr>
+      <td>Focus</td>
+      <td><button class="attn-link force-focus" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span>shortlist.html</span></button></td>
+      <td><code>focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1</code> on <code>rounded-sm</code> — shadcn ring convention, visible in dark and light, ≥3:1 against both panel tints (WCAG 2.4.7 / 1.4.11). Enter and Space activate (native button). In the Tab order between the dialog’s other controls.</td>
+    </tr>
+    <tr>
+      <td>Minting</td>
+      <td><button class="attn-link minting" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg><span>shortlist.html</span><svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12a9 9 0 1 1-6.219-8.56"/></svg></button></td>
+      <td>While the signed URL is created: <code>disabled</code> + <code>aria-busy</code>, <code>opacity-60</code>, <code>cursor-wait</code>, trailing <code>Loader2 h-3 w-3 animate-spin</code> appended after the label (same spinner the dialog already uses). Prevents double-click double-mint; usually &lt;500&nbsp;ms so no skeleton/overlay. Layout shift is one 12px glyph — acceptable and honest.</td>
+    </tr>
+    <tr>
+      <td>Error</td>
+      <td>Link returns to rest</td>
+      <td><code>toast.error("Failed to open attachment — please try again.")</code> (sonner, matches the dialog’s existing “Failed to …” voice). Link re-enabled so retry is one click. No inline error state — transient network failure shouldn’t permanently scar the prose.</td>
+    </tr>
+    <tr>
+      <td>Deleted source</td>
+      <td>Plain prose: <span style="font-size:13px">old-shortlist-DRAFT.html</span></td>
+      <td>Never linkified (no match in live attachment list). No tooltip, no <code>title</code>, no styling — see annotation 6.</td>
+    </tr>
+  </table>
+  </div>
+
+  <h3>Toast (sonner) mock</h3>
+  <div class="toast" role="status">
+    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+    <span>Failed to open attachment — please try again.</span>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>04 · Exact element spec</h2>
+  <pre class="codeblock"><code><span class="cm">// Emitted by the attachments pass inside Markdown (mirrors renderMentions)</span>
+<span class="tag">&lt;button</span>
+  <span class="attr">type</span>=<span class="str">"button"</span>
+  <span class="attr">title</span>={<span class="str">`Open attachment ${attachment.file_name}`</span>}
+  <span class="attr">aria-busy</span>={isMinting}
+  <span class="attr">disabled</span>={isMinting}
+  <span class="attr">onClick</span>={() =&gt; openAttachment(attachment)}   <span class="cm">// signed URL → inline for image/pdf/html/text, download otherwise (Files-tab pattern)</span>
+  <span class="attr">className</span>=<span class="str">"inline-flex max-w-full items-baseline gap-1 rounded-sm text-left align-baseline
+             font-medium text-blue-400 underline decoration-blue-400/40 underline-offset-2
+             hover:text-blue-300 hover:decoration-blue-300
+             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1
+             disabled:cursor-wait disabled:opacity-60 cursor-pointer"</span>
+<span class="tag">&gt;</span>
+  <span class="tag">&lt;Paperclip</span> <span class="attr">className</span>=<span class="str">"h-3 w-3 shrink-0 translate-y-px self-center"</span> <span class="attr">aria-hidden</span>=<span class="str">"true"</span> <span class="tag">/&gt;</span>
+  <span class="tag">&lt;span</span> <span class="attr">className</span>=<span class="str">"break-all"</span><span class="tag">&gt;</span>{matchedText}<span class="tag">&lt;/span&gt;</span>
+  {isMinting &amp;&amp; <span class="tag">&lt;Loader2</span> <span class="attr">className</span>=<span class="str">"h-3 w-3 shrink-0 animate-spin self-center"</span> <span class="attr">aria-hidden</span>=<span class="str">"true"</span> <span class="tag">/&gt;</span>}
+<span class="tag">&lt;/button&gt;</span></code></pre>
+
+  <ul class="spec">
+    <li><strong>Icons</strong>: lucide <code>Paperclip</code> (leading, always) + <code>Loader2</code> (trailing, minting only). Both <code>h-3 w-3</code>, matching the dialog’s inline icon scale.</li>
+    <li><strong>Font weight</strong>: <code>font-medium</code> at rest (same as mentions); inherits <code>font-semibold</code> when nested inside <code>&lt;strong&gt;</code> — bold precedence: the pass runs on text nodes <em>inside</em> strong/em (as <code>processMentionChildren</code> already does), so the link nests within the bold, never swallows it. A filename split across a formatting boundary (<code>file**name**.html</code>) does not match — matching is per-text-node only, same rule that keeps code spans clean.</li>
+    <li><strong>Display text</strong>: the author’s original casing/run from the source text; match is case-insensitive against real <code>board_task_attachments.file_name</code> values, longest-filename-first, with the same word-boundary check the mention matcher uses. Adjacent punctuation (<code>shortlist.html.</code>, <code>(shortlist.html)</code>) stays outside the link.</li>
+    <li><strong>Touch target</strong>: inline-text exception under WCAG 2.5.8 applies (link sits in a sentence); the full filename — typically 150px+ wide — is the target, and long names wrap to multi-line targets. No minimum-height padding that would break line rhythm.</li>
+    <li><strong>Light mode</strong>: <code>text-blue-400</code>/<code>blue-300</code> hover hold ≥4.5:1 on the light Output tint (<code>bg-blue-500/5</code> over white) is <em>not</em> guaranteed — use <code>text-blue-600 hover:text-blue-700 dark:text-blue-400 dark:hover:text-blue-300</code> if the app’s light theme is enabled for these surfaces. (Mentions currently hardcode <code>blue-400</code>; app default is dark. Follow whichever the mention pipeline does — consistency beats local perfection.)</li>
+    <li><strong>Screen reader</strong>: announced as “Open attachment {name}, button” via <code>title</code>+content; <code>aria-busy</code> during mint.</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2>05 · Explicitly not changing</h2>
+  <ul class="spec">
+    <li><span class="pill keep">KEEP</span>@mention rendering, colors, and matching pipeline — attachments pass runs alongside it, filenames matched before mention fallback only where they overlap (no filename starts with <code>@</code> in practice; if one does, mention match wins after <code>@</code>).</li>
+    <li><span class="pill keep">KEEP</span>Markdown code spans and code blocks — never linkified (AC).</li>
+    <li><span class="pill keep">KEEP</span>Standard markdown <code>&lt;a&gt;</code> links — untouched, still <code>text-primary underline</code>, still open in new tab.</li>
+    <li><span class="pill keep">KEEP</span>The Files tab (<code>task-attachments-section.tsx</code>) — its preview/download buttons, icons, and signed-URL logic are unchanged; the open-on-click behaviour here <em>reuses</em> that pattern, it doesn’t fork it.</li>
+    <li><span class="pill keep">KEEP</span>Output panel container (<code>border-blue-500/20 bg-blue-500/5</code>) and comment-type left-border styling.</li>
+    <li><span class="pill keep">KEEP</span>Every other <code>Markdown</code> consumer (idea descriptions, task comments, discussions) — no <code>attachments</code> prop passed ⇒ zero behaviour change.</li>
+    <li><span class="pill keep">KEEP</span>Stored step output / comment text — linkification is render-time only; the database text is never rewritten.</li>
+  </ul>
+
+  <p class="meta" style="margin-top:40px">docs/design-attachment-links.html · UX Design step deliverable · VibeCodes</p>
+</div>
+</body>
+</html>

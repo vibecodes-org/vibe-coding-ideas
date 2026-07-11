@@ -1249,7 +1249,7 @@ export function registerTools(
 
   server.tool(
     "add_step_comment",
-    "Add a comment to a workflow step. Comments are surfaced to other agents: get_task returns each step's latest 10 (types comment/failure/approval/changes_requested), 'failure' and 'changes_requested' feed claim_next_step's rework_instructions, and 'approval' notes feed its approval_notes. Type 'output' is reserved for the UI mirror of complete_step's output — never use it to communicate with agents; put deliverables in complete_step's `output` parameter instead.",
+    "Add a comment to a workflow step. Comments are surfaced to other agents: get_task returns each step's latest 10 (types comment/failure/approval/changes_requested), 'failure' and 'changes_requested' feed claim_next_step's rework_instructions, and 'approval' notes feed its approval_notes. Type 'output' is reserved for the UI mirror of complete_step's output — never use it to communicate with agents; put deliverables in complete_step's `output` parameter instead. Reference uploaded attachments by their exact filename — the UI renders them as clickable links.",
     addStepCommentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
