@@ -1,6 +1,7 @@
 "use client";
 
 import { Paperclip, Info, AlertTriangle } from "lucide-react";
+import { ENHANCE_ATTACHMENT_MAX_MB } from "@/lib/validation";
 import type { EnhanceAttachmentUsage } from "@/lib/attachment-context";
 
 /**
@@ -32,7 +33,7 @@ const KNOWN_REASONS: ReadonlySet<string> = new Set([
 export function omissionReasonText(name: string, reason: OmissionReason): string {
   switch (reason) {
     case "too_large":
-      return "over the 1 MB size limit";
+      return `over the ${ENHANCE_ATTACHMENT_MAX_MB} MB size limit`;
     case "over_budget":
       return "skipped to stay within the combined reading limit";
     case "read_error":

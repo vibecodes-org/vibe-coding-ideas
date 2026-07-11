@@ -10,6 +10,8 @@ export const MAX_LABEL_NAME_LENGTH = 50;
 export const MAX_IDEA_ATTACHMENTS = 10;
 export const MAX_DISCUSSION_ATTACHMENTS = 10;
 export const MAX_IDEA_ATTACHMENT_SIZE = 10 * 1024 * 1024; // 10 MB
+/** Per-file size ceiling for reading an attachment into an AI enhance prompt (see attachment-context). */
+export const ENHANCE_ATTACHMENT_MAX_MB = 5;
 export const ALLOWED_IDEA_ATTACHMENT_TYPES = [
   "image/jpeg",
   "image/png",

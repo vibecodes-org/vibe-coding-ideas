@@ -11,16 +11,21 @@
  */
 import { extractText, getDocumentProxy } from "unpdf";
 import { logger } from "@/lib/logger";
-import { MAX_IDEA_ATTACHMENTS } from "@/lib/validation";
+import { MAX_IDEA_ATTACHMENTS, ENHANCE_ATTACHMENT_MAX_MB } from "@/lib/validation";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
 const IDEA_ATTACHMENTS_BUCKET = "idea-attachments";
 
+/**
+ * Reading caps. Exported so tests derive boundaries from them rather than
+ * hardcoding numbers. Sized generously against the model's context window —
+ * the trade-off is input-token cost per enhance, not context headroom.
+ */
 /** Files larger than this are never downloaded, regardless of type. */
-const MAX_DOWNLOAD_BYTES = 1_048_576; // 1 MB
-const PER_FILE_CHAR_BUDGET = 8_000;
-const TOTAL_CHAR_BUDGET = 24_000;
+export const MAX_DOWNLOAD_BYTES = ENHANCE_ATTACHMENT_MAX_MB * 1_048_576; // 5 MB
+export const PER_FILE_CHAR_BUDGET = 30_000;
+export const TOTAL_CHAR_BUDGET = 150_000;
 const TRUNCATION_MARKER = "\n\n[... truncated ...]";
 
 /** Content types eligible as plain text (in addition to the extension check below). */

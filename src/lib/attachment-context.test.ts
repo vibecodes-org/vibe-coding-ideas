@@ -4,6 +4,9 @@ import {
   buildAttachmentPromptBlock,
   encodeAttachmentUsageHeader,
   getAttachmentContext,
+  MAX_DOWNLOAD_BYTES,
+  PER_FILE_CHAR_BUDGET,
+  TOTAL_CHAR_BUDGET,
   type AttachmentCandidate,
 } from "./attachment-context";
 
@@ -55,15 +58,23 @@ describe("classifyAttachment", () => {
     ).toBe("unsupported_type");
   });
 
-  it("classifies files over 1MB as too_large regardless of type", () => {
+  it("classifies files over the size limit as too_large regardless of type", () => {
     expect(
-      classifyAttachment({ file_name: "notes.md", file_size: 1_048_577, content_type: "text/markdown" })
+      classifyAttachment({
+        file_name: "notes.md",
+        file_size: MAX_DOWNLOAD_BYTES + 1,
+        content_type: "text/markdown",
+      })
     ).toBe("too_large");
   });
 
-  it("treats exactly 1MB as within budget (only strictly-over is too_large)", () => {
+  it("treats exactly the size limit as within budget (only strictly-over is too_large)", () => {
     expect(
-      classifyAttachment({ file_name: "notes.md", file_size: 1_048_576, content_type: "text/markdown" })
+      classifyAttachment({
+        file_name: "notes.md",
+        file_size: MAX_DOWNLOAD_BYTES,
+        content_type: "text/markdown",
+      })
     ).toBe("text");
   });
 });
@@ -86,16 +97,16 @@ describe("buildAttachmentPromptBlock", () => {
     expect(result.usage.omitted).toEqual([]);
   });
 
-  it("AC-2: truncates a single file at the 8,000 char budget with a marker", () => {
-    const longContent = "x".repeat(10_000);
+  it("AC-2: truncates a single file at the per-file char budget with a marker", () => {
+    const longContent = "x".repeat(PER_FILE_CHAR_BUDGET + 2_000);
     const result = buildAttachmentPromptBlock([
       candidate({ id: "a1", name: "big.pdf", content: longContent }),
     ]);
 
     expect(result.usage.used).toEqual([{ id: "a1", name: "big.pdf", truncated: true }]);
     expect(result.promptBlock).toContain("[... truncated ...]");
-    // 8000 chars of content + the marker text, nothing more of the original.
-    expect(result.promptBlock).not.toContain("x".repeat(10_000));
+    // Cut to the per-file budget + marker — no run longer than the budget survives.
+    expect(result.promptBlock).not.toContain("x".repeat(PER_FILE_CHAR_BUDGET + 1));
   });
 
   it("AC-3: a read_error candidate (e.g. scanned PDF) is omitted and doesn't affect the prompt", () => {
@@ -122,18 +133,25 @@ describe("buildAttachmentPromptBlock", () => {
     );
   });
 
-  it("AC-5: 4 eligible 8k files (newest-first) — first 3 included, 4th omitted:over_budget + marker", () => {
-    const eightK = "y".repeat(8_000);
-    const result = buildAttachmentPromptBlock([
-      candidate({ id: "1", name: "newest.md", content: eightK }),
-      candidate({ id: "2", name: "second.md", content: eightK }),
-      candidate({ id: "3", name: "third.md", content: eightK }),
-      candidate({ id: "4", name: "oldest.md", content: eightK }),
-    ]);
+  it("AC-5: eligible files past the total budget (newest-first) are omitted:over_budget + marker", () => {
+    // Each file is exactly the per-file budget (so it fills without truncation);
+    // one more than fits in the total budget overflows to over_budget.
+    const perFile = "y".repeat(PER_FILE_CHAR_BUDGET);
+    const fit = Math.floor(TOTAL_CHAR_BUDGET / PER_FILE_CHAR_BUDGET);
+    const candidates = Array.from({ length: fit + 1 }, (_, i) =>
+      candidate({ id: String(i + 1), name: `f${i + 1}.md`, content: perFile })
+    );
 
-    expect(result.usage.used.map((u) => u.id)).toEqual(["1", "2", "3"]);
-    expect(result.usage.omitted).toEqual([{ id: "4", name: "oldest.md", reason: "over_budget" }]);
-    expect(result.promptBlock).toContain("[1 more attachment(s) omitted: oldest.md]");
+    const result = buildAttachmentPromptBlock(candidates);
+
+    expect(result.usage.used.map((u) => u.id)).toEqual(
+      Array.from({ length: fit }, (_, i) => String(i + 1))
+    );
+    const overflowName = `f${fit + 1}.md`;
+    expect(result.usage.omitted).toEqual([
+      { id: String(fit + 1), name: overflowName, reason: "over_budget" },
+    ]);
+    expect(result.promptBlock).toContain(`[1 more attachment(s) omitted: ${overflowName}]`);
   });
 
   it("AC-6: zero candidates → empty prompt block and empty usage arrays", () => {

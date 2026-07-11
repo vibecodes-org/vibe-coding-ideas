@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { ENHANCE_ATTACHMENT_MAX_MB } from "@/lib/validation";
 import {
   parseAttachmentUsageHeader,
   omissionReasonText,
@@ -82,7 +83,9 @@ describe("parseAttachmentUsageHeader", () => {
 
 describe("omissionReasonText", () => {
   it("maps too_large / over_budget / read_error", () => {
-    expect(omissionReasonText("a.md", "too_large")).toBe("over the 1 MB size limit");
+    expect(omissionReasonText("a.md", "too_large")).toBe(
+      `over the ${ENHANCE_ATTACHMENT_MAX_MB} MB size limit`
+    );
     expect(omissionReasonText("a.md", "over_budget")).toBe(
       "skipped to stay within the combined reading limit"
     );
