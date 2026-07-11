@@ -131,9 +131,9 @@ export async function POST(req: Request) {
     // and fills the token budget before making a second — confirmed by telemetry).
     // Normal ideas never hit this, so they keep the ORIGINAL prompt above untouched;
     // only large ideas get an added decomposition nudge. Threshold in characters:
-    // ~5000 chars ≈ 1200 tokens — well above a normal idea, well below YCS TEST's
-    // ~20000-char programme spec.
-    const LARGE_IDEA_CHARS = 5000;
+    // 12000 chars ≈ 2000 words — comfortably above a normal spec, well below YCS
+    // TEST's ~20000-char programme spec.
+    const LARGE_IDEA_CHARS = 12000;
     const isLargeIdea = (idea.description?.length ?? 0) > LARGE_IDEA_CHARS;
 
     const contextParts = buildPromptContextParts({
@@ -148,13 +148,18 @@ export async function POST(req: Request) {
       agentBio,
     });
 
-    // Large ideas ONLY: append decomposition guidance as the last thing the model
-    // reads (recency), with a positive few-shot example — the lever that actually
-    // gets this model to keep descriptions short so many tasks fit in the budget.
+    // Large ideas ONLY: append a short nudge as the last thing the model reads
+    // (recency). The ONLY failure this addresses is the model writing one giant
+    // task description that eats the whole token budget before it makes a second
+    // task. So the nudge targets exactly that — short descriptions, don't reproduce
+    // the spec's detail verbatim, split long descriptions. It deliberately does NOT
+    // suggest a task count: the model decomposes to the right number on its own
+    // (30+ on normal ideas, which carry no count hint either), and a number would
+    // only anchor it. Short descriptions are what let many tasks fit in the budget.
     if (isLargeIdea) {
       contextParts.push(
         "---",
-        "This idea is large and detailed. Decompose it into MANY small, separate tasks (aim for 15-25) — do not pack multiple areas of work into one task. Summarize the detail into short descriptions (roughly one sentence each) rather than reproducing acceptance criteria, tables, RICE scores, user stories, or long prose; a single task with a very long description should be split into several tasks. Match the size of these examples:\n" +
+        "This idea's description is long and detailed. Break it into separate tasks — one per discrete piece of work — rather than packing several areas into one large task, and keep each task's description short (about one sentence): summarize the work rather than reproducing acceptance criteria, tables, RICE scores, user stories, or long prose from the idea in a description. If a task's description is getting long, that means it should be split into several separate tasks. Match the size and shape of these examples:\n" +
           '- {"title": "Set up the project repository and CI", "description": "Create the repo and add a lint/test/build pipeline that runs on every PR.", "columnName": "To Do", "labels": ["infrastructure"]}\n' +
           '- {"title": "Design the sign-up flow", "description": "Wireframe the 3-step onboarding and get sign-off before build.", "columnName": "To Do", "labels": ["design"]}'
       );
