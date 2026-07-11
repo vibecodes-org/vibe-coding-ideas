@@ -81,7 +81,7 @@ describe("board actions — no revalidatePath", () => {
     vi.clearAllMocks();
     // Reset chain responses to success
     mockSingle.mockResolvedValue({ data: { id: "item-1", position: 0 }, error: null });
-    mockMaybeSingle.mockResolvedValue({ data: null, error: null });
+    mockMaybeSingle.mockResolvedValue({ data: { id: "item-1" }, error: null });
     mockLimit.mockResolvedValue({ data: [{ position: 0 }], error: null });
     mockEq.mockReturnValue(chain);
     mockInsert.mockReturnValue(chain);

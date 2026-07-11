@@ -635,14 +635,21 @@ export async function updateTaskComment(
 
   content = validateComment(content);
 
-  // App-level author check + RLS defense-in-depth
-  const { error } = await supabase
+  // RLS enforces: author_id = auth.uid() OR is_bot_owner(author_id, auth.uid()).
+  // No app-level author filter here — a bot-owned comment's author_id is the
+  // bot's id, not the human's, so an `.eq("author_id", user.id)` filter would
+  // silently match 0 rows for a legitimate owned-bot edit. Select the updated
+  // row back so an RLS-filtered (0-row) update surfaces as an error instead
+  // of a silent no-op success.
+  const { data, error } = await supabase
     .from("board_task_comments")
     .update({ content })
     .eq("id", commentId)
-    .eq("author_id", user.id);
+    .select("id")
+    .maybeSingle();
 
   if (error) throw new Error(error.message);
+  if (!data) throw new Error("Comment not found or you don't have permission to edit it");
 
   // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
 }

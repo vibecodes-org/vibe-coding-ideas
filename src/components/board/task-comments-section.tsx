@@ -16,6 +16,7 @@ import { logTaskActivity } from "@/lib/activity";
 import { createTaskComment, deleteTaskComment, updateTaskComment } from "@/actions/board";
 import { undoableAction } from "@/lib/undo-toast";
 import { useBotRoles } from "@/components/bot-roles-context";
+import { canModifyComment, isCommentEdited } from "./comment-utils";
 import type { BoardTaskCommentWithAuthor, User } from "@/types";
 
 interface TaskCommentsSectionProps {
@@ -301,6 +302,7 @@ export function TaskCommentsSection({
   }
 
   async function handleSaveEdit(commentId: string) {
+    if (savingEdit) return;
     const trimmed = editContent.trim();
     const original = comments.find((c) => c.id === commentId);
     if (!trimmed || trimmed === original?.content) {
@@ -325,14 +327,6 @@ export function TaskCommentsSection({
     } finally {
       setSavingEdit(false);
     }
-  }
-
-  function canModifyComment(comment: BoardTaskCommentWithAuthor) {
-    return comment.author_id === currentUserId || userBotIds.includes(comment.author_id);
-  }
-
-  function isEdited(comment: BoardTaskCommentWithAuthor) {
-    return comment.updated_at && comment.updated_at !== comment.created_at;
   }
 
   return (
@@ -375,36 +369,40 @@ export function TaskCommentsSection({
                       </span>
                       <span className="text-[10px] text-muted-foreground">
                         {formatRelativeTime(comment.created_at)}
-                        {isEdited(comment) && (
+                        {isCommentEdited(comment.created_at, comment.updated_at) && (
                           <span className="ml-1 text-muted-foreground/60">(edited)</span>
                         )}
                       </span>
-                      {!isReadOnly && canModifyComment(comment) && !isEditingThis && (
-                        <>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                className="text-muted-foreground/60 hover:text-foreground"
-                                onClick={() => handleStartEdit(comment)}
-                              >
-                                <Pencil className="h-3 w-3" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>Edit comment</TooltipContent>
-                          </Tooltip>
-                          <Tooltip>
-                            <TooltipTrigger asChild>
-                              <button
-                                className="text-muted-foreground/60 hover:text-destructive"
-                                onClick={() => handleDelete(comment.id)}
-                              >
-                                <Trash2 className="h-3 w-3" />
-                              </button>
-                            </TooltipTrigger>
-                            <TooltipContent>Delete comment</TooltipContent>
-                          </Tooltip>
-                        </>
-                      )}
+                      {!isReadOnly &&
+                        canModifyComment(comment.author_id, currentUserId, userBotIds) &&
+                        !isEditingThis && (
+                          <>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  className="p-1.5 -m-1.5 rounded text-muted-foreground/60 hover:text-foreground"
+                                  aria-label="Edit comment"
+                                  onClick={() => handleStartEdit(comment)}
+                                >
+                                  <Pencil className="h-3 w-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>Edit comment</TooltipContent>
+                            </Tooltip>
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <button
+                                  className="p-1.5 -m-1.5 rounded text-muted-foreground/60 hover:text-destructive"
+                                  aria-label="Delete comment"
+                                  onClick={() => handleDelete(comment.id)}
+                                >
+                                  <Trash2 className="h-3 w-3" />
+                                </button>
+                              </TooltipTrigger>
+                              <TooltipContent>Delete comment</TooltipContent>
+                            </Tooltip>
+                          </>
+                        )}
                     </div>
 
                     {isEditingThis ? (
@@ -415,6 +413,7 @@ export function TaskCommentsSection({
                           onChange={(e) => setEditContent(e.target.value)}
                           rows={2}
                           className="min-h-[50px] text-xs"
+                          disabled={savingEdit}
                           onKeyDown={(e) => {
                             if (e.key === "Escape") handleCancelEdit();
                             if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) handleSaveEdit(comment.id);
@@ -426,6 +425,7 @@ export function TaskCommentsSection({
                               <Button
                                 size="icon"
                                 className="h-6 w-6"
+                                aria-label="Save comment"
                                 onClick={() => handleSaveEdit(comment.id)}
                                 disabled={savingEdit || !editContent.trim()}
                               >
@@ -440,6 +440,7 @@ export function TaskCommentsSection({
                                 variant="ghost"
                                 size="icon"
                                 className="h-6 w-6"
+                                aria-label="Cancel edit"
                                 onClick={handleCancelEdit}
                                 disabled={savingEdit}
                               >
@@ -489,6 +490,7 @@ export function TaskCommentsSection({
                 type="submit"
                 size="icon"
                 className="h-[60px] w-10 shrink-0"
+                aria-label="Send comment"
                 disabled={submitting || !content.trim()}
               >
                 <Send className="h-4 w-4" />

@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UX Design — Task Comment Editing (edit persistence + bot-edit fix)</title>
+<style>
+  :root {
+    --bg: #09090b;            /* zinc-950 */
+    --surface: #18181b;       /* zinc-900 */
+    --surface-2: #27272a;     /* zinc-800 */
+    --border: #3f3f46;        /* zinc-700 */
+    --border-soft: #27272a;
+    --fg: #fafafa;            /* zinc-50 */
+    --fg-mid: #a1a1aa;        /* zinc-400 */
+    --fg-dim: #71717a;        /* zinc-500 */
+    --accent: #fafafa;
+    --accent-fg: #18181b;
+    --green: #34d399;
+    --red: #f87171;
+    --amber: #fbbf24;
+    --blue: #60a5fa;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg);
+    color: var(--fg);
+    font: 15px/1.6 -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    padding: 40px 20px 80px;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 26px; letter-spacing: -0.02em; margin-bottom: 4px; }
+  .subtitle { color: var(--fg-mid); margin-bottom: 8px; }
+  .meta { font-size: 12px; color: var(--fg-dim); margin-bottom: 36px; }
+  .meta code { font-family: var(--mono); background: var(--surface); border: 1px solid var(--border-soft); border-radius: 4px; padding: 1px 6px; }
+  h2 { font-size: 19px; letter-spacing: -0.01em; margin: 48px 0 6px; padding-top: 24px; border-top: 1px solid var(--border-soft); }
+  h2 .num { color: var(--fg-dim); font-weight: 600; margin-right: 8px; }
+  h3 { font-size: 15px; margin: 28px 0 10px; color: var(--fg); }
+  p { color: var(--fg-mid); margin: 10px 0; }
+  p strong, li strong { color: var(--fg); }
+  code { font-family: var(--mono); font-size: 0.88em; background: var(--surface); border: 1px solid var(--border-soft); border-radius: 4px; padding: 1px 5px; }
+  ul, ol { margin: 10px 0 10px 22px; color: var(--fg-mid); }
+  li { margin: 6px 0; }
+
+  /* Callout */
+  .callout { border: 1px solid var(--border); border-left: 3px solid var(--blue); background: var(--surface); border-radius: 8px; padding: 14px 18px; margin: 18px 0; font-size: 14px; color: var(--fg-mid); }
+  .callout.good { border-left-color: var(--green); }
+  .callout.warn { border-left-color: var(--amber); }
+  .callout b { color: var(--fg); }
+
+  /* Flow diagram */
+  .flow { margin: 20px 0; }
+  .flow-step { display: flex; gap: 14px; align-items: flex-start; }
+  .flow-node { flex-shrink: 0; width: 28px; display: flex; flex-direction: column; align-items: center; align-self: stretch; }
+  .flow-dot { width: 28px; height: 28px; border-radius: 50%; background: var(--surface-2); border: 1px solid var(--border); color: var(--fg); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .flow-dot.err { background: #3b1214; border-color: #7f1d1d; color: var(--red); }
+  .flow-dot.ok { background: #0d2b21; border-color: #14532d; color: var(--green); }
+  .flow-line { width: 2px; flex: 1; background: var(--border-soft); margin: 4px 0; min-height: 14px; }
+  .flow-body { padding-bottom: 20px; min-width: 0; }
+  .flow-title { font-weight: 600; font-size: 14px; color: var(--fg); }
+  .flow-desc { font-size: 13px; color: var(--fg-mid); margin-top: 2px; }
+  .flow-desc code { font-size: 12px; }
+  kbd { font-family: var(--mono); font-size: 11px; background: var(--surface-2); border: 1px solid var(--border); border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px; color: var(--fg); white-space: nowrap; }
+
+  /* Mockups */
+  .mock-frame { border: 1px solid var(--border); border-radius: 10px; background: var(--surface); margin: 16px 0 6px; overflow: hidden; }
+  .mock-titlebar { display: flex; align-items: center; justify-content: space-between; font-size: 11px; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--fg-dim); background: var(--surface-2); padding: 7px 14px; border-bottom: 1px solid var(--border-soft); }
+  .mock-body { padding: 18px 16px; max-width: 420px; }
+  .mock-note { font-size: 12.5px; color: var(--fg-dim); margin: 6px 2px 26px; }
+  .mock-note b { color: var(--fg-mid); }
+
+  /* Comment anatomy (mirrors the real component) */
+  .c-row { display: flex; gap: 8px; }
+  .c-avatar { width: 24px; height: 24px; border-radius: 50%; background: #4c1d95; color: #ede9fe; font-size: 10px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+  .c-avatar.bot { background: #0c4a6e; color: #bae6fd; }
+  .c-main { min-width: 0; flex: 1; }
+  .c-head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .c-name { font-size: 12px; font-weight: 600; display: inline-flex; align-items: center; gap: 4px; }
+  .c-bot-badge { font-size: 10px; color: var(--blue); }
+  .c-time { font-size: 10px; color: var(--fg-dim); }
+  .c-edited { color: #52525b; margin-left: 4px; }
+  .c-actions { display: inline-flex; gap: 2px; }
+  .icon-btn { background: none; border: none; color: var(--fg-dim); cursor: pointer; border-radius: 6px; padding: 6px; display: inline-flex; align-items: center; justify-content: center; line-height: 0; }
+  .icon-btn:hover { color: var(--fg); background: var(--surface-2); }
+  .icon-btn.danger:hover { color: var(--red); }
+  .icon-btn svg { width: 12px; height: 12px; }
+  .c-content { font-size: 12px; color: #d4d4d8; margin-top: 3px; }
+  .c-content .strike { text-decoration: line-through; color: var(--fg-dim); }
+  .c-edit-area { margin-top: 6px; }
+  .c-textarea { width: 100%; min-height: 52px; resize: vertical; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; color: var(--fg); font: 12px/1.5 inherit; padding: 8px 10px; outline: none; }
+  .c-textarea:focus { border-color: #52525b; box-shadow: 0 0 0 3px rgba(250,250,250,0.08); }
+  .c-edit-actions { display: flex; align-items: center; gap: 6px; margin-top: 6px; }
+  .btn-save { width: 28px; height: 28px; border-radius: 7px; border: none; background: var(--fg); color: var(--accent-fg); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .btn-save[disabled] { opacity: 0.45; cursor: not-allowed; }
+  .btn-cancel { width: 28px; height: 28px; border-radius: 7px; border: none; background: transparent; color: var(--fg-mid); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+  .btn-cancel:hover { background: var(--surface-2); color: var(--fg); }
+  .btn-save svg, .btn-cancel svg { width: 12px; height: 12px; }
+  .spinner { width: 12px; height: 12px; border: 2px solid rgba(24,24,27,0.3); border-top-color: var(--accent-fg); border-radius: 50%; display: inline-block; }
+
+  /* Annotation tags */
+  .anno { display: inline-block; font-size: 10px; font-weight: 700; font-family: var(--mono); background: #1e3a5f; color: #93c5fd; border-radius: 4px; padding: 0 5px; vertical-align: middle; margin-left: 6px; }
+  .anno.g { background: #0d2b21; color: var(--green); }
+  .anno.r { background: #3b1214; color: var(--red); }
+  .anno-list { font-size: 12.5px; color: var(--fg-mid); margin: 8px 2px 0; }
+  .anno-list li { margin: 4px 0; }
+
+  /* Toast mock */
+  .toast { display: flex; align-items: center; gap: 10px; background: #131316; border: 1px solid var(--border); border-radius: 10px; padding: 11px 14px; font-size: 13px; color: var(--fg); max-width: 320px; box-shadow: 0 8px 30px rgba(0,0,0,0.5); margin-top: 14px; }
+  .toast .t-icon { color: var(--red); flex-shrink: 0; line-height: 0; }
+  .toast .t-icon svg { width: 16px; height: 16px; }
+
+  /* Deltas */
+  .delta { border: 1px solid var(--border-soft); background: var(--surface); border-radius: 10px; padding: 14px 16px 14px 52px; margin: 12px 0; position: relative; }
+  .delta-num { position: absolute; left: 14px; top: 14px; width: 26px; height: 26px; border-radius: 8px; background: var(--surface-2); border: 1px solid var(--border); color: var(--fg); font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .delta h4 { font-size: 14px; margin-bottom: 4px; }
+  .delta p { font-size: 13px; margin: 4px 0 0; }
+  .tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.05em; text-transform: uppercase; border-radius: 4px; padding: 1px 7px; margin-left: 8px; vertical-align: 1px; }
+  .tag.required { background: #3b1214; color: var(--red); }
+  .tag.cheap { background: #0d2b21; color: var(--green); }
+  .tag.verify { background: #1e3a5f; color: #93c5fd; }
+
+  .not-changing li { color: var(--fg-mid); }
+  .not-changing li b { color: var(--fg); }
+
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 14px 0; }
+  th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--border-soft); color: var(--fg-mid); vertical-align: top; }
+  th { color: var(--fg); font-size: 12px; }
+  .table-scroll { overflow-x: auto; }
+
+  @media (max-width: 480px) {
+    body { padding: 24px 12px 60px; }
+    .mock-body { max-width: none; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Task Comment Editing — UX Design Review</h1>
+  <p class="subtitle">Feature Development workflow · Step 2: UX Design · Building on the Requirements step (step 1)</p>
+  <p class="meta">Component: <code>src/components/board/task-comments-section.tsx</code> · Server action: <code>updateTaskComment</code> in <code>src/actions/board.ts</code> · Scope: two backend defects + minimal UX deltas. This is <b>not</b> a redesign.</p>
+
+  <div class="callout good">
+    <b>Verdict: the existing inline edit flow is sound and stays.</b> Pencil → inline textarea → Check/X with <kbd>Ctrl</kbd>+<kbd>Enter</kbd> / <kbd>Esc</kbd> matches Linear/GitHub conventions (Jakob's Law), edits happen in place (no modal), and the action icons are <b>always visible</b> — not hover-gated — so mobile works. Critically, <code>handleSaveEdit</code> applies the local state update <em>after</em> <code>await updateTaskComment()</code> resolves. That means once the server action starts throwing on 0-row updates (Defect 2 fix), the existing <code>catch</code> path automatically delivers AC8: error toast, no false "saved" state, edit mode stays open with the user's draft intact. No client reordering is needed — only guards and small accessibility fixes, listed in §3.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="num">1</span>User flow — trigger to completion, including error recovery</h2>
+  <p>Actor: a team member editing their own comment, or a comment authored by a bot they own (<code>userBotIds</code>). The flow below is the flow as it will behave <em>after</em> the two backend fixes; steps that change are annotated.</p>
+
+  <div class="flow">
+    <div class="flow-step">
+      <div class="flow-node"><div class="flow-dot">1</div><div class="flow-line"></div></div>
+      <div class="flow-body">
+        <div class="flow-title">Trigger — click/tap the pencil icon</div>
+        <div class="flow-desc">Pencil sits inline next to the timestamp on every comment the user can modify — own comments <b>and owned-bot comments (AC5)</b>. Always rendered, never hover-only. <span class="anno">Δ3, Δ4: needs aria-label + bigger hit area</span></div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-node"><div class="flow-dot">2</div><div class="flow-line"></div></div>
+      <div class="flow-body">
+        <div class="flow-title">Edit in place</div>
+        <div class="flow-desc">Comment body swaps to a textarea pre-filled with current content, auto-focused. Check (save) and X (cancel) buttons directly below — primary action adjacent to the work (Fitts). <kbd>Ctrl</kbd>/<kbd>⌘</kbd>+<kbd>Enter</kbd> saves, <kbd>Esc</kbd> cancels; tooltips advertise both shortcuts (recognition over recall).</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-node"><div class="flow-dot">3</div><div class="flow-line"></div></div>
+      <div class="flow-body">
+        <div class="flow-title">Guards before the network</div>
+        <div class="flow-desc"><b>Empty edit (AC7):</b> trimmed-empty content never reaches the server — Check is disabled and a keyboard save falls through to cancel, restoring the original comment. Deleting is a separate, explicit action (trash → undo toast). <b>Unchanged edit:</b> silently exits edit mode; no request, no spurious "(edited)". <span class="anno">Δ2: add in-flight re-submit guard</span></div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-node"><div class="flow-dot">4</div><div class="flow-line"></div></div>
+      <div class="flow-body">
+        <div class="flow-title">Save — pessimistic commit</div>
+        <div class="flow-desc"><code>await updateTaskComment()</code> runs first; local state is updated only on success (content + <code>updated_at</code>), then edit mode closes. Sub-second on typical latency, so no extra "saving…" affordance is needed beyond the disabled Check button.</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-node"><div class="flow-dot ok">✓</div><div class="flow-line"></div></div>
+      <div class="flow-body">
+        <div class="flow-title">Success — "(edited)" everywhere, forever</div>
+        <div class="flow-desc">Editor sees updated content with the <b>(edited)</b> suffix beside the timestamp. The DB trigger (Defect 1 fix) bumps <code>updated_at</code>, so the indicator <b>survives reload (AC1–2)</b> and the realtime UPDATE payload carries the new <code>updated_at</code> to other viewers <b>live (AC3)</b> — the client handler already maps it through. Pencil remains visible for future edits, including on bot comments (AC5).</div>
+      </div>
+    </div>
+    <div class="flow-step">
+      <div class="flow-node"><div class="flow-dot err">✕</div></div>
+      <div class="flow-body">
+        <div class="flow-title">Error recovery — failure is loud, work is preserved</div>
+        <div class="flow-desc">If <code>updateTaskComment</code> throws — including the new 0-row throw (Defect 2 fix) — <code>toast.error("Failed to update comment")</code> fires and <b>edit mode stays open with the draft intact</b>. Nothing is lost, nothing false is rendered (AC8). The user can retry (Check again) or bail (<kbd>Esc</kbd> restores the original). This recovery already exists in the component; the fix simply makes the server stop lying to it.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout warn">
+    <b>The pre-fix false-success path, for contrast:</b> owner edits a bot comment → server matches 0 rows (<code>.eq("author_id", user.id)</code> excludes bot-authored rows) → no error → client "optimistically" renders the new content and closes the editor → reload silently reverts it. The user's work evaporates with a success face on. This is the worst failure class — silent data loss — and it is fixed server-side, not with UI.
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="num">2</span>Annotated mockups — comment states</h2>
+  <p>Wireframes mirror the real component (zinc dark theme, 24px avatar, 12px text). Rendered at the task-drawer's ~420px content width; the same single-column layout holds at 375px because the header row wraps and the textarea is full-width.</p>
+
+  <h3>State A — Normal (own comment, not yet edited)</h3>
+  <div class="mock-frame">
+    <div class="mock-titlebar"><span>Comment · default</span><span>can modify</span></div>
+    <div class="mock-body">
+      <div class="c-row">
+        <div class="c-avatar">NB</div>
+        <div class="c-main">
+          <div class="c-head">
+            <span class="c-name">Nick Ball</span>
+            <span class="c-time">2h ago</span>
+            <span class="c-actions">
+              <button class="icon-btn" aria-label="Edit comment" title="Edit comment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+              <button class="icon-btn danger" aria-label="Delete comment" title="Delete comment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+            </span>
+          </div>
+          <div class="c-content">Realtime handler is wired up — deploying the trigger migration next.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <ul class="anno-list">
+    <li><span class="anno">Δ4</span> Pencil/trash glyphs stay 12px, but the buttons gain padding for a ≥24px hit area (currently the tap target is the bare 12px icon — well under any touch guideline).</li>
+    <li><span class="anno">Δ3</span> Both buttons get <code>aria-label</code>s — Radix tooltips do not provide an accessible name, so today screen readers announce unnamed buttons.</li>
+    <li><span class="anno g">KEEP</span> Icons always visible (no hover gate) — mobile-safe as-is.</li>
+  </ul>
+
+  <h3>State B — Editing (inline)</h3>
+  <div class="mock-frame">
+    <div class="mock-titlebar"><span>Comment · editing</span><span>editingId === comment.id</span></div>
+    <div class="mock-body">
+      <div class="c-row">
+        <div class="c-avatar">NB</div>
+        <div class="c-main">
+          <div class="c-head">
+            <span class="c-name">Nick Ball</span>
+            <span class="c-time">2h ago</span>
+          </div>
+          <div class="c-edit-area">
+            <textarea class="c-textarea" aria-label="Edit comment text">Realtime handler is wired up — trigger migration deployed and verified on staging.</textarea>
+            <div class="c-edit-actions">
+              <button class="btn-save" aria-label="Save comment" title="Save (Ctrl+Enter)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></button>
+              <button class="btn-cancel" aria-label="Cancel edit" title="Cancel (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <ul class="anno-list">
+    <li><span class="anno g">KEEP</span> Pencil/trash hidden while editing (single mode, no conflicting actions). Save is the filled primary button, cancel is ghost — clear hierarchy.</li>
+    <li><span class="anno g">KEEP</span> Check disabled when trimmed-empty. Acceptable despite the "no unexplained disabled buttons" rule: the adjacent X and <kbd>Esc</kbd> give an always-available exit, and an empty "save" via keyboard resolves to cancel — the user is never trapped (AC7).</li>
+    <li><span class="anno">Δ2</span> While a save is in flight, <kbd>Ctrl</kbd>+<kbd>Enter</kbd> can currently re-fire <code>handleSaveEdit</code> (the textarea stays active and only the buttons check <code>savingEdit</code>). Add an early return.</li>
+    <li><span class="anno">Δ3</span> Check/X buttons need <code>aria-label</code>s. They are 24px (<code>h-6 w-6</code>); acceptable inline, but padding may bump effective targets to ~32px cheaply if the implementer prefers.</li>
+  </ul>
+
+  <h3>State C — Saved, with persistent "(edited)" (shown on a bot comment — AC5)</h3>
+  <div class="mock-frame">
+    <div class="mock-titlebar"><span>Comment · saved</span><span>updated_at ≠ created_at</span></div>
+    <div class="mock-body">
+      <div class="c-row">
+        <div class="c-avatar bot">SC</div>
+        <div class="c-main">
+          <div class="c-head">
+            <span class="c-name"><span class="c-bot-badge" title="Scout (Research Agent)">🤖</span> Scout</span>
+            <span class="c-time">2h ago<span class="c-edited">(edited)</span></span>
+            <span class="c-actions">
+              <button class="icon-btn" aria-label="Edit comment" title="Edit comment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/></svg></button>
+              <button class="icon-btn danger" aria-label="Delete comment" title="Delete comment"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/></svg></button>
+            </span>
+          </div>
+          <div class="c-content">Findings updated: competitor uses a DB trigger for this exact pattern.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <ul class="anno-list">
+    <li><span class="anno g">KEEP</span> "(edited)" as a quiet suffix beside the timestamp — GitHub/Linear convention, no colour dependence, readable by screen readers as plain text.</li>
+    <li><span class="anno g">AC1–3</span> After the trigger fix this state is identical for: the editor post-save, the editor post-reload, and remote viewers via realtime. One state, three routes into it — no new UI.</li>
+    <li><span class="anno g">AC5</span> Owner sees pencil/trash on the owned bot's comment (<code>canModifyComment</code> checks <code>userBotIds</code>) — and after the Defect 2 fix, the edit actually persists.</li>
+  </ul>
+
+  <h3>State D — Error: save failed (0-row or network)</h3>
+  <div class="mock-frame">
+    <div class="mock-titlebar"><span>Comment · error recovery</span><span>catch → toast, editor stays open</span></div>
+    <div class="mock-body">
+      <div class="c-row">
+        <div class="c-avatar">NB</div>
+        <div class="c-main">
+          <div class="c-head">
+            <span class="c-name">Nick Ball</span>
+            <span class="c-time">2h ago</span>
+          </div>
+          <div class="c-edit-area">
+            <textarea class="c-textarea" aria-label="Edit comment text">Realtime handler is wired up — trigger migration deployed and verified on staging.</textarea>
+            <div class="c-edit-actions">
+              <button class="btn-save" aria-label="Save comment" title="Save (Ctrl+Enter)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M20 6 9 17l-5-5"/></svg></button>
+              <button class="btn-cancel" aria-label="Cancel edit" title="Cancel (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6 6 18M6 6l12 12"/></svg></button>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="toast" role="status">
+        <span class="t-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 8v4m0 4h.01"/></svg></span>
+        Failed to update comment
+      </div>
+    </div>
+  </div>
+  <ul class="anno-list">
+    <li><span class="anno g">AC8</span> Draft text preserved in the open textarea; the rendered comment list still shows the <em>original</em> content — no false "saved" state at any moment, because the local update only ever happens after a successful await.</li>
+    <li><span class="anno g">KEEP</span> Recovery paths from here: retry (Check / <kbd>Ctrl</kbd>+<kbd>Enter</kbd>) or discard (<kbd>X</kbd> / <kbd>Esc</kbd>). Both one action away.</li>
+    <li><span class="anno">Δ1</span> Implementation must <b>not</b> "clean up" the catch block by closing the editor or clearing <code>editContent</code> — keeping it open <em>is</em> the recovery design.</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2><span class="num">3</span>UX deltas for Implementation</h2>
+  <p>Everything the implementation step must touch in <code>task-comments-section.tsx</code>. The two backend fixes (DB trigger, 0-row throw in <code>updateTaskComment</code>) are specified by the Requirements step and are out of scope here.</p>
+
+  <div class="delta"><div class="delta-num">1</div>
+    <h4>Preserve the save/catch flow exactly <span class="tag verify">verify — no change</span></h4>
+    <p><code>handleSaveEdit</code> already awaits the server action <em>before</em> touching local state, and its <code>catch</code> shows <code>toast.error("Failed to update comment")</code> while leaving <code>editingId</code>/<code>editContent</code> intact. Once the server action throws on 0 rows, this delivers AC8 with zero client changes. <b>Do not reorder to optimistic-first and do not close the editor on error.</b> Add/confirm a test or manual check: failed save → toast + editor open with draft + list still shows original content.</p>
+  </div>
+
+  <div class="delta"><div class="delta-num">2</div>
+    <h4>Guard against double-submit during an in-flight save <span class="tag required">required</span></h4>
+    <p>The edit textarea stays enabled while <code>savingEdit</code> is true, so <kbd>Ctrl</kbd>+<kbd>Enter</kbd> can invoke <code>handleSaveEdit</code> again mid-flight (the disabled Check button only guards the click path). Add <code>if (savingEdit) return;</code> at the top of <code>handleSaveEdit</code>. Optionally also pass <code>disabled={savingEdit}</code> to the edit <code>Textarea</code>.</p>
+  </div>
+
+  <div class="delta"><div class="delta-num">3</div>
+    <h4>aria-labels on all icon-only buttons <span class="tag cheap">cheap a11y</span></h4>
+    <p>Radix <code>TooltipContent</code> does not give a button an accessible name. Add: <code>aria-label="Edit comment"</code> (pencil), <code>aria-label="Delete comment"</code> (trash), <code>aria-label="Save comment"</code> (Check), <code>aria-label="Cancel edit"</code> (X), and <code>aria-label="Send comment"</code> on the composer's Send button while in the file. Five attributes, no visual change. (WCAG 2.1 AA 4.1.2.)</p>
+  </div>
+
+  <div class="delta"><div class="delta-num">4</div>
+    <h4>Enlarge pencil/trash hit areas <span class="tag cheap">cheap a11y</span></h4>
+    <p>The bare <code>&lt;button&gt;</code>s currently have a ~12px tap target (the <code>h-3 w-3</code> icon itself). Keep the 12px glyph and visual density; add padding with negative margin so the layout doesn't shift, e.g. <code>className="p-1.5 -m-1 rounded text-muted-foreground/60 hover:text-foreground"</code> → ≥24px effective target. Do the same on the trash button (hover keeps <code>hover:text-destructive</code>).</p>
+  </div>
+
+  <div class="delta"><div class="delta-num">5</div>
+    <h4>Realtime UPDATE handler: keep as-is <span class="tag verify">verify — no change</span></h4>
+    <p>The UPDATE subscription already maps <code>content</code> and <code>updated_at</code> into state (lines ~131–139), which is exactly what AC3 needs once the trigger produces a changed <code>updated_at</code>. No client change; just verify with two browser sessions after the migration lands. Note the editor's own optimistic <code>updated_at</code> (client clock) is later overwritten by the server value via this same handler — harmless, by design.</p>
+  </div>
+
+  <div class="delta"><div class="delta-num">6</div>
+    <h4>Empty-edit behaviour: keep cancel-on-empty <span class="tag verify">verify — no change</span></h4>
+    <p>Trimmed-empty or unchanged content exits edit mode without a request (AC7). Do not add an error toast for this — an empty edit is a cancelled edit, not a failure; deletion stays an explicit separate action with its own undo toast. The disabled Check button is acceptable because the enabled X/<kbd>Esc</kbd> exit sits directly adjacent.</p>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2><span class="num">4</span>Intentionally NOT changing</h2>
+  <ul class="not-changing">
+    <li><b>The inline edit pattern itself</b> — pencil → textarea → Check/X with <kbd>Ctrl</kbd>+<kbd>Enter</kbd>/<kbd>Esc</kbd>. It matches platform conventions and the ACs; no modal, no redesign, no new components.</li>
+    <li><b>The "(edited)" presentation</b> — quiet suffix beside the relative timestamp, derived from <code>updated_at !== created_at</code>. No tooltip with edit time, no edit history — out of scope.</li>
+    <li><b>Delete flow</b> — optimistic removal with undo toast (<code>undoableAction</code>) is untouched.</li>
+    <li><b>Composer, mentions, markdown rendering</b> — the new-comment form, @-mention autocomplete, and <code>Markdown</code> body rendering are unrelated to these defects.</li>
+    <li><b>No "saving…" spinner or skeleton states</b> — the pessimistic save is fast; the disabled Check button during <code>savingEdit</code> is sufficient feedback for a sub-second operation.</li>
+    <li><b>No permission-UI changes</b> — <code>canModifyComment</code> (own + owned-bot comments) is already correct; Defect 2 was the server disagreeing with it.</li>
+    <li><b>Layout at 375px</b> — header row wraps and the textarea is full-width; verified structurally sound, no responsive changes needed.</li>
+  </ul>
+
+  <p class="meta" style="margin-top:40px">Deliverable of workflow step 2 (UX Design). Next: Implementation step consumes §3. · <code>docs/design-task-comment-editing.html</code></p>
+
+</div>
+</body>
+</html>
