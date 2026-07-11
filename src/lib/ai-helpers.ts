@@ -4,7 +4,7 @@ import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
-export const AI_MODEL = "claude-sonnet-4-6";
+export const AI_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
 
 export type AiAccess = {
   hasApiKey: boolean;

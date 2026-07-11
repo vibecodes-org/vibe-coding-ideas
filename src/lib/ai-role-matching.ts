@@ -135,6 +135,11 @@ export async function matchRolesWithAi(
 
     return result;
   } catch (err) {
+    logger.error("AI role matching: model call failed (falling back to fuzzy match)", {
+      model: AI_MODEL,
+      error: err instanceof Error ? err.message : String(err),
+      userId,
+    });
     logger.error("AI role matching failed, will fall back to fuzzy matching", {
       error: err instanceof Error ? err.message : String(err),
     });

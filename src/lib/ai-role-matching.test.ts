@@ -5,11 +5,14 @@ vi.mock("ai", () => ({
   generateObject: vi.fn(),
 }));
 
-vi.mock("@/lib/ai-helpers", () => ({
-  AI_MODEL: "claude-sonnet-4-6",
-  resolveAiProvider: vi.fn(),
-  chargeAiUsage: vi.fn(),
-}));
+vi.mock("@/lib/ai-helpers", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/ai-helpers")>();
+  return {
+    ...actual,
+    resolveAiProvider: vi.fn(),
+    chargeAiUsage: vi.fn(),
+  };
+});
 
 vi.mock("@/lib/logger", () => ({
   logger: { error: vi.fn(), info: vi.fn(), warn: vi.fn(), debug: vi.fn() },
@@ -17,7 +20,7 @@ vi.mock("@/lib/logger", () => ({
 
 import { matchRolesWithAi, matchRolesWithAiOrFuzzy, roleMatchSignature } from "./ai-role-matching";
 import { generateObject } from "ai";
-import { resolveAiProvider, chargeAiUsage } from "@/lib/ai-helpers";
+import { resolveAiProvider, chargeAiUsage, AI_MODEL } from "@/lib/ai-helpers";
 
 const mockGenerateObject = vi.mocked(generateObject);
 const mockResolveAiProvider = vi.mocked(resolveAiProvider);
@@ -77,7 +80,7 @@ describe("matchRolesWithAi", () => {
       actionType: "role_matching",
       inputTokens: 100,
       outputTokens: 50,
-      model: "claude-sonnet-4-6",
+      model: AI_MODEL,
       ideaId: null,
       keyType: "byok",
     });

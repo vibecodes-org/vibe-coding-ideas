@@ -18,7 +18,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, WorkflowTemplateStep } from "@/types/database";
-import { resolveAiProvider, chargeAiUsage } from "@/lib/ai-helpers";
+import { resolveAiProvider, chargeAiUsage, AI_MODEL } from "@/lib/ai-helpers";
 import { logger } from "@/lib/logger";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
 
@@ -49,7 +49,7 @@ export { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS };
  * heuristic fallback. The account/key evidently lacks Haiku 4.5 access. Keep
  * Sonnet — it's the proven-working model — until Haiku access is confirmed.
  */
-export const WORKFLOW_MATCHING_MODEL = "claude-sonnet-4-6";
+export const WORKFLOW_MATCHING_MODEL = AI_MODEL;
 
 const AI_TIMEOUT_MS = 30_000;
 
@@ -441,6 +441,11 @@ export async function adjudicateWorkflowMatch(
         recommendedTemplateId === suggestedTemplate.id,
     };
   } catch (err) {
+    logger.error("Workflow matching: model call failed (falling back to heuristic)", {
+      model: WORKFLOW_MATCHING_MODEL,
+      error: err instanceof Error ? err.message : String(err),
+      userId,
+    });
     logger.error("Workflow matching: AI adjudication failed, using heuristic", {
       error: err instanceof Error ? err.message : String(err),
       userId,

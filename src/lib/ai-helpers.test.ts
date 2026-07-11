@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { decrementStarterCredit, chargeAiUsage } from "./ai-helpers";
+import { decrementStarterCredit, chargeAiUsage, AI_MODEL } from "./ai-helpers";
 
 // Mock logger to suppress output
 vi.mock("@/lib/logger", () => ({
@@ -78,7 +78,7 @@ describe("chargeAiUsage", () => {
     actionType: "enhance_description" as const,
     inputTokens: 10,
     outputTokens: 5,
-    model: "claude-sonnet-4-6",
+    model: AI_MODEL,
     ideaId: null,
   };
 

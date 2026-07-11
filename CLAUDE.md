@@ -58,6 +58,8 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - `requireAiAccess()` for server actions (throws on failure), `getAiAccess()` for UI gating
 - AI API routes use `maxDuration = 300` for Vercel function timeout
 
+**Model update cadence**: to change the model, set `ANTHROPIC_MODEL` (or bump the default `AI_MODEL` in `src/lib/ai-helpers.ts:7`, which also drives `WORKFLOW_MATCHING_MODEL`). Before flipping, verify the resolved key(s) accept the new id via a real prod call that produces an `ai_usage_log` row — on the platform key AND a BYOK key (we were burned by a Haiku swap the account key rejected).
+
 ### Logging
 - Use `logger.*` from `src/lib/logger.ts`, NOT `console.*`
 - Structured JSON output; level via `LOG_LEVEL` env var (default: `warn` prod, `debug` dev)
@@ -126,7 +128,7 @@ SUPABASE_SERVICE_ROLE_KEY, API_KEY_ENCRYPTION_KEY
 NOTIFICATION_WEBHOOK_SECRET
 
 # AI
-ANTHROPIC_API_KEY, PLATFORM_AI_DAILY_LIMIT (default 50)
+ANTHROPIC_API_KEY, ANTHROPIC_MODEL, PLATFORM_AI_DAILY_LIMIT (default 50)
 
 # Third-party
 NEXT_PUBLIC_SENTRY_DSN, SENTRY_AUTH_TOKEN, SENTRY_ORG, SENTRY_PROJECT
