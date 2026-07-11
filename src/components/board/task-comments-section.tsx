@@ -412,7 +412,7 @@ export function TaskCommentsSection({
                           value={editContent}
                           onChange={(e) => setEditContent(e.target.value)}
                           rows={2}
-                          className="min-h-[50px] text-xs"
+                          className="min-h-[50px] max-h-40 text-xs"
                           disabled={savingEdit}
                           onKeyDown={(e) => {
                             if (e.key === "Escape") handleCancelEdit();
@@ -467,7 +467,7 @@ export function TaskCommentsSection({
       )}
 
       {!isReadOnly && (
-        <form onSubmit={handleSubmit} className="relative flex gap-2">
+        <form onSubmit={handleSubmit} className="relative flex items-end gap-2">
           {mentionQuery !== null && (
             <MentionAutocomplete
               filteredMembers={filteredMembers}
@@ -482,7 +482,7 @@ export function TaskCommentsSection({
             onKeyDown={handleKeyDown}
             placeholder="Write a comment... (@ to mention)"
             rows={2}
-            className="min-h-[60px] text-xs"
+            className="min-h-[60px] max-h-40 text-xs"
           />
           <Tooltip>
             <TooltipTrigger asChild>
