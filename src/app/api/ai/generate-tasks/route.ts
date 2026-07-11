@@ -131,9 +131,9 @@ export async function POST(req: Request) {
     // and fills the token budget before making a second — confirmed by telemetry).
     // Normal ideas never hit this, so they keep the ORIGINAL prompt above untouched;
     // only large ideas get an added decomposition nudge. Threshold in characters:
-    // ~5000 chars ≈ 1200 tokens — well above a normal idea, well below YCS TEST's
-    // ~20000-char programme spec.
-    const LARGE_IDEA_CHARS = 5000;
+    // 12000 chars ≈ 2000 words — comfortably above a normal spec, well below YCS
+    // TEST's ~20000-char programme spec.
+    const LARGE_IDEA_CHARS = 12000;
     const isLargeIdea = (idea.description?.length ?? 0) > LARGE_IDEA_CHARS;
 
     const contextParts = buildPromptContextParts({
@@ -151,10 +151,14 @@ export async function POST(req: Request) {
     // Large ideas ONLY: append decomposition guidance as the last thing the model
     // reads (recency), with a positive few-shot example — the lever that actually
     // gets this model to keep descriptions short so many tasks fit in the budget.
+    // NO upper cap on task count: the failure mode is UNDER-production (one giant
+    // task), and a detailed spec should yield MORE tasks than a small idea, not
+    // fewer. The count is driven by the content (one task per discrete unit of
+    // work); short descriptions are what let many tasks fit in the token budget.
     if (isLargeIdea) {
       contextParts.push(
         "---",
-        "This idea is large and detailed. Decompose it into MANY small, separate tasks (aim for 15-25) — do not pack multiple areas of work into one task. Summarize the detail into short descriptions (roughly one sentence each) rather than reproducing acceptance criteria, tables, RICE scores, user stories, or long prose; a single task with a very long description should be split into several tasks. Match the size of these examples:\n" +
+        "This idea is large and detailed. Break it into MANY small, separate tasks — roughly one task per user story, deliverable, or discrete piece of work — rather than packing several areas into one big task; a detailed spec like this usually yields 25-40+ tasks. Keep each task's description short (about one sentence) and summarize rather than reproducing acceptance criteria, tables, RICE scores, user stories, or long prose verbatim; if a description is getting long, that means it should be several separate tasks. Match the size of these examples:\n" +
           '- {"title": "Set up the project repository and CI", "description": "Create the repo and add a lint/test/build pipeline that runs on every PR.", "columnName": "To Do", "labels": ["infrastructure"]}\n' +
           '- {"title": "Design the sign-up flow", "description": "Wireframe the 3-step onboarding and get sign-off before build.", "columnName": "To Do", "labels": ["design"]}'
       );
