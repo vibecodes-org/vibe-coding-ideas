@@ -24,8 +24,8 @@ const IDEA_ATTACHMENTS_BUCKET = "idea-attachments";
  */
 /** Files larger than this are never downloaded, regardless of type. */
 export const MAX_DOWNLOAD_BYTES = ENHANCE_ATTACHMENT_MAX_MB * 1_048_576; // 5 MB
-export const PER_FILE_CHAR_BUDGET = 30_000;
-export const TOTAL_CHAR_BUDGET = 150_000;
+export const PER_FILE_CHAR_BUDGET = 60_000;
+export const TOTAL_CHAR_BUDGET = 600_000;
 const TRUNCATION_MARKER = "\n\n[... truncated ...]";
 
 /** Content types eligible as plain text (in addition to the extension check below). */
