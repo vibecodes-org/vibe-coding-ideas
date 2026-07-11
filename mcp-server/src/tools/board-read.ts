@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { DEFAULT_BOARD_COLUMNS } from "../constants";
 import type { McpContext } from "../context";
+import {
+  groupStepComments,
+  type StepCommentRow,
+  type StepCommentsForStep,
+} from "../lib/step-comments";
 
 /**
  * The fields selected for an open workflow suggestion, in agent-pickup payloads.
@@ -221,6 +226,33 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
     .eq("task_id", params.task_id)
     .order("position");
 
+  // Fetch step-level comments (type != 'output' — the UI mirror of
+  // complete_step's `output` column, which is canonical, see design §00) in
+  // one batched query, then group/clamp/cap per step. `comments` /
+  // `comments_truncated` are ALWAYS present on every step ([] / false when
+  // none); on query error, soft-fail to empty rather than throwing — same
+  // enrichment posture as the comments/activity/attachments fetches below
+  // (docs/design-step-comments-api.html §01/§05).
+  const stepIds = (workflowSteps ?? []).map((s) => s.id);
+  let stepCommentsByStep = new Map<string, StepCommentsForStep>();
+  if (stepIds.length > 0) {
+    const { data: stepCommentRows, error: stepCommentsError } = await ctx.supabase
+      .from("workflow_step_comments")
+      .select(
+        "id, step_id, type, content, author_id, created_at, users!workflow_step_comments_author_id_fkey(full_name)"
+      )
+      .in("step_id", stepIds)
+      .neq("type", "output")
+      .order("created_at", { ascending: false });
+
+    if (!stepCommentsError) {
+      stepCommentsByStep = groupStepComments(
+        (stepCommentRows ?? []) as unknown as StepCommentRow[],
+        stepIds
+      );
+    }
+  }
+
   // Fetch comments
   const { data: comments } = await ctx.supabase
     .from("board_task_comments")
@@ -288,7 +320,10 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
         (tl) => tl.board_labels
       ) ?? [],
     board_task_labels: undefined,
-    workflow_steps: steps,
+    workflow_steps: steps.map((s) => ({
+      ...s,
+      ...(stepCommentsByStep.get(s.id as string) ?? { comments: [], comments_truncated: false }),
+    })),
     workflow_suggestions,
     workflow_instruction,
     comments:

@@ -285,7 +285,7 @@ export function registerTools(
 
   server.tool(
     "get_task",
-    "Get single task detail including workflow steps, comments, and recent activity. If the task has a workflow with pending steps, follow the workflow_instruction in the response — use claim_next_step to execute steps sequentially rather than implementing directly.",
+    "Get single task detail including workflow steps, comments, and recent activity. If the task has a workflow with pending steps, follow the workflow_instruction in the response — use claim_next_step to execute steps sequentially rather than implementing directly. Each workflow step carries its own `comments` array — the step's latest discussion, failure reports, and approval notes (newest first, max 10; type 'output' mirrors are excluded because the step's `output` field is canonical). If a step's `comments_truncated` is true, older comments exist beyond the 10 returned; `comment_count` is a raw total that also counts hidden output-mirror rows, so never compare it to comments.length — the full thread is visible in the web UI.",
     getTaskSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1160,7 +1160,7 @@ export function registerTools(
 
   server.tool(
     "claim_next_step",
-    "Claim the next workflow step on a task (the next pending step, or re-claim of an in-progress step — last-claim-wins). The claim is recorded for the step's pre-assigned bot. Returns the step with bot_id, available_agents, a `context` array of prior completed steps' outputs, and a one-time `claim_token` — KEEP IT and pass it to complete_step/fail_step for this step. If bot_id is set, call set_agent_identity with that bot_id before executing the step (persona + attribution). If bot_id is null, pick the best match from available_agents (optionally pass agent_id to record the claim for it) and call set_agent_identity. Returns { done: true } when all steps are complete.",
+    "Claim the next workflow step on a task (the next pending step, or re-claim of an in-progress step — last-claim-wins). The claim is recorded for the step's pre-assigned bot. Returns the step with bot_id, available_agents, a `context` array of prior completed steps' outputs, and a one-time `claim_token` — KEEP IT and pass it to complete_step/fail_step for this step. If bot_id is set, call set_agent_identity with that bot_id before executing the step (persona + attribution). If bot_id is null, pick the best match from available_agents (optionally pass agent_id to record the claim for it) and call set_agent_identity. Also returns `approval_notes` — every note a human left when approving earlier steps in this run (empty array if none). Treat approval notes as binding constraints: 'approved, but change X' makes X a requirement for this and all later steps. Returns { done: true } when all steps are complete.",
     claimNextStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1249,7 +1249,7 @@ export function registerTools(
 
   server.tool(
     "add_step_comment",
-    "Add a comment to a workflow step. Used for inter-agent communication, output logs, failure reports, and approval notes.",
+    "Add a comment to a workflow step. Comments are surfaced to other agents: get_task returns each step's latest 10 (types comment/failure/approval/changes_requested), 'failure' and 'changes_requested' feed claim_next_step's rework_instructions, and 'approval' notes feed its approval_notes. Type 'output' is reserved for the UI mirror of complete_step's output — never use it to communicate with agents; put deliverables in complete_step's `output` parameter instead.",
     addStepCommentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

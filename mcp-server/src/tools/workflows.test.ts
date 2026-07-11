@@ -1545,6 +1545,179 @@ describe("claimNextStep — rework instructions", () => {
 });
 
 // ---------------------------------------------------------------------------
+// claimNextStep — approval_notes (Step-Level Comments API)
+// ---------------------------------------------------------------------------
+
+describe("claimNextStep — approval_notes", () => {
+  /**
+   * Extended makeClaimContext that also distinguishes the two
+   * workflow_step_comments calls a default step triggers: the Tier 2
+   * run-scoped rework query (1st call — output=null/comment_count=0 makes
+   * Tier 1 skip and Tier 2 fire) and the new approval_notes query (2nd call).
+   */
+  function makeClaimContextWithApprovals(opts: {
+    pendingStep: ReturnType<typeof makeStepRow>;
+    updatedStep: Record<string, unknown>;
+    priorSteps: { id: string; title: string; step_order: number; output: string | null }[];
+    approvalRows: {
+      step_id: string;
+      content: string;
+      author_id: string;
+      created_at: string;
+      users?: { full_name: string | null } | null;
+    }[];
+  }) {
+    const tableCounts: Record<string, number> = {};
+
+    return makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+      const callNum = tableCounts[table];
+
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        if (callNum === 1) {
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [opts.pendingStep], error: null }).then(resolve);
+        } else if (callNum === 2) {
+          chain.chain.maybeSingle = vi.fn(() =>
+            Promise.resolve({ data: opts.updatedStep, error: null })
+          );
+        } else if (callNum === 3) {
+          // Tier 2 run-scoped step IDs (fires: pendingStep.output=null, comment_count=0)
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: [{ id: opts.pendingStep.id }], error: null }).then(resolve);
+        } else if (callNum === 4) {
+          // Context query — prior completed/skipped steps
+          chain.chain.then = (resolve: (val: unknown) => void) =>
+            Promise.resolve({ data: opts.priorSteps, error: null }).then(resolve);
+        }
+        return chain.chain;
+      }
+
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: null, error: null }).then(resolve);
+        return chain.chain;
+      }
+
+      if (table === "workflow_step_comments") {
+        if (callNum === 1) {
+          // Tier 2 rework comments — none
+          return createChain([]).chain;
+        }
+        // 2nd call: approval_notes query
+        return createChain(opts.approvalRows).chain;
+      }
+
+      if (table === "idea_agents") {
+        return createChain([]).chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+  }
+
+  it("returns approval_notes mapped from prior approval comments, with step_title from the prior-steps list", async () => {
+    const step = makeStepRow({ step_order: 3 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const priorSteps = [{ id: "s1", title: "Requirements", step_order: 1, output: "Reqs output" }];
+
+    const ctx = makeClaimContextWithApprovals({
+      pendingStep: step,
+      updatedStep,
+      priorSteps,
+      approvalRows: [
+        {
+          step_id: "s1",
+          content: "Approved — but rename the field to retry_count.",
+          author_id: "human-1",
+          created_at: "2026-07-10T18:03:55Z",
+          users: { full_name: "Nick Ball" },
+        },
+      ],
+    });
+
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const r = result as { approval_notes: unknown };
+
+    expect(r.approval_notes).toEqual([
+      {
+        step_id: "s1",
+        step_title: "Requirements",
+        content: "Approved — but rename the field to retry_count.",
+        author_id: "human-1",
+        author_name: "Nick Ball",
+        created_at: "2026-07-10T18:03:55Z",
+      },
+    ]);
+  });
+
+  it("appends an APPROVER GUIDANCE block to the instruction when approval_notes exist", async () => {
+    const step = makeStepRow({ step_order: 3 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const priorSteps = [{ id: "s1", title: "Requirements", step_order: 1, output: "Reqs output" }];
+
+    const ctx = makeClaimContextWithApprovals({
+      pendingStep: step,
+      updatedStep,
+      priorSteps,
+      approvalRows: [
+        {
+          step_id: "s1",
+          content: "Approved — but rename the field to retry_count.",
+          author_id: "human-1",
+          created_at: "2026-07-10T18:03:55Z",
+          users: { full_name: "Nick Ball" },
+        },
+      ],
+    });
+
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const r = result as { instruction: string };
+
+    expect(r.instruction).toContain("APPROVER GUIDANCE");
+    expect(r.instruction).toContain("BINDING constraint");
+    expect(r.instruction).toContain(
+      '- After "Requirements" (Nick Ball, 2026-07-10T18:03:55Z): Approved — but rename the field to retry_count.'
+    );
+  });
+
+  it("returns approval_notes: [] and omits the guidance block when no approval comments exist", async () => {
+    const step = makeStepRow({ step_order: 3 });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const priorSteps = [{ id: "s1", title: "Requirements", step_order: 1, output: "Reqs output" }];
+
+    const ctx = makeClaimContextWithApprovals({
+      pendingStep: step,
+      updatedStep,
+      priorSteps,
+      approvalRows: [],
+    });
+
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+    const r = result as { approval_notes: unknown; instruction: string };
+
+    expect(r.approval_notes).toEqual([]);
+    expect(r.instruction).not.toContain("APPROVER GUIDANCE");
+  });
+
+  it("returns approval_notes: [] with no query when the step has no run_id", async () => {
+    const step = makeStepRow({ step_order: 3, run_id: null });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID, run_id: null };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = (await claimNextStep(ctx, { task_id: TASK_ID })) as {
+      instruction: string;
+      approval_notes: unknown;
+    };
+
+    expect(result.approval_notes).toEqual([]);
+    expect(result.instruction).not.toContain("APPROVER GUIDANCE");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // approveStep — bot rejection test
 // ---------------------------------------------------------------------------
 

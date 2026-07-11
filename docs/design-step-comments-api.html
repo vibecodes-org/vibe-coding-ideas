@@ -1,0 +1,407 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Step-Level Comments API — MCP DX Design</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #11151f;
+    --panel2: #161b28;
+    --border: #232a3b;
+    --text: #d7dce6;
+    --muted: #8b94a7;
+    --accent: #34d399;      /* emerald — new fields */
+    --accent-dim: #10b98122;
+    --violet: #a78bfa;      /* keys */
+    --amber: #fbbf24;       /* warnings / truncation */
+    --red: #f87171;
+    --blue: #60a5fa;        /* strings */
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.65 -apple-system, "Segoe UI", Inter, sans-serif;
+    padding: 48px 24px 96px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 28px; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin: 8px 0 40px; max-width: 72ch; }
+  h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--accent); margin: 56px 0 16px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  h2 .n { color: var(--muted); margin-right: 8px; }
+  h3 { font-size: 16px; margin: 28px 0 10px; }
+  p { margin: 10px 0; max-width: 78ch; }
+  .muted { color: var(--muted); }
+  code {
+    font-family: var(--mono); font-size: 13px;
+    background: var(--panel2); border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: 4px;
+  }
+  pre {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; overflow-x: auto; font-family: var(--mono);
+    font-size: 12.5px; line-height: 1.7; margin: 14px 0;
+  }
+  pre code { background: none; border: none; padding: 0; }
+  .k { color: var(--violet); }        /* JSON key */
+  .s { color: var(--blue); }          /* string */
+  .num { color: var(--amber); }
+  .new { background: var(--accent-dim); display: inline-block; border-radius: 3px; }
+  .new-line { background: var(--accent-dim); display: block; margin: 0 -20px; padding: 0 20px; border-left: 3px solid var(--accent); }
+  .cm { color: #5b6478; font-style: italic; }
+  .callout {
+    border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    background: var(--panel); border-radius: 8px; padding: 14px 18px; margin: 18px 0;
+  }
+  .callout.warn { border-left-color: var(--amber); }
+  .callout strong:first-child { display: block; margin-bottom: 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; }
+  .callout.warn strong:first-child { color: var(--amber); }
+  .callout strong:first-child { color: var(--accent); }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; }
+  th {
+    text-align: left; color: var(--muted); font-weight: 600; font-size: 11.5px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td code { white-space: nowrap; }
+  .table-scroll { overflow-x: auto; }
+  .pill {
+    font-family: var(--mono); font-size: 11px; padding: 2px 8px; border-radius: 999px;
+    border: 1px solid var(--border); white-space: nowrap;
+  }
+  .pill.new { color: var(--accent); border-color: #34d39944; background: var(--accent-dim); }
+  .pill.keep { color: var(--muted); }
+  .desc-box {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 20px; margin: 12px 0;
+  }
+  .desc-box .tool { font-family: var(--mono); font-size: 13px; color: var(--accent); margin-bottom: 8px; }
+  .desc-box .existing { color: var(--muted); }
+  .desc-box .added { color: var(--text); background: var(--accent-dim); border-radius: 3px; padding: 1px 2px; }
+  ul, ol { margin: 10px 0 10px 24px; }
+  li { margin: 5px 0; }
+  .flow {
+    display: flex; gap: 0; align-items: stretch; margin: 20px 0; flex-wrap: wrap;
+  }
+  .flow .node {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 12px 16px; flex: 1; min-width: 200px; margin-right: 28px; position: relative;
+  }
+  .flow .node:last-child { margin-right: 0; }
+  .flow .node:not(:last-child)::after {
+    content: "→"; position: absolute; right: -22px; top: 50%; transform: translateY(-50%);
+    color: var(--accent); font-size: 18px;
+  }
+  .flow .node .t { font-size: 12px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+  .flow .node .v { font-size: 13.5px; margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Step-Level Comments over MCP <span>— DX design spec</span></h1>
+<p class="sub">
+UX Design step for <em>"MCP gap: agents can't read step-level comments."</em> No visual UI changes — the "users" here
+are AI agents consuming <code>get_task</code> and <code>claim_next_step</code>. This spec defines exact payload shapes,
+field placement, truncation semantics, and tool-description copy so the Implementation step can build it verbatim.
+Grounded in the current code: <code>mcp-server/src/tools/board-read.ts</code> (getTask, ~L204–308),
+<code>mcp-server/src/tools/workflows.ts</code> (claimNextStep ~L660–948, approveStep ~L1456–1471, addStepComment ~L1485–1514),
+<code>mcp-server/src/register-tools.ts</code> (descriptions L288, L1163, L1252),
+migration <code>00071_board_level_workflows.sql</code> (table + comment_count trigger).
+</p>
+
+<div class="callout">
+  <strong>The scenario this design serves</strong>
+  A human approves the "Requirements" gate with <em>"Approved — but rename the field to retry_count, not attempt_no."</em>
+  Today that note lands in <code>workflow_step_comments</code> (type <code>approval</code>) and no agent ever sees it.
+  After this change it surfaces in two places agents already look: the step objects in <code>get_task</code>, and a new
+  <code>approval_notes</code> array (plus an <code>APPROVER GUIDANCE</code> instruction block) in every subsequent
+  <code>claim_next_step</code> of the same run.
+</div>
+
+<div class="flow">
+  <div class="node"><div class="t">Human</div><div class="v"><code>approve_step</code> with comment → row <code>type: "approval"</code></div></div>
+  <div class="node"><div class="t">Next claim</div><div class="v"><code>claim_next_step</code> returns <code>approval_notes[]</code> + instruction block</div></div>
+  <div class="node"><div class="t">Any time</div><div class="v"><code>get_task</code> shows per-step <code>comments[]</code> (≤10, newest first)</div></div>
+</div>
+
+<h2><span class="n">00</span> Ground truth: comment types (verified)</h2>
+<p>DB CHECK constraint (migration 00071, L277–278) and the <code>add_step_comment</code> zod enum agree exactly — five types, no others exist anywhere in the codebase:</p>
+<div class="table-scroll"><table>
+  <tr><th>type</th><th>Written by</th><th>Surfaced where (after this change)</th></tr>
+  <tr><td><code>comment</code></td><td><code>add_step_comment</code> default; system notices — tier-mismatch (workflows.ts L1073) and unblock notes (L1231) also use plain <code>comment</code></td><td><code>get_task</code> step <code>comments[]</code></td></tr>
+  <tr><td><code>output</code></td><td><code>complete_step</code> UI mirror of the step's <code>output</code> column (L1262)</td><td><strong>Excluded everywhere</strong> — <code>step.output</code> / claim <code>context[]</code> are canonical</td></tr>
+  <tr><td><code>failure</code></td><td><code>fail_step</code> (L1209)</td><td><code>get_task</code> <code>comments[]</code> + existing <code>rework_instructions</code> (unchanged)</td></tr>
+  <tr><td><code>approval</code></td><td><code>approve_step</code> when the human passes a comment (L1464)</td><td><code>get_task</code> <code>comments[]</code> + <strong>new</strong> <code>approval_notes[]</code> in <code>claim_next_step</code></td></tr>
+  <tr><td><code>changes_requested</code></td><td>reject flow (L1290)</td><td><code>get_task</code> <code>comments[]</code> + existing <code>rework_instructions</code> (unchanged)</td></tr>
+</table></div>
+
+<div class="callout warn">
+  <strong>Critical implementation fact</strong>
+  The <code>comment_count</code> trigger (00071 L304–326) counts <em>ALL</em> rows including <code>type="output"</code>
+  mirrors, and counts them <em>pre-RLS</em>. Since the API excludes <code>output</code> rows,
+  <code>comment_count &gt; comments.length</code> is <em>normal</em> and is NOT a truncation signal.
+  That is why this design adds an explicit computed <code>comments_truncated</code> boolean — see §03.
+</div>
+
+<h2><span class="n">01</span> get_task — before / after</h2>
+<p>Each element of the existing <code>workflow_steps</code> array (currently the raw <code>select("*")</code> row) gains two computed fields. Highlighted lines are new.</p>
+
+<h3>Before (today) — one step object inside <code>workflow_steps</code></h3>
+<pre><code>{
+  <span class="k">"id"</span>: <span class="s">"9f2c…step-2"</span>,
+  <span class="k">"task_id"</span>: <span class="s">"41ab…task"</span>,
+  <span class="k">"title"</span>: <span class="s">"UX Design"</span>,
+  <span class="k">"status"</span>: <span class="s">"pending"</span>,
+  <span class="k">"output"</span>: <span class="cm">null</span>,
+  <span class="k">"comment_count"</span>: <span class="num">3</span>,          <span class="cm">// counts ALL types incl. hidden output mirrors</span>
+  <span class="cm">… all other task_workflow_steps columns …</span>
+}</code></pre>
+
+<h3>After — same step, comments attached where the agent is already looking</h3>
+<pre><code>{
+  <span class="k">"id"</span>: <span class="s">"9f2c…step-2"</span>,
+  <span class="k">"title"</span>: <span class="s">"UX Design"</span>,
+  <span class="k">"status"</span>: <span class="s">"pending"</span>,
+  <span class="k">"output"</span>: <span class="cm">null</span>,
+  <span class="k">"comment_count"</span>: <span class="num">3</span>,          <span class="cm">// unchanged raw DB total — do NOT compare to comments.length</span>
+<span class="new-line">  <span class="k">"comments"</span>: [                <span class="cm">// NEW — newest first, max 10, type "output" excluded</span></span>
+<span class="new-line">    {</span>
+<span class="new-line">      <span class="k">"id"</span>: <span class="s">"c7d1…"</span>,</span>
+<span class="new-line">      <span class="k">"type"</span>: <span class="s">"comment"</span>,</span>
+<span class="new-line">      <span class="k">"content"</span>: <span class="s">"Heads-up: the PWA queue must survive a page reload — see discussion #14."</span>,</span>
+<span class="new-line">      <span class="k">"author_id"</span>: <span class="s">"b3aa…bot-user"</span>,</span>
+<span class="new-line">      <span class="k">"author_name"</span>: <span class="s">"Priya (Product Strategist)"</span>,</span>
+<span class="new-line">      <span class="k">"created_at"</span>: <span class="s">"2026-07-10T16:42:11Z"</span></span>
+<span class="new-line">    }</span>
+<span class="new-line">  ],</span>
+<span class="new-line">  <span class="k">"comments_truncated"</span>: <span class="cm">false</span>, <span class="cm">// NEW — true only when &gt;10 visible non-output comments exist</span></span>
+  <span class="cm">… all other columns unchanged …</span>
+}</code></pre>
+
+<p class="muted">Why <code>comments.length</code> (1) ≠ <code>comment_count</code> (3) here: one <code>output</code> mirror is excluded by design, and one row was RLS-filtered. Neither implies truncation — only <code>comments_truncated</code> does.</p>
+
+<h3>Query spec (one batched query, mirrors the existing task-comments join)</h3>
+<pre><code><span class="cm">// after the existing task_workflow_steps fetch in getTask (board-read.ts ~L218)</span>
+const stepIds = steps.map((s) =&gt; s.id);   <span class="cm">// per-task, ≤ ~20 ids — safe for .in()</span>
+let commentsByStep = new Map();
+if (stepIds.length &gt; 0) {
+  const { data: stepComments } = await ctx.supabase
+    .from(<span class="s">"workflow_step_comments"</span>)
+    .select(<span class="s">"id, step_id, type, content, author_id, created_at, users!workflow_step_comments_author_id_fkey(full_name)"</span>)
+    .in(<span class="s">"step_id"</span>, stepIds)
+    .neq(<span class="s">"type"</span>, <span class="s">"output"</span>)
+    .order(<span class="s">"created_at"</span>, { ascending: false });
+  <span class="cm">// group by step_id in memory; per step: comments = rows.slice(0, 10),</span>
+  <span class="cm">// comments_truncated = rows.length &gt; 10. Flatten join: author_name = row.users?.full_name ?? null.</span>
+  <span class="cm">// Query failure (error non-null): treat as empty — comments: [], comments_truncated: false,</span>
+  <span class="cm">// same soft-fail posture as the existing comments/activity fetches in getTask.</span>
+}</code></pre>
+<p class="muted">Requires a <code>Relationships</code> entry for <code>workflow_step_comments</code> → <code>users</code> in <code>src/types/database.ts</code> if missing (CLAUDE.md rule). The FK is the default-named <code>workflow_step_comments_author_id_fkey</code> (00071 L276); confirm no rename in 00098.</p>
+
+<h2><span class="n">02</span> claim_next_step — before / after</h2>
+<p>The Implementation agent claims step 3 after the human approved the Requirements gate with a caveat. Response object (workflows.ts ~L937):</p>
+
+<h3>Before</h3>
+<pre><code>{
+  <span class="k">"done"</span>: <span class="cm">false</span>,
+  <span class="k">"step"</span>: { … },
+  <span class="k">"claim_token"</span>: <span class="s">"…"</span>,
+  <span class="k">"instruction"</span>: <span class="s">"MANDATORY: this step MUST be executed by a FRESH SUBAGENT …"</span>,
+  <span class="k">"rework_instructions"</span>: <span class="cm">null</span>,
+  <span class="k">"available_agents"</span>: [ … ],
+  <span class="k">"context"</span>: [ { <span class="k">"step_id"</span>, <span class="k">"step_title"</span>, <span class="k">"output"</span> }, … ],
+  <span class="k">"expected_deliverables"</span>: [ … ]
+}</code></pre>
+
+<h3>After — <code>approval_notes</code> placed directly after <code>context</code></h3>
+<pre><code>{
+  <span class="k">"done"</span>: <span class="cm">false</span>,
+  <span class="k">"step"</span>: { <span class="k">"title"</span>: <span class="s">"Implementation"</span>, … },
+  <span class="k">"claim_token"</span>: <span class="s">"…"</span>,
+  <span class="k">"instruction"</span>: <span class="s">"… existing blocks …\n\nAPPROVER GUIDANCE: …"</span>,   <span class="cm">// block added ONLY when notes exist</span>
+  <span class="k">"rework_instructions"</span>: <span class="cm">null</span>,   <span class="cm">// byte-identical to today in all cases (AC)</span>
+  <span class="k">"available_agents"</span>: [ … ],
+  <span class="k">"context"</span>: [
+    { <span class="k">"step_id"</span>: <span class="s">"77e0…step-1"</span>, <span class="k">"step_title"</span>: <span class="s">"Requirements"</span>, <span class="k">"output"</span>: <span class="s">"…"</span> },
+    { <span class="k">"step_id"</span>: <span class="s">"9f2c…step-2"</span>, <span class="k">"step_title"</span>: <span class="s">"UX Design"</span>, <span class="k">"output"</span>: <span class="s">"…"</span> }
+  ],
+<span class="new-line">  <span class="k">"approval_notes"</span>: [           <span class="cm">// NEW — chronological; [] when none; ALL prior steps of this run</span></span>
+<span class="new-line">    {</span>
+<span class="new-line">      <span class="k">"step_id"</span>: <span class="s">"77e0…step-1"</span>,</span>
+<span class="new-line">      <span class="k">"step_title"</span>: <span class="s">"Requirements"</span>,</span>
+<span class="new-line">      <span class="k">"content"</span>: <span class="s">"Approved — but rename the field to retry_count, not attempt_no, to match board_tasks conventions."</span>,</span>
+<span class="new-line">      <span class="k">"author_id"</span>: <span class="s">"1e9d…human"</span>,</span>
+<span class="new-line">      <span class="k">"author_name"</span>: <span class="s">"Nick Ball"</span>,</span>
+<span class="new-line">      <span class="k">"created_at"</span>: <span class="s">"2026-07-10T18:03:55Z"</span></span>
+<span class="new-line">    }</span>
+<span class="new-line">  ],</span>
+  <span class="k">"expected_deliverables"</span>: [ … ]
+}</code></pre>
+
+<h3>New <code>instruction</code> block — verbatim (pushed to <code>contextParts</code> immediately after the CONTEXT CHAINING block, only when <code>approval_notes.length &gt; 0</code>)</h3>
+<pre><code>`APPROVER GUIDANCE: A human approved ${approval_notes.length} prior step(s) in this run with notes (see the "approval_notes" array). ` +
+`Treat each note as a BINDING constraint on this and all later steps — "approved, but change X" means X is now a requirement:\n` +
+approval_notes.map((n) =&gt; `- After "${n.step_title}" (${n.author_name ?? "unknown"}, ${n.created_at}): ${n.content}`).join("\n")</code></pre>
+
+<h3>Query spec (reuses the run-steps fetch already made for <code>context</code>)</h3>
+<pre><code><span class="cm">// inside the existing `if (step.run_id)` context block (~L744): keep the full priorSteps</span>
+<span class="cm">// list (id, title) BEFORE the .filter((s) =&gt; s.output) that builds `context`, then:</span>
+let approval_notes = [];
+if (priorSteps &amp;&amp; priorSteps.length &gt; 0) {
+  const { data: notes } = await ctx.supabase
+    .from(<span class="s">"workflow_step_comments"</span>)
+    .select(<span class="s">"step_id, content, author_id, created_at, users!workflow_step_comments_author_id_fkey(full_name)"</span>)
+    .in(<span class="s">"step_id"</span>, priorSteps.map((s) =&gt; s.id))
+    .eq(<span class="s">"type"</span>, <span class="s">"approval"</span>)
+    .order(<span class="s">"created_at"</span>, { ascending: true })
+    .limit(20);
+  <span class="cm">// map step_title from priorSteps by step_id; author_name = row.users?.full_name ?? null</span>
+}
+<span class="cm">// return { …, context, approval_notes, expected_deliverables, … }  — always present, [] when none</span></code></pre>
+
+<h2><span class="n">03</span> Nailed-down design decisions</h2>
+
+<h3>D1 — Author attribution: flat <code>author_name</code> via one join</h3>
+<p>Raw UUIDs alone fail the "who said this" question — an agent would need a second lookup it has no tool for.
+Join <code>users(full_name)</code> exactly as getTask already does for task-level comments (board-read.ts L227), but flatten
+to <code>author_name: string | null</code> instead of a nested <code>author</code> object: the shape is then <em>identical</em>
+in both new surfaces, and a flat scalar promises nothing more than it delivers (a nested object invites agents to probe
+for <code>email</code>, <code>avatar</code>…). Keep <code>author_id</code> for correlation with <code>available_agents</code>
+/ identity checks. <code>author_name</code> is <code>null</code> only if the join misses (FK is ON DELETE CASCADE, so
+rows normally vanish with their author) — consumers must render "unknown", never drop the comment.</p>
+
+<h3>D2 — Ordering: newest-first for step <code>comments</code>, chronological for <code>approval_notes</code></h3>
+<p><code>comments</code>: newest-first, confirmed. Two reasons override "chronological reads better for threads":
+(a) the 10-cap must never evict the <em>latest</em> feedback — newest-first + slice guarantees recency survives truncation;
+(b) it matches the task-level <code>comments</code> array in the same get_task response (desc, limit 20) — one ordering rule per response.
+<code>approval_notes</code>: chronological (created_at asc) — it is an uncapped-small narrative of gates passed in run order, read top-to-bottom as accumulated constraints.</p>
+
+<h3>D3 — <code>approval_notes</code> scope &amp; placement</h3>
+<p><strong>Scope: ALL prior steps of the same run</strong>, not "since last claim." An approval caveat ("rename the field to retry_count")
+is a standing constraint on every downstream step — a since-last-claim window would silently drop it for step 4 because step 3 already saw it,
+and re-claims after context compaction would lose it entirely. Dedup is unnecessary: notes are rare, short (≤5000 chars), and capped at 20.
+<strong>Placement:</strong> top-level key immediately after <code>context</code> — same mental slot ("what prior steps hand me"),
+distinct from <code>rework_instructions</code> ("what I did wrong"), which stays byte-identical. Steps with no <code>run_id</code>,
+first steps, and the <code>{ done: true }</code> early return are untouched; otherwise <code>approval_notes</code> is always present, <code>[]</code> when empty.</p>
+
+<h3>D4 — Truncation signal: explicit <code>comments_truncated</code> boolean</h3>
+<p><code>comment_count</code> is retained (it rides along in <code>select("*")</code>) but is <em>not</em> the truncation signal:
+the trigger counts all types including excluded <code>output</code> mirrors, pre-RLS, so <code>comment_count &gt; comments.length</code>
+is the normal state. The contract agents use: <strong><code>comments_truncated: true</code> ⇔ more than 10 visible non-output
+comments exist for that step</strong> — computed server-side from the post-RLS, post-filter row set (<code>groupedRows.length &gt; 10</code>).
+Recognition over recall: agents read one self-evident boolean instead of memorizing counting rules.
+Tool-description sentence (included verbatim in §05): <em>"If a step's comments_truncated is true, older comments exist beyond the
+10 returned; comment_count is a raw total that also counts hidden output-mirror rows, so never compare it to comments.length."</em></p>
+
+<h2><span class="n">04</span> Field-by-field spec</h2>
+<div class="table-scroll"><table>
+  <tr><th>Field</th><th>Where</th><th>Type</th><th>Semantics</th><th></th></tr>
+  <tr><td><code>comments</code></td><td>each <code>workflow_steps[i]</code> in get_task</td><td>array, always present</td><td>Newest-first, max 10, <code>type != 'output'</code>. Empty array when none — never null, never omitted.</td><td><span class="pill new">NEW</span></td></tr>
+  <tr><td><code>comments[].id</code></td><td>″</td><td>uuid</td><td>Comment row id.</td><td><span class="pill new">NEW</span></td></tr>
+  <tr><td><code>comments[].type</code></td><td>″</td><td>enum</td><td><code>comment | failure | approval | changes_requested</code> (never <code>output</code>).</td><td><span class="pill new">NEW</span></td></tr>
+  <tr><td><code>comments[].content</code></td><td>″</td><td>string ≤5000</td><td>Verbatim comment body.</td><td><span class="pill new">NEW</span></td></tr>
+  <tr><td><code>comments[].author_id</code></td><td>″</td><td>uuid</td><td>users.id (humans and bot users alike).</td><td><span class="pill new">NEW</span></td></tr>
+  <tr><td><code>comments[].author_name</code></td><td>″</td><td>string | null</td><td><code>users.full_name</code> via FK join; null if join misses — render "unknown", keep the comment.</td><td><span class="pill new">NEW</span></td></tr>
+  <tr><td><code>comments[].created_at</code></td><td>″</td><td>ISO 8601</td><td>—</td><td><span class="pill new">NEW</span></td></tr>
+  <tr><td><code>comments_truncated</code></td><td>each <code>workflow_steps[i]</code></td><td>boolean, always present</td><td>true ⇔ &gt;10 visible non-output comments on this step. THE truncation signal.</td><td><span class="pill new">NEW</span></td></tr>
+  <tr><td><code>comment_count</code></td><td>″ (existing column)</td><td>integer</td><td>Raw trigger total, all types, pre-RLS. Unchanged; not a truncation signal.</td><td><span class="pill keep">KEEP</span></td></tr>
+  <tr><td><code>approval_notes</code></td><td>claim_next_step response, after <code>context</code></td><td>array, always present when <code>done: false</code></td><td>All <code>type='approval'</code> comments on prior steps of the same run; chronological; limit 20; <code>[]</code> when none / no run_id.</td><td><span class="pill new">NEW</span></td></tr>
+  <tr><td><code>approval_notes[].step_id / step_title</code></td><td>″</td><td>uuid / string</td><td>The gated step the note was left on (title from the priorSteps fetch, not a second query).</td><td><span class="pill new">NEW</span></td></tr>
+  <tr><td><code>approval_notes[].content / author_id / author_name / created_at</code></td><td>″</td><td>as above</td><td>Same shapes and null-rules as step comments (D1).</td><td><span class="pill new">NEW</span></td></tr>
+  <tr><td>APPROVER GUIDANCE block</td><td><code>instruction</code> string</td><td>text block</td><td>Appended to contextParts only when <code>approval_notes.length &gt; 0</code>; empty path leaves <code>instruction</code> byte-identical.</td><td><span class="pill new">NEW</span></td></tr>
+</table></div>
+
+<h2><span class="n">05</span> All states — explicit</h2>
+<div class="table-scroll"><table>
+  <tr><th>State</th><th>get_task step object</th><th>claim_next_step</th></tr>
+  <tr>
+    <td>No comments on a step</td>
+    <td><code>comments: []</code>, <code>comments_truncated: false</code> — fields always present so agents never branch on key existence.</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td>Only <code>output</code>-mirror comments</td>
+    <td><code>comments: []</code>, <code>comments_truncated: false</code>, <code>comment_count &gt; 0</code>. Expected mismatch — description copy warns against comparing.</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td>&gt;10 visible comments</td>
+    <td>Newest 10 returned, <code>comments_truncated: true</code>. No pagination tool in scope — description says the full thread lives in the web UI.</td>
+    <td>—</td>
+  </tr>
+  <tr>
+    <td>RLS filters rows (remote HTTP mode)</td>
+    <td>Filtered rows silently absent; <code>comments_truncated</code> computed from <em>visible</em> rows only; <code>comment_count</code> may exceed what's shown. Local stdio (service-role) sees all rows — parity AC means the <em>shape</em> is identical, visibility follows the client's RLS.</td>
+    <td>Same: <code>approval_notes</code> contains only rows the caller's client can read.</td>
+  </tr>
+  <tr>
+    <td>Author account deleted / join miss</td>
+    <td colspan="2"><code>author_name: null</code> — comment/note is still returned. (FK cascade normally deletes the rows outright.)</td>
+  </tr>
+  <tr>
+    <td>No prior approvals / first step / silent approval (no comment passed) / step has no <code>run_id</code></td>
+    <td>—</td>
+    <td><code>approval_notes: []</code>; no APPROVER GUIDANCE block; <code>instruction</code> byte-identical to today. A silent <code>approve_step</code> inserts no row, so it correctly produces no note.</td>
+  </tr>
+  <tr>
+    <td>All steps complete</td>
+    <td>—</td>
+    <td><code>{ done: true }</code> early return unchanged — no <code>approval_notes</code> key (documented, not a bug).</td>
+  </tr>
+  <tr>
+    <td>Comment query errors</td>
+    <td colspan="2">Soft-fail to empty (<code>[]</code> / <code>false</code>), matching getTask's existing posture for comments/activity fetches — never fail the whole tool call over an enrichment.</td>
+  </tr>
+</table></div>
+
+<h2><span class="n">06</span> Tool-description copy — verbatim</h2>
+<p>Append the highlighted sentences to the existing descriptions in <code>register-tools.ts</code> (information scent: name the field, say where it is, state the one rule agents must not guess).</p>
+
+<div class="desc-box">
+  <div class="tool">get_task <span class="muted">(L288 — append)</span></div>
+  <span class="existing">"Get single task detail including workflow steps, comments, and recent activity. […] use claim_next_step to execute steps sequentially rather than implementing directly.</span>
+  <span class="added">Each workflow step carries its own `comments` array — the step's latest discussion, failure reports, and approval notes (newest first, max 10; type 'output' mirrors are excluded because the step's `output` field is canonical). If a step's `comments_truncated` is true, older comments exist beyond the 10 returned; `comment_count` is a raw total that also counts hidden output-mirror rows, so never compare it to comments.length — the full thread is visible in the web UI.</span><span class="existing">"</span>
+</div>
+
+<div class="desc-box">
+  <div class="tool">claim_next_step <span class="muted">(L1163 — append)</span></div>
+  <span class="existing">"Claim the next workflow step on a task […] Returns the step with bot_id, available_agents, a `context` array of prior completed steps' outputs, and a one-time `claim_token` […]</span>
+  <span class="added">Also returns `approval_notes` — every note a human left when approving earlier steps in this run (empty array if none). Treat approval notes as binding constraints: 'approved, but change X' makes X a requirement for this and all later steps.</span>
+  <span class="existing">Returns { done: true } when all steps are complete."</span>
+</div>
+
+<div class="desc-box">
+  <div class="tool">add_step_comment <span class="muted">(L1252 — replace)</span></div>
+  <span class="existing">"Add a comment to a workflow step.</span>
+  <span class="added">Comments are surfaced to other agents: get_task returns each step's latest 10 (types comment/failure/approval/changes_requested), 'failure' and 'changes_requested' feed claim_next_step's rework_instructions, and 'approval' notes feed its approval_notes. Type 'output' is reserved for the UI mirror of complete_step's output — never use it to communicate with agents; put deliverables in complete_step's `output` parameter instead.</span><span class="existing">"</span>
+</div>
+
+<h2><span class="n">07</span> Explicitly NOT changing</h2>
+<ul>
+  <li><code>rework_instructions</code> — shape, queries (L661–720), and bytes untouched; <code>approval_notes</code> is a sibling, not a merge.</li>
+  <li><code>context[]</code> — still built exclusively from <code>step.output</code> columns, never from comments (comment at workflows.ts L741–742 stays true).</li>
+  <li><code>instruction</code> string when <code>approval_notes</code> is empty — byte-identical (same guarantee pattern as the model-tier and skills blocks).</li>
+  <li><code>comment_count</code> column, trigger, and value — still counts all types; no migration needed (<code>comments_truncated</code> is computed, not stored).</li>
+  <li><code>add_step_comment</code> write path and zod schema — description copy only.</li>
+  <li>Task-level <code>comments</code> in get_task (<code>board_task_comments</code>, desc, limit 20) — a different table, untouched.</li>
+  <li><code>approve_step</code> insert path (L1456–1471) and its bot-caller block.</li>
+  <li><code>claim_next_step</code>'s <code>{ done: true }</code> early return.</li>
+  <li>No new MCP tool, no pagination, no RLS policy changes, no web-UI changes.</li>
+</ul>
+
+<p class="muted" style="margin-top:48px; border-top:1px solid var(--border); padding-top:16px;">
+UX Design step 2 · Feature Development workflow · "MCP gap: agents can't read step-level comments" · Both MCP modes (stdio + remote HTTP) share these handlers via <code>register-tools.ts</code>, so one implementation covers both.
+</p>
+
+</div>
+</body>
+</html>

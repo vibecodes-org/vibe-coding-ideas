@@ -9,6 +9,12 @@ import { tierRank } from "../../../src/lib/role-matching";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "../../../src/lib/workflow-matching";
 import { logActivity } from "../activity";
 import { fetchOpenSuggestions } from "./board-read";
+import {
+  buildApprovalNotes,
+  buildApproverGuidanceBlock,
+  type ApprovalNote,
+  type ApprovalNoteRow,
+} from "../lib/step-comments";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -741,6 +747,12 @@ export async function claimNextStep(
   // Reads directly from the step's `output` column (the single source of truth),
   // not from workflow_step_comments which are a UI display feature only.
   let context: { step_id: string; step_title: string; output: string }[] = [];
+  // approval_notes: every type='approval' comment left on a prior step of this
+  // run — ALWAYS present on the done:false return, [] when none/no run_id
+  // (docs/design-step-comments-api.html §02/D3). Scope is ALL prior steps, not
+  // just the ones with output, since an approval caveat is a standing
+  // constraint on every downstream step.
+  let approval_notes: ApprovalNote[] = [];
   if (step.run_id) {
     const { data: priorSteps } = await ctx.supabase
       .from("task_workflow_steps")
@@ -754,6 +766,23 @@ export async function claimNextStep(
       context = priorSteps
         .filter((s) => s.output)
         .map((s) => ({ step_id: s.id, step_title: s.title, output: s.output! }));
+
+      const { data: approvalRows, error: approvalError } = await ctx.supabase
+        .from("workflow_step_comments")
+        .select(
+          "step_id, content, author_id, created_at, users!workflow_step_comments_author_id_fkey(full_name)"
+        )
+        .in("step_id", priorSteps.map((s) => s.id))
+        .eq("type", "approval")
+        .order("created_at", { ascending: true })
+        .limit(20);
+
+      if (!approvalError) {
+        approval_notes = buildApprovalNotes(
+          (approvalRows ?? []) as unknown as ApprovalNoteRow[],
+          priorSteps.map((s) => ({ id: s.id, title: s.title }))
+        );
+      }
     }
   }
 
@@ -837,6 +866,13 @@ export async function claimNextStep(
       `- Do NOT repeat prior deliverables wholesale — reference them and add new value\n` +
       `- If a prior step's output conflicts with your analysis, call out the discrepancy explicitly`
     );
+  }
+
+  // APPROVER GUIDANCE: only added when a human left approval notes on prior
+  // steps of this run — the empty-notes path leaves `instruction` byte-for-
+  // byte identical to today (docs/design-step-comments-api.html §02/§07).
+  if (approval_notes.length > 0) {
+    contextParts.push(buildApproverGuidanceBlock(approval_notes));
   }
 
   if (expected_deliverables.length > 0) {
@@ -942,6 +978,7 @@ export async function claimNextStep(
     rework_instructions,
     available_agents,
     context,
+    approval_notes,
     expected_deliverables,
     ...(available_skills.length > 0 ? { available_skills } : {}),
   };

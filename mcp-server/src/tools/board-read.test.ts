@@ -21,6 +21,7 @@ function createChain(resolveWith: unknown = null) {
   chain.select = vi.fn(() => chain);
   chain.eq = vi.fn(() => chain);
   chain.in = vi.fn(() => chain);
+  chain.neq = vi.fn(() => chain);
   chain.insert = vi.fn(() => chain);
   chain.update = vi.fn(() => chain);
 
@@ -100,6 +101,10 @@ function buildContext(opts: {
   activity?: unknown[];
   attachments?: unknown[];
   suggestions?: unknown[];
+  /** Rows returned by getTask's step-level workflow_step_comments query. */
+  stepComments?: unknown[];
+  /** When true, the step-level comments query resolves with an error (soft-fail path). */
+  stepCommentsError?: boolean;
 }): McpContext {
   const taskChain = createChain(opts.task ?? makeTask());
   const stepsChain = createChain(opts.steps ?? []);
@@ -107,6 +112,11 @@ function buildContext(opts: {
   const activityChain = createChain(opts.activity ?? []);
   const attachmentsChain = createChain(opts.attachments ?? []);
   const suggestionsChain = createChain(opts.suggestions ?? []);
+  const stepCommentsChain = createChain(opts.stepComments ?? []);
+  if (opts.stepCommentsError) {
+    stepCommentsChain.then = (resolve: (val: unknown) => void) =>
+      Promise.resolve({ data: null, error: { message: "boom" } }).then(resolve);
+  }
 
   const fromFn = vi.fn((table: string) => {
     switch (table) {
@@ -122,6 +132,8 @@ function buildContext(opts: {
         return attachmentsChain;
       case "workflow_suggestions":
         return suggestionsChain;
+      case "workflow_step_comments":
+        return stepCommentsChain;
       default:
         return createChain();
     }
@@ -386,5 +398,76 @@ describe("getTask — workflow_suggestions", () => {
 
     expect(result.workflow_step_total).toBe(0);
     expect(result.workflow_steps).toEqual([]);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getTask — step-level comments (Step-Level Comments API)
+// ---------------------------------------------------------------------------
+
+describe("getTask — step-level comments", () => {
+  const params = getTaskSchema.parse({ task_id: TASK_ID, idea_id: IDEA_ID });
+
+  it("attaches comments: [] and comments_truncated: false to a step with no comments", async () => {
+    const ctx = buildContext({ steps: [makeStep({ id: "step-1" })], stepComments: [] });
+
+    const result = await getTask(ctx, params);
+
+    const step = result.workflow_steps[0] as Record<string, unknown>;
+    expect(step.comments).toEqual([]);
+    expect(step.comments_truncated).toBe(false);
+  });
+
+  it("shapes and attaches step comment rows, flattening the users join", async () => {
+    const ctx = buildContext({
+      steps: [makeStep({ id: "step-1" })],
+      stepComments: [
+        {
+          id: "c1",
+          step_id: "step-1",
+          type: "comment",
+          content: "Heads-up: watch out for the reload edge case.",
+          author_id: "author-1",
+          created_at: "2026-07-10T16:42:11Z",
+          users: { full_name: "Priya" },
+        },
+      ],
+    });
+
+    const result = await getTask(ctx, params);
+
+    const step = result.workflow_steps[0] as Record<string, unknown>;
+    expect(step.comments).toEqual([
+      {
+        id: "c1",
+        type: "comment",
+        content: "Heads-up: watch out for the reload edge case.",
+        author_id: "author-1",
+        author_name: "Priya",
+        created_at: "2026-07-10T16:42:11Z",
+      },
+    ]);
+  });
+
+  it("soft-fails to comments: [] / comments_truncated: false when the query errors", async () => {
+    const ctx = buildContext({
+      steps: [makeStep({ id: "step-1" })],
+      stepCommentsError: true,
+    });
+
+    const result = await getTask(ctx, params);
+
+    const step = result.workflow_steps[0] as Record<string, unknown>;
+    expect(step.comments).toEqual([]);
+    expect(step.comments_truncated).toBe(false);
+  });
+
+  it("does not query workflow_step_comments when there are no steps", async () => {
+    const ctx = buildContext({ steps: [] });
+
+    await getTask(ctx, params);
+
+    const calls = (ctx.supabase.from as unknown as { mock: { calls: unknown[][] } }).mock.calls;
+    expect(calls.some((c) => c[0] === "workflow_step_comments")).toBe(false);
   });
 });
