@@ -10,7 +10,7 @@ import {
   resolveAiProvider,
 } from "@/lib/ai-helpers";
 import type { AiAccess } from "@/lib/ai-helpers";
-import { getAttachmentContext } from "@/lib/attachment-context";
+import { getAttachmentContext, appendAttachmentBlock } from "@/lib/attachment-context";
 import type { EnhanceAttachmentUsage } from "@/lib/attachment-context";
 
 const AI_TIMEOUT_MS = 90_000; // 90s — fail gracefully before Vercel's 120s function timeout
@@ -394,9 +394,10 @@ Use the answers above to inform your enhanced description. Make the enhancement 
   }
 
   // Appends "" when there's no attachment context — byte parity for ideas with
-  // no (eligible) attachments (AC-6). Kept in lockstep with the identical
-  // append in src/app/api/ai/enhance/route.ts (AC-8).
-  userPrompt += attachmentPromptBlock;
+  // no (eligible) attachments (AC-6). Shares `appendAttachmentBlock` with the
+  // identical append in src/app/api/ai/enhance/route.ts so the two can't
+  // drift from each other (AC-8).
+  userPrompt = appendAttachmentBlock(userPrompt, attachmentPromptBlock);
 
   let text: string;
   let usage: { inputTokens?: number; outputTokens?: number };

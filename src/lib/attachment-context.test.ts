@@ -4,6 +4,7 @@ import {
   buildAttachmentPromptBlock,
   encodeAttachmentUsageHeader,
   getAttachmentContext,
+  appendAttachmentBlock,
   MAX_DOWNLOAD_BYTES,
   PER_FILE_CHAR_BUDGET,
   TOTAL_CHAR_BUDGET,
@@ -160,6 +161,28 @@ describe("buildAttachmentPromptBlock", () => {
     expect(result.usage).toEqual({ used: [], omitted: [] });
   });
 
+  it("Task 4a: truncates at a code-point boundary, never splitting a surrogate pair", () => {
+    // "A" + budget-many emoji (each a surrogate pair) — a raw.slice() at the
+    // char budget would land mid-pair for roughly half of these.
+    const longContent = "A" + "\u{1F600}".repeat(PER_FILE_CHAR_BUDGET);
+    const result = buildAttachmentPromptBlock([
+      candidate({ id: "a1", name: "emoji.md", content: longContent }),
+    ]);
+
+    expect(result.usage.used).toEqual([{ id: "a1", name: "emoji.md", truncated: true }]);
+    expect(result.promptBlock).toContain("[... truncated ...]");
+
+    const sectionStart = result.promptBlock.indexOf("## emoji.md\n") + "## emoji.md\n".length;
+    const markerStart = result.promptBlock.indexOf("\n\n[... truncated ...]");
+    const truncatedContent = result.promptBlock.slice(sectionStart, markerStart);
+
+    // A lone surrogate makes encodeURIComponent throw a URIError — this is a
+    // cheap, reliable way to assert the cut never severed a pair.
+    expect(() => encodeURIComponent(truncatedContent)).not.toThrow();
+    // Cut to exactly the per-file budget in code points (not code units).
+    expect(Array.from(truncatedContent)).toHaveLength(PER_FILE_CHAR_BUDGET);
+  });
+
   it("orders sections in the order candidates are given (newest-first is the caller's contract)", () => {
     const result = buildAttachmentPromptBlock([
       candidate({ id: "1", name: "b.md", content: "B content" }),
@@ -209,6 +232,99 @@ describe("encodeAttachmentUsageHeader", () => {
     const encoded = encodeAttachmentUsageHeader({ used, omitted: [] });
     const decoded = JSON.parse(decodeURIComponent(encoded!));
     expect(decoded).toEqual({ usedCount: 500, omittedCount: 0 });
+  });
+
+  // ── AC-6: all-omitted still emits the header (powers the amber warning) ──
+
+  it("AC-6: used empty + omitted non-empty still returns a non-null header", () => {
+    const encoded = encodeAttachmentUsageHeader({
+      used: [],
+      omitted: [{ id: "a1", name: "photo.png", reason: "unsupported_type" }],
+    });
+
+    expect(encoded).not.toBeNull();
+    const decoded = JSON.parse(decodeURIComponent(encoded!));
+    expect(decoded.used).toEqual([]);
+    expect(decoded.omitted).toEqual([{ id: "a1", name: "photo.png", reason: "unsupported_type" }]);
+  });
+
+  // ── Task 4b: byte/encoded-length-aware filename clamp ────────────────────
+
+  it("Task 4b: retains per-file detail for CJK filenames that would previously trigger fallback", () => {
+    // 70 CJK chars is under the old 100-code-unit cap (so it went through
+    // unclamped), but encodes to ~630 chars each — 10 of them blew past
+    // HEADER_MAX_ENCODED_LENGTH under the old code-unit-only clamp.
+    const cjkName = "測".repeat(70);
+    const used = Array.from({ length: 10 }, (_, i) => ({
+      id: `attachment-id-${i}`,
+      name: cjkName,
+      truncated: false,
+    }));
+
+    const encoded = encodeAttachmentUsageHeader({ used, omitted: [] });
+
+    expect(encoded).not.toBeNull();
+    const decoded = JSON.parse(decodeURIComponent(encoded!));
+    // Still the detailed shape, not the counts-only fallback.
+    expect(Array.isArray(decoded.used)).toBe(true);
+    expect(decoded.used).toHaveLength(10);
+    expect(decoded.usedCount).toBeUndefined();
+  });
+
+  it("Task 4b: modest CJK filenames (~20 chars, 10 attachments) retain full per-file detail", () => {
+    const cjkName = "測".repeat(20);
+    const used = Array.from({ length: 10 }, (_, i) => ({
+      id: `attachment-id-${i}`,
+      name: cjkName,
+      truncated: false,
+    }));
+
+    const encoded = encodeAttachmentUsageHeader({ used, omitted: [] });
+
+    const decoded = JSON.parse(decodeURIComponent(encoded!));
+    expect(decoded.used).toHaveLength(10);
+    expect(decoded.used[0].name).toBe(cjkName); // untouched — well within budget
+  });
+
+  it("Task 4b: a genuinely oversized CJK payload still falls back to counts-only", () => {
+    const used = Array.from({ length: 500 }, (_, i) => ({
+      id: `id-${i}`,
+      name: "測".repeat(50),
+      truncated: false,
+    }));
+    const encoded = encodeAttachmentUsageHeader({ used, omitted: [] });
+    const decoded = JSON.parse(decodeURIComponent(encoded!));
+    expect(decoded).toEqual({ usedCount: 500, omittedCount: 0 });
+  });
+});
+
+// ── appendAttachmentBlock (Task 2: shared append, locks route/ai.ts parity) ─
+
+describe("appendAttachmentBlock", () => {
+  it("concatenates the prompt block onto the user prompt", () => {
+    expect(appendAttachmentBlock("Base prompt", "\n\n---\nAttached")).toBe(
+      "Base prompt\n\n---\nAttached"
+    );
+  });
+
+  it("is byte-parity with the original prompt when promptBlock is empty (AC-6)", () => {
+    expect(appendAttachmentBlock("Base prompt", "")).toBe("Base prompt");
+  });
+
+  it("produces the same result the two call sites (route.ts, ai.ts) rely on staying identical", () => {
+    // Both src/app/api/ai/enhance/route.ts and enhanceIdeaWithContext in
+    // src/actions/ai.ts call `appendAttachmentBlock(userPrompt, attachmentPromptBlock)`
+    // with the same getAttachmentContext().promptBlock — since they now share
+    // this one function, they're structurally incapable of diverging.
+    const sharedPromptBlock = buildAttachmentPromptBlock([
+      { id: "a1", name: "notes.md", content: "Some notes", skipReason: null },
+    ]).promptBlock;
+
+    const routeResult = appendAttachmentBlock("Route user prompt", sharedPromptBlock);
+    const actionResult = appendAttachmentBlock("Route user prompt", sharedPromptBlock);
+
+    expect(routeResult).toBe(actionResult);
+    expect(routeResult).toBe("Route user prompt" + sharedPromptBlock);
   });
 });
 
@@ -358,5 +474,135 @@ describe("getAttachmentContext", () => {
     expect(result.usage.used).toEqual([{ id: "a1", name: "readable.pdf", truncated: false }]);
     expect(result.usage.omitted).toEqual([{ id: "a2", name: "scanned.pdf", reason: "read_error" }]);
     expect(result.promptBlock).toContain("Extracted PDF text");
+  });
+
+  it("AC-6: an idea whose only attachment is all-omitted (a PNG) → empty prompt, non-empty omitted, non-null header", async () => {
+    const supabase = makeSupabaseMock({
+      attachments: [
+        {
+          id: "a1",
+          file_name: "photo.png",
+          file_size: 100,
+          content_type: "image/png",
+          storage_path: "idea-1/a1.png",
+        },
+      ],
+    });
+
+    const result = await getAttachmentContext(supabase, "idea-1");
+
+    // Prompt is byte-parity with "no attachments" ...
+    expect(result.promptBlock).toBe("");
+    // ... but the usage receipt still says something was skipped ...
+    expect(result.usage.omitted).toEqual([{ id: "a1", name: "photo.png", reason: "unsupported_type" }]);
+    expect(result.usage.used).toEqual([]);
+    // ... and the header is still emitted so the UI can render the
+    // all-omitted amber warning (never suppressed just because used is empty).
+    expect(encodeAttachmentUsageHeader(result.usage)).not.toBeNull();
+  });
+
+  // ── Task 3: unpdf throw-path hardening ──────────────────────────────────
+
+  it("Task 3: getDocumentProxy throwing degrades that file to read_error and doesn't stop the batch", async () => {
+    const pdfBlob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) } as unknown as Blob;
+    const mdBlob = { text: vi.fn().mockResolvedValue("Markdown body") } as unknown as Blob;
+    const supabase = makeSupabaseMock({
+      attachments: [
+        {
+          id: "a1",
+          file_name: "broken.pdf",
+          file_size: 500,
+          content_type: "application/pdf",
+          storage_path: "idea-1/a1.pdf",
+        },
+        {
+          id: "a2",
+          file_name: "notes.md",
+          file_size: 100,
+          content_type: "text/markdown",
+          storage_path: "idea-1/a2.md",
+        },
+      ],
+    });
+    // Newest-first order means a1 (pdf) downloads first, then a2 (md).
+    supabase._download
+      .mockResolvedValueOnce({ data: pdfBlob, error: null })
+      .mockResolvedValueOnce({ data: mdBlob, error: null });
+    mockGetDocumentProxy.mockRejectedValue(new Error("boom"));
+
+    const result = await getAttachmentContext(supabase, "idea-1");
+
+    expect(result.usage.omitted).toEqual([{ id: "a1", name: "broken.pdf", reason: "read_error" }]);
+    expect(result.usage.used).toEqual([{ id: "a2", name: "notes.md", truncated: false }]);
+    expect(result.promptBlock).toContain("Markdown body");
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it("Task 3: extractText throwing degrades that file to read_error and doesn't stop the batch", async () => {
+    const pdfBlob = { arrayBuffer: vi.fn().mockResolvedValue(new ArrayBuffer(8)) } as unknown as Blob;
+    const mdBlob = { text: vi.fn().mockResolvedValue("Markdown body") } as unknown as Blob;
+    const supabase = makeSupabaseMock({
+      attachments: [
+        {
+          id: "a1",
+          file_name: "broken.pdf",
+          file_size: 500,
+          content_type: "application/pdf",
+          storage_path: "idea-1/a1.pdf",
+        },
+        {
+          id: "a2",
+          file_name: "notes.md",
+          file_size: 100,
+          content_type: "text/markdown",
+          storage_path: "idea-1/a2.md",
+        },
+      ],
+    });
+    supabase._download
+      .mockResolvedValueOnce({ data: pdfBlob, error: null })
+      .mockResolvedValueOnce({ data: mdBlob, error: null });
+    mockGetDocumentProxy.mockResolvedValue({} as never);
+    mockExtractText.mockRejectedValue(new Error("boom"));
+
+    const result = await getAttachmentContext(supabase, "idea-1");
+
+    expect(result.usage.omitted).toEqual([{ id: "a1", name: "broken.pdf", reason: "read_error" }]);
+    expect(result.usage.used).toEqual([{ id: "a2", name: "notes.md", truncated: false }]);
+    expect(result.promptBlock).toContain("Markdown body");
+    expect(logger.warn).toHaveBeenCalled();
+  });
+
+  it("Task 3: blob.text() throwing for a text file degrades to read_error and doesn't stop the batch", async () => {
+    const brokenBlob = { text: vi.fn().mockRejectedValue(new Error("boom")) } as unknown as Blob;
+    const mdBlob = { text: vi.fn().mockResolvedValue("Markdown body") } as unknown as Blob;
+    const supabase = makeSupabaseMock({
+      attachments: [
+        {
+          id: "a1",
+          file_name: "broken.txt",
+          file_size: 100,
+          content_type: "text/plain",
+          storage_path: "idea-1/a1.txt",
+        },
+        {
+          id: "a2",
+          file_name: "notes.md",
+          file_size: 100,
+          content_type: "text/markdown",
+          storage_path: "idea-1/a2.md",
+        },
+      ],
+    });
+    supabase._download
+      .mockResolvedValueOnce({ data: brokenBlob, error: null })
+      .mockResolvedValueOnce({ data: mdBlob, error: null });
+
+    const result = await getAttachmentContext(supabase, "idea-1");
+
+    expect(result.usage.omitted).toEqual([{ id: "a1", name: "broken.txt", reason: "read_error" }]);
+    expect(result.usage.used).toEqual([{ id: "a2", name: "notes.md", truncated: false }]);
+    expect(result.promptBlock).toContain("Markdown body");
+    expect(logger.warn).toHaveBeenCalled();
   });
 });

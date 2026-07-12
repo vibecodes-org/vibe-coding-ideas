@@ -7,7 +7,11 @@ import {
   chargeAiUpfront,
   resolveAiProvider,
 } from "@/lib/ai-helpers";
-import { getAttachmentContext, encodeAttachmentUsageHeader } from "@/lib/attachment-context";
+import {
+  getAttachmentContext,
+  encodeAttachmentUsageHeader,
+  appendAttachmentBlock,
+} from "@/lib/attachment-context";
 
 export const maxDuration = 300; // Streaming keeps the connection alive; allow generous time
 
@@ -114,7 +118,7 @@ Use the answers above to inform your enhanced description. Make the enhancement 
 
     // Appends "" when there's no attachment context — byte parity for ideas with
     // no (eligible) attachments (AC-6).
-    userPrompt += attachmentPromptBlock;
+    userPrompt = appendAttachmentBlock(userPrompt, attachmentPromptBlock);
 
     // Charge upfront BEFORE the AI call — prevents "use now, pay never" if the
     // serverless function is killed mid-stream. Token usage is logged after.

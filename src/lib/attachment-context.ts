@@ -109,8 +109,19 @@ export function buildAttachmentPromptBlock(
     }
 
     const raw = candidate.content ?? "";
-    const truncated = raw.length > PER_FILE_CHAR_BUDGET;
-    const fileText = truncated ? raw.slice(0, PER_FILE_CHAR_BUDGET) + TRUNCATION_MARKER : raw;
+    // Code-unit length is always >= code-point length, so this is a safe
+    // pre-check: only pay for the code-point split when there's a chance the
+    // budget is actually exceeded. Slicing by code point (rather than
+    // `raw.slice`) avoids severing a UTF-16 surrogate pair at the cut.
+    let truncated = false;
+    let fileText = raw;
+    if (raw.length > PER_FILE_CHAR_BUDGET) {
+      const codePoints = Array.from(raw);
+      truncated = codePoints.length > PER_FILE_CHAR_BUDGET;
+      fileText = truncated
+        ? codePoints.slice(0, PER_FILE_CHAR_BUDGET).join("") + TRUNCATION_MARKER
+        : raw;
+    }
 
     if (budgetExhausted || totalChars + fileText.length > TOTAL_CHAR_BUDGET) {
       budgetExhausted = true;
@@ -138,6 +149,19 @@ export function buildAttachmentPromptBlock(
   }
 
   return { promptBlock, usage: { used, omitted } };
+}
+
+/**
+ * Appends the attachment prompt block to a user prompt. This is a trivial
+ * concat, but it's shared so the two call sites that build the same
+ * `userPrompt += attachmentPromptBlock` line independently — the streaming
+ * route (`src/app/api/ai/enhance/route.ts`) and the `enhanceIdeaWithContext`
+ * server action (`src/actions/ai.ts`) — can't drift from each other (AC-8).
+ * `promptBlock` is `""` when there's no (eligible) attachment context, so
+ * this is byte-parity with the un-appended prompt in that case.
+ */
+export function appendAttachmentBlock(userPrompt: string, promptBlock: string): string {
+  return userPrompt + promptBlock;
 }
 
 /**
@@ -244,8 +268,43 @@ export async function getAttachmentContext(
 }
 
 const HEADER_FILENAME_CAP = 100;
+/**
+ * Ceiling on a single filename's `encodeURIComponent` length. Code-unit
+ * length alone (`HEADER_FILENAME_CAP`) under-clamps multi-byte names — a
+ * 90-char CJK filename is well under the 100-char cap but expands to ~9
+ * encoded chars per character, bloating the header far more than an ASCII
+ * name of the same length would.
+ */
+const HEADER_NAME_ENCODED_BUDGET = 300;
 /** Conservative ceiling to stay under common single-header size limits (~8KB). */
 const HEADER_MAX_ENCODED_LENGTH = 6_000;
+
+/**
+ * Clamp a filename for the header: first by code units (existing safety
+ * net for pathological single names), then — if it still encodes to more
+ * than `HEADER_NAME_ENCODED_BUDGET` — shrink further one code point at a
+ * time (never splitting a surrogate pair) until the encoded form fits.
+ * Cheap for the common case (plain ASCII names skip the binary search
+ * entirely since they rarely need it).
+ */
+function clampName(name: string): string {
+  const codeUnitClamped = name.length > HEADER_FILENAME_CAP ? name.slice(0, HEADER_FILENAME_CAP) : name;
+  if (encodeURIComponent(codeUnitClamped).length <= HEADER_NAME_ENCODED_BUDGET) return codeUnitClamped;
+
+  const codePoints = Array.from(codeUnitClamped);
+  let lo = 0;
+  let hi = codePoints.length;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    const candidate = codePoints.slice(0, mid).join("");
+    if (encodeURIComponent(candidate).length <= HEADER_NAME_ENCODED_BUDGET) {
+      lo = mid;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  return codePoints.slice(0, lo).join("");
+}
 
 /**
  * Serialize a usage receipt for the `X-Attachment-Usage` response header
@@ -255,9 +314,6 @@ const HEADER_MAX_ENCODED_LENGTH = 6_000;
  */
 export function encodeAttachmentUsageHeader(usage: EnhanceAttachmentUsage): string | null {
   if (usage.used.length === 0 && usage.omitted.length === 0) return null;
-
-  const clampName = (name: string) =>
-    name.length > HEADER_FILENAME_CAP ? name.slice(0, HEADER_FILENAME_CAP) : name;
 
   const clamped: EnhanceAttachmentUsage = {
     used: usage.used.map((u) => ({ ...u, name: clampName(u.name) })),
