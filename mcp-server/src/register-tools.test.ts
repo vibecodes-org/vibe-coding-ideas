@@ -5,6 +5,7 @@ import type { McpContext } from "./context";
 const EXPECTED_TOOL_NAMES = [
   "list_ideas",
   "get_idea",
+  "get_idea_enhancement_prompt",
   "get_board",
   "get_task",
   "get_my_tasks",
@@ -93,13 +94,13 @@ function createMockServer() {
 }
 
 describe("registerTools", () => {
-  it("registers exactly 83 tools", () => {
+  it("registers exactly 84 tools", () => {
     const server = createMockServer();
     const getContext = vi.fn();
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(83);
+    expect(server.tool).toHaveBeenCalledTimes(84);
   });
 
   it("registers all expected tool names", () => {
@@ -159,8 +160,9 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    // Invoke create_task (index 5) with valid-shaped args that will fail at DB
-    const callback = server.tool.mock.calls[5][3];
+    // Invoke create_task (index 6 — shifted by get_idea_enhancement_prompt at
+    // index 2) with valid-shaped args that will fail at DB
+    const callback = server.tool.mock.calls[6][3];
     const result = await callback(
       {
         idea_id: "00000000-0000-0000-0000-000000000001",
@@ -324,5 +326,57 @@ describe("registerTools", () => {
     const result = await callback({}, {});
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Error:");
+  });
+
+  it("get_idea's description points to get_idea_enhancement_prompt (Q5 discoverability)", () => {
+    const server = createMockServer();
+    const getContext = vi.fn();
+
+    registerTools(server, getContext);
+
+    const getIdeaCall = server.tool.mock.calls.find(
+      (call: unknown[]) => call[0] === "get_idea"
+    );
+    expect(getIdeaCall![1]).toContain("get_idea_enhancement_prompt");
+  });
+
+  it("get_idea_enhancement_prompt is registered with an attachment-context provider passed through", async () => {
+    const server = createMockServer();
+    const IDEA_ID = "00000000-0000-4000-a000-00000000abcd";
+    const AUTHOR_ID = "00000000-0000-4000-a000-000000000001";
+
+    const ideaChain = {
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({
+        data: { id: IDEA_ID, title: "T", description: "D", author_id: AUTHOR_ID, project_kit: null },
+        error: null,
+      }),
+    };
+    const mockContext: McpContext = {
+      supabase: { from: vi.fn(() => ideaChain) } as unknown as McpContext["supabase"],
+      userId: AUTHOR_ID,
+    };
+    const getContext = vi.fn(() => mockContext);
+    const provider = vi.fn().mockResolvedValue({
+      promptBlock: "\n\n---\n**Attached Files:**\n\n## a.md\nhello",
+      usage: { used: [{ id: "a1", name: "a.md", truncated: false }], omitted: [] },
+    });
+
+    registerTools(server, getContext, undefined, provider);
+
+    const call = server.tool.mock.calls.find(
+      (c: unknown[]) => c[0] === "get_idea_enhancement_prompt"
+    );
+    expect(call).toBeDefined();
+    const callback = call![3];
+    const result = await callback({ idea_id: IDEA_ID }, {});
+
+    expect(result.isError).toBeUndefined();
+    expect(provider).toHaveBeenCalledWith(mockContext.supabase, IDEA_ID);
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.attachments.used).toEqual([{ id: "a1", name: "a.md", truncated: false }]);
+    expect(parsed.user_prompt).toContain("## a.md");
+    expect(parsed.next_tool).toBe("update_idea_description");
   });
 });

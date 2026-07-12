@@ -5,6 +5,7 @@ import { registerTools } from "../../../../../mcp-server/src/register-tools";
 import { instrumentServer } from "../../../../../mcp-server/src/instrument";
 import { resolveActiveBotId } from "../../../../../mcp-server/src/bot-identity";
 import { logger } from "@/lib/logger";
+import { getAttachmentContext } from "@/lib/attachment-context";
 import type { McpContext } from "../../../../../mcp-server/src/context";
 import type { Database } from "@/types/database";
 
@@ -168,7 +169,11 @@ const handler = createMcpHandler(
       },
       // Identity is resolved from the DB per request, so there is no in-memory
       // state to update here. set_agent_identity persists to mcp_agent_sessions.
-      () => {}
+      () => {},
+      // Full parity attachment reader (incl. PDF text extraction) for
+      // get_idea_enhancement_prompt — the remote transport runs inside the
+      // Next app, so the real getAttachmentContext (with unpdf) is available.
+      getAttachmentContext
     );
   },
   {

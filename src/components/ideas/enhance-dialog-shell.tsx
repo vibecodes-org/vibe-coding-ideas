@@ -40,6 +40,7 @@ import {
   type ParsedAttachmentUsage,
 } from "@/components/ideas/attachment-usage-line";
 import type { ClarifyingQuestion } from "@/actions/ai";
+import { DEFAULT_ENHANCE_PROMPT } from "@/lib/enhance-prompts";
 
 type DialogPhase = "configure" | "questions" | "result" | "refine";
 
@@ -55,8 +56,7 @@ export interface EnhanceDialogBot {
 const TRUNCATION_MARKER = "\n\n__TRUNCATED__";
 const MAX_CHIPS = 6;
 
-const DEFAULT_PROMPT =
-  "Improve this idea description. Add more detail, user stories, technical scope, and a clear product vision. Keep the original intent and key points, but make it more comprehensive and well-structured.";
+const DEFAULT_PROMPT = DEFAULT_ENHANCE_PROMPT;
 
 const EMPTY_DESCRIPTION_HINT =
   "Your draft description will appear here once you start typing.";

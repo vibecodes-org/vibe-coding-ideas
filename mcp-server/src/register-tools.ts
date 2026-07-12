@@ -211,6 +211,11 @@ import {
   recordProjectPath,
   recordProjectPathSchema,
 } from "./tools/project-paths";
+import {
+  getIdeaEnhancementPrompt,
+  getIdeaEnhancementPromptSchema,
+  type AttachmentContextProvider,
+} from "./tools/idea-enhance";
 
 function jsonResult(data: unknown) {
   return {
@@ -237,7 +242,8 @@ export function getRegisteredToolNames(): string[] {
 export function registerTools(
   server: AnyMcpServer,
   getContext: (extra: ServerExtra) => McpContext | Promise<McpContext>,
-  onIdentityChange?: (botId: string | null) => void
+  onIdentityChange?: (botId: string | null) => void,
+  attachmentContextProvider?: AttachmentContextProvider
 ): void {
   // --- Read Tools ---
 
@@ -257,12 +263,32 @@ export function registerTools(
 
   server.tool(
     "get_idea",
-    "Get full idea detail including description, recent comments, collaborators, and board summary.",
+    "Get full idea detail including description, recent comments, collaborators, and board summary. To enhance or rewrite the description with AI, call get_idea_enhancement_prompt — do not rewrite it unaided.",
     getIdeaSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
         const ctx = await getContext(extra);
         return jsonResult(await getIdea(ctx, getIdeaSchema.parse(args)));
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "get_idea_enhancement_prompt",
+    "Get everything needed to enhance an idea's description YOURSELF: the current title/description, ready-to-use prompts, and attachment context. This tool does NOT call AI and consumes no platform credits — YOU (the connected agent) generate the enhanced markdown using the returned system_prompt and user_prompt, show the user what changed, get their confirmation, then save with update_idea_description. Author-only. Use when the user asks to enhance, improve, expand, polish, or rewrite an idea description from the terminal. Follow the returned `instructions` field exactly.",
+    getIdeaEnhancementPromptSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(
+          await getIdeaEnhancementPrompt(
+            ctx,
+            getIdeaEnhancementPromptSchema.parse(args),
+            attachmentContextProvider
+          )
+        );
       } catch (e) {
         return errorResult(e);
       }

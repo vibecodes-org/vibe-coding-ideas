@@ -12,6 +12,7 @@ import {
 import type { AiAccess } from "@/lib/ai-helpers";
 import { getAttachmentContext, appendAttachmentBlock } from "@/lib/attachment-context";
 import type { EnhanceAttachmentUsage } from "@/lib/attachment-context";
+import { buildEnhanceSystemPrompt, buildEnhanceUserPrompt } from "@/lib/enhance-prompts";
 
 const AI_TIMEOUT_MS = 90_000; // 90s — fail gracefully before Vercel's 120s function timeout
 
@@ -218,9 +219,14 @@ export async function enhanceIdeaDescription(
 
   const systemPrompt = personaPrompt
     ? `${personaPrompt}\n\nYou are helping to enhance an idea description on a project management platform.`
-    : "You are an expert product manager and technical writer helping to enhance idea descriptions on a project management platform.";
+    : buildEnhanceSystemPrompt();
 
-  const userPrompt = `${prompt}\n\n---\n\n**Idea Title:** ${idea.title}\n\n**Current Description:**\n${idea.description}${attachmentPromptBlock}`;
+  const userPrompt = buildEnhanceUserPrompt({
+    prompt,
+    title: idea.title,
+    description: idea.description,
+    attachmentBlock: attachmentPromptBlock,
+  });
 
   let text: string;
   let usage: { inputTokens?: number; outputTokens?: number };
@@ -355,7 +361,7 @@ export async function enhanceIdeaWithContext(
 
   const systemPrompt = personaPrompt
     ? `${personaPrompt}\n\nYou are helping to enhance an idea description on a project management platform.`
-    : "You are an expert product manager and technical writer helping to enhance idea descriptions on a project management platform.";
+    : buildEnhanceSystemPrompt();
 
   let userPrompt: string;
 
@@ -390,7 +396,7 @@ ${qaSection}
 
 Use the answers above to inform your enhanced description. Make the enhancement specific and tailored based on what you learned.`;
   } else {
-    userPrompt = `${prompt}\n\n---\n\n**Idea Title:** ${idea.title}\n\n**Current Description:**\n${idea.description}`;
+    userPrompt = buildEnhanceUserPrompt({ prompt, title: idea.title, description: idea.description });
   }
 
   // Appends "" when there's no attachment context — byte parity for ideas with

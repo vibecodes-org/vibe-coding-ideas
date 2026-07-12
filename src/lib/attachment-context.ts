@@ -43,7 +43,15 @@ export interface EnhanceAttachmentUsage {
   omitted: Array<{
     id: string;
     name: string;
-    reason: "too_large" | "unsupported_type" | "over_budget" | "read_error";
+    /**
+     * `pdf_unsupported_on_stdio` is never produced by this module (it's a
+     * remote/full-parity implementation) — it's included here so the shared
+     * type is a superset of what the mcp-server stdio attachment reader can
+     * report (see mcp-server/src/attachment-context-stdio.ts), keeping the
+     * `get_idea_enhancement_prompt` MCP tool's payload shape consistent
+     * across transports.
+     */
+    reason: "too_large" | "unsupported_type" | "over_budget" | "read_error" | "pdf_unsupported_on_stdio";
   }>;
 }
 

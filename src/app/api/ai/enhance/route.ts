@@ -12,6 +12,7 @@ import {
   encodeAttachmentUsageHeader,
   appendAttachmentBlock,
 } from "@/lib/attachment-context";
+import { buildEnhanceSystemPrompt, buildEnhanceUserPrompt } from "@/lib/enhance-prompts";
 
 export const maxDuration = 300; // Streaming keeps the connection alive; allow generous time
 
@@ -78,7 +79,7 @@ export async function POST(req: Request) {
 
     const systemPrompt = personaPrompt
       ? `${personaPrompt}\n\nYou are helping to enhance an idea description on a project management platform.${kitContext}`
-      : `You are an expert product manager and technical writer helping to enhance idea descriptions on a project management platform.${kitContext}`;
+      : buildEnhanceSystemPrompt({ kitContext });
 
     let userPrompt: string;
 
@@ -113,7 +114,7 @@ ${qaSection}
 
 Use the answers above to inform your enhanced description. Make the enhancement specific and tailored based on what you learned.`;
     } else {
-      userPrompt = `${prompt}\n\n---\n\n**Idea Title:** ${idea.title}\n\n**Current Description:**\n${idea.description}`;
+      userPrompt = buildEnhanceUserPrompt({ prompt, title: idea.title, description: idea.description });
     }
 
     // Appends "" when there's no attachment context — byte parity for ideas with

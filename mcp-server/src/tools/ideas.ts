@@ -116,6 +116,23 @@ export async function updateIdeaDescription(
   ctx: McpContext,
   params: z.infer<typeof updateIdeaDescriptionSchema>
 ) {
+  // Author check (closes the stdio service-role gap — remote already enforces
+  // this via RLS, so this is behaviour-preserving there; see deleteIdea's
+  // identical author-check pattern below).
+  const { data: existing, error: fetchError } = await ctx.supabase
+    .from("ideas")
+    .select("id, author_id")
+    .eq("id", params.idea_id)
+    .maybeSingle();
+
+  if (fetchError) throw new Error(`Failed to look up idea: ${fetchError.message}`);
+  if (!existing) throw new Error(`Idea not found: ${params.idea_id}`);
+
+  const callerId = ctx.ownerUserId ?? ctx.userId;
+  if (callerId !== existing.author_id) {
+    throw new Error("Only the idea author can update the description");
+  }
+
   const { data, error } = await ctx.supabase
     .from("ideas")
     .update({ description: params.description })

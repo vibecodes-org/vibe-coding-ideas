@@ -12,6 +12,12 @@
     "sourceMap": true,
     "noEmit": true
   },
-  "include": ["src/**/*", "../src/types/**/*", "../src/lib/role-matching.ts"],
+  "include": [
+    "src/**/*",
+    "../src/types/**/*",
+    "../src/lib/role-matching.ts",
+    "../src/lib/enhance-prompts.ts",
+    "../src/lib/validation.ts"
+  ],
   "exclude": ["node_modules", "dist"]
 }

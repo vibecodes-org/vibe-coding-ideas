@@ -5,6 +5,7 @@ import { supabase, BOT_USER_ID, OWNER_USER_ID } from "./supabase";
 import { registerTools } from "./register-tools";
 import { instrumentServer } from "./instrument";
 import { resolveActiveBotId } from "./bot-identity";
+import { getStdioAttachmentContext } from "./attachment-context-stdio";
 import type { McpContext } from "./context";
 
 const server = new McpServer(
@@ -60,7 +61,7 @@ const instrumentedServer = instrumentServer(server, getContext, (entry) => {
     });
 });
 
-registerTools(instrumentedServer, getContext, setActiveBotId);
+registerTools(instrumentedServer, getContext, setActiveBotId, getStdioAttachmentContext);
 
 // --- Start server ---
 

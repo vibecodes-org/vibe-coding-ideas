@@ -27,6 +27,7 @@ const KNOWN_REASONS: ReadonlySet<string> = new Set([
   "unsupported_type",
   "over_budget",
   "read_error",
+  "pdf_unsupported_on_stdio",
 ]);
 
 /** User-facing text for why a file was skipped. */
@@ -38,6 +39,8 @@ export function omissionReasonText(name: string, reason: OmissionReason): string
       return "skipped to stay within the combined reading limit";
     case "read_error":
       return "couldn't be read";
+    case "pdf_unsupported_on_stdio":
+      return "PDFs aren't read over the local connection";
     case "unsupported_type": {
       const ext = name.slice(name.lastIndexOf(".") + 1).toLowerCase();
       return ext === "svg" ? "SVG files can't be read" : "images can't be read";
