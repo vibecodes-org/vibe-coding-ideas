@@ -163,7 +163,7 @@ export function ActivityTimeline({ taskId, ideaId }: ActivityTimelineProps) {
         <Activity className="h-4 w-4" />
         <span className="text-sm font-medium">Activity</span>
       </div>
-      <ScrollArea className="max-h-64">
+      <ScrollArea className={activities.length > 6 ? "h-64" : undefined}>
         <div className="space-y-3 pr-4">
           {activities.map((activity) => {
             const config = ACTIVITY_ACTIONS[activity.action];

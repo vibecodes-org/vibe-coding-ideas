@@ -430,7 +430,10 @@ export function BotActivityDialog({
               </p>
             ) : (
               <>
-                <ScrollArea type="always" className="max-h-96 [&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0">
+                <ScrollArea
+                  type="always"
+                  className={`${feed.length > 8 ? "h-96 " : ""}[&_[data-slot=scroll-area-viewport]>div]:!block [&_[data-slot=scroll-area-viewport]>div]:!min-w-0`}
+                >
                   <div className="space-y-4 pr-3">
                     {sessions.map((session, sessionIdx) => {
                       const taskGroups = groupByTask(session);

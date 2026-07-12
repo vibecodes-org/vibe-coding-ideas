@@ -185,7 +185,13 @@ export function ImportPreviewTable({
         </p>
       )}
 
-      <ScrollArea className="max-h-[50vh] min-h-[200px] rounded-md border">
+      <ScrollArea
+        className={
+          displayed.length > 8
+            ? "h-[50vh] min-h-[200px] rounded-md border"
+            : "min-h-[200px] rounded-md border"
+        }
+      >
         <table className="w-full text-xs">
           <thead className="sticky top-0 z-10 bg-muted">
             <tr className="border-b">

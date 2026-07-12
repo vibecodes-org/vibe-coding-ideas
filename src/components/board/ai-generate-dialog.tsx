@@ -799,7 +799,7 @@ export function AiGenerateDialog({
                   </div>
                 </div>
 
-                <ScrollArea className="max-h-[120px]">
+                <ScrollArea className={insertResult.failed.length > 4 ? "h-[120px]" : undefined}>
                   <ul className="space-y-1 text-sm text-muted-foreground">
                     {insertResult.failed.map((f, i) => (
                       <li key={i} className="flex items-start gap-1.5">
