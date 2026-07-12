@@ -15,7 +15,7 @@ import { updateDiscussionReply } from "@/actions/discussions";
 import { useMentionState } from "@/hooks/use-mentions";
 import { sendDiscussionMentionNotifications } from "@/lib/mention-notifications";
 import { useBotRoles } from "@/components/bot-roles-context";
-import { formatRelativeTime, getInitials } from "@/lib/utils";
+import { displayName, formatRelativeTime, getInitials } from "@/lib/utils";
 import {
   DiscussionAttachmentsSection,
   type DiscussionAttachmentsHandle,
@@ -105,13 +105,13 @@ export function ChildReplyItem({
       <Avatar className="h-6 w-6 shrink-0">
         <AvatarImage src={reply.author.avatar_url ?? undefined} />
         <AvatarFallback className="text-[10px]">
-          {getInitials(reply.author.full_name)}
+          {getInitials(displayName(reply.author))}
         </AvatarFallback>
       </Avatar>
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <span className="text-sm font-medium">
-            {reply.author.full_name ?? "Anonymous"}
+            {displayName(reply.author)}
           </span>
           {reply.author.is_bot && (
             <Tooltip>

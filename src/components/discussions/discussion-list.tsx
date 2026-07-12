@@ -18,7 +18,7 @@ import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { Input } from "@/components/ui/input";
 import { useBotRoles } from "@/components/bot-roles-context";
-import { formatRelativeTime, getInitials } from "@/lib/utils";
+import { displayName, formatRelativeTime, getInitials } from "@/lib/utils";
 import type { IdeaDiscussionWithAuthor } from "@/types";
 
 /** Strip markdown syntax to produce a clean plain-text preview */
@@ -225,10 +225,10 @@ export function DiscussionList({ discussions, ideaId }: DiscussionListProps) {
                       <Avatar className="h-4 w-4">
                         <AvatarImage src={discussion.author.avatar_url ?? undefined} />
                         <AvatarFallback className="text-[8px]">
-                          {getInitials(discussion.author.full_name)}
+                          {getInitials(displayName(discussion.author))}
                         </AvatarFallback>
                       </Avatar>
-                      <span>{discussion.author.full_name ?? "Anonymous"}</span>
+                      <span>{displayName(discussion.author)}</span>
                     </div>
                     <span className="text-muted-foreground/50">&middot;</span>
                     <span>Updated {formatRelativeTime(discussion.last_activity_at)}</span>

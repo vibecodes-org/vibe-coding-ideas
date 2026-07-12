@@ -18,7 +18,7 @@ import {
   MAX_IDEA_ATTACHMENT_SIZE,
   ALLOWED_IDEA_ATTACHMENT_TYPES,
 } from "@/lib/validation";
-import { getInitials } from "@/lib/utils";
+import { displayName, getInitials } from "@/lib/utils";
 import type { User } from "@/types";
 
 const ALLOWED_EXTENSIONS = [
@@ -280,10 +280,10 @@ export function DiscussionReplyForm({
         <Avatar className="h-5 w-5">
           <AvatarImage src={currentUser.avatar_url ?? undefined} />
           <AvatarFallback className="text-[8px]">
-            {getInitials(currentUser.full_name)}
+            {getInitials(displayName(currentUser))}
           </AvatarFallback>
         </Avatar>
-        Reply as {currentUser.full_name ?? "Anonymous"}
+        Reply as {displayName(currentUser)}
       </div>
       <div className="relative">
         {mention.mentionQuery !== null && mention.hasMentions && (
