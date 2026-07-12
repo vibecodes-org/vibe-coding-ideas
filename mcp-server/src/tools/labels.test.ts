@@ -1,5 +1,17 @@
 import { describe, it, expect, vi } from "vitest";
 import type { McpContext } from "../context";
+
+const mockCheckAndApplyAutoRules = vi.fn().mockResolvedValue(undefined);
+vi.mock("../../../src/lib/workflow-helpers", () => ({
+  checkAndApplyAutoRules: (...args: unknown[]) => mockCheckAndApplyAutoRules(...args),
+  checkAutoRuleWorkflow: vi.fn().mockResolvedValue({ hasActiveWorkflow: false }),
+  removeAutoRuleWorkflow: vi.fn().mockResolvedValue({ removed: false }),
+}));
+
+vi.mock("../../../src/lib/workflow-matching", () => ({
+  dismissSuggestionsForLabel: vi.fn().mockResolvedValue(undefined),
+}));
+
 import { manageLabels, manageLabelsSchema } from "./labels";
 
 // ---------------------------------------------------------------------------
@@ -137,5 +149,37 @@ describe("manageLabels — create action deduplication", () => {
     expect(result.success).toBe(true);
     expect(result.already_existed).toBeUndefined();
     expect(chain.insert).toHaveBeenCalled();
+  });
+});
+
+describe("manageLabels — add_to_task auto-rule adjudication", () => {
+  // Regression guard: the MCP route has no after()/waitUntil to schedule
+  // post-response work, so checkAndApplyAutoRules must be told to await the
+  // AI adjudication (awaitAdjudication: true) — otherwise it fires as a bare
+  // detached promise that serverless kills once the tool call returns.
+  it("awaits AI adjudication (awaitAdjudication: true) instead of firing detached", async () => {
+    mockCheckAndApplyAutoRules.mockClear();
+
+    const chain = createChain({ name: "Bug" });
+    const fromFn = vi.fn(() => chain);
+
+    const ctx: McpContext = {
+      supabase: { from: fromFn } as unknown as McpContext["supabase"],
+      userId: USER_ID,
+    };
+
+    const params = manageLabelsSchema.parse({
+      idea_id: IDEA_ID,
+      action: "add_to_task",
+      task_id: TASK_ID,
+      label_id: LABEL_ID,
+    });
+
+    const result = await manageLabels(ctx, params);
+
+    expect(result.success).toBe(true);
+    expect(mockCheckAndApplyAutoRules).toHaveBeenCalledTimes(1);
+    const options = mockCheckAndApplyAutoRules.mock.calls[0][5];
+    expect(options.awaitAdjudication).toBe(true);
   });
 });

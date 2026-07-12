@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import { after } from "next/server";
 
 // Track revalidatePath calls — should never be called by board actions
 const mockRevalidatePath = vi.fn();
@@ -40,8 +41,9 @@ vi.mock("@/lib/supabase/server", () => ({
   }),
 }));
 
+const mockCheckAndApplyAutoRules = vi.fn();
 vi.mock("@/lib/workflow-helpers", () => ({
-  checkAndApplyAutoRules: vi.fn(),
+  checkAndApplyAutoRules: (...args: unknown[]) => mockCheckAndApplyAutoRules(...args),
   checkAutoRuleWorkflow: vi.fn(),
   removeAutoRuleWorkflow: vi.fn().mockResolvedValue({ removed: false }),
 }));
@@ -117,4 +119,39 @@ describe("board actions — no revalidatePath", () => {
       expect(mockRevalidatePath).not.toHaveBeenCalled();
     });
   }
+});
+
+describe("board actions — auto-rule adjudication scheduling", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockSingle.mockResolvedValue({ data: { id: "item-1", position: 0 }, error: null });
+    mockMaybeSingle.mockResolvedValue({ data: { id: "item-1" }, error: null });
+    mockLimit.mockResolvedValue({ data: [{ position: 0 }], error: null });
+    mockEq.mockReturnValue(chain);
+    mockInsert.mockReturnValue(chain);
+    mockUpdate.mockReturnValue(chain);
+    mockDelete.mockReturnValue(chain);
+    mockSelect.mockReturnValue(chain);
+  });
+
+  // Regression guard: without a scheduling mechanism, checkAndApplyAutoRules
+  // fires the AI adjudication as a bare detached promise, which serverless
+  // kills post-response. Server actions must pass `schedule: after` (Next.js
+  // `after()`) so the adjudication reliably runs and is logged.
+  it("addLabelToTask passes schedule: after to checkAndApplyAutoRules", async () => {
+    await addLabelToTask("task-1", "label-1", "idea-1");
+
+    expect(mockCheckAndApplyAutoRules).toHaveBeenCalledTimes(1);
+    const options = mockCheckAndApplyAutoRules.mock.calls[0][5];
+    expect(options.schedule).toBe(after);
+  });
+
+  it("addLabelsToTask passes schedule: after to checkAndApplyAutoRules for every label", async () => {
+    await addLabelsToTask("task-1", ["label-1", "label-2"], "idea-1");
+
+    expect(mockCheckAndApplyAutoRules).toHaveBeenCalledTimes(2);
+    for (const call of mockCheckAndApplyAutoRules.mock.calls) {
+      expect(call[5].schedule).toBe(after);
+    }
+  });
 });

@@ -85,13 +85,17 @@ export async function manageLabels(
       label_name: label?.name ?? params.label_id,
     });
 
-    // Check for auto-rule workflow application
+    // Check for auto-rule workflow application. Must await adjudication here:
+    // the MCP route has no after()/waitUntil to schedule post-response work, so
+    // a fire-and-forget promise gets killed by the serverless runtime once this
+    // tool call returns, silently dropping the AI adjudication.
     await checkAndApplyAutoRules(
       ctx.supabase, params.task_id, params.label_id, params.idea_id,
       (taskId, templateId) => applyWorkflowTemplate(ctx, { task_id: taskId, template_id: templateId }),
       {
         userId: ctx.ownerUserId ?? ctx.userId,
         isAutonomousAgent: !!ctx.ownerUserId && ctx.ownerUserId !== ctx.userId,
+        awaitAdjudication: true,
       }
     );
 

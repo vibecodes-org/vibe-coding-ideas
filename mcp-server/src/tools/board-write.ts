@@ -127,12 +127,17 @@ export async function createTask(ctx: McpContext, params: z.infer<typeof createT
         await logActivity(ctx, task.id, params.idea_id, "label_added", {
           label_name: match.name,
         });
+        // Must await adjudication here: the MCP route has no after()/waitUntil
+        // to schedule post-response work, so a fire-and-forget promise gets
+        // killed by the serverless runtime once this tool call returns,
+        // silently dropping the AI adjudication.
         await checkAndApplyAutoRules(
           ctx.supabase, task.id, match.id, params.idea_id,
           (taskId, templateId) => applyWorkflowTemplate(ctx, { task_id: taskId, template_id: templateId }),
           {
             userId: ctx.ownerUserId ?? ctx.userId,
             isAutonomousAgent: !!ctx.ownerUserId && ctx.ownerUserId !== ctx.userId,
+            awaitAdjudication: true,
           }
         );
       }

@@ -481,6 +481,8 @@ export async function addLabelsToTask(
     await checkAndApplyAutoRules(supabase, taskId, labelId, ideaId, applyWorkflowTemplate, {
       userId: user.id,
       isAutonomousAgent: false,
+      // after(): run the AI adjudication post-response — reliable + logged on serverless.
+      schedule: after,
     });
   }
 
