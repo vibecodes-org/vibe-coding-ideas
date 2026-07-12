@@ -449,7 +449,7 @@ export function DiscussionThread({
           <Avatar className="h-7 w-7">
             <AvatarImage src={discussion.author.avatar_url ?? undefined} />
             <AvatarFallback className="text-xs">
-              {getInitials(discussion.author.full_name)}
+              {getInitials(displayName(discussion.author))}
             </AvatarFallback>
           </Avatar>
           <span className="text-sm font-medium">
