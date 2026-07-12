@@ -17,6 +17,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { createClient } from "@/lib/supabase/client";
 import { formatRelativeTime } from "@/lib/utils";
+import { acceptFilesWithinCap } from "@/lib/attachment-cap";
 import {
   MAX_IDEA_ATTACHMENTS,
   MAX_IDEA_ATTACHMENT_SIZE,
@@ -69,6 +70,9 @@ export function IdeaAttachmentsSection({
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dragCounterRef = useRef(0);
+  // Uploads accepted but not yet persisted — guards the cap when the handler
+  // fires again (paste/drop/select) before a previous batch has settled.
+  const inFlightRef = useRef(0);
 
   const isReadOnly = !isTeamMember;
 
@@ -147,7 +151,7 @@ export function IdeaAttachmentsSection({
         if (item.type.startsWith("image/")) {
           e.preventDefault();
           const file = item.getAsFile();
-          if (file) uploadFile(file);
+          if (file) uploadFiles([file]);
           break;
         }
       }
@@ -172,11 +176,6 @@ export function IdeaAttachmentsSection({
 
     if (!typeAllowed) {
       toast.error("Unsupported file type. Allowed: images, PDF, Markdown, HTML");
-      return;
-    }
-
-    if (attachments.length >= MAX_IDEA_ATTACHMENTS) {
-      toast.error(`Maximum ${MAX_IDEA_ATTACHMENTS} attachments per idea`);
       return;
     }
 
@@ -237,13 +236,46 @@ export function IdeaAttachmentsSection({
     setUploading(false);
   }
 
+  // Computes remaining slots ONCE against the current + in-flight count,
+  // slices the batch to fit, and uploads only what fits. This replaces a
+  // per-file check that re-read `attachments.length` on every iteration of a
+  // sequential loop — since that length doesn't update until each upload
+  // resolves, selecting many files at once blew past the cap.
+  async function uploadFiles(files: File[]) {
+    if (!files.length) return;
+
+    const { accepted, rejectedCount } = acceptFilesWithinCap(
+      attachments.length,
+      inFlightRef.current,
+      files,
+      MAX_IDEA_ATTACHMENTS
+    );
+
+    if (rejectedCount > 0) {
+      toast.error(
+        accepted.length > 0
+          ? `Only ${accepted.length} more attachment${accepted.length === 1 ? "" : "s"} allowed (max ${MAX_IDEA_ATTACHMENTS})`
+          : `Maximum ${MAX_IDEA_ATTACHMENTS} attachments per idea`
+      );
+    }
+
+    if (!accepted.length) return;
+
+    inFlightRef.current += accepted.length;
+    try {
+      for (const file of accepted) {
+        await uploadFile(file);
+      }
+    } finally {
+      inFlightRef.current -= accepted.length;
+    }
+  }
+
   async function handleFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
     const files = e.target.files;
     if (!files?.length || uploading) return;
 
-    for (const file of files) {
-      await uploadFile(file);
-    }
+    await uploadFiles(Array.from(files));
 
     if (fileInputRef.current) {
       fileInputRef.current.value = "";
@@ -326,9 +358,7 @@ export function IdeaAttachmentsSection({
     const files = e.dataTransfer.files;
     if (!files?.length || uploading) return;
 
-    for (const file of files) {
-      await uploadFile(file);
-    }
+    await uploadFiles(Array.from(files));
   }
 
   const canDelete = (attachment: IdeaAttachment) =>
@@ -356,7 +386,13 @@ export function IdeaAttachmentsSection({
         {loading ? (
           <p className="text-xs text-muted-foreground">Loading...</p>
         ) : attachments.length > 0 || uploadingFiles.length > 0 ? (
-          <ScrollArea className={attachments.length > 6 ? "max-h-64" : undefined}>
+          /* Radix's Viewport is `size-full` (height:100%), which only
+             resolves against a parent with a definite height — a
+             `max-h-*` alone leaves the parent's height as `auto`, so the
+             viewport (and its content) grows unclipped past it. An
+             explicit `h-*` (as used in team-editor-dialog.tsx) gives the
+             parent a definite height the viewport can fill and clip to. */
+          <ScrollArea className={attachments.length > 6 ? "h-64" : undefined}>
             <div className="space-y-1.5">
               {uploadingFiles.map((file) => (
                 <div

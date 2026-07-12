@@ -322,7 +322,14 @@ export function TaskAttachmentsSection({
       {loading ? (
         <p className="text-xs text-muted-foreground">Loading...</p>
       ) : attachments.length > 0 || uploadingFiles.length > 0 ? (
-        <ScrollArea className="max-h-48">
+        // A `max-h-*` alone doesn't clip here: Radix's Viewport is
+        // `size-full` (height:100%), which only resolves against a parent
+        // with a definite height. A `max-h-*` parent's height stays `auto`,
+        // so the viewport grows unclipped past it once the list is long
+        // enough — same latent bug fixed on idea-attachments-section.tsx.
+        // An explicit `h-*` (as used in team-editor-dialog.tsx) gives the
+        // parent a definite height the viewport can fill and clip to.
+        <ScrollArea className={attachments.length > 6 ? "h-48" : undefined}>
           <div className="grid grid-cols-1 gap-2 pr-4 sm:grid-cols-2">
             {uploadingFiles.map((file) => (
               <div
