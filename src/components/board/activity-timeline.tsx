@@ -29,7 +29,7 @@ import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { useBotRoles } from "@/components/bot-roles-context";
 import { createClient } from "@/lib/supabase/client";
-import { formatRelativeTime } from "@/lib/utils";
+import { displayName, formatRelativeTime } from "@/lib/utils";
 import { formatActivityDetails } from "@/lib/activity-format";
 import { ACTIVITY_ACTIONS } from "@/lib/constants";
 import type { BoardTaskActivityWithActor } from "@/types";
@@ -194,7 +194,7 @@ export function ActivityTimeline({ taskId, ideaId }: ActivityTimelineProps) {
                           </TooltipContent>
                         </Tooltip>
                       )}
-                      {activity.actor?.full_name ?? "Someone"}
+                      {displayName(activity.actor)}
                     </span>{" "}
                     {label}
                     {detailText && (

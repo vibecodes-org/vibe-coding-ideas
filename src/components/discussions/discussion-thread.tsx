@@ -36,7 +36,7 @@ import { useMentionState } from "@/hooks/use-mentions";
 import { useScrollToHash } from "@/hooks/use-scroll-to-hash";
 import { sendDiscussionMentionNotifications } from "@/lib/mention-notifications";
 import { useBotRoles } from "@/components/bot-roles-context";
-import { formatRelativeTime, getInitials } from "@/lib/utils";
+import { displayName, formatRelativeTime, getInitials } from "@/lib/utils";
 import {
   DiscussionAttachmentsSection,
   type DiscussionAttachmentsHandle,
@@ -453,7 +453,7 @@ export function DiscussionThread({
             </AvatarFallback>
           </Avatar>
           <span className="text-sm font-medium">
-            {discussion.author.full_name ?? "Anonymous"}
+            {displayName(discussion.author)}
           </span>
           {discussion.author.is_bot && (
             <Tooltip>

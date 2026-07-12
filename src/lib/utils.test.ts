@@ -1,9 +1,11 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   cn,
+  displayName,
   formatRelativeTime,
   getDueDateStatus,
   formatDueDate,
+  getInitials,
   getLabelColorConfig,
   stripMarkdown,
   stripMarkdownForMeta,
@@ -56,6 +58,41 @@ describe("formatRelativeTime", () => {
 
   it("returns years for >= 1 year", () => {
     expect(formatRelativeTime("2023-06-15T12:00:00Z")).toBe("2y ago");
+  });
+});
+
+describe("displayName", () => {
+  it("returns full_name when present", () => {
+    expect(displayName({ full_name: "Jane Doe", email: "jane@example.com" })).toBe("Jane Doe");
+  });
+
+  it("falls back to email local-part when full_name is null", () => {
+    expect(displayName({ full_name: null, email: "chris.smith@example.com" })).toBe("chris.smith");
+  });
+
+  it("falls back to email local-part when full_name is an empty string", () => {
+    expect(displayName({ full_name: "", email: "jane@example.com" })).toBe("jane");
+  });
+
+  it('returns "Unknown" when full_name and email are both null', () => {
+    expect(displayName({ full_name: null, email: null })).toBe("Unknown");
+  });
+
+  it('returns "Unknown" for a null user', () => {
+    expect(displayName(null)).toBe("Unknown");
+  });
+
+  it('returns "Unknown" for an undefined user', () => {
+    expect(displayName(undefined)).toBe("Unknown");
+  });
+
+  it("returns the whole string when email has no @ sign", () => {
+    expect(displayName({ full_name: null, email: "notanemail" })).toBe("notanemail");
+  });
+
+  it("produces sensible initials from an email-derived display name", () => {
+    const name = displayName({ full_name: null, email: "chris.smith@example.com" });
+    expect(getInitials(name)).toBe("C");
   });
 });
 

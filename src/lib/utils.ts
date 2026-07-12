@@ -31,6 +31,17 @@ export function formatRelativeTime(dateString: string): string {
   return `${years}y ago`;
 }
 
+/**
+ * Resolve a user-facing display name: `full_name` if set, else the email
+ * local-part (before "@"), else "Unknown". Used anywhere a user's name is
+ * rendered so we never show a bare "Unknown"/"?" when an email is available.
+ */
+export function displayName(user: { full_name?: string | null; email?: string | null } | null | undefined): string {
+  if (user?.full_name) return user.full_name;
+  if (user?.email) return user.email.split("@")[0] || user.email;
+  return "Unknown";
+}
+
 /** Extract uppercase initials from a name string, e.g. "John Doe" → "JD". */
 export function getInitials(name: string | null | undefined, fallback = "?"): string {
   if (!name) return fallback;

@@ -11,7 +11,7 @@ import { MentionAutocomplete } from "./mention-autocomplete";
 import { toast } from "sonner";
 import { createClient } from "@/lib/supabase/client";
 import { logger } from "@/lib/logger";
-import { formatRelativeTime, getInitials } from "@/lib/utils";
+import { displayName, formatRelativeTime, getInitials } from "@/lib/utils";
 import { logTaskActivity } from "@/lib/activity";
 import { createTaskComment, deleteTaskComment, updateTaskComment } from "@/actions/board";
 import { undoableAction } from "@/lib/undo-toast";
@@ -342,7 +342,7 @@ export function TaskCommentsSection({
         <div>
           <div className="space-y-3">
             {comments.map((comment) => {
-              const initials = getInitials(comment.author?.full_name);
+              const initials = getInitials(displayName(comment.author));
 
               const isEditingThis = editingId === comment.id;
 
@@ -365,7 +365,7 @@ export function TaskCommentsSection({
                             </TooltipContent>
                           </Tooltip>
                         )}
-                        {comment.author?.full_name ?? "Unknown"}
+                        {displayName(comment.author)}
                       </span>
                       <span className="text-[10px] text-muted-foreground">
                         {formatRelativeTime(comment.created_at)}

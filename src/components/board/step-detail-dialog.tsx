@@ -62,7 +62,7 @@ import {
   updateWorkflowStep,
   addStepComment,
 } from "@/actions/workflow";
-import { getInitials } from "@/lib/utils";
+import { displayName, getInitials } from "@/lib/utils";
 import {
   modelTierLabel,
   capitalizeModelName,
@@ -196,7 +196,13 @@ const STATUS_CONFIG = {
 } as const;
 
 type CommentWithAuthor = WorkflowStepComment & {
-  author?: { full_name: string | null; avatar_url: string | null; is_bot: boolean; bot_role?: string | null } | null;
+  author?: {
+    full_name: string | null;
+    email: string | null;
+    avatar_url: string | null;
+    is_bot: boolean;
+    bot_role?: string | null;
+  } | null;
 };
 
 interface StepDetailDialogProps {
@@ -291,7 +297,7 @@ export function StepDetailDialog({
     async function fetchComments() {
       const { data } = await supabase
         .from("workflow_step_comments")
-        .select("*, users!workflow_step_comments_author_id_fkey(full_name, avatar_url, is_bot)")
+        .select("*, users!workflow_step_comments_author_id_fkey(full_name, email, avatar_url, is_bot)")
         .eq("step_id", step.id)
         .order("created_at", { ascending: true });
 
@@ -314,7 +320,7 @@ export function StepDetailDialog({
 
         setComments(
           data.map((c) => {
-            const user = c.users as { full_name: string | null; avatar_url: string | null; is_bot: boolean } | null;
+            const user = c.users as { full_name: string | null; email: string | null; avatar_url: string | null; is_bot: boolean } | null;
             return {
               ...c,
               author: user ? { ...user, bot_role: user.is_bot ? (botRoles[c.author_id] ?? null) : null } : null,
@@ -931,11 +937,11 @@ export function StepDetailDialog({
                       <Avatar className="h-4 w-4">
                         <AvatarImage src={comment.author?.avatar_url ?? undefined} />
                         <AvatarFallback className="text-[8px]">
-                          {getInitials(comment.author?.full_name)}
+                          {getInitials(displayName(comment.author))}
                         </AvatarFallback>
                       </Avatar>
                       <span className="text-xs font-medium">
-                        {comment.author?.full_name ?? "Unknown"}
+                        {displayName(comment.author)}
                       </span>
                       {comment.author?.is_bot && (
                         <Tooltip>
