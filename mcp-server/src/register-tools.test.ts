@@ -6,6 +6,7 @@ const EXPECTED_TOOL_NAMES = [
   "list_ideas",
   "get_idea",
   "get_idea_enhancement_prompt",
+  "get_new_idea_enhancement_prompt",
   "get_board",
   "get_task",
   "get_my_tasks",
@@ -94,13 +95,13 @@ function createMockServer() {
 }
 
 describe("registerTools", () => {
-  it("registers exactly 84 tools", () => {
+  it("registers exactly 85 tools", () => {
     const server = createMockServer();
     const getContext = vi.fn();
 
     registerTools(server, getContext);
 
-    expect(server.tool).toHaveBeenCalledTimes(84);
+    expect(server.tool).toHaveBeenCalledTimes(85);
   });
 
   it("registers all expected tool names", () => {
@@ -160,9 +161,10 @@ describe("registerTools", () => {
 
     registerTools(server, getContext);
 
-    // Invoke create_task (index 6 — shifted by get_idea_enhancement_prompt at
-    // index 2) with valid-shaped args that will fail at DB
-    const callback = server.tool.mock.calls[6][3];
+    // Invoke create_task (index 7 — shifted by get_idea_enhancement_prompt at
+    // index 2 and get_new_idea_enhancement_prompt at index 3) with
+    // valid-shaped args that will fail at DB
+    const callback = server.tool.mock.calls[7][3];
     const result = await callback(
       {
         idea_id: "00000000-0000-0000-0000-000000000001",
@@ -378,5 +380,31 @@ describe("registerTools", () => {
     expect(parsed.attachments.used).toEqual([{ id: "a1", name: "a.md", truncated: false }]);
     expect(parsed.user_prompt).toContain("## a.md");
     expect(parsed.next_tool).toBe("update_idea_description");
+  });
+
+  it("get_new_idea_enhancement_prompt is registered and returns the create_idea-pointed contract", async () => {
+    const server = createMockServer();
+    const mockContext: McpContext = {
+      supabase: {} as McpContext["supabase"],
+      userId: "test-user",
+    };
+    const getContext = vi.fn(() => mockContext);
+
+    registerTools(server, getContext);
+
+    const call = server.tool.mock.calls.find(
+      (c: unknown[]) => c[0] === "get_new_idea_enhancement_prompt"
+    );
+    expect(call).toBeDefined();
+    const callback = call![3];
+    const result = await callback({ title: "New idea", description: "Draft desc" }, {});
+
+    expect(result.isError).toBeUndefined();
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.next_tool).toBe("create_idea");
+    expect(parsed.draft).toEqual({
+      title: "New idea",
+      description: "Draft desc",
+    });
   });
 });

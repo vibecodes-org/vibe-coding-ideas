@@ -50,3 +50,40 @@ export function buildEnhanceUserPrompt(args: {
   const { prompt, title, description, attachmentBlock } = args;
   return `${prompt}\n\n---\n\n**Idea Title:** ${title}\n\n**Current Description:**\n${description}${attachmentBlock ?? ""}`;
 }
+
+/**
+ * Builds the kit-context suffix shared by every "enhance" system prompt.
+ * Canonicalized on `/api/ai/enhance-create/route.ts`'s wording (the live
+ * create-idea path) — matches byte-for-byte what
+ * `/api/ai/enhance/route.ts` (existing-idea path) already produces via
+ * `getIdeaEnhancementPrompt`.
+ */
+export function buildKitContext(kitType?: string): string {
+  return kitType
+    ? `\nThis is a **${kitType}** project — tailor the description to concerns specific to ${kitType.toLowerCase()} projects (e.g. architecture, deployment, tooling, and workflows).`
+    : "";
+}
+
+/** Base system prompt for enhancing a brand-new (not-yet-created) idea description. */
+export const NEW_IDEA_SYSTEM_PROMPT =
+  "You are an expert product manager and technical writer helping to enhance a new project idea description on a project management platform.";
+
+/**
+ * Builds the system prompt for the "New Idea" enhance flow: persona (if any)
+ * + the new-idea framing + optional kit-context suffix. Matches the exact
+ * assembly `/api/ai/enhance-create/route.ts` used before extraction
+ * (lines 48-50 there):
+ * - No persona: `${NEW_IDEA_SYSTEM_PROMPT}${kitContext}`
+ * - With persona: `${personaPrompt}\n\nYou are helping to enhance a new project idea description on a project management platform.${kitContext}`
+ */
+export function buildNewIdeaSystemPrompt(opts?: {
+  kitContext?: string;
+  personaPrompt?: string | null;
+}): string {
+  const kitContext = opts?.kitContext ?? "";
+  const personaPrompt = opts?.personaPrompt;
+  if (personaPrompt) {
+    return `${personaPrompt}\n\nYou are helping to enhance a new project idea description on a project management platform.${kitContext}`;
+  }
+  return `${NEW_IDEA_SYSTEM_PROMPT}${kitContext}`;
+}

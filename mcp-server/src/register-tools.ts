@@ -216,6 +216,10 @@ import {
   getIdeaEnhancementPromptSchema,
   type AttachmentContextProvider,
 } from "./tools/idea-enhance";
+import {
+  getNewIdeaEnhancementPrompt,
+  getNewIdeaEnhancementPromptSchema,
+} from "./tools/new-idea-enhance";
 
 function jsonResult(data: unknown) {
   return {
@@ -287,6 +291,25 @@ export function registerTools(
             ctx,
             getIdeaEnhancementPromptSchema.parse(args),
             attachmentContextProvider
+          )
+        );
+      } catch (e) {
+        return errorResult(e);
+      }
+    }
+  );
+
+  server.tool(
+    "get_new_idea_enhancement_prompt",
+    "Get everything needed to enhance a NEW (not-yet-created) idea's description YOURSELF before it exists: ready-to-use prompts and an optional kit-aware system prompt. This tool does NOT call AI and consumes no platform credits — YOU (the connected agent) generate the enhanced markdown using the returned system_prompt and user_prompt, show the user the draft, get their confirmation, then call create_idea (optionally with kit_id, which applies the kit in the same call). Use when the user is starting a new idea from the terminal and wants it enhanced before creation. Follow the returned `instructions` field exactly.",
+    getNewIdeaEnhancementPromptSchema.shape,
+    async (args: Record<string, unknown>, extra: ServerExtra) => {
+      try {
+        const ctx = await getContext(extra);
+        return jsonResult(
+          await getNewIdeaEnhancementPrompt(
+            ctx,
+            getNewIdeaEnhancementPromptSchema.parse(args)
           )
         );
       } catch (e) {
@@ -413,7 +436,7 @@ export function registerTools(
 
   server.tool(
     "create_idea",
-    "Create a new idea with title, description, tags, and visibility.",
+    "Create a new idea with title, description, tags, and visibility. Optionally pass kit_id to apply a project kit (agents, labels, workflow template) atomically at creation time — see get_new_idea_enhancement_prompt for the recommended terminal-driven enhance-then-create flow. Kit application failure never fails the create; check the returned `kit` field.",
     createIdeaSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

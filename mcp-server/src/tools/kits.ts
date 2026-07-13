@@ -105,11 +105,27 @@ export async function applyKitMcp(
   }
   if (!isTeamMember) throw new Error("You must be a team member to apply a kit");
 
+  return applyKitToIdea(ctx, params.idea_id, params.kit_id);
+}
+
+/**
+ * Core kit-application logic: clone/reuse agents, create board labels, import
+ * workflow templates + auto-rules, and set `ideas.project_kit_id`. Shared by
+ * `applyKitMcp` (standalone `apply_kit` tool, team-membership pre-checked by
+ * the caller above) and `createIdea` (atomic create-with-kit — the caller is
+ * the idea's brand-new author, so no separate team-membership check is
+ * needed there).
+ */
+export async function applyKitToIdea(
+  ctx: McpContext,
+  ideaId: string,
+  kitId: string
+) {
   // Fetch the kit
   const { data: kit, error: kitError } = await ctx.supabase
     .from("project_kits")
     .select("*")
-    .eq("id", params.kit_id)
+    .eq("id", kitId)
     .eq("is_active", true)
     .maybeSingle();
 
@@ -218,7 +234,7 @@ export async function applyKitMcp(
     for (const botId of botIdsToAllocate) {
       try {
         await ctx.supabase.from("idea_agents").upsert({
-          idea_id: params.idea_id,
+          idea_id: ideaId,
           bot_id: botId,
           added_by: ownerId,
         }, { onConflict: "idea_id,bot_id", ignoreDuplicates: true });
@@ -233,7 +249,7 @@ export async function applyKitMcp(
     const { data: existingLabels } = await ctx.supabase
       .from("board_labels")
       .select("name")
-      .eq("idea_id", params.idea_id);
+      .eq("idea_id", ideaId);
 
     const existingLabelNames = new Set(
       (existingLabels ?? []).map((l) => l.name.toLowerCase())
@@ -243,7 +259,7 @@ export async function applyKitMcp(
       if (existingLabelNames.has(preset.name.toLowerCase())) continue;
       try {
         await ctx.supabase.from("board_labels").insert({
-          idea_id: params.idea_id,
+          idea_id: ideaId,
           name: preset.name,
           color: preset.color,
         });
@@ -258,14 +274,14 @@ export async function applyKitMcp(
   const { data: mappings } = await ctx.supabase
     .from("kit_workflow_mappings")
     .select("label_name, is_primary, workflow_library_template_id")
-    .eq("kit_id", params.kit_id);
+    .eq("kit_id", kitId);
 
   if (mappings && mappings.length > 0) {
     // Fetch all board labels for this idea
     const { data: boardLabels } = await ctx.supabase
       .from("board_labels")
       .select("id, name")
-      .eq("idea_id", params.idea_id);
+      .eq("idea_id", ideaId);
 
     const labelsByName = new Map(
       (boardLabels ?? []).map((l) => [l.name.toLowerCase(), l.id])
@@ -293,7 +309,7 @@ export async function applyKitMcp(
         const { data: newTemplate } = await ctx.supabase
           .from("workflow_templates")
           .insert({
-            idea_id: params.idea_id,
+            idea_id: ideaId,
             name: libTemplate.name,
             description: libTemplate.description,
             steps: libTemplate.steps,
@@ -311,7 +327,7 @@ export async function applyKitMcp(
 
           try {
             await ctx.supabase.from("workflow_auto_rules").insert({
-              idea_id: params.idea_id,
+              idea_id: ideaId,
               label_id: labelId,
               template_id: newTemplate.id,
             });
@@ -338,7 +354,7 @@ export async function applyKitMcp(
         const { data: newTemplate } = await ctx.supabase
           .from("workflow_templates")
           .insert({
-            idea_id: params.idea_id,
+            idea_id: ideaId,
             name: libTemplate.name,
             description: libTemplate.description,
             steps: libTemplate.steps,
@@ -354,13 +370,13 @@ export async function applyKitMcp(
             const { data: matchingLabel } = await ctx.supabase
               .from("board_labels")
               .select("id")
-              .eq("idea_id", params.idea_id)
+              .eq("idea_id", ideaId)
               .ilike("name", kit.auto_rule_label)
               .maybeSingle();
 
             if (matchingLabel) {
               await ctx.supabase.from("workflow_auto_rules").insert({
-                idea_id: params.idea_id,
+                idea_id: ideaId,
                 label_id: matchingLabel.id,
                 template_id: newTemplate.id,
               });
@@ -377,8 +393,8 @@ export async function applyKitMcp(
   // 4. Set project_kit_id on the idea
   await ctx.supabase
     .from("ideas")
-    .update({ project_kit_id: params.kit_id })
-    .eq("id", params.idea_id);
+    .update({ project_kit_id: kitId })
+    .eq("id", ideaId);
 
   return { success: true, ...result };
 }

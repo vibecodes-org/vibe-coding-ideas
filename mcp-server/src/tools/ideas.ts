@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { McpContext } from "../context";
+import { applyKitToIdea } from "./kits";
 
 export const listIdeasSchema = z.object({
   status: z
@@ -158,6 +159,13 @@ export const createIdeaSchema = z.object({
     .enum(["public", "private"])
     .default("public")
     .describe("Idea visibility (default public)"),
+  kit_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "Optional project kit to apply immediately after creation (agents, labels, and workflow templates). Kit application failure never fails the create — check the returned `kit` field."
+    ),
 });
 
 export async function createIdea(
@@ -177,7 +185,31 @@ export async function createIdea(
     .single();
 
   if (error) throw new Error(`Failed to create idea: ${error.message}`);
-  return { success: true, idea: data };
+
+  if (!params.kit_id) {
+    return { success: true, idea: data };
+  }
+
+  // Kit application is non-fatal: the idea is already created and returned
+  // either way (mirrors the web `createIdea` server action's `kitError: true`
+  // behaviour — never roll back or fail the whole create over a kit hiccup).
+  try {
+    const { success: _kitSuccess, ...kitCounts } = await applyKitToIdea(
+      ctx,
+      data.id,
+      params.kit_id
+    );
+    return { success: true, idea: data, kit: { applied: true, ...kitCounts } };
+  } catch (e) {
+    return {
+      success: true,
+      idea: data,
+      kit: {
+        applied: false,
+        error: e instanceof Error ? e.message : String(e),
+      },
+    };
+  }
 }
 
 // --- Delete Idea ---

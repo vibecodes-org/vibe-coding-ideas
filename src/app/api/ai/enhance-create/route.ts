@@ -7,6 +7,7 @@ import {
   chargeAiUpfront,
   resolveAiProvider,
 } from "@/lib/ai-helpers";
+import { buildKitContext, buildNewIdeaSystemPrompt } from "@/lib/enhance-prompts";
 
 export const maxDuration = 300;
 
@@ -41,13 +42,8 @@ export async function POST(req: Request) {
       return Response.json({ error: "Missing title or prompt" }, { status: 400 });
     }
 
-    const kitContext = kitType
-      ? `\nThis is a **${kitType}** project — tailor the description to concerns specific to ${kitType.toLowerCase()} projects (e.g. architecture, deployment, tooling, and workflows).`
-      : "";
-
-    const systemPrompt = personaPrompt
-      ? `${personaPrompt}\n\nYou are helping to enhance a new project idea description on a project management platform.${kitContext}`
-      : `You are an expert product manager and technical writer helping to enhance a new project idea description on a project management platform.${kitContext}`;
+    const kitContext = buildKitContext(kitType);
+    const systemPrompt = buildNewIdeaSystemPrompt({ kitContext, personaPrompt });
 
     let userPrompt: string;
 
