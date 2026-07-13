@@ -1,18 +1,19 @@
 "use client";
 
-import { useEffect, useRef, useCallback, useMemo, startTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useRef, useCallback, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import type { RealtimeChannel, RealtimePostgresChangesPayload } from "@supabase/supabase-js";
 import { logger } from "@/lib/logger";
 import { msSinceLocalBoardMutation } from "./local-mutation-signal";
+import { refreshBoard } from "./board-refresh-registry";
 
 const DEBOUNCE_MS = 500;
 const FOLLOW_UP_DELAY_MS = 1500;
 // While the local user is actively mutating the board (e.g. dragging cards), a
-// Realtime echo of their OWN write must not trigger router.refresh(): the board
-// already shows the change optimistically, and the first refresh after a page
-// load re-enters the force-dynamic segment's loading.tsx skeleton (the visible
+// Realtime echo of their OWN write must not trigger a refresh: the board
+// already shows the change optimistically, and (historically, back when this
+// refreshed via router.refresh()) the first refresh after a page load
+// re-entered the force-dynamic segment's loading.tsx skeleton (the visible
 // "blank flash"). Defer the refresh until the user has been idle this long so
 // the self-echo is absorbed while external changes are still reconciled.
 const SELF_MUTATION_WINDOW_MS = 2500;
@@ -26,7 +27,6 @@ interface BoardRealtimeProps {
 }
 
 export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
-  const router = useRouter();
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const followUpRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const channelRef = useRef<RealtimeChannel | null>(null);
@@ -43,22 +43,35 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
     taskIdSetRef.current = taskIdSet;
   }, [taskIdSet]);
 
+  // Client-side refetch of the LIVE board tables (board-refetch.ts), merged
+  // into KanbanBoard's server-merge machinery via the board-refresh-registry
+  // sibling channel. Replaces router.refresh(): a full RSC re-render always
+  // re-suspends this force-dynamic segment through loading.tsx (proven not to
+  // be fixable with startTransition), while a scoped client fetch + merge
+  // never re-enters the Suspense boundary at all. Fire-and-forget — KanbanBoard's
+  // refreshFromServer already logs and no-ops on query failure, so this can't
+  // reject, but guard anyway in case KanbanBoard hasn't mounted yet.
+  const runRefresh = useCallback(() => {
+    refreshBoard(ideaId).catch((err) => {
+      logger.warn("Board refresh callback failed", {
+        ideaId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+  }, [ideaId]);
+
   const debouncedRefresh = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     timeoutRef.current = setTimeout(() => {
       timeoutRef.current = null;
       // Drop the refresh if it lands within the window after a local mutation:
       // it's the Realtime echo of the user's OWN change, which the board already
-      // shows optimistically (held by trusted-state). Running router.refresh()
-      // here re-enters the force-dynamic segment and flashes its loading.tsx
-      // skeleton — the visible blank ~1s after a drag. External changes arrive
+      // shows optimistically (held by trusted-state). External changes arrive
       // as their own (later) events and refresh normally.
       if (msSinceLocalBoardMutation(ideaId) < SELF_MUTATION_WINDOW_MS) return;
-      // Still wrap in a transition so an external-change refresh keeps the
-      // current board on screen rather than dropping to the skeleton.
-      startTransition(() => router.refresh());
+      runRefresh();
     }, DEBOUNCE_MS);
-  }, [router, ideaId]);
+  }, [runRefresh, ideaId]);
 
   // Workflow step changes need a follow-up refresh to catch denormalized
   // column updates on board_tasks that may not be visible on the first read
@@ -69,9 +82,9 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
     followUpRef.current = setTimeout(() => {
       followUpRef.current = null;
       if (msSinceLocalBoardMutation(ideaId) < SELF_MUTATION_WINDOW_MS) return;
-      startTransition(() => router.refresh());
+      runRefresh();
     }, FOLLOW_UP_DELAY_MS);
-  }, [debouncedRefresh, router, ideaId]);
+  }, [debouncedRefresh, runRefresh, ideaId]);
 
   // Client-side filter for board_task_labels — the table has no idea_id column,
   // so we check if the task_id belongs to this board before refreshing.
@@ -191,8 +204,10 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
           if (disposed) return;
           if (status === "SUBSCRIBED") {
             logger.debug("Board realtime reconnected", { ideaId });
-            // Refresh to catch any events missed during disconnect
-            startTransition(() => router.refresh());
+            // Refetch to catch any events missed during disconnect — a full
+            // board-refetch pulls the complete current state, so nothing is
+            // "missed" the way an incremental event stream could drop one.
+            runRefresh();
           } else if (status === "TIMED_OUT" || status === "CHANNEL_ERROR") {
             logger.warn("Board realtime reconnect failed, retrying", { ideaId, status });
             reconnect();
@@ -233,7 +248,7 @@ export function BoardRealtime({ ideaId, taskIds }: BoardRealtimeProps) {
       if (healthCheckRef.current) clearInterval(healthCheckRef.current);
       channel.unsubscribe();
     };
-  }, [ideaId, debouncedRefresh, debouncedRefreshWithFollowUp, handleTaskLabelChange, router]);
+  }, [ideaId, debouncedRefresh, debouncedRefreshWithFollowUp, handleTaskLabelChange, runRefresh]);
 
   return null;
 }

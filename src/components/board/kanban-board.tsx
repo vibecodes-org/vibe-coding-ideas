@@ -46,6 +46,9 @@ import { toast } from "sonner";
 import { moveBoardTask, reorderBoardColumns } from "@/actions/board";
 import { mergeTrustedState, TRUST_WINDOW_MS, type TrustedTaskState } from "./trusted-state";
 import { markLocalBoardMutation } from "./local-mutation-signal";
+import { registerBoardRefresh } from "./board-refresh-registry";
+import { fetchBoardRefreshData } from "@/lib/board-refetch";
+import { createClient } from "@/lib/supabase/client";
 import { POSITION_GAP } from "@/lib/constants";
 import { getDueDateStatus } from "@/lib/utils";
 import type {
@@ -263,7 +266,7 @@ export function KanbanBoard({
   botProfiles = [],
   userBotProfiles = [],
   coverImageUrls = {},
-  suggestionsByTask = {},
+  suggestionsByTask: initialSuggestionsByTask = {},
   isReadOnly = false,
   hasWorkflowTemplates = false,
   hasKit = false,
@@ -320,6 +323,23 @@ export function KanbanBoard({
   const [columns, setColumns] = useState(initialColumns);
   const columnsRef = useRef(columns);
   columnsRef.current = columns;
+
+  // Latest known server snapshot the merge machinery below reconciles
+  // against. Seeded from props (the RSC's initial render) and kept in sync
+  // whenever props change (e.g. a real navigation re-runs the force-dynamic
+  // page). `refreshFromServer` (below) is the OTHER way this gets updated —
+  // a client-side refetch triggered by BoardRealtime — so both a fresh SSR
+  // render and a Realtime-driven refetch flow through the exact same
+  // serverKey/mergeTrustedState/applySync pipeline.
+  const [serverColumns, setServerColumns] = useState(initialColumns);
+  useEffect(() => {
+    setServerColumns(initialColumns);
+  }, [initialColumns]);
+
+  const [suggestionsByTask, setSuggestionsByTask] = useState(initialSuggestionsByTask);
+  useEffect(() => {
+    setSuggestionsByTask(initialSuggestionsByTask);
+  }, [initialSuggestionsByTask]);
   const [activeTask, setActiveTask] = useState<BoardTaskWithAssignee | null>(null);
   const [activeColumn, setActiveColumn] = useState<BoardColumnWithTasks | null>(null);
   const dragSourceColumnRef = useRef<string | null>(null);
@@ -394,7 +414,7 @@ export function KanbanBoard({
   const serverKey = useMemo(
     () =>
       JSON.stringify(
-        initialColumns.map((c) => [
+        serverColumns.map((c) => [
           c.id,
           c.position,
           c.is_done_column,
@@ -417,12 +437,12 @@ export function KanbanBoard({
           ]),
         ])
       ),
-    [initialColumns]
+    [serverColumns]
   );
   const [lastServerKey, setLastServerKey] = useState(serverKey);
   // Keep refs for deferred sync callback
-  const initialColumnsRef = useRef(initialColumns);
-  initialColumnsRef.current = initialColumns;
+  const serverColumnsRef = useRef(serverColumns);
+  serverColumnsRef.current = serverColumns;
   const serverKeyRef = useRef(serverKey);
   serverKeyRef.current = serverKey;
 
@@ -438,7 +458,7 @@ export function KanbanBoard({
     // any trusted entries the server has caught up on / that expired.
     const applySync = () => {
       const { columns: merged, resolved } = mergeTrustedState(
-        initialColumnsRef.current,
+        serverColumnsRef.current,
         trustedTasksRef.current,
         Date.now()
       );
@@ -454,6 +474,25 @@ export function KanbanBoard({
     const timer = setTimeout(applySync, remaining + 100);
     return () => clearTimeout(timer);
   }, [serverKey, lastServerKey, activeTask, activeColumn, pendingOps]);
+
+  // Client-side refetch of the LIVE board tables, replacing the old
+  // router.refresh() BoardRealtime used to call. Feeds the result into
+  // `serverColumns`/`suggestionsByTask` — the SAME state the effect above
+  // reconciles via serverKey/mergeTrustedState/applySync, so a
+  // Realtime-driven refetch gets identical trusted-move protection as a real
+  // SSR navigation. Registered below so BoardRealtime (a sibling under the
+  // page, not a descendant) can reach it.
+  const refreshFromServer = useCallback(async () => {
+    const supabase = createClient();
+    const data = await fetchBoardRefreshData(supabase, ideaId);
+    if (!data) return; // query failed — already logged; keep last-known-good board
+    setServerColumns(data.columns);
+    setSuggestionsByTask(data.suggestionsByTask);
+  }, [ideaId]);
+
+  useEffect(() => {
+    return registerBoardRefresh(ideaId, refreshFromServer);
+  }, [ideaId, refreshFromServer]);
 
   // Count archived tasks across all columns
   const archivedCount = useMemo(

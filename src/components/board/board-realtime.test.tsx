@@ -15,8 +15,17 @@ const subscriptions: Subscription[] = [];
 // handler board-realtime wires up). Tracked separately so they don't
 // masquerade as table subscriptions.
 const systemEvents: string[] = [];
-const mockRefresh = vi.fn();
+// Board-refresh-registry callback — replaces router.refresh() as of the
+// force-dynamic loading.tsx skeleton fix. BoardRealtime must call this (and
+// must NEVER call router.refresh, which always re-suspends this segment).
+const mockRefreshBoard = vi.fn((_ideaId: string) => Promise.resolve());
 const mockUnsubscribe = vi.fn();
+// Status callbacks passed to `channel.subscribe(cb)`, in call order — one per
+// createChannel() (the initial subscription, then one more per reconnect()).
+// Lets tests drive SUBSCRIBED/TIMED_OUT/CHANNEL_ERROR without depending on a
+// real Realtime connection.
+type StatusCallback = (status: string) => void;
+const subscribeCallbacks: StatusCallback[] = [];
 
 // Build a chainable channel mock that records subscriptions. Only
 // `postgres_changes` registrations are real table subscriptions; other events
@@ -33,20 +42,23 @@ function createChannelMock() {
       }
       return channelObj;
     }),
-    subscribe: vi.fn(() => channelObj),
+    subscribe: vi.fn((cb: StatusCallback) => {
+      subscribeCallbacks.push(cb);
+      return channelObj;
+    }),
     unsubscribe: mockUnsubscribe,
   };
   return channelObj;
 }
 
-vi.mock("next/navigation", () => ({
-  useRouter: () => ({ refresh: mockRefresh }),
-}));
-
 vi.mock("@/lib/supabase/client", () => ({
   createClient: () => ({
     channel: () => createChannelMock(),
   }),
+}));
+
+vi.mock("./board-refresh-registry", () => ({
+  refreshBoard: (ideaId: string) => mockRefreshBoard(ideaId),
 }));
 
 // Must import after mocks are set up
@@ -58,6 +70,7 @@ describe("BoardRealtime", () => {
     vi.useFakeTimers();
     subscriptions.length = 0;
     systemEvents.length = 0;
+    subscribeCallbacks.length = 0;
   });
 
   afterEach(() => {
@@ -111,7 +124,7 @@ describe("BoardRealtime", () => {
     } as unknown as RealtimePostgresChangesPayload<Record<string, unknown>>);
 
     vi.advanceTimersByTime(600);
-    expect(mockRefresh).not.toHaveBeenCalled();
+    expect(mockRefreshBoard).not.toHaveBeenCalled();
 
     // Fire event for a task ON this board
     labelSub!.handler({
@@ -125,7 +138,7 @@ describe("BoardRealtime", () => {
     } as unknown as RealtimePostgresChangesPayload<Record<string, unknown>>);
 
     vi.advanceTimersByTime(600);
-    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    expect(mockRefreshBoard).toHaveBeenCalledTimes(1);
   });
 
   it("filters board_task_labels DELETE events using old record", () => {
@@ -145,7 +158,7 @@ describe("BoardRealtime", () => {
     } as unknown as RealtimePostgresChangesPayload<Record<string, unknown>>);
 
     vi.advanceTimersByTime(600);
-    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    expect(mockRefreshBoard).toHaveBeenCalledTimes(1);
   });
 
   it("all non-label subscriptions are filtered by idea_id", () => {
@@ -174,16 +187,64 @@ describe("BoardRealtime", () => {
 
     // First refresh at 500ms
     vi.advanceTimersByTime(500);
-    expect(mockRefresh).toHaveBeenCalledTimes(1);
+    expect(mockRefreshBoard).toHaveBeenCalledTimes(1);
 
     // Follow-up refresh at 1500ms
     vi.advanceTimersByTime(1000);
-    expect(mockRefresh).toHaveBeenCalledTimes(2);
+    expect(mockRefreshBoard).toHaveBeenCalledTimes(2);
   });
 
   it("cleans up timers and unsubscribes on unmount", () => {
     const { unmount } = render(<BoardRealtime ideaId="idea-1" taskIds={[]} />);
     unmount();
     expect(mockUnsubscribe).toHaveBeenCalled();
+  });
+
+  it("calls the board-refresh-registry callback with the ideaId, not router.refresh", () => {
+    // This file intentionally does NOT mock "next/navigation" — board-realtime
+    // no longer imports useRouter at all. If a future change reintroduces
+    // router.refresh(), this suite fails at render time instead of silently
+    // re-flashing the loading.tsx skeleton in production.
+    render(<BoardRealtime ideaId="idea-42" taskIds={[]} />);
+
+    const columnsSub = subscriptions.find((s) => s.table === "board_columns");
+    columnsSub!.handler({
+      eventType: "UPDATE",
+      new: { id: "col-1", idea_id: "idea-42" },
+      old: {},
+      schema: "public",
+      table: "board_columns",
+      commit_timestamp: "",
+      errors: null,
+    } as unknown as RealtimePostgresChangesPayload<Record<string, unknown>>);
+
+    vi.advanceTimersByTime(600);
+    expect(mockRefreshBoard).toHaveBeenCalledTimes(1);
+    expect(mockRefreshBoard).toHaveBeenCalledWith("idea-42");
+  });
+
+  it("refetches via the registry (not router.refresh) once reconnected after a dropped channel", () => {
+    render(<BoardRealtime ideaId="idea-1" taskIds={[]} />);
+    expect(subscribeCallbacks).toHaveLength(1);
+
+    // Report the initial channel as errored — schedules reconnect() after
+    // RECONNECT_DELAY_MS (2000ms).
+    subscribeCallbacks[0]("CHANNEL_ERROR");
+    expect(mockRefreshBoard).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(2000);
+    // reconnect() unsubscribed the dead channel, created a fresh one, and
+    // called its own subscribe() — a second status callback is now available.
+    expect(mockUnsubscribe).toHaveBeenCalled();
+    expect(subscribeCallbacks).toHaveLength(2);
+
+    // The fresh channel comes up healthy.
+    subscribeCallbacks[1]("SUBSCRIBED");
+
+    // Reconnect refetches immediately (no debounce) to pull full current
+    // state — nothing is "missed" the way an incremental event stream could
+    // drop one across the disconnect window.
+    expect(mockRefreshBoard).toHaveBeenCalledTimes(1);
+    expect(mockRefreshBoard).toHaveBeenCalledWith("idea-1");
   });
 });

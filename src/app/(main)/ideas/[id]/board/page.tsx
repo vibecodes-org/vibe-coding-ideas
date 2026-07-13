@@ -16,14 +16,8 @@ import { TerminalDock } from "@/components/board/terminal-dock";
 import { isTerminalEnabled } from "@/lib/terminal/connection";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { computeIdeaHealth } from "@/lib/idea-health";
-import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
-import type {
-  BoardColumnWithTasks,
-  BoardTaskWithAssignee,
-  BoardLabel,
-  BoardSuggestionIndicator,
-  User,
-} from "@/types";
+import { composeBoardColumns, composeSuggestionsByTask } from "@/lib/board-refetch";
+import type { BoardLabel } from "@/types";
 import type { Metadata } from "next";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL || "https://vibecodes.co.uk";
@@ -224,33 +218,13 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     .eq("idea_id", id)
     .eq("status", "suggested");
 
-  const suggestionsByTask: Record<string, BoardSuggestionIndicator> = {};
-  if (suggestionRows) {
-    for (const row of suggestionRows) {
-      // One indicator per task — first open suggestion wins.
-      if (suggestionsByTask[row.task_id]) continue;
-      const adjudicating =
-        !row.reason &&
-        !!row.adjudication_started_at &&
-        // eslint-disable-next-line react-hooks/purity -- async Server Component: one-time render-time timestamp, not client render state
-        Date.now() - new Date(row.adjudication_started_at).getTime() <
-          WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS;
-      suggestionsByTask[row.task_id] = { source: row.source, adjudicating };
-    }
-  }
-
-  // Build taskLabelsMap: Record<taskId, BoardLabel[]>
-  const taskLabelsMap: Record<string, BoardLabel[]> = {};
-  if (taskLabelRows) {
-    for (const row of taskLabelRows) {
-      if (!row.label) continue;
-      const label = row.label as unknown as BoardLabel;
-      if (!taskLabelsMap[row.task_id]) {
-        taskLabelsMap[row.task_id] = [];
-      }
-      taskLabelsMap[row.task_id].push(label);
-    }
-  }
+  // Shared with the client-side realtime refetch (src/lib/board-refetch.ts) so
+  // the two paths that assemble this same shape cannot drift apart.
+  const suggestionsByTask = composeSuggestionsByTask(
+    suggestionRows,
+    // eslint-disable-next-line react-hooks/purity -- async Server Component: one-time render-time timestamp, not client render state
+    Date.now()
+  );
 
   const userHasByokKey = !isReadOnly && !!userProfile?.encrypted_anthropic_key;
   const starterCredits = userProfile?.ai_starter_credits ?? 0;
@@ -270,17 +244,9 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     }
   }
 
-  // Assemble columns with tasks (including labels)
-  const columns: BoardColumnWithTasks[] = (rawColumns ?? []).map((col) => ({
-    ...col,
-    tasks: (rawTasks ?? [])
-      .filter((t) => t.column_id === col.id)
-      .map((t) => ({
-        ...t,
-        assignee: (t.assignee as unknown as User) ?? null,
-        labels: taskLabelsMap[t.id] ?? [],
-      })) as BoardTaskWithAssignee[],
-  }));
+  // Assemble columns with tasks (including labels) — shared with the
+  // client-side realtime refetch so the two paths cannot drift apart.
+  const columns = composeBoardColumns(rawColumns ?? [], rawTasks ?? [], taskLabelRows);
 
   return (
     <div className="flex h-full flex-col overflow-hidden px-4 sm:px-6 lg:px-8">
