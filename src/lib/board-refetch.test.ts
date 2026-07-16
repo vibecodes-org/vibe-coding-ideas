@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { composeBoardColumns, composeSuggestionsByTask } from "./board-refetch";
+import { composeBoardColumns, composeSuggestionsByTask, composeCoverImageUrls } from "./board-refetch";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
 import type { BoardColumn, BoardTask } from "@/types";
 
@@ -149,5 +149,32 @@ describe("composeSuggestionsByTask", () => {
         now
       )["task-1"].adjudicating
     ).toBe(false);
+  });
+});
+
+describe("composeCoverImageUrls", () => {
+  it("happy path: maps path → signedUrl", () => {
+    const result = composeCoverImageUrls([
+      { path: "a/cover.png", signedUrl: "https://signed/a" },
+      { path: "b/cover.png", signedUrl: "https://signed/b" },
+    ]);
+    expect(result).toEqual({
+      "a/cover.png": "https://signed/a",
+      "b/cover.png": "https://signed/b",
+    });
+  });
+
+  it("no cover images: null and empty array both produce an empty map", () => {
+    expect(composeCoverImageUrls(null)).toEqual({});
+    expect(composeCoverImageUrls([])).toEqual({});
+  });
+
+  it("skips entries the storage API could not sign (missing path or url)", () => {
+    const result = composeCoverImageUrls([
+      { path: "ok/cover.png", signedUrl: "https://signed/ok" },
+      { path: null, signedUrl: "https://orphan" },
+      { path: "empty/cover.png", signedUrl: "" },
+    ]);
+    expect(result).toEqual({ "ok/cover.png": "https://signed/ok" });
   });
 });

@@ -2,10 +2,12 @@
  * "Trusted local state" for the kanban board's drag-drop sync.
  *
  * The board applies optimistic moves immediately, then reconciles against
- * server snapshots delivered by Realtime (`router.refresh()` → RSC re-fetch).
- * Those RSC fetches read from a Postgres **read replica** that lags the primary
- * (and the Realtime WAL stream) by tens to hundreds of ms. After a move, a
- * refresh can therefore return a *stale* snapshot showing the task still in its
+ * server snapshots delivered by Realtime (a client-side refetch of the live
+ * board tables — see `board-refetch.ts`; historically this was `router.refresh()`
+ * → RSC re-fetch, since replaced to avoid the loading.tsx skeleton flash).
+ * Those reads hit a Postgres **read replica** that lags the primary (and the
+ * Realtime WAL stream) by tens to hundreds of ms. After a move, a refetch can
+ * therefore return a *stale* snapshot showing the task still in its
  * source column — and the board's cooldown only DELAYS applying that snapshot,
  * it doesn't validate it. Result: the task bounces back to its old column, then
  * forward again once the replica catches up. (See task 717be78d.)

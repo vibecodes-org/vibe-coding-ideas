@@ -256,7 +256,7 @@ export function KanbanBoard({
   recordedProjectPaths = [],
   ideaDescription = "",
   teamMembers,
-  boardLabels,
+  boardLabels: initialBoardLabels,
   currentUserId,
   initialTaskId,
   ideaAgents = [],
@@ -265,7 +265,7 @@ export function KanbanBoard({
   starterCredits = 0,
   botProfiles = [],
   userBotProfiles = [],
-  coverImageUrls = {},
+  coverImageUrls: initialCoverImageUrls = {},
   suggestionsByTask: initialSuggestionsByTask = {},
   isReadOnly = false,
   hasWorkflowTemplates = false,
@@ -340,6 +340,22 @@ export function KanbanBoard({
   useEffect(() => {
     setSuggestionsByTask(initialSuggestionsByTask);
   }, [initialSuggestionsByTask]);
+
+  // Label master list (picker/filter) and cover-image URLs, kept live off the
+  // same client refetch as serverColumns. Seeded from props (RSC render), synced
+  // when props change (real navigation), and updated by refreshFromServer — so a
+  // teammate/agent creating a label over MCP updates the picker without a reload.
+  // Unlike serverColumns these bypass the trusted-move merge: they're independent
+  // of drag state, so applying them immediately can't cause a card bounce-back.
+  const [boardLabels, setBoardLabels] = useState(initialBoardLabels);
+  useEffect(() => {
+    setBoardLabels(initialBoardLabels);
+  }, [initialBoardLabels]);
+
+  const [coverImageUrls, setCoverImageUrls] = useState(initialCoverImageUrls);
+  useEffect(() => {
+    setCoverImageUrls(initialCoverImageUrls);
+  }, [initialCoverImageUrls]);
   const [activeTask, setActiveTask] = useState<BoardTaskWithAssignee | null>(null);
   const [activeColumn, setActiveColumn] = useState<BoardColumnWithTasks | null>(null);
   const dragSourceColumnRef = useRef<string | null>(null);
@@ -488,6 +504,12 @@ export function KanbanBoard({
     if (!data) return; // query failed — already logged; keep last-known-good board
     setServerColumns(data.columns);
     setSuggestionsByTask(data.suggestionsByTask);
+    setBoardLabels(data.boardLabels);
+    // Merge cover URLs additively: a task's card only renders a cover for the
+    // path currently on its (live) row, so a lingering URL for a removed cover is
+    // never referenced — while merging avoids wiping visible covers if a single
+    // refetch's signing call transiently failed and returned {}.
+    setCoverImageUrls((prev) => ({ ...prev, ...data.coverImageUrls }));
   }, [ideaId]);
 
   useEffect(() => {
