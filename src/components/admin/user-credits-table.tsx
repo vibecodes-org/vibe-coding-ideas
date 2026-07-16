@@ -43,30 +43,40 @@ interface UserStats {
   creditsUsed: number;
 }
 
+/**
+ * Aggregate per-user platform stats from all-time platform ai_usage_log rows.
+ * `platformCalls`/tokens count every row (raw call volume for cost estimation),
+ * but `creditsUsed` counts only rows with `charged === true` — `free: true`
+ * rows include both genuinely-free onboarding calls and the post-stream log
+ * write of upfront-charged streaming routes, so it is NOT a reliable debit
+ * signal on its own (see ai-helpers.ts `chargeAiUsage`). Exported for testing.
+ */
+export function computeUserStats(allPlatformLogs: PlatformLogEntry[]): Map<string, UserStats> {
+  const map = new Map<string, UserStats>();
+  for (const log of allPlatformLogs) {
+    const existing = map.get(log.user_id);
+    if (existing) {
+      existing.platformCalls++;
+      existing.platformInputTokens += log.input_tokens;
+      existing.platformOutputTokens += log.output_tokens;
+      if (log.charged) existing.creditsUsed++;
+    } else {
+      map.set(log.user_id, {
+        platformCalls: 1,
+        platformInputTokens: log.input_tokens,
+        platformOutputTokens: log.output_tokens,
+        creditsUsed: log.charged ? 1 : 0,
+      });
+    }
+  }
+  return map;
+}
+
 export function UserCreditsTable({ userCredits, allPlatformLogs, isSuperAdmin }: UserCreditsTableProps) {
   const router = useRouter();
 
   // Compute per-user platform stats from all-time platform logs (unfiltered)
-  const userStatsMap = useMemo(() => {
-    const map = new Map<string, UserStats>();
-    for (const log of allPlatformLogs) {
-      const existing = map.get(log.user_id);
-      if (existing) {
-        existing.platformCalls++;
-        existing.platformInputTokens += log.input_tokens;
-        existing.platformOutputTokens += log.output_tokens;
-        existing.creditsUsed++;
-      } else {
-        map.set(log.user_id, {
-          platformCalls: 1,
-          platformInputTokens: log.input_tokens,
-          platformOutputTokens: log.output_tokens,
-          creditsUsed: 1,
-        });
-      }
-    }
-    return map;
-  }, [allPlatformLogs]);
+  const userStatsMap = useMemo(() => computeUserStats(allPlatformLogs), [allPlatformLogs]);
 
   // Show all non-bot users
   const filteredUsers = userCredits;

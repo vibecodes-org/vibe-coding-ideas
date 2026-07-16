@@ -154,6 +154,7 @@ Use the answers above to inform your enhanced description. Make the enhancement 
           ideaId,
           keyType,
           free: true,
+          chargedUpfront: true,
         });
         if (finishReason === "length") {
           logger.warn("AI enhance output truncated", { ideaId });

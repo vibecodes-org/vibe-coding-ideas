@@ -2029,6 +2029,7 @@ export type Database = {
           key_type: "platform" | "byok";
           idea_id: string | null;
           created_at: string;
+          charged: boolean;
         };
         Insert: {
           id?: string;
@@ -2040,6 +2041,7 @@ export type Database = {
           key_type: "platform" | "byok";
           idea_id?: string | null;
           created_at?: string;
+          charged?: boolean;
         };
         Update: {
           id?: string;
@@ -2051,6 +2053,7 @@ export type Database = {
           key_type?: "platform" | "byok";
           idea_id?: string | null;
           created_at?: string;
+          charged?: boolean;
         };
         Relationships: [
           {

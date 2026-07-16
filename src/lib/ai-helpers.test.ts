@@ -122,3 +122,75 @@ describe("chargeAiUsage", () => {
     expect(mockInsert).toHaveBeenCalledOnce();
   });
 });
+
+describe("chargeAiUsage — `charged` column reflects the real debit, not `free`", () => {
+  const mockInsert = vi.fn();
+  const mockRpc = vi.fn();
+  const mockSupabase = {
+    from: vi.fn(() => ({ insert: mockInsert })),
+    rpc: mockRpc,
+  } as unknown as SupabaseClient<Database>;
+  const userId = "test-user-id";
+
+  const baseParams = {
+    userId,
+    actionType: "enhance_description" as const,
+    inputTokens: 10,
+    outputTokens: 5,
+    model: AI_MODEL,
+    ideaId: null,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockInsert.mockResolvedValue({ error: null });
+    mockRpc.mockResolvedValue({ data: 9, error: null });
+  });
+
+  it("marks charged=true for a direct platform charge (no `free`)", async () => {
+    await chargeAiUsage(mockSupabase, { ...baseParams, keyType: "platform" });
+
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ charged: true })
+    );
+  });
+
+  it("marks charged=false for a genuinely-free onboarding call (free:true, no chargedUpfront)", async () => {
+    await chargeAiUsage(mockSupabase, { ...baseParams, keyType: "platform", free: true });
+
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ charged: false })
+    );
+    // Genuinely free: no decrement either.
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("marks charged=true for an upfront-charged streaming call (free:true + chargedUpfront:true)", async () => {
+    await chargeAiUsage(mockSupabase, {
+      ...baseParams,
+      keyType: "platform",
+      free: true,
+      chargedUpfront: true,
+    });
+
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ charged: true })
+    );
+    // The credit was already decremented via chargeAiUpfront — chargeAiUsage
+    // itself must NOT decrement again (no double charge).
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+
+  it("marks charged=false for BYOK regardless of free/chargedUpfront", async () => {
+    await chargeAiUsage(mockSupabase, {
+      ...baseParams,
+      keyType: "byok",
+      chargedUpfront: true,
+    });
+
+    expect(mockInsert).toHaveBeenCalledWith(
+      expect.objectContaining({ charged: false })
+    );
+    expect(mockRpc).not.toHaveBeenCalled();
+  });
+});

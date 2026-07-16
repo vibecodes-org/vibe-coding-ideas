@@ -125,6 +125,9 @@ export type LogAiUsageParams = {
   model: string;
   ideaId: string | null;
   keyType?: "platform" | "byok";
+  /** Did this row correspond to an actual starter-credit debit? Defaults to
+   *  true — most direct callers of `logAiUsage` charge synchronously. */
+  charged?: boolean;
 };
 
 export async function logAiUsage(
@@ -139,6 +142,7 @@ export async function logAiUsage(
     model: params.model,
     key_type: params.keyType ?? "byok",
     idea_id: params.ideaId,
+    charged: params.charged ?? true,
   });
   if (error) {
     logger.error("Failed to log AI usage", {
@@ -155,6 +159,12 @@ export type ChargeAiUsageParams = LogAiUsageParams & {
   keyType: "platform" | "byok";
   /** Explicitly free call (e.g. onboarding): log usage but never decrement. */
   free?: boolean;
+  /** The credit was already decremented via `chargeAiUpfront` before this
+   *  call — used by streaming routes that must charge before the response
+   *  starts and can only log usage afterward (see `chargeAiUpfront`). When
+   *  true alongside `free: true`, the row is still marked `charged` because
+   *  a credit WAS debited — just not by this call. */
+  chargedUpfront?: boolean;
 };
 
 /**
@@ -166,12 +176,18 @@ export type ChargeAiUsageParams = LogAiUsageParams & {
  * failure so a missed charge surfaces to the caller instead of silently leaking
  * a free call. Route every non-streaming AI call through here so a future
  * feature can't skip the charge by forgetting the convention.
+ *
+ * `free` is overloaded — it suppresses the decrement here, but a caller may
+ * pass it purely to avoid double-charging after already decrementing via
+ * `chargeAiUpfront`. The logged `charged` column tracks the real debit
+ * (`chargedUpfront` covers that case), not the `free` flag itself.
  */
 export async function chargeAiUsage(
   supabase: SupabaseClient<Database>,
   params: ChargeAiUsageParams
 ): Promise<void> {
-  await logAiUsage(supabase, params);
+  const charged = params.keyType === "platform" && (!params.free || !!params.chargedUpfront);
+  await logAiUsage(supabase, { ...params, charged });
   if (params.keyType === "platform" && !params.free) {
     await decrementStarterCredit(supabase, params.userId);
   }

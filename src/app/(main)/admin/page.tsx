@@ -119,7 +119,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     // ALL platform usage logs (unfiltered) for the credits table
     supabase
       .from("ai_usage_log")
-      .select("user_id, input_tokens, output_tokens, key_type")
+      .select("user_id, input_tokens, output_tokens, key_type, charged")
       .eq("key_type", "platform")
       .order("created_at", { ascending: false })
       .limit(5000),
@@ -199,6 +199,7 @@ export type PlatformLogEntry = {
   input_tokens: number;
   output_tokens: number;
   key_type: string;
+  charged: boolean;
 };
 
 export type UserCreditInfo = {

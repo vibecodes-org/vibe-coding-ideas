@@ -99,6 +99,7 @@ Use the answers above to inform your enhanced description. Make the enhancement 
           ideaId: null,
           keyType,
           free: true,
+          chargedUpfront: true,
         });
         if (finishReason === "length") {
           logger.warn("AI create enhance output truncated");

@@ -270,6 +270,7 @@ export async function POST(req: Request) {
               ideaId,
               keyType,
               free: true,
+              chargedUpfront: true,
             });
           }
         } catch (err) {
