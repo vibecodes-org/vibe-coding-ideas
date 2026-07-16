@@ -10,7 +10,16 @@
     "forceConsistentCasingInFileNames": true,
     "resolveJsonModule": true,
     "sourceMap": true,
-    "noEmit": true
+    "noEmit": true,
+    "baseUrl": ".",
+    // Mirrors the root tsconfig's "@/*" -> "./src/*" alias (relative to repo root).
+    // App-side lib files pulled in transitively by mcp-server tools (e.g.
+    // workflow-helpers.ts, ai-role-matching.ts) import via "@/...". Without this
+    // mapping tsc can't resolve those imports when run standalone from mcp-server/.
+    // Keep this even if it looks unused at a glance.
+    "paths": {
+      "@/*": ["../src/*"]
+    }
   },
   "include": [
     "src/**/*",

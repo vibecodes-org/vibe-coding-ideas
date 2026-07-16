@@ -36,6 +36,19 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      # mcp-server is compiled standalone (its own tsconfig.json, not part of the
+      # root program) so the root typecheck above does not catch breakage in it.
+      # Deliberately no separate "npm ci" here: mcp-server is not an npm workspace
+      # and its own package.json is missing a few deps (e.g. "ai", "@ai-sdk/anthropic")
+      # that its @/-aliased imports need transitively (tracked separately) — a real
+      # `npm ci` in mcp-server/ would create an incomplete node_modules there and
+      # shadow the walk-up to the root install below, which is what actually has
+      # everything needed. Node/npm resolve node_modules by walking up from
+      # mcp-server/ to the repo root, so the root `npm ci` above is sufficient.
+      - name: Typecheck mcp-server
+        run: npm run typecheck
+        working-directory: mcp-server
+
       # Blocking gate: lint must pass (0 errors; warnings allowed).
       - name: Lint
         run: npm run lint
