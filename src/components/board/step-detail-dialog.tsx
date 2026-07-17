@@ -482,7 +482,9 @@ export function StepDetailDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[80vh] flex-col gap-0 p-0 sm:max-w-md">
+      {/* Widen on desktop to match the task detail dialog (was sm:max-w-md / 448px —
+          too narrow for step output, which is often long markdown). */}
+      <DialogContent className="flex max-h-[80vh] flex-col gap-0 p-0 sm:max-w-2xl lg:max-w-3xl">
         <DialogHeader className="px-5 pt-5 pb-0">
           <DialogTitle className="sr-only">Step Details</DialogTitle>
 
