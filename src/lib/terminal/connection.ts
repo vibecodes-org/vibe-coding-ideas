@@ -264,18 +264,30 @@ function isValidDim(n: number): boolean {
 }
 
 /**
- * The outcome of a resize attempt (fix/terminal-dock-launch-defects):
+ * The outcome of a resize attempt (fix/terminal-dock-launch-defects,
+ * fix/terminal-dock-cold-launch-resize):
  *
- *   - "send"  — dims changed AND the socket is OPEN → send now, advance the dedupe key.
- *   - "defer" — dims changed but the socket isn't OPEN yet (still CONNECTING at
- *     launch) → the frame can't go out, so the dedupe key must NOT advance. Advancing
- *     it here was the bug: a launch-time resize computed the real dims, stamped the
- *     key, and dropped the frame — the PTY was then stuck at the relay's 80×24
- *     default forever, because a later same-size send() from the SAME key would be
- *     (wrongly) treated as a no-op dedupe.
+ *   - "send"  — dims changed AND the frame can actually REACH the PTY → send now,
+ *     advance the dedupe key.
+ *   - "defer" — dims changed but the frame can't reach the PTY yet → the dedupe key
+ *     must NOT advance. Advancing it here was the original bug: a launch-time
+ *     resize computed the real dims, stamped the key, and the frame was lost — the
+ *     PTY was then stuck at the relay's 80×24 default forever, because a later
+ *     same-size send() from the SAME key would be (wrongly) treated as a no-op
+ *     dedupe.
  *   - "skip"  — unchanged since the last SUCCESSFUL send → no-op. This preserves the
  *     existing live-socket dedupe (ResizeObserver churn while the socket is open and
  *     dims haven't actually changed must stay a no-op).
+ *
+ * "Reachable" is NOT the same as "socket OPEN": the relay drops browser→bridge
+ * frames (with no buffering) whenever no bridge/peer is attached yet
+ * (terminal/relay/src/index.js). On a cold autolaunch the browser's wss handshake
+ * (~100-300ms) beats the helper→bridge attach (can take seconds), so the socket is
+ * OPEN well before the bridge is attached — a resize sent in that window is
+ * silently dropped by the relay even though `ws.readyState === OPEN`. The caller
+ * must gate on the runtime "peer attached and forwarding" signal (connection status
+ * === "connected", which flips on the first inbound PTY byte) rather than socket
+ * OPEN alone.
  */
 export type ResizeDecision =
   | { action: "send"; nextLastKey: string }
@@ -284,12 +296,14 @@ export type ResizeDecision =
 
 /**
  * Decide what to do with a computed resize `key` (`"${cols}x${rows}"`) given the
- * last key a resize was SUCCESSFULLY sent for and whether the socket is currently
- * OPEN. Pure so the dedupe/defer policy is unit-tested without a socket.
+ * last key a resize was SUCCESSFULLY sent for and whether the frame can currently
+ * REACH the PTY (socket OPEN *and* the bridge/peer is attached — see the
+ * `ResizeDecision` doc comment above for why OPEN alone isn't enough). Pure so the
+ * dedupe/defer policy is unit-tested without a socket.
  */
-export function decideResize(key: string, lastKey: string, isOpen: boolean): ResizeDecision {
+export function decideResize(key: string, lastKey: string, isReachable: boolean): ResizeDecision {
   if (key === lastKey) return { action: "skip" };
-  if (!isOpen) return { action: "defer" };
+  if (!isReachable) return { action: "defer" };
   return { action: "send", nextLastKey: key };
 }
 

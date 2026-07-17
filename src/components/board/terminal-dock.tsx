@@ -337,14 +337,17 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
 
   // Fit + emit a resize control frame (TEXT) matching the bridge's framing.
   //
-  // Deferred via decideResize (fix/terminal-dock-launch-defects): at launch the
-  // ResizeObserver / expand-rAF fire this while the socket is still CONNECTING
-  // (wsRef not OPEN yet). The OLD code stamped the dedupe key unconditionally
-  // before checking readyState, so that first real-dims frame was silently
-  // dropped AND the key was advanced — ws.onopen never re-sent, so the PTY stuck
-  // at the relay's 80×24 default until a manual window resize changed the dims.
-  // Now a "defer" leaves lastDimsRef untouched, so the SAME key resolves to a
-  // "send" once openBrowserLeg's ws.onopen retries (Part C below).
+  // Deferred via decideResize (fix/terminal-dock-launch-defects,
+  // fix/terminal-dock-cold-launch-resize): a resize can only REACH the PTY once the
+  // socket is OPEN *and* the bridge/peer is attached (status "connected") — the
+  // relay drops browser→bridge frames with no buffering while unpaired, so socket
+  // OPEN alone is not sufficient (see the `ResizeDecision` doc comment in
+  // connection.ts). On a cold autolaunch the browser's wss handshake beats the
+  // helper→bridge attach by hundreds of ms to seconds, so the ResizeObserver /
+  // expand-rAF below fire while the socket is OPEN but still unpaired — sending
+  // then would be silently dropped by the relay. A "defer" leaves lastDimsRef
+  // untouched, so the SAME key resolves to a "send" once the connected-transition
+  // effect re-fires this (below).
   const sendResize = useCallback(() => {
     const term = termRef.current;
     const fit = fitRef.current;
@@ -358,8 +361,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     if (!msg) return;
     const key = `${term.cols}x${term.rows}`;
     const ws = wsRef.current;
-    const isOpen = ws?.readyState === WebSocket.OPEN;
-    const decision = decideResize(key, lastDimsRef.current, isOpen);
+    const isReachable = ws?.readyState === WebSocket.OPEN && statusRef.current === "connected";
+    const decision = decideResize(key, lastDimsRef.current, isReachable);
     if (decision.action !== "send") return;
     lastDimsRef.current = decision.nextLastKey;
     ws?.send(msg);
@@ -380,6 +383,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       return () => window.cancelAnimationFrame(id);
     }
   }, [expanded, sendResize]);
+
+  // Resend on the transition to "connected" (fix/terminal-dock-cold-launch-resize).
+  // The bridge/peer only becomes reachable the moment status flips to "connected"
+  // (first inbound PTY byte), so any resize computed BEFORE that point — the
+  // ResizeObserver / expand-rAF above fire well before this on a cold autolaunch —
+  // was deferred with its key un-advanced. Re-running sendResize() here is exactly
+  // the retry that resolves that deferred key to a real "send" now that it can
+  // reach the PTY. Fires on every transition INTO "connected", so it also covers a
+  // grace-window reattach; when dims are unchanged that's just a "skip" (harmless).
+  useEffect(() => {
+    if (state.status === "connected") sendResize();
+  }, [state.status, sendResize]);
 
   // ── launch focus (fix/terminal-dock-launch-defects, Defect 2) ──────────────
   // Nothing previously called termRef.current.focus() — a freshly connected
@@ -634,12 +649,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       ws.onopen = () => {
         clearConnectTimer();
         dispatch({ type: "relay-open" });
-        // Retry any resize deferred while the socket was still CONNECTING (the
-        // launch-time ResizeObserver/expand-rAF fire before this). The key was
-        // never advanced on defer, so this resolves to a genuine send with the
-        // real dims. On a RECONNECT (reconnect: true) the dims are unchanged →
-        // decideResize returns "skip" here, so this never causes a resize storm.
-        sendResize();
+        // No sendResize() retry here (fix/terminal-dock-cold-launch-resize): OPEN
+        // means the socket reached the relay, but the bridge/peer may not be
+        // attached yet, so decideResize would just "defer" again — a wasted call.
+        // The connected-transition effect (see sendResize's call sites) is the one
+        // retry that matters: it fires once reachability is actually true.
       };
       ws.onmessage = (ev) => {
         // ANY inbound frame proves the link carried something just now — feed the
@@ -714,7 +728,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
         if (mapped.status === "disconnected") scheduleReconnectRef.current();
       };
     },
-    [teardownSocket, clearConnectTimer, clearHelperTimer, removeLaunchIframe, clearDegradeTimer, sendResize],
+    [teardownSocket, clearConnectTimer, clearHelperTimer, removeLaunchIframe, clearDegradeTimer],
   );
 
   // Drive the grace-window reconnect loop: reattach to the SAME sid with the retained

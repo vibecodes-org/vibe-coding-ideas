@@ -255,20 +255,20 @@ describe("encodeResizeMessage", () => {
   });
 });
 
-describe("decideResize (fix/terminal-dock-launch-defects)", () => {
-  it("unchanged key → skip, regardless of socket state", () => {
+describe("decideResize (fix/terminal-dock-launch-defects, fix/terminal-dock-cold-launch-resize)", () => {
+  it("unchanged key → skip, regardless of reachability", () => {
     expect(decideResize("80x24", "80x24", true)).toEqual({ action: "skip" });
     expect(decideResize("80x24", "80x24", false)).toEqual({ action: "skip" });
   });
 
-  it("changed key + socket open → send, carrying the new key", () => {
+  it("changed key + reachable → send, carrying the new key", () => {
     expect(decideResize("120x30", "80x24", true)).toEqual({
       action: "send",
       nextLastKey: "120x30",
     });
   });
 
-  it("changed key + socket NOT open → defer, with no nextLastKey (caller contract: the key must not advance)", () => {
+  it("changed key + NOT reachable → defer, with no nextLastKey (caller contract: the key must not advance)", () => {
     const decision = decideResize("120x30", "80x24", false);
     expect(decision).toEqual({ action: "defer" });
     expect(decision).not.toHaveProperty("nextLastKey");
@@ -279,12 +279,12 @@ describe("decideResize (fix/terminal-dock-launch-defects)", () => {
     expect(decision).not.toHaveProperty("nextLastKey");
   });
 
-  it("the launch sequence: defer while CONNECTING, then the SAME key resolves to send once OPEN", () => {
+  it("the launch sequence: defer while CONNECTING, then the SAME key resolves to send once reachable", () => {
     // This is the exact bug this decision function fixes: the launch-time
-    // ResizeObserver/expand-rAF compute the real dims before the socket is
-    // OPEN. The old code stamped the dedupe key on that first call regardless,
-    // so the retry on ws.onopen (same key) was wrongly treated as unchanged and
-    // never sent — the PTY stayed stuck at the relay's 80x24 default.
+    // ResizeObserver/expand-rAF compute the real dims before the socket is even
+    // OPEN. The old code stamped the dedupe key on that first call regardless, so
+    // the retry (same key) was wrongly treated as unchanged and never sent — the
+    // PTY stayed stuck at the relay's 80x24 default.
     let lastKey = "";
     const key = "137x42";
 
@@ -293,8 +293,33 @@ describe("decideResize (fix/terminal-dock-launch-defects)", () => {
     // Caller contract: a "defer" must NOT advance the dedupe key.
     if (atLaunch.action === "send") lastKey = atLaunch.nextLastKey;
 
-    const onOpen = decideResize(key, lastKey, true);
-    expect(onOpen).toEqual({ action: "send", nextLastKey: key });
+    const onReachable = decideResize(key, lastKey, true);
+    expect(onReachable).toEqual({ action: "send", nextLastKey: key });
+  });
+
+  it("cold-launch hole: socket OPEN but bridge/peer unpaired still defers (OPEN alone is not reachable)", () => {
+    // fix/terminal-dock-cold-launch-resize: the relay drops browser→bridge frames
+    // with no buffering while no peer is attached. On a cold autolaunch the wss
+    // handshake (~100-300ms) beats the helper→bridge attach (seconds), so the
+    // socket reaches OPEN well before the bridge pairs. A resize computed in that
+    // window must defer (isReachable=false) even though the socket is open —
+    // sending it would be silently dropped by the relay and the key would wrongly
+    // advance, permanently stranding the PTY at 80x24. The SAME key resolves to a
+    // real send once the bridge attaches and reachability flips true.
+    let lastKey = "";
+    const key = "137x42";
+
+    // Socket OPEN, but not yet reachable (bridge/peer not attached — status isn't
+    // "connected" yet). Passing isReachable=false models exactly this state,
+    // regardless of what ws.readyState reports.
+    const openButUnpaired = decideResize(key, lastKey, false);
+    expect(openButUnpaired).toEqual({ action: "defer" });
+    if (openButUnpaired.action === "send") lastKey = openButUnpaired.nextLastKey;
+
+    // Bridge attaches, status flips to "connected" → reachable → the deferred
+    // dims finally go out.
+    const onceReachable = decideResize(key, lastKey, true);
+    expect(onceReachable).toEqual({ action: "send", nextLastKey: key });
   });
 
   it("a live-socket resize storm with unchanged dims stays deduped (existing behaviour preserved)", () => {
