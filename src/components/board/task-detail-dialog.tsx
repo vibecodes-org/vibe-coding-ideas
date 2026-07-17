@@ -545,7 +545,10 @@ export function TaskDetailDialog({
       }}
     >
       <DialogContent
-        className="flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-lg"
+        // Widen on desktop (was sm:max-w-lg / 512px — too narrow, truncated the
+        // workflow step titles and cramped the description). tailwind-merge lets
+        // these override the base DialogContent's sm:max-w-lg.
+        className="flex max-h-[85vh] flex-col gap-0 p-0 sm:max-w-2xl lg:max-w-3xl"
         onOpenAutoFocus={(e) => e.preventDefault()}
       >
         {/* Cover image */}
