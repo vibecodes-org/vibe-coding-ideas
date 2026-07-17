@@ -26,13 +26,13 @@ import {
 import { formatRelativeTime } from "@/lib/utils";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { UserCreditsTable } from "./user-credits-table";
-import type { UsageLogWithUser, UserCreditInfo, PlatformLogEntry } from "@/app/(main)/admin/page";
+import type { UsageLogWithUser, UserCreditInfo, PlatformStatsEntry } from "@/app/(main)/admin/page";
 
 interface AiUsageDashboardProps {
   usageLogs: UsageLogWithUser[];
   filters: { from: string; to: string; action: string; source: string };
   userCredits: UserCreditInfo[];
-  allPlatformLogs: PlatformLogEntry[];
+  platformStats: PlatformStatsEntry[];
   isSuperAdmin: boolean;
 }
 
@@ -52,7 +52,7 @@ export function AiUsageDashboard({
   usageLogs,
   filters,
   userCredits,
-  allPlatformLogs,
+  platformStats,
   isSuperAdmin,
 }: AiUsageDashboardProps) {
   const router = useRouter();
@@ -266,7 +266,7 @@ export function AiUsageDashboard({
       </div>
 
       {/* User Credits & Platform Costs — all-time, not affected by filters */}
-      <UserCreditsTable userCredits={userCredits} allPlatformLogs={allPlatformLogs} isSuperAdmin={isSuperAdmin} />
+      <UserCreditsTable userCredits={userCredits} platformStats={platformStats} isSuperAdmin={isSuperAdmin} />
     </div>
   );
 }

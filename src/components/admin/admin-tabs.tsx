@@ -10,7 +10,7 @@ import { AdminTeamsDashboard } from "./admin-teams-dashboard";
 import { AdminTemplatesDashboard } from "./admin-templates-dashboard";
 import { AdminMcpToolsDashboard } from "./admin-mcp-tools-dashboard";
 import type { McpToolLogWithUser, McpToolStatsRow } from "./admin-mcp-tools-dashboard";
-import type { UsageLogWithUser, FeedbackWithUser, UserCreditInfo, PlatformLogEntry } from "@/app/(main)/admin/page";
+import type { UsageLogWithUser, FeedbackWithUser, UserCreditInfo, PlatformStatsEntry } from "@/app/(main)/admin/page";
 import type { BotProfile, FeaturedTeamWithAgents, WorkflowLibraryTemplate } from "@/types";
 
 interface AdminTabsProps {
@@ -26,7 +26,7 @@ interface AdminTabsProps {
   communityAgents: BotProfile[];
   libraryTemplates: WorkflowLibraryTemplate[];
   userCredits: UserCreditInfo[];
-  allPlatformLogs: PlatformLogEntry[];
+  platformStats: PlatformStatsEntry[];
   mcpToolLogs: McpToolLogWithUser[];
   mcpToolStats: McpToolStatsRow[];
   allMcpToolNames: string[];
@@ -45,7 +45,7 @@ export function AdminTabs({
   communityAgents,
   libraryTemplates,
   userCredits,
-  allPlatformLogs,
+  platformStats,
   mcpToolLogs,
   mcpToolStats,
   allMcpToolNames,
@@ -82,7 +82,7 @@ export function AdminTabs({
         <TabsTrigger value="mcp-tools">MCP Tools</TabsTrigger>
       </TabsList>
       <TabsContent value="ai-usage" className="mt-6 space-y-10">
-        <AiUsageDashboard usageLogs={usageLogs} filters={usageFilters} userCredits={userCredits} allPlatformLogs={allPlatformLogs} isSuperAdmin={isSuperAdmin} />
+        <AiUsageDashboard usageLogs={usageLogs} filters={usageFilters} userCredits={userCredits} platformStats={platformStats} isSuperAdmin={isSuperAdmin} />
         <div>
           <h2 className="mb-3 text-lg font-semibold">Tier Adherence</h2>
           <TierAdherenceDashboard />

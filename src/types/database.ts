@@ -2811,6 +2811,16 @@ export type Database = {
         };
         Returns: undefined;
       };
+      get_admin_platform_credit_stats: {
+        Args: Record<string, never>;
+        Returns: {
+          user_id: string;
+          platform_calls: number;
+          platform_input_tokens: number;
+          platform_output_tokens: number;
+          credits_used: number;
+        }[];
+      };
     };
     Enums: {
       idea_status: "open" | "in_progress" | "completed" | "archived";

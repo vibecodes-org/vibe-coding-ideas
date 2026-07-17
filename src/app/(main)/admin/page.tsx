@@ -85,7 +85,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
     { data: teamsData },
     { data: communityData },
     { data: libraryTemplatesData },
-    { data: allPlatformLogs },
+    { data: platformStats },
     { data: userCreditsData },
     { data: mcpToolLogs },
     { data: mcpToolStats },
@@ -116,13 +116,10 @@ export default async function AdminPage({ searchParams }: PageProps) {
       .limit(100),
     // Workflow library templates
     supabase.from("workflow_library_templates").select("*").order("display_order", { ascending: true }),
-    // ALL platform usage logs (unfiltered) for the credits table
-    supabase
-      .from("ai_usage_log")
-      .select("user_id, input_tokens, output_tokens, key_type, charged")
-      .eq("key_type", "platform")
-      .order("created_at", { ascending: false })
-      .limit(5000),
+    // All-time platform usage aggregated per-user, server-side (RPC), for the
+    // credits table — avoids shipping every raw row to the browser and avoids
+    // the silent truncation a `.limit()` on raw rows would eventually hit.
+    supabase.rpc("get_admin_platform_credit_stats"),
     // Non-bot users with credit + key info for the admin credits table
     supabase
       .from("users")
@@ -166,7 +163,7 @@ export default async function AdminPage({ searchParams }: PageProps) {
         communityAgents={communityAgents}
         libraryTemplates={libraryTemplates}
         userCredits={userCredits}
-        allPlatformLogs={(allPlatformLogs ?? []) as PlatformLogEntry[]}
+        platformStats={(platformStats ?? []) as PlatformStatsEntry[]}
         mcpToolLogs={(mcpToolLogs ?? []) as import("@/components/admin/admin-mcp-tools-dashboard").McpToolLogWithUser[]}
         mcpToolStats={(mcpToolStats ?? []) as import("@/components/admin/admin-mcp-tools-dashboard").McpToolStatsRow[]}
         allMcpToolNames={getRegisteredToolNames()}
@@ -194,12 +191,12 @@ export type UsageLogWithUser = {
   };
 };
 
-export type PlatformLogEntry = {
+export type PlatformStatsEntry = {
   user_id: string;
-  input_tokens: number;
-  output_tokens: number;
-  key_type: string;
-  charged: boolean;
+  platform_calls: number;
+  platform_input_tokens: number;
+  platform_output_tokens: number;
+  credits_used: number;
 };
 
 export type UserCreditInfo = {
