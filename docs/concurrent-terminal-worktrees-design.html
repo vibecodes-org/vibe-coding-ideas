@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Concurrent Terminals — Auto-Worktree Isolation — UX Design</title>
+<style>
+  :root {
+    --bg: #0f1115; --surface: #171a21; --surface2: #1f242e;
+    --text: #e6e9ef; --muted: #9aa3b2; --accent: #5eead4;
+    --good: #4ade80; --bad: #f87171; --warn: #fbbf24; --line: #2a313d;
+    --info: #7dd3fc;
+  }
+  * { box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font: 15px/1.6 -apple-system, "Segoe UI", Roboto, sans-serif; margin: 0; padding: 2rem 1rem 5rem; }
+  main { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.2rem; margin: 2.4rem 0 .8rem; color: var(--accent); border-bottom: 1px solid var(--line); padding-bottom: .4rem; }
+  h3 { font-size: 1rem; margin: 1.4rem 0 .5rem; }
+  .meta { color: var(--muted); font-size: .85rem; margin-bottom: 1.5rem; }
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 1rem 1.25rem; margin: .8rem 0; }
+  .decision { border-color: var(--warn); }
+  pre { background: var(--surface2); border: 1px solid var(--line); border-radius: 8px; padding: .9rem 1rem; overflow-x: auto; font-size: .82rem; line-height: 1.5; }
+  code { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--accent); font-size: .85em; }
+  pre code { color: var(--text); }
+  table { border-collapse: collapse; width: 100%; font-size: .84rem; margin: .6rem 0; }
+  th, td { border: 1px solid var(--line); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+  th { background: var(--surface2); }
+  .flow { display: flex; flex-direction: column; gap: .35rem; margin: .8rem 0; }
+  .step { display: flex; gap: .7rem; align-items: flex-start; background: var(--surface2); border: 1px solid var(--line); border-radius: 8px; padding: .55rem .8rem; font-size: .85rem; }
+  .step .who { min-width: 130px; font-weight: 600; color: var(--accent); flex-shrink: 0; }
+  .ok { color: var(--good); } .err { color: var(--bad); } .note { color: var(--warn); } .inf { color: var(--info); }
+  .pill { display: inline-block; border: 1px solid var(--line); border-radius: 999px; padding: .05rem .6rem; font-size: .72rem; color: var(--muted); margin-left: .4rem; }
+  .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: .8rem; }
+  @media (max-width: 760px) { .grid2 { grid-template-columns: 1fr; } }
+  /* terminal mockups */
+  .term { background: #0a0c10; border: 1px solid var(--line); border-radius: 8px; padding: .8rem 1rem; font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: .8rem; line-height: 1.55; overflow-x: auto; white-space: pre; margin: .6rem 0; }
+  .term .dim { color: #6b7484; }
+  .term .p  { color: #4ade80; }   /* primary */
+  .term .wt { color: #7dd3fc; }   /* worktree */
+  .term .w  { color: #fbbf24; }   /* warning */
+  .term .cmd { color: #e6e9ef; }
+  .caption { color: var(--muted); font-size: .78rem; margin: -.2rem 0 .8rem .2rem; }
+  /* dock tab mockup */
+  .dock { display: flex; gap: .4rem; background: #0a0c10; border: 1px solid var(--line); border-radius: 8px; padding: .5rem .6rem; font-size: .8rem; flex-wrap: wrap; }
+  .tab { border: 1px solid var(--line); border-radius: 6px; padding: .3rem .7rem; background: var(--surface2); color: var(--muted); }
+  .tab.active { color: var(--text); border-color: var(--accent); }
+  .tab .badge { font-size: .72rem; margin-left: .35rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Concurrent Terminals — Auto-Worktree Isolation <span class="pill">UX Design</span></h1>
+  <div class="meta">Compass (UX Designer) · Design step · "Git clash when running more than one terminal" · Builds on the <strong>Requirements</strong> deliverable (ProdOwner) — Option C locked: auto-worktree per concurrent session. FR references below cite that document.</div>
+
+  <div class="card decision">
+    <strong>The open decision this design serves.</strong> The isolation decision + <code>git worktree add</code> must run <em>locally</em> — the browser cannot see the filesystem. Two candidate homes: <strong>(H) native terminal helper</strong> (deterministic, clash-proof, but native and heavily in-flight) vs <strong>(A) agent-side bootstrap prompt + heartbeat-lock</strong> (ships now, testable, but heuristic). Per the PO recommendation, <strong>this design targets (A) as primary</strong>; §7 lists exactly where the UX differs under (H) so the Design Review gate can pick with the deltas in view. All touchpoint copy below is home-agnostic unless flagged.
+  </div>
+
+  <h2>1 · Design principles</h2>
+  <div class="card">
+    <ol style="margin:.2rem 0 .2rem 1.2rem; padding:0;">
+      <li><strong>Invisible until it matters</strong> (FR-1, FR-2). The first session sees <em>one extra line</em> at start and nothing else. Isolation only announces itself when it actually happens.</li>
+      <li><strong>Always answer "where am I?"</strong> (FR-5). Every session states its working dir, branch, and primary/worktree status at start — the single most common confusion with worktrees (mirrors how VS Code and <code>git worktree list</code> surface this).</li>
+      <li><strong>Never destroy work, always say where it went</strong> (FR-6). Dirty/unpushed worktrees are kept, and the keep message doubles as a recovery card: path, branch, and the three commands to resume, publish, or discard.</li>
+      <li><strong>Degrade loudly, block never</strong> (FR-8). Non-git folder or a failed <code>worktree add</code> → one prominent warning, then launch proceeds.</li>
+      <li><strong>Icon + word, never colour alone.</strong> Terminal glyphs are paired with text labels (<code>● Primary</code>, <code>⧉ Isolated worktree</code>, <code>⚠ Shared folder</code>) — status survives monochrome terminals and screen readers.</li>
+    </ol>
+  </div>
+
+  <h2>2 · User flows</h2>
+
+  <h3>2a · First / single session — nothing changes (FR-1)</h3>
+  <div class="flow">
+    <div class="step"><span class="who">user</span><span>Clicks "Launch Claude Code" on the board → terminal opens in <code>~/projects/acme-app</code></span></div>
+    <div class="step"><span class="who">bootstrap (A)</span><span>Checks for a live session lock (<code>.vibecodes/session.lock</code>, heartbeat-stamped) → none found → <strong>claims primary</strong>, writes lock</span></div>
+    <div class="step"><span class="who">terminal</span><span>Prints the one-line primary banner (§3.1) <span class="ok">← the only visible delta vs today</span></span></div>
+    <div class="step"><span class="who">user</span><span>Works exactly as before. No new dirs, no new branches.</span></div>
+  </div>
+
+  <h3>2b · Second concurrent session — transparent isolation (FR-2)</h3>
+  <div class="flow">
+    <div class="step"><span class="who">user</span><span>Launches a second terminal on the <em>same</em> folder while session 1 is live</span></div>
+    <div class="step"><span class="who">bootstrap (A)</span><span>Lock exists + heartbeat fresh → <strong>isolate</strong>: <code>git worktree add ../acme-app.vibe/wt-2 -b vibe/wt-2</code></span></div>
+    <div class="step"><span class="who">terminal</span><span><code>cd</code> into the worktree, print the isolation banner (§3.2) — states path, branch, why, and the way back</span></div>
+    <div class="step"><span class="who">user / agent</span><span>Works normally — shared <code>.git</code> means full history, zero clash with session 1 <span class="ok">← no user action was required at any point</span></span></div>
+  </div>
+  <div class="card">Naming: worktrees live in a <strong>sibling</strong> folder <code>&lt;repo&gt;.vibe/wt-&lt;n&gt;</code> (never inside the repo — keeps <code>git status</code> and file watchers clean) on branch <code>vibe/wt-&lt;n&gt;</code>. Predictable names make the recovery copy in §3.4 guessable even from memory. Exact scheme is an eng-review detail; the UX contract is only <em>sibling + predictable + echoed in every banner</em>.</div>
+
+  <h3>2c · Session end — cleanup decision tree (FR-6)</h3>
+  <div class="flow">
+    <div class="step"><span class="who">session ends</span><span>Was this session in a worktree? <strong>No</strong> → release lock, done (no output).</span></div>
+    <div class="step"><span class="who">check 1</span><span>Uncommitted changes (<code>git status --porcelain</code> non-empty)? <span class="note">Yes → KEEP + recovery card (§3.4)</span></span></div>
+    <div class="step"><span class="who">check 2</span><span>Unpushed commits (<code>git log @{u}.. </code> or branch never pushed with commits)? <span class="note">Yes → KEEP + recovery card (§3.4)</span></span></div>
+    <div class="step"><span class="who">clean</span><span>No changes, nothing unpushed → <code>git worktree remove</code> + branch deleted if unused → one-line prune notice (§3.5) <span class="ok">← dirty/unpushed is NEVER auto-deleted; deletion is only ever a user command</span></span></div>
+  </div>
+
+  <h3>2d · Degraded — non-git folder or worktree failure (FR-8)</h3>
+  <div class="flow">
+    <div class="step"><span class="who">bootstrap (A)</span><span>Second session detected, but folder is not a git repo <em>or</em> <code>worktree add</code> fails (bare repo, locked index, disk)</span></div>
+    <div class="step"><span class="who">terminal</span><span>Prints the shared-folder warning (§3.3) — names the risk and the concurrent session count <span class="err">← warn, don't block</span></span></div>
+    <div class="step"><span class="who">user / agent</span><span>Launch proceeds in the original folder. Agent bootstrap additionally instructs the agent to avoid concurrent edits (§5).</span></div>
+  </div>
+
+  <h2>3 · Touchpoints — exact copy &amp; placement</h2>
+
+  <h3>3.1 · Session-start banner — primary tree (FR-5)</h3>
+  <div class="term"><span class="p">●</span> <span class="p">Primary checkout</span> <span class="dim">·</span> ~/projects/acme-app <span class="dim">·</span> branch <span class="cmd">master</span> <span class="dim">· only session on this folder</span></div>
+  <p class="caption">One line, printed before the agent starts. Glyph <code>●</code> + the words "Primary checkout" — never colour alone. This is the entire FR-1 footprint.</p>
+
+  <h3>3.2 · Session-start banner — isolated worktree (FR-2, FR-5)</h3>
+  <div class="term"><span class="wt">⧉</span> <span class="wt">Isolated worktree</span> <span class="dim">·</span> ~/projects/acme-app.vibe/wt-2 <span class="dim">·</span> branch <span class="cmd">vibe/wt-2</span>
+<span class="dim">  Another session is using ~/projects/acme-app, so this one got its own copy</span>
+<span class="dim">  (shared git history, separate files). When done: push this branch or open a PR.</span></div>
+  <p class="caption">Three lines max. Line 1 answers "where am I"; line 2 answers "why"; line 3 plants the merge-back seed early (FR-7). The <code>⧉</code> glyph (two overlapping squares — "a copy") is reused everywhere isolation is shown.</p>
+
+  <h3>3.3 · Degraded warning — isolation unavailable (FR-8)</h3>
+  <div class="term"><span class="w">⚠ Shared folder — isolation unavailable</span> <span class="dim">(not a git repository)</span>
+<span class="dim">  2 sessions are using ~/Downloads/scratch. Concurrent edits can overwrite each other.</span>
+<span class="dim">  Continuing anyway. Tip: git init (or run one session at a time) to enable isolation.</span></div>
+  <p class="caption">The parenthetical swaps per cause: <code>(not a git repository)</code> / <code>(git worktree failed: &lt;first line of stderr&gt;)</code>. Same three-line shape either way; launch always proceeds.</p>
+
+  <h3>3.4 · Session-end — worktree kept (FR-6)</h3>
+  <div class="term"><span class="wt">⧉ Worktree kept</span> — it has uncommitted changes (3 files) and 2 unpushed commits.
+<span class="dim">  Where:</span>   ~/projects/acme-app.vibe/wt-2  <span class="dim">(branch vibe/wt-2)</span>
+<span class="dim">  Resume:</span>  cd ~/projects/acme-app.vibe/wt-2
+<span class="dim">  Publish:</span> git push -u origin vibe/wt-2   <span class="dim">then open a PR</span>
+<span class="dim">  Discard:</span> git worktree remove ~/projects/acme-app.vibe/wt-2 --force  <span class="dim">(after you're sure)</span></div>
+  <p class="caption">A recovery card, not an apology: state → location → the three verbs (resume / publish / discard) as copy-pasteable commands. The reason clause adapts: "uncommitted changes (N files)", "N unpushed commits", or both.</p>
+
+  <h3>3.5 · Session-end — worktree pruned (clean)</h3>
+  <div class="term"><span class="p">✓ Worktree removed</span> <span class="dim">— vibe/wt-2 had no changes to keep. Nothing left behind.</span></div>
+  <p class="caption">One line. Confirms cleanup happened so leftover-folder anxiety never builds — silence here would make users go check by hand.</p>
+
+  <h3>3.6 · Optional — terminal-dock tab indicator <span class="pill">richer under (H)</span></h3>
+  <div class="dock" role="tablist" aria-label="Terminal sessions">
+    <span class="tab active" role="tab" aria-selected="true" aria-label="acme-app, primary checkout">acme-app <span class="badge" style="color:var(--good)">●</span></span>
+    <span class="tab" role="tab" aria-selected="false" aria-label="acme-app, isolated worktree wt-2">acme-app <span class="badge" style="color:var(--info)">⧉ wt-2</span></span>
+    <span class="tab" role="tab" aria-selected="false" aria-label="scratch, shared folder warning">scratch <span class="badge" style="color:var(--warn)">⚠ shared</span></span>
+  </div>
+  <p class="caption">Badge = glyph + short word (<code>⧉ wt-2</code>, <code>⚠ shared</code>), tooltip/aria-label carries the full sentence. Under <strong>(A)</strong> the tab label is best-effort (agent self-reports via the relay / OSC title, may lag seconds or go stale). Under <strong>(H)</strong> the helper owns tab chrome and the badge is authoritative — this is the single biggest UX delta between homes (§7). Tabs stay keyboard-reachable via the dock's existing tab order.</p>
+
+  <h2>4 · States table — every surface × every state</h2>
+  <table>
+    <tr><th>Surface</th><th>Primary</th><th>Isolated worktree</th><th>Degraded (shared)</th><th>Cleanup — kept</th><th>Cleanup — pruned</th></tr>
+    <tr>
+      <td><strong>Session-start banner</strong></td>
+      <td>"● Primary checkout · &lt;path&gt; · branch &lt;br&gt; · only session on this folder"</td>
+      <td>"⧉ Isolated worktree · &lt;wt-path&gt; · branch vibe/wt-N" + why + merge-back line (§3.2)</td>
+      <td>"⚠ Shared folder — isolation unavailable (&lt;cause&gt;)" + risk + tip (§3.3)</td>
+      <td>—</td><td>—</td>
+    </tr>
+    <tr>
+      <td><strong>Session-end summary</strong></td>
+      <td><em>silent</em> (lock released)</td>
+      <td>→ becomes one of the two cleanup states</td>
+      <td><em>silent</em></td>
+      <td>"⧉ Worktree kept — …" recovery card (§3.4)</td>
+      <td>"✓ Worktree removed — … Nothing left behind." (§3.5)</td>
+    </tr>
+    <tr>
+      <td><strong>Dock tab badge</strong> (optional)</td>
+      <td>"●" · aria: "primary checkout"</td>
+      <td>"⧉ wt-N" · aria: "isolated worktree wt-N"</td>
+      <td>"⚠ shared" · aria: "shared folder warning"</td>
+      <td>badge persists on closed-tab list until worktree removed <span class="pill">H only</span></td>
+      <td>badge cleared</td>
+    </tr>
+    <tr>
+      <td><strong>Agent bootstrap directive</strong> (A)</td>
+      <td>"You are in the primary checkout on &lt;branch&gt;."</td>
+      <td>"You are in an isolated worktree at &lt;path&gt; on branch &lt;br&gt;. Commit here; when work is complete, push and open a PR. Do not cd into the primary checkout."</td>
+      <td>"Isolation is unavailable; another session shares this folder. Prefer read-only ops; avoid editing files another session may hold open."</td>
+      <td>"Before exiting: report kept-worktree status verbatim to the user." </td>
+      <td>—</td>
+    </tr>
+  </table>
+  <div class="card">Loading/empty/error mapping for this feature: "loading" = the instant before the banner prints (&lt;1 line of latency budget under A — the check is a stat + one git call); "empty" = primary (nothing to show is the design); "error" = degraded row; "success" = isolated + pruned rows.</div>
+
+  <h2>5 · Merge-back guidance — the right copy at the right moments (FR-7)</h2>
+  <table>
+    <tr><th>Moment</th><th>Copy (verbatim)</th><th>Why here</th></tr>
+    <tr><td>Worktree banner, line 3 (§3.2)</td><td>"When done: push this branch or open a PR."</td><td>Seed the expectation before any work exists — no surprise at exit.</td></tr>
+    <tr><td>Agent bootstrap directive (A)</td><td>"When your work is complete, push branch <code>vibe/wt-N</code> and open a PR. Never merge into or edit the primary checkout directly."</td><td>The agent is the one most likely to act; make the happy path the instructed path.</td></tr>
+    <tr><td>Session end, kept card (§3.4)</td><td>"Publish: <code>git push -u origin vibe/wt-N</code> — then open a PR"</td><td>The moment of maximum intent: work exists, session over, one copy-paste to safety.</td></tr>
+    <tr><td>Session end, commits already pushed</td><td>"✓ Branch vibe/wt-N is pushed. Open a PR when ready; then <code>git worktree remove &lt;path&gt;</code>."</td><td>Closes the loop — tells the user the worktree is now disposable.</td></tr>
+  </table>
+
+  <h2>6 · Accessibility (WCAG 2.1 AA)</h2>
+  <div class="card">
+    <ul style="margin:.2rem 0 .2rem 1.2rem; padding:0;">
+      <li><strong>Never colour alone:</strong> every status is glyph + word ("⧉ Isolated worktree", "⚠ Shared folder", "● Primary checkout", "✓ Worktree removed"). Fully legible in a monochrome terminal.</li>
+      <li><strong>Contrast:</strong> banner accents on <code>#0a0c10</code>: green <code>#4ade80</code> ≈ 10.5:1, cyan <code>#7dd3fc</code> ≈ 10.9:1, amber <code>#fbbf24</code> ≈ 10.4:1, dim text <code>#6b7484</code> ≈ 4.6:1 — all ≥ 4.5:1.</li>
+      <li><strong>Screen readers:</strong> banners are plain terminal text — read linearly in order (status → path → branch → action). No box-drawing characters in the copy itself; glyphs precede their text label so the label always disambiguates.</li>
+      <li><strong>Keyboard:</strong> dock tabs keep the existing <code>role="tab"</code> order; badges carry <code>aria-label</code> with the full status sentence (mockup in §3.6). No new focus traps; no interaction is added to the terminal stream itself.</li>
+    </ul>
+  </div>
+
+  <h2>7 · (H) vs (A) — where the experience differs</h2>
+  <table>
+    <tr><th>Aspect</th><th>(A) Agent bootstrap + heartbeat-lock <span class="pill">primary target</span></th><th>(H) Native terminal helper</th></tr>
+    <tr><td>Banner timing</td><td>Appears as the agent's first output — a beat after the shell prompt (seconds). Copy identical.</td><td>Printed by the helper <em>before</em> the shell starts — instant, guaranteed first line.</td></tr>
+    <tr><td>Concurrency detection</td><td>Heartbeat lock file. <span class="note">Stale-lock caveat:</span> a crashed session's lock past its TTL is treated as free — a session launched inside that window could wrongly claim primary. Mitigation: short TTL + the banner always tells the truth about <em>where</em> it is, so the failure is visible, not silent.</td><td>Helper holds live session state — deterministic, no stale window, clash-proof.</td></tr>
+    <tr><td>Dock tab badges (§3.6)</td><td>Best-effort self-report (relay/OSC title); may lag or stale on crash.</td><td>Helper owns tab chrome — authoritative badges, kept-worktree reminders can persist on the dock after tab close.</td></tr>
+    <tr><td>Cleanup on crash</td><td>No exit hook ran → worktree simply remains; next session start on that folder appends "1 worktree from a previous session is still around — <code>git worktree list</code>" to its banner.</td><td>Helper can detect dead sessions and show the kept/prune card retroactively.</td></tr>
+    <tr><td>Degraded (FR-8)</td><td>Agent prints §3.3 and also receives the behavioural directive (§4 row 4) — the agent adapts its own conduct.</td><td>Same §3.3 copy from the helper; agent directive still injected via prompt.</td></tr>
+    <tr><td>Ships</td><td>Now — prompt + small lock convention, testable end-to-end today.</td><td>After helper lands; all copy above ports 1:1, only the emitter moves.</td></tr>
+  </table>
+  <div class="card"><strong>Design position:</strong> every touchpoint is written to be emitter-agnostic — adopting (H) later changes <em>who prints</em> the same words, plus two upgrades (authoritative badges, crash-time cleanup cards). Nothing in (A)'s UX becomes throwaway. That makes "A now, H later" a copy-stable migration, which supports the PO's recommendation.</div>
+</main>
+</body>
+</html>
