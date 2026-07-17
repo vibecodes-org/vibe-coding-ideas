@@ -263,6 +263,36 @@ function isValidDim(n: number): boolean {
   return Number.isInteger(n) && n > 0 && n <= 1000;
 }
 
+/**
+ * The outcome of a resize attempt (fix/terminal-dock-launch-defects):
+ *
+ *   - "send"  — dims changed AND the socket is OPEN → send now, advance the dedupe key.
+ *   - "defer" — dims changed but the socket isn't OPEN yet (still CONNECTING at
+ *     launch) → the frame can't go out, so the dedupe key must NOT advance. Advancing
+ *     it here was the bug: a launch-time resize computed the real dims, stamped the
+ *     key, and dropped the frame — the PTY was then stuck at the relay's 80×24
+ *     default forever, because a later same-size send() from the SAME key would be
+ *     (wrongly) treated as a no-op dedupe.
+ *   - "skip"  — unchanged since the last SUCCESSFUL send → no-op. This preserves the
+ *     existing live-socket dedupe (ResizeObserver churn while the socket is open and
+ *     dims haven't actually changed must stay a no-op).
+ */
+export type ResizeDecision =
+  | { action: "send"; nextLastKey: string }
+  | { action: "defer" }
+  | { action: "skip" };
+
+/**
+ * Decide what to do with a computed resize `key` (`"${cols}x${rows}"`) given the
+ * last key a resize was SUCCESSFULLY sent for and whether the socket is currently
+ * OPEN. Pure so the dedupe/defer policy is unit-tested without a socket.
+ */
+export function decideResize(key: string, lastKey: string, isOpen: boolean): ResizeDecision {
+  if (key === lastKey) return { action: "skip" };
+  if (!isOpen) return { action: "defer" };
+  return { action: "send", nextLastKey: key };
+}
+
 /** Feature flag — OFF unless NEXT_PUBLIC_TERMINAL_ENABLED is exactly "true". */
 export function isTerminalEnabled(): boolean {
   return process.env.NEXT_PUBLIC_TERMINAL_ENABLED === "true";

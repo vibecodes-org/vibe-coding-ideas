@@ -15,6 +15,7 @@ import {
   shouldDeclareLinkSilent,
   buildRelayUrl,
   encodeResizeMessage,
+  decideResize,
   type TerminalConnectionState,
   type TerminalEvent,
 } from "./connection";
@@ -251,6 +252,61 @@ describe("encodeResizeMessage", () => {
     expect(encodeResizeMessage(120, -1)).toBeNull();
     expect(encodeResizeMessage(1.5, 30)).toBeNull();
     expect(encodeResizeMessage(120, 99999)).toBeNull();
+  });
+});
+
+describe("decideResize (fix/terminal-dock-launch-defects)", () => {
+  it("unchanged key → skip, regardless of socket state", () => {
+    expect(decideResize("80x24", "80x24", true)).toEqual({ action: "skip" });
+    expect(decideResize("80x24", "80x24", false)).toEqual({ action: "skip" });
+  });
+
+  it("changed key + socket open → send, carrying the new key", () => {
+    expect(decideResize("120x30", "80x24", true)).toEqual({
+      action: "send",
+      nextLastKey: "120x30",
+    });
+  });
+
+  it("changed key + socket NOT open → defer, with no nextLastKey (caller contract: the key must not advance)", () => {
+    const decision = decideResize("120x30", "80x24", false);
+    expect(decision).toEqual({ action: "defer" });
+    expect(decision).not.toHaveProperty("nextLastKey");
+  });
+
+  it("skip also carries no nextLastKey", () => {
+    const decision = decideResize("80x24", "80x24", true);
+    expect(decision).not.toHaveProperty("nextLastKey");
+  });
+
+  it("the launch sequence: defer while CONNECTING, then the SAME key resolves to send once OPEN", () => {
+    // This is the exact bug this decision function fixes: the launch-time
+    // ResizeObserver/expand-rAF compute the real dims before the socket is
+    // OPEN. The old code stamped the dedupe key on that first call regardless,
+    // so the retry on ws.onopen (same key) was wrongly treated as unchanged and
+    // never sent — the PTY stayed stuck at the relay's 80x24 default.
+    let lastKey = "";
+    const key = "137x42";
+
+    const atLaunch = decideResize(key, lastKey, false);
+    expect(atLaunch).toEqual({ action: "defer" });
+    // Caller contract: a "defer" must NOT advance the dedupe key.
+    if (atLaunch.action === "send") lastKey = atLaunch.nextLastKey;
+
+    const onOpen = decideResize(key, lastKey, true);
+    expect(onOpen).toEqual({ action: "send", nextLastKey: key });
+  });
+
+  it("a live-socket resize storm with unchanged dims stays deduped (existing behaviour preserved)", () => {
+    let lastKey = "80x24";
+    const first = decideResize("80x24", lastKey, true);
+    expect(first).toEqual({ action: "skip" });
+    // A genuinely new size still sends.
+    const second = decideResize("100x28", lastKey, true);
+    expect(second).toEqual({ action: "send", nextLastKey: "100x28" });
+    if (second.action === "send") lastKey = second.nextLastKey;
+    // And immediately repeating that size is deduped again.
+    expect(decideResize("100x28", lastKey, true)).toEqual({ action: "skip" });
   });
 });
 

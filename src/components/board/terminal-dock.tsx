@@ -61,6 +61,7 @@ import {
   LINK_SILENT_CHECK_MS,
   RECONNECT_GRACE_MS,
   buildRelayUrl,
+  decideResize,
   encodeHeartbeatFrame,
   encodeResizeMessage,
   initialConnectionState,
@@ -264,6 +265,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   pairedRef.current = paired;
   pairRef.current = pair;
 
+  // Previous connection status, updated ONLY by the first-connect focus effect
+  // below (fix/terminal-dock-launch-defects) — so it reflects status "as of the
+  // last time that effect ran" rather than every render, letting it tell a
+  // genuine first connect (prev connecting/waiting-to-pair) apart from a
+  // grace-window reattach (prev disconnected), which must NOT steal focus.
+  const prevStatusRef = useRef<TerminalStatus>(state.status);
+
   // ── lazy, client-only xterm init ────────────────────────────────────────────
   useEffect(() => {
     if (!enabled) return;
@@ -328,6 +336,15 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   }, [enabled]);
 
   // Fit + emit a resize control frame (TEXT) matching the bridge's framing.
+  //
+  // Deferred via decideResize (fix/terminal-dock-launch-defects): at launch the
+  // ResizeObserver / expand-rAF fire this while the socket is still CONNECTING
+  // (wsRef not OPEN yet). The OLD code stamped the dedupe key unconditionally
+  // before checking readyState, so that first real-dims frame was silently
+  // dropped AND the key was advanced — ws.onopen never re-sent, so the PTY stuck
+  // at the relay's 80×24 default until a manual window resize changed the dims.
+  // Now a "defer" leaves lastDimsRef untouched, so the SAME key resolves to a
+  // "send" once openBrowserLeg's ws.onopen retries (Part C below).
   const sendResize = useCallback(() => {
     const term = termRef.current;
     const fit = fitRef.current;
@@ -340,10 +357,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     const msg = encodeResizeMessage(term.cols, term.rows);
     if (!msg) return;
     const key = `${term.cols}x${term.rows}`;
-    if (key === lastDimsRef.current) return;
-    lastDimsRef.current = key;
     const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) ws.send(msg);
+    const isOpen = ws?.readyState === WebSocket.OPEN;
+    const decision = decideResize(key, lastDimsRef.current, isOpen);
+    if (decision.action !== "send") return;
+    lastDimsRef.current = decision.nextLastKey;
+    ws?.send(msg);
   }, []);
 
   // Refit on container resize and whenever the dock expands.
@@ -361,6 +380,46 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       return () => window.cancelAnimationFrame(id);
     }
   }, [expanded, sendResize]);
+
+  // ── launch focus (fix/terminal-dock-launch-defects, Defect 2) ──────────────
+  // Nothing previously called termRef.current.focus() — a freshly connected
+  // terminal never had keyboard focus, so the first keystroke was silently lost
+  // (isInputEnabled gates on state.status === "connected", but the DOM node never
+  // had focus for the browser to route the keystroke to).
+  //
+  // First-connect focus: fires only on a genuine "we just reached the bridge for
+  // the first time" transition (prior status connecting/waiting-to-pair), never on
+  // a grace-window reattach (prior status disconnected) — a user typing mid-drop
+  // must not have their cursor/scroll position hijacked by an automatic reattach.
+  useEffect(() => {
+    const prev = prevStatusRef.current;
+    if (
+      state.status === "connected" &&
+      (prev === "connecting" || prev === "waiting-to-pair") &&
+      expanded
+    ) {
+      termRef.current?.focus();
+    }
+    prevStatusRef.current = state.status;
+  }, [state.status, expanded]);
+
+  // Expand focus: a user-initiated expand of an already-live session (e.g.
+  // collapse then re-expand while connected) should also land focus in the
+  // terminal. Keyed ONLY on `expanded` (not state.status) so a background status
+  // change — e.g. a reattach completing while the dock is already expanded —
+  // never re-triggers this and steals focus; it reads the current status from
+  // closure at the moment `expanded` itself transitions.
+  useEffect(() => {
+    if (!expanded || state.status !== "connected") return;
+    // Next paint, mirroring the expand-rAF resize above — the container must be
+    // un-hidden before focus() can land.
+    const id = window.requestAnimationFrame(() => termRef.current?.focus());
+    return () => window.cancelAnimationFrame(id);
+    // Deliberately excludes state.status: see comment above (must only re-run on
+    // `expanded` transitions, not on every status change, or a background
+    // reattach while already expanded would steal focus).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [expanded]);
 
   const clearConnectTimer = useCallback(() => {
     if (connectTimerRef.current) {
@@ -575,6 +634,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       ws.onopen = () => {
         clearConnectTimer();
         dispatch({ type: "relay-open" });
+        // Retry any resize deferred while the socket was still CONNECTING (the
+        // launch-time ResizeObserver/expand-rAF fire before this). The key was
+        // never advanced on defer, so this resolves to a genuine send with the
+        // real dims. On a RECONNECT (reconnect: true) the dims are unchanged →
+        // decideResize returns "skip" here, so this never causes a resize storm.
+        sendResize();
       };
       ws.onmessage = (ev) => {
         // ANY inbound frame proves the link carried something just now — feed the
@@ -649,7 +714,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
         if (mapped.status === "disconnected") scheduleReconnectRef.current();
       };
     },
-    [teardownSocket, clearConnectTimer, clearHelperTimer, removeLaunchIframe, clearDegradeTimer],
+    [teardownSocket, clearConnectTimer, clearHelperTimer, removeLaunchIframe, clearDegradeTimer, sendResize],
   );
 
   // Drive the grace-window reconnect loop: reattach to the SAME sid with the retained
