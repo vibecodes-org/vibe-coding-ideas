@@ -307,6 +307,25 @@ export function decideResize(key: string, lastKey: string, isReachable: boolean)
   return { action: "send", nextLastKey: key };
 }
 
+/**
+ * Single-flight generation guard for `connect()` (fix/terminal-connect-single-flight,
+ * PR #88). Each `connect()` attempt claims the next generation via
+ * `claimConnectGeneration`; after any `await` (the session mint) it re-checks with
+ * `isConnectSuperseded` whether a LATER attempt has since claimed, and if so aborts
+ * BEFORE firing a second deep link / opening a second socket. Without this, two
+ * truly-concurrent attempts each mint a session + open a bridge → the relay's
+ * single-attach tears both down (the "connect fires twice" bug). Pure so the guard
+ * contract is unit-tested without a DOM/socket.
+ */
+export function claimConnectGeneration(current: number): number {
+  return current + 1;
+}
+
+/** True if `claimed` is no longer the current generation — a newer attempt superseded it. */
+export function isConnectSuperseded(claimed: number, current: number): boolean {
+  return claimed !== current;
+}
+
 /** Feature flag — OFF unless NEXT_PUBLIC_TERMINAL_ENABLED is exactly "true". */
 export function isTerminalEnabled(): boolean {
   return process.env.NEXT_PUBLIC_TERMINAL_ENABLED === "true";

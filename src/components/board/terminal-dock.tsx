@@ -61,7 +61,9 @@ import {
   LINK_SILENT_CHECK_MS,
   RECONNECT_GRACE_MS,
   buildRelayUrl,
+  claimConnectGeneration,
   decideResize,
+  isConnectSuperseded,
   encodeHeartbeatFrame,
   encodeResizeMessage,
   initialConnectionState,
@@ -842,7 +844,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   const connect = useCallback(async (options?: { autoLaunch?: boolean }) => {
     // Claim this attempt's generation. A later connect() bumps it, which makes this
     // one abort at the post-mint checkpoint below instead of racing a 2nd session.
-    const gen = ++connectGenRef.current;
+    const gen = (connectGenRef.current = claimConnectGeneration(connectGenRef.current));
     const autoLaunch = options?.autoLaunch ?? false;
     teardownSocket();
     clearHelperTimer();
@@ -866,7 +868,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       data = await res.json();
     } catch (err) {
       // Superseded while minting → let the newer attempt own the outcome.
-      if (gen !== connectGenRef.current) return;
+      if (isConnectSuperseded(gen, connectGenRef.current)) return;
       logger.error("Terminal session mint failed (client)", {
         error: err instanceof Error ? err.message : String(err),
       });
@@ -881,7 +883,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     // second deep link or opening a second socket. The newer attempt already ran
     // teardownSocket() + dispatch(connect); doing anything here would orphan a
     // bridge and trip the relay's single-attach. This is the double-connect fix.
-    if (gen !== connectGenRef.current) return;
+    if (isConnectSuperseded(gen, connectGenRef.current)) return;
 
     dispatch({ type: "session-created", sessionId: data.sessionId });
     // Retain the browser token too, so a transient drop can REATTACH to this same

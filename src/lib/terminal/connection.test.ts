@@ -16,6 +16,8 @@ import {
   buildRelayUrl,
   encodeResizeMessage,
   decideResize,
+  claimConnectGeneration,
+  isConnectSuperseded,
   type TerminalConnectionState,
   type TerminalEvent,
 } from "./connection";
@@ -427,5 +429,34 @@ describe("silent-link watchdog (fix/terminal-dock-heartbeat)", () => {
   it("the silence threshold tolerates lost acks (≥ 2 probe intervals of headroom)", () => {
     // One dropped ack must never be a false alarm; three probes fit in the window.
     expect(LINK_SILENT_AFTER_MS).toBeGreaterThanOrEqual(HEARTBEAT_INTERVAL_MS * 3);
+  });
+});
+
+describe("connect() single-flight generation guard (PR #88)", () => {
+  it("claimConnectGeneration returns the next generation", () => {
+    expect(claimConnectGeneration(0)).toBe(1);
+    expect(claimConnectGeneration(7)).toBe(8);
+  });
+
+  it("the attempt holding the current generation is NOT superseded (proceeds)", () => {
+    expect(isConnectSuperseded(1, 1)).toBe(false);
+  });
+
+  it("an earlier attempt IS superseded once a later attempt claims (aborts)", () => {
+    expect(isConnectSuperseded(1, 2)).toBe(true);
+  });
+
+  it("models two concurrent connect() attempts: the first aborts, the second proceeds", () => {
+    // Shared generation counter, exactly as connectGenRef in the component.
+    let counter = 0;
+    // Attempt A claims a generation, then awaits its session mint...
+    const aGen = (counter = claimConnectGeneration(counter)); // 1
+    // ...while attempt B (concurrent double-activation) claims the next one.
+    const bGen = (counter = claimConnectGeneration(counter)); // 2
+    // Post-mint checkpoint: A sees it was superseded and bails BEFORE opening a
+    // 2nd socket; B is still current and continues — so only one session/socket
+    // ever goes live (the "connect fires twice" fix).
+    expect(isConnectSuperseded(aGen, counter)).toBe(true);
+    expect(isConnectSuperseded(bGen, counter)).toBe(false);
   });
 });
