@@ -14,15 +14,17 @@ import {
 import { usePostHog } from "posthog-js/react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import {
-  type CompactPromptParts,
+  type CompactPromptEssentials,
   type LaunchMode,
   type LaunchPathState,
   type RecordedProjectPath,
+  MAX_DEEP_LINK_URL_LENGTH,
+  buildBoundedDeepLink,
   buildClaudeDeepLink,
   buildLaunchCommand,
   buildBoardBootstrapPrompt,
   buildTaskBootstrapPrompt,
-  buildCompactBootstrapPromptParts,
+  buildCompactPromptEssentials,
   readLaunchPath,
   resolveAppUrl,
   resolveDefaultLaunchState,
@@ -138,14 +140,10 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     [props, ideaId, ideaTitle, ideaGithubUrl]
   );
 
-  // Compact variant for URL-limited launches — the claude-cli:// deep link and
-  // the in-browser terminal's vibecodes:// launch both have OS URL ceilings and
-  // an over-long URL silently fails to launch. Built as head/tail PARTS so the
-  // in-browser path can budget-truncate the tail (the dock alone knows its
-  // session/token overhead); the deep-link path joins them. ONE builder, so the
-  // two launch destinations carry a byte-identical prompt for the same state.
-  const buildCompactParts = useCallback(
-    (state: LaunchPathState): CompactPromptParts => {
+  // Shared derivation of the compact builders' newProject/existingPath args
+  // from a LaunchPathState — feeds buildCompactEssentials below.
+  const compactDirArgsFor = useCallback(
+    (state: LaunchPathState) => {
       const newProject =
         state.mode === "new" ? { newProjectPath: state.path } : undefined;
       // Existing-mode absolute path (recorded/pinned) → the prompt's verify-folder
@@ -153,7 +151,28 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       // to existing mode, so this carries that path into the compact prompt.
       const existingPath =
         state.mode === "existing" && state.path.trim() ? state.path.trim() : undefined;
-      return buildCompactBootstrapPromptParts({
+      return { newProject, existingPath };
+    },
+    []
+  );
+
+  // Compact variant for URL-limited launches — the claude-cli:// deep link and
+  // the in-browser terminal's vibecodes:// launch both have OS URL ceilings and
+  // an over-long URL silently fails to launch. BUG1 fix (and, this cycle, BUG5
+  // follow-through): NEITHER destination can use the unconditional
+  // buildCompactBootstrapPromptParts (which bakes the worktree-isolation
+  // protocol into a never-trimmed head) — the protocol is best-effort against
+  // each destination's OWN URL budget. Essentials-only (path-length-
+  // independent head/tail) + the protocol candidate kept separate, so both
+  // openInClaudeCode AND the in-browser launch (via the bus payload — see
+  // handleLaunchInBrowser below) decide inclusion against their actual budget
+  // via fitCompactWorktreeProtocol (never overflow, never half-truncate). ONE
+  // builder, so every launch destination carries a byte-identical essentials
+  // set for the same state.
+  const buildCompactEssentials = useCallback(
+    (state: LaunchPathState): CompactPromptEssentials => {
+      const { newProject, existingPath } = compactDirArgsFor(state);
+      return buildCompactPromptEssentials({
         appUrl: APP_URL,
         ideaId,
         ideaTitle,
@@ -164,15 +183,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         taskId: props.variant === "board" ? undefined : props.taskId,
       });
     },
-    [props, ideaId, ideaTitle, ideaGithubUrl]
-  );
-
-  const buildDeepLinkPrompt = useCallback(
-    (state: LaunchPathState): string => {
-      const { head, tail } = buildCompactParts(state);
-      return head + tail;
-    },
-    [buildCompactParts]
+    [props, ideaId, ideaTitle, ideaGithubUrl, compactDirArgsFor]
   );
 
   const posthog = usePostHog();
@@ -213,7 +224,6 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         has_repo: !!ideaGithubUrl,
       });
 
-      const prompt = buildDeepLinkPrompt(state);
       // cwd resolution — the SHARED rule (resolveLaunchCwd): pinned existing path
       // → that path; new (no-repo) mode → the effective target's cwd (the saved
       // path or the agent-recorded path for THIS machine — the SAME value the
@@ -222,11 +232,37 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       // undefined for repo ideas). The in-browser launch payload uses the same
       // rule, so both destinations open in the same folder.
       const cwd = resolveLaunchCwd(state, effectiveTarget.cwd);
-      const link = buildClaudeDeepLink({
-        prompt,
+      const repo = ideaGithubUrl ?? undefined;
+
+      // Budget the prompt against the claude-cli:// URL ceiling via
+      // buildBoundedDeepLink (FIX A, QA BUG A): it keeps the essentials
+      // path-length-independent and folds the worktree protocol in ONLY when
+      // it fits the remaining budget (BUG1) — and, new this cycle, it also
+      // guarantees the FIRED url is never over-cap even when `cwd` ITSELF
+      // (not just the prompt) is long enough to blow the cap alone: it
+      // degrades by dropping the `cwd=` param and folding a `cd '<path>'`
+      // line into the prompt instead, falling all the way back to a
+      // directory-less launch (or, in the extraordinarily unlikely case even
+      // that can't fit, no launch at all — see the toast below) rather than
+      // ever firing an over-cap URL Chromium would silently no-op.
+      const essentials = buildCompactEssentials(state);
+      const result = buildBoundedDeepLink({
+        essentials,
         cwd,
-        repo: ideaGithubUrl ?? undefined,
+        cap: MAX_DEEP_LINK_URL_LENGTH,
+        buildLink: ({ prompt, cwd: linkCwd }) => buildClaudeDeepLink({ prompt, cwd: linkCwd, repo }),
       });
+      if (!result.ok) {
+        launchingRef.current = false;
+        posthog?.capture("launch_claude_code_fallback", {
+          reason: "path_too_long",
+          mode: state.mode,
+          has_repo: !!ideaGithubUrl,
+        });
+        toast.error("Project path too long to launch — open the folder manually and run Claude Code there");
+        return;
+      }
+      const link = result.url;
 
       let handled = false;
       const markHandled = () => {
@@ -284,7 +320,7 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
         });
       }, SCHEME_RACE_MS);
     },
-    [buildDeepLinkPrompt, ideaGithubUrl, effectiveTarget.cwd, copyCommand, posthog]
+    [buildCompactEssentials, ideaGithubUrl, effectiveTarget.cwd, copyCommand, posthog]
   );
 
   // Primary action: always launch. No path needed — repo-backed ideas resolve via
@@ -306,19 +342,22 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   const browserLaunchAvailable = isBrowserLaunchAvailable(isTerminalEnabled());
   const handleLaunchInBrowser = useCallback(() => {
     posthog?.capture("launch_claude_code_clicked", { method: "in_browser" });
-    // Carry the SAME compact bootstrap prompt AND cwd the terminal-window deep
-    // link would use for this state (bootstrap-prompt + folder parity). Prompt is
-    // sent as head/tail parts so the dock can enforce its vibecodes:// URL budget
-    // without re-splitting; cwd rides the payload so a pinned/recorded existing
-    // folder is honoured in the browser too.
+    // Carry the SAME compact bootstrap ESSENTIALS AND cwd the terminal-window
+    // deep link would use for this state (bootstrap-prompt + folder parity).
+    // BUG5 follow-through (4th rework cycle): sent as essentials (not the
+    // unconditional head/tail parts) so the dock can hand off to
+    // fitCompactWorktreeProtocol against its OWN vibecodes:// URL budget,
+    // exactly like openInClaudeCode does for the claude-cli:// deep link —
+    // the worktree-isolation protocol degrades cleanly (atomic omit) instead
+    // of being baked into a never-trimmed head. cwd rides the payload so a
+    // pinned/recorded existing folder is honoured in the browser too.
     const state = resolveState();
-    const { head, tail } = buildCompactParts(state);
+    const essentials = buildCompactEssentials(state);
     requestBrowserLaunch({
-      promptHead: head,
-      promptTail: tail,
+      essentials,
       cwd: resolveLaunchCwd(state, effectiveTarget.cwd),
     });
-  }, [posthog, buildCompactParts, resolveState, effectiveTarget.cwd]);
+  }, [posthog, buildCompactEssentials, resolveState, effectiveTarget.cwd]);
 
   const openDialog = useCallback((mode: LaunchMode, launch: boolean) => {
     setPendingLaunch(launch);

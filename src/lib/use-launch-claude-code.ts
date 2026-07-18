@@ -5,10 +5,12 @@ import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
   type LaunchMode,
+  MAX_DEEP_LINK_URL_LENGTH,
   buildClaudeDeepLink,
   buildBoardBootstrapPrompt,
-  buildCompactBootstrapPrompt,
+  buildCompactPromptEssentials,
   buildLaunchCommand,
+  fitCompactWorktreeProtocol,
 } from "@/lib/launch-claude-code";
 import { logger } from "@/lib/logger";
 
@@ -99,19 +101,26 @@ export function useLaunchClaudeCode({
 
     // Deep link uses the COMPACT prompt — the claude-cli:// URL has an OS length
     // ceiling and over-long URLs silently fail to launch. (The copy-command
-    // fallback keeps the verbose prompt; a shell arg has no such limit.)
+    // fallback keeps the verbose prompt; a shell arg has no such limit.) Built
+    // as essentials (BUG1 fix — path-length-independent head, worktree
+    // protocol kept separate) so fitCompactWorktreeProtocol can decide
+    // whether the protocol fits the budget — the same shared helper
+    // launch-claude-code-button's openInClaudeCode uses, rather than sending
+    // an untruncated prompt that can push the URL past the OS ceiling for a
+    // real title/path.
     const mode: LaunchMode = ideaGithubUrl ? "existing" : "new";
-    const prompt = buildCompactBootstrapPrompt({
+    const repo = ideaGithubUrl ?? undefined;
+    const essentials = buildCompactPromptEssentials({
       appUrl: APP_URL,
       ideaId,
       ideaTitle,
       mode,
       repoUrl: ideaGithubUrl,
     });
-    const link = buildClaudeDeepLink({
-      prompt,
-      repo: ideaGithubUrl ?? undefined,
-    });
+    const base = buildClaudeDeepLink({ prompt: "", repo });
+    const budget = MAX_DEEP_LINK_URL_LENGTH - base.length;
+    const prompt = fitCompactWorktreeProtocol(essentials, budget);
+    const link = buildClaudeDeepLink({ prompt, repo });
 
     let handled = false;
     const markHandled = () => {

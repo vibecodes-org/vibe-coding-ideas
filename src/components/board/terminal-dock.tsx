@@ -86,8 +86,8 @@ import {
 } from "@/lib/terminal/deep-link";
 import { type BrowserLaunchPayload, subscribeBrowserLaunch } from "@/lib/terminal/launch-mode";
 import {
-  buildCompactBootstrapPromptParts,
-  enforcePromptLength,
+  buildBoundedDeepLink,
+  buildCompactPromptEssentials,
   resolveAppUrl,
   resolveDefaultLaunchState,
   resolveLaunchCwd,
@@ -124,7 +124,7 @@ interface TerminalDockProps {
    * The idea's GitHub URL (or null). Needed so dock-initiated launches — paired
    * auto-connect and Retry, which never pass through the launch button — can
    * build the SAME board-level compact bootstrap prompt the button would
-   * (shared resolveDefaultLaunchState + buildCompactBootstrapPromptParts).
+   * (shared resolveDefaultLaunchState + buildCompactPromptEssentials).
    */
   ideaGithubUrl: string | null;
 }
@@ -250,11 +250,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   // openBrowserLeg when a fresh socket is opened.
   const lastInboundAtRef = useRef(0);
   const hbArmedRef = useRef(false);
-  // The compact bootstrap prompt (head/tail parts) the LAST launch-bus event
-  // carried — i.e. what the launch button resolved. Dock-initiated launches with
-  // no bus payload (paired auto-connect on open, Retry) fall back to building the
-  // board-level prompt themselves via the same shared builder (see
-  // resolveLaunchPromptParts), so every launch is primed.
+  // The compact bootstrap prompt ESSENTIALS (BUG5 follow-through, 4th rework
+  // cycle) the LAST launch-bus event carried — i.e. what the launch button
+  // resolved. Dock-initiated launches with no bus payload (paired auto-connect
+  // on open, Retry) fall back to building the board-level essentials themselves
+  // via the same shared builder (see resolveLaunchPromptParts), so every launch
+  // is primed.
   const promptPartsRef = useRef<BrowserLaunchPayload | null>(null);
 
   // Mirror live state into refs so the stable xterm onData handler + socket handlers
@@ -473,21 +474,26 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     if (frame && frame.parentNode) frame.parentNode.removeChild(frame);
   }, []);
 
-  // The compact bootstrap prompt + cwd for THIS launch: the payload the launch
-  // button put on the bus (its exact resolved state — task- or board-level) or,
-  // for dock-initiated launches (paired auto-connect / Retry), the board-level
-  // prompt built here from the SAME shared state resolver + builder the button
-  // uses — so the in-browser prompt is byte-identical to the terminal-window deep
-  // link's for the same state, and never duplicated. The fallback's cwd uses the
-  // same shared rule (resolveLaunchCwd); the dock has no recordedProjectPaths, so
-  // it passes no effective cwd — a pinned existing-mode folder still resolves
-  // (rule 1), while the recorded-path injection only flows through the button
-  // payload, exactly as the terminal-window default path would behave.
+  // The compact bootstrap prompt ESSENTIALS + cwd for THIS launch: the payload
+  // the launch button put on the bus (its exact resolved state — task- or
+  // board-level) or, for dock-initiated launches (paired auto-connect / Retry),
+  // the board-level essentials built here from the SAME shared state resolver +
+  // builder the button uses — so the in-browser prompt is byte-identical to the
+  // terminal-window deep link's for the same state, and never duplicated. BUG5
+  // follow-through (4th rework cycle): built as ESSENTIALS (buildCompactPromptEssentials),
+  // not the unconditional buildCompactBootstrapPromptParts this used to call —
+  // that builder bakes the worktree-isolation protocol into a never-trimmed
+  // head, so fireLaunchDeepLink's own budget clamp had no clean way to drop it
+  // on overflow. The fallback's cwd uses the same shared rule (resolveLaunchCwd);
+  // the dock has no recordedProjectPaths, so it passes no effective cwd — a
+  // pinned existing-mode folder still resolves (rule 1), while the
+  // recorded-path injection only flows through the button payload, exactly as
+  // the terminal-window default path would behave.
   const resolveLaunchPromptParts = useCallback((): BrowserLaunchPayload => {
     const carried = promptPartsRef.current;
     if (carried) return carried;
     const state = resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl);
-    const { head, tail } = buildCompactBootstrapPromptParts({
+    const essentials = buildCompactPromptEssentials({
       appUrl: resolveAppUrl(),
       ideaId,
       ideaTitle,
@@ -500,7 +506,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       existingPath:
         state.mode === "existing" && state.path.trim() ? state.path.trim() : undefined,
     });
-    return { promptHead: head, promptTail: tail, cwd: resolveLaunchCwd(state, undefined) };
+    return { essentials, cwd: resolveLaunchCwd(state, undefined) };
   }, [ideaId, ideaTitle, ideaGithubUrl]);
 
   // Fire the signed vibecodes:// deep link so a same-machine helper attaches as the
@@ -521,32 +527,49 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   const fireLaunchDeepLink = useCallback(
     (sessionId: string, bridgeToken: string) => {
       let link: string;
-      let promptChars = 0;
+      let urlChars = 0;
       let hasCwd = false;
+      let droppedCwd = false;
       try {
-        const { promptHead, promptTail, cwd } = resolveLaunchPromptParts();
+        const { essentials, cwd } = resolveLaunchPromptParts();
         hasCwd = !!cwd;
-        // Budget the prompt against the vibecodes:// URL ceiling: everything the
-        // base link needs (relay/session/token, and the cwd when present) is
-        // spent first, the prompt gets the rest. enforcePromptLength trims only
-        // the work-step tail and always keeps the MCP-setup head (+ the
-        // …(truncated) marker on overflow).
-        const base = buildLaunchDeepLink({
-          relay: relayBaseUrl(),
-          session: sessionId,
-          token: bridgeToken,
+        // Budget the prompt against the vibecodes:// URL ceiling via
+        // buildBoundedDeepLink (FIX A, QA BUG A) — the SAME shared helper the
+        // claude-cli:// deep link uses. BUG5 follow-through (4th rework
+        // cycle): it routes through fitCompactWorktreeProtocol so the
+        // worktree-isolation protocol rides the head only when it fits whole
+        // (never a half-truncated fragment, essentials always prioritised
+        // over the best-effort protocol). New this cycle: it ALSO guarantees
+        // the fired URL is never over-cap when `cwd` ITSELF (not just the
+        // prompt) is long enough to blow the cap alone — the vibecodes://
+        // `prompt=` param key is only present once the prompt is non-empty,
+        // so `promptKeyOverhead` reserves room for it up front (mirrors the
+        // manual `- "&prompt=".length` this replaces).
+        const result = buildBoundedDeepLink({
+          essentials,
           cwd,
+          cap: MAX_LAUNCH_URL_LENGTH,
+          promptKeyOverhead: "&prompt=".length,
+          buildLink: ({ prompt, cwd: linkCwd }) =>
+            buildLaunchDeepLink({
+              relay: relayBaseUrl(),
+              session: sessionId,
+              token: bridgeToken,
+              cwd: linkCwd,
+              prompt,
+            }),
         });
-        const budget = MAX_LAUNCH_URL_LENGTH - base.length - "&prompt=".length;
-        const prompt = enforcePromptLength(promptHead, promptTail, budget);
-        promptChars = prompt.length;
-        link = buildLaunchDeepLink({
-          relay: relayBaseUrl(),
-          session: sessionId,
-          token: bridgeToken,
-          cwd,
-          prompt,
-        });
+        if (!result.ok) {
+          logger.error("Terminal deep-link build failed", {
+            reason: "path_too_long",
+          });
+          toast.error("Project path too long to launch — open the folder manually and run Claude Code there");
+          setLaunchPhase("helper-timeout");
+          return;
+        }
+        link = result.url;
+        droppedCwd = result.droppedCwd;
+        urlChars = link.length;
       } catch (err) {
         logger.error("Terminal deep-link build failed", {
           error: err instanceof Error ? err.message : String(err),
@@ -560,8 +583,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       logger.info("Terminal firing launch deep link", {
         sessionId,
         url: redactDeepLinkToken(link).replace(/([?&]cwd=)[^&]*/g, "$1***"),
-        promptChars,
+        urlChars,
         hasCwd,
+        droppedCwd,
       });
       setLaunchPhase("opening");
 

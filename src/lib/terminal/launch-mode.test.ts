@@ -24,12 +24,11 @@ describe("launchModeOptions", () => {
 });
 
 describe("launch bus payload (bootstrap-prompt transport)", () => {
-  it("delivers the compact-prompt parts AND the launch cwd from the button to the dock", () => {
+  it("delivers the compact-prompt essentials AND the launch cwd from the button to the dock", () => {
     const handler = vi.fn<(payload?: BrowserLaunchPayload) => void>();
     const unsubscribe = subscribeBrowserLaunch(handler);
     const payload: BrowserLaunchPayload = {
-      promptHead: "Set up VibeCodes…\n\n1. connect\n",
-      promptTail: "2. work the task",
+      essentials: { head: "Set up VibeCodes…\n\n1. connect\n", tail: "2. work the task" },
       cwd: "/Users/me/projects/my-idea",
     };
     requestBrowserLaunch(payload);
@@ -38,11 +37,23 @@ describe("launch bus payload (bootstrap-prompt transport)", () => {
     unsubscribe();
   });
 
+  it("the essentials' protocol candidate rides the payload too (BUG5 follow-through — atomic omit on the browser launch)", () => {
+    const handler = vi.fn<(payload?: BrowserLaunchPayload) => void>();
+    const unsubscribe = subscribeBrowserLaunch(handler);
+    const payload: BrowserLaunchPayload = {
+      essentials: { head: "h", tail: "t", protocol: "WORKTREE_PROTOCOL" },
+      cwd: "/Users/me/projects/my-idea",
+    };
+    requestBrowserLaunch(payload);
+    expect(handler.mock.calls[0][0]?.essentials.protocol).toBe("WORKTREE_PROTOCOL");
+    unsubscribe();
+  });
+
   it("cwd is optional — a payload without one arrives without one", () => {
     const handler = vi.fn<(payload?: BrowserLaunchPayload) => void>();
     const unsubscribe = subscribeBrowserLaunch(handler);
-    requestBrowserLaunch({ promptHead: "h", promptTail: "t" });
-    expect(handler).toHaveBeenCalledWith({ promptHead: "h", promptTail: "t" });
+    requestBrowserLaunch({ essentials: { head: "h", tail: "t" } });
+    expect(handler).toHaveBeenCalledWith({ essentials: { head: "h", tail: "t" } });
     expect(handler.mock.calls[0][0]?.cwd).toBeUndefined();
     unsubscribe();
   });
@@ -60,7 +71,7 @@ describe("launch bus payload (bootstrap-prompt transport)", () => {
     const handler = vi.fn();
     const unsubscribe = subscribeBrowserLaunch(handler);
     unsubscribe();
-    requestBrowserLaunch({ promptHead: "h", promptTail: "t" });
+    requestBrowserLaunch({ essentials: { head: "h", tail: "t" } });
     expect(handler).not.toHaveBeenCalled();
   });
 });

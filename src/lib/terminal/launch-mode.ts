@@ -6,6 +6,8 @@
 // ask the board's terminal dock (a separate, page-level component) to open in the
 // browser. Keeping the selection logic pure makes it unit-testable without React.
 
+import type { CompactPromptEssentials } from "@/lib/launch-claude-code";
+
 /** The two destinations Claude can run in. "terminal-window" = today's behaviour. */
 export type LaunchTarget = "terminal-window" | "browser";
 
@@ -37,16 +39,23 @@ export function isBrowserLaunchAvailable(terminalEnabled: boolean): boolean {
 const LAUNCH_EVENT = "vibecodes:terminal-browser-launch";
 
 /**
- * The compact bootstrap prompt the launch button resolved for this launch,
- * split head/tail (buildCompactBootstrapPromptParts) so the dock — which alone
- * knows the final vibecodes:// URL's session/token overhead — can budget-truncate
- * the tail with enforcePromptLength while the load-bearing head survives.
- * Carrying the PARTS (not a joined string) keeps that truncation on the one
- * shared implementation instead of re-splitting a built prompt.
+ * The compact bootstrap prompt the launch button resolved for this launch, as
+ * ESSENTIALS (buildCompactPromptEssentials — BUG 5 follow-through, 4th rework
+ * cycle) rather than the unconditional head/tail parts
+ * (buildCompactBootstrapPromptParts) this payload used to carry: the
+ * unconditional builder bakes the worktree-isolation protocol into the
+ * never-trimmed head whenever it's in scope, so a long cwd could push the
+ * vibecodes:// URL over its budget with no clean way to drop the protocol
+ * afterwards (the dock's bare enforcePromptLength clamp had already baked it
+ * in). Carrying the essentials (path-length-independent head + trimmable tail
+ * + the protocol candidate kept SEPARATE) lets the dock — which alone knows
+ * the final URL's session/token overhead — hand off to
+ * fitCompactWorktreeProtocol, the SAME atomic protocol-omit helper the
+ * claude-cli:// deep link uses, so the two launch destinations degrade
+ * identically (never overflow, never a half-truncated protocol fragment).
  */
 export interface BrowserLaunchPayload {
-  promptHead: string;
-  promptTail: string;
+  essentials: CompactPromptEssentials;
   /**
    * The working directory the launch should open in — resolved by the button
    * with the SAME rule the claude-cli:// path uses (resolveLaunchCwd over the

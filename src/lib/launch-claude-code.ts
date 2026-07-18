@@ -85,14 +85,42 @@ function encodedLength(s: string): number {
 }
 
 /**
+ * The trailing marker enforcePromptLength appends whenever it trims anything
+ * (head OR tail). Hoisted to a module constant (was a local inside
+ * enforcePromptLength) so fitEssentialHead (BUG B fix, below) can reserve the
+ * same amount of budget headroom for it — guaranteeing its own atomic head
+ * never needs a SECOND, char-level trim pass once enforcePromptLength sees it.
+ */
+const TRUNCATION_MARKER = "\n…(truncated)";
+
+/**
  * Enforce a cap on the URL-ENCODED prompt (acceptance criterion #6). The
  * MCP-setup `head` is load-bearing (without it the agent can't connect), so it
- * is ALWAYS preserved verbatim — we trim only the variable `tail` until
- * `encodeURIComponent(head + tail).length <= cap`.
+ * is preserved verbatim whenever possible — we trim only the variable `tail`
+ * until `encodeURIComponent(head + tail).length <= cap`.
  *
  * `head` must already contain whatever joins it to the tail (e.g. a trailing
- * newline); `tail` is appended as-is. If the head alone exceeds the cap we keep
- * the whole head (correctness of the bootstrap beats the cap; an extreme edge).
+ * newline); `tail` is appended as-is.
+ *
+ * BUG 6 (root cause, 4th rework cycle): a function named `enforcePromptLength`
+ * MUST guarantee `encodeURIComponent(return).length <= cap` in ALL cases. The
+ * prior implementation broke that guarantee two ways: (1) the "never sacrifice
+ * the head" branch returned `head` VERBATIM once `encodedLength(head) >= cap`,
+ * without ever trimming it back under the cap; (2) the tail binary search's
+ * floor (`lo = 0`) returned `head + ellipsis` unconditionally, never checking
+ * that `head + ellipsis` itself actually fits `cap` — so a head that was just
+ * UNDER the cap alone could still tip over once the ellipsis marker was added.
+ * Both let an over-cap string escape this function.
+ *
+ * Fix: whenever `head + ellipsis` alone doesn't fit `cap`, trim the HEAD too —
+ * the largest prefix of `head` whose encoded `(prefix + ellipsis)` fits `cap`,
+ * via the same monotonic binary search used for the tail. Only once
+ * `head + ellipsis` is confirmed to fit on its own do we fall through to the
+ * normal tail-trim path, where `lo = 0` (tail fully dropped) is now guaranteed
+ * to be a valid floor. Real heads (~1k chars) sit far under any realistic cap
+ * (>=1900 for the deep link, 5000 for the copy-command prompt, or a computed
+ * URL budget in between), so the head-trim branch is a no-op for every
+ * non-pathological caller — this only changes the pathological floor case.
  *
  * `cap` defaults to the claude-cli:// deep-link budget; the in-browser terminal
  * launch passes its own per-launch budget (the vibecodes:// URL ceiling minus
@@ -106,12 +134,33 @@ export function enforcePromptLength(
   const full = head + tail;
   if (encodedLength(full) <= cap) return full;
 
-  // Never sacrifice the head, even if it alone overflows the cap.
-  if (encodedLength(head) >= cap) return head;
+  const ellipsis = TRUNCATION_MARKER;
 
-  const ellipsis = "\n…(truncated)";
+  // Pathological: even `head + ellipsis` alone doesn't fit `cap` (whether
+  // because the head alone already exceeds it, or because adding the
+  // ellipsis marker tips an otherwise-fitting head over). Trimming the tail
+  // (below) can never rescue this — the tail can shrink to nothing and the
+  // marker is still there — so trim the HEAD too: the largest prefix whose
+  // encoded `(prefix + ellipsis)` fits `cap`.
+  if (encodedLength(head + ellipsis) > cap) {
+    let lo = 0;
+    let hi = head.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      const candidate = head.slice(0, mid) + ellipsis;
+      if (encodedLength(candidate) <= cap) {
+        lo = mid;
+      } else {
+        hi = mid - 1;
+      }
+    }
+    return head.slice(0, lo) + ellipsis;
+  }
+
   // Largest tail length whose encoded (head + tail + ellipsis) fits. Binary
-  // search on the raw tail length — encodedLength is monotonic in it.
+  // search on the raw tail length — encodedLength is monotonic in it. The
+  // branch above guarantees `head + ellipsis` alone already fits `cap` before
+  // we get here, so lo=0 (tail fully dropped) is always a valid floor.
   let lo = 0;
   let hi = tail.length;
   while (lo < hi) {
@@ -383,6 +432,81 @@ Do NOT debug or reconfigure other MCP servers, and do NOT improvise the OAuth fl
 }
 
 /**
+ * Concurrent-terminal auto-worktree isolation — the agent-side protocol a
+ * launched local session runs at startup, BEFORE reading the board or picking
+ * up any task. Builds on:
+ *  - Requirements (ProdOwner): Scope C, auto-isolate each additional concurrent
+ *    session into its own `git worktree`; first session unchanged (FR-1);
+ *    dirty/unpushed worktrees are never deleted (FR-6); degrade, never block
+ *    (FR-8).
+ *  - UX Design (Compass, docs/concurrent-terminal-worktrees-design.html §3):
+ *    the exact banner copy/glyphs below (● Primary checkout / ⧉ Isolated
+ *    worktree / ⚠ Shared folder / ✓ Worktree removed).
+ *  - Design Review (Nick, BINDING): mechanism (A) agent-side; worktree home
+ *    sibling `<repo>.vibe/wt-N` on branch `vibe/wt-N`; PID-liveness lock
+ *    (`kill -0`, not a heartbeat TTL); the lock lives OUTSIDE the repo at
+ *    `~/.vibecodes/locks/<hash-of-abs-path>` so it never pollutes `git
+ *    status`; lock content is THIS session's PID + the absolute path (so a
+ *    recycled PID for a different process/path reads as stale); leftover
+ *    worktrees are reconciled (clean ones auto-pruned, dirty/unpushed always
+ *    kept) on the NEXT primary-claiming launch, since agents rarely fire exit
+ *    hooks; a worktree session must never push to or merge the primary
+ *    branch — only `vibe/wt-N`.
+ *
+ * Only used for existing-mode/no-repo launches (see directoryBlock and
+ * buildCompactBootstrapPromptParts) — a repo-backed idea resolves its working
+ * copy via the deep link's `repo` slug and is out of scope for this protocol.
+ *
+ * `variant: "compact"` returns a terse, budget-conscious rewrite of the same
+ * steps for the URL-capped deep-link / in-browser-terminal prompt (see
+ * MAX_DEEP_LINK_URL_LENGTH / MAX_LAUNCH_URL_LENGTH) — the full numbered
+ * version below would blow those OS ceilings. Both variants keep every
+ * load-bearing mechanic (lock path, `kill -0`, sibling + branch naming, the
+ * never-push-primary directive, reconcile/auto-prune, degrade-don't-block);
+ * the compact one drops only the prose explanations and the recovery-card
+ * formatting.
+ */
+export function buildWorktreeIsolationProtocol(variant: "full" | "compact" = "full"): string {
+  if (variant === "compact") {
+    return `Not a git repo? Skip, warn shared folder, continue. LOCK=~/.vibecodes/locks/<pwd-hash>; kill -0 PID AND path==$PWD -> lowest free N, worktree add ../<repo>.vibe/wt-N -b vibe/wt-N, never push primary, only wt-N. Else: dirty=git status --porcelain nonempty; unpushed=git log @{u}.. nonempty or no @{u}+commits; prune only if clean+pushed; else keep dirty/unpushed, never git worktree remove --force during auto-prune (even on retry), claim here.`;
+  }
+
+  return `WORKTREE ISOLATION - run before any board work.
+
+0. Not a git repo? Print, stay here:
+     ⚠ Shared folder - isolation unavailable (not a git repository)
+       Concurrent edits may clash. Continuing anyway.
+
+1. LOCK=~/.vibecodes/locks/$(printf '%s' "$PWD"|shasum -a 256|cut -c1-16)
+
+2. Live PID in $LOCK (kill -0) AND its recorded path == $PWD -> step 3 (a
+   recycled PID for a different process/path is NOT live — treat as stale).
+   Else stale -> step 4; overwrite.
+
+3. ISOLATE: REPO=$(basename "$(git rev-parse --show-toplevel)"); pick the
+   LOWEST FREE N (../$REPO.vibe/wt-1, wt-2, … — the first that doesn't already
+   exist, so a bare wt-N never collides with a kept dirty worktree); git
+   worktree add ../$REPO.vibe/wt-N -b vibe/wt-N. Fails: warn, stay. Else: cd in,
+   relock, print:
+     ⧉ Isolated worktree - <path> - branch vibe/wt-N
+   Push only vibe/wt-N when done; never the primary branch.
+
+4. CLAIM PRIMARY: for each leftover ../<repo>.vibe/wt-*, check dirty
+   (\`git status --porcelain\` non-empty) and unpushed (git log @{u}..
+   --oneline non-empty, or no @{u} with commits ahead of primary). Clean AND
+   fully pushed -> prune, print "✓ Worktree removed"; else keep dirty/unpushed
+   (never delete), print:
+     ⧉ Worktree kept - <path>, branch vibe/wt-N
+       Resume cd <path>; publish git push -u origin vibe/wt-N + PR; discard
+       git worktree remove <path> --force.
+   Never run \`git worktree remove --force\` during auto-prune (even on retry)
+   — dirty/unpushed always means KEEP; --force above is for a HUMAN's
+   deliberate discard only.
+   Write the lock, print:
+     ● Primary checkout - <path> - branch <branch> - only session on this folder`;
+}
+
+/**
  * The create-new (no-repo / repo-into-new-folder) bootstrap steps. Idempotent
  * intent. Numbered to follow the MCP-setup head (step 1), so it reads as one
  * sequence. Order is load-bearing: cd/create FIRST → pwd → record_project_path
@@ -439,8 +563,13 @@ export function slugifyIdeaTitle(title: string): string {
  * The directory-resolution block. The browser never supplies an absolute path;
  * the launched (local) Claude Code resolves WHERE to work:
  *  - new mode → mkdir the suggested folder, then clone/init (handled by the agent);
- *  - existing mode WITH a repo → open the local clone, or clone it if missing;
- *  - existing mode WITHOUT a repo → nothing here (rely on the deep link's cwd, if any).
+ *  - existing mode WITH a repo → open the local clone, or clone it if missing
+ *    (repo-backed; OUT OF SCOPE for worktree isolation — the repo slug already
+ *    resolves the folder deterministically, no concurrent-terminal ambiguity);
+ *  - existing mode WITHOUT a repo → rely on the deep link's cwd, if any, and run
+ *    the worktree-isolation protocol (buildWorktreeIsolationProtocol) — this is
+ *    the "launches that inject a cwd" case the concurrent-terminal design
+ *    targets: a real local shell about to sit in a possibly-shared folder.
  * Home-relative (`~/…`) suggestions are fine — the agent expands them in the shell.
  */
 function directoryBlock({
@@ -458,6 +587,13 @@ function directoryBlock({
   • If you already have it cloned locally, cd into that working copy.
   • If not, clone it first (suggested location ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}):
      git clone https://github.com/${repo}.git ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}`;
+  }
+  // Worktree isolation is scoped to existing-mode/no-repo only (the deep
+  // link's cwd, if any). A "new" mode call that reaches here (e.g. a caller
+  // that never supplied `newProject`) falls back to the prior no-op — it's
+  // about to create a brand-new folder, not sit in a possibly-shared one.
+  if (mode === "existing") {
+    return buildWorktreeIsolationProtocol();
   }
   return "";
 }
@@ -554,15 +690,44 @@ export interface CompactPromptParts {
 }
 
 /**
- * COMPACT bootstrap prompt, as head/tail parts — the SINGLE source of the
- * compact prompt's content. See buildCompactBootstrapPrompt for the semantics;
- * this variant exists so URL-budgeted launch paths can truncate the tail with
- * enforcePromptLength while the head (title header + dir + MCP connect +
- * record_project_path steps) survives verbatim. The task/idea ids live in the
- * TAIL's work step; on (rare) truncation the agent recovers them from the board
- * over MCP — the head's connect step is what makes that possible.
+ * The raw ingredients of the compact prompt, shared by BOTH
+ * buildCompactBootstrapPromptParts (unconditional — always folds the worktree
+ * protocol in when in scope; used by the no-budget/content-inspection builder
+ * and by callers with no URL ceiling of their own) and
+ * buildCompactPromptEssentials (BUG1 fix — keeps the raw-cwd echo AND the
+ * protocol OUT of the protected head so a URL-capped caller can decide
+ * inclusion against its own budget). Single source of the step text so the
+ * two builders can never drift apart.
  */
-export function buildCompactBootstrapPromptParts({
+interface CompactStepPieces {
+  header: string;
+  /** Directory-create/clone step for newProject/repo modes. Doesn't duplicate
+   * the deep-link's cwd param (new-project/repo launches don't carry one the
+   * same way existing-mode does), so it's fine to leave in the protected head
+   * — out of BUG1's scope. Empty for existingPath / first-launch (no step). */
+  leadingSteps: string[];
+  /**
+   * Existing-mode/no-repo only: echoes the raw cwd. This DUPLICATES the deep
+   * link's `cwd` URL param, so a long recorded/pinned path grows both the
+   * fixed URL overhead AND (if this sat in the protected head) the head
+   * itself — the mechanism behind BUG1's overflow. Kept out of any
+   * `head`/essentials text; callers place it in the trimmable tail.
+   */
+  directoryEcho?: string;
+  /**
+   * Compact worktree-isolation protocol candidate — same existing-mode/no-repo
+   * scope as directoryEcho, same reason it's kept separate: it must be
+   * included or omitted as one atomic block (BUG1 — see
+   * fitCompactWorktreeProtocol), never embedded where a length guard could
+   * half-truncate it.
+   */
+  protocol?: string;
+  /** Always-present, path-length-independent: MCP connect + record_project_path. */
+  essentialSteps: string[];
+  work: string;
+}
+
+function buildCompactStepPieces({
   appUrl,
   ideaId,
   ideaTitle,
@@ -570,10 +735,12 @@ export function buildCompactBootstrapPromptParts({
   newProject,
   existingPath,
   taskId,
-}: CompactBootstrapArgs): CompactPromptParts {
+}: CompactBootstrapArgs): CompactStepPieces {
   const title = ideaTitle.length > 80 ? `${ideaTitle.slice(0, 79)}…` : ideaTitle;
   const repo = parseRepoFromGithubUrl(repoUrl);
-  const steps: string[] = [];
+  const leadingSteps: string[] = [];
+  let directoryEcho: string | undefined;
+  let protocol: string | undefined;
 
   // Directory step. In create-new mode → mkdir/init the folder. Repo-backed →
   // clone/cd. Existing-no-repo WITH a known folder (recorded/pinned path the deep
@@ -584,26 +751,29 @@ export function buildCompactBootstrapPromptParts({
     const git = repo
       ? `if empty, \`git clone https://github.com/${repo}.git .\`, else keep existing files`
       : "if empty, `git init`";
-    steps.push(
+    leadingSteps.push(
       `Project folder FIRST, before anything else (even planning/research): if ${p} exists, cd in and reuse it as-is; else \`mkdir -p ${p} && cd ${p}\`. Never work in your home directory (${git}).`
     );
   } else if (repo) {
-    steps.push(
+    leadingSteps.push(
       `Get into the repo ${repo} first: cd your local clone, or \`git clone https://github.com/${repo}.git ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}\` and cd in. Never work in your home directory.`
     );
   } else if (existingPath) {
-    steps.push(
-      `You should already be in ${existingPath} (recorded from a previous session). Confirm with \`pwd\`; \`cd\` there if not. Don't re-init or re-clone — reuse the folder as-is.`
-    );
+    directoryEcho = `You should already be in ${existingPath} (recorded from a previous session). Confirm with \`pwd\`; \`cd\` there if not. Don't re-init or re-clone — reuse the folder as-is.`;
+    // Concurrent-terminal isolation (existing-mode/no-repo — the deep link's cwd
+    // is what puts this session in a possibly-shared folder; a repo-backed
+    // launch resolves via the `repo` slug instead and never reaches this
+    // branch). The "compact" variant is a budget-conscious rewrite of the same
+    // steps buildWorktreeIsolationProtocol("full") gives the copy-command
+    // prompt — this one keeps every load-bearing invariant but drops the prose
+    // so the URL-capped deep link / in-browser terminal stay under their ceiling.
+    protocol = buildWorktreeIsolationProtocol("compact");
   }
 
-  steps.push(
-    `Connect the board tools (if they're already available, skip this step): run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`
-  );
-
-  steps.push(
-    `Re-confirm the folder: call record_project_path (idea_id ${ideaId}, machine \`hostname\`, \`pwd\`) so future launches reopen here — safe to repeat on every launch.`
-  );
+  const essentialSteps = [
+    `Connect the board tools (if they're already available, skip this step): run \`claude mcp add -s local --transport http vibecodes ${mcpEndpoint(appUrl)}\`, then \`/mcp\` → vibecodes → Authenticate in the browser. Use the built-in /mcp flow; do NOT hand-build the OAuth URL.`,
+    `Re-confirm the folder: call record_project_path (idea_id ${ideaId}, machine \`hostname\`, \`pwd\`) so future launches reopen here — safe to repeat on every launch.`,
+  ];
 
   const work = taskId
     ? `Work this task: get_task (task_id ${taskId}, idea_id ${ideaId}), move it to In Progress, then start. Comment as you go.`
@@ -612,11 +782,419 @@ export function buildCompactBootstrapPromptParts({
   const header = taskId
     ? `Set up VibeCodes and work a board task for "${title}".`
     : `Set up VibeCodes and pick up board work for "${title}".`;
+
+  return { header, leadingSteps, directoryEcho, protocol, essentialSteps, work };
+}
+
+/**
+ * COMPACT bootstrap prompt, as head/tail parts — the SINGLE source of the
+ * compact prompt's content. See buildCompactBootstrapPrompt for the semantics;
+ * this variant exists so URL-budgeted launch paths can truncate the tail with
+ * enforcePromptLength while the head (title header + dir + MCP connect +
+ * record_project_path steps) survives verbatim. The task/idea ids live in the
+ * TAIL's work step; on (rare) truncation the agent recovers them from the board
+ * over MCP — the head's connect step is what makes that possible.
+ *
+ * UNCONDITIONAL: the worktree-isolation protocol (when in scope) always rides
+ * the head here, exactly as before — this builder has no URL budget of its
+ * own to weigh it against. Callers that DO have a hard URL ceiling (the
+ * claude-cli:// deep link, the in-browser terminal) must NOT clamp this
+ * output directly — the protocol is load-bearing-shaped text embedded in
+ * `head`, and enforcePromptLength's "never sacrifice the head" fallback would
+ * let an oversized head overflow the cap instead of degrading (BUG1). Those
+ * callers use buildCompactPromptEssentials + fitCompactWorktreeProtocol
+ * instead, which keep the protocol OUT of the protected head and decide its
+ * inclusion against the actual budget.
+ */
+export function buildCompactBootstrapPromptParts(args: CompactBootstrapArgs): CompactPromptParts {
+  const { header, leadingSteps, directoryEcho, protocol, essentialSteps, work } =
+    buildCompactStepPieces(args);
+  const steps = [...leadingSteps];
+  if (directoryEcho) steps.push(directoryEcho);
+  if (protocol) steps.push(protocol);
+  steps.push(...essentialSteps);
+
   const numbered = steps.map((s, i) => `${i + 1}. ${s}`).join("\n");
   return {
     head: `${header}\n\n${numbered}\n`,
     tail: `${steps.length + 1}. ${work}`,
   };
+}
+
+export interface CompactPromptEssentials {
+  /**
+   * Header + MCP-connect + record_project_path steps ONLY — ALWAYS present
+   * and, unlike `CompactPromptParts.head`, path-length-independent: it never
+   * echoes the raw cwd, so a long recorded/pinned path can't shrink the
+   * available URL budget out from under it (BUG1). Protected: a final
+   * enforcePromptLength call must never trim this.
+   *
+   * This is the UNCONDITIONAL join of `headSteps` under `header` — kept for
+   * parity/back-compat callers with a roomy (or no) budget of their own, and
+   * for the `head`-vs-`CompactPromptParts.head` divergence test. Budget-aware
+   * callers (fitCompactWorktreeProtocol) do NOT consume this string directly
+   * — see `header`/`headSteps` below.
+   */
+  head: string;
+  /**
+   * Trimmable: the existing-folder confirm echo (duplicates the deep link's
+   * `cwd` param — safe to truncate, unlike the protocol) + the work step.
+   */
+  tail: string;
+  /**
+   * Compact worktree-isolation protocol candidate (existing-mode/no-repo with
+   * a known cwd only); undefined when out of scope (repo-backed / new-project
+   * / first-launch). Best-effort on the URL-capped path — see
+   * fitCompactWorktreeProtocol, which decides whether it rides the head.
+   */
+  protocol?: string;
+  /**
+   * BUG B fix (5th rework cycle): the title-header line, ALONE (no steps).
+   * Optional — omitted (with `headSteps`) by any caller that doesn't have a
+   * natural step breakdown, in which case `fitCompactWorktreeProtocol` falls
+   * back to treating `head` as one indivisible unit (its pre-BUG-B
+   * behaviour). `buildCompactPromptEssentials` always supplies both.
+   */
+  header?: string;
+  /**
+   * BUG B fix (5th rework cycle, QA BUG B): the essential steps that make up
+   * `head`, as ATOMIC, individually-addressable units, in PRIORITY order
+   * (index 0 = highest priority — for the real prompt this is MCP-connect,
+   * since an agent that can't reach the board can't self-heal anything else;
+   * record_project_path follows). When the full head doesn't fit a budget,
+   * `fitCompactWorktreeProtocol` greedily includes whole steps from this list
+   * in order and OMITS any step that doesn't fit in its entirety — it NEVER
+   * emits a mid-sentence fragment of a step, unlike the old raw-char
+   * `enforcePromptLength` head-trim this replaces for the compact-essentials
+   * path (that char-trim remains the tail's belt-and-suspenders — see
+   * enforcePromptLength's own doc comment).
+   */
+  headSteps?: string[];
+}
+
+/**
+ * BUG1 fix — the essentials-only counterpart to buildCompactBootstrapPromptParts
+ * for launch paths with a hard URL ceiling (the claude-cli:// deep link, the
+ * in-browser terminal). Keeps the protected `head` constant-size regardless of
+ * cwd length (no raw-path echo) and surfaces the worktree-isolation protocol
+ * candidate SEPARATELY so `fitCompactWorktreeProtocol` can include it only
+ * when it actually fits the remaining budget — an omission is always clean
+ * (the whole protocol, never a fragment) and the final prompt can never push
+ * the URL past the cap (FR-8 degrade: no isolation beats a silently-dropped
+ * launch).
+ */
+export function buildCompactPromptEssentials(args: CompactBootstrapArgs): CompactPromptEssentials {
+  const { header, leadingSteps, directoryEcho, protocol, essentialSteps, work } =
+    buildCompactStepPieces(args);
+
+  // Priority order for the BUG B atomic degrade: leadingSteps (mkdir/clone —
+  // must happen before anything else, when present) first, THEN essentialSteps
+  // (MCP-connect, then record_project_path). For the existing-mode/no-repo
+  // scenario the pathological-cwd bugs actually target, leadingSteps is
+  // always empty, so this reduces to exactly [MCP-connect, record_project_path].
+  const headSteps = [...leadingSteps, ...essentialSteps];
+  const numbered = headSteps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+
+  const tailSteps: string[] = [];
+  if (directoryEcho) tailSteps.push(directoryEcho);
+  tailSteps.push(work);
+  const numberedTail = tailSteps
+    .map((s, i) => `${headSteps.length + i + 1}. ${s}`)
+    .join("\n");
+
+  return {
+    header,
+    headSteps,
+    head: `${header}\n\n${numbered}\n`,
+    tail: numberedTail,
+    protocol,
+  };
+}
+
+/**
+ * BUG1 fix (FR-8 degrade applied to the URL budget) — the pure, shared
+ * decision of whether the compact worktree-isolation protocol rides a
+ * URL-capped launch's prompt. Used by BOTH `openInClaudeCode`
+ * (launch-claude-code-button.tsx) and `useLaunchClaudeCode`'s `launch()`
+ * (use-launch-claude-code.ts) so the two entry points can never diverge.
+ *
+ * The protocol is all-or-nothing: it is folded into the (never-trimmed) head
+ * ONLY when head+protocol actually fits `budget` on its own (before the tail
+ * even gets a chance to shrink) — otherwise it is omitted entirely and the
+ * launch proceeds without isolation (today's pre-worktree-protocol
+ * behaviour), never half-truncated. The result is double-checked against
+ * `budget` after enforcePromptLength runs (rather than trusting the
+ * pre-check alone) so a razor-thin edge case in the ellipsis math can never
+ * let the protocol-inclusive candidate sneak past the cap — the essentials-
+ * only prompt (guaranteed <= budget on its own, since essentials are
+ * path-length-independent) is the fallback.
+ *
+ * BUG 1 (4th rework cycle, belt-and-suspenders): `enforcePromptLength` now
+ * guarantees `encodedLength <= cap` in every case (BUG 6 fix, above), so
+ * `withoutProtocol` can no longer overflow in practice — but this function
+ * previously trusted that single call site without a post-hoc check, unlike
+ * `withProtocol` below. Mirror the same defensive re-verification on BOTH
+ * branches: never let EITHER candidate escape this function over `budget`,
+ * even if a future change to `enforcePromptLength`'s internals regresses its
+ * guarantee. The empty string is the final, always-safe floor.
+ *
+ * BUG 1 (4th rework cycle, priority-inversion fix): the "does the protocol
+ * fit?" check MUST happen BEFORE calling enforcePromptLength on
+ * `headWithProtocol`, not by inspecting its return value. Pre-BUG-6-fix, an
+ * over-budget `headWithProtocol` made enforcePromptLength return it
+ * VERBATIM (the old bug), which happened to double as an implicit "didn't
+ * fit" signal the post-hoc `encodedLength <= budget` check could catch. Now
+ * that enforcePromptLength always self-heals an over-cap head by trimming
+ * IT (not just the tail), that implicit signal is gone: a `headWithProtocol`
+ * too big for `budget` would get silently trimmed down to size — and since
+ * `protocol` sits at the very front of `headWithProtocol`, the trim eats
+ * into the essentials text that follows it, KEEPING the protocol at the
+ * cost of cutting into the essentials (inverting the documented priority —
+ * essentials must never be sacrificed for the best-effort protocol). The
+ * explicit pre-check below restores the original contract: the protocol
+ * rides the head only when `head + protocol`, BOTH fully intact, already
+ * fits `budget` on its own.
+ *
+ * BUG B fix (5th rework cycle, QA BUG B): the head handed to
+ * enforcePromptLength below is no longer `essentials.head` (the always-both-
+ * steps join) — it's `resolveEssentialHead(essentials, budget)`, which
+ * greedily assembles the head from `essentials.headSteps` in priority order,
+ * including a step ONLY when it fits WHOLE. Pre-BUG-B, a head that didn't fit
+ * `budget` fell through to enforcePromptLength's raw-char binary-search
+ * head-trim (the BUG 6 belt-and-suspenders), which happily bisected mid-step
+ * — QA's repro showed the record_project_path step silently dropped AND the
+ * MCP-connect step itself cut mid-sentence ("...Authenticate in the
+ * brow\n…(truncated)"). resolveEssentialHead's output is already guaranteed
+ * to fit `budget` (with room reserved for enforcePromptLength's own trailing
+ * marker), so enforcePromptLength's head-trim branch is no longer reachable
+ * for a real (headSteps-bearing) essentials object — it remains exactly as
+ * before (KEPT, unmodified) as the tail's trim mechanism, and as the
+ * back-compat fallback for a caller with no step breakdown (see
+ * resolveEssentialHead).
+ */
+export function fitCompactWorktreeProtocol(
+  essentials: CompactPromptEssentials,
+  budget: number
+): string {
+  const { tail, protocol } = essentials;
+  const head = resolveEssentialHead(essentials, budget);
+  const withoutProtocol = enforcePromptLength(head, tail, budget);
+  const safeWithoutProtocol = encodedLength(withoutProtocol) <= budget ? withoutProtocol : "";
+  if (!protocol) return safeWithoutProtocol;
+
+  const headWithProtocol = `${protocol}\n\n${head}`;
+  // Pre-check (see BUG 1 priority-inversion note above): only attempt the
+  // protocol-inclusive candidate when the COMBINED head already fits budget
+  // intact — never let enforcePromptLength's head-trim decide this for us.
+  if (encodedLength(headWithProtocol) > budget) return safeWithoutProtocol;
+
+  const withProtocol = enforcePromptLength(headWithProtocol, tail, budget);
+  return encodedLength(withProtocol) <= budget ? withProtocol : safeWithoutProtocol;
+}
+
+/**
+ * BUG B fix (5th rework cycle) — resolve the essentials head AGAINST `budget`
+ * using ATOMIC step inclusion (fitEssentialHead) whenever the caller supplied
+ * a step breakdown (`headSteps` — every real caller, via
+ * buildCompactPromptEssentials, does). Falls back to the raw `head` string,
+ * UNCHANGED, for a caller with no natural step decomposition (e.g. a
+ * synthetic test fixture) — enforcePromptLength's own char-level head-trim
+ * remains that caller's (documented, pre-existing) belt-and-suspenders.
+ */
+function resolveEssentialHead(essentials: CompactPromptEssentials, budget: number): string {
+  if (!essentials.headSteps) return essentials.head;
+  return fitEssentialHead(essentials.header ?? "", essentials.headSteps, budget);
+}
+
+/**
+ * Greedily assemble an essentials head from atomic step units, in PRIORITY
+ * order (index 0 = highest priority — MCP-connect for the real prompt, since
+ * an agent that can't reach the board can't self-heal any later step). A step
+ * is included ONLY when the numbered head INCLUDING it — plus headroom for
+ * enforcePromptLength's own trailing TRUNCATION_MARKER, so this function's
+ * output never forces a further head-trim there — fits `budget` in its
+ * entirety. The FIRST step that doesn't fit stops inclusion: lower-priority
+ * steps after it are never promoted ahead of a dropped higher-priority one
+ * (this is what makes MCP-connect "the last to drop" — record_project_path,
+ * index 1, can only ever appear once MCP-connect, index 0, already fit).
+ * Every included step is present in its FULL text, verbatim — never a
+ * fragment; an omitted step is cleanly absent, never partially there.
+ */
+function fitEssentialHead(header: string, steps: string[], budget: number): string {
+  const reserve = encodedLength(TRUNCATION_MARKER);
+  const included: string[] = [];
+  for (const step of steps) {
+    const candidateSteps = [...included, step];
+    const numbered = candidateSteps.map((s, i) => `${i + 1}. ${s}`).join("\n");
+    const candidateHead = `${header}\n\n${numbered}\n`;
+    if (encodedLength(candidateHead) + reserve > budget) break;
+    included.push(step);
+  }
+  const numbered = included.map((s, i) => `${i + 1}. ${s}`).join("\n");
+  return `${header}\n\n${numbered}\n`;
+}
+
+// ────────────────────────────────────────────────────────────────────────────
+// FIX A (5th rework cycle, QA BUG A) — bounded deep link: cwd is unclamped
+// ────────────────────────────────────────────────────────────────────────────
+
+/**
+ * `cd '<path>'` line FIX A folds into the (trimmable) prompt when the `cwd=`
+ * URL param alone is too large for the deep-link cap — the agent still gets
+ * the working directory, just as a shell command instead of a param. Reuses
+ * buildLaunchCommand's inert POSIX single-quoting (below) so no command
+ * substitution / variable expansion / escape can leak through a pathological
+ * path.
+ */
+function buildCdLine(cwd: string): string {
+  return `cd ${shellSingleQuote(cwd)}\n`;
+}
+
+/** Fold a `cd` line in as the new highest-priority prefix of the essentials
+ * head — ahead of every atomic step (headSteps) when present, or simply
+ * prepended to the raw `head` for a back-compat caller with no breakdown. */
+function foldCdIntoEssentials(
+  essentials: CompactPromptEssentials,
+  cdLine: string
+): CompactPromptEssentials {
+  if (essentials.headSteps) {
+    return {
+      ...essentials,
+      header: cdLine + (essentials.header ?? ""),
+      head: cdLine + essentials.head,
+    };
+  }
+  return { ...essentials, head: cdLine + essentials.head };
+}
+
+export interface BoundedDeepLinkArgs {
+  /** The compact prompt essentials (see buildCompactPromptEssentials). */
+  essentials: CompactPromptEssentials;
+  /** The working directory this launch would otherwise carry as `cwd=`. */
+  cwd?: string;
+  /** The full-URL hard ceiling (MAX_DEEP_LINK_URL_LENGTH / MAX_LAUNCH_URL_LENGTH). */
+  cap: number;
+  /**
+   * Extra fixed literal chars the final URL carries once its prompt param
+   * becomes non-empty, BEYOND what `buildLink({ prompt: "" })` already
+   * measures. The claude-cli:// `q=` key is always present (0 here); the
+   * vibecodes:// `prompt=` key is OMITTED entirely for an empty prompt, so
+   * its owner (terminal-dock.tsx) passes `"&prompt=".length` (8).
+   */
+  promptKeyOverhead?: number;
+  /**
+   * Build the full deep-link URL for a prompt, with or without a `cwd` —
+   * omit the `cwd` key (don't pass `cwd: someLongPath`) to build the
+   * NO-cwd-param variant. Callers close over their own fixed params (repo;
+   * or relay/session/token).
+   */
+  buildLink: (parts: { prompt: string; cwd?: string }) => string;
+}
+
+export type BoundedDeepLinkResult =
+  | { ok: true; url: string; droppedCwd: boolean }
+  | { ok: false };
+
+/**
+ * FIX A (5th rework cycle, QA BUG A) — the single shared decision both
+ * call-sites (`openInClaudeCode` in launch-claude-code-button.tsx,
+ * `fireLaunchDeepLink` in terminal-dock.tsx) route through to build a
+ * deep-link URL. `cwd` rides the link's `cwd=` param, completely UNCLAMPED —
+ * enforcePromptLength only ever trimmed the PROMPT. A pathological (dense,
+ * deeply-nested) path can alone exceed the cap even with an EMPTY prompt:
+ * `budget` goes negative, the prompt floors to `""`, but pre-fix the
+ * call-site still fired `buildLink({ prompt: "", cwd })` unconditionally — an
+ * over-cap URL Chromium silently no-ops. Same original bug, moved threshold.
+ *
+ * The invariant this function guarantees: when it returns `ok: true`, `url`
+ * is ALWAYS `<= cap` — at ANY cwd length, without exception.
+ *
+ * Degrade ladder:
+ *  1. cwd rides its own param — the unchanged fast path. Used ONLY when it
+ *     doesn't cost any essentials degradation: the fitted prompt must retain
+ *     every essential step WHOLE (essentialsSurviveWhole, below). A cwd long
+ *     enough to squeeze out even one essential step is exactly the case FIX A
+ *     targets — rather than accept a launch that "looks fine" (right folder)
+ *     but silently lost e.g. record_project_path or MCP-connect, tier 1 is
+ *     rejected and the ladder proceeds to try to recover full essentials from
+ *     a fresh, path-length-INDEPENDENT budget instead. (A caller with no
+ *     `headSteps` breakdown — i.e. no way to check step survival — can't be
+ *     held to this stricter bar; essentialsSurviveWhole degrades gracefully
+ *     to "always true" for it, so tier 1's gate there is just `budgetWithCwd
+ *     > 0`, unchanged from pre-FIX-A.)
+ *  2. The cwd param can't deliver full essentials (or doesn't fit at all) →
+ *     drop it. The essentials/protocol/tail now budget against the FULL
+ *     no-cwd ceiling (CONSTANT — it doesn't shrink with path length, unlike
+ *     tier 1's) with a `cd '<path>'` line folded in as an atomic prefix: it
+ *     rides WHOLE alongside whatever essentials fit, or this tier is
+ *     abandoned entirely — NEVER a bisected mid-path fragment (checked by
+ *     confirming the raw `cwd` string appears byte-for-byte in the assembled
+ *     prompt, not just a leading substring of it).
+ *  3. The cd line doesn't fit either (a genuinely extreme path) → the
+ *     "folder-less minimal launch": essentials only, no directory info at
+ *     all, still routed through the SAME atomic degrade — this is exactly
+ *     today's normal first-launch/no-cwd flow, not a new failure mode, so it
+ *     fires rather than blocking on a toast.
+ *  4. Even that can't fit (`budgetNoCwd <= 0` — the FIXED relay/session/token
+ *     or app-url/repo overhead alone exceeds `cap`; extraordinarily
+ *     unlikely) → `ok: false`. The caller shows a toast and does NOT fire an
+ *     over-cap URL.
+ */
+export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLinkResult {
+  const { essentials, cwd, cap, buildLink } = args;
+  const overhead = args.promptKeyOverhead ?? 0;
+
+  // Tier 1 — cwd rides its own URL param, but only when doing so doesn't
+  // cost any essentials degradation (see the ladder note above).
+  const baseWithCwd = buildLink({ prompt: "", cwd });
+  const budgetWithCwd = cap - baseWithCwd.length - overhead;
+  if (budgetWithCwd > 0) {
+    const prompt = fitCompactWorktreeProtocol(essentials, budgetWithCwd);
+    const url = buildLink({ prompt, cwd });
+    if (url.length <= cap && essentialsSurviveWhole(essentials, prompt)) {
+      return { ok: true, url, droppedCwd: false };
+    }
+  }
+
+  // Tiers 2/3 — drop the cwd param. budgetNoCwd is CONSTANT regardless of
+  // path length (unlike budgetWithCwd, which shrinks linearly with it), so
+  // this is the actual FR-8 backstop for a path long enough to blow tier 1.
+  const baseNoCwd = buildLink({ prompt: "" });
+  const budgetNoCwd = cap - baseNoCwd.length - overhead;
+  if (budgetNoCwd <= 0) return { ok: false };
+
+  if (cwd) {
+    // Tier 2 — fold `cd '<path>'` in as an atomic prefix. Only accept this
+    // candidate when the FULL raw cwd string survives verbatim in the
+    // assembled prompt — i.e. the cd line rode whole, never bisected by
+    // enforcePromptLength's tail/head trims.
+    const cdLine = buildCdLine(cwd);
+    const withCd = foldCdIntoEssentials(essentials, cdLine);
+    const prompt = fitCompactWorktreeProtocol(withCd, budgetNoCwd);
+    if (prompt.includes(cwd)) {
+      const url = buildLink({ prompt });
+      if (url.length <= cap) return { ok: true, url, droppedCwd: true };
+    }
+  }
+
+  // Tier 3 — folder-less minimal launch: essentials only, no directory info.
+  const prompt = fitCompactWorktreeProtocol(essentials, budgetNoCwd);
+  const url = buildLink({ prompt });
+  if (url.length <= cap) return { ok: true, url, droppedCwd: !!cwd };
+
+  return { ok: false };
+}
+
+/**
+ * Whether every essential step (essentials.headSteps) is present, WHOLE, in
+ * `prompt`. A caller with no step breakdown (back-compat — see
+ * CompactPromptEssentials.headSteps) can't be checked this way, so this
+ * degrades to `true` for it — tier 1's gate then reduces to its pre-FIX-A
+ * `budgetWithCwd > 0` check alone, unchanged for that caller.
+ */
+function essentialsSurviveWhole(essentials: CompactPromptEssentials, prompt: string): boolean {
+  if (!essentials.headSteps) return true;
+  return essentials.headSteps.every((step) => prompt.includes(step));
 }
 
 /**
