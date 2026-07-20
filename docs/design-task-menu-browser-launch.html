@@ -1,0 +1,442 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UX Design — "Run Claude Code in browser" in the task card menu</title>
+<style>
+  /* ===== VibeCodes dark theme approximation (Tailwind v4 / shadcn Zinc) ===== */
+  :root {
+    --background: #09090b;        /* zinc-950 */
+    --foreground: #fafafa;        /* zinc-50 */
+    --card: #18181b;              /* zinc-900 */
+    --popover: #18181b;
+    --muted: #27272a;             /* zinc-800 */
+    --muted-fg: #a1a1aa;          /* zinc-400 */
+    --border: #27272a;
+    --accent: #27272a;            /* focus/hover bg of menu items */
+    --sky-400: #38bdf8;
+    --emerald-400: #34d399;
+    --red-400: #f87171;
+    --amber-400: #fbbf24;
+    --destructive: #f87171;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--background);
+    color: var(--foreground);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 960px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
+  h2 { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; margin: 48px 0 12px; padding-top: 24px; border-top: 1px solid var(--border); }
+  h3 { font-size: 14px; font-weight: 600; margin: 24px 0 8px; }
+  p  { font-size: 14px; color: var(--muted-fg); margin: 0 0 12px; }
+  p strong, li strong, td strong { color: var(--foreground); font-weight: 600; }
+  ul, ol { font-size: 14px; color: var(--muted-fg); margin: 0 0 12px; padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  .subtitle { font-size: 14px; color: var(--muted-fg); margin-bottom: 8px; }
+  .meta { font-size: 12px; color: #71717a; }
+  code, .code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    background: var(--muted);
+    border-radius: 4px;
+    padding: 1.5px 6px;
+    color: #e4e4e7;
+    word-break: break-all;
+  }
+  pre.codeblock {
+    background: #101012;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    overflow-x: auto;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    line-height: 1.6;
+    color: #e4e4e7;
+  }
+  pre.codeblock code { background: none; padding: 0; }
+  .cm { color: #6b7280; }
+  .tag { color: #7dd3fc; }
+  .attr { color: #c4b5fd; }
+  .str { color: #86efac; }
+
+  /* ===== Mock chrome ===== */
+  .mock {
+    background: #0e0e11;
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 28px;
+    margin: 12px 0 4px;
+    display: flex;
+    gap: 40px;
+    flex-wrap: wrap;
+    align-items: flex-start;
+  }
+  .mock-label {
+    display: inline-block;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #71717a;
+    margin: 20px 0 0;
+  }
+  .mock-label.before { color: var(--red-400); }
+  .mock-label.after  { color: var(--emerald-400); }
+  .caption { font-size: 12px; color: #71717a; margin: 6px 0 0; }
+
+  /* Dropdown menu — mirrors src/components/ui/dropdown-menu.tsx:
+     bg-popover rounded-md border p-1 shadow-md, items px-2 py-1.5 text-sm gap-2 */
+  .menu {
+    background: var(--popover);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    width: 236px;
+    font-size: 14px;
+    flex: none;
+  }
+  .mi {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;          /* py-1.5 px-2 (desktop; mobile uses py-2.5) */
+    border-radius: 4px;
+    color: var(--foreground);
+    cursor: default;
+    white-space: nowrap;
+  }
+  .mi svg { flex: none; width: 16px; height: 16px; color: var(--muted-fg); }
+  .mi.focused { background: var(--accent); }
+  .mi.disabled { opacity: 0.5; pointer-events: none; }
+  .mi.destructive { color: var(--destructive); }
+  .mi.destructive svg { color: var(--destructive); }
+  .mi.hint { color: var(--muted-fg); }
+  .sep { height: 1px; background: var(--border); margin: 4px -4px; }
+  .beta {
+    display: inline-block;
+    border-radius: 4px;
+    background: rgba(14,165,233,0.15);   /* bg-sky-500/15 */
+    padding: 0 4px;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    line-height: 1.25;
+    color: var(--sky-400);               /* text-sky-400 */
+  }
+  .mock-note { font-size: 12px; color: #71717a; max-width: 280px; }
+  .mock-note strong { color: var(--muted-fg); }
+
+  /* Two-line toolbar item (reference only) */
+  .mi .two-line { display: flex; flex-direction: column; }
+  .mi .two-line .desc { font-size: 11px; color: var(--muted-fg); white-space: normal; }
+  .menu.wide { width: 288px; }
+  .mi.wrap { white-space: normal; align-items: flex-start; }
+  .mi.wrap svg { margin-top: 2px; }
+
+  /* Flow diagram */
+  .flow { display: flex; flex-direction: column; gap: 0; margin: 16px 0; }
+  .flow-step {
+    display: flex; gap: 14px; align-items: flex-start;
+  }
+  .flow-num {
+    flex: none; width: 24px; height: 24px; border-radius: 9999px;
+    background: var(--muted); color: var(--foreground);
+    font-size: 12px; font-weight: 600;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .flow-body { padding-bottom: 4px; }
+  .flow-body h4 { font-size: 13.5px; font-weight: 600; margin: 2px 0 2px; }
+  .flow-body p { font-size: 13px; margin: 0 0 8px; }
+  .flow-rail { flex: none; width: 24px; display: flex; justify-content: center; }
+  .flow-rail span { width: 1px; background: var(--border); flex: 1; min-height: 14px; }
+  .flow-connector { display: flex; }
+
+  /* Tables */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; margin: 12px 0; }
+  th {
+    text-align: left; font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.06em; color: #71717a; padding: 8px 12px; border-bottom: 1px solid var(--border);
+  }
+  td { padding: 9px 12px; border-bottom: 1px solid #1c1c1f; color: var(--muted-fg); vertical-align: top; }
+  td:first-child { color: var(--foreground); white-space: nowrap; }
+  .table-scroll { overflow-x: auto; }
+
+  .pill-ok { color: var(--emerald-400); font-weight: 600; }
+  .pill-warn { color: var(--amber-400); font-weight: 600; }
+
+  .callout {
+    border: 1px solid rgba(52,211,153,0.25);
+    background: rgba(52,211,153,0.06);
+    border-radius: 8px;
+    padding: 12px 16px;
+    margin: 12px 0;
+    font-size: 13.5px;
+    color: var(--muted-fg);
+  }
+  .callout strong { color: var(--emerald-400); }
+  .callout.decide { border-color: rgba(56,189,248,0.25); background: rgba(56,189,248,0.06); }
+  .callout.decide strong { color: var(--sky-400); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Run Claude Code in the browser — task card menu item</h1>
+  <p class="subtitle">UX Design step deliverable · Task: <strong>“Add a run Claude Code in browser menu item”</strong></p>
+  <p class="meta">Compass (UX Designer) · Building on the completed <strong>Requirements</strong> step (see that step's document on this board for FR1–FR7 and acceptance criteria 1–9)</p>
+
+  <h2>1 · Overview</h2>
+  <p>
+    Building on the Requirements step: the board toolbar's split-button dropdown already lets people choose
+    <em>where</em> Claude Code runs — “In a terminal window” or “In the browser” (Beta) — but the per-card
+    <strong>⋮ context menu</strong> only offers the terminal-window launch. Users who work task-by-task from the card menu
+    have no path to the in-browser terminal without walking back to the toolbar and losing the task scope.
+  </p>
+  <p>
+    This design adds a second launch item to the card menu's existing launch section, rendered by the
+    <code>variant="task-menu-item"</code> branch of <code>src/components/board/launch-claude-code-button.tsx</code>
+    inside <code>src/components/board/task-card-menu.tsx</code>. It follows FR1–FR7: terminal first, Globe + Beta parity,
+    byte-identical menu when the flag is off, desktop-only, reuse of <code>handleLaunchInBrowser</code>
+    (task-scoped prompt + cwd parity), PostHog parity, and pick-one semantics.
+  </p>
+
+  <h2>2 · Design decisions</h2>
+
+  <h3>2.1 Label wording — <strong>“Launch in browser terminal”</strong></h3>
+  <div class="callout decide">
+    <strong>Decision:</strong> the existing item keeps its exact label, <strong>“Launch in Claude Code”</strong>
+    (Terminal icon), and the new item is <strong>“Launch in browser terminal”</strong> (Globe icon + Beta pill), placed second.
+  </div>
+  <ul>
+    <li><strong>“Launch in Claude Code” stays untouched.</strong> FR3 requires the flag-off menu to be byte-identical to today,
+      and keeping the label constant in both flag states means muscle memory never breaks — the first item is always the same
+      action with the same name (Jakob's Law: don't move or rename the default).</li>
+    <li><strong>Why not “Launch in browser”?</strong> Information scent: in a task card menu, “Launch in browser” could plausibly read
+      as “open this task in a browser tab.” “Launch in browser <em>terminal</em>” says exactly what appears — a terminal, in the browser —
+      and echoes the toolbar's description copy (“A live terminal docked on this board”) in one word.</li>
+    <li><strong>Why not reuse the toolbar's “In the browser”?</strong> The toolbar items sit under a labelled “Launch Claude Code” split button,
+      so the fragment “In the browser” inherits its context. The card menu has no such header — items are self-contained,
+      verb-first commands (“Move to top”, “Convert to conversation”, “Archive”). A bare “In the browser” next to
+      “Move to bottom” has weak scent. Verb-first parallel construction (“Launch in…” / “Launch in…”) keeps the pair
+      visually and grammatically grouped (Gestalt similarity) while the shared prefix + adjacency (proximity) signals
+      “same action, different destination.”</li>
+    <li><strong>Mental-model parity is preserved</strong> where it matters: same ordering (terminal first), same icons
+      (Terminal / Globe), same Beta pill recipe. A user who learned the choice on the toolbar recognises it instantly here.</li>
+  </ul>
+
+  <h3>2.2 Single-line items, no descriptions</h3>
+  <div class="callout decide">
+    <strong>Decision:</strong> both launch items are <strong>single-line</strong> — no 11px muted description lines in the card menu.
+  </div>
+  <ul>
+    <li><strong>Internal consistency beats cross-surface mimicry.</strong> Every item in the card menu is a compact single-line
+      command. Introducing one two-line island would break the menu's rhythm (Gestalt similarity within the group the user is
+      actually scanning) and visually over-weight the launch section against Archive/Delete.</li>
+    <li><strong>The toolbar's descriptions solve a different problem.</strong> There, the fragments “In a terminal window” /
+      “In the browser” need the explanatory second line; here, the fuller labels already carry that meaning, so the description
+      would be redundant (recognition over recall — the label itself is recognisable).</li>
+    <li><strong>Width and scan cost.</strong> The card menu is a narrow, quick-action surface; two-line items nearly double its
+      height and slow the scan for the destructive actions below (Hick's Law — keep per-item decision cost low).</li>
+    <li>The <strong>Beta pill alone</strong> flags the newer, less-proven path — the same signal the toolbar uses.</li>
+  </ul>
+
+  <h3>2.3 Placement and grouping</h3>
+  <ul>
+    <li>Both items live in the <strong>existing launch section</strong> in <code>task-card-menu.tsx</code> — between the separator
+      after “Move to bottom” and the separator before “Convert to conversation.” No new separators between the two launch items:
+      they are one choice, two destinations (pick-one, FR7), so they share a group.</li>
+    <li><strong>Order (FR1):</strong> terminal window first, browser second — identical to the toolbar and to
+      <code>launchModeOptions()</code> which always returns <code>["terminal-window", "browser"]</code>.</li>
+    <li>Item padding keeps the existing <code>py-2.5 sm:py-1.5</code> recipe — ≥44px touch height on small screens, compact on desktop.</li>
+  </ul>
+
+  <h2>3 · Mockups — card menu BEFORE / AFTER</h2>
+  <p>Realistic data: menu opened from the ⋮ on the card “Wire attachment previews into step outputs”.</p>
+
+  <span class="mock-label before">Before — today (and any time the terminal flag is OFF)</span>
+  <div class="mock">
+    <div class="menu" role="menu" aria-label="Task actions">
+      <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/></svg>Move to top</div>
+      <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></svg>Move to bottom</div>
+      <div class="sep"></div>
+      <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>Launch in Claude Code</div>
+      <div class="sep"></div>
+      <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>Convert to conversation</div>
+      <div class="sep"></div>
+      <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>Archive</div>
+      <div class="sep"></div>
+      <div class="mi destructive"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Delete</div>
+    </div>
+    <div class="mock-note">
+      <strong>One launch destination.</strong> The launch section holds a single item. When the flag is off this exact
+      structure is preserved byte-for-byte (FR3, acceptance criterion 3).
+    </div>
+  </div>
+
+  <span class="mock-label after">After — terminal flag ON, desktop ≥768px</span>
+  <div class="mock">
+    <div class="menu" role="menu" aria-label="Task actions">
+      <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/></svg>Move to top</div>
+      <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17V3"/><path d="m6 11 6 6 6-6"/><path d="M19 21H5"/></svg>Move to bottom</div>
+      <div class="sep"></div>
+      <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>Launch in Claude Code</div>
+      <div class="mi focused"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>Launch in browser terminal&nbsp;<span class="beta">Beta</span></div>
+      <div class="sep"></div>
+      <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>Convert to conversation</div>
+      <div class="sep"></div>
+      <div class="mi"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v11a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8"/><path d="M10 12h4"/></svg>Archive</div>
+      <div class="sep"></div>
+      <div class="mi destructive"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>Delete</div>
+    </div>
+    <div class="mock-note">
+      <strong>Two destinations, one group.</strong> Terminal first (FR1), browser second with Globe + Beta pill (FR2).
+      No separator between the pair — one decision, pick one place for Claude to run (FR7).
+      The second item is shown here with its keyboard-focus / hover state (<code>focus:bg-accent</code>) —
+      the same treatment every other item gets; nothing is hover-only.
+    </div>
+  </div>
+
+  <span class="mock-label">Mobile &lt;768px — unchanged in both flag states (FR4)</span>
+  <div class="mock">
+    <div class="menu" role="menu" aria-label="Task actions" style="width:260px">
+      <div class="mi" style="padding-top:10px;padding-bottom:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 3h14"/><path d="m18 13-6-6-6 6"/><path d="M12 7v14"/></svg>Move to top</div>
+      <div class="sep"></div>
+      <div class="mi disabled hint" style="padding-top:10px;padding-bottom:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>Open on desktop to launch Claude Code</div>
+      <div class="sep"></div>
+      <div class="mi" style="padding-top:10px;padding-bottom:10px"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 9a2 2 0 0 1-2 2H6l-4 4V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2z"/><path d="M18 9h2a2 2 0 0 1 2 2v11l-4-4h-6a2 2 0 0 1-2-2v-1"/></svg>Convert to conversation</div>
+    </div>
+    <div class="mock-note">
+      <strong>No browser item on mobile.</strong> The existing disabled hint stays the single launch-section entry
+      below 768px regardless of the flag — matching the toolbar, which is hidden below <code>md</code>. (Excerpt shown;
+      the rest of the menu is unchanged.)
+    </div>
+  </div>
+
+  <span class="mock-label">Reference — the board toolbar dropdown this pairs with (unchanged)</span>
+  <div class="mock">
+    <div class="menu wide">
+      <div class="mi wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg><span class="two-line"><span>In a terminal window</span><span class="desc">On your computer — how it works today</span></span></div>
+      <div class="mi wrap"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg><span class="two-line"><span>In the browser&nbsp;&nbsp;<span class="beta">Beta</span></span><span class="desc">A live terminal docked on this board</span></span></div>
+    </div>
+    <div class="mock-note">
+      <strong>Shared vocabulary, different container.</strong> Same order, same icons, same Beta recipe. Its two-line
+      treatment stays a toolbar idiom (see §2.2); the card menu expresses the same choice in its own single-line grammar.
+    </div>
+  </div>
+
+  <h2>4 · Interaction flow — “Launch in browser terminal”</h2>
+  <div class="flow">
+    <div class="flow-step"><span class="flow-num">1</span><div class="flow-body"><h4>Trigger</h4><p>User opens the card's ⋮ menu (click, or keyboard focus + Enter — the trigger already supports <code>focus-visible</code> reveal). Board is editable; viewer is on desktop; terminal flag is on.</p></div></div>
+    <div class="flow-connector"><span class="flow-rail"><span></span></span></div>
+    <div class="flow-step"><span class="flow-num">2</span><div class="flow-body"><h4>Choose destination</h4><p>The launch group shows both items. Arrow keys move item-to-item; typeahead “L” cycles the two Launch items. User selects <strong>Launch in browser terminal</strong> (Enter, Space, or click).</p></div></div>
+    <div class="flow-connector"><span class="flow-rail"><span></span></span></div>
+    <div class="flow-step"><span class="flow-num">3</span><div class="flow-body"><h4>Menu closes, event fires</h4><p>Radix closes the menu on select (pick-one — no lingering state). <code>handleLaunchInBrowser</code> captures the PostHog event <code>launch_claude_code_clicked</code> with <code>method: "in_browser"</code> (FR6) and dispatches the <code>vibecodes:terminal-browser-launch</code> CustomEvent via <code>requestBrowserLaunch</code> with the compact prompt head/tail + resolved cwd.</p></div></div>
+    <div class="flow-connector"><span class="flow-rail"><span></span></span></div>
+    <div class="flow-step"><span class="flow-num">4</span><div class="flow-body"><h4>Dock opens at the bottom of the board</h4><p>The board's terminal dock (a page-level sibling) opens — or comes to the fore if already open — mints a session, and auto-launches via its <code>vibecodes://</code> deep link, budget-truncating the prompt tail to fit the URL ceiling.</p></div></div>
+    <div class="flow-connector"><span class="flow-rail"><span></span></span></div>
+    <div class="flow-step"><span class="flow-num">5</span><div class="flow-body"><h4>Session boots task-scoped</h4><p>Because the component was rendered with <code>variant="task-menu-item"</code>, <code>buildCompactParts</code> already embeds <code>taskId</code> — Claude boots against <em>this task</em>, in the same cwd the terminal-window deep link would have used (FR5: prompt + folder parity for free).</p></div></div>
+  </div>
+  <p>
+    Selecting <strong>Launch in Claude Code</strong> instead runs today's flow unchanged: <code>handleLaunch</code> →
+    <code>claude-cli://</code> deep link, with the existing double-click guard (<code>launchingRef</code>), fallback toast,
+    and copy-command escape hatch.
+  </p>
+
+  <h2>5 · Accessibility</h2>
+  <ul>
+    <li><strong>Keyboard:</strong> both items are ordinary Radix <code>DropdownMenuItem</code>s — full arrow-key navigation,
+      Home/End, Enter/Space to select, Esc to close and return focus to the ⋮ trigger, plus typeahead. No custom key handling needed.
+      <code>onCloseAutoFocus</code> is already suppressed by the card menu so closing doesn't yank scroll position.</li>
+    <li><strong>No hover-only affordance:</strong> the item is always visible in the open menu; the ⋮ trigger itself is
+      always visible on mobile and revealed on desktop by hover <em>or</em> <code>focus-visible</code> <em>or</em> open state — existing behaviour, unchanged.</li>
+    <li><strong>Beta pill contrast:</strong> <code>text-sky-400</code> (#38bdf8) on <code>bg-sky-500/15</code> composited over the
+      popover (~#18181b) computes to ≈ <span class="pill-ok">6.6 : 1</span> — passes WCAG 2.1 AA for normal text (4.5:1) despite the 10px size,
+      and stays ≥ 4.5:1 over the <code>bg-accent</code> (zinc-800) focus state. It's the exact recipe already shipped in the toolbar, so no new tokens.</li>
+    <li><strong>Not colour-only:</strong> the two destinations differ by icon (Terminal vs Globe), label text, and the literal word
+      “Beta” in the pill — colour is reinforcement, never the sole carrier.</li>
+    <li><strong>Target size:</strong> items keep <code>py-2.5</code> below <code>sm</code> (≥44px tall full-width rows) and <code>sm:py-1.5</code> on desktop pointer contexts.</li>
+    <li><strong>Screen readers:</strong> the pill is plain text inside the item, so the accessible name reads
+      “Launch in browser terminal Beta” — self-describing, no <code>aria-label</code> override required.</li>
+  </ul>
+
+  <h2>6 · States &amp; edge cases</h2>
+  <div class="table-scroll">
+  <table>
+    <thead><tr><th>State</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td>Flag OFF · desktop</td><td>Launch section renders exactly one item, “Launch in Claude Code” — byte-identical DOM to today (FR3). The browser item is <em>not rendered</em> (not disabled, not hidden — absent).</td></tr>
+      <tr><td>Flag ON · desktop</td><td>Two items as in the AFTER mock. Terminal item first and fully unchanged in label, icon, and behaviour.</td></tr>
+      <tr><td>Mobile &lt;768px (either flag)</td><td>Existing single disabled hint “Open on desktop to launch Claude Code.” No browser item — parity with the toolbar, which doesn't exist below <code>md</code> (FR4).</td></tr>
+      <tr><td>Read-only board</td><td>Unchanged: the entire ⋮ menu subtree is unrendered by the caller, so neither launch item can appear. No new gating needed.</td></tr>
+      <tr><td>Dock already open</td><td><code>requestBrowserLaunch</code> fires the same event; the dock (already listening) handles it — surfaces itself and starts/replaces the session per its existing rules. Identical to clicking the toolbar's “In the browser” twice; no divergent card-menu behaviour.</td></tr>
+      <tr><td>Repeated clicks</td><td>Menu closes on first select, so a second click requires deliberately reopening — natural rate-limiting. Terminal path additionally keeps its <code>launchingRef</code> in-flight guard; browser path is idempotent at the dock (single event listener, dock dedupes).</td></tr>
+      <tr><td>Both items clicked in sequence</td><td>Pick-one semantics (FR7): each launch targets one destination only; choosing browser never also fires the terminal-window flow, and vice versa. Nothing in this design links the two handlers.</td></tr>
+      <tr><td>Archived task</td><td>Launch section renders today for archived cards (it isn't behind the <code>!task.archived</code> guards) — the browser item follows the same rule. No change.</td></tr>
+      <tr><td>Task detail dialog header icon</td><td>Out of scope: the <code>task-icon</code> variant keeps its single terminal-launch button, per the Requirements step.</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <h2>7 · Implementation notes (for the Engineering step)</h2>
+  <p>
+    One file changes: <code>src/components/board/launch-claude-code-button.tsx</code>, only the
+    <code>variant === "task-menu-item"</code> desktop branch. Everything the new item needs already exists in component scope:
+  </p>
+  <ul>
+    <li><code>browserLaunchAvailable</code> — already computed unconditionally (line ~306) from
+      <code>isBrowserLaunchAvailable(isTerminalEnabled())</code>; just consume it in this branch.</li>
+    <li><code>handleLaunchInBrowser</code> — reuse as-is (FR5/FR6). Because <code>props.variant</code> is
+      <code>"task-menu-item"</code>, <code>buildCompactParts</code> already includes <code>props.taskId</code>, and
+      <code>resolveLaunchCwd(state, effectiveTarget.cwd)</code> gives folder parity with the terminal-window deep link.</li>
+    <li><code>src/components/board/task-card-menu.tsx</code> needs <strong>no changes</strong> — the component returns a fragment
+      that slots into the existing launch section between its separators.</li>
+  </ul>
+  <pre class="codeblock"><code><span class="cm">// ── Per-task: card menu item ──────────────────────────────────────────</span>
+if (props.variant === "task-menu-item") {
+  if (!isDesktop) { <span class="cm">/* unchanged disabled hint */</span> }
+  return (
+    &lt;<span class="tag">&gt;</span>
+      &lt;<span class="tag">DropdownMenuItem</span> <span class="attr">onSelect</span>={handleLaunch} <span class="attr">className</span>=<span class="str">"py-2.5 sm:py-1.5"</span>&gt;
+        &lt;<span class="tag">Terminal</span> <span class="attr">className</span>=<span class="str">"mr-2 h-4 w-4"</span> /&gt;
+        Launch in Claude Code
+      &lt;/<span class="tag">DropdownMenuItem</span>&gt;
+      {browserLaunchAvailable &amp;&amp; (
+        &lt;<span class="tag">DropdownMenuItem</span> <span class="attr">onSelect</span>={handleLaunchInBrowser} <span class="attr">className</span>=<span class="str">"py-2.5 sm:py-1.5"</span>&gt;
+          &lt;<span class="tag">Globe</span> <span class="attr">className</span>=<span class="str">"mr-2 h-4 w-4"</span> /&gt;
+          &lt;<span class="tag">span</span> <span class="attr">className</span>=<span class="str">"inline-flex items-center gap-1.5"</span>&gt;
+            Launch in browser terminal
+            &lt;<span class="tag">span</span> <span class="attr">className</span>=<span class="str">"rounded bg-sky-500/15 px-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-sky-400"</span>&gt;
+              Beta
+            &lt;/<span class="tag">span</span>&gt;
+          &lt;/<span class="tag">span</span>&gt;
+        &lt;/<span class="tag">DropdownMenuItem</span>&gt;
+      )}
+      {dialog}
+    &lt;/<span class="tag">&gt;</span>
+  );
+}</code></pre>
+  <ul>
+    <li><strong>Guard shape matters for FR3:</strong> render the browser item behind <code>{browserLaunchAvailable &amp;&amp; …}</code>
+      so the flag-off tree is literally today's tree — don't restructure the terminal item.</li>
+    <li><strong>Analytics:</strong> nothing to add — <code>handleLaunchInBrowser</code> already captures
+      <code>launch_claude_code_clicked { method: "in_browser" }</code>, matching the toolbar event byte-for-byte (FR6).</li>
+    <li><strong>Beta pill classes:</strong> copy the toolbar's exact class string (shown above) so a future restyle finds one recipe, not two variants.</li>
+    <li><strong>Testing hooks:</strong> assert (a) flag off → single item with unchanged label; (b) flag on → item order Terminal → Globe;
+      (c) selecting the browser item calls <code>requestBrowserLaunch</code> with a payload containing this task's id in the prompt head;
+      (d) mobile branch never renders the browser item.</li>
+  </ul>
+
+  <p class="meta" style="margin-top:48px">Next step: hand off to Engineering. Acceptance criteria 1–9 from the Requirements step apply unchanged; this document adds the label decision (§2.1), the single-line decision (§2.2), and the state matrix (§6) as the review checklist for the Verify step.</p>
+
+</div>
+</body>
+</html>

@@ -407,6 +407,17 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
           <Terminal className="mr-2 h-4 w-4" />
           Launch in Claude Code
         </DropdownMenuItem>
+        {browserLaunchAvailable && (
+          <DropdownMenuItem onSelect={handleLaunchInBrowser} className="py-2.5 sm:py-1.5">
+            <Globe className="mr-2 h-4 w-4" />
+            <span className="inline-flex items-center gap-1.5">
+              Launch in browser terminal
+              <span className="rounded bg-sky-500/15 px-1 text-[10px] font-semibold uppercase leading-tight tracking-wide text-sky-400">
+                Beta
+              </span>
+            </span>
+          </DropdownMenuItem>
+        )}
         {dialog}
       </>
     );
