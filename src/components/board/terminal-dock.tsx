@@ -64,11 +64,11 @@ import { slugifyIdeaTitle } from "@/lib/launch-claude-code";
 import { newSessionTooltip } from "@/lib/terminal/session-cap";
 import {
   generatePopoutNonce,
-  parsePopoutChannelMessage,
   popoutChannelName,
-  reduceDockHandshake,
+  createDockPopoutMessageHandler,
   INITIAL_DOCK_HANDSHAKE_STATE,
   type DockHandshakeState,
+  type PopoutChannelLike,
   type PopoutPayload,
 } from "@/lib/terminal/popout-channel";
 import {
@@ -170,7 +170,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   // from the moment "Pop out" is clicked until either "Bring back" or the
   // popped window's own close-signal).
   const [poppedOutKeys, setPoppedOutKeys] = useState<Set<string>>(() => new Set());
-  const popoutChannelsRef = useRef<Map<string, { channel: BroadcastChannel; handshake: DockHandshakeState }>>(
+  const popoutChannelsRef = useRef<Map<string, { channel: PopoutChannelLike; handshake: DockHandshakeState }>>(
     new Map(),
   );
   // Mirrors so `deliverLaunch` (used by both the launch-bus subscription and
@@ -309,9 +309,19 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
         });
         return; // D7: no state change on failure — the tab stays attached and streaming.
       }
-      posthogRef.current?.capture("terminal_popout_used", { origin: entry?.origin ?? "toolbar" });
-      setPoppedOutKeys((prev) => new Set(prev).add(key));
 
+      // Set up the hand-off channel FIRST, synchronously, before any other
+      // work (posthog, setPoppedOutKeys, building the payload) — so it's
+      // guaranteed to be a live listener the instant the popped window's
+      // "ready" (or one of its retries — see startPopoutClientHandshake)
+      // arrives. This was the root cause of the field failure (see this
+      // module's rework doc in popout-channel.ts): nothing here previously
+      // depended on ordering in a way that could race in a real browser, but
+      // keeping this first removes any doubt and matches the hardening in
+      // createDockPopoutMessageHandler, which now treats every "ready" —
+      // not just the first — as a reason to (re)send the payload.
+      const channel = new BroadcastChannel(popoutChannelName(nonce));
+      popoutChannelsRef.current.set(key, { channel, handshake: INITIAL_DOCK_HANDSHAKE_STATE });
       const payload: PopoutPayload = {
         sid: summary.sessionId,
         browserToken: summary.browserToken,
@@ -322,22 +332,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
         identity,
         readOnly: summary.readOnly,
       };
-      const channel = new BroadcastChannel(popoutChannelName(nonce));
-      popoutChannelsRef.current.set(key, { channel, handshake: INITIAL_DOCK_HANDSHAKE_STATE });
-      channel.onmessage = (ev) => {
-        const message = parsePopoutChannelMessage(ev.data);
-        if (!message) return;
-        const current = popoutChannelsRef.current.get(key);
-        if (!current) return; // already torn down (e.g. a racing bring-back)
-        const result = reduceDockHandshake(current.handshake, message);
-        popoutChannelsRef.current.set(key, { channel, handshake: result.state });
-        if (result.action === "send-payload") {
-          channel.postMessage({ type: "payload", payload });
-        } else if (result.action === "reattach") {
-          // The popped window told us it's closing (D3) — reattach automatically.
-          bringBackToDock(key);
-        }
-      };
+      channel.onmessage = createDockPopoutMessageHandler({
+        getEntry: () => popoutChannelsRef.current.get(key),
+        setEntry: (next) => popoutChannelsRef.current.set(key, next),
+        getPayload: () => payload,
+        // The popped window told us it's closing (D3) — OR its hand-off
+        // timed out and it's telling us to give up on its behalf (see
+        // startPopoutClientHandshake) — either way, reattach automatically.
+        onReattach: () => bringBackToDock(key),
+      });
+
+      posthogRef.current?.capture("terminal_popout_used", { origin: entry?.origin ?? "toolbar" });
+      setPoppedOutKeys((prev) => new Set(prev).add(key));
     },
     [ideaId, ideaTitle, ideaSlug, bringBackToDock],
   );
