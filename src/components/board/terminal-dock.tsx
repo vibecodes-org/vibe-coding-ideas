@@ -52,7 +52,7 @@
 // zero new UI anywhere, including the tab strip and "+".
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ChevronUp, ChevronDown, Circle, Plus, Terminal as TerminalIcon, X } from "lucide-react";
+import { ChevronUp, ChevronDown, Circle, ListTree, Plus, Terminal as TerminalIcon, X } from "lucide-react";
 import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -78,6 +78,7 @@ import {
   dockStatusMeta,
   type SessionSummary,
 } from "./terminal-session-view";
+import { TerminalMySessionsPanel } from "./terminal-my-sessions-panel";
 import type { TerminalSessionActions, TerminalSessionDescriptor } from "./use-terminal-session";
 
 interface TerminalDockProps {
@@ -140,6 +141,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   // Single shared aria-live announcer for background-tab attention (a11y §14) —
   // one region so simultaneous background transitions never talk over each other.
   const [announcement, setAnnouncement] = useState("");
+  // Multi-session stage 3 (C3/C4): the global "My sessions" panel — one
+  // instance, opened from the collapsed bar's button (always visible,
+  // collapsed or expanded) OR by a cap refusal on ANY tab's mint (E1, design
+  // §7b). `mySessionsCount` mirrors the panel's own fetch so the trigger's
+  // badge stays in sync without a second independent poll.
+  const [mySessionsOpen, setMySessionsOpen] = useState(false);
+  const [mySessionsCount, setMySessionsCount] = useState<number | null>(null);
+  const openMySessions = useCallback(() => setMySessionsOpen(true), []);
   const actionsMapRef = useRef<Map<string, TerminalSessionActions>>(new Map());
   // Mirrors so `deliverLaunch` (used by both the launch-bus subscription and
   // "+") can read the CURRENT list/summaries without depending on them — that
@@ -403,6 +412,27 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
             </span>
           )}
         </span>
+        <TerminalMySessionsPanel
+          open={mySessionsOpen}
+          onOpenChange={setMySessionsOpen}
+          onCountChange={setMySessionsCount}
+        >
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-zinc-300 hover:text-zinc-100"
+            aria-label="My terminal sessions — every terminal running across your ideas"
+            aria-haspopup="dialog"
+          >
+            <ListTree className="h-3.5 w-3.5" />
+            <span className="hidden sm:inline">My sessions</span>
+            {!!mySessionsCount && (
+              <span className="rounded-full border border-zinc-600 bg-zinc-800 px-1.5 text-[10px] font-bold text-sky-300">
+                {mySessionsCount}
+              </span>
+            )}
+          </Button>
+        </TerminalMySessionsPanel>
         <Button
           variant="ghost"
           size="xs"
@@ -535,6 +565,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
             onReportSummary={reportSummary}
             onRegisterActions={registerActions}
             onAnnounce={announce}
+            onCapExceeded={openMySessions}
           />
         ))}
       </div>

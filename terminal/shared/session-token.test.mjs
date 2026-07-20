@@ -7,8 +7,11 @@ import {
   verifyToken,
   authorizeAttach,
   mintSessionTokens,
+  mintControlToken,
+  authorizeControl,
   newSessionId,
   DEFAULT_TTL_SECONDS,
+  CONTROL_TTL_SECONDS,
 } from "./session-token.mjs";
 
 const SECRET = "test-secret-do-not-ship";
@@ -206,4 +209,53 @@ test("mintSessionTokens mints both legs sharing one sid + sub", async () => {
 test("newSessionId produces a relay-safe id", () => {
   const id = newSessionId();
   assert.match(id, /^[A-Za-z0-9._-]+$/);
+});
+
+// ── control tokens (multi-session stage 3, relay POST /end) ─────────────────
+
+test("mintControlToken → authorizeControl happy path", async () => {
+  assert.equal(CONTROL_TTL_SECONDS, 60);
+  const token = await mintControlToken({ sub: "user-A", sid: "sess-1", idea: "idea-1", secret: SECRET, now: NOW });
+  const res = await authorizeControl({ token, secret: SECRET, session: "sess-1", now: NOW });
+  assert.equal(res.ok, true);
+  assert.equal(res.sub, "user-A");
+  assert.equal(res.claims.role, "control");
+});
+
+test("authorizeControl: sid mismatch is rejected", async () => {
+  const token = await mintControlToken({ sub: "user-A", sid: "sess-1", secret: SECRET, now: NOW });
+  const res = await authorizeControl({ token, secret: SECRET, session: "sess-OTHER", now: NOW });
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, "sid mismatch");
+});
+
+test("authorizeControl: a bridge/browser token is rejected with role mismatch", async () => {
+  const { browser } = await mintSessionTokens({ sub: "user-A", idea: "idea-1", sid: "sess-1", secret: SECRET, now: NOW });
+  const res = await authorizeControl({ token: browser, secret: SECRET, session: "sess-1", now: NOW });
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, "role mismatch");
+});
+
+test("authorizeControl: expiry is ALWAYS strict — no reattach waiver exists for control tokens", async () => {
+  const token = await mintControlToken({ sub: "user-A", sid: "sess-1", secret: SECRET, now: NOW });
+  const stillGood = await authorizeControl({ token, secret: SECRET, session: "sess-1", now: NOW + CONTROL_TTL_SECONDS - 1 });
+  assert.equal(stillGood.ok, true);
+  const expired = await authorizeControl({ token, secret: SECRET, session: "sess-1", now: NOW + CONTROL_TTL_SECONDS + 1 });
+  assert.equal(expired.ok, false);
+  assert.equal(expired.reason, "expired");
+});
+
+test("authorizeControl: a tampered control token is rejected (bad signature)", async () => {
+  const token = await mintControlToken({ sub: "user-A", sid: "sess-1", secret: SECRET, now: NOW });
+  // Forge the payload (a different sid, trying to redirect this control token at
+  // ANOTHER session) while keeping the original signature — guaranteed to fail
+  // the HMAC check, unlike flipping trailing base64 characters (whose last
+  // symbol carries unused padding bits and can coincidentally decode unchanged).
+  const [payloadB64, sig] = token.split(".");
+  const forged = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+  forged.sid = "sess-EVIL";
+  const forgedPayload = Buffer.from(JSON.stringify(forged)).toString("base64url");
+  const res = await authorizeControl({ token: `${forgedPayload}.${sig}`, secret: SECRET, session: "sess-EVIL", now: NOW });
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, "bad signature");
 });

@@ -39,7 +39,9 @@
 import "@xterm/xterm/css/xterm.css";
 import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } from "react";
 import { toast } from "sonner";
+import { usePostHog } from "posthog-js/react";
 import { logger } from "@/lib/logger";
+import { capReachedToastCopy, getTerminalSessionCap, RATE_LIMIT_MESSAGE } from "@/lib/terminal/session-cap";
 import type { Terminal as XTerm } from "@xterm/xterm";
 import type { FitAddon as XFitAddon } from "@xterm/addon-fit";
 import {
@@ -92,6 +94,51 @@ import { type LaunchPhase, nextLaunchPhaseOnTimeout } from "@/lib/terminal/first
 // so we always fall through here rather than spin forever.
 const HELPER_OPEN_TIMEOUT_MS = 8000;
 
+/** The mint route's 409/429 refusal body shape (stage 3 — see route.ts). */
+interface MintErrorBody {
+  error?: string;
+  code?: string;
+  cap?: number;
+}
+
+/**
+ * Module-scope (not a useCallback) — takes everything it needs as arguments so
+ * it never has to be a dependency of `connect`. Shows the SERVER's error copy
+ * either way (E1/E2's whole point is that copy lives in one place — session-cap.ts
+ * — not duplicated client-side); the only client-side branching is which toast
+ * shape and whether a "View my sessions" action + a `terminal_cap_hit` PostHog
+ * event go with it.
+ */
+function reportMintFailure(
+  status: number,
+  body: MintErrorBody | null,
+  posthog: { capture: (event: string, props?: Record<string, unknown>) => void } | undefined,
+  onCapExceeded: (() => void) | undefined,
+) {
+  logger.error("Terminal session mint refused (client)", {
+    status,
+    code: body?.code,
+    error: body?.error,
+  });
+  if (body?.code === "cap_exceeded") {
+    const cap = typeof body.cap === "number" ? body.cap : getTerminalSessionCap();
+    posthog?.capture("terminal_cap_hit", { cap });
+    const copy = capReachedToastCopy(cap);
+    toast.error(body.error || copy.title, {
+      description: copy.description,
+      action: onCapExceeded ? { label: "View my sessions", onClick: () => onCapExceeded() } : undefined,
+    });
+    return;
+  }
+  if (body?.code === "rate_limited") {
+    toast.error(body.error || RATE_LIMIT_MESSAGE);
+    return;
+  }
+  toast.error("Couldn't start a terminal session", {
+    description: body?.error || `Session request failed (${status})`,
+  });
+}
+
 /** What identifies the idea/board a session's launches are bootstrapped for. */
 export interface TerminalSessionDescriptor {
   ideaId: string;
@@ -141,6 +188,22 @@ export interface UseTerminalSessionOptions {
    * explicitly.
    */
   autoConnectWhenExpanded?: boolean;
+  /**
+   * Multi-session stage 3 (C1/C4): this tab's task identity, when the launch
+   * was task-scoped — forwarded on mint so the `terminal_sessions` registry
+   * row (and, from it, "My sessions") can show a task label instead of just
+   * the idea. Undefined for a board-level launch.
+   */
+  taskId?: string;
+  taskTitle?: string;
+  /**
+   * Called when a mint is refused for having hit the cap (E1) — the caller
+   * (the dock) opens/points at the "My sessions" panel, the ONE place a
+   * blocked user can see and end what's counting against them (design §7b).
+   * Optional: a hook instance the dock doesn't wire this for just shows the
+   * toast with no action button.
+   */
+  onCapExceeded?: () => void;
 }
 
 export interface PairInfo {
@@ -204,7 +267,20 @@ export function useTerminalSession(
   options: UseTerminalSessionOptions,
 ): UseTerminalSessionResult {
   const { ideaId, ideaTitle, ideaGithubUrl } = descriptor;
-  const { enabled, expanded, requestExpand, autoConnectWhenExpanded = true } = options;
+  const {
+    enabled,
+    expanded,
+    requestExpand,
+    autoConnectWhenExpanded = true,
+    taskId,
+    taskTitle,
+    onCapExceeded,
+  } = options;
+  const posthog = usePostHog();
+  const posthogRef = useRef(posthog);
+  const onCapExceededRef = useRef(onCapExceeded);
+  posthogRef.current = posthog;
+  onCapExceededRef.current = onCapExceeded;
 
   const [state, dispatch] = useReducer(terminalReducer, initialConnectionState);
   const [readOnly, setReadOnly] = useState(false);
@@ -893,11 +969,20 @@ export function useTerminalSession(
       const res = await fetch("/api/terminal/session", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ideaId }),
+        body: JSON.stringify({
+          ideaId,
+          ...(taskId ? { taskId } : {}),
+          ...(taskTitle ? { taskTitle } : {}),
+        }),
       });
       if (!res.ok) {
-        const body = (await res.json().catch(() => null)) as { error?: string } | null;
-        throw new Error(body?.error || `Session request failed (${res.status})`);
+        const body = (await res.json().catch(() => null)) as MintErrorBody | null;
+        // Superseded while minting → let the newer attempt own the outcome
+        // (a stale refusal toast for an attempt nobody's waiting on anymore).
+        if (isConnectSuperseded(gen, connectGenRef.current)) return;
+        dispatch({ type: "session-mint-failed" });
+        reportMintFailure(res.status, body, posthogRef.current, onCapExceededRef.current);
+        return;
       }
       data = await res.json();
     } catch (err) {
@@ -932,16 +1017,37 @@ export function useTerminalSession(
     reconnectAttemptRef.current = 0;
     termRef.current?.clear();
 
+    // Best-effort identity PATCH (C4): the browser already resolves a cwd to
+    // build the launch prompt — forward it to the registry row so "My
+    // sessions" can show it. Never awaited/blocking: a failure here changes
+    // nothing about the terminal itself, the identity line is just honestly
+    // blank until it lands (or forever, if there's no cwd to report).
+    try {
+      const { cwd } = resolveLaunchPromptParts();
+      if (cwd && cwd.trim()) {
+        void fetch(`/api/terminal/session/${encodeURIComponent(data.sessionId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cwd: cwd.trim() }),
+        }).catch(() => {});
+      }
+    } catch {
+      /* best-effort only — never blocks the terminal actually connecting */
+    }
+
     // Same-machine: hand the bridge token to the local helper via the deep link.
     if (autoLaunch) fireLaunchDeepLink(data.sessionId, data.bridgeToken);
 
     openBrowserLeg(data.sessionId, data.browserToken);
   }, [
     ideaId,
+    taskId,
+    taskTitle,
     teardownSocket,
     clearHelperTimer,
     removeLaunchIframe,
     requestExpand,
+    resolveLaunchPromptParts,
     fireLaunchDeepLink,
     openBrowserLeg,
   ]);
@@ -999,6 +1105,7 @@ export function useTerminalSession(
     clearHelperTimer();
     removeLaunchIframe();
     setLaunchPhase("idle");
+    const sid = pairRef.current?.sessionId;
     const ws = wsRef.current;
     if (ws) {
       try {
@@ -1008,6 +1115,17 @@ export function useTerminalSession(
       }
     }
     teardownSocket();
+    // Additive (C3): keep the registry truthful for "My sessions" — the socket
+    // teardown above is unchanged/authoritative for the terminal itself; this
+    // is fire-and-forget bookkeeping only, never awaited, never surfaced to
+    // the user on failure (the relay end route is itself skew-safe/best-effort).
+    if (sid) {
+      void fetch("/api/terminal/session/end", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sid }),
+      }).catch(() => {});
+    }
   }, [teardownSocket, clearHelperTimer, removeLaunchIframe]);
 
   // Clean up the socket + helper timer + probe iframe if the hook unmounts mid-flow.

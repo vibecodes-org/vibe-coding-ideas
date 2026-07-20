@@ -230,6 +230,115 @@ describe("useTerminalSession", () => {
     expect(mockSockets).toHaveLength(0);
   });
 
+  it("forwards taskId/taskTitle on mint when provided (C1)", async () => {
+    const fetchMock = vi.fn(async () => mintResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const requestExpand = vi.fn();
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, {
+        enabled: true,
+        expanded: true,
+        requestExpand,
+        taskId: "task-1",
+        taskTitle: "Fix login",
+      }),
+    );
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/terminal/session",
+      expect.objectContaining({
+        body: JSON.stringify({ ideaId: "idea-1", taskId: "task-1", taskTitle: "Fix login" }),
+      }),
+    );
+  });
+
+  it("a 409 cap refusal shows the server's copy, fires the onCapExceeded callback, and never opens a socket", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: "You already have 5 terminals running — end one to start another.",
+          code: "cap_exceeded",
+          cap: 5,
+          active: [],
+        }),
+      })),
+    );
+    const onCapExceeded = vi.fn();
+    const requestExpand = vi.fn();
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand, onCapExceeded }),
+    );
+
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(mockSockets).toHaveLength(0);
+    expect(toastError).toHaveBeenCalled();
+    const [title, opts] = toastError.mock.calls[0];
+    expect(title).toContain("You already have 5 terminals running");
+    expect(opts?.action?.label).toBe("View my sessions");
+    opts.action.onClick();
+    expect(onCapExceeded).toHaveBeenCalled();
+  });
+
+  it("a 429 rate-limit refusal shows distinct copy with no action button and never mentions ending a session", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 429,
+        json: async () => ({
+          error: "You're starting terminals too fast — wait a moment and try again.",
+          code: "rate_limited",
+        }),
+      })),
+    );
+    const onCapExceeded = vi.fn();
+    const requestExpand = vi.fn();
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand, onCapExceeded }),
+    );
+
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(toastError).toHaveBeenCalledWith("You're starting terminals too fast — wait a moment and try again.");
+    expect(onCapExceeded).not.toHaveBeenCalled();
+  });
+
+  it("end() fire-and-forgets a POST to /api/terminal/session/end with the sid (C3 registry truth)", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/terminal/session/end") return { ok: true, json: async () => ({ results: [] }) };
+      return mintResponse();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateBinaryMessage());
+
+    act(() => result.current.actions.end());
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/terminal/session/end",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ sid: "sid-abc123" }),
+      }),
+    );
+  });
+
   it("an abnormal drop after a live stream reattaches within the grace window (same sid, no re-mint)", async () => {
     vi.useFakeTimers();
     const { result } = setup();

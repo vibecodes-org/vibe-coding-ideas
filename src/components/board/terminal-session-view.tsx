@@ -105,6 +105,8 @@ interface TerminalSessionViewProps {
   onReportSummary: (key: string, summary: SessionSummary) => void;
   onRegisterActions: (key: string, actions: TerminalSessionActions | null) => void;
   onAnnounce: (text: string) => void;
+  /** Opens the dock's "My sessions" panel on a cap refusal (E1, design §7b). */
+  onCapExceeded?: () => void;
 }
 
 export function TerminalSessionView({
@@ -118,12 +120,16 @@ export function TerminalSessionView({
   onReportSummary,
   onRegisterActions,
   onAnnounce,
+  onCapExceeded,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
     expanded,
     requestExpand: onRequestExpand,
     autoConnectWhenExpanded,
+    taskId: entry.taskId,
+    taskTitle: entry.taskTitle,
+    onCapExceeded,
   });
   const { state, launchPhase, peerDegraded, pair, readOnly, inputEnabled, platform, paired, containerRef, actions } =
     session;

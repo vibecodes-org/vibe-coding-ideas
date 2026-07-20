@@ -18,6 +18,7 @@
 //   const relay = await startStandinRelay({ port: 0, idleMs: 200 });
 //   ... relay.url ("ws://127.0.0.1:<port>") ... await relay.close();
 
+import http from "node:http";
 import { WebSocketServer } from "ws";
 import {
   decideAttach,
@@ -30,7 +31,7 @@ import {
   maxCloseReason,
   resolveMs,
 } from "../relay/src/pairing.js";
-import { authorizeAttach } from "../shared/session-token.mjs";
+import { authorizeAttach, authorizeControl } from "../shared/session-token.mjs";
 import {
   encodeAttachedFrame,
   encodePeerDegradedFrame,
@@ -69,7 +70,56 @@ export function startStandinRelay(opts = {}) {
   // (`peer-reattached`); the timer firing still-incomplete runs the OLD teardown.
   const sessions = new Map();
 
-  const wss = new WebSocketServer({ port: opts.port ?? 0 });
+  // Multi-session stage 3 (POST /end): the stand-in needs a plain HTTP
+  // endpoint alongside the WebSocket upgrade path, so — unlike the original
+  // `{ port }` shorthand — we own the http.Server explicitly and hand it to
+  // WebSocketServer via the `server` option (ws only intercepts the `upgrade`
+  // event on it; everything else is handled by our own request listener).
+  const httpServer = http.createServer((req, res) => {
+    handleHttpRequest(req, res).catch((err) => {
+      log("end handler crashed", { err: String(err) });
+      try {
+        res.writeHead(500, { "content-type": "application/json" });
+        res.end(JSON.stringify({ ended: false, reason: "internal-error" }));
+      } catch { /* response already sent */ }
+    });
+  });
+  const wss = new WebSocketServer({ server: httpServer });
+
+  /** Faithful twin of the Cloudflare DO's handleEnd (relay/src/index.js). */
+  async function handleHttpRequest(req, res) {
+    const url = new URL(req.url, "http://localhost");
+    if (url.pathname !== "/end" || req.method !== "POST") {
+      res.writeHead(404, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "not found" }));
+      return;
+    }
+    const session = url.searchParams.get("session");
+    const authHeader = req.headers["authorization"] || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;
+    const auth = await authorizeControl({ token, secret, session });
+    if (!auth.ok) {
+      log("end rejected (auth)", { session, reason: auth.reason });
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ended: false, reason: "unauthorized" }));
+      return;
+    }
+    const legs = sessions.get(session);
+    const hasLive =
+      !!legs &&
+      ((legs.bridge && legs.bridge.readyState === legs.bridge.OPEN) ||
+        (legs.browser && legs.browser.readyState === legs.browser.OPEN));
+    if (!hasLive) {
+      log("end: no live session", { session });
+      res.writeHead(200, { "content-type": "application/json" });
+      res.end(JSON.stringify({ ended: false, reason: "no-session" }));
+      return;
+    }
+    endSession(session, "ended-by-user");
+    log("end: session ended", { session });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ ended: true }));
+  }
 
   /** Close both legs with code 1000 + a lifecycle reason, then forget the session. */
   function endSession(session, reason) {
@@ -239,10 +289,14 @@ export function startStandinRelay(opts = {}) {
   });
 
   return new Promise((resolve) => {
-    wss.on("listening", () => {
-      const { port } = wss.address();
+    httpServer.listen(opts.port ?? 0, () => {
+      const { port } = httpServer.address();
       resolve({
         url: `ws://127.0.0.1:${port}`,
+        // Multi-session stage 3: the HTTP base for POST /end (same host/port —
+        // ws upgrades and plain HTTP share one listener, exactly like the real
+        // Cloudflare Worker fronting one Durable Object namespace).
+        httpUrl: `http://127.0.0.1:${port}`,
         port,
         sessions,
         close: () =>
@@ -255,7 +309,7 @@ export function startStandinRelay(opts = {}) {
             for (const client of wss.clients) {
               try { client.terminate(); } catch { /* ignore */ }
             }
-            wss.close(() => res());
+            wss.close(() => httpServer.close(() => res()));
           }),
       });
     });

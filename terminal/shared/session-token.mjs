@@ -29,7 +29,21 @@
 // never waived, and a belt-and-braces cap rejects tokens older than the max
 // session age. `verifyToken` itself stays strict (expired is always a failure).
 
-/** @typedef {"bridge"|"browser"} Role */
+/**
+ * @typedef {"bridge"|"browser"|"control"} Role
+ *
+ * "control" (multi-session stage 3, terminal/api/session/end) is a THIRD kind
+ * of leg: it never opens a WebSocket. It authorizes a single HTTP call — the
+ * VibeCodes end route (POST /end?session=<sid>) telling the relay's Durable
+ * Object to close both legs of a specific session. It reuses this exact
+ * sign/verify machinery (same secret, same HMAC, same shape checks) so the
+ * relay verifies it with the SAME code path as bridge/browser tokens —
+ * `authorizeControl` below is the strict (non-waived) counterpart to
+ * `authorizeAttach`: a control token is always short-lived (60s) and NEVER
+ * gets the reattach expiry waiver a live session's owner gets on bridge/
+ * browser tokens, because there is no "session" for a control call to be
+ * live inside of — it's a one-shot admin action, not a leg that attaches.
+ */
 
 /**
  * @typedef {Object} SessionClaims
@@ -53,7 +67,10 @@ export const DEFAULT_TTL_SECONDS = 300;
  */
 export const DEFAULT_MAX_SESSION_MS = 4 * 60 * 60 * 1000;
 
-const ROLES = Object.freeze(["bridge", "browser"]);
+const ROLES = Object.freeze(["bridge", "browser", "control"]);
+
+/** Control-token lifetime (multi-session stage 3): short-lived, one-shot. */
+export const CONTROL_TTL_SECONDS = 60;
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -261,4 +278,53 @@ export async function mintSessionTokens({
     signToken({ ...base, role: "bridge" }, secret),
   ]);
   return { sid, idea, sub, exp, browser, bridge };
+}
+
+/**
+ * Mint a short-lived "control" token authorizing ONE HTTP call to the relay's
+ * `POST /end?session=<sid>` endpoint (multi-session stage 3, terminal/api/
+ * session/end). Minted SERVER-SIDE by the VibeCodes end route — never handed
+ * to the browser — immediately before that server-to-server fetch, so its 60s
+ * TTL only ever needs to cover one outbound request. `idea` is carried for
+ * parity with the other mint helper and for relay-side logging; it is not
+ * checked by `authorizeControl`.
+ *
+ * @param {{ sub: string, sid: string, idea?: string, secret: string, ttlSeconds?: number, now?: number }} args
+ * @returns {Promise<string>} the signed control token
+ */
+export async function mintControlToken({
+  sub,
+  sid,
+  idea = "",
+  secret,
+  ttlSeconds = CONTROL_TTL_SECONDS,
+  now = Math.floor(Date.now() / 1000),
+}) {
+  const exp = now + ttlSeconds;
+  return signToken({ sub, sid, idea, role: "control", iat: now, exp }, secret);
+}
+
+/**
+ * Verify a control token for the relay's `/end` HTTP endpoint. Deliberately
+ * STRICT — unlike {@link authorizeAttach}, there is no reattach waiver: a
+ * control call is a one-shot admin action, never a leg of a live session, so
+ * an expired token is always rejected outright. Checks signature, shape,
+ * `role === "control"`, and `sid` match; does NOT check `sub` against
+ * anything — the caller (the end route) already verified the sid belongs to
+ * the requesting user via the `terminal_sessions` registry BEFORE minting
+ * this token, so by the time the relay sees it, authorization already
+ * happened upstream. This function exists so the relay never has to trust an
+ * unsigned `session` query param alone — the control token proves the call
+ * came from VibeCodes' own server, not an arbitrary client guessing a sid.
+ *
+ * @param {{ token: unknown, secret: string, session: unknown, now?: number }} args
+ * @returns {Promise<{ ok: true, sub: string, claims: SessionClaims } | { ok: false, reason: string }>}
+ */
+export async function authorizeControl({ token, secret, session, now }) {
+  const res = await verifyToken(token, secret, { now });
+  if (!res.ok) return res;
+  const c = res.claims;
+  if (c.role !== "control") return { ok: false, reason: "role mismatch" };
+  if (c.sid !== session) return { ok: false, reason: "sid mismatch" };
+  return { ok: true, sub: c.sub, claims: c };
 }
