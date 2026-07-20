@@ -281,4 +281,48 @@ describe("useTerminalSession", () => {
     expect(result.current.state.status).toBe("session-ended");
     expect(result.current.state.endedReason).toBe("reconnect-failed");
   });
+
+  // Multi-session stage 2: `autoConnectWhenExpanded` stops a freshly-minted tab
+  // (mounted with `expanded` already true, delivering its own explicit launch in
+  // the same tick) from ALSO tripping the paired-auto-connect effect and minting
+  // a second, orphaned session. Requires a "supported" platform + a pre-paired
+  // browser, so these two stub navigator to a Mac UA.
+  describe("autoConnectWhenExpanded", () => {
+    const macUserAgent =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
+
+    beforeEach(() => {
+      vi.stubGlobal("navigator", { userAgent: macUserAgent, maxTouchPoints: 0 });
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+    });
+
+    it("auto-connects a paired, expanded, idle instance by default (unchanged P1 behaviour)", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(global.fetch).toHaveBeenCalled();
+      expect(result.current.state.status).not.toBe("idle");
+    });
+
+    it("does NOT auto-connect when autoConnectWhenExpanded is false (a freshly-minted tab)", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+        }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(result.current.state.status).toBe("idle");
+    });
+  });
 });

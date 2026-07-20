@@ -64,6 +64,17 @@ export interface BrowserLaunchPayload {
    * (repo-backed, or a brand-new ~/projects/<slug> the agent creates).
    */
   cwd?: string;
+  /**
+   * Multi-session stage 2 (B10 dedupe, B3 tab labels): the task this launch was
+   * scoped to, when it came from a task card ("task-icon" / "task-menu-item"
+   * variants of LaunchClaudeCodeButton) rather than the board toolbar. Undefined
+   * for board-level launches — those never carry a task identity, so B10's
+   * dedupe never applies to them (only a REAL task identity is keyed on; cwd/
+   * prompt equivalence is deliberately never treated as a match).
+   */
+  taskId?: string;
+  /** The task's title, for the tab label (B3) when `taskId` is present. */
+  taskTitle?: string;
 }
 
 /** Ask the board's terminal dock to open + auto-launch in the browser. */

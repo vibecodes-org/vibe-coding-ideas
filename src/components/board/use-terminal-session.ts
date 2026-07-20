@@ -108,7 +108,17 @@ export interface TerminalSessionDescriptor {
 export interface UseTerminalSessionOptions {
   /** Master feature gate — mirrors isTerminalEnabled(); effects no-op when false. */
   enabled: boolean;
-  /** Is the dock panel currently open? Drives resize/focus/auto-connect timing. */
+  /**
+   * Is THIS instance's terminal currently visible? P1 (one hook): the dock
+   * panel's own open/closed state. Multi-session stage 2 (one hook per tab): the
+   * dock panel open AND this tab the active one — a background tab must never
+   * resize/refit or steal focus just because the dock is open on a DIFFERENT
+   * tab. Passing `dockExpanded && isActiveTab` here is what scopes those
+   * dock-wide P1 effects (resize-on-expand, focus-on-connect-or-expand, and —
+   * see `autoConnectWhenExpanded` below — the paired auto-connect gate) to the
+   * one tab actually on screen; switching tabs re-fires them for the newly
+   * active one exactly like re-expanding the P1 dock did.
+   */
   expanded: boolean;
   /**
    * Called at the same points the old component called `setExpanded(true)` —
@@ -116,6 +126,21 @@ export interface UseTerminalSessionOptions {
    * `expanded` itself stays owned by the caller (dock chrome, not per-session).
    */
   requestExpand: () => void;
+  /**
+   * Gates the "paired browser auto-connects when the panel opens while idle"
+   * effect (install-first criterion #6). Default true — unchanged P1 behaviour
+   * for a lone/pristine instance. Multi-session stage 2 sets this to `false` for
+   * every tab it creates via an EXPLICIT launch (task menu, toolbar, "+"): those
+   * tabs mount with `expanded` already true (the dock is already open) and
+   * deliver their own launch via `actions.launchFromBus` / `beginBrowserLaunch`
+   * in the same tick — without this flag, THIS effect would independently see
+   * "expanded, idle, paired" on that same mount and fire a SECOND, redundant
+   * `connect()`, minting and immediately orphaning an extra relay session. Only
+   * the board's one always-mounted pristine slot (never yet launched) needs this
+   * ambient auto-connect, so the dock only ever passes `false` for tabs it mints
+   * explicitly.
+   */
+  autoConnectWhenExpanded?: boolean;
 }
 
 export interface PairInfo {
@@ -179,7 +204,7 @@ export function useTerminalSession(
   options: UseTerminalSessionOptions,
 ): UseTerminalSessionResult {
   const { ideaId, ideaTitle, ideaGithubUrl } = descriptor;
-  const { enabled, expanded, requestExpand } = options;
+  const { enabled, expanded, requestExpand, autoConnectWhenExpanded = true } = options;
 
   const [state, dispatch] = useReducer(terminalReducer, initialConnectionState);
   const [readOnly, setReadOnly] = useState(false);
@@ -1003,7 +1028,7 @@ export function useTerminalSession(
   // (criterion #6). Unpaired / unsupported browsers never satisfy this guard, so no
   // deep link fires for them.
   useEffect(() => {
-    if (!enabled) return;
+    if (!enabled || !autoConnectWhenExpanded) return;
     if (
       expanded &&
       state.status === "idle" &&
@@ -1013,7 +1038,16 @@ export function useTerminalSession(
     ) {
       void connect({ autoLaunch: true });
     }
-  }, [enabled, expanded, state.status, platform.supported, paired, launchPhase, connect]);
+  }, [
+    enabled,
+    autoConnectWhenExpanded,
+    expanded,
+    state.status,
+    platform.supported,
+    paired,
+    launchPhase,
+    connect,
+  ]);
 
   const copyBridgeCommand = useCallback(() => {
     if (!pair) return;

@@ -356,8 +356,13 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     requestBrowserLaunch({
       essentials,
       cwd: resolveLaunchCwd(state, effectiveTarget.cwd),
+      // Multi-session stage 2 (B10 dedupe, B3 tab labels): only task-scoped
+      // variants carry a task identity — a board-level launch never does, so
+      // B10's dedupe never mistakes two board launches for the same task.
+      taskId: props.variant === "board" ? undefined : props.taskId,
+      taskTitle: props.variant === "board" ? undefined : props.taskTitle,
     });
-  }, [posthog, buildCompactEssentials, resolveState, effectiveTarget.cwd]);
+  }, [posthog, buildCompactEssentials, resolveState, effectiveTarget.cwd, props]);
 
   const openDialog = useCallback((mode: LaunchMode, launch: boolean) => {
     setPendingLaunch(launch);
