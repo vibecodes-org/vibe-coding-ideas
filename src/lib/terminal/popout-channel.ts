@@ -37,6 +37,26 @@
 // dock's own tiny handshake reducer, and the 4001/"brought back" + hand-off
 // timeout predicates — so it's unit-tested without a DOM, a socket, or a real
 // BroadcastChannel.
+//
+// REWORK (fix/terminal-popout-handshake, board task cd0a9792): a Brave field
+// test showed the popped window timing out with "Lost the session hand-off"
+// while the dock's tab kept showing "Connected" — the hand-off never
+// completed. Root cause: the popped window posted "ready" EXACTLY ONCE
+// (terminal-popout-client.tsx), and neither side had any resilience to that
+// single BroadcastChannel message going missing — no retry, and every
+// rejection path (`parsePopoutPayload`/`parsePopoutChannelMessage`) failed
+// SILENTLY (`return null`, nothing logged), so a dropped or delayed message
+// left no trace anywhere. A one-shot post on a cross-window channel is not a
+// safe assumption in real browsers (strict privacy/storage-isolation modes —
+// Brave chief among them — plus ordinary scheduling races between a
+// `noopener` popup and its opener can all delay or drop the very first
+// message); this module now assumes every message CAN be lost and makes the
+// whole handshake self-healing instead: the client retries "ready" on an
+// interval until the payload lands or it gives up (`startPopoutClientHandshake`),
+// the dock treats "ready" as fully idempotent — N readies, N (harmless,
+// duplicate) payload re-sends — instead of "first one wins"
+// (`reduceDockHandshake`), and every rejection path now warns with its
+// reason instead of dropping silently.
 
 import { RELAY_CLOSE } from "@/lib/terminal/connection";
 
@@ -81,7 +101,10 @@ export interface PopoutPayload {
    * `useTerminalSession` currently resolves the relay URL itself from the SAME
    * `NEXT_PUBLIC_TERMINAL_RELAY_URL` build-time env both documents share, so
    * this field is not required to be threaded into the actual connection —
-   * see use-terminal-session.ts's `attachExisting` option doc.
+   * see use-terminal-session.ts's `attachExisting` option doc. Non-essential:
+   * an empty string is accepted (see `parsePopoutPayload`) — it's unused by
+   * the popped window either way, so treating it as required would only add
+   * one more way for a legitimate hand-off to be silently rejected.
    */
   relayUrl: string;
   ideaId: string;
@@ -102,31 +125,43 @@ function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.length > 0;
 }
 
+/**
+ * Field-by-field validation so a rejection can say WHICH field was the
+ * problem (never silent — a dropped hand-off used to leave zero trace
+ * anywhere, which is exactly what made the Brave field failure so hard to
+ * place). `relayUrl` is intentionally the one non-essential field — see its
+ * doc on `PopoutPayload` — so an empty string there doesn't sink an
+ * otherwise-valid hand-off.
+ */
 function parsePopoutPayload(value: unknown): PopoutPayload | null {
-  if (!value || typeof value !== "object") return null;
-  const p = value as Record<string, unknown>;
-  if (
-    isNonEmptyString(p.sid) &&
-    isNonEmptyString(p.browserToken) &&
-    isNonEmptyString(p.relayUrl) &&
-    isNonEmptyString(p.ideaId) &&
-    typeof p.ideaTitle === "string" &&
-    isNonEmptyString(p.label) &&
-    typeof p.identity === "string" &&
-    typeof p.readOnly === "boolean"
-  ) {
-    return {
-      sid: p.sid,
-      browserToken: p.browserToken,
-      relayUrl: p.relayUrl,
-      ideaId: p.ideaId,
-      ideaTitle: p.ideaTitle,
-      label: p.label,
-      identity: p.identity,
-      readOnly: p.readOnly,
-    };
+  if (!value || typeof value !== "object") {
+    console.warn("[terminal-popout] rejected payload: not an object", value);
+    return null;
   }
-  return null;
+  const p = value as Record<string, unknown>;
+  const problems: string[] = [];
+  if (!isNonEmptyString(p.sid)) problems.push("sid");
+  if (!isNonEmptyString(p.browserToken)) problems.push("browserToken");
+  if (typeof p.relayUrl !== "string") problems.push("relayUrl");
+  if (!isNonEmptyString(p.ideaId)) problems.push("ideaId");
+  if (typeof p.ideaTitle !== "string") problems.push("ideaTitle");
+  if (!isNonEmptyString(p.label)) problems.push("label");
+  if (typeof p.identity !== "string") problems.push("identity");
+  if (typeof p.readOnly !== "boolean") problems.push("readOnly");
+  if (problems.length > 0) {
+    console.warn("[terminal-popout] rejected payload: invalid/missing field(s)", problems);
+    return null;
+  }
+  return {
+    sid: p.sid as string,
+    browserToken: p.browserToken as string,
+    relayUrl: p.relayUrl as string,
+    ideaId: p.ideaId as string,
+    ideaTitle: p.ideaTitle as string,
+    label: p.label as string,
+    identity: p.identity as string,
+    readOnly: p.readOnly as boolean,
+  };
 }
 
 /**
@@ -137,14 +172,19 @@ function parsePopoutPayload(value: unknown): PopoutPayload | null {
  * `unknown`, not `any`, by the time it reaches app code).
  */
 export function parsePopoutChannelMessage(data: unknown): PopoutChannelMessage | null {
-  if (!data || typeof data !== "object") return null;
+  if (!data || typeof data !== "object") {
+    console.warn("[terminal-popout] ignoring channel message: not an object", data);
+    return null;
+  }
   const msg = data as { type?: unknown; payload?: unknown };
   if (msg.type === "ready") return { type: "ready" };
   if (msg.type === "closed") return { type: "closed" };
   if (msg.type === "payload") {
+    // parsePopoutPayload already warns with the specific reason on rejection.
     const payload = parsePopoutPayload(msg.payload);
     return payload ? { type: "payload", payload } : null;
   }
+  console.warn("[terminal-popout] ignoring channel message: unrecognised type", msg.type);
   return null;
 }
 
@@ -164,25 +204,80 @@ export interface DockHandshakeResult {
 
 /**
  * Pure reducer over every message the dock's channel can receive. `"ready"`
- * only triggers `send-payload` the FIRST time (idempotent against a retried
- * "ready" — e.g. a slow-loading popped window firing more than one, or a
- * message replayed after a hot-reload): once `payload-sent`, a later "ready" is
- * a no-op rather than re-sending (and re-triggering) the pop-out. `"closed"` is
- * the auto-reattach signal (D3) and is always actionable, regardless of
- * handshake phase — a popped window can close before OR after it ever received
- * the payload (e.g. the user closed it during the ~5s hand-off window), and the
- * dock must reattach either way. A stray `"payload"` on the DOCK's own channel
- * (it should never receive one — only send them) is ignored.
+ * ALWAYS triggers `send-payload` — including every retry (see
+ * `startPopoutClientHandshake`, which now re-announces "ready" on an
+ * interval instead of posting it once). This is deliberately idempotent
+ * rather than "first one wins": re-sending the SAME payload on a duplicate
+ * "ready" is a harmless no-op for the popped window (it just overwrites its
+ * own not-yet-set state with an identical value), whereas the old "only the
+ * first ready counts" version meant that if the payload the dock sent in
+ * response to that first ready was itself the one that got lost — not the
+ * ready — every later retried "ready" was silently ignored and the hand-off
+ * could never recover. `state` still tracks whether a payload has EVER been
+ * sent (useful for tests/debugging), but no longer gates the action.
+ * `"closed"` is the auto-reattach signal (D3) and is always actionable,
+ * regardless of handshake phase — a popped window can close (or its own
+ * hand-off can time out, which now ALSO posts "closed" — see
+ * `startPopoutClientHandshake`) before OR after it ever received the
+ * payload, and the dock must reattach either way. A stray `"payload"` on the
+ * DOCK's own channel (it should never receive one — only send them) is
+ * ignored.
  */
 export function reduceDockHandshake(
   state: DockHandshakeState,
   message: PopoutChannelMessage,
 ): DockHandshakeResult {
   if (message.type === "closed") return { state, action: "reattach" };
-  if (message.type === "ready" && state === "waiting-for-ready") {
-    return { state: "payload-sent", action: "send-payload" };
-  }
+  if (message.type === "ready") return { state: "payload-sent", action: "send-payload" };
   return { state, action: "none" };
+}
+
+// ── dock-side channel wiring (extracted so it's unit-testable without
+//    mounting the whole terminal-dock.tsx component tree) ──────────────────
+
+/**
+ * The minimal shape terminal-dock.tsx's real `BroadcastChannel` and a test
+ * double both satisfy. `onmessage`'s event type is the real DOM
+ * `MessageEvent` (not a narrowed `{ data: unknown }`) deliberately — a
+ * narrower property type here would make `BroadcastChannel` itself fail to
+ * structurally satisfy this interface under `strictFunctionTypes`
+ * (parameters are contravariant for property-declared function types).
+ */
+export interface PopoutChannelLike {
+  postMessage(data: unknown): void;
+  onmessage: ((ev: MessageEvent) => void) | null;
+  close(): void;
+}
+
+/**
+ * Builds the DOCK side's `channel.onmessage` handler — the exact logic
+ * terminal-dock.tsx's `handlePopOut` wires up, extracted so it can be driven
+ * by a test double instead of a real `BroadcastChannel` + React state. The
+ * per-tab bookkeeping (is this channel still the live one for this tab, or
+ * did a "Bring back" already tear it down?) stays with the CALLER via
+ * `getEntry`/`setEntry` — that's terminal-dock.tsx's `popoutChannelsRef` Map,
+ * not something this module should own.
+ */
+export function createDockPopoutMessageHandler(options: {
+  getEntry: () => { channel: PopoutChannelLike; handshake: DockHandshakeState } | undefined;
+  setEntry: (next: { channel: PopoutChannelLike; handshake: DockHandshakeState }) => void;
+  getPayload: () => PopoutPayload;
+  onReattach: () => void;
+}): (ev: MessageEvent) => void {
+  const { getEntry, setEntry, getPayload, onReattach } = options;
+  return (ev) => {
+    const message = parsePopoutChannelMessage(ev.data);
+    if (!message) return; // already warned with a reason
+    const current = getEntry();
+    if (!current) return; // already torn down (e.g. a racing bring-back)
+    const result = reduceDockHandshake(current.handshake, message);
+    setEntry({ channel: current.channel, handshake: result.state });
+    if (result.action === "send-payload") {
+      current.channel.postMessage({ type: "payload", payload: getPayload() });
+    } else if (result.action === "reattach") {
+      onReattach();
+    }
+  };
 }
 
 // ── popped-window-side decisions ────────────────────────────────────────────
@@ -204,6 +299,15 @@ export function isPreemptedClose(closeCode: number | null): boolean {
 /** How long the popped window waits for the hand-off payload before giving up honestly (D2/D7 fallback, "~5s" per the design). */
 export const POPOUT_HANDOFF_TIMEOUT_MS = 5_000;
 
+/**
+ * How often the popped window re-announces "ready" while it waits (hardening
+ * for the Brave field failure — see this module's header doc). One-shot was
+ * fragile by construction: if that single message never landed on a live
+ * dock listener, nothing would ever try again. ~300ms gives roughly 16
+ * attempts inside the 5s hand-off window.
+ */
+export const POPOUT_READY_RETRY_MS = 300;
+
 /** Pure boundary check for the ~5s hand-off wait, so the timing policy is testable without a real timer. */
 export function hasPopoutHandoffTimedOut(
   startedAtMs: number,
@@ -211,4 +315,96 @@ export function hasPopoutHandoffTimedOut(
   timeoutMs: number = POPOUT_HANDOFF_TIMEOUT_MS,
 ): boolean {
   return nowMs - startedAtMs >= timeoutMs;
+}
+
+// ── popped-window-side channel wiring (extracted, same rationale as the
+//    dock-side handler above) ───────────────────────────────────────────────
+
+export interface PopoutClientHandshakeOptions {
+  channel: PopoutChannelLike;
+  /** Called with the payload the moment a valid one arrives — retries stop immediately after. */
+  onPayload: (payload: PopoutPayload) => void;
+  /** Called once, if no payload arrives before the timeout — the caller renders the "Lost the session hand-off" state. */
+  onTimeout: () => void;
+  now?: () => number;
+  setIntervalFn?: (cb: () => void, ms: number) => ReturnType<typeof setInterval>;
+  clearIntervalFn?: (id: ReturnType<typeof setInterval>) => void;
+  retryIntervalMs?: number;
+  pollIntervalMs?: number;
+  timeoutMs?: number;
+}
+
+/**
+ * The popped window's side of the hand-off: announce "ready" immediately,
+ * then keep re-announcing on `retryIntervalMs` until either a valid payload
+ * arrives (`onPayload`, retries stop) or `timeoutMs` elapses (`onTimeout`,
+ * retries stop AND a "closed" message goes out — see the module header doc:
+ * a failed hand-off must not leave the dock stuck showing "Popped out"
+ * forever with nothing on the other end, so a timeout is treated exactly
+ * like the window closing for real). Returns a `stop()` cleanup that clears
+ * both timers without sending anything (used on unmount/nonce-change, where
+ * nothing failed — the effect is just tearing down).
+ */
+export function startPopoutClientHandshake(options: PopoutClientHandshakeOptions): () => void {
+  const {
+    channel,
+    onPayload,
+    onTimeout,
+    now = Date.now,
+    setIntervalFn = (cb, ms) => setInterval(cb, ms),
+    clearIntervalFn = (id) => clearInterval(id),
+    retryIntervalMs = POPOUT_READY_RETRY_MS,
+    pollIntervalMs = 250,
+    timeoutMs = POPOUT_HANDOFF_TIMEOUT_MS,
+  } = options;
+  const startedAt = now();
+  let settled = false;
+
+  const postReady = () => {
+    try {
+      channel.postMessage({ type: "ready" });
+    } catch {
+      /* channel already gone — nothing to announce to */
+    }
+  };
+
+  channel.onmessage = (ev) => {
+    if (settled) return;
+    const message = parsePopoutChannelMessage(ev.data);
+    if (message?.type !== "payload") return;
+    settled = true;
+    clearIntervalFn(readyTimer);
+    clearIntervalFn(pollTimer);
+    onPayload(message.payload);
+  };
+
+  // Both timers are created BEFORE the first `postReady()` call, even though
+  // `postReady` doesn't fire on an interval tick until later — this is
+  // deliberate, not incidental: `onmessage` (above) closes over `readyTimer`
+  // / `pollTimer`, and on a delivery model where a message can be answered
+  // SYNCHRONOUSLY (true of this repo's own test doubles; never true of a
+  // real `BroadcastChannel`, whose dispatch is always a later task, but
+  // correctness here shouldn't depend on that), calling `postReady()` before
+  // both consts exist would let `onmessage` read them mid-initialization
+  // (a TDZ `ReferenceError`) the instant that first "ready" gets answered.
+  const readyTimer = setIntervalFn(postReady, retryIntervalMs);
+  const pollTimer = setIntervalFn(() => {
+    if (settled) return;
+    if (!hasPopoutHandoffTimedOut(startedAt, now(), timeoutMs)) return;
+    settled = true;
+    clearIntervalFn(readyTimer);
+    clearIntervalFn(pollTimer);
+    try {
+      channel.postMessage({ type: "closed" });
+    } catch {
+      /* channel already gone — nothing to signal */
+    }
+    onTimeout();
+  }, pollIntervalMs);
+  postReady();
+
+  return () => {
+    clearIntervalFn(readyTimer);
+    clearIntervalFn(pollTimer);
+  };
 }

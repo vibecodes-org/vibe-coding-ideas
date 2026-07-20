@@ -18,9 +18,8 @@
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import {
-  hasPopoutHandoffTimedOut,
-  parsePopoutChannelMessage,
   popoutChannelName,
+  startPopoutClientHandshake,
   type PopoutPayload,
 } from "@/lib/terminal/popout-channel";
 import { TerminalPopoutView } from "@/components/board/terminal-popout-view";
@@ -56,20 +55,24 @@ export function TerminalPopoutClient() {
     window.name = nonce;
 
     const channel = new BroadcastChannel(popoutChannelName(nonce));
-    const startedAt = Date.now();
 
-    channel.onmessage = (ev) => {
-      const message = parsePopoutChannelMessage(ev.data);
-      if (message?.type === "payload") setPayload(message.payload);
-    };
-    channel.postMessage({ type: "ready" });
-
-    const pollTimer = window.setInterval(() => {
-      if (hasPopoutHandoffTimedOut(startedAt, Date.now())) {
-        setTimedOut(true);
-        window.clearInterval(pollTimer);
-      }
-    }, 250);
+    // Rework (fix/terminal-popout-handshake): this used to post "ready"
+    // exactly once. A Brave field test showed that one message can be lost
+    // (privacy/storage isolation around a `noopener` popup, or just an
+    // ordinary scheduling race) with NO way to recover — the dock's channel
+    // never hears anything, so it never sends the payload, and this window
+    // sits waiting for the full 5s before giving up. startPopoutClientHandshake
+    // re-announces "ready" every ~300ms until the payload arrives or the
+    // hand-off times out, and the dock now treats every "ready" as a reason
+    // to (re)send — see createDockPopoutMessageHandler / reduceDockHandshake.
+    const stopHandshake = startPopoutClientHandshake({
+      channel,
+      onPayload: (p) => setPayload(p),
+      // On timeout this ALSO posts "closed" on the channel (same module),
+      // so a dock that's still listening auto-reattaches instead of being
+      // stuck showing "Popped out" forever with nothing on the other end.
+      onTimeout: () => setTimedOut(true),
+    });
 
     const sendClosed = () => {
       try {
@@ -82,7 +85,7 @@ export function TerminalPopoutClient() {
     window.addEventListener("pagehide", sendClosed);
 
     return () => {
-      window.clearInterval(pollTimer);
+      stopHandshake();
       window.removeEventListener("beforeunload", sendClosed);
       window.removeEventListener("pagehide", sendClosed);
       // Deliberately NOT closing the channel or sending "closed" here — this
