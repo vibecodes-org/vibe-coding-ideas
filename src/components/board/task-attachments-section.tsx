@@ -21,7 +21,8 @@ import { createClient } from "@/lib/supabase/client";
 import { logger } from "@/lib/logger";
 import { formatRelativeTime } from "@/lib/utils";
 import { logTaskActivity } from "@/lib/activity";
-import { downloadAttachment } from "@/lib/attachment-open";
+import { toast } from "sonner";
+import { downloadAttachment, openAttachment } from "@/lib/attachment-open";
 import type { BoardTaskAttachment } from "@/types";
 
 interface TaskAttachmentsSectionProps {
@@ -264,6 +265,23 @@ export function TaskAttachmentsSection({
     }
   }
 
+  // Row click: open the attachment the way markdown attachment links do —
+  // text/html via the inline-viewer proxy, images/PDF via an inline signed
+  // URL, anything else as a download (see attachmentOpenStrategy).
+  async function handleOpen(attachment: BoardTaskAttachment) {
+    const supabase = createClient();
+    try {
+      await openAttachment(supabase, attachment);
+    } catch (error) {
+      logger.error("Failed to open attachment", {
+        error: error instanceof Error ? error.message : String(error),
+        taskId,
+        fileName: attachment.file_name,
+      });
+      toast.error("Couldn't open the attachment");
+    }
+  }
+
   async function handlePreview(attachment: BoardTaskAttachment) {
     const supabase = createClient();
     const { data } = await supabase.storage.from("task-attachments").createSignedUrl(attachment.storage_path, 300);
@@ -367,12 +385,19 @@ export function TaskAttachmentsSection({
                     <FileText className="h-4 w-4 text-muted-foreground" />
                   </div>
                 )}
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[11px] font-medium">{attachment.file_name}</p>
+                <button
+                  type="button"
+                  className="min-w-0 flex-1 cursor-pointer text-left hover:underline"
+                  onClick={() => handleOpen(attachment)}
+                  title={`Open ${attachment.file_name}`}
+                >
+                  <p className="truncate text-[11px] font-medium">
+                    {attachment.file_name}
+                  </p>
                   <p className="text-[10px] text-muted-foreground">
                     {formatFileSize(attachment.file_size)} &middot; {formatRelativeTime(attachment.created_at)}
                   </p>
-                </div>
+                </button>
                 <div className="flex shrink-0 gap-0.5">
                   {!isReadOnly && isImageType(attachment.content_type) && (
                     attachment.storage_path === localCoverPath ? (
