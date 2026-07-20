@@ -434,4 +434,121 @@ describe("useTerminalSession", () => {
       expect(result.current.state.status).toBe("idle");
     });
   });
+
+  async function flushEffects() {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  // Multi-session stage 4 (D1/D2, popout-channel.ts): the popped-out window's
+  // whole entry point — attach to an ALREADY-MINTED session with no mint, no
+  // deep link, no install-first gate.
+  describe("attachExisting", () => {
+    it("attaches directly to the transferred sid/browserToken — no mint, no deep link", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+
+      await flushEffects();
+
+      // No mint round-trip at all — the whole point of attaching.
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(result.current.state.status).toBe("connecting");
+      expect(result.current.pair).toEqual({
+        sessionId: "sid-popped",
+        browserToken: "popped-browser-token",
+      });
+      expect(latestSocket().url).toBe(
+        "ws://127.0.0.1:8787/?session=sid-popped&role=browser&token=popped-browser-token",
+      );
+
+      act(() => latestSocket().simulateOpen());
+      expect(result.current.state.status).toBe("waiting-to-pair");
+
+      act(() => latestSocket().simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+      expect(result.current.inputEnabled).toBe(true);
+    });
+
+    it("reports the relay's 4001 preempted close via closeCode, distinct from every other close", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+      await flushEffects();
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+
+      // The relay's DUP_BROWSER close — a "Bring back to dock" reattach
+      // preempted THIS window's leg.
+      act(() => latestSocket().close(4001, ""));
+      expect(result.current.state.status).toBe("error");
+      expect(result.current.state.errorKind).toBe("duplicate");
+      expect(result.current.state.closeCode).toBe(4001);
+    });
+
+    it("only attaches once per distinct transferred sessionId — a stable object on a later render is a no-op", async () => {
+      const requestExpand = vi.fn();
+      const attachExisting = { sessionId: "sid-popped", browserToken: "popped-browser-token" };
+      const { rerender } = renderHook(
+        (props: { attachExisting: typeof attachExisting | null }) =>
+          useTerminalSession(descriptor, {
+            enabled: true,
+            expanded: true,
+            requestExpand,
+            autoConnectWhenExpanded: false,
+            attachExisting: props.attachExisting,
+          }),
+        { initialProps: { attachExisting } },
+      );
+      await flushEffects();
+      expect(mockSockets).toHaveLength(1);
+
+      rerender({ attachExisting: { ...attachExisting } }); // same sessionId, new object identity
+      await flushEffects();
+      expect(mockSockets).toHaveLength(1); // no second socket opened
+    });
+
+    it("never trips the paired auto-connect effect, even on a browser that WOULD otherwise ambient-connect (would double-mint)", async () => {
+      // Same paired/supported setup the "autoConnectWhenExpanded" describe
+      // above uses to make the ambient auto-connect effect's guard pass —
+      // proving `autoConnectWhenExpanded: false` (a real popped window's
+      // actual wiring) is enough to stop it from ALSO firing connect()
+      // alongside attachToExisting and minting a second, orphaned session.
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+      vi.stubGlobal("navigator", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        maxTouchPoints: 0,
+      });
+      const requestExpand = vi.fn();
+      renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+      await flushEffects();
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(mockSockets).toHaveLength(1); // exactly the attach's own socket, nothing extra
+    });
+  });
 });

@@ -124,6 +124,86 @@ export default function LaunchingClaudeCodePage() {
         </section>
 
         <section>
+          <h2 className="mb-4 text-2xl font-semibold">
+            Running It In The Browser — Multiple Sessions at Once
+          </h2>
+          <p className="mb-4 text-muted-foreground">
+            Picking{" "}
+            <strong className="text-foreground">
+              &quot;In the browser&quot;
+            </strong>{" "}
+            (Beta) from the Launch options dropdown opens a live terminal
+            docked to the bottom of the board, mirroring Claude Code running
+            on your own machine through the VibeCodes helper — your code
+            never leaves your computer.
+          </p>
+          <p className="mb-4 text-muted-foreground">
+            You&apos;re not limited to one session at a time. You can run
+            several sessions concurrently — any mix of terminal windows and
+            in-browser tabs — each working on its own task:
+          </p>
+          <ul className="mb-4 list-inside list-disc space-y-2 text-muted-foreground">
+            <li>
+              <strong className="text-foreground">Tabs in the dock</strong> —
+              every launch (toolbar, task card, or the dock&apos;s{" "}
+              <strong className="text-foreground">&quot;+&quot;</strong>)
+              opens a new tab rather than replacing what&apos;s already
+              running. The dock shows how many in-browser sessions you can
+              have running at once, and explains what to do if you&apos;re at
+              that limit.
+            </li>
+            <li>
+              <strong className="text-foreground">
+                Automatic worktree isolation
+              </strong>{" "}
+              — your second and later concurrent sessions on the same repo
+              each get their own private git worktree (a sibling{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                &lt;repo&gt;.vibe/wt-1
+              </code>
+              ,{" "}
+              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                wt-2
+              </code>
+              , and so on, each on its own branch) so two sessions never
+              collide editing the same files. Your first/primary session keeps
+              working in the repo folder itself, unchanged.
+            </li>
+            <li>
+              <strong className="text-foreground">My sessions</strong> — the
+              dock&apos;s{" "}
+              <strong className="text-foreground">&quot;My sessions&quot;</strong>{" "}
+              button lists every session running across all your ideas, with
+              a one-click <strong className="text-foreground">End</strong> per
+              session and an{" "}
+              <strong className="text-foreground">&quot;End all sessions&quot;</strong>{" "}
+              panic button for when you just want everything stopped.
+            </li>
+            <li>
+              <strong className="text-foreground">Pop-out</strong> — any
+              in-browser session can be popped into its own browser window
+              (the tab&apos;s{" "}
+              <strong className="text-foreground">&quot;Pop out&quot;</strong>{" "}
+              button). It&apos;s the exact same session, just in different
+              glass: closing the popped-out window brings it back to the dock
+              automatically, or use{" "}
+              <strong className="text-foreground">
+                &quot;Bring back to dock&quot;
+              </strong>{" "}
+              from the dock&apos;s tab at any time.
+            </li>
+          </ul>
+          <div className="rounded-xl border border-border bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              Each session runs a real Claude Code process on your computer —
+              running several at once uses more of your machine&apos;s
+              resources. Close sessions you&apos;re done with rather than
+              leaving them running indefinitely.
+            </p>
+          </div>
+        </section>
+
+        <section>
           <h2 className="mb-4 text-2xl font-semibold">What the Launch Actually Does</h2>
           <p className="mb-4 text-muted-foreground">
             The launch generates a prompt that tells Claude Code to do four

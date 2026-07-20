@@ -46,7 +46,7 @@ export interface SessionEntry {
 // ── shared tone vocabulary (drives both the per-tab glyph and the collapsed
 // bar's summary chips — same colours, same meaning, everywhere) ──────────────
 
-export type TabTone = "ok" | "info" | "warn" | "err" | "mut";
+export type TabTone = "ok" | "info" | "warn" | "err" | "mut" | "popped";
 
 export interface TabStatusMeta {
   /** Shape-distinct glyph — never colour alone (B5 / design §2 callout 1). */
@@ -58,6 +58,19 @@ export interface TabStatusMeta {
   needsAttention: boolean;
 }
 
+/**
+ * What a tab can DISPLAY, layered on top of the underlying session's real
+ * `TerminalStatus` (multi-session stage 4, D2/D3). "popped-out" is NOT a
+ * connection-machine state — connection.ts is untouched — it's a dock-tracked
+ * fact ("the user popped this tab's session into its own window") that
+ * OVERRIDES the tab's glyph/tone regardless of what the underlying socket is
+ * currently doing (which, moments after a pop-out, is usually the relay's
+ * 4001 "preempted" close — see terminal-dock.tsx's `poppedOutKeys` and
+ * src/lib/terminal/popout-channel.ts). Every `TerminalStatus` is already a
+ * valid `TabDisplayStatus`, so every existing caller keeps working unchanged.
+ */
+export type TabDisplayStatus = TerminalStatus | "popped-out";
+
 const STATUS_META: Record<TerminalStatus, TabStatusMeta> = {
   idle: { glyph: "○", tone: "mut", ariaText: "idle", needsAttention: false },
   connecting: { glyph: "◌", tone: "info", ariaText: "connecting", needsAttention: false },
@@ -68,8 +81,18 @@ const STATUS_META: Record<TerminalStatus, TabStatusMeta> = {
   error: { glyph: "▲", tone: "err", ariaText: "needs attention", needsAttention: true },
 };
 
-/** Per-tab glyph/tone/aria projection of a session's TerminalStatus (B5, design §5). */
-export function tabStatusMeta(status: TerminalStatus): TabStatusMeta {
+// Design §5's table: "popped out ... None — deliberate user state" — never an
+// attention treatment, it's something the user chose, not something wrong.
+const POPPED_OUT_META: TabStatusMeta = {
+  glyph: "⧉",
+  tone: "popped",
+  ariaText: "popped out",
+  needsAttention: false,
+};
+
+/** Per-tab glyph/tone/aria projection of a tab's display status (B5, design §5 + §10b). */
+export function tabStatusMeta(status: TabDisplayStatus): TabStatusMeta {
+  if (status === "popped-out") return POPPED_OUT_META;
   return STATUS_META[status] ?? STATUS_META.idle;
 }
 
@@ -172,15 +195,18 @@ export interface StatusSummaryChip {
   label: string;
 }
 
-type SummaryCategory = "error" | "disconnected" | "connecting" | "idle" | "ended" | "connected";
+type SummaryCategory = "error" | "disconnected" | "connecting" | "idle" | "ended" | "popped" | "connected";
 
 // Worst-first (design §6: "the first thing you read is the thing to act on").
+// "popped" sits with "connected" at the calm end — a pop-out is a deliberate
+// choice, never something to flag (same reasoning as POPPED_OUT_META above).
 const CATEGORY_ORDER: SummaryCategory[] = [
   "error",
   "disconnected",
   "connecting",
   "idle",
   "ended",
+  "popped",
   "connected",
 ];
 
@@ -190,11 +216,14 @@ const CATEGORY_META: Record<SummaryCategory, { tone: TabTone; glyph: string; wor
   connecting: { tone: "info", glyph: "◌", word: "connecting" },
   idle: { tone: "mut", glyph: "○", word: "idle" },
   ended: { tone: "mut", glyph: "■", word: "ended" },
+  popped: { tone: "popped", glyph: "⧉", word: "popped out" },
   connected: { tone: "ok", glyph: "●", word: "connected" },
 };
 
-function categoryOf(status: TerminalStatus): SummaryCategory {
+function categoryOf(status: TabDisplayStatus): SummaryCategory {
   switch (status) {
+    case "popped-out":
+      return "popped";
     case "error":
       return "error";
     case "disconnected":
@@ -217,9 +246,12 @@ function categoryOf(status: TerminalStatus): SummaryCategory {
  * §6) — e.g. "2 connected · 1 reconnecting". Only categories that exist appear
  * (all-healthy collapses to a single "N connected" chip). Callers with exactly
  * one session should keep today's single-session pill copy instead of this
- * summary (per the stage brief: "single session keeps today's copy").
+ * summary (per the stage brief: "single session keeps today's copy"). Callers
+ * pass a tab's DISPLAY status (terminal-dock.tsx substitutes "popped-out" for
+ * any tab in its `poppedOutKeys`) so a preempted-by-design 4001 close never
+ * misreads as "needs attention" in the summary.
  */
-export function summarizeSessionStatuses(statuses: TerminalStatus[]): StatusSummaryChip[] {
+export function summarizeSessionStatuses(statuses: TabDisplayStatus[]): StatusSummaryChip[] {
   const counts = new Map<SummaryCategory, number>();
   for (const status of statuses) {
     const cat = categoryOf(status);

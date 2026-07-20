@@ -337,8 +337,11 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   // is OFF this is false, so the menu collapses to exactly today's single
   // terminal-window action — the existing behaviour is completely untouched.
   // Picking "In the browser" asks the board's terminal dock (a page-level sibling)
-  // to open + auto-launch via the vibecodes:// deep link; it does NOT also run the
-  // terminal-window flow — Claude runs in one place at a time.
+  // to open a NEW tab + auto-launch via the vibecodes:// deep link; it does NOT also
+  // run the terminal-window flow for THIS click — each click still starts exactly
+  // one session in exactly one destination. That's no longer a claim about the app
+  // as a whole, though: multiple sessions (terminal windows and/or browser tabs) can
+  // run concurrently — see the terminal dock's "My sessions" / pop-out support.
   const browserLaunchAvailable = isBrowserLaunchAvailable(isTerminalEnabled());
   const handleLaunchInBrowser = useCallback(() => {
     posthog?.capture("launch_claude_code_clicked", { method: "in_browser" });

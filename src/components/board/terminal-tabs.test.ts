@@ -30,6 +30,21 @@ describe("tabStatusMeta", () => {
     expect(tabStatusMeta(status).needsAttention).toBe(expected);
   });
 
+  it("gives 'popped-out' its own violet glyph, tone, and aria text, distinct from every real status", () => {
+    const popped = tabStatusMeta("popped-out");
+    expect(popped).toEqual({ glyph: "⧉", tone: "popped", ariaText: "popped out", needsAttention: false });
+    const realGlyphs = new Set(
+      (["idle", "connecting", "waiting-to-pair", "connected", "disconnected", "session-ended", "error"] as const).map(
+        (s) => tabStatusMeta(s).glyph,
+      ),
+    );
+    expect(realGlyphs.has(popped.glyph)).toBe(false);
+  });
+
+  it("'popped-out' is never an attention state — it's a deliberate user choice, not a problem", () => {
+    expect(tabStatusMeta("popped-out").needsAttention).toBe(false);
+  });
+
   it("gives every status a distinct glyph shape (never colour alone)", () => {
     const statuses: TerminalStatus[] = [
       "idle",
@@ -181,6 +196,18 @@ describe("summarizeSessionStatuses (B5)", () => {
 
   it("returns an empty array for no sessions", () => {
     expect(summarizeSessionStatuses([])).toEqual([]);
+  });
+
+  it("gives a popped-out session its own calm chip, never lumped into 'needs attention'", () => {
+    // A popped-out session's UNDERLYING socket is usually sitting in an
+    // "error"/duplicate state at this exact moment (the 4001 preemption) —
+    // the caller substitutes "popped-out" for it precisely so this summary
+    // never misreads a deliberate pop-out as something wrong.
+    const chips = summarizeSessionStatuses(["connected", "popped-out"]);
+    expect(chips).toEqual([
+      { tone: "popped", glyph: "⧉", count: 1, label: "1 popped out" },
+      { tone: "ok", glyph: "●", count: 1, label: "1 connected" },
+    ]);
   });
 });
 

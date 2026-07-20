@@ -57,13 +57,23 @@ import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { isTerminalEnabled, type TerminalStatus } from "@/lib/terminal/connection";
+import { isTerminalEnabled, relayBaseUrl, type TerminalStatus } from "@/lib/terminal/connection";
 import { subscribeBrowserLaunch, type BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import { resolveDockView } from "@/lib/terminal/first-run-flow";
 import { slugifyIdeaTitle } from "@/lib/launch-claude-code";
 import { newSessionTooltip } from "@/lib/terminal/session-cap";
 import {
+  generatePopoutNonce,
+  parsePopoutChannelMessage,
+  popoutChannelName,
+  reduceDockHandshake,
+  INITIAL_DOCK_HANDSHAKE_STATE,
+  type DockHandshakeState,
+  type PopoutPayload,
+} from "@/lib/terminal/popout-channel";
+import {
   type SessionEntry,
+  type TabDisplayStatus,
   type TabTone,
   tabStatusMeta,
   isLiveTabStatus,
@@ -150,6 +160,19 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   const [mySessionsCount, setMySessionsCount] = useState<number | null>(null);
   const openMySessions = useCallback(() => setMySessionsOpen(true), []);
   const actionsMapRef = useRef<Map<string, TerminalSessionActions>>(new Map());
+  // Multi-session stage 4 (D1-D3, popout-channel.ts): which tabs are CURRENTLY
+  // popped out. Purely a dock-tracked fact — the underlying session's real
+  // TerminalStatus is usually "error"/duplicate (the 4001 preemption) the
+  // instant this is true, but that's not what the UI should show (design §5:
+  // "popped out ... deliberate user state", never an attention/error
+  // treatment). `popoutChannelsRef` holds the live BroadcastChannel + its
+  // handshake phase per popped-out key, for the lifetime of the pop-out (open
+  // from the moment "Pop out" is clicked until either "Bring back" or the
+  // popped window's own close-signal).
+  const [poppedOutKeys, setPoppedOutKeys] = useState<Set<string>>(() => new Set());
+  const popoutChannelsRef = useRef<Map<string, { channel: BroadcastChannel; handshake: DockHandshakeState }>>(
+    new Map(),
+  );
   // Mirrors so `deliverLaunch` (used by both the launch-bus subscription and
   // "+") can read the CURRENT list/summaries without depending on them — that
   // keeps its identity stable across renders instead of forcing the launch-bus
@@ -167,6 +190,26 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     summariesRef.current = summaries;
     posthogRef.current = posthog;
   }, [sessions, summaries, posthog]);
+
+  // Close every open pop-out hand-off channel if the dock itself unmounts
+  // (board navigation away) — the popped windows keep running independently
+  // either way; this just stops the dock's side from listening. The Map
+  // instance itself never changes identity across renders (created once by
+  // useRef), so capturing it here is just satisfying the lint rule, not
+  // guarding against a real staleness bug.
+  useEffect(() => {
+    const channels = popoutChannelsRef.current;
+    return () => {
+      for (const { channel } of channels.values()) {
+        try {
+          channel.close();
+        } catch {
+          /* already closed */
+        }
+      }
+      channels.clear();
+    };
+  }, []);
 
   const descriptor: TerminalSessionDescriptor = useMemo(
     () => ({ ideaId, ideaTitle, ideaGithubUrl }),
@@ -193,7 +236,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
         cur.errorKind === summary.errorKind &&
         cur.launchPhase === summary.launchPhase &&
         cur.platformSupported === summary.platformSupported &&
-        cur.paired === summary.paired
+        cur.paired === summary.paired &&
+        cur.browserToken === summary.browserToken &&
+        cur.readOnly === summary.readOnly
       ) {
         return prev;
       }
@@ -203,9 +248,104 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
 
   const announce = useCallback((text: string) => setAnnouncement(text), []);
 
+  // ── pop-out (D1-D7, design §10 + §13 Flow 3) ────────────────────────────────
+  // Tears down THIS tab's pop-out bookkeeping — the BroadcastChannel and the
+  // `poppedOutKeys` membership — without touching the underlying session
+  // itself. Shared by both return paths: the user's own "Bring back to dock"
+  // click and the popped window's own close-signal (D3).
+  const endPopOut = useCallback((key: string) => {
+    const entry = popoutChannelsRef.current.get(key);
+    if (entry) {
+      try {
+        entry.channel.close();
+      } catch {
+        /* already closed */
+      }
+      popoutChannelsRef.current.delete(key);
+    }
+    setPoppedOutKeys((prev) => {
+      if (!prev.has(key)) return prev;
+      const next = new Set(prev);
+      next.delete(key);
+      return next;
+    });
+  }, []);
+
+  // Reattach the dock's OWN leg for this session (no re-mint — reconnectNow()
+  // reuses the retained sid/browserToken, see use-terminal-session.ts) and
+  // drop the pop-out bookkeeping. This is what BOTH "Bring back to dock" and
+  // the popped window's close-signal do — the only difference is who
+  // triggered it (design §10b: "two paths, never a race").
+  const bringBackToDock = useCallback(
+    (key: string) => {
+      actionsMapRef.current.get(key)?.reconnectNow();
+      endPopOut(key);
+    },
+    [endPopOut],
+  );
+
+  const handlePopOut = useCallback(
+    (key: string) => {
+      const summary = summariesRef.current[key];
+      if (!summary?.sessionId || !summary.browserToken) return; // nothing minted yet — button shouldn't even be visible
+      const entry = sessionsRef.current.find((s) => s.key === key);
+      const label = deriveTabLabel({
+        taskTitle: entry?.taskTitle,
+        ideaSlug,
+        sessionId: summary.sessionId,
+      });
+      const identity = `${ideaTitle} · session ${summary.sessionId.slice(0, 8)}`;
+      const nonce = generatePopoutNonce();
+      // MUST be the direct, synchronous result of the click — no await before
+      // this line — or popup blockers treat it as an unsolicited pop-up (D7).
+      const win = window.open(
+        `/terminal/popout#${nonce}`,
+        `vibecodes-terminal-${nonce}`,
+        "width=760,height=560,noopener",
+      );
+      if (!win) {
+        toast.error("Couldn't open the terminal window", {
+          description: "Your browser blocked the pop-up. Allow pop-ups for vibecodes.co.uk and try again.",
+        });
+        return; // D7: no state change on failure — the tab stays attached and streaming.
+      }
+      posthogRef.current?.capture("terminal_popout_used", { origin: entry?.origin ?? "toolbar" });
+      setPoppedOutKeys((prev) => new Set(prev).add(key));
+
+      const payload: PopoutPayload = {
+        sid: summary.sessionId,
+        browserToken: summary.browserToken,
+        relayUrl: relayBaseUrl(),
+        ideaId,
+        ideaTitle,
+        label,
+        identity,
+        readOnly: summary.readOnly,
+      };
+      const channel = new BroadcastChannel(popoutChannelName(nonce));
+      popoutChannelsRef.current.set(key, { channel, handshake: INITIAL_DOCK_HANDSHAKE_STATE });
+      channel.onmessage = (ev) => {
+        const message = parsePopoutChannelMessage(ev.data);
+        if (!message) return;
+        const current = popoutChannelsRef.current.get(key);
+        if (!current) return; // already torn down (e.g. a racing bring-back)
+        const result = reduceDockHandshake(current.handshake, message);
+        popoutChannelsRef.current.set(key, { channel, handshake: result.state });
+        if (result.action === "send-payload") {
+          channel.postMessage({ type: "payload", payload });
+        } else if (result.action === "reattach") {
+          // The popped window told us it's closing (D3) — reattach automatically.
+          bringBackToDock(key);
+        }
+      };
+    },
+    [ideaId, ideaTitle, ideaSlug, bringBackToDock],
+  );
+
   // ── close / remove a tab ────────────────────────────────────────────────────
   const removeEntry = useCallback(
     (key: string) => {
+      endPopOut(key);
       setSessions((prev) => {
         const idx = prev.findIndex((s) => s.key === key);
         if (idx === -1) return prev;
@@ -231,13 +371,19 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
         return next;
       });
     },
-    [],
+    [endPopOut],
   );
 
   const requestClose = useCallback(
     (key: string) => {
       const status = summaries[key]?.status ?? "idle";
-      if (!isLiveTabStatus(status)) {
+      // A popped-out tab's OWN reported status is usually "error"/duplicate
+      // (the 4001 preemption) at this point, which `isLiveTabStatus` would
+      // read as "already over" — but the session is very much alive, just
+      // running in the popped window. × on this tab must still end the WHOLE
+      // session (both legs, wherever they are), never silently orphan it.
+      const live = poppedOutKeys.has(key) || isLiveTabStatus(status);
+      if (!live) {
         // Already ended/errored — nothing to end, just close the tab (OQ1).
         setConfirmingKey((c) => (c === key ? null : c));
         removeEntry(key);
@@ -252,7 +398,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       setConfirmingKey(null);
       removeEntry(key);
     },
-    [summaries, confirmingKey, removeEntry],
+    [summaries, confirmingKey, removeEntry, poppedOutKeys],
   );
 
   const cancelClose = useCallback(() => setConfirmingKey(null), []);
@@ -361,8 +507,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   const activeSummary = summaries[activeKey];
   const activeStatus: TerminalStatus = activeSummary?.status ?? "idle";
   const multi = sessions.length > 1;
+  const activeIsPoppedOut = poppedOutKeys.has(activeKey);
+  const soleIsPoppedOut = !multi && !!sessions[0] && poppedOutKeys.has(sessions[0].key);
 
-  const statusChips = multi ? summarizeSessionStatuses(sessions.map((s) => summaries[s.key]?.status ?? "idle")) : [];
+  // Substitute "popped-out" for any tab the dock knows it popped — its real
+  // status is usually mid-preemption at this exact moment and would
+  // otherwise misread as an error in the collapsed-bar summary (design §5).
+  const displayStatusFor = (key: string): TabDisplayStatus =>
+    poppedOutKeys.has(key) ? "popped-out" : (summaries[key]?.status ?? "idle");
+
+  const statusChips = multi ? summarizeSessionStatuses(sessions.map((s) => displayStatusFor(s.key))) : [];
   const singleView = activeSummary
     ? resolveDockView(activeSummary.status, activeSummary.launchPhase, activeSummary.platformSupported, activeSummary.paired)
     : "setup";
@@ -378,7 +532,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       {/* Collapsed dock bar — always visible */}
       <div className="flex items-center gap-2.5 px-3 py-1.5">
         <span className="inline-flex items-center gap-2 text-xs font-semibold">
-          {!multi && <Circle className={cn("h-2.5 w-2.5 fill-current", dotClass(activeStatus))} />}
+          {!multi && (
+            <Circle
+              className={cn("h-2.5 w-2.5 fill-current", activeIsPoppedOut ? "text-violet-400" : dotClass(activeStatus))}
+            />
+          )}
           <TerminalIcon className="h-3.5 w-3.5 text-zinc-400" />
           <span className="hidden sm:inline">{multi ? "Terminals" : "Terminal"}</span>
           {!multi && activeSummary?.sessionId && (
@@ -398,6 +556,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
                   chip.tone === "info" && "border-sky-500/50 bg-sky-500/10 text-sky-400",
                   chip.tone === "warn" && "border-amber-500/50 bg-amber-500/10 text-amber-400",
                   chip.tone === "err" && "border-rose-500/50 bg-rose-500/10 text-rose-400",
+                  chip.tone === "popped" && "border-violet-500/50 bg-violet-500/10 text-violet-300",
                   chip.tone === "mut" && "border-zinc-600 bg-zinc-800/60 text-zinc-400",
                 )}
               >
@@ -405,7 +564,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
                 {chip.label}
               </span>
             ))}
-          {!multi && (
+          {!multi && soleIsPoppedOut && (
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/50 bg-violet-500/10 px-2 py-0.5 text-[11px] font-semibold text-violet-300">
+              <span aria-hidden="true">⧉</span> Popped out
+            </span>
+          )}
+          {!multi && !soleIsPoppedOut && (
             <span className={cn("inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-semibold", singleMeta.className)}>
               <singleMeta.Icon className={cn("h-3 w-3", singleMeta.spin && "animate-spin")} />
               {singleMeta.label}
@@ -459,7 +623,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
               {sessions.map((entry, index) => {
                 const summary = summaries[entry.key];
                 const status = summary?.status ?? "idle";
-                const meta = tabStatusMeta(status);
+                const poppedOut = poppedOutKeys.has(entry.key);
+                const meta = tabStatusMeta(displayStatusFor(entry.key));
+                const tabIsLive = poppedOut || isLiveTabStatus(status);
                 const label = deriveTabLabel({
                   taskTitle: entry.taskTitle,
                   ideaSlug,
@@ -521,7 +687,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
                         <span className="min-w-0 flex-1 truncate">{label}</span>
                         <button
                           type="button"
-                          aria-label={`${isLiveTabStatus(status) ? "End session and close tab" : "Close tab"}: ${label}`}
+                          aria-label={`${tabIsLive ? "End session and close tab" : "Close tab"}: ${label}`}
                           className="flex h-[18px] w-[18px] flex-none items-center justify-center rounded text-zinc-500 hover:bg-zinc-700 hover:text-zinc-200"
                           onClick={(e) => {
                             e.stopPropagation();
@@ -566,6 +732,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
             onRegisterActions={registerActions}
             onAnnounce={announce}
             onCapExceeded={openMySessions}
+            poppedOut={poppedOutKeys.has(entry.key)}
+            onPopOut={() => handlePopOut(entry.key)}
+            onBringBack={() => bringBackToDock(entry.key)}
           />
         ))}
       </div>
@@ -585,6 +754,8 @@ function toneStyle(tone: TabTone): { color: string } {
       return { color: "#fb7185" };
     case "info":
       return { color: "#7dd3fc" };
+    case "popped":
+      return { color: "#a78bfa" };
     case "mut":
     default:
       return { color: "#6f6f7a" };

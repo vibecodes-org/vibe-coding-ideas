@@ -204,11 +204,43 @@ export interface UseTerminalSessionOptions {
    * toast with no action button.
    */
   onCapExceeded?: () => void;
+  /**
+   * Multi-session stage 4 (D1/D2): attach directly to an ALREADY-MINTED
+   * session's browser leg — no mint, no first-run/launch flow. Set by the
+   * popped-out window (terminal-popout-view.tsx) once its hand-off payload
+   * arrives over the same-origin BroadcastChannel (see
+   * src/lib/terminal/popout-channel.ts) — this is exactly what a fresh
+   * `/terminal/popout` document needs, since it never launched anything
+   * itself and has no prior `pair`. Attaching with the SAME OWNER is what
+   * PREEMPTS whichever OTHER browser leg is currently attached at the relay
+   * — the existing 4001 "preempted" close (D1/F2); an expired token is fine,
+   * the relay waives expiry for a same-owner reattach to a live session
+   * (mirrors the grace-window reconnect's own waiver, fix/terminal-expired-reattach).
+   *
+   * Identity is keyed on `sessionId`: changing it (a NEW transferred pair)
+   * re-attaches; the SAME object/value on a later render is a no-op (callers
+   * don't need to memoize beyond keeping the sessionId stable).
+   */
+  attachExisting?: AttachExistingPair | null;
+}
+
+/** The minimum a popped-out window needs to attach to an existing session — see `attachExisting` above. */
+export interface AttachExistingPair {
+  sessionId: string;
+  browserToken: string;
 }
 
 export interface PairInfo {
   sessionId: string;
-  bridgeToken: string;
+  /**
+   * Undefined for a session this window ATTACHED to (attachExisting) rather
+   * than minted — a popped-out window never received the bridge token (it
+   * isn't part of the pop-out payload; only the browser leg's credentials
+   * cross the hand-off channel), so it can't offer "copy bridge command"
+   * (that advanced panel only ever renders for the legacy-waiting view, which
+   * an attached window has no path into a launch that would need it).
+   */
+  bridgeToken?: string;
   // Retained so a TRANSIENT drop can REATTACH to the SAME sid with no re-mint
   // (grace-window reconnect). `browserToken` re-opens the browser leg. Reattach is
   // bounded purely by RECONNECT_GRACE_MS — the relay waives token expiry for a
@@ -275,6 +307,7 @@ export function useTerminalSession(
     taskId,
     taskTitle,
     onCapExceeded,
+    attachExisting = null,
   } = options;
   const posthog = usePostHog();
   const posthogRef = useRef(posthog);
@@ -1052,6 +1085,58 @@ export function useTerminalSession(
     openBrowserLeg,
   ]);
 
+  // ── attach-existing (multi-session stage 4, D1/D2) ─────────────────────────
+  // The popped-out window's whole entry point: no fetch, no deep link, no
+  // install-first gate — just open the browser leg for a session that was
+  // ALREADY minted elsewhere (the dock tab that popped it out). Deliberately
+  // mirrors connect()'s bookkeeping (teardown, timer resets, dispatch
+  // sequence, setPair, fresh reconnect budget) minus everything that assumes
+  // this window is the one originating the session.
+  const attachToExisting = useCallback(
+    (p: AttachExistingPair) => {
+      const gen = (connectGenRef.current = claimConnectGeneration(connectGenRef.current));
+      teardownSocket();
+      clearHelperTimer();
+      removeLaunchIframe();
+      setLaunchPhase("idle");
+      lastDimsRef.current = "";
+      // Two dispatches back-to-back, no await between them — React folds them
+      // through the reducer IN ORDER against the queued (not the stale
+      // closure) state, so "session-created"'s `state.status !== "connecting"`
+      // guard sees the "connect" transition that just landed ahead of it.
+      // Same guarantee connect() relies on across its own await gap.
+      dispatch({ type: "connect" });
+      dispatch({ type: "session-created", sessionId: p.sessionId });
+      setPair({ sessionId: p.sessionId, browserToken: p.browserToken });
+      reconnectDeadlineRef.current = 0;
+      reconnectAttemptRef.current = 0;
+      termRef.current?.clear();
+      // A newer attach/connect raced this one while it was doing its
+      // (synchronous, but still checked for symmetry with connect()) setup —
+      // abort before opening a socket that a newer attempt would immediately
+      // have to tear down again.
+      if (isConnectSuperseded(gen, connectGenRef.current)) return;
+      openBrowserLeg(p.sessionId, p.browserToken);
+    },
+    [teardownSocket, clearHelperTimer, removeLaunchIframe, openBrowserLeg],
+  );
+
+  // Fire attachToExisting once per distinct transferred session id — the
+  // popped window's `attachExisting` prop starts `null` (no payload yet) and
+  // becomes non-null asynchronously, whenever the hand-off channel delivers it
+  // (see terminal-popout-view.tsx). NOT gated on xtermReady: connect() itself
+  // opens the browser leg with no such gate (an inbound byte arriving before
+  // xterm has mounted is already a pre-existing, harmless no-op there —
+  // `termRef.current?.write(...)` — so attach-existing keeps the same
+  // characteristics rather than inventing a stricter rule for one path).
+  const attachedSessionIdRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!enabled || !attachExisting) return;
+    if (attachedSessionIdRef.current === attachExisting.sessionId) return;
+    attachedSessionIdRef.current = attachExisting.sessionId;
+    attachToExisting(attachExisting);
+  }, [enabled, attachExisting, attachToExisting]);
+
   // Manual "Reconnect now" — force an immediate reattach attempt (skip the backoff
   // wait) using the retained token, or fall back to a clean fresh launch if the
   // grace window is spent. Fixes the old button, which minted an EMPTY session with
@@ -1168,7 +1253,11 @@ export function useTerminalSession(
   ]);
 
   const copyBridgeCommand = useCallback(() => {
-    if (!pair) return;
+    // No bridge token to copy for an attached (not minted) session — see
+    // PairInfo.bridgeToken's doc. The legacy-waiting panel that renders this
+    // button isn't reachable from attachExisting anyway, but stay honest
+    // rather than emit a command with a literal "undefined" in it.
+    if (!pair || !pair.bridgeToken) return;
     const cmd = `RELAY_URL=${relayBaseUrl()} SESSION_ID=${pair.sessionId} BRIDGE_TOKEN=${pair.bridgeToken} node terminal/bridge/src/index.js --cmd bash`;
     navigator.clipboard
       .writeText(cmd)

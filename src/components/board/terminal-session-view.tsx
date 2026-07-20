@@ -49,6 +49,8 @@ import {
   ChevronRight,
   Circle,
   CircleDashed,
+  ExternalLink,
+  Undo2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -84,6 +86,17 @@ export interface SessionSummary {
   launchPhase: LaunchPhase;
   platformSupported: boolean;
   paired: boolean;
+  /**
+   * Multi-session stage 4 (D1): the browser-leg token, mirrored up so the
+   * dock can build a pop-out hand-off payload WITHOUT threading a second
+   * imperative accessor through the actions registry — it changes in
+   * lock-step with `sessionId` (both are set together by connect()/
+   * attachToExisting), so it's always current whenever sessionId is. `null`
+   * before a session exists (nothing to pop out).
+   */
+  browserToken: string | null;
+  /** Mirrored so a pop-out payload can carry the CURRENT read-only toggle across into the popped window (D1). */
+  readOnly: boolean;
 }
 
 interface TerminalSessionViewProps {
@@ -107,6 +120,20 @@ interface TerminalSessionViewProps {
   onAnnounce: (text: string) => void;
   /** Opens the dock's "My sessions" panel on a cap refusal (E1, design §7b). */
   onCapExceeded?: () => void;
+  /**
+   * Multi-session stage 4 (D1-D7): true once the dock has popped this tab's
+   * session out into its own window. Renders the "Popped out" placeholder
+   * (design §10b) INSTEAD OF the normal header/body/input — the underlying
+   * `useTerminalSession` instance keeps running unaffected (its socket gets
+   * preempted by the relay moments after the popped window attaches, exactly
+   * like any other 4001 close), it's purely this component's PRESENTATION
+   * that changes. Omitted/false renders exactly as before (P1 unchanged).
+   */
+  poppedOut?: boolean;
+  /** "Pop out" header control (D1/D2) — omitted hides the button entirely. */
+  onPopOut?: () => void;
+  /** "Bring back to dock" (D3) — only rendered while `poppedOut`. */
+  onBringBack?: () => void;
 }
 
 export function TerminalSessionView({
@@ -121,6 +148,9 @@ export function TerminalSessionView({
   onRegisterActions,
   onAnnounce,
   onCapExceeded,
+  poppedOut = false,
+  onPopOut,
+  onBringBack,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -167,6 +197,8 @@ export function TerminalSessionView({
       launchPhase,
       platformSupported: platform.supported,
       paired,
+      browserToken: pair?.browserToken ?? null,
+      readOnly,
     });
     if (shouldAnnounceAttention(prevStatusRef.current, state.status, isActive)) {
       onAnnounce(formatAttentionAnnouncement(label, state.status));
@@ -183,6 +215,7 @@ export function TerminalSessionView({
     paired,
     isActive,
     label,
+    readOnly,
   ]);
 
   // Keep the dock's action registry current so a tab strip close (×) — which
@@ -208,6 +241,36 @@ export function TerminalSessionView({
     view === "connecting-returning" ||
     view === "legacy-waiting";
 
+  // Multi-session stage 4 (D2/D3, design §10b): once this tab has been popped
+  // out, its whole body becomes the placeholder — no header/pill/stream/input.
+  // The underlying `useTerminalSession` instance above keeps running (its
+  // socket will shortly be preempted by the relay, or already has been); we
+  // just don't SHOW any of that here. The tab strip above this component is
+  // unaffected (owned by terminal-dock.tsx).
+  if (poppedOut) {
+    return (
+      <div className={cn(!isActive && "hidden")} aria-hidden={!isActive}>
+        <div className="flex h-[38vh] min-h-[220px] flex-col items-center justify-center gap-3 bg-[#0c0c0e] px-6 py-6 text-center">
+          <span className="text-2xl text-violet-400" aria-hidden="true">
+            ⧉
+          </span>
+          <div className="text-base font-semibold text-violet-400">Popped out</div>
+          <p className="max-w-md text-[13px] text-zinc-400">
+            This session is open in another window. It keeps running there — close that window and it
+            returns here automatically.
+          </p>
+          <Button
+            className="bg-sky-500 text-sky-950 hover:bg-sky-400"
+            onClick={onBringBack}
+            aria-label={`Bring back to dock: ${label}`}
+          >
+            <Undo2 className="h-4 w-4" /> Bring back to dock
+          </Button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={cn(!isActive && "hidden")} aria-hidden={!isActive}>
       {/* Header: state · identity · controls (safest → most destructive) */}
@@ -226,6 +289,24 @@ export function TerminalSessionView({
           {pair && <span className="text-zinc-600"> · session {pair.sessionId.slice(0, 8)}</span>}
         </span>
         <span className="ml-auto inline-flex items-center gap-1.5">
+          {/* Pop out (D1/D2, design §4 "one new header control, in the old
+              header") — left of Read-only/End, per the design's control
+              cluster ordering (safest → most destructive). Gated on
+              `showStream` like Read-only: popping out only makes sense once
+              there's a live/reconnecting stream to move into another window;
+              `onPopOut` itself is dock-only (the popped window's own view
+              never renders this component with a handler wired). */}
+          {showStream && onPopOut && (
+            <Button
+              variant="outline"
+              size="xs"
+              className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
+              onClick={onPopOut}
+              aria-label="Pop this session out into its own window"
+            >
+              <ExternalLink className="h-3 w-3" /> Pop out
+            </Button>
+          )}
           {showStream && (
             <Button
               variant="outline"
