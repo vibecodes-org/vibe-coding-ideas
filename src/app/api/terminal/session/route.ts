@@ -15,6 +15,21 @@ import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 // One shared implementation of the token scheme — also imported by the relay.
 import { mintSessionTokens } from "../../../../../terminal/shared/session-token.mjs";
+import {
+  getServerTerminalSessionCap,
+  getTerminalMintRateLimit,
+  capRefusalMessage,
+  RATE_LIMIT_MESSAGE,
+  CAP_REFUSAL_CODE,
+  RATE_LIMIT_CODE,
+} from "@/lib/terminal/session-cap";
+import {
+  computeSessionExpiresAt,
+  decideCap,
+  decideRateLimit,
+  isSessionExpired,
+  rateLimitWindowStart,
+} from "@/lib/terminal/session-registry";
 
 // Pin the runtime: this handler mints per-request, auth-bound tokens and must never
 // be statically optimized or flipped to the Edge runtime. The pin stays as hygiene,
@@ -29,6 +44,11 @@ export const dynamic = "force-dynamic";
 
 const BodySchema = z.object({
   ideaId: z.string().uuid(),
+  // Multi-session stage 3 (C1/C4): carried through to the terminal_sessions
+  // registry row so "My sessions" can show a task-scoped label. Both optional
+  // — a board-level launch (toolbar "In the browser") carries neither.
+  taskId: z.string().uuid().optional(),
+  taskTitle: z.string().trim().min(1).max(500).optional(),
 });
 
 export async function POST(req: Request) {
@@ -51,7 +71,7 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { ideaId } = parsed.data;
+    const { ideaId, taskId, taskTitle } = parsed.data;
 
     // Only a member of the idea (author or collaborator) may open a terminal on it.
     const { data: idea } = await supabase
@@ -77,7 +97,100 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── (a) REAP: mark this user's own expired-but-still-"active" rows ended
+    // BEFORE trusting any count below (R2 mitigation) — the registry is
+    // best-effort and can drift from the relay (e.g. a max-duration close the
+    // registry was never told about), so an unreaped stale row would wrongly
+    // count against the cap/rate-limit forever.
+    const nowMs = Date.now();
+    const { data: activeRows, error: activeErr } = await supabase
+      .from("terminal_sessions")
+      .select("id, expires_at")
+      .eq("user_id", user.id)
+      .eq("status", "active");
+    if (activeErr) {
+      logger.error("Terminal session registry read failed", { error: activeErr.message });
+    }
+    const staleIds = (activeRows ?? [])
+      .filter((row) => isSessionExpired(row.expires_at, nowMs))
+      .map((row) => row.id);
+    if (staleIds.length > 0) {
+      const { error: reapErr } = await supabase
+        .from("terminal_sessions")
+        .update({ status: "ended", ended_at: new Date(nowMs).toISOString() })
+        .in("id", staleIds);
+      if (reapErr) {
+        logger.error("Terminal session reap failed", { error: reapErr.message, count: staleIds.length });
+      } else {
+        logger.info("Reaped expired terminal session rows", { userId: user.id, count: staleIds.length });
+      }
+    }
+    const activeCount = (activeRows?.length ?? 0) - staleIds.length;
+
+    // ── (b) CAP (E1) — refuse before minting anything. ──────────────────────
+    const cap = getServerTerminalSessionCap();
+    const capDecision = decideCap(activeCount, cap);
+    if (!capDecision.ok) {
+      const { data: activeSummaries } = await supabase
+        .from("terminal_sessions")
+        .select("sid, idea_id, task_title, created_at")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .order("created_at", { ascending: false });
+      return NextResponse.json(
+        {
+          error: capRefusalMessage(cap),
+          code: CAP_REFUSAL_CODE,
+          cap,
+          active: (activeSummaries ?? []).map((row) => ({
+            sid: row.sid,
+            idea_id: row.idea_id,
+            task_title: row.task_title,
+            created_at: row.created_at,
+          })),
+        },
+        { status: 409 },
+      );
+    }
+
+    // ── (c) RATE LIMIT (E2) — distinct state, distinct copy (binding note: NO
+    // mention of ending a session — this refusal isn't about the cap). ──────
+    const rateLimit = getTerminalMintRateLimit();
+    const { count: recentCount, error: recentErr } = await supabase
+      .from("terminal_sessions")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .gte("created_at", rateLimitWindowStart(nowMs));
+    if (recentErr) {
+      logger.error("Terminal session rate-limit read failed", { error: recentErr.message });
+    }
+    const rateDecision = decideRateLimit(recentCount ?? 0, rateLimit);
+    if (!rateDecision.ok) {
+      return NextResponse.json({ error: RATE_LIMIT_MESSAGE, code: RATE_LIMIT_CODE }, { status: 429 });
+    }
+
+    // ── (d) MINT + register. ────────────────────────────────────────────────
     const tokens = await mintSessionTokens({ sub: user.id, idea: ideaId, secret });
+
+    const { error: insertErr } = await supabase.from("terminal_sessions").insert({
+      sid: tokens.sid,
+      user_id: user.id,
+      idea_id: ideaId,
+      task_id: taskId ?? null,
+      task_title: taskTitle ?? null,
+      status: "active",
+      expires_at: computeSessionExpiresAt(nowMs),
+    });
+    if (insertErr) {
+      // The registry is best-effort (R2) — never fail an otherwise-successful
+      // mint just because its bookkeeping row didn't write; the relay session
+      // is real either way. My-sessions / the cap count simply undercount this
+      // one session until the next reap or mint self-corrects.
+      logger.error("Terminal session registry insert failed", {
+        error: insertErr.message,
+        sid: tokens.sid,
+      });
+    }
 
     logger.info("Minted terminal session tokens", {
       userId: user.id,

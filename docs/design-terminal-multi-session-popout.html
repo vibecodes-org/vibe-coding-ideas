@@ -1,0 +1,772 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Multi-Session Terminal Dock + Pop-out — UX Design (Compass)</title>
+<style>
+  :root {
+    --bg: #0a0a0b;
+    --panel: #141417;
+    --panel-2: #1c1c21;
+    --panel-3: #232329;
+    --border: #2a2a31;
+    --border-2: #3a3a44;
+    --text: #e6e6ea;
+    --muted: #9a9aa6;
+    --muted-2: #6f6f7a;
+    --accent: #7dd3fc;
+    --emerald: #34d399;
+    --amber: #fbbf24;
+    --rose: #fb7185;
+    --violet: #a78bfa;
+    --mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55; font-size: 15px;
+  }
+  .wrap { max-width: 1020px; margin: 0 auto; padding: 48px 28px 120px; }
+  header.doc { border-bottom: 1px solid var(--border); padding-bottom: 24px; margin-bottom: 32px; }
+  .kicker { color: var(--accent); font-size: 12px; letter-spacing: .14em; text-transform: uppercase; font-weight: 700; }
+  h1 { font-size: 30px; margin: 8px 0 6px; }
+  h2 { font-size: 21px; margin: 52px 0 14px; padding-top: 16px; border-top: 1px solid var(--border); }
+  h3 { font-size: 16px; margin: 28px 0 10px; color: var(--accent); }
+  p { color: var(--text); }
+  .sub { color: var(--muted); }
+  a { color: var(--accent); }
+  .persona { display: inline-block; background: var(--panel-2); border: 1px solid var(--border); border-radius: 999px; padding: 4px 12px; font-size: 12px; color: var(--violet); margin-right: 8px; }
+  code, .mono { font-family: var(--mono); font-size: 13px; }
+  code.inline { background: var(--panel-2); border: 1px solid var(--border); border-radius: 5px; padding: 1px 6px; color: var(--accent); }
+
+  .cite { background: linear-gradient(90deg, rgba(167,139,250,.08), transparent); border-left: 3px solid var(--violet); border-radius: 0 8px 8px 0; padding: 14px 18px; margin: 16px 0; font-size: 14px; }
+  .cite b { color: var(--violet); }
+  .rationale { background: linear-gradient(90deg, rgba(125,211,252,.07), transparent); border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0; padding: 12px 16px; margin: 14px 0 22px; font-size: 13.5px; color: var(--muted); }
+  .rationale b { color: var(--text); }
+  .rationale .law { color: var(--accent); font-weight: 600; }
+  .reco { background: linear-gradient(90deg, rgba(52,211,153,.10), transparent); border: 1px solid rgba(52,211,153,.4); border-radius: 12px; padding: 18px 22px; margin: 18px 0; }
+  .reco h3 { margin-top: 0; color: var(--emerald); }
+  .reco .pick { display:inline-block; background: rgba(52,211,153,.16); border:1px solid rgba(52,211,153,.5); color: var(--emerald); border-radius: 6px; padding: 2px 9px; font-size: 12px; font-weight: 700; margin-left: 6px; }
+  .warnbox { background: linear-gradient(90deg, rgba(251,191,36,.10), transparent); border: 1px solid rgba(251,191,36,.4); border-radius: 12px; padding: 16px 20px; margin: 18px 0; font-size: 14px; }
+  .warnbox b { color: var(--amber); }
+  .req { display:inline-block; font-family: var(--mono); font-size: 11px; font-weight: 700; color: var(--violet); background: rgba(167,139,250,.12); border: 1px solid rgba(167,139,250,.45); border-radius: 5px; padding: 1px 6px; margin: 0 2px; vertical-align: 1px; white-space: nowrap; }
+
+  /* ── Mock chrome ── */
+  .browser { border: 1px solid var(--border); border-radius: 12px; overflow: hidden; margin: 14px 0; background: var(--panel); box-shadow: 0 8px 30px rgba(0,0,0,.4); }
+  .chrome-bar { display:flex; align-items:center; gap:8px; background: var(--panel-2); border-bottom: 1px solid var(--border); padding: 9px 14px; }
+  .dot { width:11px; height:11px; border-radius:50%; }
+  .dot.r{background:#fb7185}.dot.y{background:#fbbf24}.dot.g{background:#34d399}
+  .urlbar { flex:1; margin-left:8px; background: var(--bg); border:1px solid var(--border); border-radius:6px; padding:3px 10px; font-family:var(--mono); font-size:11.5px; color:var(--muted); }
+  .boardtop { display:flex; align-items:center; gap:12px; padding:11px 16px; background:var(--panel); border-bottom:1px solid var(--border); }
+  .boardtop .crumb { font-size:13px; color:var(--muted); }
+  .boardtop .crumb b { color:var(--text); }
+  .boardtop .spacer { flex:1; }
+  .kanban { display:flex; gap:12px; padding:10px 16px; background:#0d0d10; overflow:hidden; }
+  .col { flex:1; min-width:0; }
+  .col h4 { margin:0 0 9px; font-size:12px; font-weight:700; letter-spacing:.04em; text-transform:uppercase; color:var(--muted); display:flex; align-items:center; gap:7px; }
+  .col h4 .count { background:var(--panel-3); border:1px solid var(--border); color:var(--muted); border-radius:999px; padding:0 7px; font-size:11px; }
+  .tcard { background:var(--panel-2); border:1px solid var(--border); border-radius:9px; padding:8px 10px; margin-bottom:9px; }
+  .tcard .ttl { font-size:12px; color:var(--text); line-height:1.4; }
+  .splitbtn { display:inline-flex; }
+  .splitbtn .main { background: var(--accent); border:1px solid var(--accent); border-right:0; border-radius:8px 0 0 8px; color:#06222e; height:34px; display:flex; align-items:center; gap:7px; padding:0 14px; font-size:13.5px; font-weight:700; }
+  .splitbtn .caret { background: var(--accent); border:1px solid var(--accent); border-radius:0 8px 8px 0; color:#06222e; height:34px; display:flex; align-items:center; padding:0 9px; }
+
+  /* ── State pills (P1 language, reused verbatim) ── */
+  .statepill { display:inline-flex; align-items:center; gap:6px; border-radius:7px; padding:4px 10px; font-size:12.5px; font-weight:600; border:1px solid var(--border-2); background: var(--panel-3); }
+  .statepill .ic { font-size:12px; line-height:1; }
+  .statepill.connected { color: var(--emerald); border-color: rgba(52,211,153,.5); background: rgba(52,211,153,.10); }
+  .statepill.connecting { color: var(--amber); border-color: rgba(251,191,36,.5); background: rgba(251,191,36,.10); }
+  .statepill.waiting { color: var(--accent); border-color: rgba(125,211,252,.5); background: rgba(125,211,252,.10); }
+  .statepill.disconnected { color: var(--amber); border-color: rgba(251,191,36,.5); background: rgba(251,191,36,.08); }
+  .statepill.ended { color: var(--muted); border-color: var(--border-2); background: var(--panel-3); }
+  .statepill.error { color: var(--rose); border-color: rgba(251,113,133,.55); background: rgba(251,113,133,.10); }
+  .hostinfo { font-family: var(--mono); font-size: 12px; color: var(--muted); display:flex; align-items:center; gap:6px; }
+  .hostinfo .sep { color: var(--muted-2); }
+  .ro-badge { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; font-weight:700; color: var(--violet); background: rgba(167,139,250,.12); border:1px solid rgba(167,139,250,.55); border-radius:6px; padding:3px 9px; letter-spacing:.02em; }
+  .spacer { flex:1; }
+  .tctrls { display:flex; align-items:center; gap:6px; }
+  .ibtn { display:inline-flex; align-items:center; gap:5px; height:30px; min-width:30px; justify-content:center; padding:0 9px; border-radius:7px; border:1px solid var(--border-2); background: var(--panel-3); color: var(--text); font-size:12.5px; cursor:pointer; }
+  .ibtn:hover { background: #2c2c34; }
+  .ibtn.danger { color: var(--rose); border-color: rgba(251,113,133,.45); }
+  .ibtn.danger:hover { background: rgba(251,113,133,.12); }
+  .ibtn:focus-visible, .btn:focus-visible, .ttab:focus-visible, .plus:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* ── NEW: tab strip ── */
+  .tabstrip { display:flex; align-items:stretch; background: var(--panel); border-bottom: 1px solid var(--border); overflow:hidden; position:relative; }
+  .tabscroll { display:flex; align-items:stretch; overflow-x:auto; scrollbar-width:none; flex:1; min-width:0; }
+  .tabscroll::-webkit-scrollbar { display:none; }
+  .ttab { display:flex; align-items:center; gap:7px; padding: 0 10px 0 12px; height: 38px; min-width: 110px; max-width: 190px; border-right: 1px solid var(--border); background: var(--panel); color: var(--muted); font-size: 12.5px; cursor:pointer; border-top: 2px solid transparent; position:relative; flex: 0 1 auto; }
+  .ttab .st { font-size: 11px; line-height: 1; flex: 0 0 auto; }
+  .ttab .st.ok { color: var(--emerald); }
+  .ttab .st.warn { color: var(--amber); }
+  .ttab .st.err { color: var(--rose); }
+  .ttab .st.mut { color: var(--muted-2); }
+  .ttab .st.cy { color: var(--accent); }
+  .ttab .lbl { overflow:hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .ttab .x { flex: 0 0 auto; width: 18px; height: 18px; border-radius: 5px; display:flex; align-items:center; justify-content:center; color: var(--muted-2); font-size: 12px; line-height:1; }
+  .ttab .x:hover { background: var(--panel-3); color: var(--text); }
+  .ttab.active { background: #0c0c0e; color: var(--text); border-top-color: var(--accent); font-weight: 600; }
+  .ttab:hover:not(.active) { background: var(--panel-2); color: var(--text); }
+  .plus { flex: 0 0 auto; width: 38px; height: 38px; display:flex; align-items:center; justify-content:center; color: var(--muted); background: var(--panel); border:0; border-right:1px solid var(--border); font-size: 16px; cursor:pointer; }
+  .plus:hover { background: var(--panel-2); color: var(--text); }
+  .strip-end { display:flex; align-items:center; gap:6px; padding: 0 10px; border-left: 1px solid var(--border); background: var(--panel); flex: 0 0 auto; }
+  .sessbtn { display:inline-flex; align-items:center; gap:6px; height: 26px; padding: 0 10px; border-radius: 7px; border: 1px solid var(--border-2); background: var(--panel-3); color: var(--muted); font-size: 11.5px; font-weight: 600; cursor:pointer; }
+  .sessbtn:hover { color: var(--text); background:#2c2c34; }
+  .sessbtn .n { background: var(--panel); border:1px solid var(--border-2); border-radius: 999px; padding: 0 6px; font-size: 10.5px; color: var(--accent); }
+  .fadeR { position:absolute; right:0; top:0; bottom:0; width:26px; background: linear-gradient(90deg, transparent, var(--panel)); pointer-events:none; }
+  .anno { font-size: 12px; color: var(--muted-2); text-align: center; margin: 6px 0 0; }
+  .callout-pin { display:inline-block; font-size:10px; font-weight:800; color:#06222e; background: var(--accent); border-radius: 999px; width: 16px; height:16px; line-height:16px; text-align:center; margin-right:6px; }
+  ol.annos { margin: 10px 0 0; padding-left: 0; list-style: none; }
+  ol.annos li { font-size: 13px; color: var(--muted); margin: 6px 0; }
+  ol.annos li b { color: var(--text); }
+
+  /* term body */
+  .term { background:#0c0c0e; }
+  .term-header { display:flex; align-items:center; gap:10px; background: var(--panel-2); border-bottom:1px solid var(--border); padding: 8px 12px; flex-wrap: wrap; }
+  .xterm { font-family: var(--mono); font-size: 12.5px; line-height: 1.5; padding: 14px 18px; color: #cfd8df; min-height: 150px; white-space: pre-wrap; }
+  .xterm .c-cyan { color: #7dd3fc; } .xterm .c-green { color: #34d399; } .xterm .c-dim { color: #6f6f7a; }
+  .xterm .c-amber { color: #fbbf24; } .xterm .c-violet { color: #a78bfa; } .xterm .c-white { color: #e6e6ea; }
+  .xterm .bullet { color:#34d399; }
+  .cursor { display:inline-block; width:8px; height:15px; background:#cfd8df; vertical-align:-2px; animation: blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .term-input { display:flex; align-items:center; gap:8px; border-top:1px solid var(--border); background: var(--panel); padding:8px 12px; }
+  .term-input .prompt { color: var(--emerald); font-family:var(--mono); font-size:12.5px; }
+  .tin { flex:1; background: var(--bg); border:1px solid var(--border-2); border-radius:7px; padding:6px 10px; color: var(--text); font-family:var(--mono); font-size:12.5px; }
+  .tin::placeholder { color: var(--muted-2); }
+
+  /* collapsed dockbar */
+  .dockbar { display:flex; align-items:center; gap:10px; background:var(--panel-2); border-top:1px solid var(--border-2); padding:7px 14px; }
+  .dockbar .lbl { display:inline-flex; align-items:center; gap:8px; font-size:12.5px; font-weight:600; color:var(--text); }
+  .dockbar .spacer { flex:1; }
+  .sumchip { display:inline-flex; align-items:center; gap:5px; font-size:11px; font-weight:700; border-radius:6px; padding:2px 8px; border:1px solid var(--border-2); }
+  .sumchip.ok { color: var(--emerald); border-color: rgba(52,211,153,.5); background: rgba(52,211,153,.10); }
+  .sumchip.warn { color: var(--amber); border-color: rgba(251,191,36,.5); background: rgba(251,191,36,.10); }
+  .sumchip.err { color: var(--rose); border-color: rgba(251,113,133,.5); background: rgba(251,113,133,.10); }
+  .sumchip.mut { color: var(--muted); background: var(--panel-3); }
+
+  /* overlays */
+  .overlay { min-height: 170px; display:flex; flex-direction:column; align-items:center; justify-content:center; text-align:center; padding: 24px; gap:10px; background:#0c0c0e; }
+  .overlay .big { font-size: 28px; line-height:1; }
+  .overlay .ttl { font-size: 15.5px; font-weight: 700; }
+  .overlay .ttl.cyan{color:var(--accent);} .overlay .ttl.muted{color:var(--muted);} .overlay .ttl.rose{color:var(--rose);} .overlay .ttl.amber{color:var(--amber);}
+  .overlay .msg { color: var(--muted); font-size:13px; max-width: 440px; }
+  .btn { display:inline-flex; align-items:center; gap:7px; height:36px; padding:0 18px; border-radius:8px; font-size:13.5px; font-weight:600; cursor:pointer; border:1px solid transparent; }
+  .btn.primary { background: var(--accent); color:#06222e; }
+  .btn.ghost { background: var(--panel-3); color: var(--text); border-color: var(--border-2); }
+  .btn.danger { background: rgba(251,113,133,.12); color: var(--rose); border:1px solid rgba(251,113,133,.5); }
+  .btnrow { display:flex; gap:10px; flex-wrap:wrap; justify-content:center; }
+
+  /* my-sessions panel */
+  .sesspanel { width: 460px; max-width:100%; background: var(--panel); border:1px solid var(--border-2); border-radius:12px; box-shadow:0 18px 50px rgba(0,0,0,.6); overflow:hidden; margin: 14px 0; }
+  .sesspanel .sp-head { display:flex; align-items:center; gap:8px; padding: 12px 14px 8px; font-size: 13px; font-weight: 700; }
+  .sesspanel .sp-head .sub2 { font-weight: 400; color: var(--muted-2); font-size: 11.5px; margin-left:auto; }
+  .sessrow { display:flex; align-items:center; gap:10px; padding: 10px 14px; border-top: 1px solid var(--border); }
+  .sessrow .info { min-width:0; flex:1; }
+  .sessrow .l1 { font-size: 13px; color: var(--text); font-weight: 600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; display:flex; align-items:center; gap:7px; }
+  .sessrow .l1 .where { font-weight:400; color: var(--muted-2); font-size: 11.5px; flex:0 0 auto; }
+  .sessrow .l2 { font-family: var(--mono); font-size: 11px; color: var(--muted-2); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; margin-top:2px; }
+  .sessrow .age { flex: 0 0 auto; font-size: 11.5px; color: var(--muted); }
+  .sesspanel .sp-foot { display:flex; align-items:center; gap:10px; padding: 10px 14px; border-top:1px solid var(--border); background: var(--panel-2); }
+  .sesspanel .sp-foot .hint { font-size: 11.5px; color: var(--muted-2); }
+
+  /* toast */
+  .toast { display:flex; gap:10px; align-items:flex-start; width: 400px; max-width:100%; background:#232327; border:1px solid var(--border-2); border-left: 3px solid var(--rose); border-radius:10px; padding: 12px 14px; box-shadow:0 12px 40px rgba(0,0,0,.55); margin: 12px 0; }
+  .toast.warn { border-left-color: var(--amber); }
+  .toast .t { font-size: 13px; font-weight: 700; }
+  .toast .d { font-size: 12.5px; color: var(--muted); margin-top: 2px; }
+  .toast .d a { font-weight: 600; }
+
+  /* notice bar */
+  .noticebar { display:flex; align-items:center; gap:8px; font-size: 11.5px; color: var(--accent); background: rgba(125,211,252,.07); border-bottom: 1px solid rgba(125,211,252,.25); padding: 6px 12px; }
+  .noticebar .dismiss { margin-left:auto; color: var(--muted-2); cursor:pointer; }
+  .reconbar { display:flex; align-items:center; gap:8px; border-top:1px solid rgba(251,191,36,.3); background: rgba(251,191,36,.05); padding: 7px 12px; font-size: 11px; color: var(--amber); }
+  .reconbar u { cursor:pointer; }
+
+  /* state grid */
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap:14px; margin:16px 0; }
+  @media (max-width:760px){ .grid { grid-template-columns: 1fr; } }
+  .state { border:1px solid var(--border); border-radius:12px; padding:14px 16px; background: var(--panel); }
+  .state .tag { font-size:11px; font-weight:700; letter-spacing:.06em; text-transform:uppercase; display:flex; align-items:center; gap:6px; }
+  .state.ok{border-color:rgba(52,211,153,.4)} .state.ok .tag{color:var(--emerald)}
+  .state.wait{border-color:rgba(125,211,252,.4)} .state.wait .tag{color:var(--accent)}
+  .state.warn{border-color:rgba(251,191,36,.4)} .state.warn .tag{color:var(--amber)}
+  .state.err{border-color:rgba(251,113,133,.45)} .state.err .tag{color:var(--rose)}
+  .state.kill{border-color:rgba(167,139,250,.45)} .state.kill .tag{color:var(--violet)}
+  .state.neutral .tag{color:var(--muted)}
+  .state p { font-size:13px; color:var(--muted); margin:8px 0 0; }
+
+  table { width:100%; border-collapse:collapse; margin:14px 0; font-size:13.5px; }
+  th,td { text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); vertical-align:top; }
+  th { color:var(--muted); font-weight:600; font-size:12px; text-transform:uppercase; letter-spacing:.05em; }
+  td code { color: var(--accent); }
+
+  /* flows */
+  .flow { display:flex; flex-direction:column; margin:18px 0; }
+  .step { display:flex; gap:14px; }
+  .step .num { flex:0 0 34px; height:34px; border-radius:50%; background:var(--panel-2); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-weight:700; font-size:13px; color:var(--accent); }
+  .step .body { flex:1; background:var(--panel); border:1px solid var(--border); border-radius:10px; padding:11px 16px; margin-bottom:10px; }
+  .step .body .t { font-weight:600; }
+  .step .body .d { color:var(--muted); font-size:13px; margin-top:2px; }
+  .step .body .branch { margin-top:8px; padding: 8px 12px; border-left: 2px solid var(--border-2); font-size: 12.5px; color: var(--muted); border-radius: 0 6px 6px 0; background: var(--panel-2); }
+  .step .body .branch b { color: var(--amber); }
+  .connector { margin:-6px 0 4px 16px; color:var(--border-2); font-size:18px; line-height:1; }
+
+  .label { display:inline-block; font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); background:var(--panel-2); border:1px solid var(--border); border-radius:6px; padding:3px 10px; margin-bottom:10px; }
+  .toc { columns:2; gap:24px; font-size:13.5px; color:var(--muted); }
+  @media (max-width:680px){ .toc{columns:1;} }
+  .toc a { display:block; padding:3px 0; }
+  ul.tight { margin:8px 0 0; padding-left:18px; }
+  ul.tight li { margin:5px 0; font-size:13.5px; color:var(--muted); }
+  ul.tight li b { color: var(--text); }
+
+  /* copy sweep before/after */
+  .copyswap { display:grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 12px 0; }
+  @media (max-width:720px){ .copyswap { grid-template-columns: 1fr; } }
+  .copyswap .before, .copyswap .after { border-radius: 10px; padding: 12px 14px; font-size: 13px; }
+  .copyswap .before { border: 1px solid rgba(251,113,133,.35); background: rgba(251,113,133,.05); color: var(--muted); }
+  .copyswap .after { border: 1px solid rgba(52,211,153,.35); background: rgba(52,211,153,.05); }
+  .copyswap .cap { font-size: 10.5px; font-weight: 700; letter-spacing: .07em; text-transform: uppercase; margin-bottom: 6px; }
+  .copyswap .before .cap { color: var(--rose); }
+  .copyswap .after .cap { color: var(--emerald); }
+
+  /* popped-out window mock */
+  .popwin { border: 1px solid var(--border-2); border-radius: 12px; overflow:hidden; margin: 14px auto; max-width: 660px; background: var(--panel); box-shadow: 0 20px 60px rgba(0,0,0,.6); }
+  kbd { font-family: var(--mono); font-size: 11.5px; background: var(--panel-3); border: 1px solid var(--border-2); border-bottom-width: 2px; border-radius: 5px; padding: 1px 6px; color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<header class="doc">
+  <div class="kicker">UX Design · Step 2 of 6 · In-App Terminal — Later Phase: Multi-Session + Pop-out</div>
+  <h1>Many terminals, one honest dock — tabs, a sessions list, and pop-out</h1>
+  <p class="sub">
+    <span class="persona">Compass · UX Designer</span>
+    This phase turns the P1 single-session terminal dock into a <b>VS Code-style tabbed multi-session surface</b>,
+    adds a <b>"My sessions"</b> list with a one-click panic button, and lets any session be <b>popped out into its own
+    browser window</b>. Everything here is UI on top of plumbing that already isolates sessions (one relay DO per
+    session, worktree isolation on disk). <b>Desktop-only (≥768px)</b> per requirement <span class="req">NG2</span> — the dock
+    remains absent on mobile, exactly as in P1. Feature-flag OFF = none of this exists <span class="req">B9</span> <span class="req">F6</span>.
+  </p>
+</header>
+
+<div class="warnbox">
+  <b>⚠ Gate reminder (EC1–EC5).</b> This is a design-only deliverable. The Requirements step's blocking entry gate is
+  <b>not met</b> (parent P1 task e31f4594 at 3/6 steps). Nothing in this document licenses implementation before the gate opens.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="reqs">1 · Building on Requirements (step 1)</h2>
+
+<div class="cite">
+  <b>Binding input: the Requirements step (Product Owner).</b> That document fixed the shape of this phase and this design
+  implements it rather than re-deciding it: <b>tabs, not panes</b> (<span class="req">NG4</span>); <b>pop-out as a same-origin browser
+  window re-attaching the same relay session via owner-verified preemption</b>, not native handoff (<span class="req">D1</span>, <span class="req">NG3</span>);
+  a <b>server-enforced cap of 3</b> with a user-explainable refusal (<span class="req">C2</span> <span class="req">E1</span>); a <b>registry-backed "My sessions"
+  list with End-all</b> (<span class="req">C3</span>); and <b>every P1 security invariant unchanged</b> (<span class="req">F1–F6</span>).
+  Where the Requirements doc left Q2 (board-scoped vs global tabs) to design, §3 answers it with a recommendation.
+</div>
+
+<p class="sub">Requirement-to-design map — where each UI-facing requirement lands in this document:</p>
+<table>
+  <tr><th>Requirement</th><th>What it demands</th><th>Designed in</th></tr>
+  <tr><td><span class="req">B1</span> <span class="req">B3</span> <span class="req">B6</span></td><td>Tab strip, per-tab anatomy, labels, P1 controls carried over</td><td>§2 (anatomy), §4 (full mockup)</td></tr>
+  <tr><td><span class="req">B4</span> <span class="req">B5</span></td><td>Background tabs stay attached; attention indicators; collapsed-bar summary</td><td>§5, §6</td></tr>
+  <tr><td><span class="req">B7</span> <span class="req">C2</span> <span class="req">E1</span></td><td>Launch routing to a new tab; cap refusal copy + path to session list</td><td>§7, Flow 1, Flow 4</td></tr>
+  <tr><td><span class="req">B8</span> <span class="req">B9</span></td><td>Collapse never ends sessions; empty/idle state; flag-off honest absence</td><td>§6, §8</td></tr>
+  <tr><td><span class="req">C3</span> <span class="req">C4</span> <span class="req">F5</span></td><td>"My sessions" across ideas, identity line, per-session End, End-all panic</td><td>§9, Flow 5</td></tr>
+  <tr><td><span class="req">D1–D7</span></td><td>Pop-out window, placeholder tab, bring-back, blocked-popup, truncation notice</td><td>§10, Flow 3</td></tr>
+  <tr><td><span class="req">A3</span> <span class="req">R5</span></td><td>"One place at a time" copy sweep</td><td>§11</td></tr>
+  <tr><td><span class="req">R4</span></td><td>Machine-load honesty on the "+" affordance</td><td>§2 (callout 4), §7</td></tr>
+  <tr><td>ACs 3–10, 13–18</td><td>State-level acceptance criteria</td><td>§5, §12 (state index), flows</td></tr>
+</table>
+
+<p class="sub"><b>Conflicts found: none material.</b> One tension worth flagging for the Design Review: <span class="req">B1</span> says the tab close affordance is "⏻" (End). VS Code's convention — which <span class="req">B1</span> itself invokes — is an <b>×</b> close glyph. Using ⏻ on every tab would read as seven tiny danger buttons. This design uses <b>× on the tab</b> but keeps its behaviour exactly what B1 intends: closing a tab <b>ends that session</b> (with a confirm), because a session without a tab would be invisible-but-running — the opposite of G4's observability goal. See §2, callout 3, and OQ3.</p>
+
+<!-- ============================================================= -->
+<h2 id="anatomy">2 · Tab anatomy — one tab, every part named</h2>
+<p class="sub">The tab strip replaces P1's single "Terminal" label row in the expanded dock header. Each tab is one session. Anatomy, magnified:</p>
+
+<div style="display:flex; justify-content:center; margin:18px 0 6px;">
+  <div class="tabstrip" style="border:1px solid var(--border-2); border-radius:10px; transform:scale(1.35); transform-origin:center; margin: 24px 0;">
+    <div class="ttab active" role="tab" aria-selected="true" style="max-width:250px;">
+      <span class="st ok" aria-hidden="true">●</span>
+      <span class="lbl">Add pagination to the recipe list</span>
+      <span class="x" role="button" aria-label="End session and close tab">×</span>
+    </div>
+    <button class="plus" aria-label="New terminal session">+</button>
+  </div>
+</div>
+
+<ol class="annos" style="max-width:640px; margin:14px auto;">
+  <li><span class="callout-pin">1</span><b>Status glyph</b> — icon + colour, <i>never colour alone</i> <span class="req">B5</span>: <span style="color:var(--emerald)">●</span> connected, <span style="color:var(--amber)">↻</span> reconnecting (spins), <span style="color:var(--accent)">◌</span> connecting/waiting, <span style="color:var(--muted-2)">■</span> ended, <span style="color:var(--rose)">▲</span> error, <span style="color:var(--violet)">⧉</span> popped out. Shapes are distinct, so a colour-blind user reads state from form.</li>
+  <li><span class="callout-pin">2</span><b>Label</b> <span class="req">B3</span> — task title when the session was launched from a task-card menu; otherwise <span class="mono">idea-slug · sid</span> (e.g. <span class="mono">recipe-saver · a3f9</span>). Truncates with ellipsis at max-width 190px; the <b>tooltip carries the full identity line</b> <span class="req">C4</span>: <span class="mono">Nick's MacBook Pro · ~/projects/recipe-saver · session a3f9</span>.</li>
+  <li><span class="callout-pin">3</span><b>Close (×)</b> — ends this session (both relay legs) after an inline confirm; only that tab's session is touched <span class="req">B6</span> <span class="req">F5</span>. 18×18px visual, but the hit target is padded to ≥24×24 and the whole tab row is 38px tall — comfortably above pointer-target minimums (Fitts's Law; this is a desktop-only, cursor-driven surface per NG2).</li>
+  <li><span class="callout-pin">4</span><b>"+" launch</b> — mints a new session for this board <span class="req">B7</span>. Tooltip carries the honesty copy from <span class="req">R4</span>: <i>"New terminal — runs on your computer. Each session uses real resources."</i> At the cap it stays enabled and clicking explains (no dead disabled button — see §7).</li>
+</ol>
+
+<div class="rationale">
+  <b>Why VS Code's grammar, exactly.</b> <span class="law">Jakob's Law</span> — every user who has seen VS Code's panel
+  tabs (P1's stated model) already knows: active tab shares the panel background and gets a top accent line; background
+  tabs are dimmer; × on hover-and-active; "+" at the end. We innovate on <i>value</i> (per-tab live status glyphs, which
+  VS Code terminals also do) and nowhere on interaction pattern. Active-tab signalling is <b>threefold</b> — background
+  colour, top accent bar, and bolder text — never colour alone.
+</div>
+
+<!-- ============================================================= -->
+<h2 id="q2">3 · Q2 answered — board-scoped tabs, global "My sessions"</h2>
+
+<div class="reco">
+  <h3>Recommendation: board-scoped tab strip + global sessions list <span class="pick">RECOMMENDED</span></h3>
+  <p style="font-size:13.5px; margin:8px 0 0;">
+    The dock's tabs show <b>only this idea's sessions</b>. The <b>"My sessions" panel (§9) is global</b> — every live
+    session across all ideas, with idea/task labels. This matches the Requirements doc's own inclination in Q2 and is
+    the honest choice for four reasons:
+  </p>
+  <ul class="tight">
+    <li><b>The dock's identity line stays truthful.</b> The dock lives on <i>a board</i>; its sessions run in <i>that idea's folder</i> (or its worktrees). A tab for another idea's session would show a cwd that has nothing to do with the board behind it.</li>
+    <li><b>The launch bus is already board-scoped.</b> <code class="inline">vibecodes:terminal-browser-launch</code> events come from this board's toolbar and task cards <span class="req">B7</span>; routing them into a mixed global strip invites delivering a prompt to the wrong idea's session.</li>
+    <li><b><span class="law">Hick's Law</span>.</b> A user with 3 sessions across 2 ideas sees at most the 2 relevant tabs here, not all 3 — fewer choices at the point of action.</li>
+    <li><b>Nothing is hidden.</b> US5's "lost track" fear is answered globally by "My sessions", which is one click away from the strip and is <i>the</i> named path in the cap-refusal message. The collapsed bar's session button shows the <b>global</b> count, so off-board sessions are never invisible (§6).</li>
+  </ul>
+  <p style="font-size:12.5px; color:var(--muted); margin:10px 0 0;">Trade-off accepted: switching between two ideas' terminals means switching boards (or popping one out — §10 is the designed answer to exactly that need). A global strip was rejected because it couples every board's dock to every session's lifecycle and breaks the label scheme in B3.</p>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="hero">4 · The multi-session dock — hero mockup</h2>
+<p class="sub">Three sessions on the Recipe Saver board: a task-scoped tab (active, connected), a long-titled task tab (background, reconnecting — note the attention treatment), and a board-level session (ended). Realistic worst-case data: long titles truncate, the strip scrolls when tabs overflow, with a fade hint at the clipped edge.</p>
+
+<div class="browser">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">vibecodes.co.uk/ideas/recipe-saver/board</span></div>
+  <div class="boardtop">
+    <span class="crumb">Recipe Saver <span style="color:var(--muted-2)">/</span> <b>Board</b></span>
+    <span class="spacer"></span>
+    <span class="splitbtn"><span class="main">▸ Launch Claude Code</span><span class="caret" aria-label="Choose where Claude runs">▾</span></span>
+  </div>
+  <div class="kanban">
+    <div class="col"><h4>To Do <span class="count">3</span></h4><div class="tcard"><div class="ttl">Email when a saved recipe goes on sale</div></div></div>
+    <div class="col"><h4>In Progress <span class="count">2</span></h4><div class="tcard" style="border-color:rgba(251,191,36,.4);"><div class="ttl">Add pagination to the recipe list</div></div></div>
+    <div class="col"><h4>Verify <span class="count">2</span></h4></div>
+    <div class="col"><h4>Done <span class="count">8</span></h4></div>
+  </div>
+
+  <div class="term">
+    <!-- TAB STRIP -->
+    <div class="tabstrip" role="tablist" aria-label="Terminal sessions">
+      <div class="tabscroll">
+        <div class="ttab active" role="tab" aria-selected="true" tabindex="0" title="Nick's MacBook Pro · ~/projects/recipe-saver · session a3f9">
+          <span class="st ok" aria-hidden="true">●</span>
+          <span class="lbl">Add pagination to the recipe list</span>
+          <span class="x" role="button" aria-label="End session and close tab: Add pagination">×</span>
+        </div>
+        <div class="ttab" role="tab" aria-selected="false" tabindex="-1" title="Reconnecting — Nick's MacBook Pro · ~/projects/recipe-saver.vibe/wt-1 · session c2d8">
+          <span class="st warn" aria-hidden="true">↻</span>
+          <span class="lbl">Migrate ingredient quantities to metric units everywhere…</span>
+          <span class="x" role="button" aria-label="End session and close tab: Migrate ingredient quantities">×</span>
+        </div>
+        <div class="ttab" role="tab" aria-selected="false" tabindex="-1" title="Ended — Nick's MacBook Pro · ~/projects/recipe-saver.vibe/wt-2 · session 9be1">
+          <span class="st mut" aria-hidden="true">■</span>
+          <span class="lbl">recipe-saver · 9be1</span>
+          <span class="x" role="button" aria-label="Close tab: recipe-saver 9be1 (session ended)">×</span>
+        </div>
+        <button class="plus" aria-label="New terminal session — runs on your computer; each session uses real resources" title="New terminal — runs on your computer. Each session uses real resources.">+</button>
+      </div>
+      <span class="fadeR" aria-hidden="true"></span>
+      <div class="strip-end">
+        <button class="sessbtn" aria-haspopup="dialog">☰ My sessions <span class="n">4</span></button>
+      </div>
+    </div>
+
+    <!-- ACTIVE TAB'S SESSION: unchanged P1 header, scoped to this tab (B6) -->
+    <div class="term-header">
+      <span class="statepill connected"><span class="ic">●</span> Connected</span>
+      <span class="hostinfo">Nick's MacBook Pro <span class="sep">·</span> ~/projects/recipe-saver <span class="sep">·</span> session a3f9</span>
+      <span class="spacer"></span>
+      <div class="tctrls">
+        <button class="ibtn" aria-label="Pop this session out into its own window">⧉ Pop out</button>
+        <button class="ibtn" aria-label="Switch to read-only">🔒 Read-only</button>
+        <button class="ibtn" aria-label="Fullscreen the terminal">⛶</button>
+        <button class="ibtn" aria-label="Collapse terminal panel">⌄</button>
+        <button class="ibtn danger" aria-label="End session">⏻ End</button>
+      </div>
+    </div>
+    <div class="xterm"><span class="bullet">●</span> Claiming <span class="c-white">"Add pagination to the recipe list"</span> → <span class="c-amber">In Progress</span>
+
+<span class="bullet">●</span> <span class="c-cyan">Edit</span> src/components/recipe-list.tsx
+  <span class="c-dim">⎿ added cursor-based page fetch + IntersectionObserver sentinel</span>
+
+<span class="bullet">●</span> Running <span class="c-cyan">npm test</span> — 14 passing<span class="cursor"></span></div>
+    <div class="term-input">
+      <span class="prompt">›</span>
+      <input class="tin" placeholder="Type here to steer this session — Enter sends to your machine" aria-label="Terminal input for session a3f9">
+    </div>
+  </div>
+</div>
+<div class="anno">The tab strip sits above the P1 session header. Everything below the strip — status pill, identity, Pop out / Read-only / Fullscreen / End — belongs to the <b>active tab only</b> (<span class="req">B6</span>). Tab 2 shows the attention treatment for a background reconnect; tab 3 an ended board-level session with the <span class="mono">slug · sid</span> label (<span class="req">B3</span>). "My sessions <b>4</b>" counts globally — one session lives on another idea (§9).</div>
+
+<div class="rationale">
+  <b>One new header control, in the old header.</b> "Pop out" joins the P1 control cluster rather than living on each tab —
+  it acts on the session you're looking at, keeps tabs lean, and stays a <i>visible</i> button (never hover-revealed).
+  <span class="law">Proximity</span>: pop-out sits with the other session-scoped controls, left of the destructive End,
+  which remains rightmost and visually distinct (harder to hit by accident — <span class="law">Fitts's Law</span> for
+  destructive actions). The strip is the only new chrome; with a single session it still renders (one tab + "+"), so the
+  surface never reshapes itself surprisingly between one and two sessions.
+</div>
+
+<h3>4a · Overflow — many tabs, long titles</h3>
+<ul class="tight">
+  <li><b>Shrink then scroll:</b> tabs flex between 190px and 110px min-width; past that the strip scrolls horizontally (mouse wheel / trackpad / arrow-key focus walking scrolls the focused tab into view). A gradient fade at the clipped edge signals more tabs (<span class="law">Continuity</span> — the eye follows the row off-edge).</li>
+  <li><b>Never wrap, never hide the "+":</b> "+" and "My sessions" are pinned outside the scroll region — launch and oversight stay one click away at any tab count.</li>
+  <li><b>Truncation is safe</b> because the tooltip and the session header both carry the full title + identity; with cap 3 per user, pathological tab counts are bounded anyway <span class="req">E1</span>.</li>
+</ul>
+
+<!-- ============================================================= -->
+<h2 id="tabstates">5 · Per-tab states — the connection machine, per session</h2>
+<p class="sub">Each tab owns an independent instance of P1's <code class="inline">terminalReducer</code>, buffer, heartbeat watchdog and grace-window loop <span class="req">B2</span>. The tab glyph is a faithful, compressed projection of that tab's <code class="inline">TerminalStatus</code> — the same states P1 defined, nothing new invented:</p>
+
+<table>
+  <tr><th>Session state (connection.ts)</th><th>Tab glyph</th><th>Background-tab attention</th><th>Active-tab body (unchanged from P1)</th></tr>
+  <tr><td><code>connecting</code> / <code>waiting-to-pair</code></td><td><span style="color:var(--accent)">◌</span> hollow ring (pulses)</td><td>None — starting up is expected</td><td>P1 connecting / waiting-for-machine overlays</td></tr>
+  <tr><td><code>connected</code></td><td><span style="color:var(--emerald)">●</span> solid dot</td><td>None — healthy is quiet</td><td>Live stream + input row</td></tr>
+  <tr><td><code>disconnected</code> (drop or watchdog <code>link-silent</code>)</td><td><span style="color:var(--amber)">↻</span> spinner</td><td><b>Yes</b> — spinner + amber label tint</td><td>Dimmed stream + amber "Reconnecting — your work is safe" bar</td></tr>
+  <tr><td><code>session-ended</code> (user / idle / max / reconnect-failed)</td><td><span style="color:var(--muted-2)">■</span> solid square</td><td><b>Yes</b> — square (calm, not alarming)</td><td>P1 ended overlay with reason copy + "Launch again"</td></tr>
+  <tr><td><code>error</code> (mint-failed, owner-mismatch, timeout…)</td><td><span style="color:var(--rose)">▲</span> triangle</td><td><b>Yes</b> — triangle + rose label tint</td><td>P1 error overlays, per <code>errorKind</code></td></tr>
+  <tr><td><i>popped out</i> (this phase, §10)</td><td><span style="color:var(--violet)">⧉</span> pop-out glyph</td><td>None — deliberate user state</td><td>"Popped out" placeholder (§10b)</td></tr>
+</table>
+
+<div class="rationale">
+  <b>Attention without alarm.</b> A background tab leaving <code class="inline">connected</code> changes its <i>glyph
+  shape</i> and tints its label — icon + colour together, satisfying <span class="req">B5</span>'s "never colour alone".
+  We deliberately do <b>not</b> flash, bounce, or badge-count tabs: with up to 3 sessions the strip is always fully
+  visible, and a persistent shape change is findable at a glance without training users to ignore motion.
+  Watchdogs keep running on background tabs on wall-clock time <span class="req">B4</span>, so a hidden tab's
+  reconnect shows up at most a poll-cadence late, never faked-fresh (AC 19).
+</div>
+
+<!-- ============================================================= -->
+<h2 id="collapsed">6 · Collapsed bar — the worst-status summary</h2>
+<p class="sub">Collapsing the dock never ends anything <span class="req">B8</span>. The collapsed bar must answer "are my agents okay?" without expanding <span class="req">B5</span>: it shows a count-by-state summary, ordered worst-first, plus the global sessions button.</p>
+
+<div class="browser" style="max-width:860px;">
+  <div class="dockbar">
+    <span class="lbl"><span aria-hidden="true" style="color:var(--muted)">▣</span> Terminals</span>
+    <span class="sumchip ok">● 2 connected</span>
+    <span class="sumchip warn">↻ 1 reconnecting</span>
+    <span class="spacer"></span>
+    <button class="sessbtn">☰ My sessions <span class="n">4</span></button>
+    <button class="ibtn" style="height:26px;" aria-label="Expand terminal panel" aria-expanded="false">⌃ Expand</button>
+  </div>
+</div>
+<div class="anno">Mixed state: "● 2 connected · ↻ 1 reconnecting" (AC 5). Chips appear only for states that exist — all healthy collapses to a single "● 3 connected". An error state adds a rose "▲ 1 needs attention" chip, which is also the bar's leftmost (worst-first ordering = <span class="law">information scent</span>: the first thing you read is the thing to act on). Clicking any chip expands the dock and activates the worst-affected tab.</div>
+
+<!-- ============================================================= -->
+<h2 id="launch">7 · Launch routing &amp; the cap</h2>
+
+<h3>7a · A launch arrives while tabs exist <span class="req">B7</span></h3>
+<p class="sub">Toolbar "In the browser", a task-card "Launch in browser terminal", or the strip's "+" all do the same thing: <b>open a new tab</b> — never replace a running session. The new tab becomes active immediately in <code class="inline">connecting</code>; the launch payload (prompt + cwd) is delivered to that tab only. Existing sessions' streams are untouched (AC 4). If the dock was collapsed, it expands with the new tab active.</p>
+
+<h3>7b · Cap reached <span class="req">C2</span> <span class="req">E1</span></h3>
+<p class="sub">The mint route refuses before creating anything. The "+" (and launch menu items) are <b>not disabled</b> — a dead control with no explanation is a dead end. Instead the refusal explains and routes (constraint: no disabled buttons without adjacent explanation):</p>
+
+<div class="toast" role="alert">
+  <span style="font-size:16px;" aria-hidden="true">⚠️</span>
+  <div>
+    <div class="t">You already have 3 terminals running</div>
+    <div class="d">That's the limit for now. End one to start another — <a href="#sessions">view my sessions</a>.</div>
+  </div>
+</div>
+<div class="anno">Cap refusal, shown as a toast anchored to whatever triggered the launch. The link opens the "My sessions" panel (§9) — the fix is one click from the failure (<span class="law">recognition over recall</span>: we show the sessions rather than asking the user to remember where they are). Same copy and behaviour from the toolbar menu, the task-card menu, and "+". No session is minted; no tab appears (AC 9).</div>
+
+<!-- ============================================================= -->
+<h2 id="empty">8 · First-run, empty, and flag-off</h2>
+<div class="grid">
+  <div class="state neutral">
+    <div class="tag">◻ No sessions yet (dock idle)</div>
+    <p>Identical to P1's resting state: the dock only exists after the user launches "In the browser". No tab strip renders with zero sessions — the strip appears with the first session and persists (even as a single tab + "+") so the surface is stable. First launch runs the unchanged P1 install/pair path, then lands as tab 1.</p>
+  </div>
+  <div class="state neutral">
+    <div class="tag">◻ Last session ended</div>
+    <p>Ending the final session returns the dock to the P1 idle/resting state <span class="req">B8</span> — the strip does not linger empty. Ended tabs before that stay visible (■) until closed, preserving their scrollback for reading.</p>
+  </div>
+  <div class="state kill">
+    <div class="tag">⚑ Flag OFF <span class="req">B9</span> <span class="req">F6</span></div>
+    <p><b>Honest absence.</b> No dock, no strip, no "My sessions", no pop-out routes, no new menu items. Users who never opted in see zero new UI anywhere in this phase.</p>
+  </div>
+  <div class="state warn">
+    <div class="tag">◔ Loading (sessions list)</div>
+    <p>The "My sessions" panel loads from the registry: skeleton rows (label + identity-line bars), never a spinner-only void. Registry unreachable → inline error with Retry, and the panel still offers End for locally-known sessions.</p>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="sessions">9 · "My sessions" — the global list + panic button</h2>
+<p class="sub">Opened from the strip or collapsed bar button, or from the cap-refusal link. A popover panel (not a modal — it must not block the board; constraint: no modals for content that could be inline). Lists <b>every live session across all ideas</b> from the registry <span class="req">C3</span>, each with the full identity line <span class="req">C4</span>. Popped-out sessions appear once, marked ⧉ (AC 18).</p>
+
+<div class="sesspanel" role="dialog" aria-label="My terminal sessions">
+  <div class="sp-head">My sessions <span class="sub2">runs on your machines — updated just now</span></div>
+
+  <div class="sessrow">
+    <span style="color:var(--emerald); flex:0 0 auto;" aria-hidden="true">●</span>
+    <div class="info">
+      <div class="l1">Add pagination to the recipe list <span class="where">Recipe Saver</span></div>
+      <div class="l2">Nick's MacBook Pro · ~/projects/recipe-saver · a3f9</div>
+    </div>
+    <span class="age">12m</span>
+    <button class="ibtn danger" style="height:26px; font-size:11.5px;" aria-label="End session: Add pagination">⏻ End</button>
+  </div>
+
+  <div class="sessrow">
+    <span style="color:var(--amber); flex:0 0 auto;" aria-hidden="true">↻</span>
+    <div class="info">
+      <div class="l1">Migrate ingredient quantities to metric… <span class="where">Recipe Saver</span></div>
+      <div class="l2">Nick's MacBook Pro · ~/projects/recipe-saver.vibe/wt-1 · c2d8</div>
+    </div>
+    <span class="age">41m</span>
+    <button class="ibtn danger" style="height:26px; font-size:11.5px;" aria-label="End session: Migrate ingredient quantities">⏻ End</button>
+  </div>
+
+  <div class="sessrow">
+    <span style="color:var(--violet); flex:0 0 auto;" aria-hidden="true">⧉</span>
+    <div class="info">
+      <div class="l1">Fix onboarding e-mail bounce handling <span class="where">Mail Robot · popped out</span></div>
+      <div class="l2">Nick's MacBook Pro · ~/projects/mail-robot · 77f2</div>
+    </div>
+    <span class="age">2h</span>
+    <button class="ibtn danger" style="height:26px; font-size:11.5px;" aria-label="End session: Fix onboarding e-mail bounce handling">⏻ End</button>
+  </div>
+
+  <div class="sessrow">
+    <span style="color:var(--emerald); flex:0 0 auto;" aria-hidden="true">●</span>
+    <div class="info">
+      <div class="l1">mail-robot · 3e01 <span class="where">Mail Robot</span></div>
+      <div class="l2">Nick's MacBook Pro · ~/projects/mail-robot.vibe/wt-1 · 3e01</div>
+    </div>
+    <span class="age">3h 50m</span>
+    <button class="ibtn danger" style="height:26px; font-size:11.5px;" aria-label="End session: mail-robot 3e01">⏻ End</button>
+  </div>
+
+  <div class="sp-foot">
+    <span class="hint">4 sessions · in-browser cap 3 per user</span>
+    <span class="spacer"></span>
+    <button class="btn danger" style="height:30px; font-size:12.5px;">⏻ End all sessions</button>
+  </div>
+</div>
+
+<h3>9a · End-all confirmation <span class="req">C3</span> <span class="req">F5</span></h3>
+<p class="sub">End-all is the panic button — it must be reachable in two clicks but never a misclick. The confirm replaces the panel footer inline (destructive action moved away from the trigger position — <span class="law">Fitts's Law</span>: you must travel to Confirm):</p>
+<div class="sesspanel" style="width:460px;">
+  <div class="sp-foot" style="border-top:0; background: rgba(251,113,133,.06); border-left:3px solid var(--rose);">
+    <div>
+      <div style="font-size:13px; font-weight:700; color:var(--rose);">End all 4 sessions?</div>
+      <div style="font-size:12px; color:var(--muted); margin-top:2px;">Claude stops on your machine in every one. Unpushed worktree changes stay on disk.</div>
+    </div>
+    <span class="spacer"></span>
+    <button class="btn ghost" style="height:30px; font-size:12.5px;">Cancel</button>
+    <button class="btn danger" style="height:30px; font-size:12.5px;">End all</button>
+  </div>
+</div>
+<div class="anno">While ending, each row shows "Ending…" with its End button replaced; rows flip to a muted "Ended" and clear on close. Both relay legs are closed per session — never merely detached (<span class="req">C3</span>, AC 10). Per-session End uses no confirm (single, visible, reversible-by-relaunching) — only the bulk action confirms.</div>
+
+<div class="grid">
+  <div class="state neutral">
+    <div class="tag">◻ Empty state</div>
+    <p><b>"No terminals running."</b> One line below: "Launch one from an idea board — Launch Claude Code → In the browser." Specific, actionable, and teaches the entry point (<span class="law">information scent</span>).</p>
+  </div>
+  <div class="state warn">
+    <div class="tag">◔ Registry drift <span class="req">R2</span></div>
+    <p>A row the relay reports gone renders as "Already ended" and clears on next open. Cap errors always name the blocking sessions via this list — the user can always see and kill what counts against them.</p>
+  </div>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="popout">10 · Pop-out — same session, different glass</h2>
+<p class="sub">Pop-out re-attaches the browser leg of the <b>same relay session</b> in a new same-origin window <span class="req">D1</span>. Owner-verified preemption does the safety work: the moment the popped window attaches, the relay closes the dock's leg — one browser leg at all times <span class="req">F2</span> (AC 13). No tokens ever ride the URL <span class="req">D4</span> (AC 16).</p>
+
+<h3>10a · The popped-out window <span class="req">D2</span></h3>
+<div class="popwin">
+  <div class="chrome-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="urlbar">vibecodes.co.uk/terminal/a3f9 — Terminal · Add pagination</span></div>
+  <div class="term">
+    <div class="term-header">
+      <span class="statepill connected"><span class="ic">●</span> Connected</span>
+      <span class="hostinfo">Nick's MacBook Pro <span class="sep">·</span> ~/projects/recipe-saver <span class="sep">·</span> a3f9</span>
+      <span class="spacer"></span>
+      <div class="tctrls">
+        <button class="ibtn" aria-label="Switch to read-only">🔒 Read-only</button>
+        <button class="ibtn danger" aria-label="End session">⏻ End</button>
+      </div>
+    </div>
+    <div class="noticebar" role="status">ℹ Showing output from pop-out onward. <span class="dismiss" role="button" aria-label="Dismiss notice">✕</span></div>
+    <div class="xterm"><span class="bullet">●</span> Running <span class="c-cyan">npm test</span> — 14 passing
+
+<span class="bullet">●</span> Moving <span class="c-white">"Add pagination to the recipe list"</span> → <span class="c-amber">Verify</span><span class="cursor"></span></div>
+    <div class="term-input">
+      <span class="prompt">›</span>
+      <input class="tin" placeholder="Type here to steer this session" aria-label="Terminal input">
+    </div>
+  </div>
+</div>
+<div class="anno">The popped window is deliberately minimal: exactly the P1 header quartet — <b>status · identity · read-only · End</b> — plus the stream and input. No tab strip, no collapse, no pop-out-of-a-pop-out. The window title mirrors the tab label so it's findable in the OS window switcher. The one-time notice bar is the MVP scrollback honesty from <span class="req">D5</span> (AC 17); if the serialize-addon transfer ships later, the bar simply never appears. It still counts toward the cap and appears in "My sessions" <span class="req">D6</span>.</div>
+
+<h3>10b · The originating tab — "Popped out" placeholder <span class="req">D2</span> <span class="req">D3</span></h3>
+<div class="browser" style="max-width:860px;">
+  <div class="term">
+    <div class="tabstrip" role="tablist" aria-label="Terminal sessions">
+      <div class="tabscroll">
+        <div class="ttab active" role="tab" aria-selected="true" tabindex="0">
+          <span class="st" style="color:var(--violet)" aria-hidden="true">⧉</span>
+          <span class="lbl">Add pagination to the recipe list</span>
+          <span class="x" role="button" aria-label="End session and close tab: Add pagination">×</span>
+        </div>
+        <button class="plus" aria-label="New terminal session">+</button>
+      </div>
+      <div class="strip-end"><button class="sessbtn">☰ My sessions <span class="n">4</span></button></div>
+    </div>
+    <div class="overlay">
+      <div class="big" aria-hidden="true" style="color:var(--violet)">⧉</div>
+      <div class="ttl" style="color:var(--violet)">Popped out</div>
+      <div class="msg">This session is open in another window. It keeps running there — close that window and it returns here automatically.</div>
+      <div class="btnrow">
+        <button class="btn primary">⇤ Bring back to dock</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="anno">The placeholder never auto-reattaches while the popped window lives — that would preempt-loop <span class="req">D3</span> <span class="req">R3</span>. Reattach happens two ways only: (1) the user clicks <b>Bring back to dock</b> (dock preempts the window; the window shows its own honest "This session went back to the dock" end-card with a "Close window" button), or (2) the popped window closes and signals via BroadcastChannel, after which the dock reattaches automatically. If the close-signal is missed (crashed window), the placeholder's Bring-back still works — it's the manual override for every failure of the automatic path.</div>
+
+<h3>10c · Pop-out failure — blocked popup <span class="req">D7</span></h3>
+<div class="toast warn" role="alert">
+  <span style="font-size:16px;" aria-hidden="true">⧉</span>
+  <div>
+    <div class="t">Couldn't open the terminal window</div>
+    <div class="d">Your browser blocked the pop-up. Allow pop-ups for vibecodes.co.uk and try again.</div>
+  </div>
+</div>
+<div class="anno">Pop out is always a direct click (never automatic), satisfying popup policies. On failure: this toast, and <b>no state change</b> — the tab stays attached and streaming. Nothing to undo.</div>
+
+<!-- ============================================================= -->
+<h2 id="copy">11 · Copy sweep — retiring "one place at a time" <span class="req">A3</span> <span class="req">R5</span></h2>
+<p class="sub">P1's load-bearing promise — "you run Claude in one place at a time" — becomes false the day this ships. Every location, with replacement copy:</p>
+
+<div class="copyswap">
+  <div class="before"><div class="cap">Before — launch menu footer</div>"You run Claude in one place at a time — terminal window <b>or</b> browser, never both."</div>
+  <div class="after"><div class="cap">After</div>"Run several sessions at once — terminal windows and browser tabs. Each runs on your computer; in-browser sessions are capped at 3."</div>
+</div>
+<div class="copyswap">
+  <div class="before"><div class="cap">Before — opt-in panel (P1 §5)</div>"…one session, one machine, one place at a time."</div>
+  <div class="after"><div class="cap">After</div>"…every session is yours alone: owner-bound, individually endable, and listed under My sessions."</div>
+</div>
+<div class="copyswap">
+  <div class="before"><div class="cap">Before — guide pages (/guide/launching-claude-code)</div>Single-session framing throughout; worktrees manual: "several in-app terminals at once is a later feature."</div>
+  <div class="after"><div class="cap">After <span class="req">A4</span></div>Concurrency documented as supported: native + in-browser mix, worktree isolation summarised ("session 2+ gets its own private worktree"), cap and My sessions explained.</div>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="stateindex">12 · Full state index</h2>
+<div class="grid">
+  <div class="state ok"><div class="tag">● Tab connected</div><p>Quiet glyph; active tab shows P1 connected panel. Next: user works, pops out, or ends.</p></div>
+  <div class="state wait"><div class="tag">◌ Tab connecting / waiting-to-pair</div><p>Pulsing ring; P1 connecting/waiting overlays in body. New-tab default state after any launch route.</p></div>
+  <div class="state warn"><div class="tag">↻ Tab reconnecting (background)</div><p>Spinner glyph + amber label; collapsed bar adds "↻ n reconnecting". Grace window runs per-tab; recovery is silent, exhaustion → ■ ended with honest copy.</p></div>
+  <div class="state err"><div class="tag">▲ Tab error</div><p>Triangle + rose tint; body shows the P1 error overlay for that <code>errorKind</code>. Only this tab is affected — siblings stream on (AC 5, 19).</p></div>
+  <div class="state neutral"><div class="tag">■ Tab ended</div><p>Calm square; body shows P1 ended overlay (user/idle/max/reconnect-failed copy) + "Launch again". Tab stays until closed so output can be read.</p></div>
+  <div class="state kill"><div class="tag">⧉ Tab popped out</div><p>Violet glyph; placeholder body with Bring back. Window closing auto-returns the session to the dock.</p></div>
+  <div class="state err"><div class="tag">⚠ Cap reached</div><p>Toast: "You already have 3 terminals running — end one to start another" + link to My sessions. No mint, no tab (AC 9).</p></div>
+  <div class="state warn"><div class="tag">⧉ Pop-up blocked</div><p>Toast explains; tab unchanged and still attached (<span class="req">D7</span>).</p></div>
+  <div class="state neutral"><div class="tag">◻ Empty / idle</div><p>P1 resting dock; sessions list empty state teaches the launch path.</p></div>
+  <div class="state kill"><div class="tag">⚑ Flag off</div><p>Nothing renders. Anywhere. <span class="req">B9</span> <span class="req">F6</span> (AC 8).</p></div>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="flows">13 · Interaction flows</h2>
+
+<h3>Flow 1 — Open a second tab (AC 4, 6)</h3>
+<div class="flow">
+  <div class="step"><div class="num">1</div><div class="body"><div class="t">Trigger</div><div class="d">Session 1 is Connected. User clicks a task card's "Launch in browser terminal" (or toolbar "In the browser", or "+").</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">2</div><div class="body"><div class="t">Cap check → mint</div><div class="d">Registry says 1 of 3 — mint proceeds, new sid.<div class="branch"><b>Cap hit?</b> → Flow 4. No tab is created.</div></div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">3</div><div class="body"><div class="t">New tab appears, active, ◌ connecting</div><div class="d">Label = task title (task-scoped) or slug · sid. Launch payload (prompt + cwd) delivered to this tab only <span class="req">B7</span>. Tab 1 slides to background — its stream, socket, and watchdog untouched <span class="req">B2</span>.</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">4</div><div class="body"><div class="t">End states</div><div class="d"><b>Success:</b> bridge attaches → ● Connected, worktree banner in stream (session 2 gets wt-1). <b>Failure:</b> this tab shows the P1 error overlay (▲); tab 1 unaffected. <b>Recovery:</b> Retry inside the failed tab, or × to close it.</div></div></div>
+</div>
+
+<h3>Flow 2 — Background tab loses its link (AC 5, 19)</h3>
+<div class="flow">
+  <div class="step"><div class="num">1</div><div class="body"><div class="t">Trigger</div><div class="d">Two tabs Connected; user is watching tab A. Tab B's bridge network drops silently.</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">2</div><div class="body"><div class="t">Tab B's own watchdog fires</div><div class="d">≤45s of silence (wall-clock; hidden-tab clamping only delays) → tab B: disconnected. Its glyph flips to ↻ amber; label tints. Tab A: nothing happens.</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">3</div><div class="body"><div class="t">Ambient signal</div><div class="d">If the dock is collapsed, the bar now reads "● 1 connected · ↻ 1 reconnecting". Clicking the amber chip expands with tab B active, showing the P1 reconnect bar ("your work is safe").</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">4</div><div class="body"><div class="t">End states</div><div class="d"><b>Recovered inside 90s grace:</b> glyph returns to ● silently. <b>Exhausted:</b> tab B → ■ ended, honest reconnect-failed copy, "Launch again". Tab A streams on throughout.</div></div></div>
+</div>
+
+<h3>Flow 3 — Pop out, then bring back (AC 13–17)</h3>
+<div class="flow">
+  <div class="step"><div class="num">1</div><div class="body"><div class="t">Trigger</div><div class="d">User clicks ⧉ Pop out in the active tab's header (direct gesture — popup-policy safe <span class="req">D7</span>).</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">2</div><div class="body"><div class="t">Window opens; credentials cross via BroadcastChannel</div><div class="d">Same-origin minimal page; sid + token via postMessage/BroadcastChannel — never the URL <span class="req">D4</span>.<div class="branch"><b>Blocked?</b> Toast (§10c); tab stays attached; flow ends.</div></div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">3</div><div class="body"><div class="t">Relay preempts the dock leg</div><div class="d">Window attaches with same <code>sub</code> → dock leg closed (existing 4001/PREEMPTED path). Dock tab → ⧉ "Popped out" placeholder; window shows ● Connected + one-time "output from pop-out onward" notice <span class="req">D5</span>. One browser leg at every instant <span class="req">F2</span>.</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">4</div><div class="body"><div class="t">Working popped out</div><div class="d">Typing, read-only, End all act on the same session <span class="req">D6</span>. Focus lands in the window's terminal on open.</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">5</div><div class="body"><div class="t">Return — two paths, never a race <span class="req">D3</span></div><div class="d"><b>(a) Window closed:</b> close-signal on BroadcastChannel → dock reattaches automatically, glyph → ●. <b>(b) "Bring back to dock":</b> dock preempts; window shows "This session went back to the dock" + Close window. The placeholder never auto-reattaches while the window lives <span class="req">R3</span>.<div class="branch"><b>Crashed window / missed signal?</b> Placeholder persists; "Bring back" is the manual recovery. <b>Session ended while popped out?</b> Both surfaces show the honest P1 ended overlay.</div></div></div></div>
+</div>
+
+<h3>Flow 4 — Cap hit (AC 9)</h3>
+<div class="flow">
+  <div class="step"><div class="num">1</div><div class="body"><div class="t">Trigger</div><div class="d">3 in-browser sessions live (any mix of docked/popped, any ideas). User attempts a fourth launch from any route.</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">2</div><div class="body"><div class="t">Mint refused server-side</div><div class="d">Registry check fails pre-mint; distinct error code; nothing created <span class="req">C2</span>.</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">3</div><div class="body"><div class="t">Explain + route</div><div class="d">Toast: "You already have 3 terminals running — end one to start another · View my sessions". Link opens §9 listing all three with End buttons.</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">4</div><div class="body"><div class="t">Recovery</div><div class="d">User ends one (or End-all) → relaunches → Flow 1 succeeds. Stale-registry phantom rows are reaped on mint <span class="req">R2</span> so a ghost can't wedge the cap permanently.</div></div></div>
+</div>
+
+<h3>Flow 5 — End all sessions (AC 10)</h3>
+<div class="flow">
+  <div class="step"><div class="num">1</div><div class="body"><div class="t">Trigger</div><div class="d">User opens "My sessions" (strip, collapsed bar, or cap toast) and clicks "End all sessions".</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">2</div><div class="body"><div class="t">Inline confirm</div><div class="d">"End all 4 sessions? Claude stops on your machine in every one. Unpushed worktree changes stay on disk." Cancel / End all.</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">3</div><div class="body"><div class="t">Ending</div><div class="d">Rows show "Ending…"; each session's relay legs are closed (killed, not detached) and registry rows marked ended.</div></div></div>
+  <div class="connector">↓</div>
+  <div class="step"><div class="num">4</div><div class="body"><div class="t">End states</div><div class="d"><b>Success:</b> all rows "Ended"; open tabs and popped windows everywhere flip to their honest ■ ended overlays within seconds <span class="req">F5</span>. <b>Partial failure (relay unreachable for one):</b> that row shows "Couldn't end — retry", others succeed; the panel never claims a clean sweep it didn't make.</div></div></div>
+</div>
+
+<!-- ============================================================= -->
+<h2 id="a11y">14 · Accessibility</h2>
+<ul class="tight">
+  <li><b>WAI-ARIA tabs pattern:</b> the strip is <code class="inline">role="tablist"</code> (aria-label "Terminal sessions"); tabs are <code class="inline">role="tab"</code> with <code class="inline">aria-selected</code>, roving tabindex. <kbd>←</kbd>/<kbd>→</kbd> move focus, <kbd>Home</kbd>/<kbd>End</kbd> jump, <kbd>Enter</kbd>/<kbd>Space</kbd> activate. <b>Manual activation</b> (focus ≠ select), because activating swaps a live xterm surface — arrow-browsing must not thrash sessions' rendering.</li>
+  <li><b>Close from keyboard:</b> <kbd>Delete</kbd> on a focused tab triggers the same end-session confirm as ×. We deliberately do <b>not</b> bind Ctrl/Cmd+W (it closes the browser tab — catastrophic mis-affordance).</li>
+  <li><b>Status is announced, not just drawn:</b> each tab carries visually-hidden state text ("reconnecting", "ended"…) appended to its accessible name; background-tab state changes post to a single polite <code class="inline">aria-live</code> region ("Migrate ingredient quantities: reconnecting") — one announcer, so three tabs can't shout over each other. Cap and popup-blocked toasts are <code class="inline">role="alert"</code>.</li>
+  <li><b>Pop-out focus management:</b> on pop-out, focus lands in the new window's terminal input; the dock placeholder's "Bring back to dock" is its first focusable. On bring-back/auto-return, focus goes to the reattached tab. The popped window's <code class="inline">&lt;title&gt;</code> is "Terminal · {label}" for window-switchers and screen readers.</li>
+  <li><b>Contrast (WCAG 2.1 AA):</b> all state colours on the dark panels are the P1-audited pairs (emerald/amber/rose/violet 300-range on zinc-900 ≥ 4.5:1 for the 11–12.5px bold labels; glyphs are supplementary to text, and state is always also words in tooltip, header pill, and accessible name — never colour alone). Muted label text stays at or above zinc-400 on the strip; zinc-500 is reserved for the non-essential identity line, which is duplicated in tooltips.</li>
+  <li><b>Targets & visibility:</b> tab rows 38px tall; × hit area ≥24×24 inside a ≥110px tab; all controls visible at rest (no hover-only affordances — × is always rendered, not hover-revealed). Focus rings: 2px accent, offset 2, on tabs, ×, +, and all panel buttons.</li>
+  <li><b>Desktop-only:</b> per <span class="req">NG2</span> the dock (and therefore the strip, panel, pop-out) does not render under 768px; no mobile layouts are specified, matching P1.</li>
+</ul>
+
+<!-- ============================================================= -->
+<h2 id="oq">15 · Open questions for Design Review</h2>
+<table>
+  <tr><th>#</th><th>Question</th><th>Design's default if unchallenged</th></tr>
+  <tr><td>OQ1</td><td>Tab × ends the session (with confirm) rather than a P1-style ⏻ per tab — accepted deviation from <span class="req">B1</span>'s glyph note? (§1, §2)</td><td>× glyph, end-session semantics, inline confirm on live sessions only (ended tabs close instantly).</td></tr>
+  <tr><td>OQ2</td><td>Q2 resolution: board-scoped tabs + global My sessions (§3) — Product Owner sign-off?</td><td>Board-scoped, per the recommendation.</td></tr>
+  <tr><td>OQ3</td><td>Should "My sessions" also live outside the dock (e.g. user menu) so a session on idea B is findable without visiting any board? MVP keeps it dock-only.</td><td>Dock-only for MVP; global count on the button makes cross-idea sessions visible.</td></tr>
+  <tr><td>OQ4</td><td>Cap value display: the panel footer states "cap 3 per user" — should the cap number be hidden until hit instead? (Q3's env-tunable value must not be hardcoded in copy.)</td><td>Show it, template from config.</td></tr>
+  <tr><td>OQ5</td><td>Popped window: is Fullscreen wanted there, or is the OS window's own maximise sufficient? Currently omitted for minimalism.</td><td>Omitted; OS chrome suffices.</td></tr>
+  <tr><td>OQ6</td><td>When a launch arrives for a task that already has a live tab, do we focus the existing tab or open a duplicate session? Requirements are silent.</td><td>Focus the existing tab and deliver nothing (toast: "This task already has a terminal — switched to it"), avoiding accidental double agents on one task.</td></tr>
+</table>
+
+<p class="sub" style="margin-top:40px; border-top:1px solid var(--border); padding-top:16px;">
+  Compass · UX Design step 2 of 6 · builds on the Requirements step (Product Owner) · for the Design Review step (Product Owner, human check).
+  Companion docs: <span class="mono">in-app-terminal-design.html</span> (P1 dock), <span class="mono">install-first-terminal-ux.html</span> (first run),
+  <span class="mono">design-task-menu-browser-launch.html</span> (task-scoped launch), <span class="mono">concurrent-terminal-worktrees-manual.html</span> (disk isolation).
+</p>
+
+</div>
+</body>
+</html>

@@ -1,10 +1,15 @@
 // In-app terminal — launch-mode selection + cross-component launch bus (SLICE 4).
 //
-// "Launch Claude Code" is a PICK-ONE control: Claude runs in exactly one place at a
-// time. This module owns the pure decision of WHICH modes the menu offers (gated on
-// the terminal flag) plus a tiny SSR-safe event bus so the toolbar's menu item can
-// ask the board's terminal dock (a separate, page-level component) to open in the
-// browser. Keeping the selection logic pure makes it unit-testable without React.
+// "Launch Claude Code" is a PICK-ONE-PER-CLICK control: each launch starts Claude in
+// exactly one destination (a terminal window OR a new browser tab). That is no longer
+// a claim about the app as a whole, though — multi-session (docs/design-terminal-multi-
+// session-popout.html) lets several sessions run at once, in any mix of terminal
+// windows and in-browser tabs (capped per user, see session-cap.ts; never re-derive
+// that number here — copy sweep A3). This module owns the pure decision of WHICH modes
+// the menu offers (gated on the terminal flag) plus a tiny SSR-safe event bus so the
+// toolbar's menu item can ask the board's terminal dock (a separate, page-level
+// component) to open a NEW tab in the browser. Keeping the selection logic pure makes
+// it unit-testable without React.
 
 import type { CompactPromptEssentials } from "@/lib/launch-claude-code";
 
@@ -64,6 +69,17 @@ export interface BrowserLaunchPayload {
    * (repo-backed, or a brand-new ~/projects/<slug> the agent creates).
    */
   cwd?: string;
+  /**
+   * Multi-session stage 2 (B10 dedupe, B3 tab labels): the task this launch was
+   * scoped to, when it came from a task card ("task-icon" / "task-menu-item"
+   * variants of LaunchClaudeCodeButton) rather than the board toolbar. Undefined
+   * for board-level launches — those never carry a task identity, so B10's
+   * dedupe never applies to them (only a REAL task identity is keyed on; cwd/
+   * prompt equivalence is deliberately never treated as a match).
+   */
+  taskId?: string;
+  /** The task's title, for the tab label (B3) when `taskId` is present. */
+  taskTitle?: string;
 }
 
 /** Ask the board's terminal dock to open + auto-launch in the browser. */

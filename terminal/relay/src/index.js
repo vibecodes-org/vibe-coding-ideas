@@ -41,7 +41,7 @@ import {
   maxCloseReason,
   resolveMs,
 } from "./pairing.js";
-import { authorizeAttach } from "../../shared/session-token.mjs";
+import { authorizeAttach, authorizeControl } from "../../shared/session-token.mjs";
 import {
   encodeAttachedFrame,
   encodePeerDegradedFrame,
@@ -54,6 +54,14 @@ import {
 /** Normal WebSocket closure code used for clean, server-initiated session ends. */
 const NORMAL_CLOSURE = 1000;
 
+/** @param {unknown} body @param {number} status @returns {Response} */
+function jsonResponse(body, status) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  });
+}
+
 export default {
   /**
    * @param {Request} request
@@ -64,6 +72,21 @@ export default {
 
     if (url.pathname === "/healthz") {
       return new Response("ok", { status: 200 });
+    }
+
+    // Multi-session stage 3 (My-sessions "End" / "End all"): a plain HTTP POST,
+    // not a WebSocket upgrade — dispatch it BEFORE the Upgrade-header gate
+    // below. Auth (the control token) is checked inside the DO, where the
+    // session's live state actually lives; here we only need a shape-valid
+    // session id to route to the right DO instance (same as the WS path).
+    if (url.pathname === "/end" && request.method === "POST") {
+      const session = url.searchParams.get("session");
+      if (!isValidSession(session)) {
+        return jsonResponse({ ended: false, reason: "bad-session" }, 400);
+      }
+      const id = env.TERMINAL_RELAY.idFromName(session);
+      const stub = env.TERMINAL_RELAY.get(id);
+      return stub.fetch(request);
     }
 
     if (request.headers.get("Upgrade") !== "websocket") {
@@ -166,9 +189,44 @@ export class TerminalRelay {
     return { bridge, browser, owner };
   }
 
+  /**
+   * Multi-session stage 3 — My-sessions "End" / "End all" (C3, F5). A
+   * lifecycle-only HTTP action: authorize the control token, then close both
+   * legs exactly like an idle/max-duration end (same `endSession` helper, same
+   * NORMAL_CLOSURE code) — no content buffering, inspection, or logging beyond
+   * the metadata every other path here already logs (AC20/F3).
+   * @param {Request} request @param {URL} url
+   */
+  async handleEnd(request, url) {
+    const session = url.searchParams.get("session");
+    const authHeader = request.headers.get("Authorization") || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;
+    const auth = await authorizeControl({ token, secret: this.env.TERMINAL_SESSION_SECRET, session });
+    if (!auth.ok) {
+      this.log("end rejected (auth)", { session, reason: auth.reason });
+      return jsonResponse({ ended: false, reason: "unauthorized" }, 401);
+    }
+
+    const state = await this.computeAttachState();
+    if (!state.bridge && !state.browser) {
+      // Nothing live to end — an honest, non-probing 200 (the caller already
+      // proved authorization via the control token, so there is no liveness
+      // leak in telling them truthfully that there's nothing here).
+      this.log("end: no live session", { session });
+      return jsonResponse({ ended: false, reason: "no-session" }, 200);
+    }
+
+    await this.endSession("ended-by-user");
+    this.log("end: session ended", { session });
+    return jsonResponse({ ended: true }, 200);
+  }
+
   /** @param {Request} request */
   async fetch(request) {
     const url = new URL(request.url);
+    if (url.pathname === "/end" && request.method === "POST") {
+      return this.handleEnd(request, url);
+    }
     const role = url.searchParams.get("role");
     const session = url.searchParams.get("session");
     const token = url.searchParams.get("token");

@@ -1,0 +1,554 @@
+// Behavioural regression net for the pure refactor that extracted
+// use-terminal-session.ts out of terminal-dock.tsx (multi-session stage 1). These
+// tests exercise the hook's session mechanics — mint → open → data → connected,
+// read-only gating, user-end, mint failure, and the grace-window reconnect — via a
+// mocked fetch + WebSocket, standing in for terminal-dock.tsx's previous inline
+// tests-by-manual-verification of the same paths. connection.ts's OWN pure logic
+// (terminalReducer, mapCloseCode, decideResize, …) is unit-tested independently in
+// connection.test.ts and is NOT re-tested here — this file is about the wiring.
+
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { renderHook, act } from "@testing-library/react";
+import { useTerminalSession, type TerminalSessionDescriptor } from "./use-terminal-session";
+
+vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+vi.mock("@xterm/xterm", () => ({
+  Terminal: class {
+    cols = 80;
+    rows = 24;
+    onData() {}
+    open() {}
+    loadAddon() {}
+    write() {}
+    clear() {}
+    focus() {}
+    dispose() {}
+  },
+}));
+vi.mock("@xterm/addon-fit", () => ({
+  FitAddon: class {
+    fit() {}
+  },
+}));
+
+const toastError = vi.fn();
+const toastSuccess = vi.fn();
+vi.mock("sonner", () => ({
+  toast: {
+    error: (...args: unknown[]) => toastError(...args),
+    success: (...args: unknown[]) => toastSuccess(...args),
+  },
+}));
+
+// ── mock WebSocket ────────────────────────────────────────────────────────────
+class MockWebSocket {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+
+  readonly url: string;
+  readyState = MockWebSocket.CONNECTING;
+  binaryType = "";
+  onopen: ((ev: unknown) => void) | null = null;
+  onmessage: ((ev: { data: unknown }) => void) | null = null;
+  onclose: ((ev: { code: number; reason: string }) => void) | null = null;
+  onerror: ((ev: unknown) => void) | null = null;
+  sent: unknown[] = [];
+
+  constructor(url: string) {
+    this.url = url;
+    mockSockets.push(this);
+  }
+
+  send(data: unknown) {
+    this.sent.push(data);
+  }
+
+  close(code = 1000, reason = "") {
+    if (this.readyState === MockWebSocket.CLOSED) return;
+    this.readyState = MockWebSocket.CLOSED;
+    this.onclose?.({ code, reason });
+  }
+
+  // test helpers — simulate the relay's side of the protocol
+  simulateOpen() {
+    this.readyState = MockWebSocket.OPEN;
+    this.onopen?.({});
+  }
+
+  simulateBinaryMessage(bytes: Uint8Array = new Uint8Array([1, 2, 3])) {
+    this.onmessage?.({ data: bytes.buffer });
+  }
+
+  simulateAbnormalDrop() {
+    // A real drop never calls close() first — the socket just dies. Mirror that:
+    // set CLOSED and fire onclose directly with an abnormal code, bypassing our
+    // own close() (which the dock's own teardown uses and would look identical).
+    this.readyState = MockWebSocket.CLOSED;
+    this.onclose?.({ code: 1006, reason: "" });
+  }
+}
+
+let mockSockets: MockWebSocket[] = [];
+function latestSocket(): MockWebSocket {
+  const s = mockSockets[mockSockets.length - 1];
+  if (!s) throw new Error("no WebSocket was constructed");
+  return s;
+}
+
+const descriptor: TerminalSessionDescriptor = {
+  ideaId: "idea-1",
+  ideaTitle: "Recipe Saver",
+  ideaGithubUrl: null,
+};
+
+function mintResponse(overrides: Partial<Record<string, unknown>> = {}) {
+  return {
+    ok: true,
+    json: async () => ({
+      sessionId: "sid-abc123",
+      browserToken: "browser-token",
+      bridgeToken: "bridge-token",
+      expiresAt: Date.now() + 300_000,
+      ...overrides,
+    }),
+  };
+}
+
+describe("useTerminalSession", () => {
+  beforeEach(() => {
+    mockSockets = [];
+    toastError.mockClear();
+    toastSuccess.mockClear();
+    vi.stubGlobal("WebSocket", MockWebSocket);
+    vi.stubGlobal("fetch", vi.fn(async () => mintResponse()));
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  function setup(expanded = true) {
+    const requestExpand = vi.fn();
+    const utils = renderHook(() =>
+      useTerminalSession(descriptor, { enabled: true, expanded, requestExpand }),
+    );
+    return { ...utils, requestExpand };
+  }
+
+  it("starts idle with no pair and read-write input", () => {
+    const { result } = setup();
+    expect(result.current.state.status).toBe("idle");
+    expect(result.current.pair).toBeNull();
+    expect(result.current.readOnly).toBe(false);
+    expect(result.current.inputEnabled).toBe(false); // not connected yet
+  });
+
+  it("connect() mints a session, opens the browser leg, and reaches connected on first byte", async () => {
+    const { result, requestExpand } = setup();
+
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+
+    expect(requestExpand).toHaveBeenCalled();
+    expect(global.fetch).toHaveBeenCalledWith(
+      "/api/terminal/session",
+      expect.objectContaining({ method: "POST", body: JSON.stringify({ ideaId: "idea-1" }) }),
+    );
+    expect(result.current.pair).toEqual({
+      sessionId: "sid-abc123",
+      bridgeToken: "bridge-token",
+      browserToken: "browser-token",
+    });
+    // buildRelayUrl shape: <base>/?session=<sid>&role=browser&token=<token>
+    expect(latestSocket().url).toBe(
+      "ws://127.0.0.1:8787/?session=sid-abc123&role=browser&token=browser-token",
+    );
+
+    act(() => latestSocket().simulateOpen());
+    expect(result.current.state.status).toBe("waiting-to-pair");
+
+    act(() => latestSocket().simulateBinaryMessage());
+    expect(result.current.state.status).toBe("connected");
+    expect(result.current.inputEnabled).toBe(true);
+    // First successful byte marks this browser paired (install-first gate, #87).
+    expect(window.localStorage.getItem("vibecodes:terminal:paired-v1")).toBe("1");
+  });
+
+  it("read-only gates inputEnabled while connected, independent of status", async () => {
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateBinaryMessage());
+    expect(result.current.inputEnabled).toBe(true);
+
+    act(() => result.current.actions.setReadOnly(true));
+    expect(result.current.readOnly).toBe(true);
+    expect(result.current.inputEnabled).toBe(false);
+
+    act(() => result.current.actions.setReadOnly(false));
+    expect(result.current.inputEnabled).toBe(true);
+  });
+
+  it("end() closes the socket with a user-end reason and reaches session-ended", async () => {
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateBinaryMessage());
+
+    const ws = latestSocket();
+    const closeSpy = vi.spyOn(ws, "close");
+    act(() => result.current.actions.end());
+
+    expect(closeSpy).toHaveBeenCalledWith(1000, "user-end");
+    expect(result.current.state.status).toBe("session-ended");
+    expect(result.current.state.endedReason).toBe("user");
+  });
+
+  it("a mint failure dispatches session-mint-failed and toasts, without opening a socket", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({ ok: false, status: 500, json: async () => ({ error: "boom" }) })),
+    );
+    const { result } = setup();
+
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(result.current.state.errorKind).toBe("session-mint-failed");
+    expect(result.current.pair).toBeNull();
+    expect(toastError).toHaveBeenCalled();
+    expect(mockSockets).toHaveLength(0);
+  });
+
+  it("forwards taskId/taskTitle on mint when provided (C1)", async () => {
+    const fetchMock = vi.fn(async () => mintResponse());
+    vi.stubGlobal("fetch", fetchMock);
+    const requestExpand = vi.fn();
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, {
+        enabled: true,
+        expanded: true,
+        requestExpand,
+        taskId: "task-1",
+        taskTitle: "Fix login",
+      }),
+    );
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/terminal/session",
+      expect.objectContaining({
+        body: JSON.stringify({ ideaId: "idea-1", taskId: "task-1", taskTitle: "Fix login" }),
+      }),
+    );
+  });
+
+  it("a 409 cap refusal shows the server's copy, fires the onCapExceeded callback, and never opens a socket", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 409,
+        json: async () => ({
+          error: "You already have 5 terminals running — end one to start another.",
+          code: "cap_exceeded",
+          cap: 5,
+          active: [],
+        }),
+      })),
+    );
+    const onCapExceeded = vi.fn();
+    const requestExpand = vi.fn();
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand, onCapExceeded }),
+    );
+
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(mockSockets).toHaveLength(0);
+    expect(toastError).toHaveBeenCalled();
+    const [title, opts] = toastError.mock.calls[0];
+    expect(title).toContain("You already have 5 terminals running");
+    expect(opts?.action?.label).toBe("View my sessions");
+    opts.action.onClick();
+    expect(onCapExceeded).toHaveBeenCalled();
+  });
+
+  it("a 429 rate-limit refusal shows distinct copy with no action button and never mentions ending a session", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 429,
+        json: async () => ({
+          error: "You're starting terminals too fast — wait a moment and try again.",
+          code: "rate_limited",
+        }),
+      })),
+    );
+    const onCapExceeded = vi.fn();
+    const requestExpand = vi.fn();
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand, onCapExceeded }),
+    );
+
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(toastError).toHaveBeenCalledWith("You're starting terminals too fast — wait a moment and try again.");
+    expect(onCapExceeded).not.toHaveBeenCalled();
+  });
+
+  it("end() fire-and-forgets a POST to /api/terminal/session/end with the sid (C3 registry truth)", async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === "/api/terminal/session/end") return { ok: true, json: async () => ({ results: [] }) };
+      return mintResponse();
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateBinaryMessage());
+
+    act(() => result.current.actions.end());
+
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/terminal/session/end",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ sid: "sid-abc123" }),
+      }),
+    );
+  });
+
+  it("an abnormal drop after a live stream reattaches within the grace window (same sid, no re-mint)", async () => {
+    vi.useFakeTimers();
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateBinaryMessage());
+    expect(result.current.state.status).toBe("connected");
+
+    act(() => latestSocket().simulateAbnormalDrop());
+    expect(result.current.state.status).toBe("disconnected");
+    expect(mockSockets).toHaveLength(1); // no reattach socket yet — backoff pending
+
+    // First backoff attempt fires at ~1000ms + up to 250ms jitter.
+    await act(async () => {
+      vi.advanceTimersByTime(1300);
+    });
+    expect(mockSockets).toHaveLength(2);
+    expect(latestSocket().url).toContain("session=sid-abc123");
+    expect(latestSocket().url).toContain("token=browser-token"); // retained token, no re-mint
+    expect(global.fetch).toHaveBeenCalledTimes(1); // still just the original mint
+
+    act(() => latestSocket().simulateBinaryMessage());
+    expect(result.current.state.status).toBe("connected");
+  });
+
+  it("reconnect-exhausted (grace window spent) ends the session honestly, not as an error", async () => {
+    vi.useFakeTimers();
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    act(() => latestSocket().simulateBinaryMessage());
+    act(() => latestSocket().simulateAbnormalDrop());
+
+    // Exhaust the 90s grace window; the reconnect loop keeps reattaching (each new
+    // socket immediately drops again) until the deadline passes. Backoff is capped
+    // at 8s/attempt, so ~12 attempts comfortably clears the 90s window.
+    await act(async () => {
+      for (let i = 0; i < 16 && result.current.state.status !== "session-ended"; i++) {
+        vi.advanceTimersByTime(12_000);
+        const ws = mockSockets[mockSockets.length - 1];
+        if (ws.readyState !== MockWebSocket.CLOSED) ws.simulateAbnormalDrop();
+      }
+    });
+
+    expect(result.current.state.status).toBe("session-ended");
+    expect(result.current.state.endedReason).toBe("reconnect-failed");
+  });
+
+  // Multi-session stage 2: `autoConnectWhenExpanded` stops a freshly-minted tab
+  // (mounted with `expanded` already true, delivering its own explicit launch in
+  // the same tick) from ALSO tripping the paired-auto-connect effect and minting
+  // a second, orphaned session. Requires a "supported" platform + a pre-paired
+  // browser, so these two stub navigator to a Mac UA.
+  describe("autoConnectWhenExpanded", () => {
+    const macUserAgent =
+      "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36";
+
+    beforeEach(() => {
+      vi.stubGlobal("navigator", { userAgent: macUserAgent, maxTouchPoints: 0 });
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+    });
+
+    it("auto-connects a paired, expanded, idle instance by default (unchanged P1 behaviour)", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(global.fetch).toHaveBeenCalled();
+      expect(result.current.state.status).not.toBe("idle");
+    });
+
+    it("does NOT auto-connect when autoConnectWhenExpanded is false (a freshly-minted tab)", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+        }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(result.current.state.status).toBe("idle");
+    });
+  });
+
+  async function flushEffects() {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+
+  // Multi-session stage 4 (D1/D2, popout-channel.ts): the popped-out window's
+  // whole entry point — attach to an ALREADY-MINTED session with no mint, no
+  // deep link, no install-first gate.
+  describe("attachExisting", () => {
+    it("attaches directly to the transferred sid/browserToken — no mint, no deep link", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+
+      await flushEffects();
+
+      // No mint round-trip at all — the whole point of attaching.
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(result.current.state.status).toBe("connecting");
+      expect(result.current.pair).toEqual({
+        sessionId: "sid-popped",
+        browserToken: "popped-browser-token",
+      });
+      expect(latestSocket().url).toBe(
+        "ws://127.0.0.1:8787/?session=sid-popped&role=browser&token=popped-browser-token",
+      );
+
+      act(() => latestSocket().simulateOpen());
+      expect(result.current.state.status).toBe("waiting-to-pair");
+
+      act(() => latestSocket().simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+      expect(result.current.inputEnabled).toBe(true);
+    });
+
+    it("reports the relay's 4001 preempted close via closeCode, distinct from every other close", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+      await flushEffects();
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+
+      // The relay's DUP_BROWSER close — a "Bring back to dock" reattach
+      // preempted THIS window's leg.
+      act(() => latestSocket().close(4001, ""));
+      expect(result.current.state.status).toBe("error");
+      expect(result.current.state.errorKind).toBe("duplicate");
+      expect(result.current.state.closeCode).toBe(4001);
+    });
+
+    it("only attaches once per distinct transferred sessionId — a stable object on a later render is a no-op", async () => {
+      const requestExpand = vi.fn();
+      const attachExisting = { sessionId: "sid-popped", browserToken: "popped-browser-token" };
+      const { rerender } = renderHook(
+        (props: { attachExisting: typeof attachExisting | null }) =>
+          useTerminalSession(descriptor, {
+            enabled: true,
+            expanded: true,
+            requestExpand,
+            autoConnectWhenExpanded: false,
+            attachExisting: props.attachExisting,
+          }),
+        { initialProps: { attachExisting } },
+      );
+      await flushEffects();
+      expect(mockSockets).toHaveLength(1);
+
+      rerender({ attachExisting: { ...attachExisting } }); // same sessionId, new object identity
+      await flushEffects();
+      expect(mockSockets).toHaveLength(1); // no second socket opened
+    });
+
+    it("never trips the paired auto-connect effect, even on a browser that WOULD otherwise ambient-connect (would double-mint)", async () => {
+      // Same paired/supported setup the "autoConnectWhenExpanded" describe
+      // above uses to make the ambient auto-connect effect's guard pass —
+      // proving `autoConnectWhenExpanded: false` (a real popped window's
+      // actual wiring) is enough to stop it from ALSO firing connect()
+      // alongside attachToExisting and minting a second, orphaned session.
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+      vi.stubGlobal("navigator", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        maxTouchPoints: 0,
+      });
+      const requestExpand = vi.fn();
+      renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+      await flushEffects();
+      expect(global.fetch).not.toHaveBeenCalled();
+      expect(mockSockets).toHaveLength(1); // exactly the attach's own socket, nothing extra
+    });
+  });
+});

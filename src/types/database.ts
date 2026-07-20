@@ -2700,6 +2700,70 @@ export type Database = {
         },
       ];
     };
+    // In-app terminal — multi-session registry (stage 3, migration 00141).
+    // Best-effort: the relay (one Durable Object per sid) is the source of
+    // truth for whether a session is actually alive; this table is what the
+    // mint route, cap/rate-limit checks, and "My sessions" read/write.
+    terminal_sessions: {
+      Row: {
+        id: string;
+        sid: string;
+        user_id: string;
+        idea_id: string;
+        task_id: string | null;
+        task_title: string | null;
+        machine_label: string | null;
+        cwd: string | null;
+        status: "active" | "ended";
+        created_at: string;
+        ended_at: string | null;
+        expires_at: string;
+      };
+      Insert: {
+        id?: string;
+        sid: string;
+        user_id: string;
+        idea_id: string;
+        task_id?: string | null;
+        task_title?: string | null;
+        machine_label?: string | null;
+        cwd?: string | null;
+        status?: "active" | "ended";
+        created_at?: string;
+        ended_at?: string | null;
+        expires_at: string;
+      };
+      Update: {
+        id?: string;
+        sid?: string;
+        user_id?: string;
+        idea_id?: string;
+        task_id?: string | null;
+        task_title?: string | null;
+        machine_label?: string | null;
+        cwd?: string | null;
+        status?: "active" | "ended";
+        created_at?: string;
+        ended_at?: string | null;
+        expires_at?: string;
+      };
+      Relationships: [
+        {
+          foreignKeyName: "terminal_sessions_user_id_fkey";
+          columns: ["user_id"];
+          isOneToOne: false;
+          referencedRelation: "users";
+          referencedColumns: ["id"];
+        },
+        {
+          foreignKeyName: "terminal_sessions_idea_id_fkey";
+          columns: ["idea_id"];
+          isOneToOne: false;
+          referencedRelation: "ideas";
+          referencedColumns: ["id"];
+        },
+      ];
+    };
     };
     Views: {
       // P2c — self-reported tier-adherence reporting views (migration 00135).
