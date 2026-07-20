@@ -28,7 +28,16 @@ export const setBotIdentitySchema = z.object({
   agent_name: z
     .string()
     .optional()
-    .describe("Agent name to search for (if agent_id not provided)."),
+    .describe(
+      "Agent name to search for (if agent_id not provided). Resolved against the idea's team when idea_id is given, then your own agents; ambiguous names error with the candidate list — prefer agent_id."
+    ),
+  idea_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "Scope agent_name resolution to this idea's agent team first. Ignored when agent_id is provided."
+    ),
 });
 
 export const createBotSchema = z.object({
@@ -164,6 +173,94 @@ async function persistActiveBotId(
     );
 }
 
+interface BotNameCandidate {
+  id: string;
+  name: string;
+  role: string | null;
+  is_active: boolean;
+}
+
+/**
+ * Resolve an agent name to a bot id in narrowing tiers (idea team → own agents
+ * → any visible). Exact case-insensitive match only. Throws on no match, and
+ * on >1 active match within the winning tier (listing the candidates so the
+ * caller can retry with agent_id).
+ */
+async function resolveBotIdByName(
+  ctx: McpContext,
+  agentName: string,
+  ideaId: string | undefined,
+  ownerId: string
+): Promise<string> {
+  // ilike with no wildcards = exact case-insensitive match. Escape the LIKE
+  // metacharacters so a name containing % or _ can't widen the match.
+  const namePattern = agentName.replace(/[%_\\]/g, "\\$&");
+
+  const tiers: Array<() => Promise<BotNameCandidate[]>> = [];
+
+  if (ideaId) {
+    tiers.push(async () => {
+      const { data, error } = await ctx.supabase
+        .from("idea_agents")
+        .select("bot:bot_profiles!inner(id, name, role, is_active)")
+        .eq("idea_id", ideaId)
+        .ilike("bot.name", namePattern)
+        .limit(20);
+      if (error) throw new Error(error.message);
+      return (data ?? []).flatMap((row) => {
+        const bot = row.bot as BotNameCandidate | BotNameCandidate[] | null;
+        return bot ? (Array.isArray(bot) ? bot : [bot]) : [];
+      });
+    });
+  }
+
+  tiers.push(async () => {
+    const { data, error } = await ctx.supabase
+      .from("bot_profiles")
+      .select("id, name, role, is_active")
+      .eq("owner_id", ownerId)
+      .ilike("name", namePattern)
+      .limit(20);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as BotNameCandidate[];
+  });
+
+  // Legacy fallback: unscoped, exactly what the old lookup searched — kept so
+  // collaborators using a teammate-owned bot without idea_id don't regress.
+  tiers.push(async () => {
+    const { data, error } = await ctx.supabase
+      .from("bot_profiles")
+      .select("id, name, role, is_active")
+      .ilike("name", namePattern)
+      .limit(20);
+    if (error) throw new Error(error.message);
+    return (data ?? []) as BotNameCandidate[];
+  });
+
+  for (const fetchTier of tiers) {
+    const candidates = await fetchTier();
+    if (candidates.length === 0) continue;
+
+    // Prefer active bots; keep inactive ones only when nothing active matches
+    // so the caller still gets the specific "Agent is inactive" error.
+    const active = candidates.filter((c) => c.is_active);
+    const pool = active.length > 0 ? active : candidates;
+
+    if (pool.length > 1) {
+      const list = pool
+        .map((c) => `"${c.name}"${c.role ? ` (${c.role})` : ""} — id ${c.id}`)
+        .join("; ");
+      throw new Error(
+        `Multiple agents match name "${agentName}": ${list}. Pass agent_id to pick one.`
+      );
+    }
+
+    return pool[0].id;
+  }
+
+  throw new Error(`No agent found with name "${agentName}"`);
+}
+
 export async function setBotIdentity(
   ctx: McpContext,
   args: z.infer<typeof setBotIdentitySchema>,
@@ -189,18 +286,18 @@ export async function setBotIdentity(
 
   let botId = args.agent_id;
 
-  // Look up by name if no ID provided
+  // Look up by name if no ID provided. The old lookup was `ilike(name).limit(1)`
+  // over EVERY visible bot_profile — with duplicate names (e.g. two "Sentinel"
+  // copies) it silently bound an arbitrary one, and on the stdio service-role
+  // client "visible" means all users' bots. Resolve in narrowing tiers instead:
+  //   1. the idea's agent team (when idea_id is provided),
+  //   2. the caller's own agents,
+  //   3. anything visible (legacy fallback, e.g. a collaborator using a
+  //      teammate-owned bot without passing idea_id).
+  // The first non-empty tier decides; >1 active match in it is an explicit
+  // ambiguity error rather than a silent guess.
   if (!botId && args.agent_name) {
-    const { data, error } = await ctx.supabase
-      .from("bot_profiles")
-      .select("id, name, is_active")
-      .ilike("name", args.agent_name)
-      .limit(1)
-      .maybeSingle();
-
-    if (error) throw new Error(error.message);
-    if (!data) throw new Error(`No agent found with name "${args.agent_name}"`);
-    botId = data.id;
+    botId = await resolveBotIdByName(ctx, args.agent_name, args.idea_id, persistUserId);
   }
 
   // Fetch the bot profile

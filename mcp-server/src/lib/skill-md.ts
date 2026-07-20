@@ -94,6 +94,23 @@ export function parseSkillMd(content: string): ParsedSkill {
     }
   }
 
+  // Top-level fallback: authors routinely write `role:` / `source:` /
+  // `source_id:` at the top level of the frontmatter rather than nested under
+  // `metadata:`. Silently dropping them caused duplicate agents on re-import
+  // (round-trip dedup never fired) and regex-inferred roles. The nested block
+  // still wins so genuine VibeCodes exports are unaffected.
+  if (!metadata.source && parsed.source) metadata.source = String(parsed.source);
+  if (!metadata.source_id && parsed.source_id) metadata.source_id = String(parsed.source_id);
+  if (!metadata.role && parsed.role) metadata.role = String(parsed.role);
+  if (!metadata.bio && parsed.bio) metadata.bio = String(parsed.bio);
+  if (!metadata.author && parsed.author) metadata.author = String(parsed.author);
+  if (!metadata.version && parsed.version) metadata.version = String(parsed.version);
+  if (!metadata.tags && parsed.tags) {
+    metadata.tags = Array.isArray(parsed.tags)
+      ? parsed.tags.map(String)
+      : String(parsed.tags).split(",").map((t) => t.trim()).filter(Boolean);
+  }
+
   return {
     name,
     description,

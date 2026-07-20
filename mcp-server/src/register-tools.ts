@@ -960,7 +960,7 @@ export function registerTools(
 
   server.tool(
     "set_agent_identity",
-    "Switch session identity to an agent persona. Provide agent_id or agent_name. Omit both to reset to default identity. Returns the agent's system prompt.",
+    "Switch session identity to an agent persona. Provide agent_id (preferred — unambiguous) or agent_name. Names resolve in tiers: the idea's agent team when idea_id is passed, then your own agents, then any visible agent; if several agents share the name within a tier the call errors with the candidate ids instead of guessing. Omit agent_id and agent_name to reset to default identity. Returns the agent's system prompt.",
     setBotIdentitySchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1458,7 +1458,7 @@ export function registerTools(
 
   server.tool(
     "import_agent_skill",
-    "Import a SKILL.md file to create a new VibeCodes agent. Parses YAML frontmatter for name/role/metadata and markdown body for the system prompt. Detects round-trip imports (source: vibecodes) and updates existing agents instead of creating duplicates.",
+    "Import a SKILL.md file to create a new VibeCodes agent. Parses YAML frontmatter (name + description at the top level; role/source/source_id/bio/tags either top-level or nested under a `metadata:` block — the nested block wins on conflict) and the markdown body becomes the system prompt. Round-trip detection: when the frontmatter carries `source: vibecodes` AND `source_id: <bot uuid>`, the existing agent is UPDATED instead of a duplicate being created.",
     importAgentSkillSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
