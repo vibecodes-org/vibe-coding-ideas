@@ -3496,14 +3496,28 @@ describe("modelTierClause", () => {
   // Design-Review CONDITION 1 — exact directive string, verbatim.
   it("produces the exact MANDATORY MODEL directive string for the platform default (standard)", () => {
     expect(modelTierClause("standard")).toBe(
-      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "sonnet". If "sonnet" is unavailable on this plan/session, use model: "opus" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it).'
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "sonnet". If "sonnet" is unavailable on this plan/session, use model: "opus" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
     );
   });
 
   it("produces the exact directive string for a user-overridden tier", () => {
     expect(modelTierClause("frontier", { frontier: "opus" })).toBe(
-      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus". If "opus" is unavailable on this plan/session, use model: "fable" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it).'
+      'MANDATORY MODEL: spawn this step\'s subagent with the Task tool parameter model: "opus". If "opus" is unavailable on this plan/session, use model: "fable" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user\'s current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.'
     );
+  });
+
+  it("includes the doc-precedence rule for the platform-default path (URGENT stale-CLAUDE.md fix)", () => {
+    const clause = modelTierClause("standard");
+    expect(clause).toContain("resolved live at claim time");
+    expect(clause).toContain("OVERRIDES");
+    expect(clause).toContain("Never edit project docs");
+  });
+
+  it("includes the doc-precedence rule for the user-override path (URGENT stale-CLAUDE.md fix)", () => {
+    const clause = modelTierClause("frontier", { frontier: "opus" });
+    expect(clause).toContain("resolved live at claim time");
+    expect(clause).toContain("OVERRIDES");
+    expect(clause).toContain("Never edit project docs");
   });
 
   it("includes the model_used capture sentence (P2c FR-1/2/3)", () => {
