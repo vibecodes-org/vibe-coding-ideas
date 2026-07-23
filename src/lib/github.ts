@@ -52,6 +52,7 @@ interface FetchOptions {
   token?: string;
   body?: unknown;
   basicAuth?: { user: string; pass: string };
+  signal?: AbortSignal;
 }
 
 async function githubFetch<T>(path: string, opts: FetchOptions = {}): Promise<T> {
@@ -76,6 +77,7 @@ async function githubFetch<T>(path: string, opts: FetchOptions = {}): Promise<T>
     method: opts.method ?? "GET",
     headers,
     body: opts.body !== undefined ? JSON.stringify(opts.body) : undefined,
+    signal: opts.signal,
   });
 
   if (res.status === 204) {
@@ -168,6 +170,29 @@ export async function createOwnRepo(
       private: input.isPrivate,
       auto_init: input.autoInit,
     },
+  });
+}
+
+/**
+ * Fetch a single repo by owner/repo — used by the repo-reachability
+ * verification (V1–V6, see docs/design-github-link-any-repo.html). Applies a
+ * client-side timeout via AbortSignal.timeout since GitHub gives no SLA on
+ * this endpoint and the caller must never hang the verification UI.
+ *
+ * Throws GithubApiError on any non-2xx response (404 = not found or private
+ * + inaccessible to this token; 403 = rate-limited). Throws a plain
+ * DOMException("AbortError") on timeout — callers should treat any non-
+ * GithubApiError rejection as "unreachable".
+ */
+export async function getRepo(
+  token: string,
+  owner: string,
+  repo: string,
+  options: { timeoutMs?: number } = {}
+): Promise<GithubRepo> {
+  return githubFetch<GithubRepo>(`/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}`, {
+    token,
+    signal: AbortSignal.timeout(options.timeoutMs ?? 5000),
   });
 }
 

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UX Design — Link any GitHub repo (not just your own)</title>
+<style>
+  :root {
+    --background: #09090b;   /* zinc-950 */
+    --foreground: #fafafa;   /* zinc-50 */
+    --card: #18181b;         /* zinc-900 */
+    --muted: #27272a;        /* zinc-800 */
+    --muted-fg: #a1a1aa;     /* zinc-400 */
+    --border: #27272a;
+    --border-strong: #3f3f46;/* zinc-700 */
+    --primary: #fafafa;
+    --ring: #d4d4d8;
+    --blue-400: #60a5fa;
+    --emerald-400: #34d399;
+    --amber-400: #fbbf24;
+    --red-400: #f87171;
+    --violet-400: #a78bfa;
+    --zinc-500: #71717a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--background); color: var(--foreground);
+    font-family: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.55; -webkit-font-smoothing: antialiased;
+  }
+  .page { max-width: 980px; margin: 0 auto; padding: 48px 24px 96px; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; margin: 0 0 4px; }
+  h2 { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; margin: 48px 0 12px; padding-top: 24px; border-top: 1px solid var(--border); }
+  h3 { font-size: 14px; font-weight: 600; margin: 26px 0 8px; }
+  p  { font-size: 14px; color: var(--muted-fg); margin: 0 0 12px; }
+  p strong, li strong { color: var(--foreground); font-weight: 600; }
+  .subtitle { font-size: 14px; color: var(--muted-fg); margin-bottom: 8px; }
+  .meta { font-size: 12px; color: var(--zinc-500); }
+  code, .code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px; background: var(--muted); border-radius: 4px;
+    padding: 1.5px 6px; color: #e4e4e7; word-break: break-word;
+  }
+  ul.spec { font-size: 14px; color: var(--muted-fg); padding-left: 20px; margin: 0 0 12px; }
+  ul.spec li { margin-bottom: 6px; }
+  ul.spec li strong { color: var(--foreground); }
+
+  /* ---- callouts ---- */
+  .note {
+    border-left: 2px solid rgba(96,165,250,0.5);
+    background: rgba(59,130,246,0.05);
+    border-radius: 0 6px 6px 0; padding: 10px 14px;
+    font-size: 13px; color: var(--muted-fg); margin: 12px 0;
+  }
+  .note strong { color: var(--foreground); }
+  .tldr { border: 1px solid var(--border); background: var(--card); border-radius: 12px; padding: 18px 22px; margin: 8px 0 4px; }
+  .tldr ul { margin: 0; padding-left: 18px; }
+  .tldr li { font-size: 13.5px; color: var(--muted-fg); margin-bottom: 8px; }
+  .tldr li strong { color: var(--foreground); }
+
+  .pill { display:inline-block; font-size:10px; font-weight:600; padding:2px 8px; border-radius:9999px; border:1px solid; margin-right:6px; vertical-align: middle;}
+  .pill.keep { color: var(--emerald-400); border-color: rgba(52,211,153,0.3); background: rgba(52,211,153,0.08); }
+  .pill.change { color: var(--amber-400); border-color: rgba(251,191,36,0.3); background: rgba(251,191,36,0.08); }
+  .pill.new { color: var(--blue-400); border-color: rgba(96,165,250,0.3); background: rgba(96,165,250,0.08); }
+
+  /* ---- mock dialog chrome (mirrors shadcn DialogContent sm:max-w-lg) ---- */
+  .mock-label { display:inline-block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--zinc-500); margin:22px 0 0; }
+  .mock-label.before { color: var(--red-400); }
+  .mock-label.after  { color: var(--emerald-400); }
+  .caption { font-size: 12px; color: var(--zinc-500); margin: 6px 0 18px; }
+
+  .dialog {
+    background: var(--card); border: 1px solid var(--border-strong);
+    border-radius: 12px; padding: 22px; margin: 10px 0 4px;
+    max-width: 512px; box-shadow: 0 12px 40px rgba(0,0,0,0.5);
+  }
+  .dialog.mobile { max-width: 343px; } /* 375px viewport minus 16px gutters */
+  .d-title { display:flex; align-items:center; gap:8px; font-size:16px; font-weight:600; color:var(--foreground); margin:0 0 4px; }
+  .d-desc { font-size: 13px; color: var(--muted-fg); margin: 0 0 16px; }
+  .d-desc .u { color: var(--foreground); font-weight: 500; }
+
+  /* segmented tabs (shadcn TabsList grid) */
+  .tabs { display:grid; grid-template-columns: repeat(3, 1fr); gap:4px; background:var(--muted); border-radius:8px; padding:4px; margin-bottom:14px; }
+  .tab { display:flex; align-items:center; justify-content:center; gap:6px; min-height:38px; border-radius:6px; font-size:13px; font-weight:500; color:var(--muted-fg); background:transparent; border:none; cursor:pointer; }
+  .tab.active { background: var(--card); color: var(--foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+  .tab svg { width:14px; height:14px; }
+
+  /* input */
+  .field-label { display:block; font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--muted-fg); margin-bottom:6px; }
+  .input { display:flex; align-items:center; gap:8px; height:38px; border:1px solid var(--border-strong); border-radius:8px; background:var(--background); padding:0 12px; font-size:13.5px; color:var(--foreground); }
+  .input.focus { border-color: var(--ring); box-shadow: 0 0 0 3px rgba(212,212,216,0.15); }
+  .input .ph { color: var(--zinc-500); }
+  .input .val { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:12.5px; }
+  .input.err { border-color: var(--red-400); }
+  .helper { font-size: 11.5px; color: var(--muted-fg); margin: 7px 2px 0; line-height:1.5; }
+
+  /* verification panel — sits DIRECTLY under the input (proximity) */
+  .vp { display:flex; gap:9px; align-items:flex-start; border-radius:8px; padding:9px 12px; margin-top:10px; font-size:12.5px; border:1px solid; }
+  .vp svg { width:15px; height:15px; flex-shrink:0; margin-top:1px; }
+  .vp .vp-title { font-weight:600; color:var(--foreground); display:block; margin-bottom:2px; }
+  .vp .vp-body { color: var(--muted-fg); display:block; }
+  .vp .repo { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--foreground); }
+  .vp-checking { border-color: var(--border); background: rgba(39,39,42,0.4); }
+  .vp-checking svg, .vp-checking .vp-title { color: var(--muted-fg); }
+  .vp-info    { border-color: rgba(96,165,250,0.28); background: rgba(59,130,246,0.06); }
+  .vp-info svg { color: var(--blue-400); }
+  .vp-success { border-color: rgba(52,211,153,0.30); background: rgba(52,211,153,0.06); }
+  .vp-success svg { color: var(--emerald-400); }
+  .vp-caution { border-color: rgba(251,191,36,0.32); background: rgba(251,191,36,0.06); }
+  .vp-caution svg { color: var(--amber-400); }
+  .vp-error   { border-color: rgba(248,113,113,0.40); background: rgba(248,113,113,0.07); }
+  .vp-error svg, .vp-error .vp-title { color: var(--red-400); }
+  .vp-neutral { border-color: var(--border-strong); background: rgba(39,39,42,0.4); }
+  .vp-neutral svg { color: var(--muted-fg); }
+  .spin { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* footer */
+  .d-footer { display:flex; justify-content:flex-end; gap:8px; margin-top:20px; padding-top:0; }
+  .d-footer.mobile { flex-direction: column-reverse; }
+  .btn { min-height:38px; border-radius:8px; padding:0 16px; font-size:13px; font-weight:500; cursor:pointer; display:inline-flex; align-items:center; justify-content:center; gap:6px; }
+  .btn-primary { background: var(--primary); color: #09090b; border:none; }
+  .btn-primary.disabled { opacity:0.45; cursor:not-allowed; }
+  .btn-ghost { background: transparent; color: var(--foreground); border:1px solid var(--border-strong); }
+  .btn.mobile { width:100%; }
+
+  /* browse list row */
+  .repo-row { display:flex; align-items:center; gap:10px; padding:9px 12px; border-bottom:1px solid var(--border); }
+  .repo-row:last-child { border-bottom:none; }
+  .repo-av { width:26px; height:26px; border-radius:5px; background:var(--muted); flex-shrink:0; }
+  .repo-name { font-size:13px; font-weight:500; color:var(--foreground); }
+  .repo-meta { font-size:11px; color:var(--muted-fg); margin-top:1px; }
+  .tag { display:inline-flex; align-items:center; gap:3px; font-size:9.5px; padding:1px 6px; border-radius:4px; border:1px solid var(--border-strong); color:var(--muted-fg); margin-left:6px; }
+  .listbox { border:1px solid var(--border); border-radius:8px; overflow:hidden; }
+
+  /* annotation callouts */
+  .anno { display:flex; gap:9px; align-items:flex-start; margin-top:9px; }
+  .anno-dot { flex-shrink:0; width:18px; height:18px; border-radius:9999px; background:rgba(96,165,250,0.15); border:1px solid rgba(96,165,250,0.4); color:var(--blue-400); font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center; margin-top:1px; }
+  .anno p { font-size: 12.5px; margin: 0; }
+
+  /* tables */
+  table { width:100%; border-collapse:collapse; font-size:12.5px; margin-top:8px; }
+  th, td { border:1px solid var(--border); padding:8px 11px; text-align:left; vertical-align:top; }
+  th { background: var(--muted); font-weight:600; font-size:11.5px; color:var(--foreground); }
+  td { color: var(--muted-fg); }
+  td:first-child { color: var(--foreground); font-weight:500; white-space:nowrap; }
+  .table-wrap { overflow-x:auto; }
+  .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size:11.5px; }
+  .ic { display:inline-flex; align-items:center; gap:5px; white-space:nowrap; font-weight:600; }
+  .ic.info{color:var(--blue-400)} .ic.ok{color:var(--emerald-400)} .ic.warn{color:var(--amber-400)}
+  .ic.err{color:var(--red-400)} .ic.neu{color:var(--muted-fg)}
+  .ic svg{width:13px;height:13px}
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:20px; }
+  @media (max-width:720px){ .grid2{grid-template-columns:1fr} }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <h1>Link any GitHub repo — not just your own</h1>
+  <p class="subtitle">UX Design · step 2 of 6 (Feature Development) · <strong>Compass</strong></p>
+  <p class="meta">Component: <code>src/components/ideas/github-link-dialog.tsx</code> · Building on the Requirements step (FR-1–FR-4, V1–V6, NFR-1/2) — those are fixed inputs; this document designs the visual + interaction layer only.</p>
+
+  <!-- ============================================================ -->
+  <h2>TL;DR — decisions for the reviewer</h2>
+  <div class="tldr">
+    <ul>
+      <li><strong>Three peer tabs</strong> replace today's footer text-link: <code>My repos</code> · <code>New repo</code> · <code>Paste URL</code>. All three labels are visible at initial render with equal weight — this is what makes the "any repo" path first-class (FR-1/FR-2) rather than the buried footer link it is today.</li>
+      <li><strong>Smart default tab</strong> mirrors the Personal Template Library pattern: connected → <code>My repos</code> (FR-3 unchanged); not connected → <code>Paste URL</code> (the only path that works without OAuth); editing an existing link → <code>Paste URL</code> prefilled.</li>
+      <li><strong>One clean gating rule:</strong> URL <em>format</em> gates the Save button (V5 is the only block); repo <em>reachability</em> only informs. Verification never disables Save.</li>
+      <li><strong>Feedback lives directly under the input</strong> (Gestalt proximity), not in a top-of-screen toast. Every V-state = <strong>icon + coloured panel + text</strong> — never colour alone (WCAG 1.4.1).</li>
+      <li><strong>FR-4 caveat is always-on</strong> helper copy under the input, before any verification runs: repo can be owned by anyone; cloning uses the user's local Git credentials.</li>
+      <li><strong>Non-blocking checking state:</strong> subtle inline spinner row, 500ms debounce + on-paste + on-blur, 5s timeout → V6. Typing never blocks (NFR-1/2).</li>
+    </ul>
+  </div>
+
+  <!-- ============================================================ -->
+  <h2>01 · Current-state analysis — what's wrong today</h2>
+  <p>Reading <code>github-link-dialog.tsx</code> as it stands, five problems block the requirements:</p>
+  <ul class="spec">
+    <li><strong>The "any repo" path is literally in the footer.</strong> Line 422–428 renders <code>paste a URL instead</code> as a 12px muted text-link in <code>DialogFooter</code>, styled <code>text-muted-foreground</code>. This is the definition of a buried power-user affordance — it reads as a fallback, directly contradicting FR-1/FR-2.</li>
+    <li><strong>No-connection users hit a dead end.</strong> Lines 238–249: when there's no GitHub connection and mode isn't <code>manual</code>, the dialog shows <em>only</em> a "Connect GitHub" gate. A user who just wants to paste someone else's URL must first notice the footer link. The working path is hidden behind the one thing they're trying to avoid.</li>
+    <li><strong>Manual mode has no verification at all.</strong> <code>handleManualSave</code> (line 197) runs a client-side <code>parseRepoUrl</code> regex and throws a binary <code>toast.error</code>. There is no V1–V6 behaviour: no resolved owner/repo confirm, no private note, no 404 caution, no rate-limit path. This is the entire feature gap.</li>
+    <li><strong>Feedback is a toast, far from the input.</strong> Errors surface at the top-right of the viewport via <code>sonner</code> — maximal distance from the field the user is editing. Violates proximity; poor error recovery.</li>
+    <li><strong>Copy under-serves FR-4.</strong> Line 415 says only "Paste any github.com repo URL — public or private." It never states the repo can be owned by <em>anyone</em>, nor that cloning depends on the user's <em>local</em> Git credentials.</li>
+  </ul>
+  <div class="note">Minor layout bug worth noting to Engineering: when <code>mode === "manual"</code> <em>and</em> a connection exists, the <code>connection ? &lt;Tabs&gt;</code> block (line 250) and the manual block (line 403) both render, so the Browse tabs and the URL input stack together. The tab redesign removes this by making the URL path a real tab panel.</div>
+
+  <!-- ============================================================ -->
+  <h2>02 · Design rationale — why three tabs, not a two-zone split</h2>
+  <p>The requirement is explicit: the URL path must "read as first-class… not a buried power-user tab." The trap is reading "not a tab" too literally. What makes something <em>buried</em> is <strong>visual demotion</strong> (a footer link, an overflow menu, a low-contrast secondary), not the tab pattern itself.</p>
+  <ul class="spec">
+    <li><strong>Jakob's Law:</strong> segmented tab groups for "pick your input method" are the convention in GitHub, Linear and Notion import dialogs. Users already know how to read three equal segments.</li>
+    <li><strong>Hick's Law:</strong> three choices is a trivial decision surface; a full always-on second zone <em>plus</em> tabs would add clutter and a second scanning axis on a 375px screen.</li>
+    <li><strong>First-class by equal weight:</strong> all three tab labels render immediately, same size, same contrast, same row. None is hidden behind hover or an overflow. The "Paste URL" tab carries a <code>link</code> icon for scent and its panel headline is the requirement's own phrasing — "Working in someone else's repo?"</li>
+    <li><strong>Smart default finishes the job:</strong> when the user <em>can't</em> browse (no OAuth), we open on Paste URL. So the disconnected user — the exact person FR-1 protects — lands on the working path with zero clicks.</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2>03 · Flow map</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>Entry condition</th><th>Opens on</th><th>Rationale</th></tr>
+    <tr><td>Connected, no existing link</td><td>My repos (Browse)</td><td>FR-3 — default unchanged</td></tr>
+    <tr><td>Connected, editing existing link</td><td>Paste URL (prefilled)</td><td>Recognition over recall; the link they're changing is a URL</td></tr>
+    <tr><td>Not connected</td><td>Paste URL</td><td>Only path that works without OAuth; avoids a dead-end connect gate</td></tr>
+  </table>
+  </div>
+  <p>From <strong>Paste URL</strong>: type/paste → (debounced/blur/explicit) verify → one of V1–V6 renders under the input → Save. Save is enabled whenever the URL parses (V1–V4, V6); disabled only on V5. On success: <code>linkRepoToIdea(…, "manual")</code> → close → sonner success toast (unchanged mechanism, now with a verified owner/repo in the message).</p>
+
+  <!-- ============================================================ -->
+  <h2>04 · Initial state — connected vs. disconnected</h2>
+
+  <span class="mock-label">A · Connected — opens on “My repos” (Browse unchanged)</span>
+  <div class="dialog">
+    <div class="d-title">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.28 2.75 1.05a9.3 9.3 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9v2.82c0 .27.18.58.69.48A10.03 10.03 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z"/></svg>
+      Link a GitHub repo
+    </div>
+    <div class="d-desc">Connected as <span class="u">@ada</span></div>
+    <div class="tabs">
+      <button class="tab active">My repos</button>
+      <button class="tab">New repo</button>
+      <button class="tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>
+        Paste URL
+      </button>
+    </div>
+    <div class="input"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="var(--zinc-500)" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="m20 20-3-3"/></svg><span class="ph">Filter your repos…</span></div>
+    <div class="listbox" style="margin-top:10px">
+      <div class="repo-row"><div class="repo-av"></div><div style="flex:1"><span class="repo-name">recipe-box</span><span class="tag">◐ Private</span><div class="repo-meta">TypeScript · Updated 2 days ago</div></div></div>
+      <div class="repo-row"><div class="repo-av"></div><div style="flex:1"><span class="repo-name">portfolio-site</span><span class="tag">◍ Public</span><div class="repo-meta">Updated 3 weeks ago</div></div></div>
+    </div>
+    <div class="d-footer"><button class="btn btn-ghost">Cancel</button></div>
+  </div>
+  <p class="caption">Browse list, filter, skeleton and empty states are unchanged (they already handle loading/empty well). The single trivial fix: the "New repo" and "My repos" panels show an inline "Connect GitHub" prompt when disconnected, instead of the whole dialog collapsing to a connect gate.</p>
+
+  <span class="mock-label after">B · Not connected — opens on “Paste URL” (no dead-end gate)</span>
+  <div class="dialog">
+    <div class="d-title">
+      <svg viewBox="0 0 24 24" width="18" height="18" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.28 2.75 1.05a9.3 9.3 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9v2.82c0 .27.18.58.69.48A10.03 10.03 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z"/></svg>
+      Link a GitHub repo
+    </div>
+    <div class="d-desc">Not connected — you can still link any public or private repo by URL.</div>
+    <div class="tabs">
+      <button class="tab" style="opacity:.55">My repos</button>
+      <button class="tab" style="opacity:.55">New repo</button>
+      <button class="tab active">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>
+        Paste URL
+      </button>
+    </div>
+    <h3 style="margin:2px 0 10px; font-size:13px; color:var(--foreground)">Working in someone else's repo?</h3>
+    <label class="field-label">Repository URL</label>
+    <div class="input"><span class="ph">https://github.com/owner/repo</span></div>
+    <p class="helper">Link a repo owned by <strong style="color:var(--foreground)">anyone</strong> — public or private. Cloning uses your computer's <strong style="color:var(--foreground)">local Git credentials</strong>, so private repos work only if your machine already has access.</p>
+    <div class="vp vp-info" role="status">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg>
+      <span><span class="vp-title">Connect GitHub to verify repos</span><span class="vp-body">We can't check a repo exists until you connect — but you can still link it now.</span></span>
+    </div>
+    <div class="d-footer"><button class="btn btn-ghost">Cancel</button><button class="btn btn-primary">Save</button></div>
+  </div>
+  <p class="caption">Disabled "My repos"/"New repo" tabs stay visible (recognition), each with a tooltip + inline connect prompt if selected — never a colour-only disable. This mock is also literal V1 (see below): Save is enabled, tone is info, never error.</p>
+
+  <!-- ============================================================ -->
+  <h2>05 · Validation states V1–V6 — the verification panel</h2>
+  <p>All feedback renders in one panel <strong>immediately below the input</strong> (proximity). Each panel is <code>role="status" aria-live="polite"</code> so screen readers announce the outcome; V5 escalates to <code>aria-live="assertive"</code> and sets <code>aria-invalid</code> + <code>aria-describedby</code> on the input. The input is the anchor; the panel is its described-by target.</p>
+
+  <span class="mock-label">Checking (pending) — non-blocking, subtle</span>
+  <div class="dialog" style="max-width:512px">
+    <label class="field-label">Repository URL</label>
+    <div class="input focus"><span class="val">https://github.com/vercel/next.js</span></div>
+    <div class="vp vp-checking" role="status" aria-live="polite">
+      <svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg>
+      <span><span class="vp-title">Checking repo…</span></span>
+    </div>
+  </div>
+  <div class="anno"><div class="anno-dot">i</div><p>Fires on paste, on blur, or 500ms after typing stops (NFR-1). The input never locks — the user can keep editing; a new keystroke cancels the in-flight check. 5s timeout routes to V6 (NFR-2). Spinner is paired with the words "Checking repo…" so it's never an icon-only state.</p></div>
+
+  <div class="grid2" style="margin-top:8px">
+    <div>
+      <span class="mock-label after">V2 · Valid public (200)</span>
+      <div class="dialog" style="max-width:100%">
+        <div class="input"><span class="val">github.com/vercel/next.js</span></div>
+        <div class="vp vp-success" role="status">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+          <span><span class="vp-title">Found <span class="repo">vercel/next.js</span></span><span class="vp-body">◍ Public repository on GitHub.</span></span>
+        </div>
+      </div>
+    </div>
+    <div>
+      <span class="mock-label after">V3 · Valid private, accessible</span>
+      <div class="dialog" style="max-width:100%">
+        <div class="input"><span class="val">github.com/ada/secret-app</span></div>
+        <div class="vp vp-success" role="status">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg>
+          <span><span class="vp-title">Found <span class="repo">ada/secret-app</span></span><span class="vp-body">◐ Private repository — visible to your GitHub account.</span></span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <span class="mock-label change">V4 · 404 / no access — save allowed, both possibilities stated</span>
+  <div class="dialog" style="max-width:512px">
+    <div class="input"><span class="val">github.com/acme/internal-tool</span></div>
+    <div class="vp vp-caution" role="status">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+      <span><span class="vp-title">Couldn't find <span class="repo">acme/internal-tool</span> with your GitHub access</span><span class="vp-body">It may be a typo or not exist — or it's private and your GitHub token can't see it. You can still link it, and it'll clone fine if your computer has access.</span></span>
+    </div>
+    <div class="d-footer"><button class="btn btn-ghost">Cancel</button><button class="btn btn-primary">Save anyway</button></div>
+  </div>
+  <div class="anno"><div class="anno-dot">!</div><p>Copy deliberately never asserts non-existence — it presents both branches (typo/nonexistent vs. private-invisible-to-token) exactly per V4. Primary button relabels to <strong>Save anyway</strong> to acknowledge the caution while keeping the action available (Fitts: same position, no relocation).</p></div>
+
+  <span class="mock-label before">V5 · Malformed URL — the ONLY blocking state</span>
+  <div class="dialog" style="max-width:512px">
+    <label class="field-label">Repository URL</label>
+    <div class="input err"><span class="val">https://gitlab.com/foo/bar</span></div>
+    <div class="vp vp-error" role="alert" aria-live="assertive">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg>
+      <span><span class="vp-title">That's not a GitHub repo URL</span><span class="vp-body">Expected <span class="repo">https://github.com/owner/repo</span>.</span></span>
+    </div>
+    <div class="d-footer"><button class="btn btn-ghost">Cancel</button><button class="btn btn-primary disabled" aria-disabled="true">Save</button></div>
+  </div>
+  <div class="anno"><div class="anno-dot">✓</div><p>Save is disabled here and <em>only</em> here — and the adjacent V5 message is the required explanation (no unexplained disabled buttons). Red border on the input + red panel + XCircle icon + text: three redundant signals, never colour alone.</p></div>
+
+  <span class="mock-label">V6 · Rate-limited / GitHub down / timeout — neutral, save allowed</span>
+  <div class="dialog" style="max-width:512px">
+    <div class="input"><span class="val">github.com/owner/repo</span></div>
+    <div class="vp vp-neutral" role="status">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19a4.5 4.5 0 0 0 .5-9 6 6 0 0 0-11.4-2"/><path d="M2 2l20 20"/><path d="M5.7 8.7A4.5 4.5 0 0 0 6.5 19h9"/></svg>
+      <span><span class="vp-title">Couldn't verify right now</span><span class="vp-body">GitHub didn't respond — you can still link it and verify later.</span></span>
+    </div>
+    <div class="d-footer"><button class="btn btn-ghost">Cancel</button><button class="btn btn-primary">Save</button></div>
+  </div>
+  <div class="anno"><div class="anno-dot">i</div><p>Neutral zinc tone, not amber — this isn't the user's fault and implies nothing about the repo. No rate-limit reset timer is surfaced (kept neutral per requirement; flagged as open question).</p></div>
+
+  <!-- ============================================================ -->
+  <h2>06 · Mobile — 375px</h2>
+  <span class="mock-label">Paste URL tab @ 375px viewport (V4 shown)</span>
+  <div class="dialog mobile">
+    <div class="d-title" style="font-size:15px">
+      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2C6.48 2 2 6.58 2 12.25c0 4.53 2.87 8.37 6.84 9.73.5.09.68-.22.68-.49v-1.7c-2.78.62-3.37-1.37-3.37-1.37-.45-1.18-1.11-1.49-1.11-1.49-.91-.63.07-.62.07-.62 1 .07 1.53 1.06 1.53 1.06.89 1.56 2.34 1.11 2.91.85.09-.66.35-1.11.63-1.37-2.22-.26-4.56-1.14-4.56-5.06 0-1.12.39-2.03 1.03-2.75-.1-.26-.45-1.3.1-2.7 0 0 .84-.28 2.75 1.05a9.3 9.3 0 0 1 5 0c1.91-1.33 2.75-1.05 2.75-1.05.55 1.4.2 2.44.1 2.7.64.72 1.03 1.63 1.03 2.75 0 3.93-2.34 4.79-4.57 5.05.36.32.68.94.68 1.9v2.82c0 .27.18.58.69.48A10.03 10.03 0 0 0 22 12.25C22 6.58 17.52 2 12 2Z"/></svg>
+      Link a GitHub repo
+    </div>
+    <div class="tabs">
+      <button class="tab" style="font-size:12px; padding:0 2px">My repos</button>
+      <button class="tab" style="font-size:12px; padding:0 2px">New</button>
+      <button class="tab active" style="font-size:12px; padding:0 2px">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10 13a5 5 0 0 0 7.5.5l3-3a5 5 0 0 0-7-7l-1.5 1.5"/><path d="M14 11a5 5 0 0 0-7.5-.5l-3 3a5 5 0 0 0 7 7l1.5-1.5"/></svg>
+        URL
+      </button>
+    </div>
+    <label class="field-label">Repository URL</label>
+    <div class="input"><span class="val" style="font-size:11.5px">github.com/acme/internal-tool</span></div>
+    <p class="helper">Any owner, public or private. Cloning uses your computer's local Git credentials.</p>
+    <div class="vp vp-caution" role="status">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg>
+      <span><span class="vp-title">Not found with your access</span><span class="vp-body">Typo, or private + invisible to your token. Links anyway; clones if your machine has access.</span></span>
+    </div>
+    <div class="d-footer mobile">
+      <button class="btn btn-primary mobile">Save anyway</button>
+      <button class="btn btn-ghost mobile">Cancel</button>
+    </div>
+  </div>
+  <ul class="spec" style="margin-top:8px">
+    <li><strong>Tab labels shorten</strong> to <code>My repos / New / URL</code> at &lt;400px so three fit without truncation; the link icon carries scent for "URL". Each tab is ≥44px tall (Fitts, touch).</li>
+    <li><strong>Footer stacks</strong> (<code>flex-col-reverse</code>): primary Save on top, full-width; Cancel below — thumb-reachable, primary action never below the fold.</li>
+    <li><strong>Verification panel + helper</strong> go full-width; the resolved <code>owner/repo</code> wraps rather than truncating so the user can always read what was matched.</li>
+    <li>Dialog is shadcn's default near-full-width sheet at this breakpoint; no horizontal scroll.</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2>07 · Microcopy table</h2>
+  <div class="table-wrap">
+  <table>
+    <tr><th>State</th><th>Icon</th><th>Tone</th><th>Title</th><th>Body</th><th>Save</th></tr>
+    <tr><td>Helper (always on)</td><td>—</td><td>muted</td><td>—</td><td>Link a repo owned by <strong>anyone</strong> — public or private. Cloning uses your computer's <strong>local Git credentials</strong>, so private repos work only if your machine already has access.</td><td class="mono">n/a</td></tr>
+    <tr><td>Checking</td><td><span class="ic neu"><svg class="spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 1 1-6.2-8.5"/></svg></span></td><td>muted</td><td>Checking repo…</td><td>—</td><td class="mono">enabled*</td></tr>
+    <tr><td><strong>V1</strong> no connection</td><td><span class="ic info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4M12 8h.01"/></svg></span></td><td class="ic info">info</td><td>Connect GitHub to verify repos</td><td>We can't check a repo exists until you connect — but you can still link it now.</td><td class="mono">enabled</td></tr>
+    <tr><td><strong>V2</strong> public</td><td><span class="ic ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></span></td><td class="ic ok">success</td><td>Found <span class="mono">owner/repo</span></td><td>Public repository on GitHub.</td><td class="mono">enabled</td></tr>
+    <tr><td><strong>V3</strong> private, accessible</td><td><span class="ic ok"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 6 9 17l-5-5"/></svg></span></td><td class="ic ok">success</td><td>Found <span class="mono">owner/repo</span></td><td>Private repository — visible to your GitHub account.</td><td class="mono">enabled</td></tr>
+    <tr><td><strong>V4</strong> 404 / no access</td><td><span class="ic warn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></svg></span></td><td class="ic warn">caution</td><td>Couldn't find <span class="mono">owner/repo</span> with your GitHub access</td><td>It may be a typo or not exist — or it's private and your GitHub token can't see it. You can still link it, and it'll clone fine if your computer has access.</td><td class="mono">enabled → “Save anyway”</td></tr>
+    <tr><td><strong>V5</strong> malformed</td><td><span class="ic err"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="m15 9-6 6M9 9l6 6"/></svg></span></td><td class="ic err">error</td><td>That's not a GitHub repo URL</td><td>Expected <span class="mono">https://github.com/owner/repo</span>.</td><td class="mono"><strong>disabled</strong></td></tr>
+    <tr><td><strong>V6</strong> rate-limit / down / timeout</td><td><span class="ic neu"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.5 19a4.5 4.5 0 0 0 .5-9 6 6 0 0 0-11.4-2"/><path d="M2 2l20 20"/></svg></span></td><td class="ic neu">neutral</td><td>Couldn't verify right now</td><td>GitHub didn't respond — you can still link it and verify later.</td><td class="mono">enabled</td></tr>
+    <tr><td>Success toast (on save)</td><td>—</td><td>sonner</td><td>—</td><td>Linked to <span class="mono">owner/repo</span> · <em>V1 variant:</em> "Saved. Connect GitHub to verify repos."</td><td class="mono">n/a</td></tr>
+  </table>
+  </div>
+  <p class="meta">* During checking the button reflects the last known parse result; if the URL parses, Save stays enabled (verification is informational). Icons are lucide: <code>Loader2, Info, CheckCircle2, AlertTriangle, XCircle, CloudOff</code>. Public/private markers reuse the existing <code>Globe</code>/<code>Lock</code> icons already imported in the component.</p>
+
+  <!-- ============================================================ -->
+  <h2>08 · Accessibility notes (WCAG 2.1 AA)</h2>
+  <ul class="spec">
+    <li><strong>Never colour alone (1.4.1):</strong> every V-state pairs a distinct icon + a text title with the colour. V5 additionally reddens the input border.</li>
+    <li><strong>Live regions:</strong> panel is <code>role="status" aria-live="polite"</code>; V5 uses <code>role="alert" aria-live="assertive"</code>. Input gets <code>aria-invalid="true"</code> + <code>aria-describedby</code> pointing at the message id on V5.</li>
+    <li><strong>Contrast:</strong> state text uses the <code>-400</code> shades (blue/emerald/amber/red) on zinc-950 for titles and <code>--foreground</code>/<code>--muted-fg</code> for body — all ≥4.5:1 for the 12.5–14px text; icon/border UI elements ≥3:1 (1.4.3 / 1.4.11).</li>
+    <li><strong>Visible labels:</strong> "Repository URL" is a real <code>&lt;label&gt;</code>, not a placeholder (2.5.3 / 3.3.2). Placeholder is example-only.</li>
+    <li><strong>Disabled button has adjacent reason:</strong> Save is disabled only at V5, where the error text directly above it is the explanation. Uses <code>aria-disabled</code> so it stays focusable and its state is announced.</li>
+    <li><strong>Keyboard:</strong> Radix Tabs give arrow-key tab navigation + roving tabindex out of the box. Full tab order: tabs → input → Cancel → Save. Enter in the field triggers verify/Save when valid.</li>
+    <li><strong>Touch (2.5.5):</strong> tab triggers, list rows and buttons are ≥44px tall on mobile.</li>
+    <li><strong>Reduced motion:</strong> the checking spinner respects <code>prefers-reduced-motion</code> — falls back to a static "Checking repo…" text row.</li>
+  </ul>
+
+  <!-- ============================================================ -->
+  <h2>09 · Open questions for Design Review</h2>
+  <ul class="spec">
+    <li><strong>V3 privacy disclosure.</strong> Confirming "Private repository — visible to your account" tells the user a private repo <em>exists</em> at that path. Since resolution runs with <em>their own</em> token they could see it on GitHub anyway, so this seems safe — but flagging it explicitly for sign-off.</li>
+    <li><strong>Verify triggers.</strong> Proposed: on-paste + on-blur + 500ms debounce. The dominant real action is paste, so on-paste matters most — OK to confirm we don't also fire on every keystroke?</li>
+    <li><strong>V6 reset timer.</strong> Requirement says keep V6 neutral; confirm we intentionally omit any "try again in Xm" from the rate-limit reset header (available on <code>GithubApiError.rateLimitResetAt</code>).</li>
+    <li><strong>Editing an existing link → default tab.</strong> Proposed: open on Paste URL prefilled. Alternative: open on My repos so users can re-pick. Which is the expected mental model?</li>
+    <li><strong>Auto-switch on paste.</strong> If a user pastes a full GitHub URL into the Browse <em>filter</em>, should we offer to jump to Paste URL? Nice-to-have; recommend deferring to a follow-up.</li>
+    <li><strong>Button relabel on V4.</strong> "Save anyway" vs. keeping plain "Save". The relabel signals the caution; confirm it's not over-warning for a supported, common case (linking a teammate's repo).</li>
+  </ul>
+
+  <p class="meta" style="margin-top:40px">End of UX Design (step 2 of 6) · next gate: human Design Review (step 3).</p>
+
+</div>
+</body>
+</html>

@@ -6,6 +6,7 @@ import { createClient as createServerClient } from "@/lib/supabase/server";
 import { decrypt } from "@/lib/encryption";
 import {
   createOwnRepo,
+  getRepo,
   GithubApiError,
   listOwnRepos,
   parseRepoUrl,
@@ -13,6 +14,7 @@ import {
   toRepoName,
   type GithubRepo,
 } from "@/lib/github";
+import { classifyRepoAccess, type RepoAccessState } from "@/lib/github-verify";
 import { logger } from "@/lib/logger";
 import type { Database } from "@/types/database";
 
@@ -230,4 +232,74 @@ export async function linkRepoToIdea(
   logger.info("github_repo_linked", { userId: user.id, ideaId, source });
   revalidatePath(`/ideas/${ideaId}`);
   return url;
+}
+
+export interface RepoAccessCheck {
+  state: RepoAccessState;
+  owner: string;
+  repo: string;
+}
+
+/**
+ * Repo reachability check for the "Paste URL" tab (V1–V6 in the approved UX
+ * design). Allow-with-warning: the result only informs the verification
+ * panel, it never blocks saving (Save gating on the client only reacts to
+ * malformed-URL, which is checked before this is ever called).
+ *
+ * Never calls GitHub when the user has no connection (V1) — no new scopes
+ * are requested, and we reuse the user's existing token. Any failure
+ * (timeout, rate-limit, network error, unexpected status) resolves to
+ * "unreachable" rather than throwing, per FR-8.
+ */
+export async function verifyRepoAccess(url: string): Promise<RepoAccessCheck> {
+  const parsed = parseRepoUrl(url);
+  if (!parsed) throw new Error("Not a valid GitHub repository URL");
+
+  const match = parsed.match(/^https:\/\/github\.com\/([^/]+)\/([^/]+)$/);
+  if (!match) throw new Error("Not a valid GitHub repository URL");
+  const [, owner, repo] = match;
+
+  const supabase = await createServerClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+
+  const service = getServiceClient();
+  const { data: connection } = await service
+    .from("user_github_connections")
+    .select("encrypted_access_token")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (!connection) {
+    return { state: "no_connection", owner, repo };
+  }
+
+  let httpStatus: number | undefined;
+  let isPrivate: boolean | undefined;
+  let hadError = false;
+
+  try {
+    const token = decrypt(connection.encrypted_access_token);
+    const repoData = await getRepo(token, owner, repo);
+    httpStatus = 200;
+    isPrivate = repoData.private;
+  } catch (err) {
+    if (err instanceof GithubApiError) {
+      httpStatus = err.status;
+    } else {
+      // Network error, timeout/abort — no HTTP status to classify.
+      hadError = true;
+      logger.warn("verifyRepoAccess request failed", {
+        userId: user.id,
+        owner,
+        repo,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  const state = classifyRepoAccess({ hasConnection: true, httpStatus, isPrivate, error: hadError });
+  return { state, owner, repo };
 }

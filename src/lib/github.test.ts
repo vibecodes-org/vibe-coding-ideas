@@ -5,6 +5,7 @@ import {
   createOwnRepo,
   exchangeCodeForToken,
   getAuthedUser,
+  getRepo,
   listOwnRepos,
   parseRepoUrl,
   revokeGrant,
@@ -277,6 +278,86 @@ describe("createOwnRepo", () => {
       expect(e).toBeInstanceOf(GithubApiError);
       expect((e as GithubApiError).status).toBe(422);
     }
+  });
+});
+
+describe("getRepo", () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("GETs /repos/{owner}/{repo} with the user's token and returns the repo", async () => {
+    const fetchMock = mockFetchOnce({
+      body: {
+        id: 1,
+        name: "next.js",
+        full_name: "vercel/next.js",
+        html_url: "https://github.com/vercel/next.js",
+        private: false,
+        description: null,
+        pushed_at: "2024-01-01T00:00:00Z",
+        language: "JavaScript",
+        owner: { login: "vercel", avatar_url: "https://a.test/v.png" },
+      },
+    });
+    const repo = await getRepo("tok", "vercel", "next.js");
+    expect(repo.full_name).toBe("vercel/next.js");
+    expect(repo.private).toBe(false);
+    const call = fetchMock.mock.calls[0];
+    expect(call?.[0]).toBe("https://api.github.com/repos/vercel/next.js");
+    const init = call?.[1] as { headers: Record<string, string>; signal?: AbortSignal };
+    expect(init.headers.Authorization).toBe("Bearer tok");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
+  it("URL-encodes owner/repo segments", async () => {
+    const fetchMock = mockFetchOnce({ body: { id: 1, owner: { login: "a", avatar_url: "" } } });
+    await getRepo("tok", "weird owner", "repo name");
+    const url = fetchMock.mock.calls[0]?.[0] as string;
+    expect(url).toBe("https://api.github.com/repos/weird%20owner/repo%20name");
+  });
+
+  it("throws GithubApiError(404) when the repo doesn't exist or isn't visible to this token", async () => {
+    mockFetchOnce({ status: 404, body: { message: "Not Found" } });
+    try {
+      await getRepo("tok", "acme", "internal-tool");
+      expect.fail("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(GithubApiError);
+      expect((e as GithubApiError).status).toBe(404);
+    }
+  });
+
+  it("throws GithubApiError(403) with rate-limit reset on rate-limiting", async () => {
+    mockFetchOnce({
+      status: 403,
+      body: { message: "API rate limit exceeded" },
+      headers: { "x-ratelimit-reset": "1700000000" },
+    });
+    try {
+      await getRepo("tok", "vercel", "next.js");
+      expect.fail("should have thrown");
+    } catch (e) {
+      expect(e).toBeInstanceOf(GithubApiError);
+      expect((e as GithubApiError).status).toBe(403);
+      expect((e as GithubApiError).rateLimitResetAt).toBe(1700000000 * 1000);
+    }
+  });
+
+  it("propagates a non-GithubApiError (e.g. abort/timeout) rather than swallowing it", async () => {
+    const fetchMock = vi.fn(async (_url: string, init?: { signal?: AbortSignal }) => {
+      // Simulate the runtime aborting the request when the timeout signal fires.
+      if (init?.signal?.aborted) throw new DOMException("The operation was aborted", "AbortError");
+      throw new DOMException("The operation was aborted", "AbortError");
+    });
+    // @ts-expect-error overriding global for the test
+    global.fetch = fetchMock;
+    await expect(getRepo("tok", "vercel", "next.js", { timeoutMs: 1 })).rejects.toMatchObject({
+      name: "AbortError",
+    });
   });
 });
 
