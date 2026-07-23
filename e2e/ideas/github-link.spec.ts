@@ -40,8 +40,8 @@ test.afterAll(async () => {
   await supabaseAdmin.from("user_github_connections").delete().eq("user_id", userAId);
 });
 
-test.describe("GitHub link dialog — manual URL fallback (no connection required)", () => {
-  test("opens the dialog and reveals manual URL field via 'paste a URL instead'", async ({ userAPage: page }) => {
+test.describe("GitHub link dialog — Paste URL tab (no connection required)", () => {
+  test("opens the dialog with the Paste URL tab visible from the initial state", async ({ userAPage: page }) => {
     await page.goto(ideaUrl);
     await page.getByRole("button", { name: /Add GitHub URL/i }).click();
 
@@ -49,7 +49,10 @@ test.describe("GitHub link dialog — manual URL fallback (no connection require
     await expect(dialog).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await expect(dialog.getByRole("heading", { name: /Link a GitHub repo/i })).toBeVisible();
 
-    await dialog.getByText(/paste a URL instead/i).click();
+    // All three tabs are peers from the initial state (FR-1/FR-2)
+    await expect(dialog.getByRole("tab", { name: /My repos/i })).toBeVisible();
+    await expect(dialog.getByRole("tab", { name: /New repo/i })).toBeVisible();
+    await dialog.getByRole("tab", { name: /Paste URL/i }).click();
     await expect(dialog.getByPlaceholder(/https:\/\/github\.com/i)).toBeVisible();
   });
 
@@ -58,11 +61,11 @@ test.describe("GitHub link dialog — manual URL fallback (no connection require
     await page.getByRole("button", { name: /Add GitHub URL/i }).click();
 
     const dialog = page.getByRole("dialog");
-    await dialog.getByText(/paste a URL instead/i).click();
+    await dialog.getByRole("tab", { name: /Paste URL/i }).click();
 
     const urlInput = dialog.getByPlaceholder(/https:\/\/github\.com/i);
     await urlInput.fill("https://github.com/test-user/manual-repo");
-    await dialog.getByRole("button", { name: /^Save$/i }).click();
+    await dialog.getByRole("button", { name: /^Save/i }).click();
 
     // Dialog closes and the View Repository pill is rendered
     await expect(page.getByRole("link", { name: /View Repository/i })).toBeVisible({
@@ -70,22 +73,22 @@ test.describe("GitHub link dialog — manual URL fallback (no connection require
     });
   });
 
-  test("rejects a non-github URL with an inline error toast", async ({ userAPage: page }) => {
+  test("blocks a non-github URL with an inline format error and disabled Save", async ({ userAPage: page }) => {
     // Reset any URL from the previous test
     await supabaseAdmin.from("ideas").update({ github_url: null }).eq("id", ideaId);
     await page.goto(ideaUrl);
     await page.getByRole("button", { name: /Add GitHub URL/i }).click();
 
     const dialog = page.getByRole("dialog");
-    await dialog.getByText(/paste a URL instead/i).click();
+    await dialog.getByRole("tab", { name: /Paste URL/i }).click();
 
     await dialog.getByPlaceholder(/https:\/\/github\.com/i).fill("https://gitlab.com/foo/bar");
-    await dialog.getByRole("button", { name: /^Save$/i }).click();
 
-    // Dialog should still be open and a toast surfaces the rejection
-    await expect(page.getByText(/Not a valid GitHub repository URL/i)).toBeVisible({
+    // Malformed URL is the only blocking state (V5): inline alert + disabled Save
+    await expect(dialog.getByText(/not a GitHub repo URL/i)).toBeVisible({
       timeout: EXPECT_TIMEOUT,
     });
+    await expect(dialog.getByRole("button", { name: /^Save/i })).toBeDisabled();
     await expect(dialog).toBeVisible();
   });
 });
@@ -97,13 +100,17 @@ test.describe("GitHub link dialog — disconnected state", () => {
     await supabaseAdmin.from("ideas").update({ github_url: null }).eq("id", ideaId);
   });
 
-  test("shows the Connect CTA and the escape-hatch link", async ({ userAPage: page }) => {
+  test("defaults to Paste URL when disconnected and shows the Connect prompt on My repos", async ({ userAPage: page }) => {
     await page.goto(ideaUrl);
     await page.getByRole("button", { name: /Add GitHub URL/i }).click();
 
     const dialog = page.getByRole("dialog");
+    // Disconnected → smart default lands on the Paste URL tab (no dead-end gate)
+    await expect(dialog.getByPlaceholder(/https:\/\/github\.com/i)).toBeVisible();
+
+    // Own-repo tabs stay visible; selecting one shows the inline Connect prompt
+    await dialog.getByRole("tab", { name: /My repos/i }).click();
     await expect(dialog.getByRole("button", { name: /Connect GitHub/i })).toBeVisible();
-    await expect(dialog.getByText(/paste a URL instead/i)).toBeVisible();
     await expect(dialog.getByText(/we'll request/i)).toBeVisible();
   });
 
@@ -119,6 +126,8 @@ test.describe("GitHub link dialog — disconnected state", () => {
     await page.getByRole("button", { name: /Add GitHub URL/i }).click();
 
     const dialog = page.getByRole("dialog");
+    // Connect CTA now lives inside the My repos / New repo tab panels
+    await dialog.getByRole("tab", { name: /My repos/i }).click();
     const connectButton = dialog.getByRole("button", { name: /Connect GitHub/i });
 
     // After clicking Connect the browser navigates through /api/github/start
@@ -236,23 +245,24 @@ test.describe("GitHub link dialog — connected state (UI only, no live GitHub f
     await supabaseAdmin.from("user_github_connections").delete().eq("user_id", userAId);
   });
 
-  test("renders Browse + Create tabs and shows the connected @login in the header", async ({ userAPage: page }) => {
+  test("renders My repos + New repo + Paste URL tabs and shows the connected @login in the header", async ({ userAPage: page }) => {
     await page.goto(ideaUrl);
     await page.getByRole("button", { name: /Add GitHub URL/i }).click();
 
     const dialog = page.getByRole("dialog");
     await expect(dialog).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await expect(dialog.getByText(/@e2e-test-user/i)).toBeVisible();
-    await expect(dialog.getByRole("tab", { name: /^Browse$/i })).toBeVisible();
-    await expect(dialog.getByRole("tab", { name: /Create new/i })).toBeVisible();
+    await expect(dialog.getByRole("tab", { name: /My repos/i })).toBeVisible();
+    await expect(dialog.getByRole("tab", { name: /New repo/i })).toBeVisible();
+    await expect(dialog.getByRole("tab", { name: /Paste URL/i })).toBeVisible();
   });
 
-  test("Create tab pre-fills the repo name with a kebab-cased idea title", async ({ userAPage: page }) => {
+  test("New repo tab pre-fills the repo name with a kebab-cased idea title", async ({ userAPage: page }) => {
     await page.goto(ideaUrl);
     await page.getByRole("button", { name: /Add GitHub URL/i }).click();
 
     const dialog = page.getByRole("dialog");
-    await dialog.getByRole("tab", { name: /Create new/i }).click();
+    await dialog.getByRole("tab", { name: /New repo/i }).click();
 
     // The seeded idea title is "[E2E] GitHub Link Test <timestamp>" — kebab-cased
     // should start with "e2e-github-link-test-".
