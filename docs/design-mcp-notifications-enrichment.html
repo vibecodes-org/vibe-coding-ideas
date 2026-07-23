@@ -1,0 +1,231 @@
+<meta charset="utf-8">
+<title>Design — list_notifications enrichment</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.4rem 1.4rem 5rem;
+    background: #0e1116; color: #d6dbe1;
+    font: 15px/1.62 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 1.62rem; color: #fff; margin: 0 0 .3rem; letter-spacing: -.01em; }
+  h2 { font-size: 1.12rem; color: #86b7ff; margin: 2.5rem 0 .7rem;
+       border-bottom: 1px solid #232a34; padding-bottom: .35rem; }
+  h3 { font-size: .98rem; color: #cfd6de; margin: 1.5rem 0 .5rem; }
+  .sub { color: #8b95a1; margin: 0 0 1.4rem; }
+  p { margin: .6rem 0; }
+  code { font-family: "SF Mono", ui-monospace, Menlo, monospace; font-size: .86em;
+         background: #1a1f27; color: #e5c07b; padding: .1em .4em; border-radius: 4px; }
+  pre { background: #12161d; border: 1px solid #232a34; border-radius: 8px;
+        padding: 1rem 1.1rem; overflow-x: auto; font-size: .84rem; line-height: 1.55; }
+  pre code { background: none; color: #c8d3de; padding: 0; }
+  .tldr { background: #12181f; border: 1px solid #2b3a2e; border-left: 3px solid #4ec97a;
+          border-radius: 8px; padding: 1rem 1.2rem; margin: 1.2rem 0; }
+  .tldr b { color: #7ee2a0; }
+  table { border-collapse: collapse; width: 100%; margin: .8rem 0; font-size: .85rem; }
+  th, td { border: 1px solid #232a34; padding: .5rem .65rem; text-align: left; vertical-align: top; }
+  th { background: #171d25; color: #a8b3bf; font-weight: 600; }
+  td code { font-size: .82em; }
+  .n { color: #e06c75; }
+  .y { color: #98c379; }
+  .note { color: #8b95a1; font-size: .88rem; }
+  ul { margin: .5rem 0; padding-left: 1.3rem; }
+  li { margin: .3rem 0; }
+  .pill { display: inline-block; font-size: .72rem; padding: .1em .5em; border-radius: 20px;
+          background: #1e2a38; color: #7fb3ff; margin-left: .4rem; vertical-align: middle; }
+  .decision { background: #161d17; border: 1px solid #2f4030; border-radius: 8px; padding: .8rem 1.1rem; }
+  .decision b { color: #9cdca6; }
+  hr { border: none; border-top: 1px solid #232a34; margin: 2.4rem 0; }
+</style>
+<main>
+
+<h1>list_notifications — enrichment spec</h1>
+<p class="sub">Quick Win · UX Design (step 2/6) · task “MCP list_notifications is useless for acting on mentions”. This doc is the implementation spec for step 4. Additive only — no schema, no signature changes.</p>
+
+<div class="tldr">
+<b>TL;DR.</b> Enrich each notification so a calling agent can <i>act</i> without a second round-trip:
+add the raw FK ids (<code>task_id</code>, <code>comment_id</code>, <code>discussion_id</code>, <code>reply_id</code>),
+inline-join <code>task {id,title}</code> + <code>discussion_title</code> (both FKs exist on <code>notifications</code>),
+a never-null <code>url</code> deep-link built by <b>importing the canonical <code>buildNotificationUrl</code></b> (zero drift),
+and a best-effort <code>mention_context</code> (the triggering board-comment excerpt) via <b>one</b> extra batched query.
+Total added cost: <b>1 extra query</b> (the main select stays one query; joins are embeds). Budget FR6 (≤2) satisfied.
+</div>
+
+<h2>1 · Current state</h2>
+<p><code>listNotifications</code> (<code>mcp-server/src/tools/notifications.ts</code>) selects only:</p>
+<pre><code>id, type, read, created_at,
+actor:users!notifications_actor_id_fkey(id, full_name),
+idea:ideas!notifications_idea_id_fkey(id, title)</code></pre>
+<p>Problem: no <code>task_id</code>/<code>comment_id</code>/<code>discussion_id</code>, no titles beyond the idea, no link. An agent that receives “you were mentioned” cannot open the task, read the comment, or even name the task without extra lookups. Everything below is <b>additive</b> — existing fields keep their shape.</p>
+
+<h2>2 · Response schema &amp; example</h2>
+<p>Per-notification shape (⊕ = new field). Nullability is explicit; <code>mention_context</code> is <b>omitted entirely</b> when absent (not <code>null</code>).</p>
+<table>
+<tr><th>Field</th><th>Type</th><th>Notes</th></tr>
+<tr><td><code>id, type, read, created_at</code></td><td>unchanged</td><td>—</td></tr>
+<tr><td><code>actor</code></td><td><code>{id,full_name}|null</code></td><td>unchanged embed</td></tr>
+<tr><td><code>idea</code></td><td><code>{id,title}|null</code></td><td>unchanged embed</td></tr>
+<tr><td>⊕ <code>idea_id</code></td><td><code>string|null</code></td><td>raw FK</td></tr>
+<tr><td>⊕ <code>task_id</code></td><td><code>string|null</code></td><td>raw FK</td></tr>
+<tr><td>⊕ <code>comment_id</code></td><td><code>string|null</code></td><td>raw FK</td></tr>
+<tr><td>⊕ <code>discussion_id</code></td><td><code>string|null</code></td><td>raw FK</td></tr>
+<tr><td>⊕ <code>reply_id</code></td><td><code>string|null</code></td><td>raw FK</td></tr>
+<tr><td>⊕ <code>task</code></td><td><code>{id,title}|null</code></td><td><code>null</code> when no <code>task_id</code> OR task deleted (join miss)</td></tr>
+<tr><td>⊕ <code>discussion_title</code></td><td><code>string|null</code></td><td><code>null</code> when no <code>discussion_id</code> OR discussion deleted</td></tr>
+<tr><td>⊕ <code>url</code></td><td><code>string</code></td><td><b>never null</b> — always at least the app base URL</td></tr>
+<tr><td>⊕ <code>mention_context</code></td><td><code>{text,source,best_effort}?</code></td><td>present only for <code>task_mention</code> with a resolvable board-comment; omitted otherwise</td></tr>
+</table>
+
+<p>Full example — three notifications: a <code>task_mention</code> with context, a <code>discussion_mention</code>, a bare <code>vote</code>:</p>
+<pre><code>{
+  "notifications": [
+    {
+      "id": "n1", "type": "task_mention", "read": false,
+      "created_at": "2026-07-23T10:04:00Z",
+      "actor": { "id": "u_amy", "full_name": "Amy Lin" },
+      "idea": { "id": "idea_9", "title": "Realtime board sync" },
+      "idea_id": "idea_9",
+      "task_id": "task_42", "comment_id": null,
+      "discussion_id": null, "reply_id": null,
+      "task": { "id": "task_42", "title": "Fix websocket reconnect" },
+      "discussion_title": null,
+      "url": "https://vibecodes.co.uk/ideas/idea_9/board?taskId=task_42",
+      "mention_context": {
+        "text": "@Nick can you check the reconnect backoff here — it hammers the socket on flaky wifi and I think the ceiling is too…",
+        "source": "board_task_comment",
+        "best_effort": true
+      }
+    },
+    {
+      "id": "n2", "type": "discussion_mention", "read": false,
+      "created_at": "2026-07-23T09:50:00Z",
+      "actor": { "id": "u_bo", "full_name": "Bo Reyes" },
+      "idea": { "id": "idea_9", "title": "Realtime board sync" },
+      "idea_id": "idea_9",
+      "task_id": null, "comment_id": null,
+      "discussion_id": "disc_7", "reply_id": "rep_3",
+      "task": null,
+      "discussion_title": "Should we drop Firefox from CI?",
+      "url": "https://vibecodes.co.uk/ideas/idea_9/discussions/disc_7#reply-rep_3"
+    },
+    {
+      "id": "n3", "type": "vote", "read": true,
+      "created_at": "2026-07-23T08:12:00Z",
+      "actor": { "id": "u_cy", "full_name": "Cy Okafor" },
+      "idea": { "id": "idea_9", "title": "Realtime board sync" },
+      "idea_id": "idea_9",
+      "task_id": null, "comment_id": null,
+      "discussion_id": null, "reply_id": null,
+      "task": null,
+      "discussion_title": null,
+      "url": "https://vibecodes.co.uk/ideas/idea_9"
+    }
+  ],
+  "total": 3,
+  "unread_count": 2
+}</code></pre>
+<p class="note"><code>total</code> / <code>unread_count</code> keep their current meaning. <code>mention_context</code> is absent on n2 and n3 — note it is a missing key, not <code>null</code>.</p>
+
+<h2>3 · Query plan</h2>
+
+<h3>3a · Main query (one query, joins are embeds)</h3>
+<p>All four embed FKs exist on <code>notifications</code> (verified in <code>database.ts</code> Relationships): <code>notifications_actor_id_fkey</code>, <code>_idea_id_fkey</code>, <code>_task_id_fkey</code> → <code>board_tasks</code>, <code>_discussion_id_fkey</code> → <code>idea_discussions</code>. So the task title and discussion title join <b>inline</b> — no extra query. New select string:</p>
+<pre><code>id, type, read, created_at,
+idea_id, task_id, comment_id, discussion_id, reply_id,
+actor:users!notifications_actor_id_fkey(id, full_name),
+idea:ideas!notifications_idea_id_fkey(id, title),
+task:board_tasks!notifications_task_id_fkey(id, title),
+discussion:idea_discussions!notifications_discussion_id_fkey(title)</code></pre>
+<p class="note">Map the <code>discussion</code> embed to the flat <code>discussion_title</code> in code: <code>discussion_title: row.discussion?.title ?? null</code>, then drop the nested <code>discussion</code> object from the emitted shape. A deleted task/discussion yields a <code>null</code> embed — the raw <code>task_id</code>/<code>discussion_id</code> survives, so the <code>url</code> still builds.</p>
+
+<h3>3b · Batched mention_context query <span class="pill">the only extra query</span></h3>
+<p>Collect the <code>(task_id, actor_id)</code> pairs from notifications where <code>type === "task_mention"</code> and <code>task_id != null</code>. Skip the query entirely when there are zero such pairs. Then one query into <code>board_task_comments</code>:</p>
+<pre><code>ctx.supabase
+  .from("board_task_comments")
+  .select("task_id, author_id, content, created_at")
+  .or(pairs.map(p =&gt; `and(task_id.eq.${p.task_id},author_id.eq.${p.actor_id})`).join(","))
+  .order("created_at", { ascending: false })
+  .limit(200)   // safety cap against a chatty author on one task</code></pre>
+<p><b>Client-side pairing:</b> rows arrive newest-first; keep the <b>first</b> row seen per <code>(task_id,author_id)</code> key = most-recent comment by that author on that task. A mention notification is created the instant its comment posts, so the most-recent comment is the triggering one in ~all cases (hence <code>best_effort:true</code>).</p>
+<p><b>.or(and()) vs .in×.in — decision:</b> use <code>.or()</code> of <code>and()</code> pairs. Rationale: a page is ≤50 notifications and typically few are mentions, so the pair count is small and <code>.or()</code> is <i>precise</i> (fetches only the requested pairs). <code>.in(task_ids)×.in(author_ids)</code> would fetch the full cross-product (author A’s comments on task B even if A never mentioned anyone there) — wasteful and, per team memory, large <code>.in()</code> lists have misfired at scale. If pair count ever exceeds ~40, chunk the <code>.or()</code> — but that stays a single logical query for the budget.</p>
+<p><b>Truncation:</b> <code>text = content.length &gt; 200 ? content.slice(0,200) + "…" : content</code>. <code>source</code> is the literal <code>"board_task_comment"</code>; <code>best_effort</code> is literal <code>true</code>.</p>
+<p><b>Documented limitation:</b> mentions originating from <code>workflow_step_comments</code> are <b>not</b> covered — those notifications also carry <code>type:"task_mention"</code> + <code>task_id</code>, but the triggering text lives in a different table. When no matching <code>board_task_comment</code> exists, <code>mention_context</code> is simply omitted (never wrong text). This is intentional scope for the Quick Win.</p>
+
+<h3>Budget</h3>
+<p>Main select = 1 query (unchanged count; titles are embeds). mention_context = 1 query, skipped when no mention pairs. <b>Worst case 2 queries total, +1 vs today.</b> FR6 (≤2 extra) satisfied.</p>
+
+<h2>4 · URL helper — placement &amp; branches</h2>
+<div class="decision">
+<b>Decision: import the canonical web helper directly.</b>
+<code>import { buildNotificationUrl } from "../../../src/lib/notification-url";</code>
+No mcp-server-local copy.
+</div>
+<p><b>Rationale.</b> FR3 demands routing <i>identical</i> to <code>buildNotificationUrl</code>, and drift here silently produces dead links. The cross-package import is already the established pattern — <code>mention-notify.ts</code> imports <code>../../../src/lib/logger</code> the same way, and <code>mcp-server/tsconfig.json</code> maps <code>@/* → ../src/*</code>, so the helper’s type-only <code>import type { Database } from "@/types/database"</code> resolves under <code>tsc</code> and is erased at runtime (tsx/node). The mention feature copied logic into <code>mcp-server/src/lib</code> only because that logic is mention-specific parsing with no canonical web owner; URL routing is the opposite — one canonical owner, high drift cost. Importing wins decisively; a local copy would reintroduce exactly the drift FR3 forbids.</p>
+<p><b>Signature (unchanged):</b></p>
+<pre><code>buildNotificationUrl({
+  type, ideaId, commentId, taskId, discussionId, replyId, appUrl
+}): string</code></pre>
+<p>Call it per-notification, passing the row’s raw FK ids and the module-level <code>APP_BASE_URL</code> (§5).</p>
+
+<h3>Branch table — every enum type → url</h3>
+<p>The helper is field-driven (FK presence first), then type-driven fallback. Table shows the URL for each <code>notification_type</code> given its typical FK payload; <code>{b}</code> = <code>{appUrl}/ideas/{ideaId}</code>.</p>
+<table>
+<tr><th>type</th><th>FK carried</th><th>url</th></tr>
+<tr><td colspan="2"><i>any type, <code>ideaId == null</code></i></td><td><code>{appUrl}</code></td></tr>
+<tr><td><code>task_mention</code></td><td><code>task_id</code></td><td><code>{b}/board?taskId={task_id}</code></td></tr>
+<tr><td><code>task_mention</code></td><td>(no task_id)</td><td><code>{b}/board</code> <span class="note">(type fallback)</span></td></tr>
+<tr><td><code>comment</code></td><td><code>comment_id</code></td><td><code>{b}#comment-{comment_id}</code></td></tr>
+<tr><td><code>comment_mention</code></td><td><code>comment_id</code></td><td><code>{b}#comment-{comment_id}</code></td></tr>
+<tr><td><code>discussion</code></td><td><code>discussion_id</code></td><td><code>{b}/discussions/{discussion_id}</code></td></tr>
+<tr><td><code>discussion_reply</code></td><td><code>discussion_id</code>,<code>reply_id</code></td><td><code>{b}/discussions/{discussion_id}#reply-{reply_id}</code></td></tr>
+<tr><td><code>discussion_mention</code></td><td><code>discussion_id</code>[,<code>reply_id</code>]</td><td><code>{b}/discussions/{discussion_id}[#reply-{reply_id}]</code></td></tr>
+<tr><td><code>discussion*</code></td><td>(no discussion_id)</td><td><code>{b}/discussions</code> <span class="note">(type fallback)</span></td></tr>
+<tr><td><code>vote</code></td><td>(idea only)</td><td><code>{b}</code></td></tr>
+<tr><td><code>collaborator</code></td><td>(idea only)</td><td><code>{b}</code></td></tr>
+<tr><td><code>status_change</code></td><td>(idea only)</td><td><code>{b}</code></td></tr>
+<tr><td><code>user_deleted</code></td><td>(idea only / none)</td><td><code>{b}</code> or <code>{appUrl}</code></td></tr>
+<tr><td><code>collaboration_request</code></td><td>(idea only)</td><td><code>{b}</code></td></tr>
+<tr><td><code>collaboration_response</code></td><td>(idea only)</td><td><code>{b}</code></td></tr>
+</table>
+<p class="note">Precedence inside the helper (do not reorder): <code>!ideaId</code> → <code>taskId</code> → <code>discussionId</code> → <code>commentId</code> → type fallbacks (<code>task_mention</code>→board, <code>discussion*</code>→discussions) → <code>{b}</code>. The table above is a consequence of that order, not a second source of truth.</p>
+
+<h2>5 · Env / config</h2>
+<table>
+<tr><th>Mode</th><th>Reads</th><th>Resolves to</th></tr>
+<tr><td>Remote (HTTP, Next.js route)</td><td><code>process.env.NEXT_PUBLIC_APP_URL</code></td><td>the deployment’s app URL (present in Vercel env)</td></tr>
+<tr><td>Local (stdio)</td><td><code>process.env.NEXT_PUBLIC_APP_URL</code></td><td>usually unset → fallback constant (correct for prod users; staging users may export it)</td></tr>
+</table>
+<p>One resolution, one constant, read <b>once at module load</b> in <code>notifications.ts</code>:</p>
+<pre><code>const APP_BASE_URL =
+  (process.env.NEXT_PUBLIC_APP_URL ?? "https://vibecodes.co.uk").replace(/\/+$/, "");</code></pre>
+<p class="note">Trailing-slash strip keeps <code>buildNotificationUrl</code>’s <code>{appUrl}/ideas/…</code> concatenation clean. Same var name in both modes — each process resolves its own env, and the fallback constant is the FR4 default. No new env var is introduced.</p>
+
+<h2>6 · Failure states</h2>
+<table>
+<tr><th>Situation</th><th>Behaviour</th></tr>
+<tr><td>mention_context query throws / errors</td><td>Wrap in try/catch; <code>logger.warn</code> with the error; <b>omit <code>mention_context</code> from all rows</b>. Notifications still return in full. Context is strictly best-effort and must never fail the tool call.</td></tr>
+<tr><td>Task deleted (task embed = null)</td><td><code>task: null</code>, but raw <code>task_id</code> survives → <code>url</code> still <code>{b}/board?taskId=…</code>. Not null.</td></tr>
+<tr><td>Discussion deleted (embed = null)</td><td><code>discussion_title: null</code>; raw <code>discussion_id</code> survives → url still built.</td></tr>
+<tr><td><code>NEXT_PUBLIC_APP_URL</code> absent</td><td>Fallback <code>https://vibecodes.co.uk</code>. <code>url</code> never null.</td></tr>
+<tr><td>Mention from <code>workflow_step_comments</code></td><td>No matching board comment → <code>mention_context</code> omitted (documented limitation §3b). Never emits wrong text.</td></tr>
+<tr><td>Main query error</td><td>Unchanged — still throws <code>Failed to list notifications</code>. Enrichment does not alter the existing error path.</td></tr>
+</table>
+
+<h2>7 · Tool description copy</h2>
+<p>Replace the current one-liner in <code>register-tools.ts</code> (line 861) with:</p>
+<pre><code>"List notifications for the current user, enriched for acting on them: "
++ "each item includes the raw FK ids (task_id, comment_id, discussion_id, "
++ "reply_id), the task title and discussion title where applicable, and a "
++ "ready-to-open deep-link `url`. Mention notifications also carry a "
++ "best-effort `mention_context` with an excerpt of the triggering board "
++ "comment. Supports unread-only filter and limit."</code></pre>
+
+<h2>8 · Open questions</h2>
+<p><span class="y">None blocking.</span> Two intentional scope calls are already resolved in-doc and need only a nod at the human gate (step 3):</p>
+<ul>
+<li><b>workflow_step_comments excluded</b> from <code>mention_context</code> (§3b) — accepted limitation for the Quick Win; a follow-up card can add it.</li>
+<li><b>“Most recent” = triggering comment</b> heuristic (§3b) rather than time-correlating each notification’s <code>created_at</code> to a specific comment — chosen for simplicity; <code>best_effort:true</code> signals the approximation to callers.</li>
+</ul>
+
+</main>

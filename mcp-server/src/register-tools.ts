@@ -858,7 +858,12 @@ export function registerTools(
 
   server.tool(
     "list_notifications",
-    "List notifications for the current user. Supports unread-only filter and limit.",
+    "List notifications for the current user, enriched for acting on them: " +
+      "each item includes the raw FK ids (task_id, comment_id, discussion_id, " +
+      "reply_id), the task title and discussion title where applicable, and a " +
+      "ready-to-open deep-link `url`. Mention notifications also carry a " +
+      "best-effort `mention_context` with an excerpt of the triggering board " +
+      "comment. Supports unread-only filter and limit.",
     listNotificationsSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
