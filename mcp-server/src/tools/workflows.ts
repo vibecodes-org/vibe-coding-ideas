@@ -15,6 +15,9 @@ import {
   type ApprovalNote,
   type ApprovalNoteRow,
 } from "../lib/step-comments";
+import { notifyMentions } from "../lib/mention-notify";
+import { stepTaskUnresolvedMentions } from "../lib/mentions";
+import { mentionedUserIdsSchema } from "./comments";
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -1528,6 +1531,7 @@ export const addStepCommentSchema = z.object({
     .optional()
     .default("comment")
     .describe("Comment type (default: comment)"),
+  mentioned_user_ids: mentionedUserIdsSchema,
 });
 
 export async function addStepComment(
@@ -1547,7 +1551,34 @@ export async function addStepComment(
     .single();
 
   if (error) throw new Error(`Failed to add step comment: ${error.message}`);
-  return data;
+
+  // Resolve the step's parent task (needed to route the notification to a
+  // real task view — a step comment carries no task_id of its own, design §6).
+  const { data: stepRow, error: stepError } = await ctx.supabase
+    .from("task_workflow_steps")
+    .select("task_id")
+    .eq("id", params.step_id)
+    .maybeSingle();
+
+  let mentions;
+  if (stepError || !stepRow?.task_id) {
+    if (stepError) {
+      logger.warn("Failed to resolve step's parent task for mention routing", {
+        error: stepError.message,
+        stepId: params.step_id,
+      });
+    }
+    mentions = stepTaskUnresolvedMentions(params.content, params.mentioned_user_ids);
+  } else {
+    mentions = await notifyMentions(ctx, {
+      ideaId: params.idea_id,
+      taskId: stepRow.task_id,
+      content: params.content,
+      mentionedUserIds: params.mentioned_user_ids,
+    });
+  }
+
+  return { ...data, mentions };
 }
 
 // --- Rematch Workflow Agents ---

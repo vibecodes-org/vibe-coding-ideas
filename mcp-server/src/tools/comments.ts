@@ -1,6 +1,14 @@
 import { z } from "zod";
 import { logActivity } from "../activity";
 import type { McpContext } from "../context";
+import { notifyMentions } from "../lib/mention-notify";
+
+export const mentionedUserIdsSchema = z
+  .array(z.string().uuid())
+  .optional()
+  .describe(
+    "Optional explicit user IDs to notify (idea team members only). You usually don't need this: any @Full Name written in `content` that matches a team member is detected and notified automatically (a single unique first name also matches). Use this only to notify someone without writing their name in the text. IDs and parsed names are merged and de-duplicated; unresolved entries are reported non-fatally and never block the comment."
+  );
 
 export const addIdeaCommentSchema = z.object({
   idea_id: z.string().uuid().describe("The idea ID"),
@@ -34,6 +42,7 @@ export const addTaskCommentSchema = z.object({
   task_id: z.string().uuid().describe("The task ID"),
   idea_id: z.string().uuid().describe("The idea ID"),
   content: z.string().min(1).max(5000).describe("Comment content (markdown)"),
+  mentioned_user_ids: mentionedUserIdsSchema,
 });
 
 export async function addTaskComment(
@@ -55,5 +64,12 @@ export async function addTaskComment(
 
   await logActivity(ctx, params.task_id, params.idea_id, "comment_added");
 
-  return { success: true, comment: data };
+  const mentions = await notifyMentions(ctx, {
+    ideaId: params.idea_id,
+    taskId: params.task_id,
+    content: params.content,
+    mentionedUserIds: params.mentioned_user_ids,
+  });
+
+  return { success: true, comment: data, mentions };
 }

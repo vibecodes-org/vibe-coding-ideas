@@ -26,7 +26,10 @@ import {
   modelTierClause,
   resolveModelTier,
   resolveTierAdherence,
+  addStepComment,
+  addStepCommentSchema,
 } from "./workflows";
+import { logger } from "../../../src/lib/logger";
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -3774,5 +3777,162 @@ describe("applyWorkflowTemplate — model_tier", () => {
     expect(insertedSteps).toHaveLength(2);
     expect(insertedSteps[0].model_tier).toBe("standard");
     expect(insertedSteps[1].model_tier).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// addStepComment — mentions (parity with add_task_comment, design §6/§9)
+// ---------------------------------------------------------------------------
+
+describe("addStepComment — mentions", () => {
+  const NICK_ID = "00000000-0000-4000-a000-000000000050";
+
+  const COMMENT_ROW = {
+    id: "comment-1",
+    step_id: STEP_ID,
+    idea_id: IDEA_ID,
+    author_id: USER_ID,
+    type: "comment",
+    content: "content",
+    created_at: "2026-01-01T00:00:00Z",
+  };
+
+  const TEAM_ROW = {
+    id: IDEA_ID,
+    author: { id: NICK_ID, full_name: "Nick Ball", notification_preferences: { task_mentions: true } },
+    collaborators: [],
+  };
+
+  /** Simple chainable mock: table -> fixed resolveWith, dispatched by name. */
+  function simpleChain(resolveWith: unknown) {
+    const chain: Record<string, unknown> = {};
+    for (const m of ["order", "limit", "range", "or", "filter", "delete", "not"]) {
+      chain[m] = vi.fn(() => chain);
+    }
+    chain.select = vi.fn(() => chain);
+    chain.eq = vi.fn(() => chain);
+    chain.in = vi.fn(() => chain);
+    chain.insert = vi.fn((data: unknown) => {
+      (chain as Record<string, unknown> & { inserted?: unknown }).inserted = data;
+      return chain;
+    });
+    chain.update = vi.fn(() => chain);
+    chain.single = vi.fn(() => Promise.resolve({ data: resolveWith, error: null }));
+    chain.maybeSingle = vi.fn(() => Promise.resolve({ data: resolveWith, error: null }));
+    chain.then = (resolve: (val: unknown) => void) =>
+      Promise.resolve({ data: resolveWith, error: null }).then(resolve);
+    return chain;
+  }
+
+  function makeStepCommentCtx(opts: {
+    stepLookupResult?: unknown;
+    stepLookupError?: { message: string } | null;
+  }) {
+    const commentChain = simpleChain(COMMENT_ROW);
+    const stepChain = simpleChain(
+      opts.stepLookupResult !== undefined ? opts.stepLookupResult : { task_id: TASK_ID }
+    );
+    if (opts.stepLookupError) {
+      stepChain.maybeSingle = vi.fn(() => Promise.resolve({ data: null, error: opts.stepLookupError }));
+    }
+    const teamChain = simpleChain(TEAM_ROW);
+    const notificationsChain = simpleChain(null);
+
+    const fromFn = vi.fn((table: string) => {
+      switch (table) {
+        case "workflow_step_comments":
+          return commentChain;
+        case "task_workflow_steps":
+          return stepChain;
+        case "ideas":
+          return teamChain;
+        case "notifications":
+          return notificationsChain;
+        default:
+          return simpleChain(null);
+      }
+    });
+
+    const ctx: McpContext = {
+      supabase: { from: fromFn } as unknown as McpContext["supabase"],
+      userId: USER_ID,
+    };
+    return { ctx, notificationsChain };
+  }
+
+  it("resolves the parent task and notifies an @Full Name mention", async () => {
+    const { ctx, notificationsChain } = makeStepCommentCtx({});
+    const params = addStepCommentSchema.parse({
+      step_id: STEP_ID,
+      idea_id: IDEA_ID,
+      content: "nice, @Nick Ball can you check?",
+    });
+
+    const result = await addStepComment(ctx, params);
+
+    expect(result.id).toBe("comment-1"); // raw row shape preserved
+    expect(result.mentions.notified).toEqual([{ user_id: NICK_ID, full_name: "Nick Ball" }]);
+    expect(notificationsChain.insert).toHaveBeenCalledWith([
+      { user_id: NICK_ID, actor_id: USER_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID },
+    ]);
+  });
+
+  it("is independent of the `type` field", async () => {
+    const { ctx } = makeStepCommentCtx({});
+    const params = addStepCommentSchema.parse({
+      step_id: STEP_ID,
+      idea_id: IDEA_ID,
+      content: "@Nick Ball approved",
+      type: "approval",
+    });
+    const result = await addStepComment(ctx, params);
+    expect(result.mentions.notified).toEqual([{ user_id: NICK_ID, full_name: "Nick Ball" }]);
+  });
+
+  it("degrades to step_task_unresolved when the parent-task lookup returns null", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx } = makeStepCommentCtx({ stepLookupResult: null });
+    const params = addStepCommentSchema.parse({
+      step_id: STEP_ID,
+      idea_id: IDEA_ID,
+      content: "note",
+      mentioned_user_ids: [NICK_ID],
+    });
+
+    const result = await addStepComment(ctx, params);
+
+    expect(result.id).toBe("comment-1"); // comment still posts
+    expect(result.mentions.notified).toEqual([]);
+    expect(result.mentions.unresolved).toEqual([{ user_id: NICK_ID, reason: "step_task_unresolved" }]);
+    expect(result.mentions.warning).toBeDefined();
+    warnSpy.mockRestore();
+  });
+
+  it("degrades to step_task_unresolved and logs a warning when the lookup errors", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { ctx } = makeStepCommentCtx({ stepLookupError: { message: "boom" } });
+    const params = addStepCommentSchema.parse({
+      step_id: STEP_ID,
+      idea_id: IDEA_ID,
+      content: "note",
+      mentioned_user_ids: [NICK_ID],
+    });
+
+    const result = await addStepComment(ctx, params);
+
+    expect(result.mentions.unresolved).toEqual([{ user_id: NICK_ID, reason: "step_task_unresolved" }]);
+    expect(warnSpy).toHaveBeenCalledTimes(1);
+    warnSpy.mockRestore();
+  });
+
+  it("posts with no mentions when content has no @ and no mentioned_user_ids", async () => {
+    const { ctx } = makeStepCommentCtx({});
+    const params = addStepCommentSchema.parse({
+      step_id: STEP_ID,
+      idea_id: IDEA_ID,
+      content: "plain step comment",
+    });
+    const result = await addStepComment(ctx, params);
+    expect(result.mentions).toEqual({ notified: [], unresolved: [] });
   });
 });

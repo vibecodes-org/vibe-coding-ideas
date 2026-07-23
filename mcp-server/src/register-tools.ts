@@ -640,7 +640,7 @@ export function registerTools(
 
   server.tool(
     "add_task_comment",
-    "Add a comment to a board task. Posted as Claude Code bot.",
+    "Add a comment to a board task. Posted as Claude Code bot. Any @Full Name in the content that matches an idea team member is detected automatically and sent a task-mention notification (exact full-name match, case-insensitive; a single unique first name also matches). Given a casual name (e.g. \"tag Chris\"), resolve it against the idea team (list_collaborators) and pass mentioned_user_ids — only write @Full Name in content when you know the exact registered name. Unmatched names never block the comment — they're returned in mentions.unresolved with a reason.",
     addTaskCommentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1298,7 +1298,7 @@ export function registerTools(
 
   server.tool(
     "add_step_comment",
-    "Add a comment to a workflow step. Comments are surfaced to other agents: get_task returns each step's latest 10 (types comment/failure/approval/changes_requested), 'failure' and 'changes_requested' feed claim_next_step's rework_instructions, and 'approval' notes feed its approval_notes. Type 'output' is reserved for the UI mirror of complete_step's output — never use it to communicate with agents; put deliverables in complete_step's `output` parameter instead. Reference uploaded attachments by their exact filename — the UI renders them as clickable links.",
+    "Add a comment to a workflow step. Comments are surfaced to other agents: get_task returns each step's latest 10 (types comment/failure/approval/changes_requested), 'failure' and 'changes_requested' feed claim_next_step's rework_instructions, and 'approval' notes feed its approval_notes. Type 'output' is reserved for the UI mirror of complete_step's output — never use it to communicate with agents; put deliverables in complete_step's `output` parameter instead. Reference uploaded attachments by their exact filename — the UI renders them as clickable links. @Full Name mentions of idea team members are detected in the content and notified on the step's PARENT TASK (same exact-match rules as add_task_comment, including single unique first names); mentioned_user_ids works too — given a casual name (e.g. \"tag Chris\"), resolve it against the idea team (list_collaborators) and pass mentioned_user_ids rather than guessing a name. This is independent of the `type` field. Results are reported in mentions.{notified,unresolved} and never affect whether the comment posts.",
     addStepCommentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

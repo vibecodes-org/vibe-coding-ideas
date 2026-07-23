@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MCP @mention in Task + Step Comments — API Design</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #11151f;
+    --panel2: #161b28;
+    --border: #232a3b;
+    --text: #d7dce6;
+    --muted: #8b94a7;
+    --accent: #34d399;      /* emerald — new fields */
+    --accent-dim: #10b98122;
+    --violet: #a78bfa;      /* keys */
+    --amber: #fbbf24;       /* warnings / non-fatal */
+    --red: #f87171;
+    --blue: #60a5fa;        /* strings */
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.65 -apple-system, "Segoe UI", Inter, sans-serif;
+    padding: 48px 24px 96px;
+  }
+  .wrap { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 28px; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin: 8px 0 40px; max-width: 74ch; }
+  h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--accent); margin: 56px 0 16px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  h2 .n { color: var(--muted); margin-right: 8px; }
+  h3 { font-size: 16px; margin: 28px 0 10px; }
+  p { margin: 10px 0; max-width: 80ch; }
+  ul, ol { margin: 10px 0 10px 22px; max-width: 80ch; }
+  li { margin: 5px 0; }
+  .muted { color: var(--muted); }
+  code {
+    font-family: var(--mono); font-size: 13px;
+    background: var(--panel2); border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: 4px;
+  }
+  pre {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 20px; overflow-x: auto; font-family: var(--mono);
+    font-size: 12.5px; line-height: 1.7; margin: 14px 0;
+  }
+  pre code { background: none; border: none; padding: 0; }
+  .k { color: var(--violet); }
+  .s { color: var(--blue); }
+  .num { color: var(--amber); }
+  .cm { color: #5b6478; font-style: italic; }
+  .new-line { background: var(--accent-dim); display: block; margin: 0 -20px; padding: 0 20px; border-left: 3px solid var(--accent); }
+  .callout {
+    border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    background: var(--panel); border-radius: 8px; padding: 14px 18px; margin: 18px 0;
+  }
+  .callout.warn { border-left-color: var(--amber); }
+  .callout.info { border-left-color: var(--blue); }
+  .callout strong:first-child { display: block; margin-bottom: 4px; font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--accent); }
+  .callout.warn strong:first-child { color: var(--amber); }
+  .callout.info strong:first-child { color: var(--blue); }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 13.5px; }
+  th {
+    text-align: left; color: var(--muted); font-weight: 600; font-size: 11.5px;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    padding: 8px 12px; border-bottom: 1px solid var(--border);
+  }
+  td { padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  td code { white-space: nowrap; }
+  .table-scroll { overflow-x: auto; }
+  .pill { font-size: 11px; padding: 1px 7px; border-radius: 20px; border: 1px solid var(--border); background: var(--panel2); white-space: nowrap; }
+  .pill.ok { color: var(--accent); border-color: #10b98155; }
+  .pill.warn { color: var(--amber); border-color: #fbbf2455; }
+  .pill.red { color: var(--red); border-color: #f8717155; }
+  .enum { color: var(--amber); font-family: var(--mono); font-size: 12.5px; }
+  .tldr { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 8px 24px 18px; margin: 8px 0 20px; }
+  .tldr li { margin: 8px 0; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 8px 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>MCP <span>@mention</span> in Task + Step Comments</h1>
+<p class="sub">Step 2 — UX Design (API surface). Backend feature: both comment tools gain human @mention notifications. No new web UI. The "user" here is the calling agent (reads schemas + response) and the notified human (reads the bell). Designs to fixed FR-1..15 / AC-1..12.</p>
+
+<h2><span class="n">§0</span> TL;DR — Decisions</h2>
+<div class="tldr">
+<ol>
+  <li>Both <code>add_task_comment</code> and <code>add_step_comment</code> gain one optional param: <code>mentioned_user_ids: uuid[]</code>. Plus automatic <code>@Full Name</code> parsing of <code>content</code>. The two sources are <strong>unioned</strong>.</li>
+  <li>Name matching is <strong>exact, normalised, greedy longest-match</strong> against the idea's human roster (author + collaborators). No fuzzy / partial / prefix matches.</li>
+  <li>Mentions are <strong>never fatal</strong>. The comment always posts. Unresolved / ambiguous / non-member / opted-out / self tokens are reported in <code>mentions.unresolved[]</code> with machine-stable <span class="enum">reason</span> enums.</li>
+  <li>Notification row mirrors web exactly: <code>{type:"task_mention", idea_id, task_id, actor_id, user_id}</code>. Fire-and-forget; a failed insert never fails the tool call.</li>
+  <li>Step comments resolve their <strong>parent task</strong> via one lookup (<code>task_workflow_steps.task_id</code>) so the notification points at a real task. If that lookup fails, the comment still posts and mentions are skipped with a warning.</li>
+  <li>Self-skip excludes <strong>both</strong> <code>ctx.userId</code> (active identity) and <code>ctx.ownerUserId</code> (human owner).</li>
+  <li>Both MCP modes insert notifications with the same <strong>request-scoped <code>ctx.supabase</code></strong> — valid today under the permissive <code>with check (true)</code> policy.</li>
+</ol>
+</div>
+
+<h2><span class="n">§1</span> Current State — what the tools return today</h2>
+
+<h3><code>add_task_comment</code> <span class="muted">(mcp-server/src/tools/comments.ts)</span></h3>
+<p>Params: <code>task_id</code>, <code>idea_id</code>, <code>content</code>. Inserts into <code>board_task_comments</code>, logs <code>comment_added</code> activity, returns:</p>
+<pre><code>{ <span class="k">"success"</span>: <span class="num">true</span>, <span class="k">"comment"</span>: { <span class="k">"id"</span>, <span class="k">"content"</span>, <span class="k">"created_at"</span> } }</code></pre>
+
+<h3><code>add_step_comment</code> <span class="muted">(mcp-server/src/tools/workflows.ts)</span></h3>
+<p>Params: <code>step_id</code>, <code>idea_id</code>, <code>content</code>, <code>type</code> (<code>comment</code>|<code>output</code>|<code>failure</code>|<code>approval</code>|<code>changes_requested</code>). Inserts into <code>workflow_step_comments</code> and returns the <strong>raw row</strong> (no <code>success</code> wrapper):</p>
+<pre><code>{ <span class="k">"id"</span>, <span class="k">"step_id"</span>, <span class="k">"idea_id"</span>, <span class="k">"author_id"</span>, <span class="k">"type"</span>, <span class="k">"content"</span>, <span class="k">"created_at"</span> }</code></pre>
+<p>A workflow step belongs to exactly one board task via <code>task_workflow_steps.task_id</code>. The step comment carries no <code>task_id</code> of its own — this is the lookup §5 adds. The <code>type</code> field is unrelated to mentions and is preserved untouched; a mention fires regardless of comment type.</p>
+
+<div class="callout info"><strong>Web precedent to mirror</strong>
+The board web client (task-comments-section.tsx ~L247) inserts <code>notifications</code> rows <code>{ user_id, actor_id, type:"task_mention", idea_id, task_id }</code>, skipping self, skipping non-team members, skipping <code>notification_preferences.task_mentions === false</code>, fire-and-forget with an error log. The MCP path reproduces this shape and skip logic verbatim. The web name matcher is autocomplete-only (regex <code>/(?:^|[\s])@(\S*)$/</code> against <code>full_name</code>); MCP has no autocomplete, so it needs the server-side parser specified in §4.</p></div>
+
+<h2><span class="n">§2</span> Roster — who is mentionable</h2>
+<p>The roster is the idea's <strong>human team</strong>: author + collaborators, from <code>getIdeaTeam().teamMembers</code> (src/lib/idea-team.ts). This matches the web task-comment mention source (which uses <code>teamMembers</code>, not <code>allMentionable</code>).</p>
+<ul>
+  <li><strong>Agents / bots are NOT in this roster.</strong> Agent-directed pings use the separate discussion <code>@agent</code> path (agent-mentions.ts). A bot full-name in <code>@Name</code> resolves to <span class="enum">not_team_member</span>, not a notification.</li>
+  <li>Each roster entry contributes its <code>full_name</code> (nullable). Entries with <code>full_name = null</code> are <strong>not matchable by name</strong> (they can still be targeted by explicit <code>mentioned_user_ids</code>).</li>
+  <li>Explicit <code>mentioned_user_ids</code> that are not in the roster resolve to <span class="enum">not_team_member</span>.</li>
+</ul>
+
+<h2><span class="n">§3</span> Param schema — both tools</h2>
+<p>One field added to <code>addTaskCommentSchema</code> and <code>addStepCommentSchema</code>. Same zod shape, same description, so an agent learns it once.</p>
+<pre><code>mentioned_user_ids: z
+  .array(z.string().uuid())
+  .optional()
+  .describe(
+    <span class="new-line"><span class="s">"Optional explicit user IDs to notify (idea team members only). "</span></span>
+    <span class="new-line"><span class="s">"You usually don't need this: any @Full Name written in `content` that "</span></span>
+    <span class="new-line"><span class="s">"matches a team member is detected and notified automatically. Use this "</span></span>
+    <span class="new-line"><span class="s">"only to notify someone without writing their name in the text. IDs and "</span></span>
+    <span class="new-line"><span class="s">"parsed names are merged and de-duplicated; unresolved entries are "</span></span>
+    <span class="new-line"><span class="s">"reported non-fatally and never block the comment."</span></span>
+  )</code></pre>
+<p>Optionality: absent field ⇒ empty explicit set; name parsing still runs on <code>content</code>. The field is additive — no existing param changes, no breaking change to callers.</p>
+
+<h2><span class="n">§4</span> Parser spec — <code>@Full Name</code> detection</h2>
+
+<h3>4.1 Normalisation (applied to both roster names and candidate text)</h3>
+<ol>
+  <li>Unicode <strong>NFKC</strong> normalise.</li>
+  <li>Casefold (lowercase).</li>
+  <li>Collapse any internal whitespace run to a single space; trim ends.</li>
+</ol>
+<p>Diacritics are <strong>preserved</strong> (é ≠ e) — full names are identity data; we normalise form + case + spacing only. A pre-built map <code>normalised(full_name) → user_id</code> is the match index; a name that normalises to a value already in the map marks that value <em>ambiguous</em> (§4.4).</p>
+
+<h3>4.2 <code>@</code> boundary rules</h3>
+<p>A mention token starts at an <code>@</code> that is <strong>at start-of-string or immediately preceded by a non-alphanumeric character</strong> (whitespace or punctuation: space, newline, <code>(</code>, <code>[</code>, <code>"</code>, <code>'</code>, <code>&gt;</code>, etc.). An <code>@</code> preceded by a letter or digit is <strong>ignored</strong> — this is the rule that makes <code>foo@bar.com</code>, <code>a@b</code>, and email addresses never trigger.</p>
+
+<h3>4.3 Greedy longest-match after <code>@</code></h3>
+<p>From the character after a valid <code>@</code>, read the following run of name-characters (letters, digits, spaces, and intra-name punctuation like <code>-</code> <code>.</code> <code>'</code>), then find the <strong>longest roster name</strong> (by word count, then char length) whose normalised form equals a normalised prefix of that run <em>ending on a word boundary</em>. Matching is whole-name-only: a token equals a roster name in full or it does not match at all — there is no partial credit.</p>
+<ul>
+  <li><strong>Trailing punctuation</strong> adjacent to the name (<code>,</code> <code>.</code> <code>!</code> <code>?</code> <code>:</code> <code>;</code> <code>)</code> <code>]</code> <code>"</code>) is not part of the name — <code>@Nick Ball,</code> matches <code>Nick Ball</code>.</li>
+  <li><strong>Prefix / longest wins:</strong> if the roster has both <code>Nick</code> and <code>Nick Ball</code>, <code>@Nick Ball</code> ⇒ <code>Nick Ball</code>; <code>@Nick,</code> ⇒ <code>Nick</code>. If the roster has only <code>Nick Ball</code>, a bare <code>@Nick</code> matches nothing (no partial) ⇒ <span class="enum">unknown_name</span>.</li>
+  <li>After a match consumes N words, scanning resumes <em>after</em> the matched span, so one comment can carry several distinct mentions.</li>
+</ul>
+
+<h3>4.4 Decisions on tricky surface</h3>
+<div class="callout"><strong>Markdown / code spans — parse everywhere (do not strip)</strong>
+We deliberately do <strong>not</strong> exclude fenced blocks or inline code from parsing. Rationale: matching is exact-full-name against a small human roster, so a false positive requires an <code>@</code> plus a real teammate's exact full name literally inside code — negligible, and arguably still intent. Stripping markdown would add a parser dependency and a fresh class of boundary bugs (nested fences, unterminated backticks) for near-zero benefit. Keep it simple; revisit only if reviewers object (see open questions).</p></div>
+<ul>
+  <li><strong>Email-like strings</strong> (<code>ballathesenior@gmail.com</code>): the <code>@</code> is preceded by <code>r</code> (alnum) ⇒ ignored by 4.2. Never triggers.</li>
+  <li><strong>Ambiguous roster</strong>: two members whose names normalise identically ⇒ that name resolves to <span class="enum">ambiguous</span>; neither is notified. (Explicit <code>mentioned_user_ids</code> is the disambiguation escape hatch.)</li>
+  <li><strong>Bare <code>@</code></strong> or <code>@</code> followed by no roster match ⇒ token recorded as <span class="enum">unknown_name</span> only if it consumed a plausible name run; a lone <code>@</code> with no following word is silently ignored (no noise).</li>
+</ul>
+
+<h3>4.5 Worked examples <span class="muted">(roster: "Nick Ball", "Nick", "Ada Lovelace", "José Díaz")</span></h3>
+<div class="table-scroll"><table>
+<thead><tr><th>#</th><th>content fragment</th><th>Result</th><th>Why</th></tr></thead>
+<tbody>
+<tr><td>1</td><td><code>Hey @Nick Ball can you look?</code></td><td><span class="pill ok">Nick Ball</span></td><td>Greedy longest: 2-word match beats bare "Nick".</td></tr>
+<tr><td>2</td><td><code>thanks @Nick, done</code></td><td><span class="pill ok">Nick</span></td><td>Comma is trailing punct; "Nick Ball" doesn't match ("," breaks word 2).</td></tr>
+<tr><td>3</td><td><code>ping (@Nick Ball) re: build</code></td><td><span class="pill ok">Nick Ball</span></td><td><code>(</code> is a valid boundary; <code>)</code> is trailing punct.</td></tr>
+<tr><td>4</td><td><code>mail me at ballathesenior@gmail.com</code></td><td><span class="pill">— none —</span></td><td><code>@</code> preceded by alnum ⇒ ignored (email guard).</td></tr>
+<tr><td>5</td><td><code>@Nicky started it</code></td><td><span class="pill warn">unknown_name</span></td><td>"Nicky" ≠ any roster name; no prefix/partial credit.</td></tr>
+<tr><td>6</td><td><code>cc @Ada Lovelace and @Nick</code></td><td><span class="pill ok">Ada Lovelace</span> <span class="pill ok">Nick</span></td><td>Two mentions; scan resumes after each match.</td></tr>
+<tr><td>7</td><td><code>see @José Díaz output</code></td><td><span class="pill ok">José Díaz</span></td><td>NFKC + casefold; diacritics preserved and matched.</td></tr>
+<tr><td>8</td><td><code>`git log --author @Nick Ball`</code></td><td><span class="pill ok">Nick Ball</span></td><td>Code span parsed too (4.4) — accepted low risk.</td></tr>
+<tr><td>9</td><td><code>@Nick @Nick Ball @nick ball</code></td><td><span class="pill ok">Nick</span> <span class="pill ok">Nick Ball</span> (deduped)</td><td>Case-insensitive; 3rd normalises to "nick ball" ⇒ same user, deduped.</td></tr>
+<tr><td>10</td><td><code>email @ me later</code></td><td><span class="pill">— none —</span></td><td>Lone <code>@</code> with no name run ⇒ silently ignored.</td></tr>
+</tbody>
+</table></div>
+
+<h2><span class="n">§5</span> Response schema — appended to existing payload</h2>
+<p>A <code>mentions</code> object is added to each tool's <strong>existing</strong> return value. For <code>add_task_comment</code> it sits beside <code>success</code>/<code>comment</code>; for <code>add_step_comment</code> it is added to the returned row object. Absence of any mention → <code>mentions</code> is still present with empty arrays (predictable shape, no branching for the agent).</p>
+<pre><code>{
+  <span class="cm">/* ...existing fields (success/comment  |  raw step row)... */</span>
+  <span class="new-line"><span class="k">"mentions"</span>: {</span>
+  <span class="new-line">  <span class="k">"notified"</span>: [</span>
+  <span class="new-line">    { <span class="k">"user_id"</span>: <span class="s">"uuid"</span>, <span class="k">"full_name"</span>: <span class="s">"Nick Ball"</span> }</span>
+  <span class="new-line">  ],</span>
+  <span class="new-line">  <span class="k">"unresolved"</span>: [</span>
+  <span class="new-line">    { <span class="k">"token"</span>: <span class="s">"Nicky"</span>, <span class="k">"reason"</span>: <span class="s">"unknown_name"</span> },</span>
+  <span class="new-line">    { <span class="k">"user_id"</span>: <span class="s">"uuid"</span>, <span class="k">"reason"</span>: <span class="s">"not_team_member"</span> }</span>
+  <span class="new-line">  ],</span>
+  <span class="new-line">  <span class="k">"warning"</span>: <span class="s">"1 name could not be matched to a team member: \"Nicky\"."</span></span>
+  <span class="new-line">}</span>
+}</code></pre>
+
+<h3>5.1 Field semantics (information scent)</h3>
+<ul>
+  <li><code>notified[]</code> — exactly the members a notification row was written for. <code>{ user_id, full_name }</code> so the agent can echo who it pinged.</li>
+  <li><code>unresolved[]</code> — every token/id that did <strong>not</strong> produce a notification, each with a machine-stable <span class="enum">reason</span>. Name-derived entries carry <code>token</code> (the raw text after <code>@</code>); id-derived entries carry <code>user_id</code>.</li>
+  <li><code>warning?</code> — present <strong>only</strong> when <code>unresolved</code> is non-empty; one human-readable sentence summarising the misses. Gives the agent a ready-to-surface line without parsing the array.</li>
+</ul>
+
+<h3>5.2 <code>reason</code> enum — stable, exhaustive</h3>
+<div class="table-scroll"><table>
+<thead><tr><th>reason</th><th>Meaning</th><th>Carries</th></tr></thead>
+<tbody>
+<tr><td><span class="enum">unknown_name</span></td><td><code>@token</code> matched no roster name.</td><td><code>token</code></td></tr>
+<tr><td><span class="enum">ambiguous</span></td><td><code>@token</code> matched ≥2 members with identical normalised names.</td><td><code>token</code></td></tr>
+<tr><td><span class="enum">not_team_member</span></td><td>Explicit <code>user_id</code> not in the idea roster.</td><td><code>user_id</code></td></tr>
+<tr><td><span class="enum">opted_out</span></td><td>Resolved member has <code>task_mentions === false</code>.</td><td><code>user_id</code></td></tr>
+<tr><td><span class="enum">self</span></td><td>Resolved to caller (<code>ctx.userId</code> or <code>ctx.ownerUserId</code>).</td><td><code>user_id</code></td></tr>
+<tr><td><span class="enum">step_task_unresolved</span></td><td><em>Step comments only</em> — parent task lookup failed, so no mention could be routed (§5.3, §7).</td><td><code>token</code>/<code>user_id</code></td></tr>
+</tbody>
+</table></div>
+<div class="callout info"><strong>Why surface self / opted_out at all?</strong>
+They aren't errors, but hiding them makes an agent think its ping landed when it didn't. Reporting them (non-fatally, distinct enums) preserves information scent: the agent can see "you can't @-mention yourself" or "that member has mentions off" and stop retrying. <code>warning</code> only counts genuine misses (unknown/ambiguous/not_team_member/step_task_unresolved), so a self-only mention produces empty-ish noise-free output.</p></div>
+
+<h3>5.3 Resolution pipeline order</h3>
+<ol>
+  <li>Parse <code>@names</code> from <code>content</code> → set of (token → user_id | unknown | ambiguous).</li>
+  <li>Union with explicit <code>mentioned_user_ids</code>.</li>
+  <li><strong>Dedupe</strong> by <code>user_id</code>.</li>
+  <li>Drop self (<code>ctx.userId</code>, <code>ctx.ownerUserId</code>) → <span class="enum">self</span>.</li>
+  <li>Drop non-roster ids → <span class="enum">not_team_member</span>.</li>
+  <li>Drop <code>task_mentions === false</code> → <span class="enum">opted_out</span>.</li>
+  <li>Survivors → insert notification rows → <code>notified[]</code>.</li>
+</ol>
+
+<h2><span class="n">§6</span> Step → parent-task resolution</h2>
+<p><code>notifications.task_id</code> is required for the bell to route to a task view, but a step comment only has <code>step_id</code>. Add one lookup:</p>
+<pre><code>ctx.supabase
+  .from(<span class="s">"task_workflow_steps"</span>)
+  .select(<span class="s">"task_id"</span>)
+  .eq(<span class="s">"id"</span>, params.step_id)
+  .maybeSingle()</code></pre>
+<ul>
+  <li><strong>Resolved</strong> → use <code>task_id</code> for the notification row; proceed as task comments do.</li>
+  <li><strong>Null / error</strong> (step deleted, RLS miss, race) → <strong>degrade, don't fail</strong>: the step comment still posts and returns normally; the mention pipeline is skipped; every would-be mention is reported as <span class="enum">step_task_unresolved</span> and <code>warning</code> explains it. This is a fire-and-forget concern, not a data-integrity one.</li>
+</ul>
+<p><code>idea_id</code> is already a param on both tools, so no extra lookup is needed for it.</p>
+
+<h2><span class="n">§7</span> Per-mode client decision (notification insert)</h2>
+<p>Both modes write the notification with the <strong>same request-scoped <code>ctx.supabase</code></strong> already in hand — no second client is constructed.</p>
+<div class="table-scroll"><table>
+<thead><tr><th>Mode</th><th>ctx.supabase</th><th>Insert into <code>notifications</code></th></tr></thead>
+<tbody>
+<tr><td><strong>Local (stdio)</strong></td><td>service-role, bypasses RLS</td><td>Always permitted.</td></tr>
+<tr><td><strong>Remote (HTTP)</strong></td><td>per-user, RLS enforced</td><td>Permitted today: the <code>notifications</code> INSERT policy is <code>with check (true)</code>, so a user may insert a row targeting another <code>user_id</code>.</td></tr>
+</tbody>
+</table></div>
+<div class="callout warn"><strong>Fallback if the RLS policy tightens</strong>
+If <code>notifications</code> INSERT is ever restricted (e.g. <code>with check (auth.uid() = actor_id)</code> would still pass, but a stricter <code>user_id = auth.uid()</code> check would block cross-user inserts), the remote path must escalate to a service-role client for the notification insert only — the comment insert stays per-user. Flagged so the reviewer confirms the current policy is intended to stay permissive. Until then: one client, both modes.</p></div>
+
+<h2><span class="n">§8</span> Notified human's experience</h2>
+<ul>
+  <li><strong>Bell:</strong> a <code>task_mention</code> notification appears in the human's bell, identical to a web @mention — existing rendering and routing are reused, nothing new to build.</li>
+  <li><strong>Click target:</strong> existing <code>task_mention</code> routing lands the human on the <strong>task view</strong> (via <code>idea_id</code> + <code>task_id</code>). Task-comment mentions land precisely on that task's comments. Step-comment mentions also land on the <strong>parent task</strong> — the notification cannot deep-link to the specific workflow step. This slight imprecision is accepted: the human arrives at the right task and can find the step from there. (No new deep-link route in scope.)</li>
+  <li><strong>Actor display:</strong> <code>actor_id = ctx.userId</code> — the <em>posting identity</em>. When an agent posts under a bot identity, the bell shows the bot's name (bots have a <code>users</code> row with <code>full_name</code>), which correctly attributes the comment to its author. We deliberately do <strong>not</strong> substitute <code>ownerUserId</code> here, so "who pinged me" matches "who wrote the comment."</li>
+</ul>
+
+<h2><span class="n">§9</span> Failure-state matrix</h2>
+<div class="table-scroll"><table>
+<thead><tr><th>State</th><th>Comment outcome</th><th>Response <code>mentions</code></th><th>Log</th></tr></thead>
+<tbody>
+<tr><td>No mentions (no <code>@</code>, no ids)</td><td><span class="pill ok">posted</span></td><td><code>notified:[]</code>, <code>unresolved:[]</code>, no <code>warning</code></td><td>none</td></tr>
+<tr><td>All resolve & notify</td><td><span class="pill ok">posted</span></td><td><code>notified:[…]</code>, <code>unresolved:[]</code></td><td>none</td></tr>
+<tr><td>Partial (some miss)</td><td><span class="pill ok">posted</span></td><td><code>notified:[…]</code> + <code>unresolved:[…]</code> + <code>warning</code></td><td>none (misses are data, not errors)</td></tr>
+<tr><td>All unresolved</td><td><span class="pill ok">posted</span></td><td><code>notified:[]</code>, <code>unresolved:[…]</code>, <code>warning</code></td><td>none</td></tr>
+<tr><td>Self / opted_out only</td><td><span class="pill ok">posted</span></td><td><code>notified:[]</code>, <code>unresolved:[{reason:self|opted_out}]</code>, no <code>warning</code></td><td>none</td></tr>
+<tr><td>Notification INSERT fails</td><td><span class="pill ok">posted</span></td><td>Failed member(s) omitted from <code>notified[]</code>; tool still succeeds</td><td><code>logger.error</code> — fire-and-forget, mirrors web</td></tr>
+<tr><td>Step→task lookup fails</td><td><span class="pill ok">posted</span></td><td><code>notified:[]</code>, all mentions <span class="enum">step_task_unresolved</span>, <code>warning</code></td><td><code>logger.warn</code></td></tr>
+<tr><td>Comment INSERT fails</td><td><span class="pill red">throws</span></td><td>n/a — existing behaviour, no mention work attempted</td><td>thrown error (unchanged)</td></tr>
+</tbody>
+</table></div>
+<p class="muted">Invariant: mention handling is strictly downstream of a successful comment insert and can never turn a successful comment into a failure. Only the pre-existing comment-insert error path throws.</p>
+
+<h2><span class="n">§10</span> Tool-description copy (append to existing strings)</h2>
+<h3><code>add_task_comment</code></h3>
+<pre><code><span class="cm">// current:</span> "Add a comment to a board task. Posted as Claude Code bot."
+<span class="cm">// append:</span>
+<span class="new-line"><span class="s">" Any @Full Name in the content that matches an idea team member is detected</span></span>
+<span class="new-line"><span class="s">automatically and sent a task-mention notification (exact full-name match,</span></span>
+<span class="new-line"><span class="s">case-insensitive). Pass mentioned_user_ids to notify members by ID without</span></span>
+<span class="new-line"><span class="s">naming them. Unmatched names never block the comment — they're returned in</span></span>
+<span class="new-line"><span class="s">mentions.unresolved with a reason."</span></span></code></pre>
+<h3><code>add_step_comment</code></h3>
+<pre><code><span class="cm">// append to the existing (long) description:</span>
+<span class="new-line"><span class="s">" @Full Name mentions of idea team members are detected in the content and</span></span>
+<span class="new-line"><span class="s">notified on the step's PARENT TASK (same exact-match rules as</span></span>
+<span class="new-line"><span class="s">add_task_comment); mentioned_user_ids works too. This is independent of the</span></span>
+<span class="new-line"><span class="s">`type` field. Results are reported in mentions.{notified,unresolved} and</span></span>
+<span class="new-line"><span class="s">never affect whether the comment posts."</span></span></code></pre>
+
+<h2><span class="n">§11</span> Open questions for the review gate</h2>
+<ol>
+  <li><strong>Code-span parsing (§4.4):</strong> confirm parse-everywhere is acceptable, vs. stripping fenced/inline code. Recommendation: keep simple.</li>
+  <li><strong>Surface <code>self</code> / <code>opted_out</code> in <code>unresolved</code> (§5.2)?</strong> Design says yes for information scent; alternative is to hide them for a quieter payload.</li>
+  <li><strong>Notifications RLS (§7):</strong> confirm <code>with check (true)</code> is intended to stay, so the remote path can insert cross-user notifications with the per-user client.</li>
+  <li><strong>Step deep-link (§8):</strong> accept landing on the parent task (no step anchor) for step-comment mentions, or is a step-anchored route wanted later?</li>
+</ol>
+
+</div>
+</body>
+</html>
