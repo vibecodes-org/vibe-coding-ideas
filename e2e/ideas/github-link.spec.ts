@@ -65,6 +65,16 @@ test.describe("GitHub link dialog — Paste URL tab (no connection required)", (
 
     const urlInput = dialog.getByPlaceholder(/https:\/\/github\.com/i);
     await urlInput.fill("https://github.com/test-user/manual-repo");
+
+    // Blur the input BEFORE clicking Save. Clicking straight from the focused
+    // input fires blur mid-click, which triggers immediate verification — the
+    // panel appearing between mousedown and mouseup shifts the footer and the
+    // click never lands on Save. Blur first, wait for the panel to settle on a
+    // result (any of the allow-to-save states), then click.
+    await urlInput.press("Tab");
+    await expect(
+      dialog.getByText(/Connect GitHub to verify repos|Couldn't verify right now|Found/i)
+    ).toBeVisible({ timeout: EXPECT_TIMEOUT });
     await dialog.getByRole("button", { name: /^Save/i }).click();
 
     // Dialog closes and the View Repository pill is rendered
