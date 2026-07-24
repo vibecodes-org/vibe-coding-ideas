@@ -29,7 +29,7 @@
 // worst-first summary, and the B10 dedupe check without lifting this session's
 // full state out of the component that actually owns it.
 
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   CircleDot,
   Loader2,
@@ -51,11 +51,13 @@ import {
   CircleDashed,
   ExternalLink,
   Undo2,
+  X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import type { TerminalConnectionState, TerminalStatus } from "@/lib/terminal/connection";
 import { type TerminalPlatform, TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
+import { shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
 import { FIRST_RUN_COPY } from "@/lib/terminal/first-run-copy";
 import { type DockView, type LaunchPhase, resolveDockView } from "@/lib/terminal/first-run-flow";
 import {
@@ -161,8 +163,24 @@ export function TerminalSessionView({
     taskTitle: entry.taskTitle,
     onCapExceeded,
   });
-  const { state, launchPhase, peerDegraded, pair, readOnly, inputEnabled, platform, paired, containerRef, actions } =
-    session;
+  const {
+    state,
+    launchPhase,
+    peerDegraded,
+    helperVersion,
+    pair,
+    readOnly,
+    inputEnabled,
+    platform,
+    paired,
+    containerRef,
+    actions,
+  } = session;
+  // Non-blocking "update your terminal helper" nudge (release-gate rework 2a).
+  // Per-session dismissal only (component-local state, not persisted) — simplest
+  // thing that satisfies "dismissible", and a fresh tab/reload re-evaluating the
+  // gate is exactly the desired behaviour (still-stale helper, nudge again).
+  const [dismissedHelperNudge, setDismissedHelperNudge] = useState(false);
 
   // Deliver this entry's launch exactly once per `launchSeq` bump (B7/B10): a
   // real bus payload goes through `launchFromBus` (carries the resolved
@@ -229,6 +247,9 @@ export function TerminalSessionView({
   const view = resolveDockView(state.status, launchPhase, platform.supported, paired);
   const meta = dockStatusMeta(view, state.errorKind);
   const showStream = state.status === "connected" || state.status === "disconnected";
+  // Only worth showing once there's an actual (live or reconnecting) bridge to
+  // update — a setup/coming-soon/idle panel has nothing to nudge about yet.
+  const showHelperNudge = showStream && !dismissedHelperNudge && shouldShowHelperUpdateNudge(helperVersion);
   const canLaunch =
     state.status === "idle" ||
     state.status === "error" ||
@@ -333,6 +354,33 @@ export function TerminalSessionView({
           )}
         </span>
       </div>
+
+      {/* Helper-update nudge (release-gate rework 2a) — non-blocking, dismissible.
+          Missing version (every pre-2a helper) OR older than
+          MINIMUM_RECOMMENDED_HELPER_VERSION shows this; the session itself is
+          never gated on it. */}
+      {showHelperNudge && (
+        <div className="flex items-center gap-2 border-b border-sky-500/30 bg-sky-500/5 px-3 py-1.5 text-[11px] text-sky-300">
+          <Info className="h-3 w-3 shrink-0" />
+          <span className="flex-1">
+            Update your terminal helper — faster and lighter on the relay.{" "}
+            <a
+              href={platform.downloadUrl ?? TERMINAL_HELPER_DOWNLOAD_URL}
+              className="underline hover:text-sky-200"
+            >
+              Download
+            </a>
+          </span>
+          <button
+            type="button"
+            className="shrink-0 text-sky-400 hover:text-sky-200"
+            onClick={() => setDismissedHelperNudge(true)}
+            aria-label="Dismiss helper update notice"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
 
       {/* Terminal body — the xterm host plus a state overlay. The host stays
           mounted under every state so scrollback is frozen + readable on end. */}

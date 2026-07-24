@@ -26,6 +26,15 @@ const { shouldRegisterProtocolInDev } = require("./proto-reg");
 
 const LAUNCH_PREFIX = "vibecodes://";
 
+// This helper's OWN version — the single source of truth for the update-nudge
+// feature (release-gate rework 2a/2b). Forked through to the bridge as
+// BRIDGE_HELPER_VERSION below; the bridge announces it to the relay, which
+// forwards it to the browser dock (src/lib/terminal/helper-version.ts decides
+// whether that's stale enough to nudge). Bump THIS package.json's `version` on
+// every release — nothing else needs touching for the announced version to
+// follow.
+const HELPER_VERSION = require("./package.json").version;
+
 // ── where the reused bridge + shared modules live ────────────────────────────
 // Packaged: copied into the app bundle under Resources/ via electron-builder
 // `extraResources` (kept OUTSIDE app.asar so node-pty's native pty.node + the
@@ -180,6 +189,9 @@ async function handleLaunchUrl(rawUrl) {
       // → loopback + any non-prod host rejected; dev → loopback allowed. Keeps
       // the two gates (helper here + bridge) in lockstep.
       VIBECODES_PACKAGED: app.isPackaged ? "1" : "",
+      // This helper's version, so the forked bridge announces IT (not its own
+      // bridge/package.json version) to the relay — single source of truth.
+      BRIDGE_HELPER_VERSION: HELPER_VERSION,
     },
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   });

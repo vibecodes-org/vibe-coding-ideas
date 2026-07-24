@@ -41,6 +41,7 @@ import {
   maxCloseReason,
   resolveMs,
 } from "./pairing.js";
+import { shouldPersistActivity, DEFAULT_ACTIVITY_PERSIST_THROTTLE_MS } from "./activity-throttle.js";
 import { authorizeAttach, authorizeControl } from "../../shared/session-token.mjs";
 import {
   encodeAttachedFrame,
@@ -49,6 +50,8 @@ import {
   encodeHeartbeatFrame,
   encodeHeartbeatAckFrame,
   isHeartbeatFrame,
+  encodeBridgeVersionFrame,
+  sanitizeHelperVersion,
 } from "../../shared/control-frames.mjs";
 
 /** Normal WebSocket closure code used for clean, server-initiated session ends. */
@@ -122,6 +125,20 @@ export class TerminalRelay {
     // NOTE (hibernation): do NOT keep session state in instance fields — the DO
     // can be evicted between messages. Live sockets + state.storage are the only
     // durable sources, read on demand below.
+    //
+    // EXCEPTION (MITIGATION 1 — Cloudflare free-tier op budget): two per-wake
+    // SOFT CACHES, deliberately not durable. Losing them on eviction only costs
+    // one extra storage op on the next wake — never a correctness issue:
+    //   - `_lastPersistedActivityAt` throttles how often webSocketMessage
+    //     actually WRITES lastActivityAt + re-arms the alarm (see
+    //     shouldPersistActivity below). Worst case after a fresh wake: one
+    //     extra persisted write.
+    //   - `_sessionStartedAtCache` mirrors `sessionStartedAt`, which is
+    //     write-once for the life of a session (see fetch() attach path) and
+    //     only ever cleared by clearSessionState(), which also resets this
+    //     cache — so it can never go stale while a session is live.
+    this._lastPersistedActivityAt = null;
+    this._sessionStartedAtCache = null;
 
     // App-level HEARTBEAT echo (fix/terminal-dock-heartbeat): answer the browser
     // dock's `{"t":"hb"}` liveness probe with `{"t":"hb-ack"}` WITHOUT waking the
@@ -159,6 +176,11 @@ export class TerminalRelay {
   /** Reconnect grace window in ms (env override → shared default). */
   graceMs() {
     return resolveMs(this.env.TERMINAL_RECONNECT_GRACE_MS, RECONNECT_GRACE_MS);
+  }
+
+  /** Activity-persist throttle window in ms (env override → default). MITIGATION 1. */
+  activityThrottleMs() {
+    return resolveMs(this.env.TERMINAL_ACTIVITY_THROTTLE_MS, DEFAULT_ACTIVITY_PERSIST_THROTTLE_MS);
   }
 
   /** Send a control frame to EVERY live leg (used for peer-reattached). */
@@ -300,10 +322,17 @@ export class TerminalRelay {
     //    start + activity and arm the idle/max alarm.
     const now = Date.now();
     if (state.owner === null) await this.state.storage.put("owner", auth.sub);
-    if ((await this.state.storage.get("sessionStartedAt")) == null) {
+    let sessionStartedAt = await this.state.storage.get("sessionStartedAt");
+    if (sessionStartedAt == null) {
+      sessionStartedAt = now;
       await this.state.storage.put("sessionStartedAt", now);
     }
+    // MITIGATION 1: sessionStartedAt is write-once for the session's life — cache
+    // it now so armAlarm() below (and every later call, until clearSessionState())
+    // can skip re-fetching it.
+    this._sessionStartedAtCache = sessionStartedAt;
     await this.state.storage.put("lastActivityAt", now);
+    this._lastPersistedActivityAt = now;
 
     // 4b) GRACE-WINDOW REATTACH reconciliation. If the session was being HELD open
     //     for a dropped leg (graceDeadline set), this attach may complete the pair
@@ -333,6 +362,39 @@ export class TerminalRelay {
         server.send(encodeAttachedFrame());
       } catch (e) {
         this.log("attached-frame send failed", { session, err: String(e) });
+      }
+    }
+
+    // 5b) HELPER-VERSION ANNOUNCEMENT (release-gate rework 2a). Ordering-independent
+    //     both ways:
+    //       - bridge attaches with a (sanitized) `helperVersion` query param → store
+    //         it durably (attach-ordering independent: outlives this one socket) and,
+    //         if a browser leg is ALREADY live, tell it now.
+    //       - browser attaches → if a bridge version is already on file (the bridge
+    //         attached first, or this is a reattach), tell THIS leg immediately.
+    //     A missing/malformed param is a no-op either way (old bridge, or nothing to
+    //     report yet) — never overwrites a previously-stored version with nothing.
+    if (role === "bridge") {
+      const helperVersion = sanitizeHelperVersion(url.searchParams.get("helperVersion"));
+      if (helperVersion) {
+        await this.state.storage.put("bridgeHelperVersion", helperVersion);
+        const browserPeer = this.findPeer("bridge");
+        if (browserPeer) {
+          try {
+            browserPeer.send(encodeBridgeVersionFrame(helperVersion));
+          } catch (e) {
+            this.log("bridge-version forward failed", { session, err: String(e) });
+          }
+        }
+      }
+    } else if (role === "browser") {
+      const bridgeHelperVersion = await this.state.storage.get("bridgeHelperVersion");
+      if (bridgeHelperVersion) {
+        try {
+          server.send(encodeBridgeVersionFrame(bridgeHelperVersion));
+        } catch (e) {
+          this.log("bridge-version send failed", { session, err: String(e) });
+        }
       }
     }
 
@@ -381,10 +443,20 @@ export class TerminalRelay {
     }
     // If no peer yet the frame is dropped (no buffering) — see slice-1 notes.
 
-    // Record activity + re-arm the idle/max alarm to the next deadline.
+    // Record activity + re-arm the idle/max alarm to the next deadline — but
+    // THROTTLED (MITIGATION 1 — Cloudflare free-tier op budget): unconditionally
+    // doing this per forwarded message was ~5 DO ops/message (1 put + armAlarm's
+    // 3 gets + 1 setAlarm), which blows through the 100k-req/day + 100k-rows/day
+    // free caps at chat speed. `lastActivityAt` only feeds the idle-timeout alarm
+    // (30-min default) — a few seconds of staleness is harmless, so we only
+    // persist + re-arm once per activityThrottleMs() (default 5s). Heartbeats
+    // never reach here (handled above) and are unaffected either way.
     const now = Date.now();
-    await this.state.storage.put("lastActivityAt", now);
-    await this.armAlarm(now);
+    if (shouldPersistActivity(now, this._lastPersistedActivityAt, this.activityThrottleMs())) {
+      this._lastPersistedActivityAt = now;
+      await this.state.storage.put("lastActivityAt", now);
+      await this.armAlarm(now);
+    }
   }
 
   /**
@@ -469,9 +541,20 @@ export class TerminalRelay {
    * deadline wins (coexists with the idle/max caps). Reads lastActivityAt from storage
    * so it stays correct whether called on fresh activity (now === last) or a defensive
    * re-arm (stored last is older).
+   *
+   * MITIGATION 1: `sessionStartedAt` is served from `_sessionStartedAtCache`
+   * when available — it's write-once for a session's life (see fetch()'s
+   * attach path) and the cache is reset only by clearSessionState(), so this
+   * can never observe a stale value while the session is live. `lastActivityAt`
+   * and `graceDeadline` are still read fresh every call: both can change
+   * outside this method (grace is set/cleared in several places; lastActivityAt
+   * is now throttled — see webSocketMessage) so a cache here could go stale.
    */
   async armAlarm(now) {
-    const started = (await this.state.storage.get("sessionStartedAt")) ?? now;
+    if (this._sessionStartedAtCache == null) {
+      this._sessionStartedAtCache = (await this.state.storage.get("sessionStartedAt")) ?? now;
+    }
+    const started = this._sessionStartedAtCache;
     const last = (await this.state.storage.get("lastActivityAt")) ?? now;
     const grace = await this.state.storage.get("graceDeadline");
     const candidates = [last + this.idleMs(), started + this.maxMs()];
@@ -541,7 +624,18 @@ export class TerminalRelay {
 
   /** Release owner binding + lifecycle bookkeeping + grace hold + any pending alarm. */
   async clearSessionState() {
-    await this.state.storage.delete(["owner", "sessionStartedAt", "lastActivityAt", "graceDeadline"]);
+    await this.state.storage.delete([
+      "owner",
+      "sessionStartedAt",
+      "lastActivityAt",
+      "graceDeadline",
+      "bridgeHelperVersion",
+    ]);
     await this.state.storage.deleteAlarm();
+    // MITIGATION 1: invalidate the per-wake soft caches so a LATER attach to
+    // this same (possibly still-warm) DO instance doesn't reuse a stale
+    // sessionStartedAt/throttle timestamp from the session that just ended.
+    this._sessionStartedAtCache = null;
+    this._lastPersistedActivityAt = null;
   }
 }

@@ -38,6 +38,8 @@ import {
   encodePeerReattachedFrame,
   encodeHeartbeatAckFrame,
   isHeartbeatFrame,
+  encodeBridgeVersionFrame,
+  sanitizeHelperVersion,
 } from "../shared/control-frames.mjs";
 
 const NORMAL_CLOSURE = 1000;
@@ -192,7 +194,15 @@ export function startStandinRelay(opts = {}) {
     }
 
     if (!sessions.has(session)) {
-      sessions.set(session, { bridge: null, browser: null, owner: null, idleTimer: null, maxTimer: null, graceTimer: null });
+      sessions.set(session, {
+        bridge: null,
+        browser: null,
+        owner: null,
+        idleTimer: null,
+        maxTimer: null,
+        graceTimer: null,
+        bridgeHelperVersion: null,
+      });
     }
     const legs = sessions.get(session);
 
@@ -226,6 +236,23 @@ export function startStandinRelay(opts = {}) {
     // prompt-carrying bridge defers its PTY spawn until this frame arrives.
     if (role === "bridge" && sendAttachedFrame) {
       try { ws.send(encodeAttachedFrame()); } catch { /* leg already gone */ }
+    }
+
+    // HELPER-VERSION ANNOUNCEMENT (release-gate rework 2a) — mirrors the Cloudflare
+    // DO's fetch() step 5b: ordering-independent both ways. A bridge attaching with
+    // a sanitized `helperVersion` stores it on the session and forwards it to an
+    // already-live browser leg; a browser attaching (before or after the bridge)
+    // gets whatever version is already on file, if any.
+    if (role === "bridge") {
+      const helperVersion = sanitizeHelperVersion(url.searchParams.get("helperVersion"));
+      if (helperVersion) {
+        legs.bridgeHelperVersion = helperVersion;
+        if (legs.browser && legs.browser.readyState === legs.browser.OPEN) {
+          try { legs.browser.send(encodeBridgeVersionFrame(helperVersion)); } catch { /* closing */ }
+        }
+      }
+    } else if (role === "browser" && legs.bridgeHelperVersion) {
+      try { ws.send(encodeBridgeVersionFrame(legs.bridgeHelperVersion)); } catch { /* leg already gone */ }
     }
 
     // GRACE-WINDOW REATTACH reconciliation: if this session was being HELD for a

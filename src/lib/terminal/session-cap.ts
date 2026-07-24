@@ -111,6 +111,10 @@ export function capReachedToastCopy(cap: number = getTerminalSessionCap()): {
 
 export const CAP_REFUSAL_CODE = "cap_exceeded" as const;
 export const RATE_LIMIT_CODE = "rate_limited" as const;
+/** MITIGATION 3 (account-wide daily relay budget breaker — see relay-budget.ts).
+ *  Distinct from both refusals above: this is ACCOUNT-WIDE, not per-user, and
+ *  existing sessions are never affected — only NEW mints are refused. */
+export const DAILY_RELAY_BUDGET_CODE = "daily_relay_budget" as const;
 
 /** The mint route's 409 refusal copy (design §7b, cap number always templated). */
 export function capRefusalMessage(cap: number = getServerTerminalSessionCap()): string {
@@ -120,3 +124,11 @@ export function capRefusalMessage(cap: number = getServerTerminalSessionCap()): 
 /** The mint route's 429 refusal copy — distinct state, never suggests ending a session. */
 export const RATE_LIMIT_MESSAGE =
   "You're starting terminals too fast — wait a moment and try again.";
+
+/**
+ * MITIGATION 3 — the mint route's 429 refusal copy when the ACCOUNT-WIDE daily
+ * relay budget breaker trips (relay-budget.ts). Deliberately reassures the user
+ * their own running session(s) are untouched — this only blocks NEW mints.
+ */
+export const DAILY_RELAY_BUDGET_MESSAGE =
+  "Terminal relay is near its free daily capacity — existing sessions keep running; new sessions available after midnight UTC.";

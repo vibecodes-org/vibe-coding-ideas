@@ -41,7 +41,12 @@ import { useCallback, useEffect, useReducer, useRef, useState, type RefObject } 
 import { toast } from "sonner";
 import { usePostHog } from "posthog-js/react";
 import { logger } from "@/lib/logger";
-import { capReachedToastCopy, getTerminalSessionCap, RATE_LIMIT_MESSAGE } from "@/lib/terminal/session-cap";
+import {
+  capReachedToastCopy,
+  getTerminalSessionCap,
+  RATE_LIMIT_MESSAGE,
+  DAILY_RELAY_BUDGET_MESSAGE,
+} from "@/lib/terminal/session-cap";
 import type { Terminal as XTerm } from "@xterm/xterm";
 import type { FitAddon as XFitAddon } from "@xterm/addon-fit";
 import {
@@ -56,11 +61,13 @@ import {
   encodeHeartbeatFrame,
   encodeResizeMessage,
   initialConnectionState,
+  isBridgeVersionFrame,
   isHeartbeatAckFrame,
   isInputEnabled,
   isPeerDegradedFrame,
   isPeerReattachedFrame,
   mapCloseCode,
+  parseBridgeVersionFrame,
   relayBaseUrl,
   shouldDeclareLinkSilent,
   terminalReducer,
@@ -132,6 +139,13 @@ function reportMintFailure(
   }
   if (body?.code === "rate_limited") {
     toast.error(body.error || RATE_LIMIT_MESSAGE);
+    return;
+  }
+  if (body?.code === "daily_relay_budget") {
+    // MITIGATION 3 — account-wide breaker (relay-budget.ts). Deliberately no
+    // "View my sessions" action: unlike the per-user cap, ending a session of
+    // your own does nothing to free up account-wide headroom.
+    toast.error(body.error || DAILY_RELAY_BUDGET_MESSAGE);
     return;
   }
   toast.error("Couldn't start a terminal session", {
@@ -279,6 +293,13 @@ export interface UseTerminalSessionResult {
   launchPhase: LaunchPhase;
   /** Grace-window "peer dropped, we're holding" hint. */
   peerDegraded: boolean;
+  /**
+   * The bridge's announced helper version (release-gate rework 2a), or null
+   * before one arrives — includes every pre-2a helper, which never announces
+   * one at all. Feed this to `shouldShowHelperUpdateNudge` (src/lib/terminal/
+   * helper-version.ts) to decide whether to show the update notice.
+   */
+  helperVersion: string | null;
   /** The minted session's ids/tokens (null before mint / after end). */
   pair: PairInfo | null;
   readOnly: boolean;
@@ -334,6 +355,12 @@ export function useTerminalSession(
   // it's HOLDING the session. The terminal stays visible; we show a subtle
   // "reconnecting" hint until peer-reattached (or the window expires).
   const [peerDegraded, setPeerDegraded] = useState(false);
+  // Release-gate rework 2a: the bridge's own announced version, forwarded by the
+  // relay as a `bridge-version` control frame (attach-ordering independent — see
+  // connection.ts's doc comment). null until one arrives — includes every
+  // pre-2a helper, which never sends one at all; the dock treats that identically
+  // to "known stale" (src/lib/terminal/helper-version.ts).
+  const [helperVersion, setHelperVersion] = useState<string | null>(null);
 
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<XTerm | null>(null);
@@ -813,6 +840,16 @@ export function useTerminalSession(
             hbArmedRef.current = true;
             return;
           }
+          if (isBridgeVersionFrame(ev.data)) {
+            // The bridge announced its helper version (2a) — never written to the
+            // xterm; the dock decides whether it's stale enough to nudge
+            // (src/lib/terminal/helper-version.ts). A malformed `v` parses to null,
+            // which leaves helperVersion at whatever it already was (never
+            // regresses a known-good value to "unknown").
+            const v = parseBridgeVersionFrame(ev.data);
+            if (v) setHelperVersion(v);
+            return;
+          }
           if (isPeerDegradedFrame(ev.data)) {
             // Our peer (the bridge) dropped; the relay is HOLDING the session. Keep
             // the terminal, show a subtle hint, and bound the wait to the grace window.
@@ -995,6 +1032,7 @@ export function useTerminalSession(
     setLaunchPhase(autoLaunch ? "opening" : "idle");
     requestExpand();
     lastDimsRef.current = "";
+    setHelperVersion(null);
     dispatch({ type: "connect" });
 
     let data: { sessionId: string; browserToken: string; bridgeToken: string; expiresAt: number };
@@ -1100,6 +1138,7 @@ export function useTerminalSession(
       removeLaunchIframe();
       setLaunchPhase("idle");
       lastDimsRef.current = "";
+      setHelperVersion(null);
       // Two dispatches back-to-back, no await between them — React folds them
       // through the reducer IN ORDER against the queued (not the stale
       // closure) state, so "session-created"'s `state.status !== "connecting"`
@@ -1269,6 +1308,7 @@ export function useTerminalSession(
     state,
     launchPhase,
     peerDegraded,
+    helperVersion,
     pair,
     readOnly,
     inputEnabled: isInputEnabled(state, readOnly),

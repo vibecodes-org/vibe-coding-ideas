@@ -22,6 +22,8 @@ import {
   RATE_LIMIT_MESSAGE,
   CAP_REFUSAL_CODE,
   RATE_LIMIT_CODE,
+  DAILY_RELAY_BUDGET_CODE,
+  DAILY_RELAY_BUDGET_MESSAGE,
 } from "@/lib/terminal/session-cap";
 import {
   computeSessionExpiresAt,
@@ -30,6 +32,14 @@ import {
   isSessionExpired,
   rateLimitWindowStart,
 } from "@/lib/terminal/session-registry";
+import {
+  getTerminalDailyBudget,
+  getTerminalBudgetSoftPct,
+  getAssumedRequestsPerSession,
+  estimateDailyRelayRequestSpend,
+  decideRelayBudget,
+  utcDayStart,
+} from "@/lib/terminal/relay-budget";
 
 // Pin the runtime: this handler mints per-request, auth-bound tokens and must never
 // be statically optimized or flipped to the Edge runtime. The pin stays as hygiene,
@@ -97,12 +107,49 @@ export async function POST(req: Request) {
       }
     }
 
+    const nowMs = Date.now();
+
+    // ── (a-1) MITIGATION 3 — ACCOUNT-WIDE daily relay budget breaker. Gated
+    // BEFORE any per-user bookkeeping: if the whole account is already near
+    // Cloudflare's free-tier daily cap there's no point doing the per-user
+    // reap/cap/rate-limit work below. Zero-cost (no Cloudflare API call) — a
+    // conservative estimate from data we already record; see relay-budget.ts
+    // for the estimator's documented assumptions. Existing sessions are
+    // completely unaffected; this only refuses NEW mints. Fails OPEN on a
+    // read error (matches every other best-effort registry read in this
+    // route) — a transient DB hiccup must never itself block every new
+    // terminal session account-wide.
+    const dailyBudget = getTerminalDailyBudget();
+    const softPct = getTerminalBudgetSoftPct();
+    const requestsPerSession = getAssumedRequestsPerSession();
+    const { count: sessionsToday, error: budgetErr } = await supabase
+      .from("terminal_sessions")
+      .select("id", { count: "exact", head: true })
+      .gte("created_at", utcDayStart(nowMs));
+    if (budgetErr) {
+      logger.error("Terminal relay budget read failed", { error: budgetErr.message });
+    }
+    const estimatedSpend = estimateDailyRelayRequestSpend(sessionsToday ?? 0, requestsPerSession);
+    const budgetDecision = decideRelayBudget(estimatedSpend, dailyBudget, softPct);
+    if (!budgetDecision.ok) {
+      logger.warn("Terminal relay daily budget breaker tripped — refusing new mint", {
+        estimatedSpend: budgetDecision.estimatedSpend,
+        dailyBudget: budgetDecision.dailyBudget,
+        softLimit: budgetDecision.softLimit,
+        sessionsToday: sessionsToday ?? 0,
+        requestsPerSession,
+      });
+      return NextResponse.json(
+        { error: DAILY_RELAY_BUDGET_MESSAGE, code: DAILY_RELAY_BUDGET_CODE },
+        { status: 429 },
+      );
+    }
+
     // ── (a) REAP: mark this user's own expired-but-still-"active" rows ended
     // BEFORE trusting any count below (R2 mitigation) — the registry is
     // best-effort and can drift from the relay (e.g. a max-duration close the
     // registry was never told about), so an unreaped stale row would wrongly
     // count against the cap/rate-limit forever.
-    const nowMs = Date.now();
     const { data: activeRows, error: activeErr } = await supabase
       .from("terminal_sessions")
       .select("id, expires_at")

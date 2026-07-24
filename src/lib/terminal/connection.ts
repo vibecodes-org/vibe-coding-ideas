@@ -419,3 +419,32 @@ export function isHeartbeatAckFrame(text: string): boolean {
 export function shouldDeclareLinkSilent(lastInboundAt: number, now: number, armed: boolean): boolean {
   return armed && now - lastInboundAt > LINK_SILENT_AFTER_MS;
 }
+
+// ── helper-version announcement (release-gate rework 2a) ──────────────────────
+//
+// The relay forwards the BRIDGE's own announced version to the BROWSER leg as a
+// `{"t":"bridge-version","v":"x.y.z"}` TEXT control frame — attach-ordering
+// independent (sent whenever the relay learns a version, whichever leg shows up
+// second) — see terminal/relay/src/index.js §5b and terminal/shared/control-frames.mjs.
+// Duplicated (not imported) for the same reason RELAY_CLOSE/isPeerDegradedFrame
+// are: that module is plain .mjs outside the app's TS build graph; connection.test.ts
+// pins both directions byte-for-byte against the real .mjs encoder. The
+// comparison/gating POLICY over the extracted version string lives in
+// src/lib/terminal/helper-version.ts, deliberately decoupled from this framing.
+
+/** The relay is telling us which helper version the bridge announced. */
+export function isBridgeVersionFrame(text: string): boolean {
+  return isControlFrame(text, "bridge-version");
+}
+
+/** Extract the announced version from a bridge-version control frame, or null
+ *  for anything malformed/hostile (a non-string `v`, bad JSON, wrong tag). */
+export function parseBridgeVersionFrame(text: string): string | null {
+  if (!isControlFrame(text, "bridge-version")) return null;
+  try {
+    const msg = JSON.parse(text) as { v?: unknown };
+    return typeof msg.v === "string" ? msg.v : null;
+  } catch {
+    return null;
+  }
+}

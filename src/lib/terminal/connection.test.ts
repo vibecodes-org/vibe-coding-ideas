@@ -12,6 +12,8 @@ import {
   isPeerReattachedFrame,
   encodeHeartbeatFrame,
   isHeartbeatAckFrame,
+  isBridgeVersionFrame,
+  parseBridgeVersionFrame,
   shouldDeclareLinkSilent,
   buildRelayUrl,
   encodeResizeMessage,
@@ -29,6 +31,7 @@ import {
   encodeHeartbeatFrame as encodeSharedHeartbeatFrame,
   encodeHeartbeatAckFrame as encodeSharedHeartbeatAckFrame,
   isHeartbeatFrame as isSharedHeartbeatFrame,
+  encodeBridgeVersionFrame as encodeSharedBridgeVersionFrame,
 } from "../../../terminal/shared/control-frames.mjs";
 
 // Helper: fold a sequence of events through the reducer from the initial state.
@@ -412,6 +415,32 @@ describe("silent-link watchdog (fix/terminal-dock-heartbeat)", () => {
     // The other detectors must not claim the ack either.
     expect(isPeerDegradedFrame(encodeSharedHeartbeatAckFrame())).toBe(false);
     expect(isPeerReattachedFrame(encodeSharedHeartbeatAckFrame())).toBe(false);
+  });
+
+  it("detects the shared bridge-version frame byte-for-byte", () => {
+    const frame = encodeSharedBridgeVersionFrame("0.2.0");
+    expect(isBridgeVersionFrame(frame)).toBe(true);
+    expect(parseBridgeVersionFrame(frame)).toBe("0.2.0");
+  });
+
+  it("the bridge-version detector/parser is strict to its tag (disjoint from every other control frame)", () => {
+    expect(isBridgeVersionFrame(encodeSharedHeartbeatFrame())).toBe(false);
+    expect(isBridgeVersionFrame(encodeSharedHeartbeatAckFrame())).toBe(false);
+    expect(isBridgeVersionFrame(encodeAttachedFrame())).toBe(false);
+    expect(isBridgeVersionFrame(encodePeerDegradedFrame())).toBe(false);
+    expect(isBridgeVersionFrame(encodePeerReattachedFrame())).toBe(false);
+    expect(isBridgeVersionFrame("")).toBe(false);
+    expect(parseBridgeVersionFrame(encodeSharedHeartbeatAckFrame())).toBeNull();
+    expect(parseBridgeVersionFrame(encodeAttachedFrame())).toBeNull();
+    // The other detectors must not claim the bridge-version frame either.
+    expect(isHeartbeatAckFrame(encodeSharedBridgeVersionFrame("0.2.0"))).toBe(false);
+    expect(isPeerDegradedFrame(encodeSharedBridgeVersionFrame("0.2.0"))).toBe(false);
+  });
+
+  it("parseBridgeVersionFrame returns null for a non-string `v` or malformed JSON", () => {
+    expect(parseBridgeVersionFrame('{"t":"bridge-version","v":123}')).toBeNull();
+    expect(parseBridgeVersionFrame('{"t":"bridge-version"}')).toBeNull();
+    expect(parseBridgeVersionFrame('{"t":"bridge-version"' /* truncated */)).toBeNull();
   });
 
   it("shouldDeclareLinkSilent: exactly the threshold is NOT yet dead; strictly beyond is", () => {

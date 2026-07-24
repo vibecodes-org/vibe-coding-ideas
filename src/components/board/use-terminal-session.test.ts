@@ -178,6 +178,43 @@ describe("useTerminalSession", () => {
     expect(window.localStorage.getItem("vibecodes:terminal:paired-v1")).toBe("1");
   });
 
+  it("helperVersion starts null and picks up a bridge-version control frame (release-gate rework 2a)", async () => {
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    expect(result.current.helperVersion).toBeNull();
+
+    act(() => latestSocket().simulateOpen());
+    act(() => {
+      latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", v: "0.2.0" }) });
+    });
+    expect(result.current.helperVersion).toBe("0.2.0");
+
+    // A malformed `v` must never regress a known-good value back to unknown.
+    act(() => {
+      latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", v: 123 }) });
+    });
+    expect(result.current.helperVersion).toBe("0.2.0");
+  });
+
+  it("helperVersion resets to null on a fresh connect() (a new mint may pair with a different bridge)", async () => {
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    act(() => {
+      latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", v: "0.2.0" }) });
+    });
+    expect(result.current.helperVersion).toBe("0.2.0");
+
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    expect(result.current.helperVersion).toBeNull();
+  });
+
   it("read-only gates inputEnabled while connected, independent of status", async () => {
     const { result } = setup();
     await act(async () => {
@@ -312,6 +349,37 @@ describe("useTerminalSession", () => {
 
     expect(result.current.state.status).toBe("error");
     expect(toastError).toHaveBeenCalledWith("You're starting terminals too fast — wait a moment and try again.");
+    expect(onCapExceeded).not.toHaveBeenCalled();
+  });
+
+  it("a 429 daily-relay-budget refusal (MITIGATION 3) shows distinct copy with no action button", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => ({
+        ok: false,
+        status: 429,
+        json: async () => ({
+          error:
+            "Terminal relay is near its free daily capacity — existing sessions keep running; new sessions available after midnight UTC.",
+          code: "daily_relay_budget",
+        }),
+      })),
+    );
+    const onCapExceeded = vi.fn();
+    const requestExpand = vi.fn();
+    const { result } = renderHook(() =>
+      useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand, onCapExceeded }),
+    );
+
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+
+    expect(result.current.state.status).toBe("error");
+    expect(mockSockets).toHaveLength(0);
+    expect(toastError).toHaveBeenCalledWith(
+      "Terminal relay is near its free daily capacity — existing sessions keep running; new sessions available after midnight UTC.",
+    );
     expect(onCapExceeded).not.toHaveBeenCalled();
   });
 

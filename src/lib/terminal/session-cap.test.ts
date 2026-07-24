@@ -12,6 +12,8 @@ import {
   RATE_LIMIT_MESSAGE,
   CAP_REFUSAL_CODE,
   RATE_LIMIT_CODE,
+  DAILY_RELAY_BUDGET_CODE,
+  DAILY_RELAY_BUDGET_MESSAGE,
 } from "./session-cap";
 
 describe("getTerminalSessionCap", () => {
@@ -127,5 +129,18 @@ describe("error codes", () => {
   it("are the exact strings the client branches on", () => {
     expect(CAP_REFUSAL_CODE).toBe("cap_exceeded");
     expect(RATE_LIMIT_CODE).toBe("rate_limited");
+    expect(DAILY_RELAY_BUDGET_CODE).toBe("daily_relay_budget");
+  });
+});
+
+describe("daily-relay-budget copy stays distinct (MITIGATION 3 — account-wide breaker)", () => {
+  it("reassures the user existing sessions are unaffected and never mentions ending one", () => {
+    expect(DAILY_RELAY_BUDGET_MESSAGE.toLowerCase()).not.toContain("end one");
+    expect(DAILY_RELAY_BUDGET_MESSAGE).toContain("existing sessions keep running");
+    expect(DAILY_RELAY_BUDGET_MESSAGE).toContain("midnight UTC");
+  });
+
+  it("is never misclassified as a cap refusal", () => {
+    expect(isCapRefusalMessage(DAILY_RELAY_BUDGET_MESSAGE)).toBe(false);
   });
 });

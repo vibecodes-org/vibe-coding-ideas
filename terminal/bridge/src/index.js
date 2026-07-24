@@ -39,6 +39,8 @@ import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
+import { createOutputBatcher } from "./output-batcher.js";
+import { sanitizeHelperVersion } from "../../shared/control-frames.mjs";
 import { parseLaunchDeepLink, redactDeepLinkToken } from "../../shared/deep-link.mjs";
 import { isRelayHostAllowed } from "../../shared/relay-allowlist.mjs";
 import {
@@ -139,6 +141,28 @@ const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd()
 //      control frame (accept-then-close rejections make ws.onopen meaningless
 //      as an auth signal). No frame in time → exit WITHOUT spawning anything.
 const PROMPT = launched?.prompt || "";
+// ── helper-version announcement (release-gate rework 2a) ─────────────────────
+// Read the RUNNING helper's own version so the relay/dock can nudge stale
+// installs to update. Priority: BRIDGE_HELPER_VERSION (set by the packaged
+// Electron helper — terminal/helper/main.js — reading ITS OWN package.json,
+// forked through as an env var; single source of truth per 2b) falling back to
+// this bridge package's own package.json version for a standalone/dev CLI run
+// (no helper wrapper in that path, so there's nothing else to report). Either
+// way it's re-validated with the SAME strict x.y.z shape guard the relay/dock
+// use, so a malformed value here never reaches the wire as `null` becomes "omit
+// the param entirely" (an old-relay-safe no-op) rather than a garbage frame.
+function resolveHelperVersion() {
+  const fromEnv = sanitizeHelperVersion(process.env.BRIDGE_HELPER_VERSION);
+  if (fromEnv) return fromEnv;
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, "..", "package.json"), "utf8"));
+    return sanitizeHelperVersion(pkg.version);
+  } catch {
+    return null;
+  }
+}
+const HELPER_VERSION = resolveHelperVersion();
+
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 28800);
 const CONNECT_TIMEOUT_MS = Number(args["connect-timeout-ms"] || 30000);
 // How long after the socket opens we wait for the relay's `attached` frame before
@@ -308,6 +332,23 @@ async function main() {
   /** @type {Buffer[]} */
   const preOpenBuffer = [];
 
+  // MITIGATION 2 (Cloudflare free-tier op budget): Nagle-style coalescing for
+  // the PTY -> relay leg. `send` closes over the live `ws`/`shuttingDown`
+  // bindings so it always targets the CURRENT socket (survives reconnects);
+  // if the socket isn't open it falls back to the same preOpenBuffer used
+  // pre-batching, so no bytes are dropped across a reconnect gap. TEXT/control
+  // frames (via outputBatcher.sendControl, unused by this bridge today but
+  // kept for any future outbound control frame) are never buffered.
+  const outputBatcher = createOutputBatcher({
+    send: (chunk, meta) => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        ws.send(chunk, { binary: meta.binary });
+      } else if (!shuttingDown) {
+        preOpenBuffer.push(chunk);
+      }
+    },
+  });
+
   function shutdown(code, why) {
     if (shuttingDown) return;
     shuttingDown = true;
@@ -316,6 +357,9 @@ async function main() {
     clearTimeout(attachTimer);
     clearTimeout(reconnectTimer);
     stopKeepalive();
+    // Flush any coalesced PTY output still buffered so the last bytes before
+    // shutdown (e.g. a command's final output) aren't lost mid-coalesce-window.
+    outputBatcher.flush();
     log("info", "shutting down", { why, bytesOut, bytesIn });
     try { ws?.close(1000, why); } catch { /* ignore */ }
     // Record the code first: with NO PTY (a blocked prompt launch) the event
@@ -406,15 +450,12 @@ async function main() {
       } catch { /* channel already closing */ }
     }
 
-    // PTY -> relay (binary, verbatim).
+    // PTY -> relay (binary, verbatim). Coalesced (MITIGATION 2) — see
+    // outputBatcher above; a quiet line still goes out immediately.
     term.onData((data) => {
       const buf = Buffer.from(data, "utf8");
       bytesOut += buf.length;
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(buf, { binary: true });
-      } else if (!shuttingDown) {
-        preOpenBuffer.push(buf);
-      }
+      outputBatcher.queueBinary(buf);
     });
 
     term.onExit(({ exitCode, signal }) => {
@@ -459,7 +500,8 @@ async function main() {
   if (!PROMPT) spawnPty();
   const url =
     `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
-    `&role=bridge&token=${encodeURIComponent(TOKEN)}`;
+    `&role=bridge&token=${encodeURIComponent(TOKEN)}` +
+    (HELPER_VERSION ? `&helperVersion=${encodeURIComponent(HELPER_VERSION)}` : "");
   const redactedUrl = url.replace(/token=[^&]*/, "token=***");
 
   // The absolute max-duration cap is armed ONCE and spans reconnects (a link drop
@@ -660,15 +702,22 @@ async function main() {
         }, ATTACH_CONFIRM_TIMEOUT_MS);
       }
       // Flush any PTY output produced before the socket opened (incl. bytes buffered
-      // during a reconnect gap) — the pipe resumes seamlessly on re-attach.
+      // during a reconnect gap) — the pipe resumes seamlessly on re-attach. Routed
+      // through the same coalescing batcher (MITIGATION 2) so a catch-up burst
+      // after a reconnect gap doesn't turn into one relay message per chunk.
       while (preOpenBuffer.length > 0) {
-        ws.send(preOpenBuffer.shift(), { binary: true });
+        outputBatcher.queueBinary(preOpenBuffer.shift());
       }
     });
 
     ws.on("close", (code, reasonBuf) => {
       const reason = reasonBuf?.toString?.() || "";
       log("info", "relay closed", { code, reason });
+      // Any bytes still coalescing when the link drops must not be silently
+      // dropped — attempt the flush now (falls back to preOpenBuffer via
+      // outputBatcher's send() if the socket is already unusable, so they
+      // replay on the next open/reconnect).
+      outputBatcher.flush();
       handleRelayClose(code, reason);
     });
 

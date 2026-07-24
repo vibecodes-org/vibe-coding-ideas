@@ -19,6 +19,10 @@ import {
   isHeartbeatFrame,
   encodeHeartbeatAckFrame,
   isHeartbeatAckFrame,
+  encodeBridgeVersionFrame,
+  isBridgeVersionFrame,
+  parseBridgeVersionFrame,
+  sanitizeHelperVersion,
 } from "../shared/control-frames.mjs";
 import { parseControlMessage } from "../bridge/src/framing.js";
 
@@ -69,4 +73,38 @@ test("rejects non-attached / malformed / hostile inputs", () => {
 test("stays disjoint from the resize control namespace (an attached frame is NOT a resize)", () => {
   assert.equal(parseControlMessage(encodeAttachedFrame()), null);
   assert.equal(isAttachedFrame(JSON.stringify({ type: "resize", cols: 80, rows: 24 })), false);
+});
+
+test("bridge-version frame encode ⇄ detect ⇄ parse round-trips and stays disjoint", () => {
+  const frame = encodeBridgeVersionFrame("0.2.0");
+  assert.equal(isBridgeVersionFrame(frame), true);
+  assert.equal(parseBridgeVersionFrame(frame), "0.2.0");
+  // Disjoint from every other control frame.
+  assert.equal(isAttachedFrame(frame), false);
+  assert.equal(isPeerDegradedFrame(frame), false);
+  assert.equal(isPeerReattachedFrame(frame), false);
+  assert.equal(isHeartbeatFrame(frame), false);
+  assert.equal(isHeartbeatAckFrame(frame), false);
+  assert.equal(isBridgeVersionFrame(encodeAttachedFrame()), false);
+  assert.equal(parseControlMessage(frame), null);
+});
+
+test("parseBridgeVersionFrame rejects a malformed/hostile `v` even inside a well-formed frame", () => {
+  assert.equal(parseBridgeVersionFrame(JSON.stringify({ t: "bridge-version", v: "not-a-version" })), null);
+  assert.equal(parseBridgeVersionFrame(JSON.stringify({ t: "bridge-version", v: "0.2.0-beta" })), null);
+  assert.equal(parseBridgeVersionFrame(JSON.stringify({ t: "bridge-version" })), null);
+  assert.equal(parseBridgeVersionFrame(JSON.stringify({ t: "bridge-version", v: 123 })), null);
+  assert.equal(parseBridgeVersionFrame("not json"), null);
+  assert.equal(parseBridgeVersionFrame(null), null);
+});
+
+test("sanitizeHelperVersion accepts only strict x.y.z", () => {
+  assert.equal(sanitizeHelperVersion("0.2.0"), "0.2.0");
+  assert.equal(sanitizeHelperVersion(" 0.2.0 "), "0.2.0");
+  assert.equal(sanitizeHelperVersion(""), null);
+  assert.equal(sanitizeHelperVersion(null), null);
+  assert.equal(sanitizeHelperVersion(undefined), null);
+  assert.equal(sanitizeHelperVersion("0.2"), null);
+  assert.equal(sanitizeHelperVersion("v0.2.0"), null);
+  assert.equal(sanitizeHelperVersion("0.2.0; DROP TABLE users;"), null);
 });

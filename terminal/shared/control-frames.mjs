@@ -49,6 +49,20 @@
 // logs-and-ignores it as an unknown control frame; the dock's watchdog only ARMS
 // on the first hb-ack, so with an old relay (no ack, ever) the pre-watchdog
 // behaviour is unchanged.
+//
+// HELPER-VERSION ANNOUNCEMENT (release-gate rework 2a) adds one more relay->browser
+// TEXT control frame in the SAME `{"t":…}` namespace:
+//   - `{"t":"bridge-version","v":"x.y.z"}` — sent by the relay to the BROWSER leg
+//     only, carrying the version the bridge announced on its own attach (via a
+//     `helperVersion` query param on its relay connect URL — see
+//     terminal/bridge/src/index.js). The relay is a dumb, honest forwarder here:
+//     it validates the shape (strict x.y.z, bounded length) and stores it durably
+//     so it can be re-sent regardless of WHICH leg attaches first (relay/src/index.js
+//     TerminalRelay.fetch), but never interprets the version itself — the
+//     comparison/gating policy is the browser dock's job (src/lib/terminal/
+//     helper-version.ts). Skew-safe: an OLD bridge never sends `helperVersion` (the
+//     relay simply has nothing to forward), and a dock that predates this frame
+//     ignores an unknown `t` tag exactly like it already does for any other one.
 
 /** Detect any control TEXT frame with a given `t` tag. Cheap + strict + bounded. */
 function isControlFrame(text, tag) {
@@ -115,4 +129,50 @@ export function encodeHeartbeatAckFrame() {
 /** @param {unknown} text @returns {boolean} */
 export function isHeartbeatAckFrame(text) {
   return isControlFrame(text, "hb-ack");
+}
+
+/** Strict `x.y.z` (non-negative integers only) shape guard — mirrors
+ *  src/lib/terminal/helper-version.ts's parser so the relay never forwards
+ *  something the dock's gating logic can't parse. */
+const SEMVER_RE = /^\d+\.\d+\.\d+$/;
+
+/** TEXT frame the relay sends the BROWSER leg announcing the bridge's helper version. */
+export function encodeBridgeVersionFrame(version) {
+  return JSON.stringify({ t: "bridge-version", v: version });
+}
+
+/** @param {unknown} text @returns {boolean} */
+export function isBridgeVersionFrame(text) {
+  return isControlFrame(text, "bridge-version");
+}
+
+/**
+ * Extract + validate the version carried by a bridge-version frame. Returns
+ * null for anything not shaped like a strict `x.y.z` string — a malformed or
+ * hostile `v` is treated identically to "no version announced" by the caller.
+ * @param {unknown} text
+ * @returns {string | null}
+ */
+export function parseBridgeVersionFrame(text) {
+  if (!isBridgeVersionFrame(text)) return null;
+  try {
+    const msg = JSON.parse(text);
+    return typeof msg.v === "string" && SEMVER_RE.test(msg.v) ? msg.v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Validate a raw `helperVersion` value (e.g. straight off a URL query param)
+ * before it's ever stored/forwarded — the ONE gate the relay applies so a
+ * hostile/malformed bridge can't smuggle arbitrary text into a control frame
+ * the browser dock parses.
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+export function sanitizeHelperVersion(raw) {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return SEMVER_RE.test(trimmed) ? trimmed : null;
 }
