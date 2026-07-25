@@ -1591,6 +1591,193 @@ describe("completeStep — persona attestation", () => {
 });
 
 // ---------------------------------------------------------------------------
+// completeStep / failStep — compliance notification wiring
+// (docs/design-compliance-alerts.html — notifyComplianceViolation)
+// ---------------------------------------------------------------------------
+
+describe("completeStep / failStep — compliance notification wiring", () => {
+  const OWNER_ID = "00000000-0000-4000-a000-000000000099";
+
+  /** Wires "ideas"/"notifications" table mocks alongside the usual step tables. */
+  function ctxWithIdeaOwner(opts: {
+    stepData: Record<string, unknown>;
+    updatedStep: Record<string, unknown>;
+    ownerId?: string | null;
+    compliancePrefOff?: boolean;
+  }) {
+    const notificationsInserted: unknown[] = [];
+    let ideaLookups = 0;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() => Promise.resolve({ data: opts.stepData, error: null }));
+        chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: opts.updatedStep, error: null }));
+        return chain.chain;
+      }
+      if (table === "ideas") {
+        ideaLookups++;
+        const chain = createChain(null);
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({
+            data:
+              opts.ownerId === null
+                ? null
+                : {
+                    author_id: opts.ownerId ?? OWNER_ID,
+                    author: { notification_preferences: opts.compliancePrefOff ? { compliance_alerts: false } : {} },
+                  },
+            error: null,
+          })
+        );
+        return chain.chain;
+      }
+      if (table === "notifications") {
+        const chain = createChain(null);
+        chain.chain.insert = vi.fn((row: unknown) => {
+          notificationsInserted.push(row);
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    return {
+      ctx,
+      getNotificationsInserted: () => notificationsInserted,
+      getIdeaLookups: () => ideaLookups,
+    };
+  }
+
+  const stepData = {
+    claim_token_hash: TCT.hash,
+    id: STEP_ID,
+    run_id: null,
+    idea_id: IDEA_ID,
+    human_check_required: false,
+    status: "in_progress",
+    bot_id: null,
+    model_tier: "frontier",
+  };
+  const updatedStep = {
+    id: STEP_ID,
+    task_id: TASK_ID,
+    run_id: null,
+    title: "Test Step",
+    agent_role: "developer",
+    status: "completed",
+    output: null,
+    completed_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("completeStep: tier dishonored -> posts one step_compliance notification to the idea owner", async () => {
+    const { ctx, getNotificationsInserted } = ctxWithIdeaOwner({ stepData, updatedStep });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "haiku" });
+
+    const rows = getNotificationsInserted();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      user_id: OWNER_ID,
+      actor_id: USER_ID,
+      type: "step_compliance",
+      idea_id: IDEA_ID,
+      task_id: TASK_ID,
+    });
+  });
+
+  it("completeStep: tier honored -> no notification, no idea lookup", async () => {
+    const { ctx, getNotificationsInserted, getIdeaLookups } = ctxWithIdeaOwner({ stepData, updatedStep });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "fable" });
+
+    expect(getNotificationsInserted()).toHaveLength(0);
+    expect(getIdeaLookups()).toBe(0);
+  });
+
+  it("completeStep: tier dishonored but owner has compliance_alerts=false -> no notification", async () => {
+    const { ctx, getNotificationsInserted } = ctxWithIdeaOwner({ stepData, updatedStep, compliancePrefOff: true });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "haiku" });
+
+    expect(getNotificationsInserted()).toHaveLength(0);
+  });
+
+  it("completeStep: owner is the caller (self) -> STILL notified (no self-skip for compliance events)", async () => {
+    const { ctx, getNotificationsInserted } = ctxWithIdeaOwner({ stepData, updatedStep, ownerId: USER_ID });
+
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "haiku" });
+
+    expect(getNotificationsInserted()).toHaveLength(1);
+  });
+
+  it("failStep: tier dishonored -> posts one step_compliance notification", async () => {
+    const failStepData = {
+      claim_token_hash: TCT.hash,
+      id: STEP_ID,
+      run_id: null,
+      step_order: 2,
+      idea_id: IDEA_ID,
+      bot_id: null,
+      agent_role: "developer",
+      status: "in_progress",
+      model_tier: "frontier",
+    };
+    const failUpdatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: null,
+      title: "Test Step",
+      agent_role: "developer",
+      status: "failed",
+      output: "It broke",
+    };
+    const { ctx, getNotificationsInserted } = ctxWithIdeaOwner({
+      stepData: failStepData,
+      updatedStep: failUpdatedStep,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "haiku", output: "It broke" });
+
+    const rows = getNotificationsInserted();
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ type: "step_compliance", idea_id: IDEA_ID, task_id: TASK_ID });
+  });
+
+  it("failStep: tier honored -> no notification", async () => {
+    const failStepData = {
+      claim_token_hash: TCT.hash,
+      id: STEP_ID,
+      run_id: null,
+      step_order: 2,
+      idea_id: IDEA_ID,
+      bot_id: null,
+      agent_role: "developer",
+      status: "in_progress",
+      model_tier: "frontier",
+    };
+    const failUpdatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: null,
+      title: "Test Step",
+      agent_role: "developer",
+      status: "failed",
+      output: "It broke",
+    };
+    const { ctx, getNotificationsInserted } = ctxWithIdeaOwner({
+      stepData: failStepData,
+      updatedStep: failUpdatedStep,
+    });
+
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "fable", output: "It broke" });
+
+    expect(getNotificationsInserted()).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // claimNextStep — human approval directive tests
 // ---------------------------------------------------------------------------
 

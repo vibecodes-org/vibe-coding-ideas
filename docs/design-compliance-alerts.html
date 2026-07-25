@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>UX Design: Agent Compliance Alerts</title>
+  <style>
+    :root {
+      --bg: #0a0a0a;
+      --surface: #141414;
+      --surface-2: #1e1e1e;
+      --border: #2a2a2a;
+      --text: #e4e4e7;
+      --text-muted: #a1a1aa;
+      --accent: #8b5cf6;
+      --accent-muted: #6d28d9;
+      --green: #10b981;
+      --green-bg: rgba(16, 185, 129, 0.1);
+      --amber: #f59e0b;
+      --amber-bg: rgba(245, 158, 11, 0.1);
+      --red: #ef4444;
+      --red-bg: rgba(239, 68, 68, 0.1);
+      --blue: #3b82f6;
+      --blue-bg: rgba(59, 130, 246, 0.1);
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      padding: 2rem;
+      max-width: 980px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.75rem; margin-bottom: 0.35rem; }
+    .sub { color: var(--text-muted); margin-bottom: 1.5rem; font-size: 0.95rem; }
+    h2 { font-size: 1.3rem; margin: 2.5rem 0 0.75rem; color: var(--accent); border-bottom: 1px solid var(--border); padding-bottom: 0.5rem; }
+    h3 { font-size: 1.02rem; margin: 1.5rem 0 0.6rem; color: var(--text); }
+    p { margin-bottom: 0.75rem; }
+    code { background: var(--surface-2); padding: 0.1rem 0.4rem; border-radius: 4px; font-size: 0.85em; font-family: 'SF Mono', Menlo, monospace; color: #d4d4d8; }
+    pre { background: var(--surface-2); border: 1px solid var(--border); border-radius: 8px; padding: 1rem; overflow-x: auto; margin: 0.75rem 0; }
+    pre code { background: none; padding: 0; font-size: 0.82rem; line-height: 1.5; }
+    ul, ol { margin: 0 0 0.75rem 1.3rem; }
+    li { margin-bottom: 0.3rem; }
+    a { color: var(--accent); }
+    strong { color: #fff; }
+    .callout { background: var(--surface); border: 1px solid var(--border); border-left: 3px solid var(--accent); border-radius: 6px; padding: 0.9rem 1.1rem; margin: 1rem 0; }
+    .callout.amber { border-left-color: var(--amber); }
+    .callout.green { border-left-color: var(--green); }
+    .lede { background: linear-gradient(180deg, rgba(139,92,246,0.08), transparent); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.25rem; margin-bottom: 1rem; }
+
+    /* ---- Bell mock ---- */
+    .bell { width: 320px; max-width: 100%; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; overflow: hidden; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+    .bell-head { display:flex; align-items:center; justify-content:space-between; padding: 0.6rem 0.75rem; border-bottom: 1px solid var(--border); font-size: 0.8rem; font-weight: 600; }
+    .bell-tabs { display:flex; border-bottom: 1px solid var(--border); font-size: 0.75rem; }
+    .bell-tab { flex:1; text-align:center; padding: 0.45rem; color: var(--text-muted); }
+    .bell-tab.active { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+    .nrow { display:flex; gap:0.6rem; padding: 0.65rem 0.75rem; align-items:flex-start; }
+    .nrow.unread { background: rgba(139,92,246,0.06); }
+    .nrow + .nrow { border-top: 1px solid var(--border); }
+    .av { position: relative; width: 30px; height: 30px; border-radius: 50%; background: var(--accent-muted); color:#fff; display:flex; align-items:center; justify-content:center; font-size: 0.65rem; font-weight:700; flex-shrink:0; margin-top:2px; }
+    .badge-shield { position:absolute; right:-4px; bottom:-4px; width:16px; height:16px; border-radius:50%; background: var(--amber); border:2px solid var(--surface); display:flex; align-items:center; justify-content:center; }
+    .badge-shield svg { width:9px; height:9px; }
+    .ntext { flex:1; min-width:0; font-size: 0.82rem; }
+    .ntext .idea { font-weight:600; color:#fff; }
+    .ntext .who { font-weight:600; color:#fff; }
+    .ntime { color: var(--text-muted); font-size: 0.72rem; margin-top: 2px; }
+    .dot { width:8px; height:8px; border-radius:50%; background: var(--accent); flex-shrink:0; margin-top:6px; }
+
+    /* dialog copy card */
+    .dlg { background: var(--surface); border:1px solid var(--border); border-radius:10px; padding: 0.9rem 1rem; }
+    .dlg-title { font-weight:700; margin-bottom:0.5rem; font-size:0.9rem; }
+    .attest { display:flex; align-items:center; gap:0.5rem; font-size:0.82rem; padding: 0.3rem 0; }
+    .pill { font-size:0.68rem; font-weight:700; padding: 0.1rem 0.45rem; border-radius: 999px; }
+    .pill.bad { background: var(--red-bg); color: #fca5a5; }
+    .pill.ok { background: var(--green-bg); color: #6ee7b7; }
+
+    .pair { display:grid; grid-template-columns: 320px 1fr; gap: 1.25rem; align-items:start; margin: 1rem 0 1.75rem; }
+    @media (max-width: 720px){ .pair { grid-template-columns: 1fr; } }
+    .pair .label { font-size: 0.72rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 0.5rem; }
+
+    /* settings mock */
+    .settings { width: 380px; max-width:100%; background: var(--surface); border:1px solid var(--border); border-radius:10px; padding: 1rem; }
+    .set-group { font-size: 0.68rem; text-transform:uppercase; letter-spacing:0.06em; color: var(--text-muted); margin-bottom: 0.6rem; }
+    .set-row { display:flex; align-items:center; justify-content:space-between; padding: 0.45rem 0; font-size: 0.85rem; }
+    .set-row.new { background: rgba(245,158,11,0.06); margin: 0.2rem -0.5rem; padding: 0.5rem; border-radius: 6px; }
+    .sw { width: 34px; height: 20px; border-radius: 999px; background: var(--accent); position:relative; flex-shrink:0; }
+    .sw::after { content:''; position:absolute; top:2px; right:2px; width:16px; height:16px; border-radius:50%; background:#fff; }
+    .sw.off { background: var(--surface-2); }
+    .sw.off::after { left:2px; right:auto; }
+
+    table { width:100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.85rem; }
+    th, td { text-align:left; padding: 0.55rem 0.7rem; border-bottom: 1px solid var(--border); vertical-align: top; }
+    th { color: var(--text-muted); font-weight:600; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.04em; }
+    td code { font-size: 0.78rem; }
+    .tag { display:inline-block; font-size:0.7rem; padding:0.1rem 0.4rem; border-radius:4px; background: var(--surface-2); color: var(--text-muted); }
+  </style>
+</head>
+<body>
+  <h1>Agent Compliance Alerts — UX Design</h1>
+  <p class="sub">Task e47a2d48 · step 2 of 6 · builds on Requirements (step 1). Next step is your review gate.</p>
+
+  <div class="lede">
+    <strong>The gist:</strong> today, when a workflow step runs on the wrong model or ignores its assigned
+    persona, it's recorded silently — you only see it if you open that step's dialog. This adds a
+    <strong>bell notification to you (the idea owner)</strong> the moment a violation is recorded, plus a
+    settings toggle to turn it off. Two thin UI touches; the rest is server-side in the MCP tools.
+  </div>
+
+  <h2>1 · What you'll see</h2>
+
+  <p>A new notification lands in your bell's <strong>Mine</strong> tab, with a shield icon marking it as a
+  compliance alert (not colour alone — the shield + wording both carry the meaning). Clicking it opens the
+  board with that task, where the step dialog shows exactly what went wrong.</p>
+
+  <div class="callout amber">
+    <strong>Key trade-off, up front.</strong> The <code>notifications</code> table stores only references
+    (idea, task) — no free-text column, and it doesn't even load the step title or model names. So the
+    <strong>bell line is one generic sentence</strong>; the <strong>precise "haiku instead of opus"
+    detail lives in the step dialog</strong> you land on after clicking. We keep the specifics exactly where
+    the data already exists, and avoid a schema change to carry text on every notification row.
+    (Alternative — adding a JSON column to notifications — rejected: too much machinery for one feature.)
+  </div>
+
+  <h3>The three violation cases → what the bell says vs. what the dialog shows</h3>
+
+  <!-- Case 1: wrong model -->
+  <div class="pair">
+    <div>
+      <div class="label">Bell — wrong model</div>
+      <div class="bell">
+        <div class="bell-head"><span>Notifications</span><span style="color:var(--text-muted);font-weight:500;">Mark all read</span></div>
+        <div class="bell-tabs"><div class="bell-tab active">Mine</div><div class="bell-tab">Agents</div></div>
+        <div class="nrow unread">
+          <div class="av">SC
+            <span class="badge-shield"><svg viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>
+          </div>
+          <div class="ntext">
+            <span class="who">Scout</span> completed a step that didn't follow its assigned agent on <span class="idea">VibeCodes</span>
+            <div class="ntime">2m ago</div>
+          </div>
+          <div class="dot"></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="label">Step dialog (after click) — the specifics</div>
+      <div class="dlg">
+        <div class="dlg-title">Implementation · QA Testing step</div>
+        <div class="attest"><span class="pill bad">Model</span> Ran on <strong>haiku</strong> instead of <strong>opus</strong> (frontier tier)</div>
+        <div class="attest"><span class="pill ok">Persona</span> Used verbatim</div>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin:0.5rem 0 0;">Copy spec: <em>"Step 'QA Testing' ran on the wrong model (haiku instead of opus)."</em></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Case 2: wrong persona -->
+  <div class="pair">
+    <div>
+      <div class="label">Bell — wrong persona</div>
+      <div class="bell">
+        <div class="bell-head"><span>Notifications</span><span style="color:var(--text-muted);font-weight:500;">Mark all read</span></div>
+        <div class="bell-tabs"><div class="bell-tab active">Mine</div><div class="bell-tab">Agents</div></div>
+        <div class="nrow unread">
+          <div class="av">CO
+            <span class="badge-shield"><svg viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>
+          </div>
+          <div class="ntext">
+            <span class="who">Compass</span> completed a step that didn't follow its assigned agent on <span class="idea">VibeCodes</span>
+            <div class="ntime">just now</div>
+          </div>
+          <div class="dot"></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="label">Step dialog (after click) — the specifics</div>
+      <div class="dlg">
+        <div class="dlg-title">UX Design step</div>
+        <div class="attest"><span class="pill ok">Model</span> Ran on opus (frontier tier) — honored</div>
+        <div class="attest"><span class="pill bad">Persona</span> Assigned persona <strong>not used</strong> (reported "none")</div>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin:0.5rem 0 0;">Copy spec: <em>"Step 'UX Design' ran without its assigned persona."</em></p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Case 3: both -->
+  <div class="pair">
+    <div>
+      <div class="label">Bell — both violated (still ONE row)</div>
+      <div class="bell">
+        <div class="bell-head"><span>Notifications</span><span style="color:var(--text-muted);font-weight:500;">Mark all read</span></div>
+        <div class="bell-tabs"><div class="bell-tab active">Mine</div><div class="bell-tab">Agents</div></div>
+        <div class="nrow unread">
+          <div class="av">AT
+            <span class="badge-shield"><svg viewBox="0 0 24 24" fill="none" stroke="#1a1a1a" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg></span>
+          </div>
+          <div class="ntext">
+            <span class="who">Atlas</span> completed a step that didn't follow its assigned agent on <span class="idea">VibeCodes</span>
+            <div class="ntime">5m ago</div>
+          </div>
+          <div class="dot"></div>
+        </div>
+      </div>
+    </div>
+    <div>
+      <div class="label">Step dialog (after click) — the specifics</div>
+      <div class="dlg">
+        <div class="dlg-title">Implementation step</div>
+        <div class="attest"><span class="pill bad">Model</span> Ran on <strong>sonnet</strong> instead of <strong>opus</strong></div>
+        <div class="attest"><span class="pill bad">Persona</span> Assigned persona not used</div>
+        <p style="font-size:0.78rem;color:var(--text-muted);margin:0.5rem 0 0;">Copy spec: <em>"Step 'Implementation' ran on the wrong model and without its assigned persona."</em></p>
+      </div>
+    </div>
+  </div>
+
+  <div class="callout">
+    <strong>Why the actor is an agent, not a person.</strong> The row's avatar is the agent that completed
+    the step (the "actor"), so at a glance you see <em>which</em> agent misbehaved — the shield badge over
+    the avatar signals it's a system compliance alert, not a normal person-driven notification. The wording
+    reads correctly with an agent name in the lead slot.
+  </div>
+
+  <h3>Settings toggle</h3>
+  <div class="pair">
+    <div>
+      <div class="settings">
+        <div class="set-group">In-app notifications</div>
+        <div class="set-row"><span>Task mentions</span><span class="sw"></span></div>
+        <div class="set-row"><span>Comment mentions</span><span class="sw"></span></div>
+        <div class="set-row"><span>New discussions &amp; replies</span><span class="sw"></span></div>
+        <div class="set-row"><span>Collaboration requests</span><span class="sw"></span></div>
+        <div class="set-row new"><span>Agent compliance alerts</span><span class="sw"></span></div>
+      </div>
+    </div>
+    <div>
+      <p>New row <strong>"Agent compliance alerts"</strong> is appended to the bottom of the in-app list —
+      grouped with its peers, below the higher-frequency mention/comment toggles (governance signals are
+      rarer, so they sit last). <strong>Default ON.</strong></p>
+      <p style="font-size:0.85rem;color:var(--text-muted);">One line in <code>inAppLabels</code> in
+      <code>notification-settings.tsx</code>:
+      <code>compliance_alerts: "Agent compliance alerts"</code>. The toggle reads/writes the jsonb
+      <code>notification_preferences.compliance_alerts</code> — no schema change. Fully keyboard-reachable
+      via the existing <code>Switch</code> component (44px hit area).</p>
+    </div>
+  </div>
+
+  <h2>2 · Server flow</h2>
+
+  <p>The check runs in <strong>both</strong> <code>completeStep</code> and <code>failStep</code> in
+  <code>mcp-server/src/tools/workflows.ts</code> (so it covers stdio and remote MCP modes), placed right
+  after <code>updateFields</code> is written — beside the existing <code>tierHonored === false</code>
+  branch that already auto-posts a step comment. The freshly computed
+  <code>tierHonored</code> / <code>personaHonored</code> locals are already in scope; no recomputation.</p>
+
+  <h3>The one extra lookup</h3>
+  <p>The step row already carries <code>idea_id</code> and <code>task_id</code>, but <strong>not</strong> the
+  idea owner or their prefs (and the step title isn't loaded — fine, generic copy doesn't need it). So one
+  new query fetches owner + preferences by <code>idea_id</code>:</p>
+  <pre><code>const { data: idea } = await ctx.supabase
+  .from("ideas")
+  .select("author_id, author:users!ideas_author_id_fkey(notification_preferences)")
+  .eq("id", step.idea_id)
+  .maybeSingle();</code></pre>
+
+  <h3>Gate + insert (fire-and-forget)</h3>
+  <pre><code>// only explicit violations — nulls (old clients) never alert
+const violated = tierHonored === false || personaHonored === false;
+const prefs = idea?.author?.notification_preferences;
+const enabled = prefs?.compliance_alerts !== false;   // absent key = ON
+const ownerId = idea?.author_id;
+
+if (violated &amp;&amp; enabled &amp;&amp; ownerId &amp;&amp; ownerId !== ctx.userId) {
+  const { error } = await ctx.supabase.from("notifications").insert({
+    user_id: ownerId,
+    actor_id: ctx.userId,          // the agent that completed the step
+    type: "step_compliance",
+    idea_id: step.idea_id,
+    task_id: step.task_id,
+  });
+  if (error) logger.error("compliance alert insert failed", { error: error.message, stepId: params.step_id });
+}</code></pre>
+
+  <p>Mirrors <code>mention-notify.ts</code> exactly: never throws, <code>logger.error</code> on failure, one
+  lookup + one insert. It runs strictly after the successful step update, so a failed insert can never fail
+  or delay the completion. Deep-link is produced at render time by the existing
+  <code>buildNotificationUrl</code> (<code>task_id</code> present → <code>/ideas/{id}/board?taskId={taskId}</code>)
+  — zero routing change.</p>
+
+  <div class="callout green">
+    <strong>Notification body: rendered, not stored.</strong> Like <code>task_mention</code>, the bell builds
+    copy client-side keyed on <code>type</code> (add <code>step_compliance</code> to <code>iconMap</code> →
+    <code>ShieldAlert</code> and <code>messageMap</code> → the generic sentence). Nothing extra is written to
+    the row. The precise model/persona detail is read live from the step's attestation fields in the dialog.
+  </div>
+
+  <h2>3 · Migration</h2>
+  <p>One new file, <code>supabase/migrations/00143_step_compliance_notification_type.sql</code> (next free
+  number after <code>00142_step_persona_attestation.sql</code>):</p>
+  <pre><code>-- Add 'step_compliance' to the notification_type enum
+ALTER TYPE notification_type ADD VALUE IF NOT EXISTS 'step_compliance';</code></pre>
+
+  <div class="callout amber">
+    <strong>Keep this file to the single statement — no other DDL.</strong> Postgres can't run
+    <code>ALTER TYPE … ADD VALUE</code> inside a transaction block on older versions. Precedent migrations
+    <code>00026</code> (task_mention) and <code>00053</code> (comment_mention) run it bare, no
+    <code>BEGIN/COMMIT</code>. Follow that: don't mix a transactional statement into this migration.
+  </div>
+
+  <p>Also update the <code>type</code> union on the <code>notifications</code> Row/Insert/Update in
+  <code>src/types/database.ts</code> (manually maintained). The preference
+  <code>compliance_alerts</code> is <strong>jsonb — no column migration</strong>; new users get ON via the
+  absent-key default at read time. Optionally add <code>"compliance_alerts": true</code> to the users
+  default jsonb for tidiness (see open question 2) — not required for correctness.</p>
+
+  <h2>4 · Failure &amp; compatibility</h2>
+  <table>
+    <thead><tr><th>Scenario</th><th>Behaviour</th></tr></thead>
+    <tbody>
+      <tr><td>Toggle off (<code>compliance_alerts: false</code>)</td><td>Gate is false → no insert. Silent, as intended.</td></tr>
+      <tr><td>Old client / no attestation (<code>tier_honored</code> &amp; <code>persona_honored</code> both null)</td><td><code>=== false</code> gate is false → <strong>no alert</strong>. This is the deliberately-deferred null case working correctly — avoids transition-period alert fatigue.</td></tr>
+      <tr><td>Notification insert fails</td><td>Swallowed &amp; logged; the step completion already succeeded and returns normally.</td></tr>
+      <tr><td>Actor is the owner (owner ran their own step)</td><td><code>ownerId !== ctx.userId</code> guard skips self-notification.</td></tr>
+      <tr><td>Deep-link to a since-deleted task</td><td>Lands on the board; missing <code>taskId</code> is handled by existing board behaviour — no crash.</td></tr>
+      <tr><td>Bell renders a mixed list including the new type</td><td>New keys added to <code>iconMap</code>/<code>messageMap</code>; if ever unmatched, the existing <code>"interacted with"</code> fallback prevents a crash.</td></tr>
+      <tr><td>fail → rework → complete both record a violation</td><td>Two rows fire — each is a genuine event; no dedupe, per requirements.</td></tr>
+      <tr><td>375px width</td><td>Bell dropdown is already <code>w-[calc(100vw-2rem)]</code> on mobile; the single-line copy wraps cleanly, shield badge and unread dot stay aligned.</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5 · Open questions (for your review gate)</h2>
+  <ol>
+    <li><strong>Avatar treatment.</strong> Show the small <span class="tag">ShieldAlert</span> badge overlaid
+      on the agent avatar (my recommendation — signals "system compliance alert" at a glance), or keep a
+      plain avatar and rely on wording alone?</li>
+    <li><strong>Default backfill.</strong> Rely purely on absent-key = ON at read time (my recommendation —
+      zero backfill), or also add <code>"compliance_alerts": true</code> to the users default jsonb in a
+      one-line update for cleanliness?</li>
+  </ol>
+
+</body>
+</html>

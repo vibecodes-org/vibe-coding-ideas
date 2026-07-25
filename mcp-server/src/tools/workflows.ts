@@ -16,6 +16,7 @@ import {
   type ApprovalNoteRow,
 } from "../lib/step-comments";
 import { notifyMentions } from "../lib/mention-notify";
+import { notifyComplianceViolation } from "../lib/compliance-notify";
 import { stepTaskUnresolvedMentions } from "../lib/mentions";
 import { mentionedUserIdsSchema } from "./comments";
 
@@ -1193,6 +1194,16 @@ export async function completeStep(
     });
   }
 
+  // Compliance alert to the idea owner (docs/design-compliance-alerts.html) —
+  // fires on either an honored-false tier or persona; no-ops otherwise. Uses
+  // the tierHonored/personaHonored locals already computed above.
+  await notifyComplianceViolation(ctx, {
+    ideaId: step.idea_id,
+    taskId: updated.task_id,
+    tierHonored,
+    personaHonored,
+  });
+
   // Check if all steps in the run are done
   let runComplete = false;
   if (step.run_id && newStatus === "completed") {
@@ -1369,6 +1380,16 @@ export async function failStep(
       content: tierMismatchSentence(step.model_tier as string, executedModel as string),
     });
   }
+
+  // Compliance alert to the idea owner (docs/design-compliance-alerts.html) —
+  // fires on either an honored-false tier or persona; no-ops otherwise. Uses
+  // the tierHonored/personaHonored locals already computed above.
+  await notifyComplianceViolation(ctx, {
+    ideaId: step.idea_id,
+    taskId: updated.task_id,
+    tierHonored,
+    personaHonored,
+  });
 
   // Cascade rejection: reset all steps from the target step onward
   let stepsReset = 0;

@@ -34,6 +34,7 @@ export type Database = {
             collaboration_responses: boolean;
             discussion_mentions: boolean;
             discussions: boolean;
+            compliance_alerts?: boolean;
           };
           default_board_columns: { title: string; is_done_column: boolean }[] | null;
           model_tier_map: { frontier?: string; standard?: string; cheap?: string } | null;
@@ -69,6 +70,7 @@ export type Database = {
             collaboration_responses: boolean;
             discussion_mentions: boolean;
             discussions: boolean;
+            compliance_alerts?: boolean;
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
@@ -104,6 +106,7 @@ export type Database = {
             collaboration_responses: boolean;
             discussion_mentions: boolean;
             discussions: boolean;
+            compliance_alerts?: boolean;
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
@@ -1401,7 +1404,8 @@ export type Database = {
             | "collaboration_response"
             | "discussion"
             | "discussion_reply"
-            | "discussion_mention";
+            | "discussion_mention"
+            | "step_compliance";
           idea_id: string | null;
           comment_id: string | null;
           task_id: string | null;
@@ -1427,7 +1431,8 @@ export type Database = {
             | "collaboration_response"
             | "discussion"
             | "discussion_reply"
-            | "discussion_mention";
+            | "discussion_mention"
+            | "step_compliance";
           idea_id?: string | null;
           comment_id?: string | null;
           task_id?: string | null;
@@ -1453,7 +1458,8 @@ export type Database = {
             | "collaboration_response"
             | "discussion"
             | "discussion_reply"
-            | "discussion_mention";
+            | "discussion_mention"
+            | "step_compliance";
           idea_id?: string | null;
           comment_id?: string | null;
           task_id?: string | null;
@@ -2912,7 +2918,8 @@ export type Database = {
         | "collaboration_response"
         | "discussion"
         | "discussion_reply"
-        | "discussion_mention";
+        | "discussion_mention"
+        | "step_compliance";
       collaboration_request_status: "pending" | "accepted" | "declined";
       discussion_status: "open" | "resolved" | "ready_to_convert" | "converted" | "archived";
     };

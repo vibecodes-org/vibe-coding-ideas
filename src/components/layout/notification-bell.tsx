@@ -13,6 +13,7 @@ import {
   AtSign,
   UserPlus,
   UserCheck,
+  ShieldAlert,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
@@ -39,6 +40,7 @@ const iconMap = {
   discussion: MessageSquare,
   discussion_reply: MessageSquare,
   discussion_mention: AtSign,
+  step_compliance: ShieldAlert,
 };
 
 const messageMap = {
@@ -54,6 +56,7 @@ const messageMap = {
   discussion: "started a discussion on",
   discussion_reply: "replied to a discussion on",
   discussion_mention: "mentioned you in a discussion on",
+  step_compliance: "completed a step that didn't follow its assigned agent on",
 };
 
 const agentMessageMap: Record<string, string> = {
@@ -229,12 +232,19 @@ export function NotificationBell() {
 
     const content = (
       <>
-        <Avatar className="mt-0.5 h-7 w-7 shrink-0">
-          <AvatarImage src={avatarUrl ?? undefined} />
-          <AvatarFallback className={`text-[10px] ${agentColors ? `${agentColors.avatarBg} ${agentColors.avatarText}` : ""}`}>
-            {initials}
-          </AvatarFallback>
-        </Avatar>
+        <div className="relative mt-0.5 shrink-0">
+          <Avatar className="h-7 w-7">
+            <AvatarImage src={avatarUrl ?? undefined} />
+            <AvatarFallback className={`text-[10px] ${agentColors ? `${agentColors.avatarBg} ${agentColors.avatarText}` : ""}`}>
+              {initials}
+            </AvatarFallback>
+          </Avatar>
+          {notification.type === "step_compliance" && (
+            <span className="absolute -bottom-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full border-2 border-background bg-amber-500">
+              <ShieldAlert className="h-2 w-2 text-amber-950" />
+            </span>
+          )}
+        </div>
         <div className="flex-1 min-w-0">
           <p className="text-sm">
             {isAgent && botName && (

@@ -34,6 +34,7 @@ const inAppLabels: Record<string, string> = {
   discussion_mentions: "Discussion mentions",
   collaboration_requests: "Collaboration requests",
   collaboration_responses: "Collaboration request responses",
+  compliance_alerts: "Agent compliance alerts",
 };
 
 export function NotificationSettings({
@@ -49,6 +50,9 @@ export function NotificationSettings({
     ...preferences,
     // Ensure email_notifications has a default for users who haven't been backfilled yet
     email_notifications: preferences.email_notifications ?? true,
+    // compliance_alerts is read-time default ON (docs/design-compliance-alerts.html §3) —
+    // no migration backfill, so absent-key must render as checked, not unchecked.
+    compliance_alerts: preferences.compliance_alerts ?? true,
   });
   const [isPending, startTransition] = useTransition();
 
@@ -137,6 +141,7 @@ export function NotificationSettings({
               setPrefs({
                 ...preferences,
                 email_notifications: preferences.email_notifications ?? true,
+                compliance_alerts: preferences.compliance_alerts ?? true,
               });
               setOpen(false);
             }}

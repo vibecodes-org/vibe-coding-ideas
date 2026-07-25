@@ -60,7 +60,8 @@ describe("Notification types", () => {
       | "collaboration_response"
       | "discussion"
       | "discussion_reply"
-      | "discussion_mention";
+      | "discussion_mention"
+      | "step_compliance";
     expectTypeOf<RowType>().toEqualTypeOf<ExpectedType>();
   });
 
@@ -78,7 +79,8 @@ describe("Notification types", () => {
       | "collaboration_response"
       | "discussion"
       | "discussion_reply"
-      | "discussion_mention";
+      | "discussion_mention"
+      | "step_compliance";
     expectTypeOf<InsertType>().toEqualTypeOf<ExpectedType>();
   });
 
