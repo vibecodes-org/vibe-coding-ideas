@@ -154,6 +154,74 @@ describe("instrumentServer", () => {
     expect(logEntries[0].idea_id).toBeNull();
   });
 
+  // bot_id records the agent a call explicitly names, which is how per-persona
+  // analysis survives the subagent protocol: ctx.userId only carries a bot id
+  // when set_agent_identity was called, and the protocol tells clients not to.
+  it("extracts bot_id from an explicit agent_id arg", async () => {
+    const { server, registeredTools } = createMockServer();
+    const logEntries: ToolLogEntry[] = [];
+
+    const instrumented = instrumentServer(
+      server,
+      () => mockContext,
+      (entry) => logEntries.push(entry),
+      "stdio"
+    );
+
+    const handler = vi.fn(async () => ({ content: [] }));
+    instrumented.tool("get_agent_skill_content", "desc", {}, handler);
+
+    const wrappedHandler = registeredTools.get("get_agent_skill_content")!;
+    await wrappedHandler({ agent_id: "bot-42", skill_name: "x" }, {});
+
+    expect(logEntries[0].bot_id).toBe("bot-42");
+  });
+
+  it("falls back to a bot_id arg, and is null when the call names no agent", async () => {
+    const { server, registeredTools } = createMockServer();
+    const logEntries: ToolLogEntry[] = [];
+
+    const instrumented = instrumentServer(
+      server,
+      () => mockContext,
+      (entry) => logEntries.push(entry),
+      "stdio"
+    );
+
+    const handler = vi.fn(async () => ({ content: [] }));
+    instrumented.tool("set_agent_identity", "desc", {}, handler);
+    instrumented.tool("plain_tool", "desc", {}, handler);
+
+    await registeredTools.get("set_agent_identity")!({ bot_id: "bot-7" }, {});
+    await registeredTools.get("plain_tool")!({ task_id: "task-1" }, {});
+
+    expect(logEntries[0].bot_id).toBe("bot-7");
+    expect(logEntries[1].bot_id).toBeNull();
+  });
+
+  it("records bot_id on the error path too", async () => {
+    const { server, registeredTools } = createMockServer();
+    const logEntries: ToolLogEntry[] = [];
+
+    const instrumented = instrumentServer(
+      server,
+      () => mockContext,
+      (entry) => logEntries.push(entry),
+      "stdio"
+    );
+
+    const handler = vi.fn(async () => {
+      throw new Error("Tool failed");
+    });
+    instrumented.tool("failing_agent_tool", "desc", {}, handler);
+
+    const wrappedHandler = registeredTools.get("failing_agent_tool")!;
+    await expect(wrappedHandler({ agent_id: "bot-9" }, {})).rejects.toThrow("Tool failed");
+
+    expect(logEntries[0].bot_id).toBe("bot-9");
+    expect(logEntries[0].is_error).toBe(true);
+  });
+
   it("does not break tool execution if logging fails", async () => {
     const { server, registeredTools } = createMockServer();
 

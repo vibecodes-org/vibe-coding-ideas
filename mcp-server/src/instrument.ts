@@ -13,6 +13,7 @@ export interface ToolLogEntry {
   is_error: boolean;
   mode: "stdio" | "remote";
   idea_id: string | null;
+  bot_id: string | null;
 }
 
 type LogFn = (entry: ToolLogEntry) => void;
@@ -31,6 +32,22 @@ type McpConnectFn = (ownerUserId: string) => void;
  */
 function extractIdeaId(args: Record<string, unknown>): string | null {
   const id = args.idea_id;
+  if (typeof id === "string" && id.length > 0) return id;
+  return null;
+}
+
+/**
+ * Extract the agent this call explicitly names, if any.
+ *
+ * Deliberately separate from ctx.userId: that only carries a bot id when the
+ * client called set_agent_identity, which the subagent protocol tells clients
+ * not to do — so it cannot attribute a subagent's work to a persona. Tools like
+ * get_agent_skill_content and get_agent_prompt take agent_id directly, which
+ * survives that protocol change and lets us ask whether an agent actually
+ * loaded the skill it was pointed at.
+ */
+function extractAgentId(args: Record<string, unknown>): string | null {
+  const id = args.agent_id ?? args.bot_id;
   if (typeof id === "string" && id.length > 0) return id;
   return null;
 }
@@ -100,6 +117,7 @@ export function instrumentServer(
                 is_error: !!(result && typeof result === "object" && "isError" in result && result.isError),
                 mode,
                 idea_id: extractIdeaId(args),
+                bot_id: extractAgentId(args),
               });
             } catch {
               // Never let logging break tool execution
@@ -130,6 +148,7 @@ export function instrumentServer(
                 is_error: true,
                 mode,
                 idea_id: extractIdeaId(args),
+                bot_id: extractAgentId(args),
               });
             } catch {
               // Never let logging break tool execution

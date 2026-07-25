@@ -1651,6 +1651,7 @@ export type Database = {
           is_error: boolean;
           mode: string;
           idea_id: string | null;
+          bot_id: string | null;
           created_at: string;
         };
         Insert: {
@@ -1662,6 +1663,7 @@ export type Database = {
           is_error?: boolean;
           mode?: string;
           idea_id?: string | null;
+          bot_id?: string | null;
           created_at?: string;
         };
         Update: {
@@ -1673,9 +1675,17 @@ export type Database = {
           is_error?: boolean;
           mode?: string;
           idea_id?: string | null;
+          bot_id?: string | null;
           created_at?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: "mcp_tool_log_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bot_profiles";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "mcp_tool_log_user_id_fkey";
             columns: ["user_id"];
