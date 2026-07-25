@@ -26,6 +26,7 @@ import {
   modelTierClause,
   resolveModelTier,
   resolveTierAdherence,
+  resolvePersonaAdherence,
   addStepComment,
   addStepCommentSchema,
 } from "./workflows";
@@ -884,6 +885,138 @@ describe("claimNextStep — agent skills", () => {
 });
 
 // ---------------------------------------------------------------------------
+// claimNextStep — persona embedding (persona-attestation design §A1/A2/§2)
+// ---------------------------------------------------------------------------
+
+const PERSONA_BOT_ID = "00000000-0000-4000-a000-000000000060";
+
+/**
+ * Like makeSkillsClaimContext but lets a test control the assigned bot's
+ * system_prompt (null = "prompt-less" branch). No agent_skills row needed —
+ * these tests only exercise the persona embed path.
+ */
+function makePersonaClaimContext(opts: {
+  pendingStep: ReturnType<typeof makeStepRow>;
+  updatedStep: Record<string, unknown>;
+  systemPrompt: string | null;
+}) {
+  const tableCounts: Record<string, number> = {};
+
+  return makeContext(((table: string) => {
+    tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+    const callNum = tableCounts[table];
+
+    if (table === "task_workflow_steps") {
+      const chain = createChain(null);
+      if (callNum === 1) {
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [opts.pendingStep], error: null }).then(resolve);
+      } else if (callNum === 2) {
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: opts.updatedStep, error: null })
+        );
+      } else {
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [], error: null }).then(resolve);
+      }
+      return chain.chain;
+    }
+
+    if (table === "idea_agents") {
+      const chain = createChain(null);
+      chain.chain.then = (resolve: (val: unknown) => void) =>
+        Promise.resolve({
+          data: [
+            {
+              bot_id: PERSONA_BOT_ID,
+              bot: {
+                id: PERSONA_BOT_ID,
+                name: "Atlas",
+                role: "Full Stack Engineer",
+                avatar_url: null,
+                is_active: true,
+                system_prompt: opts.systemPrompt,
+              },
+            },
+          ],
+          error: null,
+        }).then(resolve);
+      return chain.chain;
+    }
+
+    if (table === "agent_skills") return createChain([]).chain;
+    if (table === "workflow_runs" || table === "workflow_step_comments") {
+      return createChain([]).chain;
+    }
+
+    return createChain(null).chain;
+  }) as unknown as McpContext["supabase"]["from"]);
+}
+
+describe("claimNextStep — persona embedding", () => {
+  it("embeds persona_prompt/persona_name/persona_role when the matched bot has a system_prompt", async () => {
+    const step = makeStepRow({ step_order: 1, bot_id: PERSONA_BOT_ID });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+    const systemPrompt = "You are Atlas, a Full Stack Engineer on the VibeCodes team.";
+
+    const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep, systemPrompt });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as {
+      instruction: string;
+      persona_prompt?: string;
+      persona_name?: string;
+      persona_role?: string;
+    };
+
+    expect(r.persona_prompt).toBe(systemPrompt);
+    expect(r.persona_name).toBe("Atlas");
+    expect(r.persona_role).toBe("Full Stack Engineer");
+
+    // Adopt-verbatim replaces the get_agent_prompt round-trip.
+    expect(r.instruction).toContain('SPAWN a fresh subagent whose system prompt IS the "persona_prompt"');
+    expect(r.instruction).not.toContain("Call get_agent_prompt");
+    // Attestation obligation on the completion-reporting sentence.
+    expect(r.instruction).toContain("persona_used");
+    expect(r.instruction).toContain('"verbatim" if the subagent ran on persona_prompt unchanged');
+    expect(r.instruction).toContain("not verified, and never blocks completion");
+    // Untouched surrounding clauses.
+    expect(r.instruction).toContain("DO NOT INLINE");
+    expect(r.instruction).toContain("RELIABILITY");
+    expect(r.instruction).toContain("EXCEPTION (the ONLY one)");
+  });
+
+  it("omits persona fields and keeps the get_agent_prompt fallback when the step is unassigned", async () => {
+    const step = makeStepRow({ step_order: 1, bot_id: null });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const ctx = makeClaimContext({ pendingStep: step, updatedStep, priorSteps: [] });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string; persona_prompt?: string };
+    expect(r).not.toHaveProperty("persona_prompt");
+    expect(r).not.toHaveProperty("persona_name");
+    expect(r).not.toHaveProperty("persona_role");
+    expect(r.instruction).toContain("Call get_agent_prompt");
+  });
+
+  it("omits persona fields and keeps the get_agent_prompt fallback when the assigned bot has no system_prompt", async () => {
+    const step = makeStepRow({ step_order: 1, bot_id: PERSONA_BOT_ID });
+    const updatedStep = { ...step, status: "in_progress", claimed_by: USER_ID };
+
+    const ctx = makePersonaClaimContext({ pendingStep: step, updatedStep, systemPrompt: null });
+    const result = await claimNextStep(ctx, { task_id: TASK_ID });
+
+    const r = result as { instruction: string; persona_prompt?: string };
+    expect(r).not.toHaveProperty("persona_prompt");
+    expect(r).not.toHaveProperty("persona_name");
+    expect(r).not.toHaveProperty("persona_role");
+    expect(r.instruction).toContain("Call get_agent_prompt");
+    expect(r.instruction).not.toContain("persona_used");
+  });
+});
+
+// ---------------------------------------------------------------------------
 // completeStep tests
 // ---------------------------------------------------------------------------
 
@@ -1308,6 +1441,152 @@ describe("completeStep — tier adherence (P2c)", () => {
     const update = getUpdate();
     expect(update.tier_honored).toBe(true);
     expect(getUsersQueried()).toBe(1);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// completeStep — persona attestation (persona-attestation design §A3/A4/A6,
+// Nick's amendment: skills_used)
+// ---------------------------------------------------------------------------
+
+describe("completeStep — persona attestation", () => {
+  /** run_id: null throughout so checkAndCompleteRun never fires. */
+  function ctxFor(opts: { stepData: Record<string, unknown>; updatedStep: Record<string, unknown> }) {
+    let lastStepChain: ReturnType<typeof createChain> | null = null;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() => Promise.resolve({ data: opts.stepData, error: null }));
+        chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: opts.updatedStep, error: null }));
+        lastStepChain = chain;
+        return chain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    return {
+      ctx,
+      getUpdate: () => lastStepChain!.captured.updated as Record<string, unknown>,
+      getSelectedFields: () => lastStepChain!.captured.selectedFields,
+    };
+  }
+
+  const baseStep = {
+    claim_token_hash: TCT.hash,
+    id: STEP_ID,
+    run_id: null,
+    idea_id: IDEA_ID,
+    human_check_required: false,
+    status: "in_progress",
+    bot_id: null,
+    model_tier: null,
+  };
+  const baseUpdatedStep = {
+    id: STEP_ID,
+    task_id: TASK_ID,
+    run_id: null,
+    title: "Test Step",
+    agent_role: "developer",
+    status: "completed",
+    output: null,
+    completed_at: "2026-01-01T00:00:00Z",
+  };
+
+  it("persona_used='verbatim' -> stores persona_used='verbatim', persona_honored=true", async () => {
+    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, persona_used: "verbatim" });
+
+    const update = getUpdate();
+    expect(update.persona_used).toBe("verbatim");
+    expect(update.persona_honored).toBe(true);
+  });
+
+  it("persona_used='adapted' -> stores persona_used='adapted', persona_honored=false", async () => {
+    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, persona_used: "adapted" });
+
+    const update = getUpdate();
+    expect(update.persona_used).toBe("adapted");
+    expect(update.persona_honored).toBe(false);
+  });
+
+  it("persona_used='none' -> stores persona_used='none', persona_honored=false", async () => {
+    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, persona_used: "none" });
+
+    const update = getUpdate();
+    expect(update.persona_used).toBe("none");
+    expect(update.persona_honored).toBe(false);
+  });
+
+  it("persona_used omitted -> persona_used=NULL, persona_honored=NULL (never false — old-style call unaffected)", async () => {
+    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done" });
+
+    const update = getUpdate();
+    expect(update.persona_used).toBeNull();
+    expect(update.persona_honored).toBeNull();
+  });
+
+  it("rejects an invalid persona_used value at the schema boundary", () => {
+    expect(() =>
+      completeStepSchema.parse({ step_id: STEP_ID, persona_used: "bogus" })
+    ).toThrow();
+  });
+
+  it("skills_used present -> stored verbatim", async () => {
+    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await completeStep(ctx, {
+      claim_token: TCT.token,
+      step_id: STEP_ID,
+      skills_used: ["api-design-review", "a11y-audit"],
+    });
+
+    expect(getUpdate().skills_used).toEqual(["api-design-review", "a11y-audit"]);
+  });
+
+  it("skills_used=[] -> stored as an explicit empty array, not NULL", async () => {
+    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, skills_used: [] });
+
+    const update = getUpdate();
+    expect(update.skills_used).toEqual([]);
+    expect(update.skills_used).not.toBeNull();
+  });
+
+  it("skills_used omitted -> stored as NULL", async () => {
+    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done" });
+
+    expect(getUpdate().skills_used).toBeNull();
+  });
+
+  it("echoes persona_used/persona_honored/skills_used on the .select() list", async () => {
+    const { ctx, getSelectedFields } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { ...baseUpdatedStep, persona_used: "verbatim", persona_honored: true, skills_used: ["x"] },
+    });
+    const result = await completeStep(ctx, {
+      claim_token: TCT.token,
+      step_id: STEP_ID,
+      persona_used: "verbatim",
+      skills_used: ["x"],
+    });
+
+    expect(getSelectedFields()).toContain("persona_used, persona_honored, skills_used");
+    expect(result.step).toMatchObject({ persona_used: "verbatim", persona_honored: true, skills_used: ["x"] });
+  });
+
+  it("old-style call with no persona/skills params still completes normally", async () => {
+    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    const result = await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "done" });
+
+    expect(result.status).toBe("completed");
+    const update = getUpdate();
+    expect(update.persona_used).toBeNull();
+    expect(update.persona_honored).toBeNull();
+    expect(update.skills_used).toBeNull();
   });
 });
 
@@ -2568,6 +2847,120 @@ describe("failStep — tier adherence (P2c)", () => {
 });
 
 // ---------------------------------------------------------------------------
+// failStep — persona attestation (mirrors completeStep — persona attestation)
+// ---------------------------------------------------------------------------
+
+describe("failStep — persona attestation", () => {
+  function ctxFor(opts: { stepData: Record<string, unknown>; updatedStep: Record<string, unknown> }) {
+    let lastStepChain: ReturnType<typeof createChain> | null = null;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.single = vi.fn(() => Promise.resolve({ data: opts.stepData, error: null }));
+        chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: opts.updatedStep, error: null }));
+        lastStepChain = chain;
+        return chain.chain;
+      }
+      if (table === "workflow_step_comments") return createChain([]).chain;
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    return {
+      ctx,
+      getUpdate: () => lastStepChain!.captured.updated as Record<string, unknown>,
+      getSelectedFields: () => lastStepChain!.captured.selectedFields,
+    };
+  }
+
+  const baseStep = {
+    claim_token_hash: TCT.hash,
+    id: STEP_ID,
+    run_id: null,
+    step_order: 3,
+    idea_id: IDEA_ID,
+    bot_id: null,
+    agent_role: "developer",
+    status: "in_progress",
+    model_tier: null,
+  };
+  const baseUpdatedStep = {
+    id: STEP_ID,
+    task_id: TASK_ID,
+    run_id: null,
+    title: "Test Step",
+    agent_role: "developer",
+    status: "failed",
+    output: null,
+  };
+
+  it("persona_used='verbatim' -> stores persona_used='verbatim', persona_honored=true", async () => {
+    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, persona_used: "verbatim" });
+
+    const update = getUpdate();
+    expect(update.persona_used).toBe("verbatim");
+    expect(update.persona_honored).toBe(true);
+  });
+
+  it("persona_used='adapted'/'none' -> persona_honored=false", async () => {
+    const { ctx: ctxAdapted, getUpdate: getAdapted } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await failStep(ctxAdapted, { claim_token: TCT.token, step_id: STEP_ID, persona_used: "adapted" });
+    expect(getAdapted().persona_honored).toBe(false);
+
+    const { ctx: ctxNone, getUpdate: getNone } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await failStep(ctxNone, { claim_token: TCT.token, step_id: STEP_ID, persona_used: "none" });
+    expect(getNone().persona_honored).toBe(false);
+  });
+
+  it("persona_used omitted -> persona_used=NULL, persona_honored=NULL (old-style call unaffected)", async () => {
+    const { ctx, getUpdate } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await failStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, output: "Build failed" });
+
+    const update = getUpdate();
+    expect(update.persona_used).toBeNull();
+    expect(update.persona_honored).toBeNull();
+  });
+
+  it("rejects an invalid persona_used value at the schema boundary", () => {
+    expect(() =>
+      failStepSchema.parse({ step_id: STEP_ID, persona_used: "bogus" })
+    ).toThrow();
+  });
+
+  it("skills_used matrix — present, empty, and omitted", async () => {
+    const { ctx: ctxPresent, getUpdate: getPresent } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await failStep(ctxPresent, { claim_token: TCT.token, step_id: STEP_ID, skills_used: ["a11y-audit"] });
+    expect(getPresent().skills_used).toEqual(["a11y-audit"]);
+
+    const { ctx: ctxEmpty, getUpdate: getEmpty } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await failStep(ctxEmpty, { claim_token: TCT.token, step_id: STEP_ID, skills_used: [] });
+    expect(getEmpty().skills_used).toEqual([]);
+    expect(getEmpty().skills_used).not.toBeNull();
+
+    const { ctx: ctxOmitted, getUpdate: getOmitted } = ctxFor({ stepData: baseStep, updatedStep: baseUpdatedStep });
+    await failStep(ctxOmitted, { claim_token: TCT.token, step_id: STEP_ID });
+    expect(getOmitted().skills_used).toBeNull();
+  });
+
+  it("echoes persona_used/persona_honored/skills_used on the .select() list", async () => {
+    const { ctx, getSelectedFields } = ctxFor({
+      stepData: baseStep,
+      updatedStep: { ...baseUpdatedStep, persona_used: "adapted", persona_honored: false, skills_used: [] },
+    });
+    const result = await failStep(ctx, {
+      claim_token: TCT.token,
+      step_id: STEP_ID,
+      persona_used: "adapted",
+      skills_used: [],
+    });
+
+    expect(getSelectedFields()).toContain("persona_used, persona_honored, skills_used");
+    expect(result.step).toMatchObject({ persona_used: "adapted", persona_honored: false, skills_used: [] });
+  });
+});
+
+// ---------------------------------------------------------------------------
 // updateStep tests
 // ---------------------------------------------------------------------------
 
@@ -3610,6 +4003,28 @@ describe("resolveTierAdherence", () => {
       executedModel: "other",
       tierHonored: false,
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolvePersonaAdherence — persona-attestation design §A4/A5 truth table
+// ---------------------------------------------------------------------------
+
+describe("resolvePersonaAdherence", () => {
+  it("'verbatim' -> personaUsed='verbatim', personaHonored=true", () => {
+    expect(resolvePersonaAdherence("verbatim")).toEqual({ personaUsed: "verbatim", personaHonored: true });
+  });
+
+  it("'adapted' -> personaUsed='adapted', personaHonored=false", () => {
+    expect(resolvePersonaAdherence("adapted")).toEqual({ personaUsed: "adapted", personaHonored: false });
+  });
+
+  it("'none' -> personaUsed='none', personaHonored=false", () => {
+    expect(resolvePersonaAdherence("none")).toEqual({ personaUsed: "none", personaHonored: false });
+  });
+
+  it("omitted -> both NULL (never false — not reported is not a violation)", () => {
+    expect(resolvePersonaAdherence(undefined)).toEqual({ personaUsed: null, personaHonored: null });
   });
 });
 

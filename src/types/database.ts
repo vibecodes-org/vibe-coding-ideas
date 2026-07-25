@@ -874,6 +874,9 @@ export type Database = {
           model_tier: string | null;
           executed_model: string | null;
           tier_honored: boolean | null;
+          persona_used: string | null;
+          persona_honored: boolean | null;
+          skills_used: string[] | null;
           updated_at: string;
         };
         Insert: {
@@ -897,6 +900,9 @@ export type Database = {
           model_tier?: string | null;
           executed_model?: string | null;
           tier_honored?: boolean | null;
+          persona_used?: string | null;
+          persona_honored?: boolean | null;
+          skills_used?: string[] | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;
@@ -924,6 +930,9 @@ export type Database = {
           model_tier?: string | null;
           executed_model?: string | null;
           tier_honored?: boolean | null;
+          persona_used?: string | null;
+          persona_honored?: boolean | null;
+          skills_used?: string[] | null;
           comment_count?: number;
           started_at?: string | null;
           completed_at?: string | null;

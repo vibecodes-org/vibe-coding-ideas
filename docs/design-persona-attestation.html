@@ -1,0 +1,468 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Persona Embed + Attestation — Workflow Design</title>
+<style>
+  :root {
+    --bg: #0b0e14;
+    --panel: #11151f;
+    --panel2: #161b28;
+    --border: #232a3b;
+    --text: #d7dce6;
+    --muted: #8b94a7;
+    --accent: #34d399;      /* emerald — new / honored */
+    --accent-dim: #10b98122;
+    --violet: #a78bfa;      /* keys */
+    --amber: #fbbf24;       /* warnings / adapted */
+    --red: #f87171;
+    --red-dim: #f8717118;
+    --blue: #60a5fa;        /* strings */
+    --mono: "SF Mono", ui-monospace, "JetBrains Mono", Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font: 15px/1.65 -apple-system, "Segoe UI", Inter, sans-serif;
+    padding: 48px 24px 96px;
+  }
+  .wrap { max-width: 1040px; margin: 0 auto; }
+  h1 { font-size: 28px; letter-spacing: -0.02em; }
+  h1 span { color: var(--accent); }
+  .sub { color: var(--muted); margin: 8px 0 40px; max-width: 76ch; }
+  h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em;
+    color: var(--accent); margin: 56px 0 16px; padding-bottom: 8px;
+    border-bottom: 1px solid var(--border);
+  }
+  h2 .n { color: var(--muted); margin-right: 8px; }
+  h3 { font-size: 16px; margin: 26px 0 10px; }
+  p { margin: 10px 0; max-width: 82ch; }
+  ul, ol { margin: 10px 0 10px 22px; }
+  li { margin: 5px 0; max-width: 80ch; }
+  .muted { color: var(--muted); }
+  code {
+    font-family: var(--mono); font-size: 13px;
+    background: var(--panel2); border: 1px solid var(--border);
+    padding: 1px 5px; border-radius: 4px;
+  }
+  pre {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 10px;
+    padding: 16px 18px; overflow-x: auto; font-family: var(--mono);
+    font-size: 12.5px; line-height: 1.7; margin: 12px 0;
+  }
+  pre code { background: none; border: none; padding: 0; }
+  .k { color: var(--violet); }
+  .s { color: var(--blue); }
+  .num { color: var(--amber); }
+  .cm { color: #5b6478; font-style: italic; }
+  .new-line { background: var(--accent-dim); display: block; margin: 0 -18px; padding: 0 18px; border-left: 3px solid var(--accent); }
+  .callout {
+    border: 1px solid var(--border); border-left: 3px solid var(--accent);
+    background: var(--panel); border-radius: 8px; padding: 14px 18px; margin: 18px 0;
+  }
+  .callout.warn { border-left-color: var(--amber); }
+  .callout.red { border-left-color: var(--red); }
+  .callout h4 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 6px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0; font-size: 13px; }
+  th, td { border: 1px solid var(--border); padding: 8px 11px; text-align: left; vertical-align: top; }
+  th { background: var(--panel2); color: var(--muted); text-transform: uppercase; font-size: 11px; letter-spacing: 0.06em; }
+  td code { font-size: 12px; }
+  .tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 20px; border: 1px solid var(--border); color: var(--muted); }
+  .tag.ok { color: var(--accent); border-color: var(--accent); }
+  .tag.warn { color: var(--amber); border-color: var(--amber); }
+  .tag.null { color: var(--muted); border-style: dashed; }
+  .fr { font-size: 11px; color: var(--violet); font-family: var(--mono); }
+  hr { border: none; border-top: 1px solid var(--border); margin: 40px 0; }
+  .path { font-family: var(--mono); font-size: 12px; color: var(--blue); }
+
+  /* ── §1 flow: before/after walkthrough ── */
+  .flow { display: grid; grid-template-columns: 34px 1fr 1fr; gap: 0; margin: 20px 0; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; }
+  .flow > div { border-top: 1px solid var(--border); padding: 14px 16px; }
+  .flow > div:nth-child(-n+3) { border-top: none; }
+  .flow .stg { grid-column: 1; background: var(--panel2); color: var(--muted); font-weight: 700; font-size: 15px; text-align: center; display: flex; align-items: center; justify-content: center; }
+  .flow .hd { background: var(--panel2); font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-weight: 700; padding: 9px 16px; }
+  .flow .hd.after { color: var(--accent); }
+  .flow .before { background: #0e121b; border-left: 1px solid var(--border); }
+  .flow .after  { background: var(--panel); border-left: 1px solid var(--border); }
+  .flow .t { font-size: 12px; color: var(--muted); margin-bottom: 6px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .flow pre { margin: 6px 0 0; font-size: 11.5px; }
+  .flow p { font-size: 13px; margin: 4px 0; max-width: none; }
+  .flow .same { grid-column: 2 / 4; color: var(--muted); background: #0d1119; }
+  .flow .same code { font-size: 12px; }
+  .flow .gone { color: var(--muted); font-style: italic; }
+  .flow .gone strong { color: var(--accent); font-style: normal; }
+  .warnpill { display: inline-block; font-size: 11px; color: var(--amber); border: 1px solid #fbbf2455; background: #fbbf2412; border-radius: 5px; padding: 1px 7px; }
+
+  /* ── §2 diff ── */
+  .diff { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px 0; margin: 14px 0; font-family: var(--mono); font-size: 12.5px; line-height: 1.75; overflow-x: auto; }
+  .diff div { padding: 0 18px 0 34px; white-space: pre-wrap; position: relative; }
+  .diff .del { background: var(--red-dim); color: #e79aa0; text-decoration: line-through; text-decoration-color: #f8717188; }
+  .diff .del::before { content: "−"; position: absolute; left: 14px; color: var(--red); text-decoration: none; }
+  .diff .add { background: var(--accent-dim); color: #a7e8cf; }
+  .diff .add::before { content: "+"; position: absolute; left: 14px; color: var(--accent); }
+  .diff .ctx { color: var(--muted); }
+  .diff .fold { color: #5b6478; font-style: italic; background: #0d1119; }
+
+  /* mock badges (UI preview) */
+  .mock { display: flex; flex-direction: column; gap: 8px; margin: 14px 0; max-width: 460px; }
+  .row { display: flex; align-items: flex-start; gap: 8px; border-radius: 6px; padding: 8px 12px; font-size: 12.5px; }
+  .row .ic { font-weight: 700; flex-shrink: 0; }
+  .row.hon { border: 1px solid #34d39955; background: #34d39912; }
+  .row.hon .ic { color: var(--accent); }
+  .row.adp { border: 1px solid #fbbf2455; background: #fbbf241a; }
+  .row.adp .ic { color: var(--amber); }
+  .row .sec { color: var(--muted); }
+  .row small { display: block; color: var(--muted); font-size: 11px; margin-top: 2px; }
+
+  @media (max-width: 720px) {
+    .flow { grid-template-columns: 1fr; }
+    .flow .stg { justify-content: flex-start; padding-left: 16px; }
+    .flow .before, .flow .after { border-left: none; }
+    .flow .same { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Persona <span>Embed + Attestation</span></h1>
+<p class="sub">Ship the assigned agent's persona <em>inside</em> <code>claim_next_step</code> so the orchestrator never has to fetch it, and let it self-report whether it actually used it. This doc leads with the change as you'd live it in a Claude Code session — the same "pick up the next task" flow, before and after. Specs are in the appendices.</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">1</span>The Flow — "Nick: pick up the next task"</h2>
+<p>You're in a Claude Code session on a VibeCodes board. You tell Claude: <em>"grab the next task and run its workflow."</em> Here is every MCP call it makes, <strong>today</strong> vs <strong>after this change</strong>. Same task, same agent (Atlas, a Full Stack Engineer). Watch stages 3 and 4 — that's where the change earns its keep.</p>
+
+<div class="flow">
+  <div class="hd">Stage</div>
+  <div class="hd">Before — today</div>
+  <div class="hd after">After — this change</div>
+
+  <!-- stage 1 : identical -->
+  <div class="stg">1</div>
+  <div class="same">
+    <div class="t" style="color:var(--muted)">Find &amp; open the task <span class="warnpill" style="color:var(--muted);border-color:var(--border);background:transparent">identical — no change</span></div>
+    <p><code>get_my_tasks()</code> → picks a task → <code>move_task(task_id, "In Progress")</code>. Nothing here changes; greyed out so we only say it once.</p>
+  </div>
+
+  <!-- stage 2 : claim_next_step -->
+  <div class="stg">2</div>
+  <div class="before">
+    <div class="t">claim_next_step → response</div>
+<pre><code><span class="k">claim_next_step</span>({ task_id })
+<span class="cm">// response (trimmed):</span>
+{
+  <span class="s">"done"</span>: <span class="k">false</span>,
+  <span class="s">"step"</span>: { <span class="s">"id"</span>: <span class="s">"7f3a…"</span>, <span class="s">"title"</span>: <span class="s">"Build API"</span>,
+            <span class="s">"bot_id"</span>: <span class="s">"a12e…"</span>, <span class="s">"model_tier"</span>: <span class="s">"standard"</span> },
+  <span class="s">"claim_token"</span>: <span class="s">"ct_9f3c1e7a…"</span>,
+  <span class="s">"instruction"</span>: <span class="s">"MANDATORY: … 2. Call get_agent_prompt
+     with agent_id \"a12e…\" to fetch the Atlas persona… "</span>,
+  <span class="s">"available_agents"</span>: [ … ],
+  <span class="s">"context"</span>: [ … ]
+}</code></pre>
+    <p class="muted">The response tells Claude who to be — but only by <em>reference</em>. It still has to go fetch the actual prompt.</p>
+  </div>
+  <div class="after">
+    <div class="t">claim_next_step → response</div>
+<pre><code><span class="k">claim_next_step</span>({ task_id })
+<span class="cm">// response (trimmed):</span>
+{
+  <span class="s">"done"</span>: <span class="k">false</span>,
+  <span class="s">"step"</span>: { <span class="s">"id"</span>: <span class="s">"7f3a…"</span>, <span class="s">"title"</span>: <span class="s">"Build API"</span>,
+            <span class="s">"bot_id"</span>: <span class="s">"a12e…"</span>, <span class="s">"model_tier"</span>: <span class="s">"standard"</span> },
+  <span class="s">"claim_token"</span>: <span class="s">"ct_9f3c1e7a…"</span>,
+<span class="new-line">  "persona_prompt": "You are Atlas, a Full Stack
+     Engineer on the VibeCodes team. You ship
+     production-quality TypeScript across the Next.js
+     App Router and the Supabase data layer…",</span>
+<span class="new-line">  "persona_name": "Atlas",</span>
+<span class="new-line">  "persona_role": "Full Stack Engineer",</span>
+  <span class="s">"instruction"</span>: <span class="s">"MANDATORY: … 2. SPAWN a fresh subagent
+     whose system prompt IS the persona_prompt field
+     in this response… "</span>,
+  <span class="s">"available_agents"</span>: [ … ],
+  <span class="s">"context"</span>: [ … ]
+}</code></pre>
+    <p class="muted">Same call, same fields, <strong>plus three green ones</strong> — the persona is already here, in full.</p>
+  </div>
+
+  <!-- stage 3 : fetch prompt -->
+  <div class="stg">3</div>
+  <div class="before">
+    <div class="t">Fetch the persona</div>
+<pre><code><span class="k">get_agent_prompt</span>({ agent_id: <span class="s">"a12e…"</span> })
+<span class="cm">// response:</span>
+{ <span class="s">"system_prompt"</span>: <span class="s">"You are Atlas, a Full
+    Stack Engineer on the VibeCodes team…"</span> }</code></pre>
+    <p class="muted">A second round-trip, every step, just to get the prompt string.</p>
+  </div>
+  <div class="after">
+    <div class="t">Fetch the persona</div>
+    <p class="gone">— no call needed —<br><strong>the persona arrived in stage 2.</strong></p>
+  </div>
+
+  <!-- stage 4 : spawn -->
+  <div class="stg">4</div>
+  <div class="before">
+    <div class="t">Spawn the subagent</div>
+    <p>System prompt = whatever it fetched…</p>
+    <p><span class="warnpill">⚠ the skippable gap</span> if Claude decides the fetch is "overkill" and skips it, the subagent runs with <em>no persona</em> — and nothing recorded that it did.</p>
+  </div>
+  <div class="after">
+    <div class="t">Spawn the subagent</div>
+    <p>System prompt = <code>persona_prompt</code> <strong>verbatim</strong>. It's already in context — there is nothing to skip, nothing to fetch, no decision to get wrong.</p>
+  </div>
+
+  <!-- stage 5 : complete -->
+  <div class="stg">5</div>
+  <div class="before">
+    <div class="t">complete_step → response</div>
+<pre><code><span class="k">complete_step</span>({
+  step_id, claim_token,
+  output: <span class="s">"Added POST /api/orders…"</span>,
+  model_used: <span class="s">"sonnet"</span>
+})
+<span class="cm">// response.step (trimmed):</span>
+{ <span class="s">"status"</span>: <span class="s">"completed"</span>,
+  <span class="s">"executed_model"</span>: <span class="s">"sonnet"</span>,
+  <span class="s">"tier_honored"</span>: <span class="k">true</span> }</code></pre>
+  </div>
+  <div class="after">
+    <div class="t">complete_step → response</div>
+<pre><code><span class="k">complete_step</span>({
+  step_id, claim_token,
+  output: <span class="s">"Added POST /api/orders…"</span>,
+  model_used: <span class="s">"sonnet"</span>,
+<span class="new-line">  persona_used: "verbatim"</span>
+})
+<span class="cm">// response.step (trimmed):</span>
+{ <span class="s">"status"</span>: <span class="s">"completed"</span>,
+  <span class="s">"executed_model"</span>: <span class="s">"sonnet"</span>,
+  <span class="s">"tier_honored"</span>: <span class="k">true</span>,
+<span class="new-line">  "persona_used": "verbatim",</span>
+<span class="new-line">  "persona_honored": true }</span></code></pre>
+  </div>
+
+  <!-- stage 6 : UI -->
+  <div class="stg">6</div>
+  <div class="before">
+    <div class="t">What Nick sees in the step dialog</div>
+    <div class="mock" style="max-width:none">
+      <div class="row hon"><span class="ic">✓</span><span><strong>Model: sonnet</strong> <span class="sec">· tier honored</span></span></div>
+    </div>
+  </div>
+  <div class="after">
+    <div class="t">What Nick sees in the step dialog</div>
+    <div class="mock" style="max-width:none">
+      <div class="row hon"><span class="ic">✓</span><span><strong>Model: sonnet</strong> <span class="sec">· tier honored</span></span></div>
+      <div class="row hon"><span class="ic">✓</span><span><strong>Persona: verbatim</strong> <span class="sec">· adopted as assigned</span></span></div>
+    </div>
+  </div>
+</div>
+
+<div class="callout">
+  <h4>The whole change in one sentence</h4>
+  <p>Stage 3's round-trip disappears (the prompt now rides along in stage 2), and stage 5 gains one honest word — <code>persona_used</code> — that turns into a green "Persona: verbatim" row for Nick. Everything else is byte-for-byte what it does today.</p>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">2</span>The Prompt Diff <span class="fr">FR3 · FR4</span></h2>
+<p>The only prose that changes is the matched-agent instruction that <code>claim_next_step</code> hands back (built at <span class="path">workflows.ts:845–854</span>). Below is that block as a diff — real current text, not a paraphrase. Struck red = removed, green = added. Everything else is unchanged and collapsed.</p>
+
+<div class="diff">
+  <div class="ctx">MANDATORY: this step MUST be executed by a FRESH SUBAGENT that you spawn with your Agent/Task tool. Do NOT do this step's work yourself in this conversation.</div>
+  <div class="ctx">1. Keep the claim_token from this response — do NOT pass it to the subagent.</div>
+  <div class="del">2. Call get_agent_prompt with agent_id "a12e…" to fetch the Atlas (Full Stack Engineer) persona's full system prompt.</div>
+  <div class="add">2. SPAWN a fresh subagent whose system prompt IS the "persona_prompt" field in this response — this is the Atlas (Full Stack Engineer) persona, already included in full. Do NOT call get_agent_prompt; the prompt is right here. Give it this step's description plus the prior-step deliverables in the "context" array. It does the work in its own isolated context and returns the deliverable.</div>
+  <div class="del">3. When it returns, YOU (the orchestrator) call complete_step with this step's id, the claim_token, and the subagent's deliverable as the output.</div>
+  <div class="add">3. When it returns, YOU (the orchestrator) call complete_step with this step's id, the claim_token, the subagent's deliverable as output, and persona_used — "verbatim" if the subagent ran on persona_prompt unchanged, "adapted" if you edited/trimmed/merged it, "none" if you didn't use it. Report honestly: it is recorded as an adherence signal, not verified, and never blocks completion.</div>
+  <div class="fold">… DO-NOT-INLINE, RELIABILITY, and the no-subagent EXCEPTION clauses — unchanged, omitted here …</div>
+</div>
+
+<p class="muted">Note the shape: this is a <strong>rewrite of two existing numbered steps, not an append</strong> — net length is roughly flat because the deleted <code>get_agent_prompt</code> sentence is replaced, not stacked on. The separate <code>modelTierClause</code> (which asks for <code>model_used</code>), the claim-token block, the skills block, and the fallback path for unassigned / prompt-less bots are all untouched. Both self-reported signals — <code>model_used</code> and the new <code>persona_used</code> — land on the same <code>complete_step</code> call.</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">3</span>Guaranteed to Work the Old Way</h2>
+<p>Nothing an existing client does breaks. Each row below names the <em>mechanism</em> that guarantees it — and what would have to break for it to fail. In every case the answer is "a schema-level invariant would have to break," i.e. nothing this change touches.</p>
+<table>
+  <tr><th>Old behaviour</th><th>Still works because…</th><th>What would have to break</th></tr>
+  <tr>
+    <td><strong>Old client ignores the 3 new response fields</strong></td>
+    <td>The fields are <em>additive</em> keys on a JSON object. MCP clients read the keys they know and ignore the rest by construction — an unknown key is invisible to a consumer that doesn't reference it.</td>
+    <td>JSON would have to stop being additive — impossible.</td>
+  </tr>
+  <tr>
+    <td><strong>Old orchestrator still fetches the prompt itself</strong></td>
+    <td><code>get_agent_prompt</code> is <strong>not removed</strong>. A client running its cached old instruction calls it and gets the same <code>system_prompt</code> back exactly as today. The embed is a shortcut, not a replacement.</td>
+    <td>We'd have to delete the tool — we don't.</td>
+  </tr>
+  <tr>
+    <td><strong>Old complete_step / fail_step calls stay valid</strong></td>
+    <td><code>persona_used</code> is <code>.optional()</code> in the zod schema. Omit it → resolver returns <code>{null, null}</code> → both columns write NULL. The call succeeds identically.</td>
+    <td>The field would have to be required — it isn't.</td>
+  </tr>
+  <tr>
+    <td><strong>Legacy steps look identical in the UI</strong></td>
+    <td><code>StepPersonaLine</code> opens with <code>if (step.persona_honored == null) return null;</code>. Every pre-change step has NULL there, so it renders <strong>no row</strong> — not a warning, not an empty state.</td>
+    <td>The guard clause would have to be removed — it's the first line.</td>
+  </tr>
+  <tr>
+    <td><strong>Unassigned / Auto steps byte-identical</strong></td>
+    <td>The <code>bot_id === null</code> branch is untouched: no persona fields emitted, instruction stays today's pick-then-<code>get_agent_prompt</code> fallback. <code>personaEmbeddable</code> gates the whole block off.</td>
+    <td>The fallback branch would have to be edited — this change doesn't edit it.</td>
+  </tr>
+</table>
+<div class="callout">
+  <p>The guarantee isn't "we tested it and it seemed fine." It's structural: additive JSON, an optional param, a NULL-guarded render, and an untouched fallback branch. For any old behaviour to break, one of those four invariants would have to change — and none of them is on the change list.</p>
+</div>
+
+<hr>
+<p class="muted" style="font-size:13px">The sections below are the implementation spec — carried over from the prior revision, technically verified (12/12 FRs), with the review's binding corrections folded in. §1–3 above are the 5-minute read; these are for whoever builds it.</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">A</span>Field &amp; Schema Spec <span class="fr">FR1 · FR2 · FR5 · FR6 · FR8 · FR12</span></h2>
+
+<h3>A1. Widen the existing fetch — one line, no new round-trip</h3>
+<p>At <span class="path">workflows.ts:735</span> the idea-agents fetch already runs. Add <code>system_prompt</code> to the joined <code>bot_profiles</code> select and extract it only for the matched row — do <strong>not</strong> fold it into every <code>available_agents</code> entry (that would bloat the response with every agent's full prompt).</p>
+<pre><code><span class="cm">// :735 — add system_prompt to the join</span>
+.select(<span class="s">"bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role, avatar_url, is_active, system_prompt)"</span>)
+
+<span class="cm">// after matchedAgent is resolved (:795), pull the raw joined row for the assigned bot:</span>
+<span class="k">const</span> matchedAgentRow = updated.bot_id
+  ? (ideaAgents ?? []).find((r) => r.bot_id === updated.bot_id)
+  : <span class="k">null</span>;
+<span class="k">const</span> matchedBot = matchedAgentRow?.bot <span class="k">as</span> { name: <span class="k">string</span>; role: <span class="k">string</span>; system_prompt: <span class="k">string</span> | <span class="k">null</span> } | <span class="k">null</span>;
+<span class="k">const</span> personaEmbeddable = !!(matchedBot?.system_prompt);</code></pre>
+
+<h3>A2. Response fields — spread-guarded on the <code>done:false</code> return (:976)</h3>
+<pre><code>  <span class="k">return</span> {
+    done: <span class="k">false</span>,
+    step: updated,
+    claim_token,
+<span class="new-line">    ...(personaEmbeddable ? {
+      persona_prompt: matchedBot!.system_prompt,   // full system prompt, embedded
+      persona_name:   matchedBot!.name,
+      persona_role:   matchedBot!.role,
+    } : {}),</span>
+    instruction,
+    rework_instructions,
+    available_agents,
+    context, approval_notes, expected_deliverables,
+    ...(available_skills.length > 0 ? { available_skills } : {}),
+  };</code></pre>
+<p class="muted">All-or-nothing: <code>personaEmbeddable</code> gates the three fields as a unit. Unassigned step (<code>bot_id === null</code>) <em>or</em> assigned bot with <code>system_prompt === null</code> → block omitted, response byte-identical to today, instruction keeps the <code>get_agent_prompt</code> fallback for that step.</p>
+
+<h3>A3. Optional enum on <code>completeStepSchema</code> (:992) AND <code>failStepSchema</code> (:1136)</h3>
+<p>Identical field on both, mirroring how <code>model_used</code> is duplicated across the two schemas:</p>
+<pre><code>persona_used: z.<span class="k">enum</span>([<span class="s">"verbatim"</span>, <span class="s">"adapted"</span>, <span class="s">"none"</span>]).optional()
+  .describe(
+    <span class="s">"Self-reported: how faithfully this step's subagent used the assigned persona_prompt from claim_next_step. "</span> +
+    <span class="s">"'verbatim' = spawned on persona_prompt unchanged. "</span> +
+    <span class="s">"'adapted' = used the persona but edited, trimmed, summarised, or merged it. "</span> +
+    <span class="s">"'none' = did not use the persona prompt. "</span> +
+    <span class="s">"Omit if there was no assigned persona or you don't know. VibeCodes records this as an adherence signal — not verified, never blocks completion."</span>
+  ),</code></pre>
+
+<h3>A4. <code>resolvePersonaAdherence()</code> — pure, beside <code>resolveTierAdherence</code> (:~137)</h3>
+<pre><code><span class="k">export type</span> PersonaAdherenceResult = { personaUsed: <span class="k">string</span> | <span class="k">null</span>; personaHonored: <span class="k">boolean</span> | <span class="k">null</span> };
+
+<span class="k">export function</span> resolvePersonaAdherence(
+  personaUsed: <span class="s">"verbatim"</span> | <span class="s">"adapted"</span> | <span class="s">"none"</span> | <span class="k">undefined</span>
+): PersonaAdherenceResult {
+  <span class="k">if</span> (personaUsed === <span class="k">undefined</span>) <span class="k">return</span> { personaUsed: <span class="k">null</span>, personaHonored: <span class="k">null</span> };
+  <span class="k">return</span> { personaUsed, personaHonored: personaUsed === <span class="s">"verbatim"</span> };
+}</code></pre>
+
+<h3>A5. Truth table</h3>
+<table>
+  <tr><th><code>persona_used</code> param</th><th>stored <code>persona_used</code></th><th>stored <code>persona_honored</code></th><th>meaning</th></tr>
+  <tr><td><code>"verbatim"</code></td><td><code>"verbatim"</code></td><td><span class="tag ok">true</span></td><td>persona adopted as-is</td></tr>
+  <tr><td><code>"adapted"</code></td><td><code>"adapted"</code></td><td><span class="tag warn">false</span></td><td>persona used but modified</td></tr>
+  <tr><td><code>"none"</code></td><td><code>"none"</code></td><td><span class="tag warn">false</span></td><td>persona skipped</td></tr>
+  <tr><td>omitted</td><td><span class="tag null">null</span></td><td><span class="tag null">null</span></td><td>not reported — <em>not</em> a violation (old clients, unassigned)</td></tr>
+  <tr><td>invalid string</td><td colspan="2" class="muted">impossible — <code>z.enum</code> rejects at the tool boundary before the resolver runs</td><td>400 to caller</td></tr>
+</table>
+<p class="muted"><code>null != false</code> holds exactly as it does for <code>tier_honored</code>: NULL = "nothing was promised / not reported", false = "a persona was assigned and the agent reports it was not honored verbatim."</p>
+
+<h3>A6. Wiring in complete/fail — mirror the tier-resolution sites</h3>
+<p><code>completeStep</code> (resolve beside <span class="path">:1068</span>, write into <code>updateFields</code> at <span class="path">:1071–1077</span>) and <code>failStep</code> (its matching region):</p>
+<pre><code><span class="k">const</span> { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used);
+<span class="cm">// add to updateFields, next to executed_model / tier_honored:</span>
+<span class="new-line">  persona_used: personaUsed,</span>
+<span class="new-line">  persona_honored: personaHonored,</span></code></pre>
+<div class="callout warn">
+  <h4>Binding correction from review — append to BOTH .select() lists</h4>
+  <p>The complete_step <code>.select()</code> at <span class="path">:1086</span> currently ends <code>… model_tier, executed_model, tier_honored</code>. Append <code>, persona_used, persona_honored</code> there <strong>and</strong> in the matching <code>failStep</code> <code>.select()</code> — otherwise the tool response won't echo the two columns (FR10) even though the DB row has them. This is the stage-5 "AFTER" echo in §1.</p>
+</div>
+<p class="muted"><strong>No auto-comment</strong> on <code>persona_honored === false</code> — unlike a dishonored model tier, an adapted persona is often legitimate. The UI row is the only signal; keep the comment surface quiet. (Revisit in Phase II if abuse appears.)</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">B</span>Migration 00142 + Types <span class="fr">FR7 · FR9</span></h2>
+<p>Next free number is <span class="path">00142</span> (last shipped <span class="path">00141_terminal_sessions.sql</span>); style follows <span class="path">00135_step_executed_model.sql</span>. Two nullable columns, CHECK constraint, no backfill, <strong>no views</strong> (the tier-adherence views are model-specific and out of scope; step/`get_task` responses satisfy FR10).</p>
+<pre><code><span class="cm">-- 00142_step_persona_attestation.sql</span>
+<span class="cm">-- Records how faithfully the orchestrator SELF-REPORTS its subagent used the</span>
+<span class="cm">-- persona_prompt embedded in claim_next_step. Telemetry, not verification —</span>
+<span class="cm">-- VibeCodes never inspects the spawned system prompt (no hash; Phase II boundary).</span>
+<span class="cm">-- Additive, nullable, no backfill. NULL != false.</span>
+
+<span class="k">ALTER TABLE</span> task_workflow_steps
+  <span class="k">ADD COLUMN</span> persona_used TEXT,
+  <span class="k">ADD COLUMN</span> persona_honored BOOLEAN;
+
+<span class="k">ALTER TABLE</span> task_workflow_steps
+  <span class="k">ADD CONSTRAINT</span> task_workflow_steps_persona_used_check
+  <span class="k">CHECK</span> (persona_used <span class="k">IS NULL OR</span> persona_used <span class="k">IN</span> (<span class="s">'verbatim'</span>, <span class="s">'adapted'</span>, <span class="s">'none'</span>));
+
+<span class="k">COMMENT ON COLUMN</span> task_workflow_steps.persona_used <span class="k">IS</span>
+  <span class="s">'Self-reported via complete_step/fail_step persona_used param: verbatim|adapted|none. NULL = not reported. Never verified.'</span>;
+<span class="k">COMMENT ON COLUMN</span> task_workflow_steps.persona_honored <span class="k">IS</span>
+  <span class="s">'Derived: verbatim -> true, adapted|none -> false, omitted -> NULL. NULL != false. Self-reported, not enforced.'</span>;</code></pre>
+
+<h3>database.ts — <code>task_workflow_steps</code> only</h3>
+<div class="callout warn">
+  <h4>Binding corrections from review</h4>
+  <ul>
+    <li>Add <code>persona_used: string | null; persona_honored: boolean | null;</code> to <strong>Row</strong>, and the <code>?:</code> optional variants to <strong>Insert</strong> and <strong>Update</strong> — same three-block shape as <code>executed_model</code>/<code>tier_honored</code>.</li>
+    <li><strong>Do NOT edit the <code>TaskWorkflowStep</code> alias</strong> and <strong>leave any DB view untouched</strong> (the prior revision suggested both — both are wrong). The UI reads the fields off the Row-typed step; no alias edit is needed. <code>Relationships</code> is unchanged.</li>
+  </ul>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">C</span>UI — Persona Row <span class="fr">FR11</span></h2>
+<p>New <code>StepPersonaLine({ step })</code> beside <code>StepExecutionLine</code> (<span class="path">step-detail-dialog.tsx:84</span>), rendered <strong>directly after</strong> it at <span class="path">:679</span>:</p>
+<pre><code>  &lt;StepExecutionLine step={step} /&gt;   <span class="cm">{/* P2c tier adherence */}</span>
+<span class="new-line">  &lt;StepPersonaLine step={step} /&gt;   {/* self-reported persona fidelity */}</span></code></pre>
+<p><strong>Reuse the existing badge classes verbatim</strong> — no new styling. Honored → emerald block (<code>border-emerald-500/30 bg-emerald-500/5</code> + <code>Check</code> <code>text-emerald-500</code>); not-honored → amber block (<code>border-amber-500/30 bg-amber-500/10</code> + <code>TriangleAlert</code> <code>text-amber-500</code>). Disclosure tooltip reuses the existing <code>TIER_ADHERENCE_DISCLOSURE</code> constant — its wording is generic enough; no new constant.</p>
+<div class="mock">
+  <div class="row hon"><span class="ic">✓</span><span><strong>Persona: verbatim</strong> <span class="sec">· adopted as assigned</span></span></div>
+  <div class="row adp"><span class="ic">△</span><span><strong>Persona: adapted</strong> <span class="sec">· persona modified</span><small>Self-reported — not verified.</small></span></div>
+  <div class="row adp"><span class="ic">△</span><span><strong>Persona: not used</strong> <span class="sec">· ran without the assigned persona</span><small>Self-reported — not verified.</small></span></div>
+</div>
+<table>
+  <tr><th><code>persona_honored</code></th><th>+ <code>persona_used</code></th><th>Render</th><th>Copy</th></tr>
+  <tr><td><span class="tag ok">true</span></td><td><code>verbatim</code></td><td>emerald, <code>Check</code></td><td><strong>Persona: verbatim</strong></td></tr>
+  <tr><td><span class="tag warn">false</span></td><td><code>adapted</code></td><td>amber, <code>TriangleAlert</code></td><td><strong>Persona: adapted</strong></td></tr>
+  <tr><td><span class="tag warn">false</span></td><td><code>none</code></td><td>amber, <code>TriangleAlert</code></td><td><strong>Persona: not used</strong></td></tr>
+  <tr><td><span class="tag null">null</span></td><td>—</td><td colspan="2"><strong>row hidden</strong> — <code>return null</code></td></tr>
+</table>
+<pre><code><span class="k">function</span> StepPersonaLine({ step }: { step: TaskWorkflowStep }) {
+  <span class="k">if</span> (step.persona_honored == <span class="k">null</span>) <span class="k">return null</span>;   <span class="cm">// hides null/undefined — all legacy + in-flight</span>
+  <span class="k">if</span> (step.persona_honored === <span class="k">true</span>) { <span class="cm">/* emerald, Check, "Persona: verbatim" · "adopted as assigned" */</span> }
+  <span class="k">const</span> copy = step.persona_used === <span class="s">"adapted"</span> ? <span class="s">"Persona: adapted"</span> : <span class="s">"Persona: not used"</span>;
+  <span class="cm">// else → amber, TriangleAlert; sub-line "Self-reported — not verified."</span>
+}</code></pre>
+<p class="muted">Gating is simpler than the Execution row: because <code>persona_honored</code> is set <em>only</em> on complete/fail, that one null-check already hides in-flight steps, unreported completions, and every legacy row. No <code>model_tier</code> equivalent to check.</p>
+
+<!-- ══════════════════════════════════════════════════════════════ -->
+<h2><span class="n">D</span>Out of Scope (Phase II boundary)</h2>
+<ul>
+  <li><strong>No hash / no prompt verification.</strong> VibeCodes never inspects the spawned subagent's actual system prompt. <code>persona_used</code> is self-reported telemetry, exactly like <code>model_used</code>. (The hash-based verification idea is deferred — task <span class="path">758b784b</span>.)</li>
+  <li><strong>No enforcement.</strong> An "adapted" or "none" report never blocks <code>complete_step</code>, never fails the step, never posts an auto-comment. It only lights up the amber UI row.</li>
+  <li><strong>Fallback path stays silent.</strong> The unassigned / prompt-less branch is untouched and does <em>not</em> ask for <code>persona_used</code>, so those steps land at NULL. Adding adherence coverage there is a Phase II option, not this change.</li>
+</ul>
+
+</div>
+</body>
+</html>

@@ -150,6 +150,63 @@ function StepExecutionLine({ step }: { step: TaskWorkflowStep }) {
   );
 }
 
+/**
+ * Persona-attestation design §C — the self-reported sibling of
+ * StepExecutionLine: whether this step's subagent actually ran on the
+ * persona_prompt embedded by claim_next_step. Gated purely on
+ * `persona_honored` — that column is set ONLY by complete_step/fail_step, so
+ * this one null-check alone hides in-flight steps, unreported completions,
+ * AND every legacy row (no model_tier equivalent to check, unlike
+ * StepExecutionLine). Reuses StepExecutionLine's exact badge classes.
+ */
+function StepPersonaLine({ step }: { step: TaskWorkflowStep }) {
+  if (step.persona_honored == null) return null;
+
+  const skillsLine =
+    step.skills_used != null ? (
+      <span className="block text-[11px] text-muted-foreground">
+        Skills: {step.skills_used.length > 0 ? step.skills_used.join(", ") : "none"}
+      </span>
+    ) : null;
+
+  if (step.persona_honored === true) {
+    return (
+      <div
+        className="flex items-start gap-2 rounded-md border border-emerald-500/30 bg-emerald-500/5 px-3 py-2 text-xs"
+        aria-label="Persona: verbatim, adopted as assigned"
+      >
+        <Check className="mt-0.5 h-3.5 w-3.5 shrink-0 text-emerald-500" />
+        <span className="min-w-0">
+          <span className="font-medium">Persona: verbatim</span>{" "}
+          <span className="text-muted-foreground">· adopted as assigned</span>
+          {skillsLine}
+        </span>
+      </div>
+    );
+  }
+
+  // Not honored — "adapted" or "none" ("not used"), both self-reported and
+  // never verified (design §C truth table).
+  const copy = step.persona_used === "adapted" ? "Persona: adapted" : "Persona: not used";
+  const detail =
+    step.persona_used === "adapted" ? "persona modified" : "ran without the assigned persona";
+
+  return (
+    <div
+      className="flex items-start gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs"
+      aria-label={`${copy}, ${detail}`}
+    >
+      <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0 text-amber-500" />
+      <span className="min-w-0">
+        <span className="font-medium">{copy}</span>{" "}
+        <span className="text-muted-foreground">· {detail}</span>
+        <span className="block text-[11px] text-muted-foreground">Self-reported — not verified.</span>
+        {skillsLine}
+      </span>
+    </div>
+  );
+}
+
 const STATUS_CONFIG = {
   pending: {
     bg: "bg-zinc-500/10",
@@ -677,6 +734,8 @@ export function StepDetailDialog({
 
               {/* Execution — P2c self-reported tier adherence (design §02) */}
               <StepExecutionLine step={step} />
+              {/* Persona — self-reported persona fidelity (design-persona-attestation §C) */}
+              <StepPersonaLine step={step} />
 
               {/* Output */}
               {step.output && (

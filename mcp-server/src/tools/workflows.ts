@@ -136,6 +136,27 @@ export function resolveTierAdherence(
 }
 
 // ============================================================
+// Persona attestation (self-reported telemetry, never hard verification)
+// ============================================================
+
+/** Resolved adherence outcome for a step's self-reported persona_used (persona-attestation design §A4). */
+export type PersonaAdherenceResult = { personaUsed: string | null; personaHonored: boolean | null };
+
+/**
+ * Computes `persona_used`/`persona_honored` from the orchestrator's
+ * self-reported `persona_used` for a step. Mirrors resolveTierAdherence's
+ * placement/style: verbatim -> honored true, adapted/none -> honored false,
+ * omitted -> both NULL (never false — NULL means "not reported", not
+ * "dishonored").
+ */
+export function resolvePersonaAdherence(
+  personaUsed: "verbatim" | "adapted" | "none" | undefined
+): PersonaAdherenceResult {
+  if (personaUsed === undefined) return { personaUsed: null, personaHonored: null };
+  return { personaUsed, personaHonored: personaUsed === "verbatim" };
+}
+
+// ============================================================
 // Template Tools
 // ============================================================
 
@@ -729,10 +750,15 @@ export async function claimNextStep(
   }
 
   // Fetch available agents on this idea so Claude Code can reason about
-  // which agent persona to assume for the step's agent_role
+  // which agent persona to assume for the step's agent_role. system_prompt is
+  // widened onto this existing fetch (no new round-trip) so the assigned
+  // bot's full persona can be embedded directly in this response — it is
+  // extracted ONLY for the matched row below, never folded into every
+  // available_agents entry (that would bloat the response with every agent's
+  // full prompt).
   const { data: ideaAgents } = await ctx.supabase
     .from("idea_agents")
-    .select("bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role, avatar_url, is_active)")
+    .select("bot_id, bot:bot_profiles!idea_agents_bot_id_fkey(id, name, role, avatar_url, is_active, system_prompt)")
     .eq("idea_id", step.idea_id)
     .order("created_at", { ascending: true });
 
@@ -796,6 +822,18 @@ export async function claimNextStep(
     ? available_agents.find((a) => a.bot_id === updated.bot_id)
     : null;
 
+  // Embed the matched agent's full persona prompt directly in this response
+  // when it has one, so the orchestrator never needs a get_agent_prompt
+  // round-trip (persona-attestation design §A1). personaEmbeddable gates the
+  // response fields AND the instruction rewrite below as a unit — an
+  // unassigned step (bot_id null) or an assigned bot with no system_prompt
+  // falls through to today's get_agent_prompt fallback, byte-identical.
+  const matchedAgentRow = updated.bot_id
+    ? (ideaAgents ?? []).find((r) => r.bot_id === updated.bot_id)
+    : null;
+  const matchedBot = matchedAgentRow?.bot as { name: string; role: string; system_prompt: string | null } | null;
+  const personaEmbeddable = !!(matchedBot?.system_prompt);
+
   // Surface the assigned agent's skills so the executing subagent can self-load
   // the relevant ones (names + descriptions only — never the skill bodies). Only
   // fetched when a bot is assigned; bot_id = null steps stay byte-identical.
@@ -825,7 +863,8 @@ export async function claimNextStep(
       `You do NOT need set_agent_identity; pass agent_id directly.\n` +
       `EXCEPTION — if your spawned subagent does NOT have the get_agent_skill_content tool in its own context: ` +
       `you (the orchestrator) call get_agent_skill_content yourself for each relevant skill and fold the returned ` +
-      `instructions into the subagent's system prompt before spawning it. This is a fallback only — prefer letting the subagent self-load.`;
+      `instructions into the subagent's system prompt before spawning it. This is a fallback only — prefer letting the subagent self-load.\n` +
+      `When calling complete_step/fail_step, also report skills_used: the names of the skills whose content was actually loaded for this step (empty array if none).`;
   }
 
   // Subagent orchestration is the ONLY mode (task bd13ee8f — the per-session
@@ -842,16 +881,29 @@ export async function claimNextStep(
     ? ""
     : `0. Review the available_agents list and pick the best match for the "${updated.agent_role}" role.\n`;
 
-  const identityInstruction =
-    `MANDATORY: this step MUST be executed by a FRESH SUBAGENT that you spawn with your Agent/Task tool. Do NOT do this step's work yourself in this conversation.\n` +
-    pickStep +
-    `1. Keep the claim_token from this response — do NOT pass it to the subagent.\n` +
-    `2. Call get_agent_prompt with agent_id ${agentIdArg} to fetch ${personaRef}'s full system prompt.\n` +
-    `3. SPAWN a fresh subagent whose system prompt IS that persona prompt, with this step's description plus the prior-step deliverables in the "context" array. It does the work in its own isolated context and returns the deliverable.\n` +
-    `4. When it returns, YOU (the orchestrator) call complete_step with this step's id, the claim_token, and the subagent's deliverable as the output.\n` +
-    `DO NOT INLINE: doing the work yourself because it seems simpler, faster, cheaper, or "more convenient" is NOT permitted — a fresh isolated context per persona is the entire point and is lost if you inline it. "It's only a small step" is not a reason. If you catch yourself about to do the work directly, STOP and spawn the subagent instead.\n` +
-    `RELIABILITY: if the subagent errors or its connection drops before returning, RETRY or RESUME it (you have its agent id) — do NOT quietly finish the step yourself.\n` +
-    `EXCEPTION (the ONLY one): if your client genuinely has no subagent/Agent tool at all, then call set_agent_identity with agent_id ${agentIdArg} to adopt ${personaRef}, do the step, and state verbatim in your complete_step output: "Completed inline — no subagent capability." If you DO have an Agent/Task tool, this exception does not apply to you.`;
+  // personaEmbeddable rewrites steps 2-3 to adopt the embedded persona_prompt
+  // verbatim (no get_agent_prompt round-trip) and adds the persona_used
+  // attestation obligation to the completion-reporting sentence. The
+  // unassigned / prompt-less fallback (bot_id null, or an assigned bot with
+  // no system_prompt) is UNTOUCHED — byte-identical to today, still fetching
+  // via get_agent_prompt (persona-attestation design §2/§A2).
+  const identityInstruction = personaEmbeddable
+    ? `MANDATORY: this step MUST be executed by a FRESH SUBAGENT that you spawn with your Agent/Task tool. Do NOT do this step's work yourself in this conversation.\n` +
+      `1. Keep the claim_token from this response — do NOT pass it to the subagent.\n` +
+      `2. SPAWN a fresh subagent whose system prompt IS the "persona_prompt" field in this response — this is ${personaRef}, already included in full. Do NOT call get_agent_prompt; the prompt is right here. Give it this step's description plus the prior-step deliverables in the "context" array. It does the work in its own isolated context and returns the deliverable.\n` +
+      `3. When it returns, YOU (the orchestrator) call complete_step with this step's id, the claim_token, the subagent's deliverable as output, and persona_used — "verbatim" if the subagent ran on persona_prompt unchanged, "adapted" if you edited/trimmed/merged it, "none" if you didn't use it. Report honestly: it is recorded as an adherence signal, not verified, and never blocks completion.\n` +
+      `DO NOT INLINE: doing the work yourself because it seems simpler, faster, cheaper, or "more convenient" is NOT permitted — a fresh isolated context per persona is the entire point and is lost if you inline it. "It's only a small step" is not a reason. If you catch yourself about to do the work directly, STOP and spawn the subagent instead.\n` +
+      `RELIABILITY: if the subagent errors or its connection drops before returning, RETRY or RESUME it (you have its agent id) — do NOT quietly finish the step yourself.\n` +
+      `EXCEPTION (the ONLY one): if your client genuinely has no subagent/Agent tool at all, then call set_agent_identity with agent_id ${agentIdArg} to adopt ${personaRef}, do the step, and state verbatim in your complete_step output: "Completed inline — no subagent capability." If you DO have an Agent/Task tool, this exception does not apply to you.`
+    : `MANDATORY: this step MUST be executed by a FRESH SUBAGENT that you spawn with your Agent/Task tool. Do NOT do this step's work yourself in this conversation.\n` +
+      pickStep +
+      `1. Keep the claim_token from this response — do NOT pass it to the subagent.\n` +
+      `2. Call get_agent_prompt with agent_id ${agentIdArg} to fetch ${personaRef}'s full system prompt.\n` +
+      `3. SPAWN a fresh subagent whose system prompt IS that persona prompt, with this step's description plus the prior-step deliverables in the "context" array. It does the work in its own isolated context and returns the deliverable.\n` +
+      `4. When it returns, YOU (the orchestrator) call complete_step with this step's id, the claim_token, and the subagent's deliverable as the output.\n` +
+      `DO NOT INLINE: doing the work yourself because it seems simpler, faster, cheaper, or "more convenient" is NOT permitted — a fresh isolated context per persona is the entire point and is lost if you inline it. "It's only a small step" is not a reason. If you catch yourself about to do the work directly, STOP and spawn the subagent instead.\n` +
+      `RELIABILITY: if the subagent errors or its connection drops before returning, RETRY or RESUME it (you have its agent id) — do NOT quietly finish the step yourself.\n` +
+      `EXCEPTION (the ONLY one): if your client genuinely has no subagent/Agent tool at all, then call set_agent_identity with agent_id ${agentIdArg} to adopt ${personaRef}, do the step, and state verbatim in your complete_step output: "Completed inline — no subagent capability." If you DO have an Agent/Task tool, this exception does not apply to you.`;
 
   const contextParts: string[] = [];
 
@@ -977,6 +1029,13 @@ export async function claimNextStep(
     done: false,
     step: updated,
     claim_token,
+    ...(personaEmbeddable
+      ? {
+          persona_prompt: matchedBot!.system_prompt,
+          persona_name: matchedBot!.name,
+          persona_role: matchedBot!.role,
+        }
+      : {}),
     instruction,
     rework_instructions,
     available_agents,
@@ -1000,6 +1059,18 @@ export const completeStepSchema = z.object({
   output: z.string().max(50000).optional().describe("Step output or deliverable. This is stored on the step's `output` column and is how subsequent steps receive context — when the next step is claimed, all prior completed steps' outputs are passed in the `context` array. Also posted as a step comment for UI display. Reference uploaded attachments by their exact filename — the UI renders them as clickable links."),
   model_used: z.enum(["fable", "opus", "sonnet", "haiku", "other", "unknown"]).optional()
     .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it). Omit if you don't know. VibeCodes records this to report tier adherence — it is not verified."),
+  persona_used: z.enum(["verbatim", "adapted", "none"]).optional()
+    .describe(
+      "Self-reported: how faithfully this step's subagent used the assigned persona_prompt from claim_next_step. " +
+      "'verbatim' = spawned on persona_prompt unchanged. " +
+      "'adapted' = used the persona but edited, trimmed, summarised, or merged it. " +
+      "'none' = did not use the persona prompt. " +
+      "Omit if there was no assigned persona or you don't know. VibeCodes records this as an adherence signal — not verified, never blocks completion."
+    ),
+  skills_used: z.array(z.string()).optional()
+    .describe(
+      "Self-reported: names of the skills (from claim_next_step's available_skills) whose content was actually loaded via get_agent_skill_content for this step. Pass [] to explicitly report none were loaded. Omit if you don't know."
+    ),
 });
 
 export async function completeStep(
@@ -1067,6 +1138,10 @@ export async function completeStep(
   }
   const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap);
 
+  // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
+  // persona_used -> both NULL (not reported, not a violation).
+  const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used);
+
   // Token is single-use: clear the hash as part of completion.
   const updateFields: Record<string, unknown> = {
     status: newStatus,
@@ -1074,6 +1149,9 @@ export async function completeStep(
     claim_token_hash: null,
     executed_model: executedModel,
     tier_honored: tierHonored,
+    persona_used: personaUsed,
+    persona_honored: personaHonored,
+    skills_used: params.skills_used ?? null,
   };
   if (params.output !== undefined) updateFields.output = params.output;
   if (newStatus === "completed") updateFields.completed_at = new Date().toISOString();
@@ -1083,7 +1161,7 @@ export async function completeStep(
     .update(updateFields)
     .eq("id", params.step_id)
     .eq("status", "in_progress")
-    .select("id, task_id, run_id, title, agent_role, status, output, completed_at, model_tier, executed_model, tier_honored")
+    .select("id, task_id, run_id, title, agent_role, status, output, completed_at, model_tier, executed_model, tier_honored, persona_used, persona_honored, skills_used")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to complete step: ${updateError.message}`);
@@ -1146,6 +1224,18 @@ export const failStepSchema = z.object({
   ),
   model_used: z.enum(["fable", "opus", "sonnet", "haiku", "other", "unknown"]).optional()
     .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it). Omit if you don't know. VibeCodes records this to report tier adherence — it is not verified."),
+  persona_used: z.enum(["verbatim", "adapted", "none"]).optional()
+    .describe(
+      "Self-reported: how faithfully this step's subagent used the assigned persona_prompt from claim_next_step. " +
+      "'verbatim' = spawned on persona_prompt unchanged. " +
+      "'adapted' = used the persona but edited, trimmed, summarised, or merged it. " +
+      "'none' = did not use the persona prompt. " +
+      "Omit if there was no assigned persona or you don't know. VibeCodes records this as an adherence signal — not verified, never blocks completion."
+    ),
+  skills_used: z.array(z.string()).optional()
+    .describe(
+      "Self-reported: names of the skills (from claim_next_step's available_skills) whose content was actually loaded via get_agent_skill_content for this step. Pass [] to explicitly report none were loaded. Omit if you don't know."
+    ),
   reset_to_step_id: z
     .string()
     .uuid()
@@ -1216,12 +1306,19 @@ export async function failStep(
   }
   const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap);
 
+  // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
+  // persona_used -> both NULL (not reported, not a violation).
+  const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used);
+
   const updateFields: Record<string, unknown> = {
     status: "failed",
     completed_at: new Date().toISOString(),
     claim_token_hash: null,
     executed_model: executedModel,
     tier_honored: tierHonored,
+    persona_used: personaUsed,
+    persona_honored: personaHonored,
+    skills_used: params.skills_used ?? null,
   };
   if (params.output !== undefined) updateFields.output = params.output;
 
@@ -1230,7 +1327,7 @@ export async function failStep(
     .update(updateFields)
     .eq("id", params.step_id)
     .in("status", ["in_progress", "awaiting_approval"])
-    .select("id, task_id, run_id, title, agent_role, status, output, model_tier, executed_model, tier_honored")
+    .select("id, task_id, run_id, title, agent_role, status, output, model_tier, executed_model, tier_honored, persona_used, persona_honored, skills_used")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to fail step: ${updateError.message}`);
