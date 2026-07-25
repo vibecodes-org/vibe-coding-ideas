@@ -191,9 +191,12 @@ describe("workflow schemas", () => {
       ).toThrow();
     });
 
-    // P2c FR-1: model_used is optional (backward compatible) and constrained
-    // to the known Task-tool aliases + the "other"/"unknown" sentinels.
-    it("accepts a valid model_used alias", () => {
+    // P2c FR-1 / OQ1 (docs/design-platform-model-defaults.html §5): model_used
+    // is optional (backward compatible) and now a free string (relaxed from a
+    // fixed enum) — a novel platform-default model family must be reportable
+    // with no schema change, so an unrecognised value is soft-validated
+    // (logged if it mismatches) rather than rejected at the schema boundary.
+    it("accepts a known model_used alias", () => {
       const result = completeStepSchema.parse({ step_id: STEP_ID, model_used: "fable" });
       expect(result.model_used).toBe("fable");
     });
@@ -203,15 +206,20 @@ describe("workflow schemas", () => {
       expect(result.model_used).toBeUndefined();
     });
 
-    it("rejects an unrecognised model_used value (e.g. 'gpt-4')", () => {
+    it("accepts a novel/unrecognised model_used value (e.g. a new model family) — never rejected", () => {
+      const result = completeStepSchema.parse({ step_id: STEP_ID, model_used: "gpt-4" });
+      expect(result.model_used).toBe("gpt-4");
+    });
+
+    it("rejects a model_used value over 40 characters", () => {
       expect(() =>
-        completeStepSchema.parse({ step_id: STEP_ID, model_used: "gpt-4" })
+        completeStepSchema.parse({ step_id: STEP_ID, model_used: "a".repeat(41) })
       ).toThrow();
     });
   });
 
   describe("failStepSchema", () => {
-    it("accepts a valid model_used alias", () => {
+    it("accepts a known model_used alias", () => {
       const result = failStepSchema.parse({ step_id: STEP_ID, model_used: "opus" });
       expect(result.model_used).toBe("opus");
     });
@@ -221,9 +229,14 @@ describe("workflow schemas", () => {
       expect(result.model_used).toBeUndefined();
     });
 
-    it("rejects an unrecognised model_used value (e.g. 'gpt-4')", () => {
+    it("accepts a novel/unrecognised model_used value (e.g. a new model family) — never rejected", () => {
+      const result = failStepSchema.parse({ step_id: STEP_ID, model_used: "gpt-4" });
+      expect(result.model_used).toBe("gpt-4");
+    });
+
+    it("rejects a model_used value over 40 characters", () => {
       expect(() =>
-        failStepSchema.parse({ step_id: STEP_ID, model_used: "gpt-4" })
+        failStepSchema.parse({ step_id: STEP_ID, model_used: "a".repeat(41) })
       ).toThrow();
     });
   });
@@ -1276,6 +1289,10 @@ describe("completeStep — tier adherence (P2c)", () => {
     stepData: Record<string, unknown>;
     updatedStep: Record<string, unknown>;
     userModelTierMap?: Record<string, unknown> | null;
+    /** Simulates a live (super-admin-saved) platform_settings row — omit to
+     *  exercise the "missing row -> seed" path (the default in every other
+     *  test in this block). */
+    platformSettingsValue?: unknown;
   }) {
     let commentInserted: unknown = null;
     let usersQueried = 0;
@@ -1292,6 +1309,11 @@ describe("completeStep — tier adherence (P2c)", () => {
       if (table === "users") {
         usersQueried++;
         return createChain({ model_tier_map: opts.userModelTierMap ?? null }).chain;
+      }
+      if (table === "platform_settings") {
+        return createChain(
+          opts.platformSettingsValue === undefined ? null : { value: opts.platformSettingsValue }
+        ).chain;
       }
       if (table === "workflow_step_comments") {
         const chain = createChain(null);
@@ -1332,16 +1354,16 @@ describe("completeStep — tier adherence (P2c)", () => {
     completed_at: "2026-01-01T00:00:00Z",
   };
 
-  it("model_used = resolved model -> executed_model set, tier_honored=true, no comment", async () => {
+  it("model_used = resolved model (seed: frontier -> opus) -> executed_model set, tier_honored=true, no comment", async () => {
     const { ctx, getUpdate, getComment } = ctxFor({
       stepData: { ...baseStep, model_tier: "frontier" },
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "fable" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus" });
 
     const update = getUpdate();
-    expect(update.executed_model).toBe("fable");
+    expect(update.executed_model).toBe("opus");
     expect(update.tier_honored).toBe(true);
     expect(getComment()).toBeNull();
   });
@@ -1352,10 +1374,10 @@ describe("completeStep — tier adherence (P2c)", () => {
       updatedStep: baseUpdatedStep,
     });
 
-    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "opus" });
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "fable" });
 
     const update = getUpdate();
-    expect(update.executed_model).toBe("opus");
+    expect(update.executed_model).toBe("fable");
     expect(update.tier_honored).toBe(true);
     expect(getComment()).toBeNull();
   });
@@ -1381,6 +1403,30 @@ describe("completeStep — tier adherence (P2c)", () => {
     expect(comment.content as string).toContain("Tier not honored");
     expect(comment.content as string).toContain(TIER_ADHERENCE_DISCLOSURE);
     expect((comment.content as string).toLowerCase()).not.toContain("maps to");
+  });
+
+  // Nick's gate note 4: the auto-posted mismatch comment must name the LIVE
+  // platform default (whatever a super-admin currently has configured), never
+  // the seed constant — otherwise the comment can drift from reality the
+  // moment an admin changes the default.
+  it("names the LIVE (super-admin-configured) platform default in the mismatch comment, not the seed", async () => {
+    const { ctx, getComment } = ctxFor({
+      stepData: { ...baseStep, model_tier: "frontier" },
+      updatedStep: baseUpdatedStep,
+      platformSettingsValue: {
+        defaults: { frontier: "fable", standard: "sonnet", cheap: "haiku" },
+        fallback: { fable: "opus", opus: "fable", sonnet: "opus", haiku: "sonnet" },
+      },
+    });
+
+    // Under this LIVE default, frontier resolves to fable (fallback opus) —
+    // "sonnet" is a mismatch either way, but the comment's wording must name
+    // "Fable" (the live default), never "Opus" (the seed default).
+    await completeStep(ctx, { claim_token: TCT.token, step_id: STEP_ID, model_used: "sonnet" });
+
+    const comment = getComment() as Record<string, unknown>;
+    expect(comment.content as string).toContain("Frontier step defaults to Fable");
+    expect(comment.content as string).not.toContain("defaults to Opus");
   });
 
   it("model_used omitted -> executed_model=NULL, tier_honored=NULL (never false), no comment, no users query", async () => {
@@ -4043,8 +4089,8 @@ describe("claimNextStep — subagent instruction (only mode)", () => {
 // ---------------------------------------------------------------------------
 
 describe("resolveModelTier", () => {
-  it("resolves each tier to its platform default and single-hop fallback", () => {
-    expect(resolveModelTier("frontier")).toEqual({ resolved: "fable", fallback: "opus" });
+  it("resolves each tier to its platform default and single-hop fallback (seed: frontier -> opus)", () => {
+    expect(resolveModelTier("frontier")).toEqual({ resolved: "opus", fallback: "fable" });
     expect(resolveModelTier("standard")).toEqual({ resolved: "sonnet", fallback: "opus" });
     expect(resolveModelTier("cheap")).toEqual({ resolved: "haiku", fallback: "sonnet" });
   });
@@ -4062,8 +4108,43 @@ describe("resolveModelTier", () => {
   });
 
   it("treats a null/undefined map the same as no override", () => {
-    expect(resolveModelTier("frontier", null)).toEqual({ resolved: "fable", fallback: "opus" });
-    expect(resolveModelTier("frontier", undefined)).toEqual({ resolved: "fable", fallback: "opus" });
+    expect(resolveModelTier("frontier", null)).toEqual({ resolved: "opus", fallback: "fable" });
+    expect(resolveModelTier("frontier", undefined)).toEqual({ resolved: "opus", fallback: "fable" });
+  });
+
+  it("thread a live platformDefaults argument through — overrides the seed default", () => {
+    const live = {
+      defaults: { frontier: "fable", standard: "sonnet", cheap: "haiku" },
+      fallback: { fable: "opus", opus: "fable", sonnet: "opus", haiku: "sonnet" },
+    };
+    expect(resolveModelTier("frontier", null, live)).toEqual({ resolved: "fable", fallback: "opus" });
+  });
+
+  it("resolves a novel platform-default model family end-to-end (no schema change)", () => {
+    const live = {
+      defaults: { frontier: "opus-5.5", standard: "sonnet", cheap: "haiku" },
+      fallback: { "opus-5.5": "opus", opus: "fable", sonnet: "opus", haiku: "sonnet" },
+    };
+    expect(resolveModelTier("frontier", null, live)).toEqual({ resolved: "opus-5.5", fallback: "opus" });
+  });
+
+  it("falls back to the resolved model itself when the live fallback map doesn't know it and the seed doesn't either", () => {
+    const live = {
+      defaults: { frontier: "opus-5.5", standard: "sonnet", cheap: "haiku" },
+      fallback: {},
+    };
+    expect(resolveModelTier("frontier", null, live)).toEqual({ resolved: "opus-5.5", fallback: "opus-5.5" });
+  });
+
+  it("precedence: a valid user override wins over even a live (non-seed) platform default", () => {
+    const live = { defaults: { frontier: "sonnet", standard: "sonnet", cheap: "haiku" }, fallback: {} };
+    expect(resolveModelTier("frontier", { frontier: "opus" }, live)).toEqual({ resolved: "opus", fallback: "fable" });
+  });
+
+  it("precedence: an invalid user override still falls through to the LIVE platform default, not the seed", () => {
+    const live = { defaults: { frontier: "fable", standard: "sonnet", cheap: "haiku" }, fallback: {} };
+    // "gpt-4" isn't one of the four known override aliases, so it's ignored.
+    expect(resolveModelTier("frontier", { frontier: "gpt-4" }, live)).toEqual({ resolved: "fable", fallback: "opus" });
   });
 });
 
@@ -4155,17 +4236,17 @@ describe("resolveTierAdherence", () => {
     });
   });
 
-  it("tier set, model_used = platform-resolved model -> honored=true", () => {
-    expect(resolveTierAdherence("frontier", "fable")).toEqual({
-      executedModel: "fable",
+  it("tier set, model_used = platform-resolved model (seed: frontier -> opus) -> honored=true", () => {
+    expect(resolveTierAdherence("frontier", "opus")).toEqual({
+      executedModel: "opus",
       tierHonored: true,
     });
   });
 
   it("tier set, model_used = the tier's allowed fallback -> honored=true", () => {
-    // frontier resolves to fable, whose fallback is opus.
-    expect(resolveTierAdherence("frontier", "opus")).toEqual({
-      executedModel: "opus",
+    // frontier resolves to opus, whose fallback is fable.
+    expect(resolveTierAdherence("frontier", "fable")).toEqual({
+      executedModel: "fable",
       tierHonored: true,
     });
   });
@@ -4178,10 +4259,25 @@ describe("resolveTierAdherence", () => {
   });
 
   it("tier set, model_used = an unrelated concrete alias -> honored=false (never NULL)", () => {
-    // frontier resolves to fable/opus — sonnet is neither.
+    // frontier resolves to opus/fable — sonnet is neither.
     expect(resolveTierAdherence("frontier", "sonnet")).toEqual({
       executedModel: "sonnet",
       tierHonored: false,
+    });
+  });
+
+  it("threads a live platformDefaults argument through, so adherence is judged against the LIVE default, not the seed", () => {
+    const live = { defaults: { frontier: "sonnet", standard: "sonnet", cheap: "haiku" }, fallback: { sonnet: "haiku" } };
+    // Under the live default frontier resolves to sonnet (fallback haiku) —
+    // "opus" (the seed's resolved model for frontier) is now neither the
+    // resolved model nor its fallback.
+    expect(resolveTierAdherence("frontier", "opus", null, live)).toEqual({
+      executedModel: "opus",
+      tierHonored: false,
+    });
+    expect(resolveTierAdherence("frontier", "sonnet", null, live)).toEqual({
+      executedModel: "sonnet",
+      tierHonored: true,
     });
   });
 

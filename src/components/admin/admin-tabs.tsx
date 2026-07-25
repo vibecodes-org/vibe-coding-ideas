@@ -9,6 +9,7 @@ import { AdminAgentsDashboard } from "./admin-agents-dashboard";
 import { AdminTeamsDashboard } from "./admin-teams-dashboard";
 import { AdminTemplatesDashboard } from "./admin-templates-dashboard";
 import { AdminMcpToolsDashboard } from "./admin-mcp-tools-dashboard";
+import { AdminPlatformDashboard } from "./admin-platform-dashboard";
 import type { McpToolLogWithUser, McpToolStatsRow } from "./admin-mcp-tools-dashboard";
 import type { UsageLogWithUser, FeedbackWithUser, UserCreditInfo, PlatformStatsEntry } from "@/app/(main)/admin/page";
 import type { BotProfile, FeaturedTeamWithAgents, WorkflowLibraryTemplate } from "@/types";
@@ -80,6 +81,7 @@ export function AdminTabs({
         <TabsTrigger value="teams">Teams</TabsTrigger>
         <TabsTrigger value="templates">Workflows</TabsTrigger>
         <TabsTrigger value="mcp-tools">MCP Tools</TabsTrigger>
+        {isSuperAdmin && <TabsTrigger value="platform">Platform</TabsTrigger>}
       </TabsList>
       <TabsContent value="ai-usage" className="mt-6 space-y-10">
         <AiUsageDashboard usageLogs={usageLogs} filters={usageFilters} userCredits={userCredits} platformStats={platformStats} isSuperAdmin={isSuperAdmin} />
@@ -107,6 +109,13 @@ export function AdminTabs({
       </TabsContent>
       <TabsContent value="mcp-tools" className="mt-6">
         <AdminMcpToolsDashboard recentLogs={mcpToolLogs} stats={mcpToolStats} allToolNames={allMcpToolNames} />
+      </TabsContent>
+      {/* No trigger renders this tab for non-super-admins, but a direct
+          ?tab=platform deep link still resolves this value — AdminPlatformDashboard
+          itself renders the "denied" state in that case (defence in depth,
+          the server action independently re-checks is_super_admin too). */}
+      <TabsContent value="platform" className="mt-6">
+        <AdminPlatformDashboard isSuperAdmin={isSuperAdmin} />
       </TabsContent>
     </Tabs>
   );

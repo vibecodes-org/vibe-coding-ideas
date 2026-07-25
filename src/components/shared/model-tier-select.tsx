@@ -10,6 +10,7 @@ import { SelectContent } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useViewerModelTierMap } from "@/hooks/use-viewer-model-tier-map";
+import { usePlatformModelDefaults } from "@/hooks/use-platform-model-defaults";
 import {
   MODEL_TIERS,
   MODEL_TIER_AUTO_GLOSS,
@@ -19,6 +20,7 @@ import {
   capitalizeModelName,
   tierMismatchSentence,
   type ModelTierMap,
+  type ModelTierValue,
 } from "@/lib/constants";
 
 // Radix Select can't use "" as an item value, so Auto (null) uses this sentinel.
@@ -34,9 +36,13 @@ interface TierOption {
  * Tier options with viewer-resolved glosses (Design-Review CONDITION 3) — a
  * user mapped frontier→opus must read "Runs on Opus", never the platform
  * default. `viewerMap` is undefined while loading, which modelTierGloss
- * falls back to the platform-default display name for.
+ * falls back to the LIVE platform default (`platformDefaults`) for, and to
+ * the seed constant only if that hasn't resolved either.
  */
-function buildOptions(viewerMap: ModelTierMap | null | undefined): TierOption[] {
+function buildOptions(
+  viewerMap: ModelTierMap | null | undefined,
+  platformDefaults: Record<ModelTierValue, string>
+): TierOption[] {
   return [
     {
       value: AUTO_VALUE,
@@ -50,7 +56,7 @@ function buildOptions(viewerMap: ModelTierMap | null | undefined): TierOption[] 
     ...MODEL_TIERS.map((t) => ({
       value: t.value,
       label: t.label,
-      gloss: modelTierGloss(t.value, viewerMap?.[t.value]),
+      gloss: modelTierGloss(t.value, viewerMap?.[t.value], platformDefaults[t.value]),
     })),
   ];
 }
@@ -110,7 +116,11 @@ export function ModelTierSelect({
   const triggerId = id ?? `model-tier-${reactId}`;
   const helperId = `${triggerId}-helper`;
   const viewerMap = useViewerModelTierMap();
-  const options = React.useMemo(() => buildOptions(viewerMap), [viewerMap]);
+  const platformDefaults = usePlatformModelDefaults();
+  const options = React.useMemo(
+    () => buildOptions(viewerMap, platformDefaults.defaults),
+    [viewerMap, platformDefaults]
+  );
 
   const selectValue = value ?? AUTO_VALUE;
   const handleChange = (v: string) => onChange(v === AUTO_VALUE ? null : v);
@@ -215,6 +225,10 @@ export function ModelTierBadge({
   tierHonored?: boolean | null;
   className?: string;
 }) {
+  // Called unconditionally (before the early `!tier` return) per the Rules of
+  // Hooks — cheap no-op when the badge renders nothing anyway.
+  const platformDefaults = usePlatformModelDefaults();
+
   if (!tier) return null;
   const label = modelTierLabel(tier);
   const dishonored = tierHonored === false;
@@ -251,7 +265,7 @@ export function ModelTierBadge({
     <Tooltip>
       <TooltipTrigger asChild>{badge}</TooltipTrigger>
       <TooltipContent className="max-w-72 text-xs">
-        {tierMismatchSentence(tier, executedModel ?? "unknown")}
+        {tierMismatchSentence(tier, executedModel ?? "unknown", platformDefaults.defaults[tier as ModelTierValue])}
       </TooltipContent>
     </Tooltip>
   );

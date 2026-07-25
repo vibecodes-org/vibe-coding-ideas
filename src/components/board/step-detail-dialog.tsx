@@ -68,7 +68,9 @@ import {
   capitalizeModelName,
   tierDefaultsToCopy,
   TIER_ADHERENCE_DISCLOSURE,
+  type ModelTierValue,
 } from "@/lib/constants";
+import { usePlatformModelDefaults } from "@/hooks/use-platform-model-defaults";
 import type { TaskWorkflowStep, WorkflowStepComment } from "@/types";
 import { ApprovalLockIcon } from "./approval-lock-icon";
 
@@ -82,6 +84,9 @@ import { ApprovalLockIcon } from "./approval-lock-icon";
  * failure — most legacy/non-reporting completions land here.
  */
 function StepExecutionLine({ step }: { step: TaskWorkflowStep }) {
+  // Called unconditionally (Rules of Hooks) — cheap no-op on the early-return paths below.
+  const platformDefaults = usePlatformModelDefaults();
+
   if (!step.model_tier) return null;
   if (step.status !== "completed" && step.status !== "failed") return null;
 
@@ -125,7 +130,7 @@ function StepExecutionLine({ step }: { step: TaskWorkflowStep }) {
           </span>{" "}
           <span className="text-muted-foreground">· tier not honored</span>
           <span className="block text-[11px] text-muted-foreground">
-            {tierDefaultsToCopy(step.model_tier)}. Self-reported — not verified.
+            {tierDefaultsToCopy(step.model_tier, platformDefaults.defaults[step.model_tier as ModelTierValue])}. Self-reported — not verified.
           </span>
         </span>
       </div>

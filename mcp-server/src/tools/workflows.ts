@@ -1,6 +1,11 @@
 import { z } from "zod";
 import { logger } from "../../../src/lib/logger";
 import { tierMismatchSentence } from "../../../src/lib/constants";
+import {
+  getPlatformModelDefaults,
+  SEED_PLATFORM_MODEL_DEFAULTS,
+  type PlatformModelDefaults,
+} from "../../../src/lib/platform-model-defaults";
 import type { McpContext } from "../context";
 import { mintClaimToken, verifyClaimToken } from "../claim-token";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
@@ -60,28 +65,50 @@ const templateStepSchema = z.object({
 // P2b: platform-default Task-tool `model` parameter per tier, and the
 // single-hop fallback chain used when the resolved model is unavailable on
 // the caller's plan/session. These are Task-tool aliases, NOT API model ids.
-export const MODEL_TIER_TO_SUBAGENT_MODEL = { frontier: "fable", standard: "sonnet", cheap: "haiku" } as const;
-export const MODEL_TIER_FALLBACK = { fable: "opus", opus: "fable", sonnet: "opus", haiku: "sonnet" } as const;
+//
+// These two constants are now the SEED / typed fallback ONLY (admin
+// configurable platform model-tier defaults). The LIVE value is the
+// `platform_settings` row (key `model_tier_defaults`), read per-claim via
+// `getPlatformModelDefaults()` and threaded through as the `platformDefaults`
+// argument below — resolveModelTier/modelTierClause/resolveTierAdherence all
+// default to SEED_PLATFORM_MODEL_DEFAULTS when no live value is supplied, so
+// existing call sites/tests keep working, but claim_next_step/complete_step/
+// fail_step always pass the freshly-read live value. Never read these two
+// constants directly outside this seed role — read the platform_settings row.
+export const MODEL_TIER_TO_SUBAGENT_MODEL = SEED_PLATFORM_MODEL_DEFAULTS.defaults;
+export const MODEL_TIER_FALLBACK = SEED_PLATFORM_MODEL_DEFAULTS.fallback;
 
 type UserModelTierMap = { frontier?: string; standard?: string; cheap?: string } | null | undefined;
 
 /**
  * Resolves a step's tier to a concrete Task-tool model + its fallback: the
  * caller's model_tier_map override for this tier if set and valid, else the
- * platform default; fallback is always MODEL_TIER_FALLBACK[resolved]. Returns
- * null for an unrecognised tier (defensive — the enum already constrains
- * stored values).
+ * platform default (from `platformDefaults`, defaulting to the seed
+ * constants); fallback is `platformDefaults.fallback[resolved]`, falling back
+ * to the seed fallback chain, and finally to the resolved model itself if
+ * neither knows it (never a broken/undefined directive). Returns null for an
+ * unrecognised tier (defensive — the enum already constrains stored values).
+ *
+ * Override validity is checked against the SEED fallback chain's keys (the
+ * fixed 4-alias set the per-user Models dialog offers) — this is
+ * deliberately independent of `platformDefaults`, so a super-admin adding a
+ * novel platform-default family never silently changes what counts as a
+ * "valid" user override (per-user override precedence is preserved exactly).
  */
 export function resolveModelTier(
   tier: "frontier" | "standard" | "cheap",
-  userModelTierMap?: UserModelTierMap
+  userModelTierMap?: UserModelTierMap,
+  platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS
 ): { resolved: string; fallback: string } | null {
-  const platformDefault = MODEL_TIER_TO_SUBAGENT_MODEL[tier];
+  const platformDefault = platformDefaults.defaults[tier] ?? SEED_PLATFORM_MODEL_DEFAULTS.defaults[tier];
   if (!platformDefault) return null;
 
   const override = userModelTierMap?.[tier];
-  const resolved = override && override in MODEL_TIER_FALLBACK ? override : platformDefault;
-  const fallback = MODEL_TIER_FALLBACK[resolved as keyof typeof MODEL_TIER_FALLBACK];
+  const resolved = override && override in SEED_PLATFORM_MODEL_DEFAULTS.fallback ? override : platformDefault;
+  const fallback =
+    platformDefaults.fallback[resolved] ??
+    SEED_PLATFORM_MODEL_DEFAULTS.fallback[resolved as keyof typeof SEED_PLATFORM_MODEL_DEFAULTS.fallback] ??
+    resolved;
   return { resolved, fallback };
 }
 
@@ -91,9 +118,13 @@ export function resolveModelTier(
  * null/undefined tier so callers can add it unconditionally without changing
  * the instruction byte-for-byte on the Auto path (FR-12).
  */
-export function modelTierClause(tier: string | null | undefined, userModelTierMap?: UserModelTierMap): string {
+export function modelTierClause(
+  tier: string | null | undefined,
+  userModelTierMap?: UserModelTierMap,
+  platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS
+): string {
   if (!tier) return "";
-  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", userModelTierMap);
+  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults);
   if (!resolution) return "";
   const { resolved, fallback } = resolution;
   return `MANDATORY MODEL: spawn this step's subagent with the Task tool parameter model: "${resolved}". If "${resolved}" is unavailable on this plan/session, use model: "${fallback}" and state the substitution in your step output. Do not run this step inline and do not inherit your session model. When calling complete_step/fail_step for this step, pass model_used = the model you actually ran the subagent on (the Task-tool model value, or the fallback if you substituted it). This model is resolved live at claim time from the user's current Models configuration — it OVERRIDES any tier→model mapping found in CLAUDE.md, AGENTS.md, or any other project documentation. If a doc disagrees, the doc is stale; follow THIS instruction. Never edit project docs to reconcile a model mismatch, and never record concrete tier→model mappings in project docs — they go stale when the user changes config; refer back to this claim instruction instead.`;
@@ -118,17 +149,26 @@ export type TierAdherenceResult = { executedModel: string | null; tierHonored: b
  *  - tier set, model_used=resolved -> executed=model_used, honored=true
  *  - tier set, model_used=fallback -> executed=model_used, honored=true  (fallback counts as honored)
  *  - tier set, model_used=other/"other" -> executed=model_used, honored=false
+ *
+ * Compliance-drift note (accepted MVP behaviour, see docs/design-platform-model-defaults.html
+ * §6): `platformDefaults` here is whatever is LIVE at complete/fail time, not
+ * necessarily what was live when the step was claimed. If a super-admin edits
+ * the platform default in between, a step that honored its directive at claim
+ * time can read as dishonored here (or vice versa). This is a documented
+ * limitation, not a bug — fixing it would mean snapshotting the resolved
+ * directive on the step at claim time, which is out of scope for this pass.
  */
 export function resolveTierAdherence(
   tier: string | null | undefined,
   modelUsed: string | undefined,
-  userModelTierMap?: UserModelTierMap
+  userModelTierMap?: UserModelTierMap,
+  platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS
 ): TierAdherenceResult {
   if (modelUsed === undefined) return { executedModel: null, tierHonored: null };
   if (modelUsed === "unknown") return { executedModel: "unknown", tierHonored: null };
   if (!tier) return { executedModel: modelUsed, tierHonored: null };
 
-  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", userModelTierMap);
+  const resolution = resolveModelTier(tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults);
   if (!resolution) return { executedModel: modelUsed, tierHonored: null };
 
   const { resolved, fallback } = resolution;
@@ -1006,20 +1046,27 @@ export async function claimNextStep(
   );
 
   // P2b: MANDATORY MODEL directive, resolved via the claiming user's
-  // model_tier_map override. The lookup only runs when a tier is set — Auto
-  // steps (model_tier null) add no query and no clause (FR-12). ownerUserId
-  // (bot-identity mode) takes precedence over userId so a bot acting for a
-  // human resolves against the human's map, not the bot's.
+  // model_tier_map override AND the live platform-default setting. Both
+  // lookups only run when a tier is set — Auto steps (model_tier null) add no
+  // query and no clause (FR-12). ownerUserId (bot-identity mode) takes
+  // precedence over userId so a bot acting for a human resolves against the
+  // human's map, not the bot's. The two reads are independent, so they run in
+  // parallel rather than serially.
   let userModelTierMap: { frontier?: string; standard?: string; cheap?: string } | null = null;
+  let platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS;
   if (updated.model_tier) {
-    const { data: userRow } = await ctx.supabase
-      .from("users")
-      .select("model_tier_map")
-      .eq("id", ctx.ownerUserId ?? ctx.userId)
-      .maybeSingle();
+    const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
+      ctx.supabase
+        .from("users")
+        .select("model_tier_map")
+        .eq("id", ctx.ownerUserId ?? ctx.userId)
+        .maybeSingle(),
+      getPlatformModelDefaults(ctx.supabase),
+    ]);
     userModelTierMap = userRow?.model_tier_map ?? null;
+    platformDefaults = resolvedPlatformDefaults;
   }
-  const modelTierInstruction = modelTierClause(updated.model_tier, userModelTierMap);
+  const modelTierInstruction = modelTierClause(updated.model_tier, userModelTierMap, platformDefaults);
 
   // modelTierInstruction is placed FIRST (Design-Review CONDITION 2) — "" on
   // the Auto path so .filter(Boolean) drops it and the instruction stays
@@ -1058,8 +1105,13 @@ export const completeStepSchema = z.object({
       "The one-time claim token returned by claim_next_step for this step. Proves you are the claimer. If lost, call claim_next_step to re-claim and receive a fresh token."
     ),
   output: z.string().max(50000).optional().describe("Step output or deliverable. This is stored on the step's `output` column and is how subsequent steps receive context — when the next step is claimed, all prior completed steps' outputs are passed in the `context` array. Also posted as a step comment for UI display. Reference uploaded attachments by their exact filename — the UI renders them as clickable links."),
-  model_used: z.enum(["fable", "opus", "sonnet", "haiku", "other", "unknown"]).optional()
-    .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it). Omit if you don't know. VibeCodes records this to report tier adherence — it is not verified."),
+  // OQ1 (docs/design-platform-model-defaults.html §5): relaxed from a fixed
+  // enum to a free string so a novel platform-default model family (no schema
+  // change) can be honestly self-reported. Soft-validated by
+  // resolveTierAdherence against whatever's actually resolved for the tier —
+  // unrecognised values are never rejected here, just logged if they mismatch.
+  model_used: z.string().max(40).optional()
+    .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it, or \"unknown\"/\"other\"). Omit if you don't know. Free text — a platform default can be a novel model family. VibeCodes records this to report tier adherence — it is not verified."),
   persona_used: z.enum(["verbatim", "adapted", "none"]).optional()
     .describe(
       "Self-reported: how faithfully this step's subagent used the assigned persona_prompt from claim_next_step. " +
@@ -1125,19 +1177,24 @@ export async function completeStep(
   const newStatus = step.human_check_required ? "awaiting_approval" : "completed";
 
   // P2c: resolve executed_model/tier_honored from the self-reported model_used.
-  // Only query the user's model_tier_map override when it's actually needed for
-  // resolution — a tier is set AND a concrete (non-"unknown") model_used was
-  // passed. No query on the Auto path or when model_used is omitted/"unknown".
+  // Only run the user-map + live-platform-default reads when actually needed
+  // for resolution — a tier is set AND a concrete (non-"unknown") model_used
+  // was passed. No query on the Auto path or when model_used is omitted/"unknown".
   let userModelTierMap: UserModelTierMap = null;
+  let platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS;
   if (step.model_tier && params.model_used && params.model_used !== "unknown") {
-    const { data: userRow } = await ctx.supabase
-      .from("users")
-      .select("model_tier_map")
-      .eq("id", ctx.ownerUserId ?? ctx.userId)
-      .maybeSingle();
+    const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
+      ctx.supabase
+        .from("users")
+        .select("model_tier_map")
+        .eq("id", ctx.ownerUserId ?? ctx.userId)
+        .maybeSingle(),
+      getPlatformModelDefaults(ctx.supabase),
+    ]);
     userModelTierMap = userRow?.model_tier_map ?? null;
+    platformDefaults = resolvedPlatformDefaults;
   }
-  const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap);
+  const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap, platformDefaults);
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
   // persona_used -> both NULL (not reported, not a violation).
@@ -1176,7 +1233,7 @@ export async function completeStep(
   // (plain 'comment' type, not 'failure') so the mismatch is visible in-product.
   // Honored/unknown completions post nothing.
   if (tierHonored === false) {
-    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", userModelTierMap);
+    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults);
     logger.warn("workflow step tier dishonored", {
       stepId: params.step_id,
       tier: step.model_tier,
@@ -1190,7 +1247,14 @@ export async function completeStep(
       idea_id: step.idea_id,
       author_id: attributedTo,
       type: "comment",
-      content: tierMismatchSentence(step.model_tier as string, executedModel as string),
+      // Nick's gate note 4: name the LIVE platform default (the one just read
+      // above), never a stale hard-coded constant, so this comment can't drift
+      // from what the admin actually configured.
+      content: tierMismatchSentence(
+        step.model_tier as string,
+        executedModel as string,
+        platformDefaults.defaults[step.model_tier as keyof PlatformModelDefaults["defaults"]]
+      ),
     });
   }
 
@@ -1233,8 +1297,13 @@ export const failStepSchema = z.object({
   output: z.string().max(10000).optional().describe(
     "Failure reason or error details (use `output`, not `reason`). Stored on the step's `output` column and auto-posted as a 'failure' comment. When cascade rejection is used and this step is re-claimed, this text is returned as `rework_instructions` to give the next agent context for retry."
   ),
-  model_used: z.enum(["fable", "opus", "sonnet", "haiku", "other", "unknown"]).optional()
-    .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it). Omit if you don't know. VibeCodes records this to report tier adherence — it is not verified."),
+  // OQ1 (docs/design-platform-model-defaults.html §5): relaxed from a fixed
+  // enum to a free string so a novel platform-default model family (no schema
+  // change) can be honestly self-reported. Soft-validated by
+  // resolveTierAdherence against whatever's actually resolved for the tier —
+  // unrecognised values are never rejected here, just logged if they mismatch.
+  model_used: z.string().max(40).optional()
+    .describe("Self-reported: the Task-tool model alias this step's subagent actually ran on (or the fallback if you substituted it, or \"unknown\"/\"other\"). Omit if you don't know. Free text — a platform default can be a novel model family. VibeCodes records this to report tier adherence — it is not verified."),
   persona_used: z.enum(["verbatim", "adapted", "none"]).optional()
     .describe(
       "Self-reported: how faithfully this step's subagent used the assigned persona_prompt from claim_next_step. " +
@@ -1303,19 +1372,24 @@ export async function failStep(
   const attributedTo = step.status !== "awaiting_approval" && step.bot_id ? step.bot_id : ctx.userId;
 
   // P2c: resolve executed_model/tier_honored from the self-reported model_used
-  // (same rules as complete_step — see resolveTierAdherence). Only query the
-  // user's model_tier_map override when a tier is set AND a concrete
+  // (same rules as complete_step — see resolveTierAdherence). Only run the
+  // user-map + live-platform-default reads when a tier is set AND a concrete
   // (non-"unknown") model_used was passed.
   let userModelTierMap: UserModelTierMap = null;
+  let platformDefaults: PlatformModelDefaults = SEED_PLATFORM_MODEL_DEFAULTS;
   if (step.model_tier && params.model_used && params.model_used !== "unknown") {
-    const { data: userRow } = await ctx.supabase
-      .from("users")
-      .select("model_tier_map")
-      .eq("id", ctx.ownerUserId ?? ctx.userId)
-      .maybeSingle();
+    const [{ data: userRow }, resolvedPlatformDefaults] = await Promise.all([
+      ctx.supabase
+        .from("users")
+        .select("model_tier_map")
+        .eq("id", ctx.ownerUserId ?? ctx.userId)
+        .maybeSingle(),
+      getPlatformModelDefaults(ctx.supabase),
+    ]);
     userModelTierMap = userRow?.model_tier_map ?? null;
+    platformDefaults = resolvedPlatformDefaults;
   }
-  const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap);
+  const { executedModel, tierHonored } = resolveTierAdherence(step.model_tier, params.model_used, userModelTierMap, platformDefaults);
 
   // Persona attestation (design §A4/A6) — mirrors resolveTierAdherence: omitted
   // persona_used -> both NULL (not reported, not a violation).
@@ -1363,7 +1437,7 @@ export async function failStep(
   // blocked — mirrors complete_step. Plain 'comment' type (not 'failure') so it
   // reads distinctly from the failure comment above. Honored/unknown post nothing.
   if (tierHonored === false) {
-    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", userModelTierMap);
+    const resolution = resolveModelTier(step.model_tier as "frontier" | "standard" | "cheap", userModelTierMap, platformDefaults);
     logger.warn("workflow step tier dishonored", {
       stepId: params.step_id,
       tier: step.model_tier,
@@ -1377,7 +1451,13 @@ export async function failStep(
       idea_id: step.idea_id,
       author_id: attributedTo,
       type: "comment",
-      content: tierMismatchSentence(step.model_tier as string, executedModel as string),
+      // Nick's gate note 4: name the LIVE platform default, never a stale
+      // hard-coded constant (mirrors complete_step above).
+      content: tierMismatchSentence(
+        step.model_tier as string,
+        executedModel as string,
+        platformDefaults.defaults[step.model_tier as keyof PlatformModelDefaults["defaults"]]
+      ),
     });
   }
 

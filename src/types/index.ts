@@ -155,6 +155,9 @@ export type FeaturedTeamWithAgents = FeaturedTeam & {
 // AI usage types
 export type AiUsageLog = Database["public"]["Tables"]["ai_usage_log"]["Row"];
 
+// Platform settings (admin-configurable, greenfield key/value store)
+export type PlatformSetting = Database["public"]["Tables"]["platform_settings"]["Row"];
+
 // Collaboration request types
 export type CollaborationRequest = Database["public"]["Tables"]["collaboration_requests"]["Row"];
 export type CollaborationRequestStatus = Database["public"]["Enums"]["collaboration_request_status"];

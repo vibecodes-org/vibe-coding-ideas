@@ -33,13 +33,20 @@ export const MODEL_TIER_WHEN_TO_USE: Record<ModelTierValue, string> = {
 };
 
 /**
- * Display name for the platform-default model of each tier. UI-only mirror of
- * the canonical MODEL_TIER_TO_SUBAGENT_MODEL map in
- * mcp-server/src/tools/workflows.ts (the backend law for directive
- * resolution) — keep in sync if the platform defaults ever change.
+ * Display name for the platform-default model of each tier. This is the
+ * SEED / typed fallback ONLY — the live, admin-editable value lives in the
+ * `platform_settings` table (key `model_tier_defaults`, see
+ * src/lib/platform-model-defaults.ts + the admin "Platform" tab) and is read
+ * per-request by getPlatformModelDefaults(). Every UI surface that displays a
+ * tier's default model should thread the live value through
+ * modelTierGloss/tierDefaultsToCopy/tierMismatchSentence's optional
+ * `platformDefaultModel` argument (via usePlatformModelDefaults()) — this
+ * constant is only the safe floor when that fetch hasn't resolved yet or the
+ * platform_settings row is missing/invalid. Keep in sync with
+ * SEED_PLATFORM_MODEL_DEFAULTS in platform-model-defaults.ts.
  */
 export const MODEL_TIER_PLATFORM_DEFAULT_MODEL: Record<ModelTierValue, string> = {
-  frontier: "Fable",
+  frontier: "Opus",
   standard: "Sonnet",
   cheap: "Haiku",
 };
@@ -71,11 +78,25 @@ export function capitalizeModelName(model: string): string {
  * Design-Review CONDITION 3). `resolvedModel` MUST be the viewer's resolved
  * model for this tier (their model_tier_map override) — pass undefined/null
  * only while the viewer's map is loading/unknown, which falls back to the
- * platform-default display name. Never pass a platform-wide constant here:
- * a user mapped frontier→opus must read "Runs on Opus", not "Runs on Fable".
+ * platform default. Never hard-code a platform-wide constant here: a user
+ * mapped frontier→opus must read "Runs on Opus", not the platform default.
+ *
+ * `platformDefaultModel` is the LIVE platform default's raw alias for this
+ * tier (e.g. from usePlatformModelDefaults()) — pass it whenever available so
+ * the "no override" case reflects the admin-configured setting, not the
+ * seed constant. Omit only while that fetch hasn't resolved yet, which falls
+ * back to MODEL_TIER_PLATFORM_DEFAULT_MODEL (the seed).
  */
-export function modelTierGloss(tier: ModelTierValue, resolvedModel?: string | null): string {
-  const modelLabel = resolvedModel ? capitalizeModelName(resolvedModel) : MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier];
+export function modelTierGloss(
+  tier: ModelTierValue,
+  resolvedModel?: string | null,
+  platformDefaultModel?: string
+): string {
+  const modelLabel = resolvedModel
+    ? capitalizeModelName(resolvedModel)
+    : platformDefaultModel
+      ? capitalizeModelName(platformDefaultModel)
+      : MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier];
   return `Runs on ${modelLabel} · ${MODEL_TIER_WHEN_TO_USE[tier]}`;
 }
 
@@ -102,10 +123,23 @@ export const TIER_ADHERENCE_DISCLOSURE =
  * adherence data is never re-resolved against that map after the fact — this
  * always names the stable platform default, which is what every surface
  * displays.
+ *
+ * `platformDefaultModel` is the LIVE platform default's raw alias for this
+ * tier — pass it (via usePlatformModelDefaults()) so this reflects the
+ * admin-configured setting rather than the seed constant. Omit only while
+ * that fetch hasn't resolved, which falls back to the seed.
+ *
+ * Compliance-drift note (accepted MVP behaviour): adherence for an already
+ * *completed* step is judged against whatever the platform default IS NOW,
+ * not what it was at claim time — if a super-admin changes the default
+ * between claim and complete, a step honored under the old default can read
+ * as a mismatch (or vice versa) here. Documented, not fixed, in this pass.
  */
-export function tierDefaultsToCopy(tier: string): string {
+export function tierDefaultsToCopy(tier: string, platformDefaultModel?: string): string {
   const label = modelTierLabel(tier);
-  const model = MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier as ModelTierValue] ?? tier;
+  const model = platformDefaultModel
+    ? capitalizeModelName(platformDefaultModel)
+    : MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier as ModelTierValue] ?? tier;
   return `${label} defaults to ${model}`;
 }
 
@@ -114,10 +148,20 @@ export function tierDefaultsToCopy(tier: string): string {
  * the row badge's tooltip (model-tier-select.tsx) and the MCP auto-posted
  * step comment (mcp-server/src/tools/workflows.ts), so the wording never
  * drifts between the two surfaces (design §04/§07).
+ *
+ * `platformDefaultModel` is the LIVE platform default's raw alias for this
+ * tier at the time of the call — the client passes usePlatformModelDefaults(),
+ * the server (workflows.ts) passes the same platformDefaults it already
+ * fetched to resolve the directive, so a mismatch comment never names a stale
+ * default (see tierDefaultsToCopy's compliance-drift note above — this
+ * sentence is generated at complete/fail time, always against the
+ * then-current default).
  */
-export function tierMismatchSentence(tier: string, executedModel: string): string {
+export function tierMismatchSentence(tier: string, executedModel: string, platformDefaultModel?: string): string {
   const label = modelTierLabel(tier);
-  const defaultModel = MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier as ModelTierValue] ?? tier;
+  const defaultModel = platformDefaultModel
+    ? capitalizeModelName(platformDefaultModel)
+    : MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier as ModelTierValue] ?? tier;
   return `Tier not honored — this ${label} step defaults to ${defaultModel}, but the orchestrator reported running on ${capitalizeModelName(executedModel)}. ${TIER_ADHERENCE_DISCLOSURE}`;
 }
 

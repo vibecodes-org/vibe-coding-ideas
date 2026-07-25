@@ -269,21 +269,29 @@ describe("defaultTierForRole", () => {
 // ── modelTierGloss (P2b Design-Review CONDITION 3 / CONDITION 4) ──────
 
 describe("modelTierGloss", () => {
-  it("falls back to the platform-default model name when no resolved model is passed", () => {
-    expect(modelTierGloss("frontier")).toBe("Runs on Fable · decisions & design");
+  it("falls back to the seed platform-default model name when no resolved model or live default is passed", () => {
+    expect(modelTierGloss("frontier")).toBe("Runs on Opus · decisions & design");
     expect(modelTierGloss("standard")).toBe("Runs on Sonnet · most build steps");
     expect(modelTierGloss("cheap")).toBe("Runs on Haiku · mechanical steps");
   });
 
-  it("falls back to the platform default for null/undefined (loading/unknown viewer map)", () => {
-    expect(modelTierGloss("frontier", null)).toBe("Runs on Fable · decisions & design");
-    expect(modelTierGloss("frontier", undefined)).toBe("Runs on Fable · decisions & design");
+  it("falls back to the seed platform default for null/undefined (loading/unknown viewer map)", () => {
+    expect(modelTierGloss("frontier", null)).toBe("Runs on Opus · decisions & design");
+    expect(modelTierGloss("frontier", undefined)).toBe("Runs on Opus · decisions & design");
   });
 
-  // CONDITION 3: a user mapped frontier→opus must read "Runs on Opus", never "Runs on Fable".
+  // CONDITION 3: a user mapped frontier→fable must read "Runs on Fable", never the platform default.
   it("reflects the viewer's resolved override instead of the platform default", () => {
-    expect(modelTierGloss("frontier", "opus")).toBe("Runs on Opus · decisions & design");
+    expect(modelTierGloss("frontier", "fable")).toBe("Runs on Fable · decisions & design");
     expect(modelTierGloss("standard", "haiku")).toBe("Runs on Haiku · most build steps");
+  });
+
+  it("prefers the live platform default over the seed constant when no override is resolved", () => {
+    expect(modelTierGloss("frontier", undefined, "opus-5.5")).toBe("Runs on Opus-5.5 · decisions & design");
+  });
+
+  it("still prefers a resolved override over a live platform default", () => {
+    expect(modelTierGloss("frontier", "sonnet", "opus-5.5")).toBe("Runs on Sonnet · decisions & design");
   });
 });
 
@@ -291,7 +299,8 @@ describe("modelTierGloss", () => {
 
 describe("MODEL_TIER_RUNS_ON_HELPER", () => {
   it("does not describe the fallback as a directional tier shift", () => {
-    // Fable -> Opus is a downgrade, so wording implying "up"/"next tier" would be false.
+    // A per-user override can move a tier to a smaller OR larger model, so
+    // wording implying "up"/"next tier" would sometimes be false.
     expect(MODEL_TIER_RUNS_ON_HELPER.toLowerCase()).not.toContain("next tier");
     expect(MODEL_TIER_RUNS_ON_HELPER.toLowerCase()).not.toContain("tier up");
   });
@@ -314,10 +323,14 @@ describe("capitalizeModelName", () => {
 });
 
 describe("tierDefaultsToCopy", () => {
-  it("says '<Tier> defaults to <Model>', never 'maps to'", () => {
-    expect(tierDefaultsToCopy("frontier")).toBe("Frontier defaults to Fable");
+  it("says '<Tier> defaults to <Model>', never 'maps to' — falls back to the seed when no live default is passed", () => {
+    expect(tierDefaultsToCopy("frontier")).toBe("Frontier defaults to Opus");
     expect(tierDefaultsToCopy("standard")).toBe("Standard defaults to Sonnet");
     expect(tierDefaultsToCopy("cheap")).toBe("Cheap defaults to Haiku");
+  });
+
+  it("prefers a live platform default over the seed constant", () => {
+    expect(tierDefaultsToCopy("frontier", "fable")).toBe("Frontier defaults to Fable");
   });
 
   it("never uses 'maps to' wording (CONDITION 1)", () => {
@@ -328,13 +341,18 @@ describe("tierDefaultsToCopy", () => {
 });
 
 describe("tierMismatchSentence", () => {
-  it("states the mismatch, uses 'defaults to', and includes the disclosure verbatim", () => {
+  it("states the mismatch, uses 'defaults to', and includes the disclosure verbatim — falls back to the seed when no live default is passed", () => {
     const sentence = tierMismatchSentence("frontier", "sonnet");
     expect(sentence).toContain("Tier not honored");
-    expect(sentence).toContain("Frontier step defaults to Fable");
+    expect(sentence).toContain("Frontier step defaults to Opus");
     expect(sentence).toContain("reported running on Sonnet");
     expect(sentence).toContain(TIER_ADHERENCE_DISCLOSURE);
     expect(sentence.toLowerCase()).not.toContain("maps to");
     expect(sentence.toLowerCase()).not.toContain("verified");
+  });
+
+  it("names the LIVE platform default when passed, so a mismatch comment never names a stale default", () => {
+    const sentence = tierMismatchSentence("frontier", "sonnet", "fable");
+    expect(sentence).toContain("Frontier step defaults to Fable");
   });
 });

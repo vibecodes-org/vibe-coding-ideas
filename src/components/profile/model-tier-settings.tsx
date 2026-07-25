@@ -24,9 +24,10 @@ import {
 } from "@/components/ui/select";
 import { updateModelTierMap } from "@/actions/profile";
 import { setViewerModelTierMapCache } from "@/hooks/use-viewer-model-tier-map";
+import { usePlatformModelDefaults } from "@/hooks/use-platform-model-defaults";
 import {
-  MODEL_TIER_PLATFORM_DEFAULT_MODEL,
   MODEL_TIER_WHEN_TO_USE,
+  capitalizeModelName,
   type ModelAlias,
   type ModelTierMap,
   type ModelTierValue,
@@ -73,6 +74,7 @@ export function ModelTierSettings({
   const setOpen = isControlled ? controlledOnOpenChange! : setInternalOpen;
   const [isPending, startTransition] = useTransition();
   const [staged, setStaged] = useState<ModelTierMap>(map ?? {});
+  const platformDefaults = usePlatformModelDefaults();
 
   // Re-stage from the persisted map on every open so a prior Cancel never
   // leaks into the next open.
@@ -136,7 +138,7 @@ export function ModelTierSettings({
         <div className="space-y-4 py-2">
           {TIER_FIELDS.map(({ tier, label }) => {
             const selectValue = staged[tier] ?? PLATFORM_DEFAULT_VALUE;
-            const platformLabel = MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier];
+            const platformLabel = capitalizeModelName(platformDefaults.defaults[tier]);
             const selectedOption = MODEL_OPTIONS.find((m) => m.value === staged[tier]);
             const triggerId = `model-tier-map-${tier}`;
 

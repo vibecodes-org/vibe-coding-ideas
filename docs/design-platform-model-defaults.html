@@ -1,0 +1,428 @@
+<!--
+  UX Design — Admin-configurable platform model-tier defaults
+  Step 2 of 6 (Feature Development). Builds on the Requirements step.
+  Self-contained, dark-theme (zinc) to match VibeCodes. No external assets.
+-->
+<meta charset="utf-8" />
+<title>Design · Admin-configurable platform model-tier defaults</title>
+<style>
+  :root {
+    --bg: #09090b; --panel: #18181b; --panel-2: #212124; --panel-3: #27272a;
+    --border: #27272a; --border-2: #3f3f46;
+    --fg: #fafafa; --muted: #a1a1aa; --faint: #71717a;
+    --primary: #fafafa; --primary-fg: #18181b;
+    --emerald: #34d399; --amber: #fbbf24; --rose: #fb7185; --sky: #38bdf8; --violet: #a78bfa;
+    --radius: 10px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: var(--sans); font-size: 15px; line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 40px 20px 96px; }
+  header.doc { border-bottom: 1px solid var(--border); padding-bottom: 22px; margin-bottom: 8px; }
+  .kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--sky); font-weight: 600; }
+  h1 { font-size: 27px; line-height: 1.25; margin: 8px 0 10px; letter-spacing: -.01em; }
+  h2 { font-size: 20px; margin: 44px 0 12px; letter-spacing: -.01em; padding-top: 8px; }
+  h3 { font-size: 15px; margin: 26px 0 8px; color: var(--fg); }
+  p { color: #e4e4e7; }
+  .lede { color: var(--muted); font-size: 15px; }
+  a { color: var(--sky); }
+  code, .mono { font-family: var(--mono); font-size: .86em; }
+  code { background: var(--panel-3); padding: 1.5px 6px; border-radius: 5px; color: #e4e4e7; }
+  .muted { color: var(--muted); }
+  .faint { color: var(--faint); }
+  section { scroll-margin-top: 20px; }
+
+  .callout {
+    background: linear-gradient(180deg, rgba(56,189,248,.07), rgba(56,189,248,.02));
+    border: 1px solid rgba(56,189,248,.25); border-left: 3px solid var(--sky);
+    border-radius: var(--radius); padding: 14px 16px; margin: 18px 0; font-size: 14px;
+  }
+  .callout.warn { border-color: rgba(251,191,36,.3); border-left-color: var(--amber); background: linear-gradient(180deg, rgba(251,191,36,.07), rgba(251,191,36,.02)); }
+  .callout b { color: #fff; }
+
+  /* ---- App-frame mockups ---- */
+  .frame {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 14px;
+    overflow: hidden; margin: 16px 0 6px; box-shadow: 0 12px 40px -18px rgba(0,0,0,.8);
+  }
+  .frame-cap { font-size: 12px; color: var(--faint); margin: 0 2px 20px; }
+  .browser-bar { display: flex; align-items: center; gap: 8px; padding: 9px 14px; background: var(--panel-2); border-bottom: 1px solid var(--border); }
+  .dot { width: 11px; height: 11px; border-radius: 50%; background: var(--border-2); }
+  .url { margin-left: 10px; font-family: var(--mono); font-size: 11px; color: var(--faint); background: var(--bg); padding: 4px 12px; border-radius: 6px; flex: 1; }
+  .app { padding: 22px; }
+  .app-h1 { font-size: 20px; font-weight: 700; margin: 0 0 16px; }
+
+  /* tabs */
+  .tabs { display: flex; gap: 2px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 9px; padding: 3px; overflow-x: auto; }
+  .tab { padding: 6px 12px; border-radius: 6px; font-size: 13px; color: var(--muted); white-space: nowrap; }
+  .tab.active { background: var(--panel-3); color: var(--fg); font-weight: 600; box-shadow: inset 0 0 0 1px var(--border-2); }
+  .tab.new { color: var(--emerald); }
+  .tab.new.active { color: var(--emerald); box-shadow: inset 0 0 0 1px rgba(52,211,153,.4); }
+
+  /* card */
+  .card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-top: 20px; }
+  .card-h { display: flex; align-items: flex-start; gap: 10px; margin-bottom: 4px; }
+  .card-title { font-size: 16px; font-weight: 650; margin: 0; }
+  .card-sub { color: var(--muted); font-size: 13px; margin: 2px 0 18px; }
+  .icon { color: var(--violet); flex: 0 0 auto; }
+
+  /* tier rows */
+  .tier { display: grid; grid-template-columns: 130px 1fr; gap: 14px; align-items: start; padding: 14px 0; border-top: 1px solid var(--border); }
+  .tier:first-of-type { border-top: none; }
+  .tier-label { font-weight: 600; font-size: 14px; }
+  .tier-when { display: block; font-weight: 400; color: var(--faint); font-size: 12px; margin-top: 2px; }
+  .field { display: flex; flex-direction: column; gap: 6px; }
+  .flabel { font-size: 12px; color: var(--muted); font-weight: 500; }
+  .control {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    background: var(--bg); border: 1px solid var(--border-2); border-radius: 8px;
+    padding: 9px 12px; font-size: 14px; min-height: 40px;
+  }
+  .control.focus { border-color: var(--sky); box-shadow: 0 0 0 3px rgba(56,189,248,.18); }
+  .control.novel { border-color: var(--amber); box-shadow: 0 0 0 3px rgba(251,191,36,.14); }
+  .chev { color: var(--faint); font-size: 11px; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; padding: 2px 8px; border-radius: 999px; font-weight: 600; }
+  .pill.default { background: rgba(52,211,153,.12); color: var(--emerald); border: 1px solid rgba(52,211,153,.3); }
+  .pill.seed { background: rgba(161,161,170,.12); color: var(--muted); border: 1px solid var(--border-2); }
+
+  /* suggestion menu */
+  .menu { background: var(--panel-3); border: 1px solid var(--border-2); border-radius: 8px; padding: 5px; margin-top: 4px; width: 260px; box-shadow: 0 16px 40px -16px #000; }
+  .mitem { padding: 7px 10px; border-radius: 6px; font-size: 13px; display: flex; justify-content: space-between; align-items: center; }
+  .mitem:hover, .mitem.sel { background: var(--panel); }
+  .mitem .g { color: var(--faint); font-size: 11px; }
+  .mhead { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--faint); padding: 6px 10px 3px; }
+
+  .btnrow { display: flex; gap: 10px; justify-content: flex-end; align-items: center; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--border); }
+  .btn { font-size: 13px; font-weight: 600; padding: 8px 15px; border-radius: 8px; border: 1px solid var(--border-2); background: transparent; color: var(--fg); }
+  .btn.ghost { border-color: transparent; color: var(--muted); }
+  .btn.primary { background: var(--primary); color: var(--primary-fg); border-color: var(--primary); }
+  .btn.disabled { opacity: .45; }
+  .btn.danger { border-color: rgba(251,113,133,.4); color: var(--rose); }
+  .why { font-size: 11px; color: var(--faint); margin-right: auto; }
+
+  /* toast */
+  .toast { display: inline-flex; align-items: center; gap: 9px; background: var(--panel-3); border: 1px solid var(--border-2); border-left: 3px solid var(--emerald); border-radius: 9px; padding: 11px 15px; font-size: 13px; box-shadow: 0 16px 40px -16px #000; }
+  .toast .ck { color: var(--emerald); }
+
+  /* audit */
+  .audit { font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; margin-top: 14px; padding: 10px 12px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; }
+  .avatar { width: 20px; height: 20px; border-radius: 50%; background: linear-gradient(135deg, var(--violet), var(--sky)); flex: 0 0 auto; }
+
+  /* denied */
+  .denied { text-align: center; padding: 40px 20px; color: var(--muted); }
+  .denied .lock { font-size: 26px; }
+
+  /* ripple chips */
+  .chip { display: inline-flex; align-items: center; gap: 6px; background: var(--panel-3); border: 1px solid var(--border-2); border-radius: 7px; padding: 3px 9px; font-size: 12px; }
+  .before-after { display: grid; grid-template-columns: 1fr auto 1fr; gap: 14px; align-items: center; margin: 12px 0; }
+  .ba-col { background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .ba-col .tag { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; font-weight: 700; }
+  .ba-col.old .tag { color: var(--faint); }
+  .ba-col.new .tag { color: var(--emerald); }
+  .arrow { color: var(--faint); font-size: 18px; }
+
+  /* tables */
+  table.grid { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; }
+  table.grid th, table.grid td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+  table.grid th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .04em; }
+  table.grid tr:last-child td { border-bottom: none; }
+  table.grid td:first-child { font-weight: 600; white-space: nowrap; }
+  .yes { color: var(--emerald); } .no { color: var(--rose); }
+
+  /* OQ */
+  .oq { border: 1px solid var(--border); border-radius: 12px; padding: 16px 18px; margin: 14px 0; background: var(--panel); }
+  .oq-h { display: flex; align-items: center; gap: 10px; margin-bottom: 6px; }
+  .badge { font-family: var(--mono); font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--panel-3); color: var(--sky); border: 1px solid var(--border-2); }
+  .rec { font-size: 12px; font-weight: 700; color: var(--emerald); border: 1px solid rgba(52,211,153,.3); background: rgba(52,211,153,.1); padding: 2px 9px; border-radius: 6px; }
+
+  ul.tight { margin: 8px 0; padding-left: 20px; }
+  ul.tight li { margin: 5px 0; color: #e4e4e7; }
+  hr { border: none; border-top: 1px solid var(--border); margin: 32px 0; }
+  .toc { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 6px; }
+  .toc a { font-size: 12.5px; color: var(--muted); text-decoration: none; border: 1px solid var(--border); padding: 5px 11px; border-radius: 999px; }
+  .toc a:hover { border-color: var(--border-2); color: var(--fg); }
+  .flow-step { display: flex; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+  .flow-step:first-child { border-top: none; }
+  .flow-num { flex: 0 0 26px; height: 26px; border-radius: 50%; background: var(--panel-3); border: 1px solid var(--border-2); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: var(--sky); }
+
+  @media (max-width: 640px) {
+    .tier { grid-template-columns: 1fr; gap: 8px; }
+    .before-after { grid-template-columns: 1fr; }
+    .arrow { display: none; }
+    .menu { width: 100%; }
+    h1 { font-size: 23px; }
+  }
+</style>
+
+<div class="wrap">
+<header class="doc">
+  <div class="kicker">UX Design · Step 2 of 6 · Feature Development</div>
+  <h1>Admin-configurable platform model-tier defaults</h1>
+  <p class="lede">Stop hard-coding tier&rarr;model defaults in three lockstep places. Give super-admins a UI to set them (frontier&rarr;Opus now, future family swaps with no deploy), and make every user-facing &ldquo;Default (Fable)&rdquo; label derive from the live setting.</p>
+</header>
+
+<div class="callout">
+  <b>Building on the Requirements step.</b> Requirements defined the problem (defaults hard-coded across <code>MODEL_TIER_TO_SUBAGENT_MODEL</code> + <code>MODEL_TIER_FALLBACK</code> at <code>workflows.ts:63-64</code> and the display mirror <code>MODEL_TIER_PLATFORM_DEFAULT_MODEL</code> at <code>constants.ts:41</code>), the 10 ACs, the greenfield <code>platform_settings</code> store, super-admin-only R/W, three claim-time read sites, and three open questions. This step designs <b>what Nick sees</b> and <b>how the read slots in</b>, and proposes answers to OQ1&ndash;OQ3 for the Design-Review gate. It does not re-derive the requirements.</p>
+</div>
+
+<div class="toc">
+  <a href="#sees">1 · What Nick sees</a>
+  <a href="#novel">2 · Novel-family guard</a>
+  <a href="#ripple">3 · End-user ripple</a>
+  <a href="#flow">4 · Data &amp; flow</a>
+  <a href="#oq">5 · OQ proposals</a>
+  <a href="#compat">6 · Compatibility</a>
+  <a href="#gate">7 · For the gate</a>
+</div>
+
+<div class="callout warn">
+  <b>Discrepancy flagged for the gate.</b> Requirements says the edit flow is &ldquo;3 tiers (default + fallback each).&rdquo; The code&rsquo;s <code>MODEL_TIER_FALLBACK</code> is keyed by <b>resolved model alias</b> (<code>fable&rarr;opus, opus&rarr;fable, sonnet&rarr;opus, haiku&rarr;sonnet</code>), <b>not by tier</b> (workflows.ts:64). A tier has one default; the fallback belongs to whatever model that default resolves to, shared across tiers. So the UI can&rsquo;t honestly show &ldquo;fallback per tier.&rdquo; This design splits the surface into <b>Panel A — Tier defaults (3 rows)</b> and <b>Panel B — Fallback chain (model&rarr;model pairs)</b>, which matches the code and still satisfies AC &ldquo;fallback map editable.&rdquo; Confirm this split at the gate.
+</div>
+
+<!-- ============================================================ -->
+<section id="sees"><h2>1 · What Nick sees</h2>
+<p>The per-user Models control (<code>model-tier-settings.tsx</code>) is a dialog with three tier rows and a &ldquo;Platform default (Fable)&rdquo; sentinel. <b>Jakob&rsquo;s Law &mdash; internal consistency first:</b> the admin surface reuses that exact visual language (tier label + when-to-use gloss, shadcn <code>Select</code>/<code>Input</code>, ghost Reset + outline Cancel + primary Save, the same &ldquo;Save enables when you change&hellip;&rdquo; helper), so a super-admin who has seen their own Models dialog recognises this instantly.</p>
+
+<h3>Where it lives</h3>
+<p>A new <b>&ldquo;Platform&rdquo; tab</b> in <code>AdminTabs</code> (<code>admin-tabs.tsx</code>), rendered only when <code>isSuperAdmin</code> (the flag already flows into that component). It sits after &ldquo;MCP Tools.&rdquo; A tab, not a dialog &mdash; this is durable config a super-admin returns to, and the persona constraint is <i>don&rsquo;t use modals for content that could be inline</i>. Non-super-admins never see the tab; deep-linking <code>?tab=platform</code> shows the denied state below.</p>
+
+<!-- STATE: VIEW -->
+<div class="frame">
+  <div class="browser-bar"><span class="dot"></span><span class="dot"></span><span class="dot"></span><span class="url">vibecodes.co.uk/admin?tab=platform</span></div>
+  <div class="app">
+    <div class="app-h1">Admin</div>
+    <div class="tabs">
+      <span class="tab">AI Usage</span><span class="tab">Feedback</span><span class="tab">Agents</span>
+      <span class="tab">Teams</span><span class="tab">Workflows</span><span class="tab">MCP Tools</span>
+      <span class="tab new active">Platform</span>
+    </div>
+
+    <div class="card">
+      <div class="card-h">
+        <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v2M15 2v2M9 20v2M15 20v2M2 9h2M2 15h2M20 9h2M20 15h2"/></svg>
+        <div>
+          <p class="card-title">Model tier defaults</p>
+          <p class="card-sub">The Claude model each workflow tier runs on platform-wide. Changing a value takes effect on the <b>next</b> <code>claim_next_step</code> &mdash; no deploy. Per-user overrides in Profile &rarr; Models are unaffected.</p>
+        </div>
+      </div>
+
+      <div style="font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:6px 0 2px">Panel A · Tier defaults</div>
+      <div class="tier">
+        <div><span class="tier-label">Frontier</span><span class="tier-when">decisions &amp; design</span></div>
+        <div class="field"><span class="flabel">Default model</span>
+          <div class="control"><span>Opus</span><span class="chev">&#9662;</span></div>
+        </div>
+      </div>
+      <div class="tier">
+        <div><span class="tier-label">Standard</span><span class="tier-when">most build steps</span></div>
+        <div class="field"><span class="flabel">Default model</span>
+          <div class="control"><span>Sonnet</span><span class="chev">&#9662;</span></div>
+        </div>
+      </div>
+      <div class="tier">
+        <div><span class="tier-label">Cheap</span><span class="tier-when">mechanical steps</span></div>
+        <div class="field"><span class="flabel">Default model</span>
+          <div class="control"><span>Haiku</span><span class="chev">&#9662;</span></div>
+        </div>
+      </div>
+
+      <div style="font-size:11px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:20px 0 2px">Panel B · Fallback chain <span style="text-transform:none;letter-spacing:0;font-weight:400">— used when a resolved model isn&rsquo;t on the caller&rsquo;s plan</span></div>
+      <div class="tier"><div><span class="tier-label mono">opus</span></div><div class="field"><span class="flabel">Falls back to</span><div class="control"><span>fable</span><span class="chev">&#9662;</span></div></div></div>
+      <div class="tier"><div><span class="tier-label mono">fable</span></div><div class="field"><span class="flabel">Falls back to</span><div class="control"><span>opus</span><span class="chev">&#9662;</span></div></div></div>
+      <div class="tier"><div><span class="tier-label mono">sonnet</span></div><div class="field"><span class="flabel">Falls back to</span><div class="control"><span>opus</span><span class="chev">&#9662;</span></div></div></div>
+      <div class="tier"><div><span class="tier-label mono">haiku</span></div><div class="field"><span class="flabel">Falls back to</span><div class="control"><span>sonnet</span><span class="chev">&#9662;</span></div></div></div>
+
+      <div class="audit"><span class="avatar"></span><span>Last changed by <b style="color:#e4e4e7">Nick Ball</b> · 2 days ago · frontier default <span class="mono">fable&rarr;opus</span></span></div>
+
+      <div class="btnrow">
+        <span class="why">Save enables when you change a value.</span>
+        <button class="btn danger">Reset to seed</button>
+        <button class="btn">Cancel</button>
+        <button class="btn primary disabled">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="frame-cap">State: <b>View / clean</b> (frontier already promoted to Opus). Save disabled with adjacent reason (persona: never a bare disabled button). Reset &ldquo;to seed&rdquo; = the code&rsquo;s current constants, so there&rsquo;s always a safe floor. Values render as free text, not an enum &mdash; a novel family name displays verbatim.</p>
+
+<h3>Edit &rarr; dirty state</h3>
+<p>Each control is a shadcn <code>Select</code> whose menu lists <b>known aliases</b> (fable, opus, sonnet, haiku, each with the gloss from <code>MODEL_OPTIONS</code>) <b>plus a &ldquo;Custom&hellip;&rdquo; item</b> that swaps the control to a text <code>Input</code> for a novel family. Changing any value: Save lights up, an unsaved-changes marker appears, Reset&rarr;seed and Cancel both revert.</p>
+
+<div class="frame">
+  <div class="app" style="padding-top:22px">
+    <div class="card" style="margin-top:0">
+      <div class="tier">
+        <div><span class="tier-label">Frontier</span><span class="tier-when">decisions &amp; design</span></div>
+        <div class="field"><span class="flabel">Default model</span>
+          <div class="control focus"><span>Opus</span><span class="chev">&#9662;</span></div>
+          <div class="menu">
+            <div class="mhead">Known models</div>
+            <div class="mitem"><span>Fable</span><span class="g">frontier reasoning</span></div>
+            <div class="mitem sel"><span>Opus &#10003;</span><span class="g">deep reasoning</span></div>
+            <div class="mitem"><span>Sonnet</span><span class="g">balanced</span></div>
+            <div class="mitem"><span>Haiku</span><span class="g">fastest</span></div>
+            <div class="mhead" style="border-top:1px solid var(--border);margin-top:4px">Advanced</div>
+            <div class="mitem"><span>Custom&hellip;</span><span class="g">type a new family</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="btnrow">
+        <span class="why" style="color:var(--amber)">&#9679; Unsaved changes</span>
+        <button class="btn danger">Reset to seed</button>
+        <button class="btn">Cancel</button>
+        <button class="btn primary">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="frame-cap">State: <b>Editing.</b> Recognition over recall &mdash; glosses inline so the super-admin never has to remember which alias is which. 44px+ targets; keyboard-navigable Select (already true of the shadcn primitive).</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="novel"><h2>2 · Novel-family guard (typo defence)</h2>
+<p>Free text is the whole point (a new family needs no schema change) &mdash; but a typo (<code>opsu</code>, <code>sonnett</code>) silently sends a bad Task-tool model into every claim. <b>Guard: known aliases are one-click; a novel value requires an explicit confirm before Save unlocks.</b> This is the Hick&rsquo;s-Law split &mdash; the 99% common case (pick a known model) stays one tap; the rare, dangerous case (invent a family) gets friction.</p>
+
+<div class="frame">
+  <div class="app" style="padding-top:22px">
+    <div class="card" style="margin-top:0">
+      <div class="tier">
+        <div><span class="tier-label">Frontier</span><span class="tier-when">decisions &amp; design</span></div>
+        <div class="field"><span class="flabel">Default model · custom</span>
+          <div class="control novel"><span class="mono">opus-5.5</span><span class="faint" style="font-size:11px">editing</span></div>
+          <div class="callout warn" style="margin:8px 0 0;font-size:12.5px;display:flex;gap:9px;align-items:flex-start">
+            <span style="color:var(--amber);font-weight:700">&#9888;</span>
+            <div><b style="color:#fff">&ldquo;opus-5.5&rdquo; isn&rsquo;t a known model alias.</b> It will be sent verbatim as the Task-tool <code>model</code> on every frontier step. If it&rsquo;s a typo, steps fall back at claim time.
+              <label style="display:flex;gap:7px;align-items:center;margin-top:8px;color:#e4e4e7"><span style="width:15px;height:15px;border:1px solid var(--amber);border-radius:4px;display:inline-block"></span> I&rsquo;ve verified this alias is valid for the Task tool</label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="btnrow">
+        <span class="why">Confirm the checkbox to enable Save.</span>
+        <button class="btn danger">Reset to seed</button>
+        <button class="btn">Cancel</button>
+        <button class="btn primary disabled">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="frame-cap">State: <b>Novel-family confirm.</b> Amber ring + text + icon (never colour alone &mdash; WCAG). Save stays disabled with an adjacent reason until the &ldquo;I&rsquo;ve verified&rdquo; box is ticked. Known aliases skip this entirely.</p>
+
+<div class="callout">
+  <b>Belt-and-braces echoing the CLAUDE.md model-swap ritual.</b> The repo already warns (&ldquo;we were burned by a Haiku swap the account key rejected&rdquo;). This confirm is the UI analogue: it can&rsquo;t call Anthropic to validate an alias, so it makes the human explicitly attest. Post-MVP option to note at the gate: a &ldquo;Test this value&rdquo; button that fires one real claim-shaped resolution and reports back &mdash; out of scope for this step.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="ripple"><h2>3 · End-user-visible ripple</h2>
+<p>Today three surfaces hard-read <code>MODEL_TIER_PLATFORM_DEFAULT_MODEL</code> (constants.ts:41) and print &ldquo;Fable&rdquo; for frontier. After this change every one derives from the live setting, so a super-admin flipping frontier&rarr;Opus is reflected everywhere with no code edit.</p>
+
+<div class="before-after">
+  <div class="ba-col old"><div class="tag">Before</div>
+    <p class="muted" style="margin:8px 0 0;font-size:13px">Profile &rarr; Models, Frontier row:</p>
+    <div class="control" style="margin-top:6px"><span class="muted">Fable (default)</span><span class="chev">&#9662;</span></div>
+  </div>
+  <div class="arrow">&rarr;</div>
+  <div class="ba-col new"><div class="tag">After</div>
+    <p class="muted" style="margin:8px 0 0;font-size:13px">Same row, setting-driven:</p>
+    <div class="control" style="margin-top:6px"><span class="muted">Opus (default)</span><span class="chev">&#9662;</span></div>
+  </div>
+</div>
+
+<p>The three consumers and how each changes:</p>
+<table class="grid">
+  <tr><th>Surface</th><th>Function / file</th><th>Today &rarr; After</th></tr>
+  <tr><td>Profile &rarr; Models</td><td><code>model-tier-settings.tsx:139,164</code> &mdash; <code>MODEL_TIER_PLATFORM_DEFAULT_MODEL[tier]</code></td><td>&ldquo;Fable (default)&rdquo; chip &rarr; &ldquo;Opus (default)&rdquo;, read from the live default</td></tr>
+  <tr><td>Row model badge</td><td><code>model-tier-select.tsx:53</code> &mdash; <code>modelTierGloss()</code></td><td>&ldquo;Runs on Fable · &hellip;&rdquo; &rarr; &ldquo;Runs on Opus · &hellip;&rdquo;</td></tr>
+  <tr><td>Step-detail dialog</td><td><code>step-detail-dialog.tsx:128</code> &mdash; <code>tierDefaultsToCopy()</code></td><td>&ldquo;Frontier defaults to Fable&rdquo; &rarr; &ldquo;Frontier defaults to Opus&rdquo;</td></tr>
+</table>
+
+<div class="callout warn">
+  <b>Architectural note for the Design-Review + Implementation steps.</b> Those three consumers are <b>client</b> components calling <b>synchronous, pure</b> functions in <code>constants.ts</code>. The live default is server/DB state. So the mirror can&rsquo;t simply stay a sync constant. Recommended shape: the platform defaults become a small object passed down from the server (the same way <code>map</code>/<code>isSuperAdmin</code> are already SSR&rsquo;d as props), and the pure helpers (<code>modelTierGloss</code>, <code>tierDefaultsToCopy</code>) take the defaults object as an argument instead of importing the constant. Keep the current constant as the <b>seed / typed fallback</b> so nothing crashes if the fetch is absent. This preserves testability (the helpers stay pure) while removing the &ldquo;keep in sync&rdquo; trap.
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="flow"><h2>4 · Data &amp; flow — where the read slots in</h2>
+<p>All three claim-time sites already do the identical pattern for the per-user override (workflows.ts:1015, 1135, 1313): a scoped <code>.select("model_tier_map").eq(id).maybeSingle()</code> guarded by <code>if (model_tier)</code>. The platform-default read slots in <b>right beside it</b>, in the shared resolver so stdio + remote MCP behave identically.</p>
+
+<div class="card" style="background:var(--panel)">
+<div class="flow-step"><span class="flow-num">1</span><div><b>Claim</b> — <code>claim_next_step</code> fires. If <code>step.model_tier</code> is null (Auto), nothing changes: no read, no clause (FR-12 preserved).</div></div>
+<div class="flow-step"><span class="flow-num">2</span><div><b>Read platform defaults</b> — a new <code>getPlatformModelDefaults(ctx.supabase)</code> helper reads the <code>platform_settings</code> row. Missing row &rarr; return the seed constants. Per-request, no cache (see OQ2).</div></div>
+<div class="flow-step"><span class="flow-num">3</span><div><b>Read user override</b> — unchanged: existing <code>model_tier_map</code> lookup, override precedence preserved.</div></div>
+<div class="flow-step"><span class="flow-num">4</span><div><b>Resolve</b> — <code>resolveModelTier(tier, userMap, platformDefaults)</code> gains a third arg. Precedence unchanged: valid user override &rarr; else platform default (now from DB) &rarr; fallback from the (now DB-backed) fallback chain. Invalid stored value &rarr; log + fall through, never throw.</div></div>
+<div class="flow-step"><span class="flow-num">5</span><div><b>Emit</b> — <code>modelTierClause()</code> builds the same MANDATORY MODEL directive, now with the live model. The orchestrator spawns the subagent on it.</div></div>
+</div>
+<p class="faint" style="font-size:13px">One helper, two call environments: <code>mcp-server/src/index.ts</code> (service-role) and <code>route.ts</code> (per-user RLS). The <code>platform_settings</code> row must be <b>readable by both</b> (public/authenticated select) and <b>writable only by super-admins</b> (RLS write policy on <code>is_super_admin</code>) — so a bot in RLS mode can still resolve defaults at claim time.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="oq"><h2>5 · Open-question proposals</h2>
+
+<div class="oq">
+  <div class="oq-h"><span class="badge">OQ1</span><span class="rec">Recommend: relax to string</span></div>
+  <p style="margin:0"><b><code>model_used</code> z.enum at workflows.ts:1061 &amp; :1236.</b> Relax to <code>z.string().max(40)</code> + soft-validate against the known set, log unknowns, never reject. <span class="muted">Rationale: the enum <code>["fable","opus","sonnet","haiku",&hellip;]</code> makes &ldquo;new family, no schema change&rdquo; a lie &mdash; the moment a novel default ships, the orchestrator can&rsquo;t honestly report <code>model_used</code>. Soft-validate keeps telemetry clean without blocking. Matches the same tolerance <code>resolveModelTier</code> already shows unknown values.</span></p>
+</div>
+
+<div class="oq">
+  <div class="oq-h"><span class="badge">OQ2</span><span class="rec">Recommend: per-request read, no cache</span></div>
+  <p style="margin:0"><b>Cache TTL / staleness bound.</b> Read the row per claim, no cache. <span class="muted">Rationale: the per-user <code>model_tier_map</code> read already runs per claim beside it &mdash; adding one more indexed single-row read on the same low-volume path costs nothing measurable, and correctness beats staleness (a super-admin flipping frontier&rarr;Opus must hit the very next claim per AC). No cache = no invalidation code, no &ldquo;why is it still Fable&rdquo; support tickets. Revisit only if claim volume ever makes the read hot.</span></p>
+</div>
+
+<div class="oq">
+  <div class="oq-h"><span class="badge">OQ3</span><span class="rec">Recommend: single jsonb row</span></div>
+  <p style="margin:0"><b>Storage shape.</b> <code>platform_settings(key text primary key, value jsonb not null, updated_by uuid, updated_at timestamptz)</code>; this feature is one row, <code>key = 'model_tier_defaults'</code>, value <code>{ defaults: {frontier,standard,cheap}, fallback: {opus,fable,sonnet,haiku} }</code>. <span class="muted">Rationale: jsonb absorbs free-text families and a new tier/model with zero migrations (the whole point) &mdash; matches the <code>model_tier_map</code> / notification-preferences jsonb precedent already in the schema. <code>updated_by</code>/<code>updated_at</code> give the audit line for free. Typed columns would need a migration per new family, defeating the feature.</span></p>
+</div>
+</section>
+
+<!-- ============================================================ -->
+<section id="compat"><h2>6 · Compatibility &amp; state matrix</h2>
+<table class="grid">
+  <tr><th>Scenario</th><th>Behaviour</th><th>Surface</th></tr>
+  <tr><td>Missing row</td><td>Helper returns seed constants; UI shows values with a <span class="pill seed">seed</span> pill &amp; &ldquo;using code defaults&rdquo; note. First save writes the row.</td><td class="yes">No crash</td></tr>
+  <tr><td>Invalid stored value</td><td><code>resolveModelTier</code> logs via <code>logger.warn</code> and falls through to fallback / seed; claim still emits a directive.</td><td class="yes">Degrades safely</td></tr>
+  <tr><td>Override user</td><td>User&rsquo;s <code>model_tier_map</code> still wins over the platform default &mdash; precedence untouched at step 3/4.</td><td class="yes">Unaffected</td></tr>
+  <tr><td>New family (e.g. Opus 5)</td><td>Super-admin types it (novel-family confirm), saves; next claim uses it. jsonb + string schema &rarr; no migration, no deploy.</td><td class="yes">Zero deploy</td></tr>
+  <tr><td>Both MCP modes</td><td>Single <code>getPlatformModelDefaults()</code> helper called by stdio (service-role) &amp; remote (RLS). RLS: readable by all authenticated, writable by super-admin only.</td><td class="yes">Identical</td></tr>
+  <tr><td>Loading (UI)</td><td>Skeleton rows matching the tier layout (reuse <code>Skeleton</code>, as tier-adherence-dashboard does), not a spinner.</td><td class="yes">Explicit</td></tr>
+  <tr><td>Error (save)</td><td><code>toast.error()</code> with the server message; staged values retained so the super-admin can retry. Never fails silently.</td><td class="yes">Recoverable</td></tr>
+  <tr><td>Non-super-admin (deep link)</td><td>Tab hidden; direct <code>?tab=platform</code> shows a lock + &ldquo;Super-admin access required&rdquo; + link back to AI Usage. Server action also re-checks <code>is_super_admin</code> (defence in depth, mirrors <code>admin.ts:20-26</code>).</td><td class="yes">Denied clearly</td></tr>
+</table>
+
+<div class="frame">
+  <div class="app" style="padding-top:22px">
+    <div class="tabs">
+      <span class="tab active">AI Usage</span><span class="tab">Feedback</span><span class="tab">Agents</span><span class="tab">Teams</span><span class="tab">Workflows</span><span class="tab">MCP Tools</span>
+    </div>
+    <div class="denied">
+      <div class="lock">&#128274;</div>
+      <p style="margin:8px 0 4px;color:#e4e4e7;font-weight:600">Super-admin access required</p>
+      <p style="margin:0;font-size:13px">Platform model defaults can only be changed by super-admins. <a href="#">Back to AI Usage &rarr;</a></p>
+    </div>
+  </div>
+</div>
+<p class="frame-cap">State: <b>Non-super-admin denied.</b> No Platform tab in the list; the panel explains why and offers a way out (information scent) rather than a blank redirect.</p>
+
+<div style="margin-top:20px;text-align:center"><span class="toast"><span class="ck">&#10003;</span> Model tier defaults saved · frontier now runs on Opus</span></div>
+<p class="frame-cap" style="text-align:center">State: <b>Saved.</b> Same sonner success pattern as the per-user dialog (&ldquo;Model tiers saved&rdquo;), naming what changed so the super-admin has confirmation, not just a green flash.</p>
+</section>
+
+<!-- ============================================================ -->
+<section id="gate"><h2>7 · Open questions for the Design-Review gate</h2>
+<ul class="tight">
+  <li><b>Panel A/B split</b> — confirm the fallback chain is edited as model&rarr;model pairs (Panel B), not &ldquo;per tier,&rdquo; since the code keys fallback by resolved model. This corrects the Requirements phrasing.</li>
+  <li><b>Sync helpers &rarr; props</b> — accept that <code>modelTierGloss</code> / <code>tierDefaultsToCopy</code> take a <code>defaults</code> argument and the three client consumers receive SSR&rsquo;d defaults, keeping the constant as typed seed/fallback.</li>
+  <li><b>OQ1 string relax</b> — sign-off to widen <code>model_used</code> to string + soft-validate (touches telemetry, worth an explicit yes).</li>
+  <li><b>Fallback editing scope</b> — is Panel B in the MVP, or ship Panel A (tier defaults) first and defer the fallback editor? AC lists &ldquo;fallback map editable&rdquo;; flag if we want to phase it.</li>
+  <li><b>Audit depth</b> — is the single &ldquo;last changed by&rdquo; line enough, or do we want a full change log? (jsonb + <code>updated_by</code> covers the line; a log needs a second table.)</li>
+</ul>
+</section>
+
+<hr />
+<p class="faint" style="font-size:12px">VibeCodes · Feature Development workflow · UX Design (2/6). Deliverable for the Design-Review gate. Reads reference code at HEAD; line numbers are indicative. Next step should resolve OQ1&ndash;OQ3 and the five gate questions before implementation.</p>
+</div>

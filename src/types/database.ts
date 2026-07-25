@@ -2087,6 +2087,35 @@ export type Database = {
           },
         ];
       };
+      platform_settings: {
+        Row: {
+          key: string;
+          value: Json;
+          updated_by: string | null;
+          updated_at: string;
+        };
+        Insert: {
+          key: string;
+          value: Json;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Update: {
+          key?: string;
+          value?: Json;
+          updated_by?: string | null;
+          updated_at?: string;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "platform_settings_updated_by_fkey";
+            columns: ["updated_by"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
       idea_discussions: {
         Row: {
           id: string;
