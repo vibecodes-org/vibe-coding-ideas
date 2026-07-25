@@ -1,0 +1,597 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Opus 5 Context-Engineering Audit — Research &amp; Prototype</title>
+<style>
+  :root{
+    --bg:#09090b; --card:#101013; --popover:#18181b; --border:#27272a;
+    --muted-20:rgba(39,39,42,.20); --muted-30:rgba(39,39,42,.30);
+    --fg:#fafafa; --muted-fg:#a1a1aa; --faint-fg:#71717a;
+    --emerald:#34d399; --emerald-b:rgba(16,185,129,.35); --emerald-bg:rgba(16,185,129,.08);
+    --amber:#fbbf24;   --amber-b:rgba(245,158,11,.30);   --amber-bg:rgba(245,158,11,.10);
+    --red:#f87171;     --red-b:rgba(248,113,113,.30);    --red-bg:rgba(248,113,113,.08);
+    --violet:#a78bfa;  --violet-b:rgba(139,92,246,.25);  --violet-bg:rgba(139,92,246,.06);
+    --blue:#60a5fa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  html{scroll-behavior:smooth}
+  body{background:var(--bg);color:var(--fg);
+    font-family:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font-size:15px;line-height:1.6;-webkit-font-smoothing:antialiased}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.85em;background:var(--muted-30);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:#e4e4e7}
+  pre{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:16px 18px;overflow-x:auto;margin-top:14px}
+  pre code{background:none;border:none;padding:0;font-size:12.5px;line-height:1.65;color:#d4d4d8;white-space:pre-wrap}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 24px 120px}
+  header.hero{padding:56px 0 28px;border-bottom:1px solid var(--border)}
+  .kicker{display:inline-flex;gap:8px;align-items:center;font-size:11px;font-weight:600;letter-spacing:.08em;text-transform:uppercase;color:var(--emerald);margin-bottom:14px}
+  .kicker .dot{width:6px;height:6px;border-radius:99px;background:var(--emerald)}
+  h1{font-size:28px;line-height:1.25;font-weight:700;letter-spacing:-.02em}
+  .sub{margin-top:12px;color:var(--muted-fg);max-width:74ch}
+  .meta{margin-top:18px;display:flex;flex-wrap:wrap;gap:8px}
+  .meta span{font-size:11px;color:var(--muted-fg);border:1px solid var(--border);border-radius:99px;padding:3px 10px;background:var(--muted-20)}
+
+  nav.toc{position:sticky;top:0;z-index:50;background:rgba(9,9,11,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);margin:0 -24px;padding:10px 24px;display:flex;gap:4px;overflow-x:auto;white-space:nowrap}
+  nav.toc a{font-size:12px;color:var(--muted-fg);text-decoration:none;padding:5px 10px;border-radius:6px}
+  nav.toc a:hover{color:var(--fg);background:var(--muted-30)}
+  nav.toc a b{color:var(--emerald);font-weight:600;margin-right:5px}
+
+  section{margin-top:56px;scroll-margin-top:64px}
+  h2{font-size:21px;font-weight:650;letter-spacing:-.01em;display:flex;align-items:baseline;gap:12px}
+  h2 .num{color:var(--emerald);font-size:14px;font-weight:700}
+  h3{font-size:14.5px;font-weight:650;margin:26px 0 10px;color:#e4e4e7}
+  section>p{margin-top:10px;color:var(--muted-fg);max-width:74ch}
+  section>p.lede{color:var(--fg);font-size:15.5px}
+
+  .card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:20px 22px;margin-top:16px}
+  .card + .card{margin-top:14px}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:760px){.grid2{grid-template-columns:1fr}}
+
+  .badge{display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;letter-spacing:.02em;border-radius:99px;padding:3px 10px;border:1px solid transparent}
+  .badge.ok{color:var(--emerald);background:var(--emerald-bg);border-color:var(--emerald-b)}
+  .badge.warn{color:var(--amber);background:var(--amber-bg);border-color:var(--amber-b)}
+  .badge.bad{color:var(--red);background:var(--red-bg);border-color:var(--red-b)}
+  .badge.na{color:var(--faint-fg);background:var(--muted-20);border-color:var(--border)}
+  .badge.info{color:var(--violet);background:var(--violet-bg);border-color:var(--violet-b)}
+
+  table{width:100%;border-collapse:collapse;margin-top:14px;font-size:13px}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--faint-fg);padding:8px 10px;border-bottom:1px solid var(--border)}
+  td{padding:10px 10px;border-bottom:1px solid var(--muted-30);vertical-align:top;color:#e4e4e7}
+  tr:last-child td{border-bottom:none}
+  td.num{color:var(--muted-fg);font-variant-numeric:tabular-nums}
+  .tbl-wrap{overflow-x:auto;border:1px solid var(--border);border-radius:12px}
+  .tbl-wrap table{margin-top:0}
+  .tbl-wrap th:first-child, .tbl-wrap td:first-child{padding-left:16px}
+
+  .quote{border-left:2px solid var(--violet-b);padding:2px 0 2px 16px;color:var(--muted-fg);font-size:13.5px;margin-top:10px}
+  .finding{display:flex;gap:10px;margin-top:10px;font-size:13.5px}
+  .finding .mk{flex:none;width:18px;color:var(--emerald);font-weight:700}
+  ul.tight{margin-top:8px;padding-left:20px;color:var(--muted-fg);font-size:13.5px}
+  ul.tight li{margin-top:6px}
+  .file{color:var(--blue);font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;font-size:.83em}
+
+  .diff-wrap{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:14px}
+  @media (max-width:820px){.diff-wrap{grid-template-columns:1fr}}
+  .diff-col h4{font-size:12px;text-transform:uppercase;letter-spacing:.05em;display:flex;justify-content:space-between;align-items:center}
+  .diff-col.before h4{color:var(--red)}
+  .diff-col.after h4{color:var(--emerald)}
+  .tokcount{font-family:ui-monospace,monospace;font-size:11px;color:var(--faint-fg);font-weight:400;text-transform:none;letter-spacing:0}
+  .diff-col pre{margin-top:8px;max-height:420px;overflow-y:auto}
+  .reduction{margin-top:10px;text-align:center;font-size:13px;color:var(--emerald);font-weight:600}
+
+  .stat-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:14px}
+  .stat{flex:1;min-width:150px;background:var(--popover);border:1px solid var(--border);border-radius:10px;padding:14px 16px}
+  .stat .n{font-size:22px;font-weight:700;font-variant-numeric:tabular-nums}
+  .stat .l{font-size:11px;color:var(--faint-fg);margin-top:4px;text-transform:uppercase;letter-spacing:.03em}
+
+  footer{margin-top:70px;padding-top:20px;border-top:1px solid var(--border);color:var(--faint-fg);font-size:12px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="hero">
+    <div class="kicker"><span class="dot"></span>Technical Spike · Step 2 of 4 · Research &amp; Prototype</div>
+    <h1>Opus 5 context-engineering audit — what changes, what doesn't, and why</h1>
+    <p class="sub">Audit of VibeCodes' prompt surfaces against "The new rules of context engineering for Claude 5 generation models," built directly on the Product Owner's research brief (step 1). This is a demonstration + evidence document, not an implementation — no application code changed.</p>
+    <div class="meta">
+      <span>Task dd890fab · Technical Spike</span>
+      <span>Prod project irqbqxspxxzvuczhujzg (read-only)</span>
+      <span>Time-box ~2h</span>
+      <span>2026-07-25</span>
+    </div>
+  </header>
+
+  <nav class="toc">
+    <a href="#summary"><b>00</b>Summary</a>
+    <a href="#checklist"><b>01</b>Rule checklist</a>
+    <a href="#q1"><b>Q1</b>claim_next_step repetition</a>
+    <a href="#q2"><b>Q2</b>Skills primitive</a>
+    <a href="#q3"><b>Q3</b>Model-conditional risk</a>
+    <a href="#q4"><b>Q4</b>Tool duplication</a>
+    <a href="#q5q6"><b>Q5/6</b>AI prompts &amp; drift</a>
+    <a href="#prototype"><b>02</b>Prototype rewrites</a>
+    <a href="#changelist"><b>03</b>Change list</a>
+    <a href="#recommendation"><b>04</b>Recommendation</a>
+  </nav>
+
+  <section id="summary">
+    <h2><span class="num">00</span>Summary</h2>
+    <p class="lede">The article's thesis holds in one place and doesn't in another. The finding isn't "adopt the article" or "reject it" — it's that VibeCodes has <em>two different failure modes</em> mixed into the same prompt surfaces, and they need opposite treatment.</p>
+    <div class="card">
+      <div class="finding"><span class="mk">→</span><span><strong>Generic textbook knowledge dressed up as project rules</strong> (persona "Expertise" sections — SOLID, N+1s, caching strategy, Core Web Vitals) is exactly what the article says to cut: Opus-5-class models already know this, and telemetry shows zero VibeCodes-specific content in it. <strong>~80% of a persona prompt is this category.</strong></span></div>
+      <div class="finding"><span class="mk">→</span><span><strong>A single hard behavioral mandate</strong> (spawn a fresh subagent, don't inline) exists because a capable client — Claude Code itself — was observed choosing convenience over correctness in production, per the commit that hardened it. That's not a knowledge gap the model needs "less constraint" to solve; it's an incentive problem the model resolves the wrong way when unconstrained. Cutting this because it reads as verbose would very plausibly regress the exact behavior it was written to stop.</span></div>
+    </div>
+    <p>Full change list is in <a href="#changelist" style="color:var(--blue)">§03</a> — 10 rows, ordered by impact/effort, including one explicit keep-as-is and one item explicitly deferred past 3 months.</p>
+  </section>
+
+  <section id="checklist">
+    <h2><span class="num">01</span>Article rules as a testable checklist</h2>
+    <p>Each article rule restated as a claim about a VibeCodes prompt surface that can be checked true/false, not prose.</p>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th style="width:26px"></th><th>Rule</th><th>Testable claim</th><th>Status</th></tr>
+        <tr><td class="num">1</td><td>Advanced models need fewer constraints</td><td>No VibeCodes prompt surface is unconditionally slimmed for <em>all</em> resolved models without a documented fallback for weaker/BYOK models.</td><td><span class="badge warn">Conditional</span></td></tr>
+        <tr><td class="num">2</td><td>Rules → judgment</td><td>Constraint lists that restate generic senior-engineer practice (not VibeCodes-specific) are candidates for removal.</td><td><span class="badge bad">Violated — 61 personas</span></td></tr>
+        <tr><td class="num">3</td><td>Examples → interface design</td><td>No prose block gives worked examples where a schema/parameter could constrain shape instead.</td><td><span class="badge warn">1 instance found</span></td></tr>
+        <tr><td class="num">4</td><td>Upfront → progressive disclosure</td><td>No more than a small fraction of a persona prompt is generic reference material that isn't in a loadable skill.</td><td><span class="badge bad">Violated — skills exist, unused</span></td></tr>
+        <tr><td class="num">5</td><td>Repetition → simple tool descriptions</td><td>No instruction appears in both a static tool <code>description</code> and a dynamic runtime instruction without one being the single source of truth.</td><td><span class="badge bad">Violated — 4 named cases</span></td></tr>
+        <tr><td class="num">6</td><td>Manual memory → auto-memory</td><td>n/a — Claude Code client feature, no VibeCodes surface.</td><td><span class="badge na">Not applicable</span></td></tr>
+        <tr><td class="num">7</td><td>Simple specs → rich references</td><td>n/a per brief — parked, no surface it changes today.</td><td><span class="badge na">Not applicable (parked)</span></td></tr>
+        <tr><td class="num">8</td><td>System prompt = product context; CLAUDE.md lightweight; skills = team opinion</td><td><code>CLAUDE.md</code> already follows this (gotcha-focused, ~250 lines). <code>bot_profiles.system_prompt</code> does not — its bulk is not product context.</td><td><span class="badge ok">CLAUDE.md: pass</span> <span class="badge bad">personas: fail</span></td></tr>
+      </table>
+    </div>
+  </section>
+
+  <section id="q1">
+    <h2><span class="num">Q1</span>Is the repetition in <code>claim_next_step</code> load-bearing?</h2>
+    <p class="lede">Answer: telemetry cannot establish a before/after — the instrumentation and the instruction change are entangled — but a structural proxy signal and the commit's own stated cause both point toward "yes, the underlying mandate is load-bearing," even though the specific 4x-repeated phrasing of it is not separately verified as necessary.</p>
+
+    <h3>The timeline that breaks any before/after</h3>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th>Date</th><th>Commit</th><th>What changed</th></tr>
+        <tr><td class="num">2026-06-06</td><td><code>ec69009</code></td><td>Hardened the instruction: <em>"Testing showed capable clients (Claude Code) often skipped spawning and did the step inline because it 'seemed more convenient,' defeating the isolated-context purpose."</em> Added MANDATORY / DO NOT INLINE / narrowed EXCEPTION.</td></tr>
+        <tr><td class="num">2026-07-25 08:08</td><td><code>0a0585c</code></td><td><code>persona_used</code>/<code>persona_honored</code> attestation columns added — <strong>the first time this was ever measurable at all.</strong></td></tr>
+        <tr><td class="num">2026-07-25 11:28</td><td><code>904dcfd</code></td><td>Compliance-alert notification added — fires only when <code>tier_honored</code>/<code>persona_honored</code> is explicitly <code>false</code>.</td></tr>
+      </table>
+    </div>
+    <p>The hardened text (June 6) predates structured attestation (July 25, <em>today</em>) by seven weeks. There is no period with both the hardened instruction <em>and</em> a way to measure compliance against it — confirming the brief's predicted confound exactly. This is itself the finding, per the brief's own framing.</p>
+
+    <h3>What the data actually shows</h3>
+    <div class="stat-row">
+      <div class="stat"><div class="n">3,543</div><div class="l">completed/awaiting-approval steps, all-time</div></div>
+      <div class="stat"><div class="n">16</div><div class="l"><code>persona_used</code> ever reported (all since today)</div></div>
+      <div class="stat"><div class="n">16 / 16</div><div class="l">honored = true (0 dishonored, ever)</div></div>
+      <div class="stat"><div class="n">409 / 409</div><div class="l"><code>tier_honored</code> = true (0 dishonored, ever)</div></div>
+    </div>
+    <div class="card">
+      <div class="finding"><span class="mk">⚠</span><span><strong>0% dishonored across every self-reported row that has ever existed</strong> — for both tier and persona attestation. Combined with the compliance-alert table having exactly <strong>1 row, ever</strong> (and it fired the same morning as this very task's creation, almost certainly from feature verification, not a real violation) — the self-report channel has <em>never once</em> caught a violation, on either metric, in its entire history. Either compliance is perfect, or self-report is the wrong instrument. Given the commit message that motivated the hardening in the first place documents a real, observed violation, "perfect compliance" is the less likely read.</span></div>
+    </div>
+
+    <h3>An independent (non-self-reported) proxy — suggestive, not proof</h3>
+    <p><code>mcp_tool_log</code> only retains data from 2026-06-25 onward (after the June 6 hardening, so still no clean before/after) but gives one useful ratio for the current regime:</p>
+    <div class="stat-row">
+      <div class="stat"><div class="n">674</div><div class="l"><code>claim_next_step</code> calls</div></div>
+      <div class="stat"><div class="n">296</div><div class="l"><code>set_agent_identity</code> calls (44% of claims)</div></div>
+      <div class="stat"><div class="n">140</div><div class="l"><code>get_agent_prompt</code> calls</div></div>
+    </div>
+    <p><code>set_agent_identity</code> is framed in the current instruction as the rare, last-resort EXCEPTION path (no subagent capability) or the non-embeddable-persona fallback. A 44% call ratio against <code>claim_next_step</code> is far higher than "rare exception" implies — though it's a genuinely confounded number too (legitimate paths use it: the human-reset before <code>approve_step</code>, bots with no <code>system_prompt</code>, pre-embedding-era steps). It's not proof of non-compliance, but it's a concrete, non-self-reported number worth tracking before/after any change to this instruction.</p>
+
+    <h3>Verdict on the P0 decision</h3>
+    <p class="lede">Not "cut to one plain sentence" and not "keep verbatim." <strong>Keep the mandate, cut the 4x-repeated reinforcement of it to one instance</strong> (see prototype in §02) — this is the "make conditional" option the brief offered, applied to phrasing rather than gating. Ship it paired with change-list row #3 (instrument properly) so the <em>next</em> review of this text has a real before/after instead of another confound.</p>
+  </section>
+
+  <section id="q2">
+    <h2><span class="num">Q2</span>Do we have the progressive-disclosure primitive, and are we bypassing it?</h2>
+    <p class="lede">Yes, and yes. <code>agent_skills</code> exists, is wired into <code>claim_next_step</code>'s response (<code>available_skills</code>) and into <code>get_agent_skill_content</code> — but across the whole platform there are <strong>3 skill rows, 2 unique skills</strong> (<code>browser-testing</code>, <code>frontend-design</code>), attached to 3 of <strong>95 bot_profiles</strong>. The primitive is real; adoption is close to zero.</p>
+
+    <h3>Quantifying one persona (Atlas / Full Stack Engineer — this task's own persona)</h3>
+    <p>Full text: <span class="file">supabase/migrations/00105_improve_agent_prompts.sql:7</span> (current live prod value, confirmed via <code>bot_profiles</code> query). 2,312 characters, <strong>≈582 tokens</strong>.</p>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th>Section</th><th>Content</th><th>VibeCodes-specific?</th></tr>
+        <tr><td><code>## Goal</code></td><td>One sentence, generic "ship good full-stack code" framing.</td><td><span class="badge na">No</span></td></tr>
+        <tr><td><code>## Expertise</code></td><td>7 bullets: SOLID, N+1 detection, caching strategy, API conventions, indexing, optimistic UI, bundle size. <strong>≈45% of the prompt by length.</strong></td><td><span class="badge bad">No — generic senior-engineer knowledge</span></td></tr>
+        <tr><td><code>## Constraints</code></td><td>6 bans: tests, N+1/unbounded SELECT, derived state, single-use abstractions, <code>any</code>, unnecessary deps.</td><td><span class="badge warn">Mostly generic, phrased as VibeCodes rule</span></td></tr>
+        <tr><td><code>## Approach</code></td><td>6 sentences. Exactly <strong>one</strong> — "When picking up a board task, ALWAYS reassign it to yourself" — is genuinely VibeCodes product context.</td><td><span class="badge ok">1 of 6 sentences</span></td></tr>
+      </table>
+    </div>
+    <p>Net: of 582 tokens, a rough one sentence (≈15–20 tokens) is irreducibly VibeCodes-specific. Everything else is either (a) what a frontier model already knows, or (b) exactly the kind of team-opinion reference material the article says belongs in a progressively-disclosed skill, not the system prompt.</p>
+
+    <h3>Platform-wide shape (95 <code>bot_profiles</code> rows)</h3>
+    <div class="stat-row">
+      <div class="stat"><div class="n">61</div><div class="l">structured "## Goal" style (post-00105)</div></div>
+      <div class="stat"><div class="n">29</div><div class="l">freeform "You are a..." style (pre-00105 or user-authored)</div></div>
+      <div class="stat"><div class="n">2,030</div><div class="l">avg chars/persona (≈508 tokens avg)</div></div>
+      <div class="stat"><div class="n">2</div><div class="l">unique skills that exist, platform-wide</div></div>
+    </div>
+
+    <h3>Verdict on the P0 decision</h3>
+    <p class="lede"><strong>"Migrate persona content into skills" (expensive) — not "rewrite personas shorter" (cheap) alone.</strong> A blind character-count trim would cut the same generic-knowledge content the article targets, but throws away real (if generic) domain guidance some models still benefit from (see Q3). The right move is the one the schema already supports: extract the Expertise sections into ~10–15 role-clustered skills (roles cluster tightly — Backend/Data/DevOps personas share most of their bullets), leave Goal + the one product-context sentence inline, and let <code>claim_next_step</code>'s existing <code>available_skills</code> mechanism do the progressive disclosure it was built for.</p>
+  </section>
+
+  <section id="q3">
+    <h2><span class="num">Q3</span>What breaks if we strip constraints, given we don't control the model?</h2>
+    <p class="lede">The article's advice is explicitly scoped to advanced models. VibeCodes personas execute on whatever the calling user's key resolves — BYOK keys of unknown vintage, or a platform tier that today maps <code>frontier→opus / standard→sonnet / cheap→haiku</code> (confirmed live in <code>platform_settings.model_tier_defaults</code>, matches the seed in <span class="file">src/lib/platform-model-defaults.ts:41-42</span> — <strong>the one line the brief permits on model-tier mapping: Opus 5 resolves under the existing <code>"opus"</code> alias, with <code>fallback.opus = "fable"</code>. No further action, per scope.</strong>)</p>
+    <div class="grid2">
+      <div class="card">
+        <span class="badge ok">Model-conditional-safe</span>
+        <h4 style="margin-top:10px;font-size:13.5px">Trim the repeated "don't inline" reinforcement (Q1 prototype)</h4>
+        <p style="margin-top:6px;color:var(--muted-fg);font-size:13px">This is an orchestrator-level instruction interpreted by whatever client runs <code>claim_next_step</code> (today: Claude Code). It isn't executed by the persona's own model at all — safe to slim regardless of which model the <em>step's subagent</em> resolves to.</p>
+      </div>
+      <div class="card">
+        <span class="badge warn">Model-conditional-risk</span>
+        <h4 style="margin-top:10px;font-size:13.5px">Stripping persona "Expertise" sections</h4>
+        <p style="margin-top:6px;color:var(--muted-fg);font-size:13px">A weaker BYOK model may not reliably self-initiate a <code>get_agent_skill_content</code> call to recover the guidance — nothing today forces or nudges that round-trip for anything but the 2 skills that already exist. Gate the migration behind either (a) always keeping a one-line skill pointer in the persona prompt (already in the §02 prototype), or (b) detecting tier and only fully stripping for <code>frontier</code>.</p>
+      </div>
+    </div>
+    <p>No surface audited requires a global "slim only for Opus 5" gate — the two prototype rewrites in §02 are both safe under (a) above without new tier-detection plumbing.</p>
+  </section>
+
+  <section id="q4">
+    <h2><span class="num">Q4</span>Which of the 85 tool registrations duplicate instructions that live elsewhere?</h2>
+    <p><code>mcp-server/src/register-tools.ts</code> has <strong>85</strong> <code>server.tool(...)</code> registrations (confirmed by count). Four concrete, named duplication/drift cases found across the workflow-tool family:</p>
+
+    <div class="card">
+      <span class="badge bad">1 — Drift, not just duplication</span>
+      <h3 style="margin-top:8px">claim_next_step's static description contradicts its own dynamic instruction</h3>
+      <p><span class="file">mcp-server/src/register-tools.ts:1217</span> tells the caller: <em>"If bot_id is set, call set_agent_identity with that bot_id before executing the step."</em> That was true before the subagent model shipped. The tool's actual runtime <code>instruction</code> field (<span class="file">mcp-server/src/tools/workflows.ts:931-947</span>) now says the opposite — spawn a subagent, and only call <code>set_agent_identity</code> as the last-resort exception. A literal client reading only the static description would reproduce exactly the inlining failure Q1 investigated.</p>
+    </div>
+    <div class="card">
+      <span class="badge warn">2 — Same rule, two places</span>
+      <h3 style="margin-top:8px">"Never self-approve" stated in both the tool description and the dynamic instruction</h3>
+      <p><span class="file">register-tools.ts:1292</span> (<code>approve_step</code> description) and <span class="file">workflows.ts:989-993</span> (<code>claim_next_step</code>'s <code>HUMAN APPROVAL REQUIRED</code> block) both independently state the human-only rule. Two copies, two places to go stale — same class of risk as #1, just not yet drifted.</p>
+    </div>
+    <div class="card">
+      <span class="badge warn">3 — Repeated across 61 rows, not just 2 files</span>
+      <h3 style="margin-top:8px">"Reassign yourself before starting work"</h3>
+      <p>Stated once in <code>CLAUDE.md</code>'s Board Task Workflow section, then restated verbatim inside all 61 structured persona prompts (<span class="file">supabase/migrations/00105_improve_agent_prompts.sql</span>). For a workflow-driven step, it's largely moot — <code>claim_next_step</code> already binds the step to a pre-assigned <code>bot_id</code> by construction; there's nothing left to "reassign." The instruction only still matters for the (now rare) direct board pickup outside a workflow.</p>
+    </div>
+    <div class="card">
+      <span class="badge info">4 — Progressive-disclosure guidance, restated per-claim</span>
+      <h3 style="margin-top:8px">Skill-loading instructions duplicated between the static and dynamic layers</h3>
+      <p><code>get_agent_skill_content</code>'s static description already says "Progressive disclosure: only call this when you need the skill's detailed instructions." <code>claim_next_step</code>'s dynamic <code>skillsInstruction</code> block (<span class="file">workflows.ts:892-909</span>) restates the same guidance ("Load ONLY the skills that are relevant... do not load all of them") every single claim. Lower priority than #1–3 since the two never contradict, just repeat.</p>
+    </div>
+
+    <p>The article's cheapest-win framing — "make parameters more expressive instead of narrating rules" — doesn't have a strong candidate in this tool family: <code>persona_used</code>/<code>model_used</code>/<code>skills_used</code> are already typed enums/free-text fields carrying exactly the signal needed, not prose. The actual cheap win here is de-duplication (rows 1, 2, 3 above), not parameter redesign.</p>
+  </section>
+
+  <section id="q5q6">
+    <h2><span class="num">Q5 / Q6</span>P1: AI-feature prompts, and are seeded personas still what's live?</h2>
+
+    <h3>Q5 — rule-heavy AI-feature prompts</h3>
+    <p><code>src/lib/enhance-prompts.ts</code> (enhance/enhance-create) is already lean — a single-sentence framing + optional kit-context suffix, no rule lists. <strong>Not a target.</strong></p>
+    <p>One candidate found in <span class="file">src/app/api/ai/generate-tasks/route.ts:159-165</span>: the large-idea decomposition nudge includes 2 worked JSON examples of task shape, even though the call already uses a structured-output schema (<code>GeneratedBoardSchema</code>) that could carry a description-length constraint directly (article rule 3: examples → interface design). <strong>Named symptom:</strong> none currently — the code comment states this nudge is telemetry-confirmed to fix a real "one giant task" pathology on large ideas. Flagging as a candidate to test, not a proven win; do not cut blind (see change list).</p>
+
+    <h3>Q6 — are seeded personas still what's live, or have they drifted?</h3>
+    <p class="lede">Both, depending which axis. The <em>template</em> is current (migration <code>00105_improve_agent_prompts.sql</code> is the newest persona-content migration, dated after <code>00065</code>). But migrations don't back-fill existing rows: <strong>29 of 95 live <code>bot_profiles</code> rows are still on the older freeform "You are a..." style</strong> (some pre-<code>00065</code>, some plausibly user-authored for specific ideas like the Football Results App and YCS personas) — never touched by <code>00105</code>'s UPDATE, which targeted specific seed IDs only.</p>
+    <p>This is a <strong>data-repair problem, not a migration gap</strong>: the seed template is fine, but there's no mechanism that reconciles already-created per-idea agent copies when the platform template improves. Some of those 29 rows are likely deliberate user customization, not staleness — a blanket rewrite would be destructive (see change-list row 8, deliberately deferred).</p>
+  </section>
+
+  <section id="prototype">
+    <h2><span class="num">02</span>Prototype — two before/after rewrites</h2>
+    <p>Concrete, appliable text — this is the proof the recommendation is actionable, not just a probability judgement. Token counts are character-count/4 estimates (rough but consistent methodology across both).</p>
+
+    <h3>Surface 1 — Atlas persona (<span class="file">supabase/migrations/00105_improve_agent_prompts.sql:7</span>, live in <code>bot_profiles</code>)</h3>
+    <div class="diff-wrap">
+      <div class="diff-col before">
+        <h4>Before <span class="tokcount">≈582 tokens · 2,312 chars</span></h4>
+        <pre><code>## Goal
+Deliver production-ready features across the entire
+stack — from database migrations and API endpoints
+to polished React UIs. Every change should leave the
+codebase better, more tested, and more consistent
+than before.
+
+## Expertise
+- Apply SOLID principles pragmatically — favour
+  composition over inheritance, depend on
+  abstractions not concretions, but don't
+  over-engineer for hypothetical futures.
+- Detect and eliminate N+1 query patterns. Use eager
+  loading, database joins, or batching — never loop
+  queries inside a map.
+- Choose the right caching strategy:
+  stale-while-revalidate for UI data, ISR/SSG for
+  public pages, server-side cache for expensive
+  computations. Cache invalidation is harder than
+  caching — always have a strategy.
+- Design APIs with consistent conventions: plural
+  resource names, proper HTTP verbs, pagination via
+  cursors not offsets for large datasets, idempotency
+  keys for mutations.
+- Index database columns used in WHERE, JOIN, and
+  ORDER BY clauses. Composite indexes should match
+  query column order. Use EXPLAIN ANALYZE to verify.
+- Use optimistic UI updates with rollback for
+  user-facing mutations — never make users wait for a
+  round-trip when you can show intent immediately.
+- Keep bundle sizes small: dynamic imports for heavy
+  components, tree-shake aggressively, avoid
+  importing entire libraries for one function.
+
+## Constraints
+Never ship code without tests — at minimum, test the
+happy path and one error path for every new function.
+Do not introduce N+1 queries or unbounded SELECTs
+(always LIMIT). Never store derived state that can be
+computed. Do not create abstractions for single-use
+cases. Never ignore TypeScript errors or use `any` to
+silence the compiler. Do not add dependencies when
+the standard library or existing deps already solve
+the problem.
+
+## Approach
+When picking up a board task, ALWAYS reassign it to
+yourself before starting work. Read existing code
+before writing — understand the patterns, naming
+conventions, and file structure already in use. Break
+work into small, focused commits that each pass CI.
+Write tests alongside implementation, not after.
+Prefer co-located test files. Add comments only where
+the why is not obvious from the what. When a task is
+ambiguous, check for acceptance criteria or ask —
+never guess at business logic.</code></pre>
+      </div>
+      <div class="diff-col after">
+        <h4>After <span class="tokcount">≈117 tokens · 469 chars</span></h4>
+        <pre><code>## Goal
+Deliver production-ready features across the stack —
+from the database to the UI. Match the codebase's
+existing patterns, testing conventions, and idiom
+rather than imposing your own.
+
+## Working on VibeCodes
+When you pick up a board task, reassign it to
+yourself before starting. Use your judgment on
+architecture, caching, indexing, and API design — if
+you want the team's specific conventions on these,
+load the "full-stack-engineering-practices" skill.</code></pre>
+      </div>
+    </div>
+    <p class="reduction">≈80% token reduction — matches the article's own headline figure. Ships safely only alongside authoring the referenced skill (change-list row 7); see Q3 for the model-conditional caveat.</p>
+
+    <h3 style="margin-top:40px">Surface 2 — <code>claim_next_step</code> identity instruction (<span class="file">mcp-server/src/tools/workflows.ts:931-938</span>, embeddable-persona branch)</h3>
+    <div class="diff-wrap">
+      <div class="diff-col before">
+        <h4>Before <span class="tokcount">≈482 tokens · 1,927 chars</span></h4>
+        <pre><code>MANDATORY: this step MUST be executed by a FRESH
+SUBAGENT that you spawn with your Agent/Task tool. Do
+NOT do this step's work yourself in this conversation.
+1. Keep the claim_token from this response — do NOT
+   pass it to the subagent.
+2. SPAWN a fresh subagent whose system prompt IS the
+   "persona_prompt" field in this response — this is
+   the Atlas (Full Stack Engineer) persona, already
+   included in full. Do NOT call get_agent_prompt; the
+   prompt is right here. Give it this step's
+   description plus the prior-step deliverables in the
+   "context" array. It does the work in its own
+   isolated context and returns the deliverable.
+3. When it returns, YOU (the orchestrator) call
+   complete_step with this step's id, the claim_token,
+   the subagent's deliverable as output, and
+   persona_used — "verbatim" if the subagent ran on
+   persona_prompt unchanged, "adapted" if you
+   edited/trimmed/merged it, "none" if you didn't use
+   it. Report honestly: it is recorded as an adherence
+   signal, not verified, and never blocks completion.
+DO NOT INLINE: doing the work yourself because it
+seems simpler, faster, cheaper, or "more convenient"
+is NOT permitted — a fresh isolated context per
+persona is the entire point and is lost if you inline
+it. "It's only a small step" is not a reason. If you
+catch yourself about to do the work directly, STOP
+and spawn the subagent instead.
+RELIABILITY: if the subagent errors or its connection
+drops before returning, RETRY or RESUME it (you have
+its agent id) — do NOT quietly finish the step
+yourself.
+EXCEPTION (the ONLY one): if your client genuinely has
+no subagent/Agent tool at all, then call
+set_agent_identity with agent_id "37e8ffb2-..." to
+adopt the Atlas persona, do the step, and state
+verbatim in your complete_step output: "Completed
+inline — no subagent capability." If you DO have an
+Agent/Task tool, this exception does not apply to you.</code></pre>
+      </div>
+      <div class="diff-col after">
+        <h4>After <span class="tokcount">≈199 tokens · 797 chars</span></h4>
+        <pre><code>SUBAGENT REQUIRED: spawn a fresh subagent (Agent/Task
+tool) with the "persona_prompt" field below as its
+system prompt, so the persona's work stays isolated
+from your orchestrator context. Skip this only if your
+client has no subagent tool — then say so verbatim in
+complete_step's output ("Completed inline — no
+subagent capability").
+1. Keep claim_token — do not hand it to the subagent.
+2. Spawn the subagent with persona_prompt as its
+   system prompt, this step's description, and the
+   context array. It returns the deliverable.
+3. Call complete_step with the deliverable as output,
+   plus persona_used ("verbatim" / "adapted" / "none")
+   — self-reported, not verified, never blocks
+   completion.
+If the subagent errors or drops mid-run, retry or
+resume it — do not finish the step yourself.</code></pre>
+      </div>
+    </div>
+    <p class="reduction">≈59% token reduction — deliberately smaller than surface 1's cut. Per Q1, the underlying mandate is plausibly load-bearing (a documented real failure, not textbook caution); this rewrite removes the 4x-repeated reinforcement of the same point (MANDATORY / DO NOT INLINE / "not a reason" / "STOP") down to one clean statement, but keeps the mandate, the mechanical steps, and the honest self-report framing intact.</p>
+  </section>
+
+  <section id="changelist">
+    <h2><span class="num">03</span>Prioritised change list</h2>
+    <p>Ordered by impact ÷ effort. S ≤ 2h, M ≤ 1 day, L &gt; 1 day.</p>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th style="width:26px">#</th><th>Surface / file</th><th>Article rule</th><th>User-visible impact</th><th>Effort</th><th>Rollback / regression risk</th></tr>
+        <tr>
+          <td class="num">1</td>
+          <td><span class="file">register-tools.ts:1217</span> — <code>claim_next_step</code> static description</td>
+          <td>#5</td>
+          <td>Fixes an active contradiction: static text still says "call set_agent_identity before executing," which is the exact wrong behavior Q1's evidence investigated. Correctness fix, not a style pass.</td>
+          <td><span class="badge ok">S</span></td>
+          <td>None — text-only, no runtime behavior change (the dynamic <code>instruction</code> field is unaffected).</td>
+        </tr>
+        <tr>
+          <td class="num">2</td>
+          <td><span class="file">workflows.ts:931-938</span> — identity instruction repetition</td>
+          <td>#2, #5</td>
+          <td>~59% token cut on every step claim (see §02 prototype). Keeps the mandate; removes 4x-repeated reinforcement.</td>
+          <td><span class="badge ok">S</span></td>
+          <td><span class="badge warn">Low–medium</span> — Q1 never isolated whether the repetition itself (vs. the base mandate) matters. Ship paired with row 3.</td>
+        </tr>
+        <tr>
+          <td class="num">3</td>
+          <td>New: a saved query/small dashboard over <code>set_agent_identity</code> vs <code>claim_next_step</code> call ratio + <code>persona_honored</code></td>
+          <td>meta</td>
+          <td>Turns Q1 from permanently unmeasurable into measurable for row 2 and any future change here.</td>
+          <td><span class="badge ok">S</span></td>
+          <td>None.</td>
+        </tr>
+        <tr>
+          <td class="num">4</td>
+          <td>61× <code>bot_profiles.system_prompt</code> — drop the duplicated "reassign yourself" sentence</td>
+          <td>#5</td>
+          <td>Removes a now-largely-moot instruction (workflow steps arrive pre-assigned) repeated in 61 places; small token save, real consistency fix.</td>
+          <td><span class="badge ok">S</span></td>
+          <td>Low — keep the sentence in <code>CLAUDE.md</code> and re-add to the non-workflow direct-pickup fallback if that path still needs it.</td>
+        </tr>
+        <tr>
+          <td class="num">5</td>
+          <td><span class="file">register-tools.ts:1292</span> + <span class="file">workflows.ts:989-993</span> — dedupe "never self-approve"</td>
+          <td>#5</td>
+          <td>Removes a second copy of a hard business rule from going stale independently, same class of risk as row 1.</td>
+          <td><span class="badge ok">S</span></td>
+          <td>None — consolidate into the tool description, which the model can't infer from the parameter shape alone.</td>
+        </tr>
+        <tr>
+          <td class="num">6</td>
+          <td><span class="file">workflows.ts:892-909</span> vs <code>get_agent_skill_content</code> description — dedupe progressive-disclosure guidance</td>
+          <td>#5</td>
+          <td>Minor token save; lowest-priority dedupe since the two copies don't currently contradict.</td>
+          <td><span class="badge ok">S</span></td>
+          <td>None.</td>
+        </tr>
+        <tr>
+          <td class="num">7</td>
+          <td>~10–15 new role-clustered skills + strip Expertise sections from 61 <code>bot_profiles</code> rows</td>
+          <td>#2, #4, #8</td>
+          <td>~80% token cut per persona (§02 prototype), largest single win, uses infrastructure that already exists and is unused.</td>
+          <td><span class="badge warn">M</span></td>
+          <td><span class="badge warn">Medium</span> — per Q3, unsafe to ship without keeping a skill-pointer sentence inline (as prototyped) so weaker/BYOK models aren't silently degraded.</td>
+        </tr>
+        <tr>
+          <td class="num">8</td>
+          <td><span class="file">src/app/api/ai/generate-tasks/route.ts:159-165</span> — 2 worked examples → schema constraint</td>
+          <td>#3</td>
+          <td>Speculative — only fires on ideas &gt;12,000 chars; comment states current version is telemetry-confirmed to fix a real pathology.</td>
+          <td><span class="badge ok">S</span></td>
+          <td><span class="badge warn">Medium</span> — untested; require a before/after telemetry check, do not ship blind against a working, evidence-based prompt.</td>
+        </tr>
+        <tr style="background:var(--emerald-bg)">
+          <td class="num">9</td>
+          <td><span class="file">workflows.ts:931-947</span> — the core "spawn, don't inline" mandate itself</td>
+          <td>—</td>
+          <td colspan="1"><span class="badge ok">KEEP AS-IS</span> Q1's own evidence (the June 6 commit message) documents a real, observed failure by a capable client, not a knowledge gap the model needs less constraint to solve. Cutting this because it reads as verbose, without new counter-evidence, is the exact failure mode the brief warned against.</td>
+          <td>—</td>
+          <td>—</td>
+        </tr>
+        <tr>
+          <td class="num">10</td>
+          <td>Full consistency rewrite of all 95 <code>bot_profiles</code> rows (29 freeform + 61 structured reconciled)</td>
+          <td>#8</td>
+          <td>Fixes the Q6 drift finding platform-wide, not just the seed template.</td>
+          <td><span class="badge bad">L</span></td>
+          <td><span class="badge bad">High</span> — some of the 29 freeform rows are plausibly deliberate per-idea customization (Football Results App, YCS personas); a blanket rewrite risks destroying real user intent. <strong>Not in the next 3 months</strong> — do row 7 first, revisit only on a specific idea-owner request.</td>
+        </tr>
+      </table>
+    </div>
+  </section>
+
+  <section id="recommendation">
+    <h2><span class="num">04</span>Recommendation <span class="badge info" style="font-weight:600">Step 3 · Write Recommendation</span></h2>
+    <p class="lede">Applying step 1's trade-off test honestly to step 2's evidence: this is <strong>not</strong> a sprint of displaced feature work. It's one correctness fix that ships regardless of everything else below, plus roughly half a day of low-risk dedupe/instrumentation, plus one larger item that does not yet clear the bar the brief itself set.</p>
+
+    <h3>1. Do we act on this at all?</h3>
+    <div class="card">
+      <div class="finding"><span class="mk">→</span><span><strong>Yes, narrowly.</strong> One item — the <code>claim_next_step</code> static-description drift (change-list row 1) — is a genuine correctness bug, independent of whether any context-engineering guidance is adopted at all: the tool's static text tells a literal-reading client to do the exact thing (<code>set_agent_identity</code> before executing) that the June 6 hardening commit and the dynamic instruction both exist to prevent. Fix it regardless of the decision on everything else.</span></div>
+      <div class="finding"><span class="mk">→</span><span><strong>Yes, cheaply.</strong> Rows 2–6 are S-effort dedupe/instrumentation with no proven compliance payoff but real, near-zero-risk token/consistency savings. Worth doing in one pass, not worth blocking on more evidence.</span></div>
+      <div class="finding"><span class="mk">✕</span><span><strong>Not yet, for the headline rewrite.</strong> Row 7 (~80% persona token cut, 61 rows, M effort) is the item that would actually feel like "a sprint of displaced feature work" if scoped to all 61 personas at once. Q1 came back explicitly unmeasurable and Q3 flags real regression risk for weaker/BYOK models. The evidence for it today is a token-cost/aesthetic argument — "45% of the Atlas persona is generic senior-engineer knowledge" — not a demonstrated compliance or output-quality problem. That is close to the exact case step 1 pre-ruled out: <em>"our prompts are unfashionable is not a reason to ship."</em> Recommend a small pilot instead of the full rewrite (see §3).</span></div>
+    </div>
+
+    <h3>2. If yes, what exactly, in what order, what does it cost</h3>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th style="width:26px">#</th><th>Bucket</th><th>Action</th><th>Effort</th><th>Ship condition</th></tr>
+        <tr>
+          <td class="num">1</td>
+          <td><span class="badge bad">Correctness bug</span></td>
+          <td>Fix <span class="file">register-tools.ts:1217</span> — <code>claim_next_step</code> static description still says "call set_agent_identity before executing." Rewrite to match the dynamic instruction's actual current behavior (spawn subagent; <code>set_agent_identity</code> is the last-resort exception).</td>
+          <td><span class="badge ok">S</span></td>
+          <td>Ship now. No dependency on anything else in this document.</td>
+        </tr>
+        <tr>
+          <td class="num">2</td>
+          <td><span class="badge warn">Cheap win</span></td>
+          <td>Rows 2+3 paired: trim the 4x-repeated "don't inline" reinforcement in <span class="file">workflows.ts:931-938</span> (≈59% cut, prototype in §02) <em>and</em> ship the <code>set_agent_identity</code>/<code>claim_next_step</code> ratio + <code>persona_honored</code> saved query at the same time, so this is the last time this text changes without a real before/after.</td>
+          <td><span class="badge ok">S</span></td>
+          <td>Ship together. Never ship 2 without 3 — that's how Q1 ended up unmeasurable the first time.</td>
+        </tr>
+        <tr>
+          <td class="num">3</td>
+          <td><span class="badge warn">Cheap win</span></td>
+          <td>Dedupe: drop "reassign yourself" from 61 <code>bot_profiles</code> rows (row 4), consolidate "never self-approve" into the tool description only (row 5), dedupe skill-loading guidance (row 6).</td>
+          <td><span class="badge ok">S</span> each</td>
+          <td>Ship opportunistically, any order, independently of rows 1–2.</td>
+        </tr>
+        <tr>
+          <td class="num">4</td>
+          <td><span class="badge info">Needs evidence first</span></td>
+          <td>Row 8: swap the 2 worked JSON examples in <span class="file">src/app/api/ai/generate-tasks/route.ts:159-165</span> for a schema-level description-length constraint. The current prompt is telemetry-confirmed to fix a real pathology — do not touch until a before/after check exists for the replacement.</td>
+          <td><span class="badge ok">S</span> to write, <span class="badge warn">blocked</span> to ship</td>
+          <td>Do not ship blind. Add the telemetry check first (cheap — see §4), then A/B or shadow-compare.</td>
+        </tr>
+        <tr>
+          <td class="num">5</td>
+          <td><span class="badge info">Needs evidence first</span></td>
+          <td>Row 7: instead of stripping Expertise sections from all 61 <code>bot_profiles</code> rows at once, pilot on 2–3 backend-cluster personas with the skill-pointer sentence kept inline (as prototyped in §02). Measure <code>get_agent_skill_content</code> pickup rate via <code>mcp_tool_log</code> (already logging every call — no new instrumentation needed) before committing to the remaining 58.</td>
+          <td><span class="badge warn">M</span> full, <span class="badge ok">S</span> pilot</td>
+          <td>Pilot only, gated on row 2's instrumentation existing. Full rollout is a separate decision after the pilot, not part of this recommendation.</td>
+        </tr>
+      </table>
+    </div>
+
+    <h3>3. What we deliberately do NOT do, and why</h3>
+    <div class="card">
+      <div class="finding"><span class="mk">✕</span><span><strong>Keep as-is: the core "spawn, don't inline" mandate</strong> (<span class="file">workflows.ts:931-947</span>, change-list row 9). This is the one item in the whole audit with a named, dated, first-party incident behind it — the June 6 commit documents a capable client (Claude Code itself) choosing convenience over correctness in production. That is an incentive problem, not a knowledge gap; the article's "fewer constraints for smarter models" premise does not apply to a mandate that exists because a smart client already got it wrong once. Only the 4x reinforcement of this point is being trimmed (action #2 above) — the mandate itself is untouched.</span></div>
+      <div class="finding"><span class="mk">✕</span><span><strong>Not doing the full 61-row Expertise strip in this pass</strong> (row 7, full scope) — no output-quality or compliance evidence supports it yet, and Q3's BYOK/weaker-model risk is real. Piloting first (action #5) is the compromise; committing to all 61 rows on the strength of a token-count argument alone is exactly the move step 1's trade-off test was written to block.</span></div>
+      <div class="finding"><span class="mk">✕</span><span><strong>Not doing the full 95-row consistency rewrite</strong> (row 10, L effort). 29 of 95 live <code>bot_profiles</code> rows are pre-<code>00105</code> freeform text, and some are plausibly deliberate per-idea customization (Football Results App, YCS personas). A blanket rewrite risks destroying real user intent for a data-hygiene win. <strong>Not in the next 3 months</strong> — revisit only on a specific idea-owner request, per the audit's own framing.</span></div>
+    </div>
+
+    <h3>4. What to measure before revisiting the deferred items</h3>
+    <p>Q1 came back unmeasurable because the June 6 hardening (behavior) and the July 25 attestation columns (measurement) don't overlap in time. None of the following require schema changes — the columns and logging already exist; this is saved queries and patience, not new plumbing.</p>
+    <div class="tbl-wrap">
+      <table>
+        <tr><th>Deferred item</th><th>What to instrument</th><th>Cost</th><th>Why it's cheap</th></tr>
+        <tr><td>Row 2 identity-instruction trim (already shipping, but worth re-checking in 4–6 weeks)</td><td><code>set_agent_identity</code>-to-<code>claim_next_step</code> call ratio (currently 44%, confounded) trended weekly, plus <code>persona_honored</code> false-rate once volume clears ~200 rows (currently 16)</td><td>~1h</td><td>One SQL view over <code>mcp_tool_log</code> + <code>task_workflow_steps</code>; both tables already populated.</td></tr>
+        <tr><td>Row 7 pilot (Expertise-section strip)</td><td><code>get_agent_skill_content</code> call rate for the 2–3 piloted bot_ids, before vs. after the strip, plus a manual spot-check that pilot personas' output didn't regress on the generic-knowledge dimensions removed (caching choice, N+1 avoidance, etc.)</td><td>~2h to build the query + a few completed steps' worth of manual read</td><td><code>mcp_tool_log</code> logs every call already; no new column needed.</td></tr>
+        <tr><td>Row 8 examples→schema swap</td><td>Rate of "one giant task" outcomes (single board task generated) on ideas &gt;12,000 chars, before vs. after, matching whatever proxy the original telemetry-confirmed fix used</td><td>~1–2h</td><td>Requires finding/reusing the original telemetry query referenced in the code comment — likely already exists.</td></tr>
+      </table>
+    </div>
+
+    <h3>Strongest counter-argument to this recommendation</h3>
+    <p>The self-report channel (<code>persona_honored</code>, <code>tier_honored</code>) has never once recorded a violation across 425 combined attestation rows, and the compliance-alert table has fired exactly once, plausibly from its own feature verification. If self-report is structurally incapable of catching non-compliance — bots grading their own homework — then "wait for row-2/row-3 telemetry before touching row 7" may mean row 7 never gets evidence-gated approval, not because the risk is real, but because the instrument can't see it either way. The honest response isn't to trust the instrument uncritically; it's to pair the self-report metric with the proxy that already worked in this audit — <code>get_agent_skill_content</code> pickup rate is independently observable and not self-reported, which is why the row-7 pilot measures that instead of waiting on <code>persona_honored</code> alone. If Nick would rather skip the pilot and just ship the full row-7 rewrite on the strength of the prototype (§02) and accept the BYOK/weaker-model risk as tolerable, that is a defensible call — but it should be a deliberate one, not a default.</p>
+
+    <h3>Q4 drift bug — standalone note</h3>
+    <p>Restating per this step's brief: the <span class="file">register-tools.ts:1217</span> drift (action #1 above) is a correctness issue on its own terms. It is not contingent on adopting any part of the article's guidance, the trade-off test, or any other row in this recommendation — it should ship even if every other recommendation here is rejected.</p>
+  </section>
+
+  <footer>
+    Prototype generated as part of task <code>dd890fab-cacf-44e0-a87e-0a8ed858489b</code>, workflow step "Research &amp; Prototype." Recommendation added in step 3, "Write Recommendation." Data sources: prod Supabase project <code>irqbqxspxxzvuczhujzg</code> (read-only SELECTs), <code>git log</code>, and direct reads of the cited files. No application code was modified.
+  </footer>
+</div>
+</body>
+</html>
