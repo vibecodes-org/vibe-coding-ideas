@@ -144,10 +144,13 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       .select("*")
       .eq("idea_id", id)
       .order("created_at", { ascending: true }),
+    // `has_anthropic_key` (generated column, migration 00152) replaces
+    // `encrypted_anthropic_key`, which `authenticated` no longer has SELECT
+    // on — this page only ever needs the BYOK/Platform truthiness.
     isTeamMember
       ? supabase
           .from("users")
-          .select("encrypted_anthropic_key, ai_starter_credits, is_admin, mcp_connected_at")
+          .select("has_anthropic_key, ai_starter_credits, is_admin, mcp_connected_at")
           .eq("id", user.id)
           .single()
       : Promise.resolve({ data: null }),
@@ -226,7 +229,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     Date.now()
   );
 
-  const userHasByokKey = !isReadOnly && !!userProfile?.encrypted_anthropic_key;
+  const userHasByokKey = !isReadOnly && !!userProfile?.has_anthropic_key;
   const starterCredits = userProfile?.ai_starter_credits ?? 0;
   const userCanUseAi = !isReadOnly && (userHasByokKey || starterCredits > 0);
 

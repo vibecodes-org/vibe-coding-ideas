@@ -101,9 +101,15 @@ export default async function DiscussionDetailPage({ params }: PageProps) {
       .select("*")
       .eq("idea_id", ideaId)
       .order("position", { ascending: true }),
+    // Scoped to exactly what DiscussionThread/ReplyItem/DiscussionReplyForm
+    // read off `currentUser` (id, avatar_url, AI-access truthiness) — a bare
+    // `select("*")` would hand the full row, including admin flags, to the
+    // RSC payload for no reason. `has_anthropic_key` (generated column,
+    // migration 00152) replaces `encrypted_anthropic_key`, which
+    // `authenticated` no longer has SELECT on.
     supabase
       .from("users")
-      .select("*")
+      .select("id, avatar_url, ai_starter_credits, has_anthropic_key")
       .eq("id", user.id)
       .single(),
     supabase
@@ -147,7 +153,7 @@ export default async function DiscussionDetailPage({ params }: PageProps) {
           convertedTaskId={convertedTaskId}
           hasVoted={hasVotedOnDiscussion}
           teamMembers={ideaTeam.allMentionable}
-          canUseAi={!!(currentUser as User | null)?.encrypted_anthropic_key || ((currentUser as User | null)?.ai_starter_credits ?? 0) > 0}
+          canUseAi={!!(currentUser as User | null)?.has_anthropic_key || ((currentUser as User | null)?.ai_starter_credits ?? 0) > 0}
         />
       </BotRolesProvider>
     </div>

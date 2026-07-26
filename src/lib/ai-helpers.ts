@@ -1,4 +1,5 @@
 import { createAnthropic } from "@ai-sdk/anthropic";
+import { createClient as createSupabaseJsClient } from "@supabase/supabase-js";
 import { decrypt } from "@/lib/encryption";
 import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -46,6 +47,20 @@ export function getPlatformAnthropicProvider() {
   return createAnthropic({ apiKey });
 }
 
+/**
+ * Service-role client scoped ONLY to the one raw-ciphertext read below.
+ * Constructed fresh per call, never returned or exported — `encrypted_anthropic_key`
+ * was revoked from the `authenticated` Postgres role (migration 00152), so no
+ * RLS-bound client (including the caller's own session) can SELECT it anymore.
+ * This is the sole legitimate exception: decrypting the caller's own BYOK key.
+ */
+function createKeyLookupServiceRoleClient(): SupabaseClient<Database> {
+  return createSupabaseJsClient<Database>(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE_KEY!
+  );
+}
+
 /** Shared AI access resolution: BYOK key → platform key with credits → error.
  *  Used by both server actions (requireAiAccess) and streaming API routes. */
 export type ResolvedAiAccess =
@@ -56,17 +71,42 @@ export async function resolveAiProvider(
   supabase: SupabaseClient<Database>,
   userId: string
 ): Promise<ResolvedAiAccess> {
+  // `ai_starter_credits` is still readable by `authenticated` (only
+  // `encrypted_anthropic_key` was revoked in 00152), so it stays on the
+  // caller's own RLS-bound `supabase` client rather than moving to the
+  // service-role client below — no reason to widen the service-role blast
+  // radius to a column RLS already permits the caller to read.
   const { data: profile } = await supabase
     .from("users")
-    .select("encrypted_anthropic_key, ai_starter_credits")
+    .select("ai_starter_credits")
     .eq("id", userId)
     .single();
 
   if (!profile) return { ok: false, error: "User profile not found", status: 404 };
 
+  // INVARIANT — read this before touching the query below: `userId` MUST be
+  // derived from the caller's own authenticated session or bot identity
+  // (supabase.auth.getUser() / ctx.userId in the MCP tool layer), never from
+  // an unauthenticated request param, and this MUST stay a single-row
+  // `.eq("id", userId).single()` lookup — never a list or `.in()`. The
+  // service-role client below bypasses RLS entirely, so there is no
+  // row-security backstop the way there is for `supabase` above: accepting
+  // an attacker-influenced `userId` here, or widening this to a batch query,
+  // would reopen a cross-user ciphertext read unconditionally — worse than
+  // the bug this migration fixes, because it would have no RLS check at all
+  // to catch it. Every current caller (src/actions/ai.ts, the three AI API
+  // routes, ai-role-matching.ts, workflow-matching.ts, and the MCP workflow
+  // tools) passes an authenticated session's or bot's own id straight
+  // through — keep it that way.
+  const { data: keyRow } = await createKeyLookupServiceRoleClient()
+    .from("users")
+    .select("encrypted_anthropic_key")
+    .eq("id", userId)
+    .single();
+
   // Path 1: User has their own API key (BYOK)
-  if (profile.encrypted_anthropic_key) {
-    return { ok: true, anthropic: getAnthropicProvider(profile.encrypted_anthropic_key), keyType: "byok" };
+  if (keyRow?.encrypted_anthropic_key) {
+    return { ok: true, anthropic: getAnthropicProvider(keyRow.encrypted_anthropic_key), keyType: "byok" };
   }
 
   // Path 2: User has starter credits — use platform key

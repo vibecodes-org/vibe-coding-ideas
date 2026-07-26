@@ -39,7 +39,7 @@ function user(overrides: Partial<UserCreditInfo> = {}): UserCreditInfo {
     email: "ada@example.com",
     avatar_url: null,
     ai_starter_credits: 7,
-    encrypted_anthropic_key: null,
+    has_anthropic_key: false,
     ...overrides,
   };
 }
@@ -93,7 +93,7 @@ describe("UserCreditsTable", () => {
     ];
     const users: UserCreditInfo[] = [
       user({ id: "user-1", full_name: "Ada Lovelace", ai_starter_credits: 5 }),
-      user({ id: "user-2", full_name: "Grace Hopper", encrypted_anthropic_key: "enc-key", ai_starter_credits: 0 }),
+      user({ id: "user-2", full_name: "Grace Hopper", has_anthropic_key: true, ai_starter_credits: 0 }),
     ];
 
     render(

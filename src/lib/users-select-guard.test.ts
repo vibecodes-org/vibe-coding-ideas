@@ -50,9 +50,14 @@ const ALLOWLIST: ReadonlyArray<string> = [
   // Idea team roster (author/collaborators) — same "full row to arbitrary
   // idea page" pattern as the profile page bug, not fixed by this hotfix.
   "src/lib/idea-team.ts",
-  // Discussion author lookups — same pattern, not fixed by this hotfix.
-  "src/app/(main)/ideas/[id]/discussions/[discussionId]/page.tsx",
-  "src/app/(main)/ideas/[id]/discussions/new/page.tsx",
+  // NOTE: the discussion pages' direct `.from("users").select("*")` for
+  // `currentUser` (previously allowlisted here) was narrowed to an explicit
+  // column list as part of the encrypted_anthropic_key migration (00152) —
+  // it was a cheap fix to make alongside the column-grant change, so it's
+  // no longer in this allowlist. Their SEPARATE embedded-join wildcard
+  // (`author:users!...(*)`) is a different call site, still out of scope,
+  // and remains in EMBEDDED_WILDCARD_ALLOWLIST below.
+  //
   // Collaborator-add autocomplete search — same pattern, not fixed by this hotfix.
   "src/components/ideas/add-collaborator-popover.tsx",
 ];
@@ -216,10 +221,15 @@ describe("profile/[id]/page.tsx: users select is column- AND viewer-scoped", () 
   // regressed once already (a long explicit column list still fetched them
   // unconditionally, so they landed in the RSC payload for every viewer, not
   // just the profile owner) even after `select("*")` was first narrowed.
+  //
+  // `has_anthropic_key` replaces `encrypted_anthropic_key` here (migration
+  // 00152 revoked `authenticated`'s SELECT on the ciphertext column
+  // entirely — this page only ever needed the BYOK/Platform truthiness, now
+  // served by the generated column instead).
   const SETTINGS_ONLY_COLUMNS = [
     "notification_preferences",
     "default_board_columns",
-    "encrypted_anthropic_key",
+    "has_anthropic_key",
     "model_tier_map",
   ];
 
@@ -318,5 +328,76 @@ describe("profile/[id]/page.tsx: users select is column- AND viewer-scoped", () 
         ).toBe(false);
       }
     }
+  });
+});
+
+/**
+ * Regression guard for the `encrypted_anthropic_key` cross-user-readable
+ * ciphertext bug (migration 00152): 9 call sites read the column across 8
+ * files, but 7 only ever tested truthiness. Migration 00152 revoked
+ * `authenticated`'s SELECT on the raw column entirely and added a
+ * `has_anthropic_key` generated column for the boolean-only readers;
+ * `resolveAiProvider` (src/lib/ai-helpers.ts) is the ONE legitimate holdout,
+ * reading the ciphertext through a narrowly-scoped service-role client to
+ * decrypt it.
+ *
+ * This guards the fix from regressing: any NEW `.select()` naming
+ * `encrypted_anthropic_key` outside ai-helpers.ts either (a) will fail at
+ * runtime once `authenticated` can no longer read the column, or (b) is a
+ * sign a future feature reached for the raw ciphertext instead of
+ * `has_anthropic_key` — both worth catching in review before they ship.
+ */
+describe("encrypted_anthropic_key select() guard", () => {
+  // The one file allowed to select the raw ciphertext column — it reads
+  // through a service-role client specifically to decrypt it for BYOK use.
+  const ALLOWED_FILE = "src/lib/ai-helpers.ts";
+
+  const allFiles = SCAN_DIRS.flatMap((d) => walk(join(repoRoot, d)));
+
+  /** Matches `.select("...")` calls whose column-list argument names
+   *  `encrypted_anthropic_key` — scoped to select() call arguments (not raw
+   *  text) so comments/docs mentioning the column by name don't false-positive. */
+  const SELECT_WITH_KEY_RE = /\.select\(\s*"[^"]*\bencrypted_anthropic_key\b[^"]*"\s*\)/;
+
+  it("detects the pattern in a synthetic snippet (sanity: the regex actually works)", () => {
+    expect(
+      SELECT_WITH_KEY_RE.test('.select("encrypted_anthropic_key, ai_starter_credits")')
+    ).toBe(true);
+    // A doc comment mentioning the column by name must NOT trip the guard.
+    expect(
+      SELECT_WITH_KEY_RE.test("// encrypted_anthropic_key is sensitive, don't select it")
+    ).toBe(false);
+    // Narrow selects using the generated boolean flag must NOT trip the guard.
+    expect(SELECT_WITH_KEY_RE.test('.select("has_anthropic_key, ai_starter_credits")')).toBe(
+      false
+    );
+  });
+
+  it("no file outside ai-helpers.ts calls .select() naming encrypted_anthropic_key", () => {
+    const violations: string[] = [];
+
+    for (const file of allFiles) {
+      const rel = relative(repoRoot, file).replace(/\\/g, "/");
+      if (rel === ALLOWED_FILE) continue;
+      if (SELECT_WITH_KEY_RE.test(readFileSync(file, "utf8"))) {
+        violations.push(rel);
+      }
+    }
+
+    expect(
+      violations,
+      `These files select() the raw encrypted_anthropic_key column, which ` +
+        `\`authenticated\` no longer has SELECT on (migration 00152) — the query ` +
+        `will fail at runtime. Use the generated \`has_anthropic_key\` boolean ` +
+        `column instead unless you genuinely need to decrypt the ciphertext, in ` +
+        `which case route the read through a service-role client the way ` +
+        `resolveAiProvider() does:\n` +
+        violations.map((v) => `  - ${v}`).join("\n")
+    ).toEqual([]);
+  });
+
+  it("ai-helpers.ts itself still selects encrypted_anthropic_key (sanity: the allowlist target is real)", () => {
+    const content = readFileSync(join(repoRoot, ALLOWED_FILE), "utf8");
+    expect(SELECT_WITH_KEY_RE.test(content)).toBe(true);
   });
 });

@@ -149,7 +149,7 @@ export function UserCreditsTable({ userCredits, platformStats, isSuperAdmin }: U
                     ${cost.toFixed(4)}
                   </TableCell>
                   <TableCell>
-                    {user.encrypted_anthropic_key ? (
+                    {user.has_anthropic_key ? (
                       <Badge variant="outline" className="text-[10px] text-emerald-500 border-emerald-500/30">
                         BYOK
                       </Badge>

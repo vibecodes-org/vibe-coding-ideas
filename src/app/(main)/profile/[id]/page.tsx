@@ -21,10 +21,16 @@ import type { Metadata } from "next";
 /** The settings-only columns: never fetched unless the viewer IS the profile
  *  owner (see the `isOwnProfile` query below) — narrowing the `select()`
  *  column list alone still put these in the RSC payload for every viewer, so
- *  the query itself has to be conditional, not just its shape. */
+ *  the query itself has to be conditional, not just its shape.
+ *
+ *  `has_anthropic_key` (generated column, migration 00152) stands in for
+ *  `encrypted_anthropic_key` — `authenticated` no longer has SELECT on the
+ *  ciphertext column at all, even for a user's own row, and this page only
+ *  ever renders the BYOK/Platform truthiness (see `ApiKeySettings` /
+ *  `ProfileSettingsMenu` below). */
 type OwnProfileSettings = Pick<
   User,
-  "notification_preferences" | "default_board_columns" | "encrypted_anthropic_key" | "model_tier_map"
+  "notification_preferences" | "default_board_columns" | "has_anthropic_key" | "model_tier_map"
 >;
 
 /** IdeaCard's entire use of `idea.author` (see src/components/ideas/idea-card.tsx) —
@@ -103,7 +109,7 @@ export default async function ProfilePage({ params }: PageProps) {
   if (isOwnProfile) {
     const { data } = await supabase
       .from("users")
-      .select("notification_preferences, default_board_columns, encrypted_anthropic_key, model_tier_map")
+      .select("notification_preferences, default_board_columns, has_anthropic_key, model_tier_map")
       .eq("id", id)
       .single();
     ownSettings = data;
@@ -249,7 +255,7 @@ export default async function ProfilePage({ params }: PageProps) {
                   <>
                     <NotificationSettings preferences={ownSettings.notification_preferences} />
                     <BoardColumnSettings columns={ownSettings.default_board_columns} />
-                    <ApiKeySettings hasKey={!!ownSettings.encrypted_anthropic_key} />
+                    <ApiKeySettings hasKey={!!ownSettings.has_anthropic_key} />
                     <ModelTierSettings map={ownSettings.model_tier_map} />
                   </>
                 )}
@@ -263,7 +269,7 @@ export default async function ProfilePage({ params }: PageProps) {
                   <ProfileSettingsMenu
                     preferences={ownSettings.notification_preferences}
                     columns={ownSettings.default_board_columns}
-                    hasApiKey={!!ownSettings.encrypted_anthropic_key}
+                    hasApiKey={!!ownSettings.has_anthropic_key}
                     modelTierMap={ownSettings.model_tier_map}
                   />
                 )}

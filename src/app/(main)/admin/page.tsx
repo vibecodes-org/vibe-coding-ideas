@@ -120,10 +120,14 @@ export default async function AdminPage({ searchParams }: PageProps) {
     // credits table — avoids shipping every raw row to the browser and avoids
     // the silent truncation a `.limit()` on raw rows would eventually hit.
     supabase.rpc("get_admin_platform_credit_stats"),
-    // Non-bot users with credit + key info for the admin credits table
+    // Non-bot users with credit + key info for the admin credits table.
+    // `has_anthropic_key` (generated column, migration 00152) replaces
+    // `encrypted_anthropic_key` here — `authenticated` no longer has SELECT
+    // on the ciphertext column, and this table only ever renders a BYOK vs
+    // Platform badge from its truthiness.
     supabase
       .from("users")
-      .select("id, full_name, email, avatar_url, ai_starter_credits, encrypted_anthropic_key")
+      .select("id, full_name, email, avatar_url, ai_starter_credits, has_anthropic_key")
       .eq("is_bot", false)
       .order("full_name", { ascending: true }),
     // MCP tool logs (last 30 days)
@@ -205,7 +209,7 @@ export type UserCreditInfo = {
   email: string;
   avatar_url: string | null;
   ai_starter_credits: number;
-  encrypted_anthropic_key: string | null;
+  has_anthropic_key: boolean;
 };
 
 export type FeedbackWithUser = {
