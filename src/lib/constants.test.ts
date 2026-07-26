@@ -248,13 +248,30 @@ describe("defaultTierForRole", () => {
     expect(defaultTierForRole("Backend Engineer")).toBe("standard");
   });
 
-  it("maps QA / mechanical roles to cheap", () => {
-    expect(defaultTierForRole("QA Engineer")).toBe("cheap");
-    expect(defaultTierForRole("Tester")).toBe("cheap");
+  // Deliberately NOT cheap. A QA step's deliverable is a trusted verdict, and the
+  // cheap tier was measured fabricating findings — 4 of 4 runs on an identical audit
+  // asserted a missing index that demonstrably exists, with invented timings, while
+  // the frontier tier got it right. See migration 00150 / spike b471a2bd.
+  it("maps QA / verification roles to standard, never cheap", () => {
+    expect(defaultTierForRole("QA Engineer")).toBe("standard");
+    expect(defaultTierForRole("Tester")).toBe("standard");
+    expect(defaultTierForRole("QA")).toBe("standard");
+    expect(defaultTierForRole("Test Automation Lead")).toBe("standard");
+  });
+
+  it("never auto-assigns the cheap tier to any role", () => {
+    const roles = [
+      "QA Engineer", "Tester", "QA", "Quality Assurance", "Testing Lead",
+      "Product Owner", "UX Designer", "Full Stack Engineer", "Backend Engineer",
+      "DevOps Engineer", "Code Reviewer", "Technical Writer", "Business Analyst",
+    ];
+    for (const role of roles) {
+      expect(defaultTierForRole(role)).not.toBe("cheap");
+    }
   });
 
   it("is case-insensitive and trims", () => {
-    expect(defaultTierForRole("  qa engineer  ")).toBe("cheap");
+    expect(defaultTierForRole("  qa engineer  ")).toBe("standard");
     expect(defaultTierForRole("ux designer")).toBe("frontier");
     expect(defaultTierForRole("FULL STACK DEVELOPER")).toBe("standard");
   });
