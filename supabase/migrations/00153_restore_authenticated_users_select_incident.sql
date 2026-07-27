@@ -1,0 +1,38 @@
+-- INCIDENT ROLLBACK. Restores service. Reverts the protection added by 00152.
+--
+-- 00152 revoked authenticated's TABLE-level SELECT on public.users and re-granted
+-- an explicit column list excluding encrypted_anthropic_key. That correctly blocked
+-- the ciphertext -- and simultaneously broke every `select *` and every PostgREST
+-- embedded `users!fkey(*)` query, because Postgres requires privilege on the WHOLE
+-- row to expand a wildcard. It does NOT narrow the wildcard to granted columns.
+--
+-- Nine live call sites do exactly that, all on hot paths: the /ideas listing
+-- (ideas/page.tsx:49), dashboard (dashboard/page.tsx:75,117,190), board task
+-- comments, board activity timeline, board realtime refetch, idea-team author and
+-- bot fetches (idea-team.ts:39,88), and collaborator search.
+--
+-- Failure was SILENT: supabase-js does not throw on a PostgREST error and these
+-- call sites use `data ?? []` without checking `error`, so pages returned HTTP 200
+-- and rendered empty. Logged-in users saw an empty ideas list and empty dashboard.
+-- Confirmed live, and corroborated by "permission denied for table users" errors in
+-- the prod Postgres log.
+--
+-- Why the test suite did not catch it: 2351 tests pass and tsc is clean. The guard
+-- test's own header discloses the gap -- it cannot exercise live grant enforcement,
+-- because that needs a real Postgres role. Green tests were not evidence here.
+--
+-- Restoring service takes priority over the protection. Correct sequence:
+--   1. this migration -- restore the table-level grant, app works again
+--   2. narrow all nine wildcard call sites to explicit column lists
+--   3. re-apply 00152's revoke once no wildcard reads of users remain
+--
+-- anon is deliberately NOT restored. 00151's anon revoke is the higher-value fix
+-- (it closed unauthenticated access to every user's email and the admin roster),
+-- and it breaks no reachable page: /ideas is behind middleware for logged-out
+-- visitors, and the two genuine anon readers (sitemap, OG image) use narrow selects.
+--
+-- has_anthropic_key is kept. It is harmless, already backfilled correctly across all
+-- 298 rows, and the seven readers repointed at it in bcce445 work either way -- so
+-- step 2's app changes are NOT reverted, only its revoke.
+
+grant select on table public.users to authenticated;
