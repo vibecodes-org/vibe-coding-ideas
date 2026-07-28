@@ -1,7 +1,15 @@
-import { describe, it, expect } from "vitest";
-import { composeBoardColumns, composeSuggestionsByTask, composeCoverImageUrls } from "./board-refetch";
+import { describe, it, expect, vi } from "vitest";
+import {
+  composeBoardColumns,
+  composeSuggestionsByTask,
+  composeCoverImageUrls,
+  fetchTaskLabelsByLabelIds,
+} from "./board-refetch";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
+import { IN_FILTER_CHUNK_SIZE } from "@/lib/db-helpers";
 import type { BoardColumn, BoardTask } from "@/types";
+import type { SupabaseClient } from "@supabase/supabase-js";
+import type { Database } from "@/types/database";
 
 function makeColumn(overrides: Partial<BoardColumn> = {}): BoardColumn {
   return {
@@ -176,5 +184,82 @@ describe("composeCoverImageUrls", () => {
       { path: "empty/cover.png", signedUrl: "" },
     ]);
     expect(result).toEqual({ "ok/cover.png": "https://signed/ok" });
+  });
+});
+
+describe("fetchTaskLabelsByLabelIds", () => {
+  /**
+   * Minimal chainable mock of the `.from(...).select(...).in("label_id", chunk)`
+   * path this function issues — enough to assert call shape/count without a
+   * real Supabase client.
+   */
+  function makeMockSupabase(
+    handler: (labelIds: string[]) => { data: unknown[] | null; error: { message: string } | null }
+  ) {
+    const inCalls: string[][] = [];
+    const from = vi.fn((_table: string) => ({
+      select: vi.fn((_cols: string) => ({
+        in: vi.fn((_col: string, ids: string[]) => {
+          inCalls.push(ids);
+          return Promise.resolve(handler(ids));
+        }),
+      })),
+    }));
+    return { client: { from } as unknown as SupabaseClient<Database>, from, inCalls };
+  }
+
+  it("empty labelIds: returns an empty result and issues no query at all", async () => {
+    const { client, from } = makeMockSupabase(() => ({ data: [], error: null }));
+    const result = await fetchTaskLabelsByLabelIds(client, []);
+    expect(result).toEqual({ data: [], error: null });
+    expect(from).not.toHaveBeenCalled();
+  });
+
+  it("happy path: labelIds under the chunk limit issue exactly one .in() call", async () => {
+    const rows = [{ task_id: "task-1", label: { id: "label-1", name: "Bug" } }];
+    const { client, inCalls } = makeMockSupabase(() => ({ data: rows, error: null }));
+    const result = await fetchTaskLabelsByLabelIds(client, ["label-1"]);
+    expect(result).toEqual({ data: rows, error: null });
+    expect(inCalls).toEqual([["label-1"]]);
+  });
+
+  it("chunk boundary: exactly IN_FILTER_CHUNK_SIZE ids is one call, one more is two", async () => {
+    const atLimit = Array.from({ length: IN_FILTER_CHUNK_SIZE }, (_, i) => `label-${i}`);
+    const overLimit = [...atLimit, "label-overflow"];
+
+    const atLimitMock = makeMockSupabase(() => ({ data: [], error: null }));
+    await fetchTaskLabelsByLabelIds(atLimitMock.client, atLimit);
+    expect(atLimitMock.inCalls).toHaveLength(1);
+    expect(atLimitMock.inCalls[0]).toHaveLength(IN_FILTER_CHUNK_SIZE);
+
+    const overLimitMock = makeMockSupabase(() => ({ data: [], error: null }));
+    await fetchTaskLabelsByLabelIds(overLimitMock.client, overLimit);
+    expect(overLimitMock.inCalls).toHaveLength(2);
+    expect(overLimitMock.inCalls[0]).toHaveLength(IN_FILTER_CHUNK_SIZE);
+    expect(overLimitMock.inCalls[1]).toEqual(["label-overflow"]);
+  });
+
+  it("results from every chunk are flattened into one array (this is the dashboard's multi-idea path)", async () => {
+    const overLimit = Array.from({ length: IN_FILTER_CHUNK_SIZE + 1 }, (_, i) => `label-${i}`);
+    const { client } = makeMockSupabase((ids) => ({
+      data: ids.map((id) => ({ task_id: `task-${id}`, label: { id, name: id } })),
+      error: null,
+    }));
+    const result = await fetchTaskLabelsByLabelIds(client, overLimit);
+    expect(result.error).toBeNull();
+    expect(result.data).toHaveLength(overLimit.length);
+  });
+
+  it("error path: a failing chunk surfaces a single error and no partial data", async () => {
+    const overLimit = Array.from({ length: IN_FILTER_CHUNK_SIZE + 1 }, (_, i) => `label-${i}`);
+    let call = 0;
+    const { client } = makeMockSupabase(() => {
+      call++;
+      // Fail the second chunk — proves a single bad chunk isn't silently
+      // dropped in favour of the rest ("partial" results would hide data).
+      return call === 2 ? { data: null, error: { message: "boom" } } : { data: [], error: null };
+    });
+    const result = await fetchTaskLabelsByLabelIds(client, overLimit);
+    expect(result).toEqual({ data: null, error: { message: "boom" } });
   });
 });

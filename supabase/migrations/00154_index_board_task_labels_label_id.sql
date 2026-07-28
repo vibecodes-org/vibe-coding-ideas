@@ -1,0 +1,46 @@
+-- Add an index on board_task_labels(label_id) — half of the fix for the
+-- "one board query eating ~14% of all database time" incident (board task
+-- a1345112).
+--
+-- BACKGROUND: `board_task_labels` has no `idea_id` column, so every RLS
+-- SELECT policy on it has to reach `board_tasks` to find the owning idea.
+-- The old app-side query joined through `board_tasks!inner(idea_id)` and
+-- filtered `.eq("board_tasks.idea_id", id)`, which — combined with
+-- `is_idea_team_member()` being VOLATILE (see the companion migration
+-- 00155) — forced Postgres to run the RLS `EXISTS` check against every row
+-- of the whole platform-wide table before the idea filter could narrow
+-- anything. Confirmed via prod `pg_stat_statements`: mean 1,067.61 ms over
+-- 13,756 calls, 71x slower than the `.in("task_id", …)` form it replaced.
+--
+-- THE APP FIX (separate commit, not this migration): every call site now
+-- filters `board_task_labels` by `label_id` instead of joining through
+-- `board_tasks` by `idea_id`. Each `board_labels` row belongs to exactly one
+-- idea (`UNIQUE (idea_id, lower(name))`), so `label_id IN (this idea's — or
+-- these ideas' — label ids)` scopes exactly as tightly as the join did, and
+-- the label-id list is always small and bounded, unlike an unbounded
+-- `task_id` list.
+--
+-- WHY THIS INDEX IS STILL NEEDED ON TOP OF THAT: `board_task_labels` only
+-- had `board_task_labels_pkey` (id) and the unique constraint index on
+-- `(task_id, label_id)` (verified via `pg_indexes` against prod
+-- irqbqxspxxzvuczhujzg) — no index with `label_id` as a leading column.
+-- Filtering by `label_id` against `(task_id, label_id)` means Postgres can
+-- only use that index as a full-index scan applying `label_id` as a filter,
+-- not a seek — cheap today purely because the table is small (3,672 rows),
+-- but it degrades back toward the same class of bug as the table grows.
+-- Supabase's own advisor independently flags
+-- `board_task_labels_label_id_fkey` as an unindexed foreign key. This index
+-- gives the `label_id` filter (and the FK) a real, guaranteed access path
+-- rather than relying on "the table happens to still be small" planner
+-- behaviour.
+--
+-- WHY A PLAIN (NON-CONCURRENT) CREATE INDEX: `CREATE INDEX CONCURRENTLY`
+-- cannot run inside a transaction block, and this project applies
+-- migrations via the Supabase Management API in batches (see
+-- docs/release-process.md / project memory), which wraps each batch in a
+-- transaction. At 3,672 rows a plain `CREATE INDEX` takes well under a
+-- second and holds a brief `ACCESS EXCLUSIVE` lock on `board_task_labels`
+-- only — safe to run as a normal migration rather than fighting the
+-- batch-transaction constraint for a table this small.
+
+create index board_task_labels_label_id_idx on public.board_task_labels (label_id);

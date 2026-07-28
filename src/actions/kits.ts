@@ -7,6 +7,8 @@ import { cloneBotProfile } from "./bots";
 import { triggerAutoRulesForTasks } from "./board";
 import { BOT_ROLE_TEMPLATES, VIBECODES_USER_ID } from "@/lib/constants";
 import { generatePromptFromFields } from "@/lib/prompt-builder";
+import { chunkIds } from "@/lib/db-helpers";
+import { logger } from "@/lib/logger";
 import type { Database } from "@/types/database";
 import type { BotProfile } from "@/types";
 
@@ -412,21 +414,68 @@ export async function applyKit(
 
   // 5. Retroactively apply auto-rules to existing labeled tasks (uses batched, cached path)
   if (createdRuleIds.length > 0) {
-    const { data: taskLabels } = await supabase
-      .from("board_task_labels")
-      .select("task_id, label_id, board_tasks!inner(archived)")
-      .eq("board_tasks.idea_id", ideaId)
-      .eq("board_tasks.archived", false);
+    // Filter by label_id (this idea's label ids, fetched fresh here since the
+    // "2." block's board labels are out of scope and the "3." block's are
+    // conditional on `mappings`) rather than joining through board_tasks by
+    // idea_id. The old board_tasks!inner(idea_id) + .eq("board_tasks.idea_id",
+    // …) join forced Postgres RLS to run its per-row EXISTS check against the
+    // ENTIRE platform-wide board_task_labels table before narrowing — this was
+    // the undocumented 4th query variant found eating prod DB time alongside
+    // the board page's. label_id is a safe filter because every board_labels
+    // row belongs to exactly one idea.
+    const { data: ideaLabels } = await supabase
+      .from("board_labels")
+      .select("id")
+      .eq("idea_id", ideaId);
+    const ideaLabelIds = (ideaLabels ?? []).map((l) => l.id);
 
-    if (taskLabels && taskLabels.length > 0) {
-      const pairMap = new Map<string, string[]>();
-      for (const tl of taskLabels) {
-        const arr = pairMap.get(tl.task_id) ?? [];
-        arr.push(tl.label_id);
-        pairMap.set(tl.task_id, arr);
+    // Chunked the same way fetchTaskLabelsByLabelIds (src/lib/board-refetch.ts)
+    // chunks its label_id filter — this call site needs a different column
+    // set (task_id, label_id, no label embed) and the archived filter that
+    // helper doesn't have, so it isn't reused directly, but filtering
+    // board_task_labels by every one of this idea's label ids in one
+    // unchunked call would carry the exact same silently-drops-rows-at-scale
+    // risk chunkIds exists to close off (src/lib/db-helpers.ts). Prod's
+    // largest idea has 67 labels today — under IN_FILTER_CHUNK_SIZE, but not
+    // a bound we should rely on staying true.
+    const taskLabelsResults = await Promise.all(
+      chunkIds(ideaLabelIds).map((chunk) =>
+        supabase
+          .from("board_task_labels")
+          .select("task_id, label_id, board_tasks!inner(archived)")
+          .in("label_id", chunk)
+          .eq("board_tasks.archived", false)
+      )
+    );
+
+    // A failed chunk must not silently become "no rows" — that would apply
+    // auto-rules to only the labels whose chunk happened to succeed, with no
+    // signal the coverage was partial. Same non-fatal-to-the-whole-kit-apply
+    // convention every other step in this function follows (see the try/catch
+    // blocks above): log and skip only this step — NOT `return result` here,
+    // which would also skip the revalidatePath calls below for the
+    // agents/labels/templates/rules that steps 1-4 already created
+    // successfully.
+    const firstTaskLabelsError = taskLabelsResults.find((r) => r.error)?.error;
+    if (firstTaskLabelsError) {
+      logger.error("applyKit: retroactive auto-rule label lookup failed", {
+        ideaId,
+        kitId,
+        error: firstTaskLabelsError.message,
+      });
+    } else {
+      const taskLabels = taskLabelsResults.flatMap((r) => r.data ?? []);
+
+      if (taskLabels.length > 0) {
+        const pairMap = new Map<string, string[]>();
+        for (const tl of taskLabels) {
+          const arr = pairMap.get(tl.task_id) ?? [];
+          arr.push(tl.label_id);
+          pairMap.set(tl.task_id, arr);
+        }
+        const pairs = [...pairMap.entries()].map(([taskId, labelIds]) => ({ taskId, labelIds }));
+        await triggerAutoRulesForTasks(pairs, ideaId);
       }
-      const pairs = [...pairMap.entries()].map(([taskId, labelIds]) => ({ taskId, labelIds }));
-      await triggerAutoRulesForTasks(pairs, ideaId);
     }
   }
 

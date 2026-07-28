@@ -12,6 +12,7 @@ import type {
 } from "@/types";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
 import { logger } from "@/lib/logger";
+import { chunkIds } from "@/lib/db-helpers";
 
 // Raw row shapes as returned by the Supabase queries below — same loose typing
 // (cast at composition time) the board page RSC already uses for these joins.
@@ -64,6 +65,48 @@ export function composeBoardColumns(
         labels: taskLabelsMap[t.id] ?? [],
       })) as BoardTaskWithAssignee[],
   }));
+}
+
+/**
+ * Fetch `board_task_labels` rows for a bounded set of `label_id`s, chunked to
+ * stay under the `.in()` URL-length limit (`chunkIds`, `IN_FILTER_CHUNK_SIZE`).
+ *
+ * Replaces the old `board_tasks!inner(idea_id)` join-through-tasks shape,
+ * which forced Postgres to evaluate `board_task_labels`'s RLS `EXISTS` policy
+ * (a correlated subquery calling the VOLATILE `is_idea_team_member()`)
+ * against every row of the whole platform-wide table before the app's own
+ * `idea_id` filter could narrow anything — 71x slower in production than the
+ * `.in("task_id", …)` form it replaced. Filtering by `label_id` up front lets
+ * the planner narrow first, cutting the RLS subplan's row count from
+ * "every row in the table" down to "rows matching these labels".
+ *
+ * Correct without the idea_id join: every `board_labels` row belongs to
+ * exactly one idea (`UNIQUE (idea_id, lower(name))`), so `label_id IN (this
+ * board's — or these boards' — label ids)` scopes exactly as tightly as the
+ * join did. Chunked (not a single `.in()`) because the dashboard's
+ * multi-idea caller unions labels across every idea a user owns or
+ * collaborates on, which is not bounded the way a single board's label count
+ * is.
+ */
+export async function fetchTaskLabelsByLabelIds(
+  supabase: SupabaseClient<Database>,
+  labelIds: readonly string[]
+): Promise<{ data: RawTaskLabelRow[] | null; error: { message: string } | null }> {
+  if (labelIds.length === 0) return { data: [], error: null };
+
+  const results = await Promise.all(
+    chunkIds(labelIds).map((chunk) =>
+      supabase
+        .from("board_task_labels")
+        .select("task_id, label:board_labels!board_task_labels_label_id_fkey(*)")
+        .in("label_id", chunk)
+    )
+  );
+
+  const firstError = results.find((r) => r.error)?.error;
+  if (firstError) return { data: null, error: { message: firstError.message } };
+
+  return { data: results.flatMap((r) => (r.data ?? []) as RawTaskLabelRow[]), error: null };
 }
 
 /**
@@ -168,7 +211,9 @@ export async function fetchBoardRefreshData(
     const [
       { data: rawColumns, error: columnsError },
       { data: rawTasks, error: tasksError },
-      { data: taskLabelRows, error: labelsError },
+      // Master label list backing the picker/filter — same order() as the RSC page
+      // so the two paths can't drift. Fetched in this batch (not after) because
+      // the task-labels query below needs its ids up front.
       { data: rawBoardLabels, error: boardLabelsError },
       { data: suggestionRows, error: suggestionsError },
     ] = await Promise.all([
@@ -178,15 +223,6 @@ export async function fetchBoardRefreshData(
         .select("*, assignee:users!board_tasks_assignee_id_fkey(*)")
         .eq("idea_id", ideaId)
         .order("position", { ascending: true }),
-      // Same inner-join-scoped filter the page uses — board_task_labels has no
-      // idea_id column, and a giant .in(taskIds) list silently drops rows once
-      // the URL grows too large on big boards.
-      supabase
-        .from("board_task_labels")
-        .select("task_id, label:board_labels!board_task_labels_label_id_fkey(*), board_tasks!inner(idea_id)")
-        .eq("board_tasks.idea_id", ideaId),
-      // Master label list backing the picker/filter — same order() as the RSC page
-      // so the two paths can't drift.
       supabase.from("board_labels").select("*").eq("idea_id", ideaId).order("created_at", { ascending: true }),
       supabase
         .from("workflow_suggestions")
@@ -195,9 +231,19 @@ export async function fetchBoardRefreshData(
         .eq("status", "suggested"),
     ]);
 
-    const error = columnsError ?? tasksError ?? labelsError ?? boardLabelsError ?? suggestionsError;
-    if (error) {
-      logger.warn("Board refetch query failed", { ideaId, error: error.message });
+    const batchError = columnsError ?? tasksError ?? boardLabelsError ?? suggestionsError;
+    if (batchError) {
+      logger.warn("Board refetch query failed", { ideaId, error: batchError.message });
+      return null;
+    }
+
+    // Depends on rawBoardLabels resolving first — see fetchTaskLabelsByLabelIds
+    // for why label_id (not the old board_tasks!inner(idea_id) join) is the
+    // filter, and why this can't just join into the Promise.all above.
+    const boardLabelIds = (rawBoardLabels ?? []).map((l) => l.id);
+    const { data: taskLabelRows, error: labelsError } = await fetchTaskLabelsByLabelIds(supabase, boardLabelIds);
+    if (labelsError) {
+      logger.warn("Board refetch query failed", { ideaId, error: labelsError.message });
       return null;
     }
 
