@@ -16,7 +16,12 @@
 //   preemption  — a same-owner browser attach while a (possibly silently dead)
 //                 browser leg is still registered now WINS: the stale leg is
 //                 closed 4001 "preempted", the new leg goes live, and NO grace
-//                 window opens (the pair never stopped being whole).
+//                 window opens (the pair never stopped being whole). Because no
+//                 grace hold opens, the pair-whole `peer-reattached` signal fires
+//                 straight off `pairWhole` (fix/relay-pair-whole-notify, board
+//                 card 4f9cf03d) — this is the same relay code path a pop-out /
+//                 bring-back-to-dock preemption takes, and without it the newly
+//                 attached leg has no way to learn a quiet peer is already there.
 //
 // Runs against the Node stand-in relay, which shares the exact decision logic
 // (pairing.js) and mirrors the DO's hb intercept. Every wait is hard-timeout
@@ -36,6 +41,7 @@ import {
   isHeartbeatAckFrame,
   isAttachedFrame,
   isPeerDegradedFrame,
+  isPeerReattachedFrame,
 } from "../shared/control-frames.mjs";
 
 const SECRET = "heartbeat-test-secret";
@@ -87,9 +93,11 @@ test("(a) browser hb is acked to the browser only — never forwarded to the bri
   await waitFor(() => hasFrame(browser, isHeartbeatAckFrame), HARD_TIMEOUT_MS, "hb-ack to the probing browser leg");
 
   // Let anything wrongly forwarded arrive, then assert the bridge saw NOTHING but
-  // its own R1 `attached` confirmation — no hb, no hb-ack, no bytes.
+  // its own R1 `attached` confirmation and the initial-pairing `peer-reattached`
+  // (fix/relay-pair-whole-notify — the bridge's own attach is what completes the
+  // pair here, so it legitimately gets both) — no hb, no hb-ack, no bytes.
   await new Promise((r) => setTimeout(r, 200));
-  const unexpected = bridge.texts.filter((f) => !isAttachedFrame(f));
+  const unexpected = bridge.texts.filter((f) => !isAttachedFrame(f) && !isPeerReattachedFrame(f));
   assert.deepEqual(unexpected, [], "the bridge leg received no heartbeat traffic");
   assert.equal(bridge.binary, "", "no bytes reached the bridge leg");
   console.log("[hb/a] PASS — hb acked to sender only, peer untouched");
@@ -136,6 +144,11 @@ test("(c) same-owner 2nd browser preempts the stale leg (4001 preempted) and goe
   const bridge = await openRawLeg(relay.url, session, "bridge", tokens.bridge);
   t.after(() => { try { bridge.ws.terminate(); } catch { /* */ } });
 
+  // `bridge` just saw ONE peer-reattached frame from the initial pairing above
+  // (fix/relay-pair-whole-notify fires it there too) — clear it BEFORE the swap
+  // below, so the check after the swap proves THAT broadcast, not this stale one.
+  bridge.texts = [];
+
   // The dock's watchdog fired and the reattach loop opens a NEW browser leg with
   // the SAME owner-bound token (no re-mint) — this used to bounce off DUP_BROWSER.
   const fresh = await openRawLeg(relay.url, session, "browser", tokens.browser);
@@ -152,6 +165,14 @@ test("(c) same-owner 2nd browser preempts the stale leg (4001 preempted) and goe
   await new Promise((r) => setTimeout(r, 200));
   assert.equal(hasFrame(bridge, isPeerDegradedFrame), false, "no peer-degraded to the bridge on a preemption swap");
   assert.ok(relay.sessions.has(session), "session retained across the swap");
+
+  // fix/relay-pair-whole-notify (board card 4f9cf03d): NO grace hold opened here,
+  // so before the fix neither leg would ever have learned the pair is whole
+  // again. The fresh (preempting) leg AND the untouched bridge leg must both get
+  // `peer-reattached` — this is the only signal a quiet session's browser leg
+  // has that its bridge peer is already there.
+  await waitFor(() => hasFrame(fresh, isPeerReattachedFrame), HARD_TIMEOUT_MS, "peer-reattached to the fresh browser leg");
+  assert.ok(hasFrame(bridge, isPeerReattachedFrame), "peer-reattached to the untouched bridge leg too");
 
   // Live end-to-end both ways through the new leg.
   const down = `DOWN-${Math.random().toString(36).slice(2, 8).toUpperCase()}`;

@@ -228,6 +228,7 @@ export function startStandinRelay(opts = {}) {
     }
 
     const firstLeg = legs.bridge === null && legs.browser === null;
+    const wasHeld = legs.graceTimer != null;
     if (legs.owner === null) legs.owner = auth.sub;
     legs[role] = ws;
     log("attached", { session, role });
@@ -256,15 +257,26 @@ export function startStandinRelay(opts = {}) {
     }
 
     // GRACE-WINDOW REATTACH reconciliation: if this session was being HELD for a
-    // dropped leg and BOTH legs are present again, cancel the grace hold and tell
-    // BOTH legs to resume. (Only one leg back → keep holding, wait for the other.)
-    if (legs.graceTimer && legs.bridge && legs.browser) {
+    // dropped leg and BOTH legs are present again, cancel the grace hold. (Only
+    // one leg back → keep holding, wait for the other.)
+    const pairWhole = legs.bridge && legs.browser;
+    if (wasHeld && pairWhole) {
       clearTimeout(legs.graceTimer);
       legs.graceTimer = null;
+      log("reattached — pair whole again", { session, role });
+    }
+
+    // `peer-reattached` is the PAIR-IS-WHOLE signal — mirrors the Cloudflare DO
+    // (relay/src/index.js step 6, fix/relay-pair-whole-notify): it fires
+    // whenever THIS attach makes the pair whole, not only after a grace hold —
+    // that also covers initial pairing and a same-owner PREEMPTION reattach
+    // (pop-out / bring-back-to-dock), neither of which ever opens a grace hold.
+    // A leg attaching to a quiet session has no other way to learn its peer is
+    // there (no bytes flow, and unpaired input is dropped).
+    if (pairWhole) {
       for (const leg of [legs.bridge, legs.browser]) {
         try { leg.send(encodePeerReattachedFrame()); } catch { /* closing */ }
       }
-      log("reattached — pair whole again", { session, role });
     }
 
     // Arm the max-duration cap once, on the first leg; arm/refresh idle now (unless

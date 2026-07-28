@@ -105,6 +105,11 @@ test("(b) dropped leg reattaches (same sid+owner) within grace → both get peer
   bridge.ws.terminate();
   await waitFor(() => hasFrame(browser, isPeerDegradedFrame), 5000, "degraded");
 
+  // `browser` already saw ONE peer-reattached frame from the initial pairing
+  // above (fix/relay-pair-whole-notify fires it there too) — clear its texts so
+  // the check below proves THIS reattach's broadcast, not that stale one.
+  browser.texts = [];
+
   // Reattach the bridge with the SAME sid + owner token.
   bridge = await openRawLeg(relay.url, session, "bridge", tokens.bridge);
   t.after(() => { try { bridge.ws.terminate(); } catch { /* */ } });
@@ -253,6 +258,10 @@ test("(f1) transient relay drop with claude alive → bridge RECONNECTS to the s
   const firstBridgeWs = await waitFor(() => relay.sessions.get(session)?.bridge ?? null, 5000, "bridge attached server-side");
 
   // Force a TRANSIENT drop of the bridge's link (server-side terminate → client sees 1006).
+  // Clear the browser's seen texts first: fix/relay-pair-whole-notify means the
+  // INITIAL pairing above already sent one peer-reattached, so `hasFrame` below
+  // must only count a frame from THIS reconnect, not that stale one.
+  browser.texts = [];
   firstBridgeWs.terminate();
 
   // The bridge must RECONNECT (not reap): the relay re-pairs and broadcasts peer-reattached.
