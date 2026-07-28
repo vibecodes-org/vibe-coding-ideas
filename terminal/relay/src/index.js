@@ -398,10 +398,22 @@ export class TerminalRelay {
       }
     }
 
-    // 6) If this attach restored the pair inside the grace window, tell BOTH legs
-    //    to resume. Sent AFTER the bridge's own `attached` frame; both are no-ops
-    //    for a leg that doesn't know them (skew-safe).
-    if (wasHeld && pairWhole) {
+    // 6) `peer-reattached` is the PAIR-IS-WHOLE signal, and it must fire for ALL
+    //    THREE ways a pair becomes whole — initial pairing (this attach is the
+    //    2nd leg on a virgin session), a grace-window reattach (wasHeld above),
+    //    and a same-owner PREEMPTION reattach (pop-out / bring-back-to-dock,
+    //    step 2b — no grace hold ever opens for those, since the pair never
+    //    stopped being whole). `pairWhole` alone is the correct condition:
+    //    `wasHeld` only matters for clearing the grace deadline above. A browser
+    //    leg attaching to a QUIET session has no other way to learn the bridge is
+    //    there — no PTY bytes flow, and unpaired input is dropped — so without
+    //    this broadcast on a preemption reattach the popped/re-docked window hangs
+    //    on "Reattaching…" forever (board card 4f9cf03d: pop-out hand-off reached
+    //    the relay and paired, but the dock's still-live browser leg was preempted
+    //    with no grace hold, so the popped window never got a signal to resume).
+    //    Sent AFTER the bridge's own `attached` frame; both are no-ops for a leg
+    //    that doesn't know them (skew-safe).
+    if (pairWhole) {
       this.broadcast(encodePeerReattachedFrame());
     }
 
