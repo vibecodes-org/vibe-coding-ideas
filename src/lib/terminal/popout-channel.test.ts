@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import {
   popoutChannelName,
   generatePopoutNonce,
+  openPopoutWindow,
   parsePopoutChannelMessage,
   reduceDockHandshake,
   INITIAL_DOCK_HANDSHAKE_STATE,
@@ -44,6 +45,47 @@ describe("generatePopoutNonce", () => {
   it("never repeats across calls", () => {
     const seen = new Set(Array.from({ length: 50 }, () => generatePopoutNonce()));
     expect(seen.size).toBe(50);
+  });
+});
+
+describe("openPopoutWindow", () => {
+  it("never puts `noopener` in the feature string — regression pin for the field failure (board tasks cd0a9792 / 4f9cf03d): `window.open` returns null unconditionally whenever the feature string contains `noopener`, even on a successful open, which made the dock's `if (!win)` guard fire on EVERY click. If this assertion ever fails, someone added `noopener` back — don't", () => {
+    const windowOpen = vi.fn().mockReturnValue({ opener: "something" } as unknown as Window);
+    openPopoutWindow("nonce-abc", windowOpen);
+    const features = windowOpen.mock.calls[0][2];
+    expect(features).not.toMatch(/noopener/);
+  });
+
+  it("derives the URL and target from the nonce exactly as the client's resolveNonce() expects — hash primary, `vibecodes-terminal-` prefix for the window.name fallback", () => {
+    const windowOpen = vi.fn().mockReturnValue({ opener: "something" } as unknown as Window);
+    openPopoutWindow("abc123", windowOpen);
+    expect(windowOpen).toHaveBeenCalledWith("/terminal/popout#abc123", "vibecodes-terminal-abc123", expect.any(String));
+  });
+
+  it("on a successful open, returns the handle and severs its opener", () => {
+    const fakeWin = { opener: "should-be-nulled" } as unknown as Window;
+    const windowOpen = vi.fn().mockReturnValue(fakeWin);
+    const result = openPopoutWindow("nonce-abc", windowOpen);
+    expect(result).toBe(fakeWin);
+    expect(result?.opener).toBeNull();
+  });
+
+  it("still returns the handle when severing opener throws (cross-origin or already-detached)", () => {
+    const fakeWin = {} as Window;
+    Object.defineProperty(fakeWin, "opener", {
+      set() {
+        throw new Error("cannot set opener");
+      },
+    });
+    const windowOpen = vi.fn().mockReturnValue(fakeWin);
+    const result = openPopoutWindow("nonce-abc", windowOpen);
+    expect(result).toBe(fakeWin);
+  });
+
+  it("passes a genuine popup-block (null return) straight through — caller shows the blocked toast", () => {
+    const windowOpen = vi.fn().mockReturnValue(null);
+    const result = openPopoutWindow("nonce-abc", windowOpen);
+    expect(result).toBeNull();
   });
 });
 
