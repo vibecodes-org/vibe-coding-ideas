@@ -6,14 +6,20 @@
 // arrives.
 //
 // Nonce resolution: the URL HASH first (what the dock's window.open() sets —
-// see terminal-dock.tsx's handlePopOut), falling back to `window.name` per
-// the stage brief ("NONCE comes from the URL hash or window.name") — a
-// fallback that matters if some intermediate navigation ever drops the hash
-// (e.g. a browser "restore session" round-trip); `window.name` persists
-// across navigations within the same tab/window in a way the hash doesn't
-// survive every code path. Either way the nonce carries NO session meaning by
-// itself (see popout-channel.ts's module doc) — it only names the rendezvous
-// channel.
+// see terminal-dock.tsx's handlePopOut / openPopoutWindow in
+// popout-channel.ts), falling back to `window.name` per the stage brief
+// ("NONCE comes from the URL hash or window.name") — a fallback that matters
+// if some intermediate navigation ever drops the hash (e.g. a browser
+// "restore session" round-trip); `window.name` persists across navigations
+// within the same tab/window in a way the hash doesn't survive every code
+// path. This fallback is only genuinely reachable now that the dock opens
+// WITHOUT `noopener` (board task 4f9cf03d): per the HTML spec, `noopener`
+// forces a new browsing context's name to the empty string, so while
+// `noopener` still shipped, `window.name` here was ALWAYS empty and this
+// fallback was silently dead code — the hash was the only nonce source that
+// could ever actually work. Either way the nonce carries NO session meaning
+// by itself (see popout-channel.ts's module doc) — it only names the
+// rendezvous channel.
 
 import { useEffect, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
@@ -25,9 +31,10 @@ import {
 import { TerminalPopoutView } from "@/components/board/terminal-popout-view";
 
 // The dock's window.open() target name is `vibecodes-terminal-<nonce>` (see
-// terminal-dock.tsx's handlePopOut) — that string becomes this window's OWN
-// `window.name` automatically, so the fallback strips the same prefix back
-// off rather than treating the whole target string as the nonce.
+// openPopoutWindow in popout-channel.ts) — NOW that the feature string omits
+// `noopener`, that string genuinely becomes this window's OWN `window.name`
+// automatically, so the fallback strips the same prefix back off rather than
+// treating the whole target string as the nonce.
 const WINDOW_NAME_PREFIX = "vibecodes-terminal-";
 
 function resolveNonce(): string | null {

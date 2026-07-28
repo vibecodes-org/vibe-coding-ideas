@@ -65,6 +65,7 @@ import { newSessionTooltip } from "@/lib/terminal/session-cap";
 import {
   generatePopoutNonce,
   popoutChannelName,
+  openPopoutWindow,
   createDockPopoutMessageHandler,
   INITIAL_DOCK_HANDSHAKE_STATE,
   type DockHandshakeState,
@@ -298,11 +299,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       const nonce = generatePopoutNonce();
       // MUST be the direct, synchronous result of the click — no await before
       // this line — or popup blockers treat it as an unsolicited pop-up (D7).
-      const win = window.open(
-        `/terminal/popout#${nonce}`,
-        `vibecodes-terminal-${nonce}`,
-        "width=760,height=560,noopener",
-      );
+      // openPopoutWindow (popout-channel.ts) owns the feature string — see its
+      // doc for why `noopener` can NEVER go back in there: it shipped twice
+      // and made window.open() return null unconditionally, so this guard
+      // fired on every click even when the popup opened fine.
+      const win = openPopoutWindow(nonce, (url, target, features) => window.open(url, target, features));
       if (!win) {
         toast.error("Couldn't open the terminal window", {
           description: "Your browser blocked the pop-up. Allow pop-ups for vibecodes.co.uk and try again.",

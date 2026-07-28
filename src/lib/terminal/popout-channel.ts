@@ -3,8 +3,10 @@
 //
 // The dock and the popped-out window are TWO SEPARATE documents (a real browser
 // window opened via window.open) — there is no shared JS heap, no React context,
-// no window.opener reliance (we open with a feature string that omits it isn't
-// required either way, since nothing here reads `opener`). The only channel
+// no window.opener reliance. Isolation is enforced EXPLICITLY: `openPopoutWindow`
+// below opens WITHOUT `noopener` in the feature string and then sets
+// `win.opener = null` itself once it has a handle — see that function's doc for
+// why the feature string can never carry `noopener` again. The only channel
 // between them is a same-origin `BroadcastChannel` named from a one-time NONCE
 // carried in the popped window's URL HASH (never sent to any server — hashes
 // never leave the browser) or, as a fallback, `window.name`. The nonce carries no
@@ -30,7 +32,9 @@
 //      direction, just observed from opposite ends.
 //   5. When the popped window closes (`beforeunload`/`pagehide`), it posts
 //      "closed" on the SAME channel so the dock can auto-reattach (D3) without
-//      polling `window.closed` (which `noopener` would block anyway).
+//      polling `window.closed` — unreliable across two separate windows either
+//      way, and outright blocked back when the feature string still carried
+//      `noopener` (see the REWORK addendum below).
 //
 // This module holds every piece of that protocol that's expressible as pure data
 // + pure functions — channel naming, the payload shape, message parsing, the
@@ -57,6 +61,23 @@
 // duplicate) payload re-sends — instead of "first one wins"
 // (`reduceDockHandshake`), and every rejection path now warns with its
 // reason instead of dropping silently.
+//
+// REWORK ADDENDUM (fix/terminal-popout-open-guard, board task 4f9cf03d): the
+// retried-handshake hardening above was necessary but NOT sufficient — it
+// shipped and the pop-out STILL failed 100% of the time in production,
+// because the actual field failure was one level up the call stack and
+// nothing above could ever reach it. `handlePopOut` (terminal-dock.tsx)
+// opened with `"width=760,height=560,noopener"`, and per the HTML spec,
+// `window.open()` returns `null` whenever the feature string contains
+// `noopener` — EVEN WHEN THE POPUP OPENS SUCCESSFULLY. So its `if (!win)`
+// guard fired on every single click, the popup-blocked-toast branch ran
+// unconditionally, and the function returned before ever reaching the
+// BroadcastChannel wiring above — the retried "ready"s the popped window
+// was faithfully sending landed on a dock that had never started listening.
+// Fixed here by dropping `noopener` from the feature string (see
+// `openPopoutWindow` below) and severing `win.opener` explicitly instead —
+// isolation is preserved, but no longer at the cost of a null return on
+// success.
 
 import { RELAY_CLOSE } from "@/lib/terminal/connection";
 
@@ -86,6 +107,44 @@ export function generatePopoutNonce(): string {
     Math.random().toString(36).slice(2) +
     Math.random().toString(36).slice(2)
   );
+}
+
+/** The signature of `window.open` — injectable so the call is testable without a real browser. */
+export type PopoutWindowOpener = (url: string, target: string, features: string) => Window | null;
+
+/**
+ * Opens the popped-out terminal window and severs its opener link — the
+ * exact sequence `terminal-dock.tsx`'s `handlePopOut` runs on click, extracted
+ * here (same rationale as `createDockPopoutMessageHandler` below) so it's
+ * unit-tested without a real `window.open`.
+ *
+ * THE FEATURE STRING BELOW MUST NEVER INCLUDE `noopener` — this is not a
+ * style preference, it's the root cause of two field failures (board tasks
+ * cd0a9792 and 4f9cf03d). Per the HTML spec, `window.open()` returns `null`
+ * whenever the feature string contains `noopener`, EVEN WHEN THE POPUP
+ * OPENS SUCCESSFULLY (the browsing context is still created; only the
+ * reference back to it is withheld). `handlePopOut`'s `if (!win)` guard is
+ * only a correct "was this genuinely popup-blocked?" check as long as a
+ * successful open yields a real handle — reintroduce `noopener` here and
+ * that guard fires on EVERY call again, exactly as it did in production.
+ * Isolation is enforced explicitly instead, below: once a real handle comes
+ * back, its `opener` is nulled out directly, so the popped window still has
+ * no way to script back into the tab that opened it.
+ */
+export function openPopoutWindow(nonce: string, windowOpen: PopoutWindowOpener): Window | null {
+  const win = windowOpen(
+    `/terminal/popout#${nonce}`,
+    `vibecodes-terminal-${nonce}`,
+    "width=760,height=560",
+  );
+  if (!win) return null; // genuinely popup-blocked — caller shows the toast (D7)
+  try {
+    win.opener = null;
+  } catch {
+    /* cross-origin or already-detached — nothing to sever, and the window
+     * itself is still perfectly usable, so this must never sink the open. */
+  }
+  return win;
 }
 
 /** Everything the popped window needs to attach to the SAME relay session. */
