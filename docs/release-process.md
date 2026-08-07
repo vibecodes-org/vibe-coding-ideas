@@ -406,6 +406,39 @@ You cannot "undo" a migration — you can only go forward with a corrective migr
 
 ---
 
+## Vercel Environment Variables — the "sensitive" footgun
+
+**Incident this section exists for:** all AI features were down 2026-07-23 →
+2026-08-07 because production `ANTHROPIC_MODEL` was an **empty string**. Vercel
+marks Production env vars *sensitive* (write-only) by default, and with a
+sensitive var the CLI's `vercel env add` (piped stdin or `--value`) can
+**silently store ""** — and since sensitive vars always read back as `""` from
+`vercel env ls`/`pull`, the failed write is indistinguishable from a
+successful one. Reproduced three times during the incident fix.
+
+Rules when changing any Vercel env var:
+
+1. **Add with `--no-sensitive`** unless the value is a true secret that must
+   stay write-only:
+   `printf 'value' | vercel env add NAME production --no-sensitive`
+2. **Always verify by re-pull** to a scratch file and check the exact value:
+   `vercel env pull /tmp/check.env --environment=production` — a blank
+   read-back on a non-sensitive var means the write failed.
+3. **Sensitive vars cannot be verified by read-back** — verify by behaviour
+   (e.g. a real API call after redeploy) instead.
+4. Env changes only take effect on the **next deploy** — redeploy after
+   changing.
+
+**Runtime backstop:** `instrumentation.ts` calls `warnOnBlankEnvVars()`
+(`src/lib/env-guard.ts`) at boot and `logger.error`s any required var that is
+present-but-blank. Blank ≠ unset: unset falls back to defaults; blank is
+almost always this footgun. Code-side hardening also exists for
+`ANTHROPIC_MODEL` and `PLATFORM_AI_DAILY_LIMIT` (blank → default in
+`src/lib/ai-helpers.ts`), but the guard log is the tell that the env var
+itself needs fixing.
+
+---
+
 ## Quick Reference
 
 ### Branch naming
