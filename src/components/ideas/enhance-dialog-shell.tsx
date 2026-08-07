@@ -95,8 +95,14 @@ export interface EnhanceDialogShellProps {
   /** Wider dialog when set — kept for the existing-idea wrapper which historically used wider phases. */
   className?: string;
 
-  /** Question-generation callback — wrapper supplies idea-vs-create implementation. */
-  generateQuestions: (args: GenerateQuestionsArgs) => Promise<ClarifyingQuestion[]>;
+  /**
+   * Question-generation callback — wrapper supplies idea-vs-create implementation.
+   * Expected AI failures come back as `{ error }` (returned, not thrown, so the
+   * real message survives Next.js prod error masking) and are toasted verbatim.
+   */
+  generateQuestions: (
+    args: GenerateQuestionsArgs
+  ) => Promise<ClarifyingQuestion[] | { error: string }>;
 
   /** Streaming endpoint URL ("/api/ai/enhance" or "/api/ai/enhance-create"). */
   enhanceStreamUrl: string;
@@ -219,11 +225,17 @@ export function EnhanceDialogShell({
           prompt,
           personaPrompt: getPersonaPrompt(),
         });
+        if ("error" in result) {
+          // Structured failure returned by the server action — toast the real message.
+          toast.error(result.error);
+          return;
+        }
         onCreditUsed?.();
         setQuestions(result);
         setAnswers({});
         setPhase("questions");
       } catch (err) {
+        // Unexpected failures only (e.g. network) — expected ones arrive as { error }.
         toast.error(
           err instanceof Error ? err.message : "Failed to generate questions"
         );

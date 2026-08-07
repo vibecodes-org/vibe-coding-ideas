@@ -59,14 +59,15 @@ export function CreateEnhanceDialog({
       kitContextLabel={kitType}
       onCreditUsed={onCreditUsed}
       generateQuestions={async ({ prompt, personaPrompt }) => {
-        const { questions } = await generateCreateClarifyingQuestions({
+        const result = await generateCreateClarifyingQuestions({
           title,
           description,
           kitType,
           prompt,
           personaPrompt,
         });
-        return questions;
+        // Structured failure ({ error }) passes through — the shell toasts it.
+        return "error" in result ? result : result.questions;
       }}
       enhanceStreamUrl="/api/ai/enhance-create"
       buildStreamBody={({ prompt, personaPrompt, answers, previousEnhanced, refinementFeedback }) => ({

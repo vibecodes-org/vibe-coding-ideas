@@ -14,6 +14,7 @@ import type { AiAccess } from "@/lib/ai-helpers";
 import { getAttachmentContext, appendAttachmentBlock } from "@/lib/attachment-context";
 import type { EnhanceAttachmentUsage } from "@/lib/attachment-context";
 import { buildEnhanceSystemPrompt, buildEnhanceUserPrompt } from "@/lib/enhance-prompts";
+import { aiErrorMessage } from "@/lib/ai-error-message";
 
 const AI_TIMEOUT_MS = 90_000; // 90s — fail gracefully before Vercel's 120s function timeout
 
@@ -29,16 +30,21 @@ const ClarifyingQuestionsSchema = z.object({
 
 export type ClarifyingQuestion = z.infer<typeof ClarifyingQuestionsSchema>["questions"][number];
 
-/** Re-throw AI SDK errors as plain Error so Next.js RSC can serialize them. */
-function toPlainError(err: unknown): never {
-  logger.error("AI action error", { error: err instanceof Error ? err.message : String(err) });
-  if (err instanceof Error) {
-    if (err.name === "TimeoutError" || err.name === "AbortError") {
-      throw new Error("The AI request timed out. Please try again — the service may be under heavy load.");
-    }
-    throw new Error(err.message);
-  }
-  throw new Error("An unexpected AI error occurred");
+/** Discriminated failure returned (not thrown) by AI actions — check `"error" in result` client-side. */
+export type AiActionFailure = { error: string };
+
+/**
+ * Log the full error server-side and convert it into a RETURNED failure object.
+ * Next.js prod builds mask thrown Error messages from Server Actions, so
+ * expected AI failures must be returned as data for the client to toast the
+ * real (sanitised) message.
+ */
+function aiFailure(err: unknown): AiActionFailure {
+  logger.error("AI action error", {
+    error: err instanceof Error ? err.message : String(err),
+    name: err instanceof Error ? err.name : undefined,
+  });
+  return { error: aiErrorMessage(err) };
 }
 
 /** Common auth + AI access check. Uses BYOK key if available, falls back to platform key with starter credits. */
@@ -99,7 +105,7 @@ export async function enhanceCreateDescription(data: {
   title: string;
   description: string;
   kitType?: string;
-}): Promise<{ enhanced: string }> {
+}): Promise<{ enhanced: string } | AiActionFailure> {
   const { supabase, user, anthropic, keyType } = await requireAiAccess();
 
   const title = data.title.trim();
@@ -124,7 +130,7 @@ export async function enhanceCreateDescription(data: {
     text = result.text;
     usage = result.usage ?? {};
   } catch (err) {
-    toPlainError(err);
+    return aiFailure(err);
   }
 
   await chargeAiUsage(supabase, {
@@ -148,7 +154,7 @@ export async function generateCreateClarifyingQuestions(data: {
   kitType?: string;
   prompt: string;
   personaPrompt?: string | null;
-}): Promise<{ questions: ClarifyingQuestion[] }> {
+}): Promise<{ questions: ClarifyingQuestion[] } | AiActionFailure> {
   const { supabase, user, anthropic, keyType } = await requireAiAccess();
 
   const title = data.title.trim();
@@ -184,7 +190,7 @@ ${data.description || title}`,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
   } catch (err) {
-    toPlainError(err);
+    return aiFailure(err);
   }
 
   await chargeAiUsage(supabase, {
@@ -245,7 +251,7 @@ export async function enhanceIdeaDescription(
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
   } catch (err) {
-    toPlainError(err);
+    return aiFailure(err);
   }
 
   await chargeAiUsage(supabase, {
@@ -267,7 +273,9 @@ export async function generateClarifyingQuestions(
   ideaId: string,
   prompt: string,
   personaPrompt?: string | null
-): Promise<{ questions: ClarifyingQuestion[]; attachmentUsage?: EnhanceAttachmentUsage }> {
+): Promise<
+  { questions: ClarifyingQuestion[]; attachmentUsage?: EnhanceAttachmentUsage } | AiActionFailure
+> {
   const { supabase, user, anthropic, keyType } = await requireAiAccess();
 
   const { data: idea } = await supabase
@@ -319,7 +327,7 @@ ${idea.description}${attachmentPromptBlock}`;
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
   } catch (err) {
-    toPlainError(err);
+    return aiFailure(err);
   }
 
   await chargeAiUsage(supabase, {
@@ -423,7 +431,7 @@ Use the answers above to inform your enhanced description. Make the enhancement 
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
   } catch (err) {
-    toPlainError(err);
+    return aiFailure(err);
   }
 
   await chargeAiUsage(supabase, {
@@ -444,7 +452,7 @@ Use the answers above to inform your enhanced description. Make the enhancement 
 export async function applyEnhancedDescription(
   ideaId: string,
   description: string
-) {
+): Promise<AiActionFailure | undefined> {
   const supabase = await createClient();
   const {
     data: { user },
@@ -458,7 +466,9 @@ export async function applyEnhancedDescription(
     .eq("id", ideaId)
     .eq("author_id", user.id);
 
-  if (error) throw new Error(error.message);
+  // Returned (not thrown) so the real DB message survives prod masking.
+  if (error) return aiFailure(error);
+  return undefined;
 }
 
 // ── Generate Board Tasks ────────────────────────────────────────────────
@@ -570,7 +580,7 @@ export async function generateBoardTasks(
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
   } catch (err) {
-    toPlainError(err);
+    return aiFailure(err);
   }
 
   await chargeAiUsage(supabase, {
@@ -624,7 +634,7 @@ ${taskDescription}
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
   } catch (err) {
-    toPlainError(err);
+    return aiFailure(err);
   }
 
   await chargeAiUsage(supabase, {
@@ -672,7 +682,7 @@ ${discussionBody}
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
   } catch (err) {
-    toPlainError(err);
+    return aiFailure(err);
   }
 
   await chargeAiUsage(supabase, {

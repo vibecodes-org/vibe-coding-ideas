@@ -223,6 +223,7 @@ describe("attachment context injection", () => {
     const { enhanceIdeaWithContext } = await import("./ai");
     const result = await enhanceIdeaWithContext("idea-1", "Make it better");
 
+    if ("error" in result) throw new Error(`unexpected failure: ${result.error}`);
     expect(result.enhanced).toBe("enhanced");
     const call = mockGenerateText.mock.calls[0][0] as { prompt: string };
     expect(call.prompt).not.toContain("Attached Files");
@@ -249,6 +250,7 @@ describe("attachment context injection", () => {
     const { generateClarifyingQuestions } = await import("./ai");
     const result = await generateClarifyingQuestions("idea-1", "Make it better");
 
+    if ("error" in result) throw new Error(`unexpected failure: ${result.error}`);
     // Existing callers destructure only `{ questions }` — still works.
     const { questions } = result;
     expect(questions).toEqual([{ id: "q1", question: "Who is it for?" }]);
@@ -289,5 +291,63 @@ describe("attachment context injection", () => {
     const second = await getAttachmentContext(supabase as never, "idea-1");
     expect(first.promptBlock).toBe(second.promptBlock);
     expect(first.promptBlock).toContain("## notes.md");
+  });
+});
+
+// ── Structured failures — returned as { error }, never thrown ─────────────
+//
+// Next.js prod builds mask thrown Error messages from Server Actions, so
+// expected AI failures come back as data the client can toast verbatim.
+
+describe("AI failure paths — structured { error } returns", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    resetSupabaseMocks();
+    mockSingle.mockResolvedValue({ data: ideaRow, error: null });
+  });
+
+  it("generateClarifyingQuestions returns the real provider message as { error } when generateObject rejects", async () => {
+    mockGenerateObject.mockRejectedValue(
+      new Error("Your credit balance is too low to access the Anthropic API.")
+    );
+
+    const { generateClarifyingQuestions } = await import("./ai");
+    const result = await generateClarifyingQuestions("idea-1", "Make it better");
+
+    expect(result).toEqual({
+      error: "Your credit balance is too low to access the Anthropic API.",
+    });
+  });
+
+  it("does not charge AI usage when the AI call fails", async () => {
+    mockGenerateObject.mockRejectedValue(new Error("No object generated: response did not match schema."));
+
+    const { generateClarifyingQuestions } = await import("./ai");
+    await generateClarifyingQuestions("idea-1", "Make it better");
+
+    const { chargeAiUsage } = await import("@/lib/ai-helpers");
+    expect(chargeAiUsage).not.toHaveBeenCalled();
+  });
+
+  it("maps timeouts to the friendly timeout message", async () => {
+    const timeoutErr = new Error("The operation was aborted due to timeout");
+    timeoutErr.name = "TimeoutError";
+    mockGenerateObject.mockRejectedValue(timeoutErr);
+
+    const { generateClarifyingQuestions } = await import("./ai");
+    const result = await generateClarifyingQuestions("idea-1", "Make it better");
+
+    expect(result).toEqual({
+      error: "The AI request timed out. Please try again — the service may be under heavy load.",
+    });
+  });
+
+  it("enhanceDiscussionBody returns { error } instead of throwing when generateText rejects", async () => {
+    mockGenerateText.mockRejectedValue(new Error("Overloaded"));
+
+    const { enhanceDiscussionBody } = await import("./ai");
+    const result = await enhanceDiscussionBody("idea-1", "Title", "Body text");
+
+    expect(result).toEqual({ error: "Overloaded" });
   });
 });

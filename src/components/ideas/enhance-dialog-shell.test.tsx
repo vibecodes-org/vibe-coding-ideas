@@ -142,6 +142,27 @@ describe("EnhanceDialogShell — question generation (regression test for the or
     // Still on configure phase — Next button is back, no questions rendered
     expect(screen.getByRole("button", { name: /Next/i })).toBeDefined();
   });
+
+  it("toasts the REAL message from a structured { error } result and stays on configure (prod-masking fix)", async () => {
+    // Expected AI failures are RETURNED as data, not thrown — Next.js prod
+    // builds mask thrown Server Action messages, so this is the only path
+    // that surfaces the real provider diagnostic to the user.
+    const generateQuestions = vi.fn().mockResolvedValue({
+      error: "Your credit balance is too low to access the Anthropic API.",
+    });
+    setup({ generateQuestions });
+
+    fireEvent.click(screen.getByRole("button", { name: /Next/i }));
+
+    await waitFor(() => {
+      expect(toast.error).toHaveBeenCalledWith(
+        "Your credit balance is too low to access the Anthropic API."
+      );
+    });
+    // Still on configure phase — no transition to questions
+    expect(screen.getByRole("button", { name: /Next/i })).toBeDefined();
+    expect(screen.queryByText(/Answer a few questions/i)).toBeNull();
+  });
 });
 
 describe("EnhanceDialogShell — wrapper compatibility", () => {

@@ -45,12 +45,13 @@ export function EnhanceIdeaDialog({
       kitContextLabel={kitName ?? undefined}
       onCreditUsed={onCreditUsed}
       generateQuestions={async ({ prompt, personaPrompt }) => {
-        const { questions } = await generateClarifyingQuestions(
+        const result = await generateClarifyingQuestions(
           ideaId,
           prompt,
           personaPrompt
         );
-        return questions;
+        // Structured failure ({ error }) passes through — the shell toasts it.
+        return "error" in result ? result : result.questions;
       }}
       enhanceStreamUrl="/api/ai/enhance"
       buildStreamBody={({ prompt, personaPrompt, answers, previousEnhanced, refinementFeedback }) => ({
@@ -62,7 +63,9 @@ export function EnhanceIdeaDialog({
         refinementFeedback,
       })}
       applyResult={async (enhanced) => {
-        await applyEnhancedDescription(ideaId, enhanced);
+        const result = await applyEnhancedDescription(ideaId, enhanced);
+        // Client-side throw isn't masked — the shell's catch toasts the real message.
+        if (result && "error" in result) throw new Error(result.error);
         toast.success("Description updated with AI enhancement");
         router.refresh();
       }}

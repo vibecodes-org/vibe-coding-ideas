@@ -356,6 +356,11 @@ export function TaskDetailDialog({
     setEnhancing(true);
     try {
       const result = await enhanceTaskDescription(ideaId, title.trim(), description.trim());
+      if ("error" in result) {
+        // Structured failure returned by the server action — toast the real message.
+        toast.error(result.error);
+        return;
+      }
       descDirtyRef.current = true; // user-initiated edit — should be persisted
       setDescription(result.enhanced);
       toast.success("Description enhanced");

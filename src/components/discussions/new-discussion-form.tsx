@@ -40,8 +40,13 @@ export function NewDiscussionForm({
   async function handleEnhanceBody() {
     setEnhancing(true);
     try {
-      const { enhanced } = await enhanceDiscussionBody(ideaId, title, body);
-      setBody(enhanced);
+      const result = await enhanceDiscussionBody(ideaId, title, body);
+      if ("error" in result) {
+        // Structured failure returned by the server action — toast the real message.
+        toast.error(result.error);
+        return;
+      }
+      setBody(result.enhanced);
       toast.success("Body enhanced");
     } catch (err) {
       toast.error(err instanceof Error ? err.message : "Failed to enhance");

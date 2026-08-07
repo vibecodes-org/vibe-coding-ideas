@@ -153,8 +153,13 @@ export function DiscussionThread({
   async function handleEnhanceBody() {
     setEnhancing(true);
     try {
-      const { enhanced } = await enhanceDiscussionBody(ideaId, discussion.title, discussion.body);
-      await updateDiscussion(discussion.id, ideaId, { body: enhanced });
+      const result = await enhanceDiscussionBody(ideaId, discussion.title, discussion.body);
+      if ("error" in result) {
+        // Structured failure returned by the server action — toast the real message.
+        toast.error(result.error);
+        return;
+      }
+      await updateDiscussion(discussion.id, ideaId, { body: result.enhanced });
       toast.success("Body enhanced");
       router.refresh();
     } catch (err) {
