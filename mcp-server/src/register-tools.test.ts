@@ -342,6 +342,47 @@ describe("registerTools", () => {
     expect(getIdeaCall![1]).toContain("get_idea_enhancement_prompt");
   });
 
+  // Regression: both descriptions used to instruct clients to call
+  // set_agent_identity and execute the step, contradicting claim_next_step's own
+  // `instruction` field (spawn a subagent; identity-switching is the no-subagent
+  // fallback). A client following the description took the inline path that the
+  // ec69009 hardening exists to prevent.
+  it("claim_next_step's description defers to the instruction field, not set_agent_identity", () => {
+    const server = createMockServer();
+
+    registerTools(server, vi.fn());
+
+    const claimCall = server.tool.mock.calls.find(
+      (call: unknown[]) => call[0] === "claim_next_step"
+    );
+    const description = claimCall![1] as string;
+
+    expect(description).toContain("`instruction` field");
+    expect(description).toContain("fresh subagent");
+    // Must not tell the caller to switch identity *before executing* the step.
+    expect(description).not.toMatch(
+      /call set_agent_identity with that bot_id before executing/i
+    );
+  });
+
+  it("complete_step's description does not claim set_agent_identity is required", () => {
+    const server = createMockServer();
+
+    registerTools(server, vi.fn());
+
+    const completeCall = server.tool.mock.calls.find(
+      (call: unknown[]) => call[0] === "complete_step"
+    );
+    const description = completeCall![1] as string;
+
+    // completeStep verifies the claim_token and attributes to step.bot_id; an
+    // identity mismatch only logs a warning, it does not reject the call.
+    expect(description).toContain("claim_token");
+    expect(description).not.toMatch(
+      /you must also be acting as the step's assigned bot/i
+    );
+  });
+
   it("get_idea_enhancement_prompt is registered with an attachment-context provider passed through", async () => {
     const server = createMockServer();
     const IDEA_ID = "00000000-0000-4000-a000-00000000abcd";

@@ -27,8 +27,16 @@ import type { User } from "@/types";
 
 const MAX_FILE_SIZE = 2 * 1024 * 1024; // 2MB
 
+// Only these columns are read here — kept narrow (rather than `User`) so the
+// profile page's scoped `select()` (see profile/[id]/page.tsx) can't silently
+// regress back to over-fetching a full user row.
+type EditProfileDialogUser = Pick<
+  User,
+  "id" | "full_name" | "avatar_url" | "bio" | "github_username" | "contact_info"
+>;
+
 interface EditProfileDialogProps {
-  user: User;
+  user: EditProfileDialogUser;
 }
 
 export function EditProfileDialog({ user }: EditProfileDialogProps) {

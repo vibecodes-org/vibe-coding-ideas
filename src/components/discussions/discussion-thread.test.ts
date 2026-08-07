@@ -38,6 +38,7 @@ function makeReply(
       ai_enabled: true,
       default_board_columns: null,
       encrypted_anthropic_key: null,
+      has_anthropic_key: false,
       ai_starter_credits: 10,
       model_tier_map: null,
       notification_preferences: {

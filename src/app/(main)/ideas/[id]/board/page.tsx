@@ -16,7 +16,7 @@ import { TerminalDock } from "@/components/board/terminal-dock";
 import { isTerminalEnabled } from "@/lib/terminal/connection";
 import { McpConnectionBanner } from "@/components/shared/mcp-connection-banner";
 import { computeIdeaHealth } from "@/lib/idea-health";
-import { composeBoardColumns, composeSuggestionsByTask } from "@/lib/board-refetch";
+import { composeBoardColumns, composeSuggestionsByTask, fetchTaskLabelsByLabelIds } from "@/lib/board-refetch";
 import type { BoardLabel } from "@/types";
 import type { Metadata } from "next";
 
@@ -144,10 +144,13 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
       .select("*")
       .eq("idea_id", id)
       .order("created_at", { ascending: true }),
+    // `has_anthropic_key` (generated column, migration 00152) replaces
+    // `encrypted_anthropic_key`, which `authenticated` no longer has SELECT
+    // on — this page only ever needs the BYOK/Platform truthiness.
     isTeamMember
       ? supabase
           .from("users")
-          .select("encrypted_anthropic_key, ai_starter_credits, is_admin, mcp_connected_at")
+          .select("has_anthropic_key, ai_starter_credits, is_admin, mcp_connected_at")
           .eq("id", user.id)
           .single()
       : Promise.resolve({ data: null }),
@@ -197,15 +200,16 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
   });
 
   // Phase 3: Queries that depend on Phase 2 results
-  const taskIds = (rawTasks ?? []).map((t) => t.id);
 
-  // Scope by the parent task's idea via an inner-join filter rather than a
-  // giant .in(taskIds) list — the IN URL grew with task count and silently
-  // failed to return rows on large boards, blanking every card's labels.
-  const { data: taskLabelRows } = await supabase
-    .from("board_task_labels")
-    .select("task_id, label:board_labels!board_task_labels_label_id_fkey(*), board_tasks!inner(idea_id)")
-    .eq("board_tasks.idea_id", id);
+  // Filter by label_id (board_labels already fetched in Phase 2 above), not
+  // by joining through board_tasks — see fetchTaskLabelsByLabelIds for why:
+  // the join-through-tasks shape forced RLS to scan the whole platform-wide
+  // board_task_labels table (71x slower in prod). label_id is a safe filter
+  // because every board_labels row belongs to exactly one idea.
+  const { data: taskLabelRows } = await fetchTaskLabelsByLabelIds(
+    supabase,
+    (boardLabels ?? []).map((l) => l.id)
+  );
 
   // Open workflow suggestions for this board — single query, mapped per task so
   // the card can render its (distinct) indicator. Realtime on the
@@ -226,7 +230,7 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
     Date.now()
   );
 
-  const userHasByokKey = !isReadOnly && !!userProfile?.encrypted_anthropic_key;
+  const userHasByokKey = !isReadOnly && !!userProfile?.has_anthropic_key;
   const starterCredits = userProfile?.ai_starter_credits ?? 0;
   const userCanUseAi = !isReadOnly && (userHasByokKey || starterCredits > 0);
 

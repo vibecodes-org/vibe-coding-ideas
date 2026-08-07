@@ -43,9 +43,12 @@ export default async function NewDiscussionPage({ params }: PageProps) {
     notFound();
   }
 
-  // Fetch current user profile + team info in parallel
+  // Fetch current user profile + team info in parallel. Scoped to just the
+  // AI-access truthiness this page needs — `has_anthropic_key` (generated
+  // column, migration 00152) replaces `encrypted_anthropic_key`, which
+  // `authenticated` no longer has SELECT on.
   const [{ data: currentUserProfile }, ideaTeam] = await Promise.all([
-    supabase.from("users").select("*").eq("id", user.id).single(),
+    supabase.from("users").select("ai_starter_credits, has_anthropic_key").eq("id", user.id).single(),
     getIdeaTeam(supabase, ideaId, idea.author_id, user.id),
   ]);
 
@@ -66,7 +69,7 @@ export default async function NewDiscussionPage({ params }: PageProps) {
           ideaId={ideaId}
           teamMembers={ideaTeam.allMentionable}
           currentUserId={user.id}
-          canUseAi={!!currentUserProfile?.encrypted_anthropic_key || (currentUserProfile?.ai_starter_credits ?? 0) > 0}
+          canUseAi={!!currentUserProfile?.has_anthropic_key || (currentUserProfile?.ai_starter_credits ?? 0) > 0}
         />
       </BotRolesProvider>
     </div>

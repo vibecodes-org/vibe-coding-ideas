@@ -4,8 +4,16 @@ import { Badge } from "@/components/ui/badge";
 import { formatRelativeTime, getInitials } from "@/lib/utils";
 import type { User } from "@/types";
 
+// Only these columns are rendered here — kept narrow (rather than `User`) so
+// the profile page's scoped `select()` (see profile/[id]/page.tsx) can't
+// silently regress back to over-fetching a full user row.
+type ProfileHeaderUser = Pick<
+  User,
+  "full_name" | "avatar_url" | "is_admin" | "bio" | "github_username" | "contact_info" | "created_at"
+>;
+
 interface ProfileHeaderProps {
-  user: User;
+  user: ProfileHeaderUser;
   ideaCount: number;
   collaborationCount: number;
   commentCount: number;

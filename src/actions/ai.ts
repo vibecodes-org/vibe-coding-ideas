@@ -65,13 +65,16 @@ export async function getAiAccess(): Promise<AiAccess> {
 
   if (!user) return { hasApiKey: false, starterCredits: 0, canUseAi: false };
 
+  // `encrypted_anthropic_key` isn't readable by `authenticated` anymore (see
+  // migration 00152) — `has_anthropic_key` is the generated truthiness flag,
+  // which is all this boolean check ever needed.
   const { data: profile } = await supabase
     .from("users")
-    .select("encrypted_anthropic_key, ai_starter_credits")
+    .select("has_anthropic_key, ai_starter_credits")
     .eq("id", user.id)
     .single();
 
-  const hasKey = !!profile?.encrypted_anthropic_key;
+  const hasKey = !!profile?.has_anthropic_key;
   const credits = profile?.ai_starter_credits ?? 0;
 
   return {

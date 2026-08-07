@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { IdeaCard } from "@/components/ideas/idea-card";
-import type { IdeaWithAuthor, CommentWithAuthor } from "@/types";
+import type { IdeaWithAuthor, Comment } from "@/types";
 import { formatRelativeTime } from "@/lib/utils";
 import { CommentTypeBadge } from "@/components/comments/comment-type-badge";
 import { Markdown } from "@/components/ui/markdown";
@@ -9,7 +9,10 @@ import { Markdown } from "@/components/ui/markdown";
 interface ProfileTabsProps {
   ideas: IdeaWithAuthor[];
   collaborations: IdeaWithAuthor[];
-  comments: (CommentWithAuthor & { idea_id: string; idea_title?: string })[];
+  // No `author` — this tab never renders it (every comment here is already
+  // known to be the profile owner's), so the page doesn't fetch a full
+  // stranger's-eye-view user row just to satisfy this prop's type.
+  comments: (Comment & { idea_title?: string })[];
   userVotes: string[];
   taskCounts: Record<string, number>;
   isOwnProfile?: boolean;

@@ -213,7 +213,22 @@
       "Bash(sed -i 's/className=\"\"h-6 w-6 text-primary\"\"/className=\"\"h-6 w-6 text-violet-400\"\"/' \"src/app/guide/discussions/page.tsx\")",
       "Bash(sed -i 's/className=\"\"h-6 w-6 text-primary\"\"/className=\"\"h-6 w-6 text-blue-400\"\"/' \"src/app/guide/kanban-boards/page.tsx\")",
       "Bash(sed -i 's/className=\"\"h-6 w-6 text-primary\"\"/className=\"\"h-6 w-6 text-cyan-400\"\"/' \"src/app/guide/mcp-integration/page.tsx\")",
-      "Bash(gh secret:*)"
+      "Bash(gh secret:*)",
+      "mcp__vibecodes__list_workflow_templates",
+      "mcp__vibecodes__list_workflow_auto_rules",
+      "mcp__vibecodes__approve_step",
+      "Bash(ln -sfn /Users/nickball/projects/vibecodes-org/vibe-coding-ideas/node_modules /private/tmp/claude-501/-Users-nickball-projects-vibecodes-org-vibe-coding-ideas/852c0510-98b6-44e8-8bc0-86e6c86e8100/scratchpad/wt-board-refetch/node_modules)",
+      "mcp__vibecodes__claim_next_step",
+      "mcp__vibecodes__record_project_path",
+      "Bash(perl -e 'select\\(undef,undef,undef,60\\)')",
+      "mcp__vibecodes__get_agent_prompt",
+      "mcp__vibecodes__complete_step",
+      "WebFetch(domain:developers.cloudflare.com)",
+      "Bash(awk '/^        notifications: \\\\{/,/^        [a-z_]+: \\\\{/' src/types/database.ts)",
+      "mcp__supabase__list_tables",
+      "mcp__vibecodes__fail_step",
+      "mcp__vibecodes__apply_workflow_template",
+      "mcp__plugin_vercel_vercel__get_runtime_errors"
     ]
   },
   "enableAllProjectMcpServers": true,

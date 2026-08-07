@@ -31,6 +31,7 @@ import { CollapsibleSection } from "@/components/dashboard/collapsible-section";
 import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
 import { IdeaCard } from "@/components/ideas/idea-card";
 import { getActiveKitsWithSteps } from "@/actions/kits";
+import { fetchTaskLabelsByLabelIds } from "@/lib/board-refetch";
 import { getAiAccess } from "@/actions/ai";
 import { getAgentStatus, type AgentWorkflowStep } from "@/lib/agent-status";
 import { Button } from "@/components/ui/button";
@@ -181,6 +182,23 @@ export default async function DashboardPage() {
   const myIdeaIds = (myIdeaIdsResult.data ?? []).map((i) => i.id);
   const allUserIdeaIds = [...new Set([...myIdeaIds, ...collabIdeaIds])];
 
+  // Board labels across every idea the user owns or collaborates on. Kicked
+  // off here but NOT awaited — only the task-labels sub-fetch below needs
+  // these ids (to filter by label_id instead of joining through
+  // board_tasks; see fetchTaskLabelsByLabelIds for why), the other 8 Phase 2
+  // queries don't depend on it at all. Awaiting it here would serialise a
+  // whole extra round-trip in front of every dashboard load. `.then((r) =>
+  // r)` turns the lazy Supabase query builder into a real Promise right
+  // now — starting the request immediately, concurrently with the rest of
+  // Phase 2 below — so it's safe to await/chain more than once (here, and
+  // again for the per-idea label counts further down) without re-issuing
+  // the query the way re-invoking the builder's own `.then()` would.
+  const userBoardLabelsPromise = (
+    allUserIdeaIds.length > 0
+      ? supabase.from("board_labels").select("id, idea_id").in("idea_id", allUserIdeaIds)
+      : Promise.resolve({ data: [] as { id: string; idea_id: string }[], error: null })
+  ).then((r) => r);
+
   // Phase 2: Dependent queries
   const [collabIdeasResult, taskLabelsResult, boardColumnsResult, boardTasksResult, botTasksResult, botActivityResult, botWorkflowStepsResult, displayedTaskCountsResult, activeDiscussionsResult] = await Promise.all([
     // Collaboration idea details
@@ -192,16 +210,17 @@ export default async function DashboardPage() {
           .order("created_at", { ascending: false })
           .limit(5)
       : Promise.resolve({ data: [] }),
-    // Task labels — scope by the parent task's idea via an inner-join filter
-    // rather than a giant .in(taskIds) list. The IN URL grew with task count
-    // and silently returned no rows on large boards, blanking every card's
-    // labels. Idea count is bounded; we filter back to the shown tasks in JS.
-    allUserIdeaIds.length > 0
-      ? supabase
-          .from("board_task_labels")
-          .select("task_id, label:board_labels!board_task_labels_label_id_fkey(*), board_tasks!inner(idea_id)")
-          .in("board_tasks.idea_id", allUserIdeaIds)
-      : Promise.resolve({ data: [] }),
+    // Task labels — filtered by label_id (from userBoardLabelsPromise, kicked
+    // off above, not awaited until here), not by joining through
+    // board_tasks. The old board_tasks!inner(idea_id) join forced Postgres
+    // RLS to run its per-row EXISTS check against the ENTIRE platform-wide
+    // board_task_labels table before narrowing to this user's ideas — 71x
+    // slower in prod. Chunked internally (fetchTaskLabelsByLabelIds) because
+    // this unions labels across every
+    // idea the user owns or collaborates on, unlike the single-board call
+    // sites where the label count is small by construction. We filter back
+    // to the shown tasks (shownTaskIds) below.
+    userBoardLabelsPromise.then(({ data }) => fetchTaskLabelsByLabelIds(supabase, (data ?? []).map((l) => l.id))),
     // Board columns for user's ideas (with idea title for active boards)
     allUserIdeaIds.length > 0
       ? supabase
@@ -438,11 +457,16 @@ export default async function DashboardPage() {
   const labelCountByIdea = new Map<string, number>();
 
   if (allUserIdeaIds.length > 0) {
+    // userBoardLabelsPromise was kicked off back at the top of Phase 2 (and
+    // already awaited once, inside that Promise.all, for the task-labels
+    // fetch) — awaiting the same Promise here again resolves instantly and
+    // does not re-issue the query. Reused instead of a second board_labels
+    // query.
     const [agentData, workflowData, autoRuleData, labelData] = await Promise.all([
       supabase.from("idea_agents").select("idea_id").in("idea_id", allUserIdeaIds),
       supabase.from("workflow_templates").select("idea_id").in("idea_id", allUserIdeaIds),
       supabase.from("workflow_auto_rules").select("idea_id").in("idea_id", allUserIdeaIds),
-      supabase.from("board_labels").select("idea_id").in("idea_id", allUserIdeaIds),
+      userBoardLabelsPromise,
     ]);
     for (const row of agentData.data ?? []) {
       agentCountByIdea.set(row.idea_id, (agentCountByIdea.get(row.idea_id) ?? 0) + 1);

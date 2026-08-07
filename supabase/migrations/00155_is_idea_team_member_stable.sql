@@ -1,0 +1,60 @@
+-- Flip is_idea_team_member() from VOLATILE to STABLE — the other half of the
+-- fix for the "one board query eating ~14% of all database time" incident
+-- (board task a1345112). Kept as its own migration (separate from 00154's
+-- index) so either half can be reverted independently.
+--
+-- BUG: `is_idea_team_member(p_idea_id uuid, p_user_id uuid)` is the function
+-- RLS policies on `board_task_labels`, `board_tasks`, `board_columns`, etc.
+-- call to check team membership. It was created VOLATILE (Postgres's
+-- default when a function's volatility isn't specified — verified via
+-- `pg_proc.provolatile = 'v'` against prod irqbqxspxxzvuczhujzg), which
+-- means the planner cannot memoize repeated calls with the same arguments
+-- within one query. Its sibling `is_idea_public()` is already `STABLE`
+-- (`provolatile = 's'`); the mismatch looks unintentional, not deliberate.
+-- Every other RLS-gated correlated subquery on these tables got a Memoize
+-- plan node (44-70% hit rates observed); this function's subplan got none —
+-- it re-ran once per row scanned, every time, regardless of how many
+-- distinct (idea_id, user_id) pairs actually appeared.
+--
+-- VERIFIED SAFE TO MARK STABLE (read-only checks against prod, this
+-- migration does not alter behaviour beyond volatility):
+--   - Exactly one overload exists: `is_idea_team_member(p_idea_id uuid,
+--     p_user_id uuid)` (queried pg_proc/pg_get_function_identity_arguments —
+--     a single row came back, so there is no second signature to also fix).
+--   - Body (from pg_proc.prosrc) is exactly:
+--       RETURN EXISTS (SELECT 1 FROM ideas WHERE id = p_idea_id AND author_id = p_user_id)
+--          OR EXISTS (SELECT 1 FROM collaborators WHERE idea_id = p_idea_id AND user_id = p_user_id)
+--          OR EXISTS (SELECT 1 FROM idea_agents WHERE idea_id = p_idea_id AND bot_id = p_user_id);
+--     Three plain SELECT/EXISTS reads against `ideas`, `collaborators`,
+--     `idea_agents`. No INSERT/UPDATE/DELETE, no `nextval`/`setval`, no
+--     calls to any other (volatile or otherwise) function. Textbook STABLE:
+--     the result depends only on its arguments and table contents, and it
+--     cannot change the database.
+--
+-- WHY STABLE IS SAFE HERE: STABLE promises the result won't change within a
+-- single SQL statement (as opposed to IMMUTABLE, which promises it never
+-- changes at all). The one real caveat: if a single statement both MODIFIES
+-- team membership (INSERT/DELETE on `collaborators`/`idea_agents`, or
+-- changing `ideas.author_id`) and READS is_idea_team_member() for the same
+-- (idea_id, user_id) pair in that same statement, STABLE could serve a
+-- pre-write answer instead of picking up the fresh row.
+--
+--   Checked for that combination and found none: every collaborator/
+--   idea_agent write in this codebase (src/actions/collaborators.ts,
+--   src/actions/idea-agents.ts, src/actions/board.ts, src/actions/ideas.ts,
+--   src/actions/users.ts) is issued as its own single-table Supabase-JS
+--   `.insert()`/`.delete()` call — a separate PostgREST request and SQL
+--   statement from any team-scoped read. No RPC function in this codebase
+--   (grepped every `supabase.rpc(...)` call site in src/ and
+--   mcp-server/src/) combines a membership write with a membership-gated
+--   read in one statement. If a future feature ever adds such a combined
+--   statement (e.g. a single PL/pgSQL function that both adds a
+--   collaborator and returns team-scoped board data), it would need to
+--   re-evaluate this — not a currently-existing risk.
+--
+-- Not benchmarked post-change here (that belongs to the Verify Fix step,
+-- with the app-side label_id rewrite and the 00154 index measured
+-- together) — this migration file only asserts the volatility change is
+-- behaviourally safe, not what it does to query plans.
+
+alter function public.is_idea_team_member(uuid, uuid) stable;

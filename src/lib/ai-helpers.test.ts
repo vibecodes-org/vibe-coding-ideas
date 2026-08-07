@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
-import { decrementStarterCredit, chargeAiUsage, AI_MODEL } from "./ai-helpers";
+import { decrementStarterCredit, chargeAiUsage, resolveAiProvider, AI_MODEL } from "./ai-helpers";
 
 // Mock logger to suppress output
 vi.mock("@/lib/logger", () => ({
@@ -9,9 +9,26 @@ vi.mock("@/lib/logger", () => ({
 }));
 
 // Mock encryption module (imported by ai-helpers)
+const mockDecrypt = vi.fn();
 vi.mock("@/lib/encryption", () => ({
-  decrypt: vi.fn(),
+  decrypt: (...args: unknown[]) => mockDecrypt(...args),
 }));
+
+// Mock `@supabase/supabase-js`'s `createClient` — this is what
+// resolveAiProvider() uses (aliased to `createSupabaseJsClient`) to build the
+// service-role client that reads `encrypted_anthropic_key`. Keeping this
+// separate from the caller's own (RLS-bound) `supabase` client mock is the
+// point of the test: it proves the raw ciphertext is read through the
+// service-role path, not the caller's session client.
+const mockServiceRoleFrom = vi.fn();
+const mockCreateSupabaseJsClient = vi.fn((..._args: unknown[]) => ({ from: mockServiceRoleFrom }));
+vi.mock("@supabase/supabase-js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@supabase/supabase-js")>();
+  return {
+    ...actual,
+    createClient: (...args: unknown[]) => mockCreateSupabaseJsClient(...args),
+  };
+});
 
 describe("decrementStarterCredit", () => {
   const mockRpc = vi.fn();
@@ -192,5 +209,112 @@ describe("chargeAiUsage — `charged` column reflects the real debit, not `free`
       expect.objectContaining({ charged: false })
     );
     expect(mockRpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("resolveAiProvider", () => {
+  const userId = "test-user-id";
+
+  /** A chainable `.select().eq().single()` mock resolving to `result`. */
+  function singleRowChain(result: { data: unknown }) {
+    const chain = {
+      select: vi.fn(() => chain),
+      eq: vi.fn(() => chain),
+      single: vi.fn().mockResolvedValue(result),
+    };
+    return chain;
+  }
+
+  /** Caller's own RLS-bound client: only ever reads `ai_starter_credits`
+   *  (still granted to `authenticated`) and, for the platform-credit path,
+   *  today's platform call count from `ai_usage_log`. */
+  function makeCallerSupabase(opts: {
+    profile: { ai_starter_credits: number } | null;
+    usageCount?: number;
+  }) {
+    const usersChain = singleRowChain({ data: opts.profile });
+    const usageLogChain = {
+      select: vi.fn(() => usageLogChain),
+      eq: vi.fn(() => usageLogChain),
+      gte: vi.fn().mockResolvedValue({ count: opts.usageCount ?? 0 }),
+    };
+    const supabase = {
+      from: vi.fn((table: string) => {
+        if (table === "users") return usersChain;
+        if (table === "ai_usage_log") return usageLogChain;
+        throw new Error(`resolveAiProvider test: unexpected table "${table}"`);
+      }),
+    } as unknown as SupabaseClient<Database>;
+    return { supabase, usersChain };
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    mockDecrypt.mockReturnValue("sk-ant-decrypted");
+  });
+
+  it("happy path: returns a BYOK provider, reading the raw key through the service-role client (not the caller's)", async () => {
+    const { supabase, usersChain } = makeCallerSupabase({ profile: { ai_starter_credits: 0 } });
+    mockServiceRoleFrom.mockReturnValue(
+      singleRowChain({ data: { encrypted_anthropic_key: "enc-ciphertext" } })
+    );
+
+    const result = await resolveAiProvider(supabase, userId);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.keyType).toBe("byok");
+    }
+    // The ciphertext lookup went through the service-role client...
+    expect(mockCreateSupabaseJsClient).toHaveBeenCalledOnce();
+    expect(mockServiceRoleFrom).toHaveBeenCalledWith("users");
+    expect(mockDecrypt).toHaveBeenCalledWith("enc-ciphertext");
+    // ...never through the caller's own (RLS-bound) client, which legitimately
+    // queries "users" too but only ever for ai_starter_credits — never asked
+    // to select the (now ungrantable) ciphertext column.
+    expect(usersChain.select).toHaveBeenCalledWith("ai_starter_credits");
+    expect(usersChain.select).not.toHaveBeenCalledWith(
+      expect.stringContaining("encrypted_anthropic_key")
+    );
+  });
+
+  it("happy path: falls back to the platform key when there's no BYOK key but starter credits remain", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "sk-ant-platform-key");
+    const { supabase } = makeCallerSupabase({ profile: { ai_starter_credits: 3 }, usageCount: 0 });
+    mockServiceRoleFrom.mockReturnValue(singleRowChain({ data: { encrypted_anthropic_key: null } }));
+
+    const result = await resolveAiProvider(supabase, userId);
+
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.keyType).toBe("platform");
+    }
+    vi.unstubAllEnvs();
+  });
+
+  it("error path: no key and no starter credits left", async () => {
+    const { supabase } = makeCallerSupabase({ profile: { ai_starter_credits: 0 } });
+    mockServiceRoleFrom.mockReturnValue(singleRowChain({ data: { encrypted_anthropic_key: null } }));
+
+    const result = await resolveAiProvider(supabase, userId);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(403);
+    }
+  });
+
+  it("error path: user profile not found — never falls through to the service-role key lookup", async () => {
+    const { supabase } = makeCallerSupabase({ profile: null });
+
+    const result = await resolveAiProvider(supabase, userId);
+
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.status).toBe(404);
+    }
+    // Fails fast on the caller-client check — no reason to spend a
+    // service-role round trip for a user that doesn't exist.
+    expect(mockCreateSupabaseJsClient).not.toHaveBeenCalled();
   });
 });

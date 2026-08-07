@@ -43,6 +43,12 @@ export type Database = {
           is_bot: boolean;
           ai_enabled: boolean;
           encrypted_anthropic_key: string | null;
+          /** `GENERATED ALWAYS AS (encrypted_anthropic_key IS NOT NULL) STORED`
+           *  (migration 00152) — read-only truthiness flag for the 7 call
+           *  sites that only need "does this user have a BYOK key", now that
+           *  `authenticated` no longer has SELECT on the ciphertext column
+           *  itself. Not settable — omitted from Insert/Update below. */
+          has_anthropic_key: boolean;
           ai_daily_limit: number;
           ai_starter_credits: number;
           onboarding_completed_at: string | null;
@@ -1651,6 +1657,7 @@ export type Database = {
           is_error: boolean;
           mode: string;
           idea_id: string | null;
+          bot_id: string | null;
           created_at: string;
         };
         Insert: {
@@ -1662,6 +1669,7 @@ export type Database = {
           is_error?: boolean;
           mode?: string;
           idea_id?: string | null;
+          bot_id?: string | null;
           created_at?: string;
         };
         Update: {
@@ -1673,9 +1681,17 @@ export type Database = {
           is_error?: boolean;
           mode?: string;
           idea_id?: string | null;
+          bot_id?: string | null;
           created_at?: string;
         };
         Relationships: [
+          {
+            foreignKeyName: "mcp_tool_log_bot_id_fkey";
+            columns: ["bot_id"];
+            isOneToOne: false;
+            referencedRelation: "bot_profiles";
+            referencedColumns: ["id"];
+          },
           {
             foreignKeyName: "mcp_tool_log_user_id_fkey";
             columns: ["user_id"];

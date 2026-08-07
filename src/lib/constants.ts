@@ -174,8 +174,14 @@ export function defaultTierForRole(role: string): ModelTierValue | null {
   const r = role?.trim().toLowerCase() ?? "";
   if (!r) return null;
 
-  // QA / mechanical → cheap (checked first: "QA Engineer" must not fall to build)
-  if (/\bqa\b|quality assurance|\btest\b|tester|testing/.test(r)) return "cheap";
+  // QA / verification → standard (checked first: "QA Engineer" must not fall to build).
+  // Deliberately NOT cheap. A QA step's output is a trusted verdict ("9/9 PASS,
+  // verdict SHIP"), and the cheap tier was measured fabricating findings — in 4 of 4
+  // runs on an identical audit it asserted an index was missing that demonstrably
+  // exists, with invented timings attached, while the frontier tier got it right.
+  // A fabricated PASS is worse than no QA step, because it removes the prompt for
+  // anyone else to look. See task 890f5c57 / spike b471a2bd.
+  if (/\bqa\b|quality assurance|\btest\b|tester|testing/.test(r)) return "standard";
 
   // Design / UX → frontier (before build, so "UX Designer" wins over "engineer")
   if (/\bux\b|\bui\b|designer|\bdesign\b/.test(r)) return "frontier";

@@ -1,0 +1,139 @@
+-- Security fix (Phase 1 of 2): stop unauthenticated PostgREST requests from
+-- reading the full `users` table.
+--
+-- BUG: `public.users` has a SELECT RLS policy of `USING (true)` ("Users are
+-- viewable by everyone"), and the table carries Supabase's default bootstrap
+-- grant (`GRANT ALL ON ALL TABLES IN SCHEMA public TO anon, authenticated,
+-- service_role`). RLS restricts *rows*, not *columns* — so with the public
+-- anon key (no login required) anyone could `select=*` every column of every
+-- row via PostgREST, bypassing middleware.ts and requireAuth() entirely.
+-- Confirmed against prod: 298 rows readable (273 bots, 4 admins, 1 super
+-- admin), including encrypted_anthropic_key, is_admin/is_super_admin,
+-- ai_starter_credits, notification_preferences, model_tier_map,
+-- default_board_columns, and contact_info.
+--
+-- WHY COLUMN GRANTS, NOT A NEW RLS POLICY OR A VIEW:
+--   - A self-only policy (`auth.uid() = id`) breaks the app: 273/298 rows are
+--     bots, which act under a human's session, so `auth.uid()` never equals a
+--     bot row's `id`. Every agent name/avatar/attribution across the app
+--     would go null.
+--   - A view doesn't inherit the FK metadata PostgREST needs for the ~50
+--     embedded-join call sites (`users!board_tasks_assignee_id_fkey(...)`
+--     etc.), so it would force rewriting every one of them.
+--   - Postgres column-level grants narrow the columns a role's queries may
+--     touch (SELECT list *and* filter/order columns) without touching a
+--     single call site — RLS still applies on top, unchanged.
+--
+-- WHY ONLY `anon` CHANGES HERE (Phase 1), NOT `authenticated`:
+-- Column grants are role-wide, not row-aware — they can't express "you may
+-- read your own encrypted_anthropic_key but not someone else's." Auditing
+-- every RLS-bound (i.e. non-service-role) read of the sensitive columns
+-- showed `authenticated` genuinely needs all of them, often for OTHER users'
+-- rows, not just the caller's own:
+--   - encrypted_anthropic_key: self-read in resolveAiProvider()
+--     (src/lib/ai-helpers.ts:59-63) for BYOK resolution, AND cross-user in
+--     the admin credits table (src/app/(main)/admin/page.tsx:124-128, boolean-
+--     ized before render but the raw column is fetched for every non-bot user).
+--   - notification_preferences: cross-user by design — read for the idea
+--     AUTHOR when notifying (src/actions/collaborators.ts:59-64), for
+--     COLLABORATORS (src/actions/ideas.ts:129), and for mention/compliance
+--     notification fan-out.
+--   - model_tier_map: self-read (src/actions/profile.ts:150-157) and read for
+--     the acting BOT's owner during workflow step claiming
+--     (mcp-server/src/tools/workflows.ts, run under the remote MCP route's
+--     per-user JWT client — role `authenticated`).
+--   - default_board_columns: self-only today (src/actions/board.ts:23-27),
+--     but table-level revoke/re-grant is what's being changed, not a
+--     per-column judgement call, so it stays with the rest.
+--   - ai_starter_credits: self-read in resolveAiProvider(), cross-user in the
+--     same admin credits table as encrypted_anthropic_key.
+--   - is_super_admin: referenced inside the "Super admins can update any
+--     user" RLS policy's own USING/CHECK subquery, which runs with the
+--     querying role's column privileges — revoking it from `authenticated`
+--     risks breaking that policy for every authenticated write, not just
+--     reads.
+--   - email: Nick's explicit product call — stays visible to logged-in
+--     members (src/app/(main)/members/page.tsx:39-45 lists the directory by
+--     email), must NOT be visible to anon.
+-- Since every sensitive column is already reachable by ANY authenticated
+-- user for ANY other user's row (RLS is `USING (true)`, not self-scoped),
+-- narrowing `authenticated` here would be security theater — it wouldn't
+-- close the "other authenticated users" hole (see Phase 2 below), and
+-- touching it risks breaking one of the real, load-bearing cross-user reads
+-- above. `authenticated`'s grant is deliberately left untouched.
+--
+-- WHAT `anon` ACTUALLY NEEDS: audited every anon-reachable code path — every
+-- construction of a client with NEXT_PUBLIC_SUPABASE_ANON_KEY, checking which
+-- ones run WITHOUT a session (role `anon`) versus with one (role
+-- `authenticated`). TWO paths query `public.users` as a genuine `anon` caller:
+--
+--   1. src/app/sitemap.ts:74-97 —
+--        .from("users").select("id, updated_at").eq("is_bot", false)
+--      Postgres requires SELECT privilege on a column to reference it ANYWHERE
+--      in a query, including a WHERE filter — not just the output list — so
+--      `is_bot` needs the grant too even though it is never returned.
+--
+--   2. src/app/(main)/ideas/[id]/opengraph-image.tsx:15-22 —
+--        .from("ideas").select("…, author:users!ideas_author_id_fkey(full_name)")
+--      Builds its own anon-key client (it is an `edge` runtime OG image, so it
+--      has no session) and embeds the author's display name. Without a grant on
+--      `full_name` the WHOLE ideas query fails on the embedded resource, `idea`
+--      comes back null, and every social preview silently degrades to the
+--      default branded card reading "VibeCodes User" — a quiet regression with
+--      no error surfaced to anyone. Hence `full_name` is granted.
+--
+-- `full_name` is safe to expose to anon: it is a public display name already
+-- rendered into OG images by design, and is the one field that must be public
+-- for link previews to work at all.
+--
+-- The following anon-key clients resolve to role `authenticated`, not `anon`,
+-- because they carry the caller's session/JWT, so they are unaffected:
+-- src/lib/supabase/{server,client,middleware}.ts, and the remote MCP route
+-- (src/app/api/mcp/[[...transport]]/route.ts:147, which sets the caller's
+-- Bearer token explicitly to enforce RLS). src/app/api/oauth/token/route.ts
+-- uses the anon key but never reads `users`.
+--
+-- Kept intentionally minimal beyond those two: a future public-facing feature
+-- needing another column must extend this grant as a conscious, reviewed
+-- decision rather than inheriting blanket access.
+--
+-- MECHANICS VERIFIED (read-only, against prod irqbqxspxxzvuczhujzg):
+--   - `anon`/`authenticated`/`service_role` each hold their OWN explicit
+--     table-level grants (Supabase's standard `GRANT ALL ON ALL TABLES IN
+--     SCHEMA public TO ...` bootstrap) — none is inherited via membership in
+--     PUBLIC or another role. So revoking from `anon` cannot cascade to
+--     `authenticated` or `service_role`, and `service_role` needs no changes
+--     here (bypasses column grants for our purposes anyway, since every
+--     service-role caller in this codebase uses the service-role key
+--     directly, never RLS/grant-gated).
+--   - `REVOKE SELECT ON TABLE x FROM role` removes the table-level ACL entry
+--     entirely; a subsequent `GRANT SELECT (cols) ON x TO role` then adds a
+--     column-scoped ACL entry. The two are independent grant kinds in
+--     Postgres's ACL model, so the order (revoke-then-grant) leaves `anon`
+--     with SELECT on ONLY the named columns — not "all columns because the
+--     table-level grant used to be there." Querying an ungranted column
+--     (e.g. encrypted_anthropic_key) now fails PostgREST's query with a
+--     permission-denied error, the same shape as any other RLS/grant
+--     rejection the app's error handling already tolerates.
+--
+-- OUT OF SCOPE (deliberately not touched): anon's INSERT/UPDATE/DELETE table
+-- grants on `users` are untouched by this migration. They're already inert —
+-- "Users can update their own profile" requires `auth.uid() = id`, which is
+-- never true for the anon role (auth.uid() is null), so no write path opens
+-- up here. Narrowing them is a separate, lower-severity hardening task.
+--
+-- PHASE 2 (follow-up card, not this migration): protect sensitive columns
+-- (encrypted_anthropic_key, notification_preferences, model_tier_map,
+-- ai_starter_credits, ai_daily_limit, is_admin/is_super_admin) from being
+-- read by OTHER authenticated users, not just anon. Column grants can't
+-- express that — the only clean mechanism is moving those columns to a
+-- separate table with a genuine self-only RLS policy (`auth.uid() = user_id`
+-- works there because it's a 1:1 companion table, not the bot-inclusive
+-- `users` table). That's a schema change with app changes behind it
+-- (resolveAiProvider, the admin credits table, notification fan-out, etc.
+-- all need to read the new table instead) — too large to bundle into this
+-- hotfix, and it should not block closing the anon hole.
+
+revoke select on table public.users from anon;
+
+grant select (id, updated_at, is_bot, full_name) on public.users to anon;

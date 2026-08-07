@@ -137,9 +137,12 @@ export default async function IdeaDetailPage({ params }: PageProps) {
       .eq("idea_id", id)
       .eq("user_id", user.id)
       .maybeSingle(),
+    // `has_anthropic_key` (generated column, migration 00152) replaces
+    // `encrypted_anthropic_key`, which `authenticated` no longer has SELECT
+    // on — this page only ever needs the BYOK/Platform truthiness.
     supabase
       .from("users")
-      .select("is_admin, encrypted_anthropic_key, ai_starter_credits")
+      .select("is_admin, has_anthropic_key, ai_starter_credits")
       .eq("id", user.id)
       .single(),
     supabase
@@ -168,7 +171,7 @@ export default async function IdeaDetailPage({ params }: PageProps) {
   const isCollaborator = !!collab;
   const isAdmin = profile?.is_admin ?? false;
   const taskCount = boardTaskCount ?? 0;
-  const userHasByokKey = !!profile?.encrypted_anthropic_key;
+  const userHasByokKey = !!profile?.has_anthropic_key;
   const userStarterCredits = profile?.ai_starter_credits ?? 0;
   const userCanUseAi = userHasByokKey || userStarterCredits > 0;
   const userBots = (bots ?? []) as BotProfile[];
