@@ -236,19 +236,19 @@ describe("AI_MODEL resolution", () => {
   it("falls back to the default when ANTHROPIC_MODEL is unset", async () => {
     delete process.env.ANTHROPIC_MODEL;
 
-    expect(await loadAiModel()).toBe("claude-sonnet-4-6");
+    expect(await loadAiModel()).toBe("claude-sonnet-5");
   });
 
   it("falls back to the default when ANTHROPIC_MODEL is an empty string (the prod outage case)", async () => {
     vi.stubEnv("ANTHROPIC_MODEL", "");
 
-    expect(await loadAiModel()).toBe("claude-sonnet-4-6");
+    expect(await loadAiModel()).toBe("claude-sonnet-5");
   });
 
   it("falls back to the default when ANTHROPIC_MODEL is whitespace-only", async () => {
     vi.stubEnv("ANTHROPIC_MODEL", "   ");
 
-    expect(await loadAiModel()).toBe("claude-sonnet-4-6");
+    expect(await loadAiModel()).toBe("claude-sonnet-5");
   });
 
   it("respects a real ANTHROPIC_MODEL value", async () => {
