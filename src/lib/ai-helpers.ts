@@ -5,7 +5,11 @@ import { logger } from "@/lib/logger";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 
-export const AI_MODEL = process.env.ANTHROPIC_MODEL ?? "claude-sonnet-4-6";
+// `??` only catches null/undefined, not "" — a blank ANTHROPIC_MODEL (e.g. an
+// accidentally-cleared Vercel env var) would otherwise send `model: ""` to
+// every AI call. `.trim() || default` treats blank/whitespace-only the same
+// as unset.
+export const AI_MODEL = process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-4-6";
 
 export type AiAccess = {
   hasApiKey: boolean;

@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/types/database";
 import { decrementStarterCredit, chargeAiUsage, resolveAiProvider, AI_MODEL } from "./ai-helpers";
@@ -209,6 +209,52 @@ describe("chargeAiUsage — `charged` column reflects the real debit, not `free`
       expect.objectContaining({ charged: false })
     );
     expect(mockRpc).not.toHaveBeenCalled();
+  });
+});
+
+describe("AI_MODEL resolution", () => {
+  // AI_MODEL is a module-level const computed from process.env at import
+  // time, so each case needs a fresh module instance (vi.resetModules() +
+  // dynamic import) to pick up the env change — same pattern as
+  // src/lib/logger.test.ts.
+  const originalEnv = { ...process.env };
+
+  async function loadAiModel() {
+    const mod = await import("./ai-helpers");
+    return mod.AI_MODEL;
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.unstubAllEnvs();
+  });
+
+  it("falls back to the default when ANTHROPIC_MODEL is unset", async () => {
+    delete process.env.ANTHROPIC_MODEL;
+
+    expect(await loadAiModel()).toBe("claude-sonnet-4-6");
+  });
+
+  it("falls back to the default when ANTHROPIC_MODEL is an empty string (the prod outage case)", async () => {
+    vi.stubEnv("ANTHROPIC_MODEL", "");
+
+    expect(await loadAiModel()).toBe("claude-sonnet-4-6");
+  });
+
+  it("falls back to the default when ANTHROPIC_MODEL is whitespace-only", async () => {
+    vi.stubEnv("ANTHROPIC_MODEL", "   ");
+
+    expect(await loadAiModel()).toBe("claude-sonnet-4-6");
+  });
+
+  it("respects a real ANTHROPIC_MODEL value", async () => {
+    vi.stubEnv("ANTHROPIC_MODEL", "claude-sonnet-5");
+
+    expect(await loadAiModel()).toBe("claude-sonnet-5");
   });
 });
 
