@@ -8,6 +8,7 @@ import {
   AI_MODEL,
   chargeAiUsage,
   resolveAiProvider,
+  ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
 } from "@/lib/ai-helpers";
 import type { AiAccess } from "@/lib/ai-helpers";
 import { getAttachmentContext, appendAttachmentBlock } from "@/lib/attachment-context";
@@ -178,6 +179,7 @@ export async function generateCreateClarifyingQuestions(data: {
 **Current Description:**
 ${data.description || title}`,
       schema: ClarifyingQuestionsSchema,
+      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
       maxOutputTokens: 1000,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
@@ -312,6 +314,7 @@ ${idea.description}${attachmentPromptBlock}`;
       system: systemPrompt,
       prompt: userPrompt,
       schema: ClarifyingQuestionsSchema,
+      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
       maxOutputTokens: 1000,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));
@@ -562,6 +565,7 @@ export async function generateBoardTasks(
       system: systemPrompt,
       prompt: contextParts.join("\n\n"),
       schema: GeneratedBoardSchema,
+      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
       maxOutputTokens: 8000,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     }));

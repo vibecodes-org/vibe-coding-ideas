@@ -40,6 +40,9 @@ vi.mock("ai", () => ({
 // ── AI access helpers ──────────────────────────────────────────────────
 vi.mock("@/lib/ai-helpers", () => ({
   AI_MODEL: "test-model",
+  ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS: {
+    anthropic: { structuredOutputMode: "outputFormat" },
+  },
   resolveAiProvider: vi.fn().mockResolvedValue({
     ok: true,
     anthropic: (m: string) => m,

@@ -11,6 +11,7 @@ import {
   chargeAiUsage,
   getPlatformAiCallsToday,
   PLATFORM_AI_DAILY_LIMIT,
+  ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
 } from "@/lib/ai-helpers";
 import { initializeBoardColumns, triggerAutoRulesForTasks } from "@/actions/board";
 import {
@@ -346,6 +347,7 @@ export async function generateBoardFromOnboarding(
         "You are an expert project manager generating a structured task board for a software project on a kanban-style project management platform. If a task has subtasks or implementation steps, include them as a markdown task list in the description (e.g. \"- [ ] Step one\\n- [ ] Step two\").",
       prompt: contextParts.join("\n\n"),
       schema: GeneratedBoardSchema,
+      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
       maxOutputTokens: 8000,
       abortSignal: AbortSignal.timeout(ONBOARDING_GENERATE_TIMEOUT_MS),
     }));

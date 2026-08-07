@@ -11,6 +11,16 @@ import type { Database } from "@/types/database";
 // as unset.
 export const AI_MODEL = process.env.ANTHROPIC_MODEL?.trim() || "claude-sonnet-5";
 
+// `@ai-sdk/anthropic`'s built-in model table predates claude-sonnet-5; for ids
+// it doesn't recognise it falls back to tool-mode JSON, which Sonnet 5
+// double-encodes ("No object generated: response did not match schema.").
+// Forcing the native structured-output API sidesteps the stale table. Every
+// `generateObject` call must pass this (enforced by
+// generate-object-structured-output-guard.test.ts).
+export const ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS = {
+  anthropic: { structuredOutputMode: "outputFormat" as const },
+};
+
 export type AiAccess = {
   hasApiKey: boolean;
   starterCredits: number;

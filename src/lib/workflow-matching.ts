@@ -18,7 +18,7 @@ import { generateObject } from "ai";
 import { z } from "zod";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database, WorkflowTemplateStep } from "@/types/database";
-import { resolveAiProvider, chargeAiUsage, AI_MODEL } from "@/lib/ai-helpers";
+import { resolveAiProvider, chargeAiUsage, AI_MODEL, ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS } from "@/lib/ai-helpers";
 import { logger } from "@/lib/logger";
 import { WORKFLOW_AI_ADJUDICATION_TIMEOUT_MS } from "@/lib/workflow-suggestion-constants";
 
@@ -395,6 +395,7 @@ export async function adjudicateWorkflowMatch(
         `The label rule would attach template ID ${suggestedTemplate.id} ("${suggestedTemplate.name}").\n\n` +
         `Candidate templates:\n${candidateList}`,
       schema: adjudicationSchema,
+      providerOptions: ANTHROPIC_STRUCTURED_OUTPUT_OPTIONS,
       maxOutputTokens: 500,
       abortSignal: AbortSignal.timeout(AI_TIMEOUT_MS),
     });
