@@ -264,10 +264,14 @@ export async function chargeAiUpfront(
 }
 
 /** Daily platform AI usage limit (0 = unlimited) */
-export const PLATFORM_AI_DAILY_LIMIT = parseInt(
-  process.env.PLATFORM_AI_DAILY_LIMIT ?? "50",
-  10
-);
+// Same blank-env hazard as AI_MODEL above: `??` passes "" through, and
+// parseInt("") is NaN, which silently disables the `> 0` limit check (fails
+// open — unlimited platform spend). Blank/whitespace/non-numeric all fall
+// back to the default; an explicit "0" still intentionally disables the limit.
+export const PLATFORM_AI_DAILY_LIMIT = (() => {
+  const parsed = parseInt(process.env.PLATFORM_AI_DAILY_LIMIT?.trim() || "50", 10);
+  return Number.isNaN(parsed) ? 50 : parsed;
+})();
 
 /** Check how many platform AI calls a specific user has made today. */
 export async function getPlatformAiCallsToday(

@@ -258,6 +258,63 @@ describe("AI_MODEL resolution", () => {
   });
 });
 
+describe("PLATFORM_AI_DAILY_LIMIT resolution", () => {
+  // Same import-time-const pattern as AI_MODEL above. Guards the fail-open
+  // variant of the blank-env bug: parseInt("") is NaN, and NaN > 0 is false,
+  // which would silently skip the platform daily-limit check entirely.
+  const originalEnv = { ...process.env };
+
+  async function loadLimit() {
+    const mod = await import("./ai-helpers");
+    return mod.PLATFORM_AI_DAILY_LIMIT;
+  }
+
+  beforeEach(() => {
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.unstubAllEnvs();
+  });
+
+  it("defaults to 50 when unset", async () => {
+    delete process.env.PLATFORM_AI_DAILY_LIMIT;
+
+    expect(await loadLimit()).toBe(50);
+  });
+
+  it("defaults to 50 when blank (the Vercel sensitive-var footgun case)", async () => {
+    vi.stubEnv("PLATFORM_AI_DAILY_LIMIT", "");
+
+    expect(await loadLimit()).toBe(50);
+  });
+
+  it("defaults to 50 when whitespace-only", async () => {
+    vi.stubEnv("PLATFORM_AI_DAILY_LIMIT", "   ");
+
+    expect(await loadLimit()).toBe(50);
+  });
+
+  it("defaults to 50 when non-numeric", async () => {
+    vi.stubEnv("PLATFORM_AI_DAILY_LIMIT", "unlimited");
+
+    expect(await loadLimit()).toBe(50);
+  });
+
+  it("respects a real numeric value", async () => {
+    vi.stubEnv("PLATFORM_AI_DAILY_LIMIT", "25");
+
+    expect(await loadLimit()).toBe(25);
+  });
+
+  it("an explicit 0 still disables the limit (intentional escape hatch)", async () => {
+    vi.stubEnv("PLATFORM_AI_DAILY_LIMIT", "0");
+
+    expect(await loadLimit()).toBe(0);
+  });
+});
+
 describe("resolveAiProvider", () => {
   const userId = "test-user-id";
 
