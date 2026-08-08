@@ -80,6 +80,16 @@ export interface NotifyMentionsArgs {
   taskId: string;
   content: string;
   mentionedUserIds?: string[];
+  /**
+   * Agent-voiced comments (docs/agent-voice-comments-design.html §1.4,
+   * decision 1 §7): when a valid work_token attributes the comment to the
+   * step's assigned agent, pass that agent's id here. Self-suppression then
+   * keys on the SPEAKING agent, not the connection — so an agent's "@Nick"
+   * notifies Nick even though it was posted under his JWT. Omit for
+   * human-attributed comments, which behave exactly as today (self-suppress
+   * on ctx.userId/ctx.ownerUserId).
+   */
+  actorId?: string;
 }
 
 /**
@@ -91,7 +101,10 @@ export interface NotifyMentionsArgs {
  */
 export async function notifyMentions(ctx: McpContext, args: NotifyMentionsArgs): Promise<MentionResolution> {
   const team = await fetchIdeaTeam(ctx, args.ideaId);
-  const selfIds = [ctx.userId, ctx.ownerUserId].filter((id): id is string => !!id);
+  const actor = args.actorId ?? ctx.userId;
+  const selfIds = args.actorId
+    ? [args.actorId]
+    : [ctx.userId, ctx.ownerUserId].filter((id): id is string => !!id);
 
   const resolution = resolveMentions({
     content: args.content,
@@ -104,7 +117,7 @@ export async function notifyMentions(ctx: McpContext, args: NotifyMentionsArgs):
 
   const rows = resolution.notified.map((n) => ({
     user_id: n.user_id,
-    actor_id: ctx.userId,
+    actor_id: actor,
     type: "task_mention" as const,
     idea_id: args.ideaId,
     task_id: args.taskId,

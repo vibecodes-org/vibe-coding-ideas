@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   mintClaimToken,
+  mintWorkToken,
   hashClaimToken,
   verifyClaimToken,
 } from "./claim-token";
@@ -21,6 +22,37 @@ describe("mintClaimToken", () => {
   it("never returns the plaintext as the hash", () => {
     const { token, hash } = mintClaimToken();
     expect(hash).not.toContain(token);
+  });
+});
+
+describe("mintWorkToken", () => {
+  it("returns a wt_-prefixed token and its sha256 hash", () => {
+    const { token, hash } = mintWorkToken();
+    expect(token).toMatch(/^wt_[0-9a-f]{48}$/);
+    expect(hash).toBe(hashClaimToken(token));
+    expect(hash).toMatch(/^[0-9a-f]{64}$/);
+  });
+
+  it("mints unique tokens", () => {
+    const tokens = new Set(Array.from({ length: 50 }, () => mintWorkToken().token));
+    expect(tokens.size).toBe(50);
+  });
+
+  it("is discriminable from a claim token by prefix alone", () => {
+    const { token: workToken } = mintWorkToken();
+    const { token: claimToken } = mintClaimToken();
+    expect(workToken.startsWith("wt_")).toBe(true);
+    expect(workToken.startsWith("ct_")).toBe(false);
+    expect(claimToken.startsWith("ct_")).toBe(true);
+    expect(claimToken.startsWith("wt_")).toBe(false);
+  });
+
+  it("verifies against verifyClaimToken like any other minted token (shared primitive)", () => {
+    const { token, hash } = mintWorkToken();
+    expect(verifyClaimToken(hash, token)).toBe(true);
+    // A claim token's plaintext never verifies against a work token's hash.
+    const { token: claimToken } = mintClaimToken();
+    expect(verifyClaimToken(hash, claimToken)).toBe(false);
   });
 });
 
