@@ -866,6 +866,7 @@ export type Database = {
           bot_id: string | null;
           claimed_by: string | null;
           claim_token_hash: string | null;
+          work_token_hash: string | null;
           title: string;
           description: string | null;
           status: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval" | "skipped";
@@ -896,6 +897,7 @@ export type Database = {
           bot_id?: string | null;
           claimed_by?: string | null;
           claim_token_hash?: string | null;
+          work_token_hash?: string | null;
           title: string;
           description?: string | null;
           status?: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval" | "skipped";
@@ -926,6 +928,7 @@ export type Database = {
           bot_id?: string | null;
           claimed_by?: string | null;
           claim_token_hash?: string | null;
+          work_token_hash?: string | null;
           title?: string;
           description?: string | null;
           status?: "pending" | "in_progress" | "completed" | "failed" | "awaiting_approval" | "skipped";
