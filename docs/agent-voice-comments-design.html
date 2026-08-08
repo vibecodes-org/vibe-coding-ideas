@@ -1,0 +1,458 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design: Agent-Voiced Comments &amp; Ambient Identity Retirement</title>
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1a1d21; --muted: #5b6470; --border: #d9dee5;
+    --surface: #f5f7fa; --surface2: #eceff3; --accent: #0b6bcb; --accent-fg: #ffffff;
+    --ok: #1a7f4b; --warn: #a15c00; --err: #b3261e; --code-bg: #eef1f5;
+    --bot: #6d28d9; --bot-bg: #f1ebfd;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #14171a; --fg: #e6e9ec; --muted: #9aa4b0; --border: #333a42;
+      --surface: #1c2126; --surface2: #232930; --accent: #6cb2f7; --accent-fg: #0d1117;
+      --ok: #4ade80; --warn: #fbbf24; --err: #f87171; --code-bg: #232930;
+      --bot: #c4b5fd; --bot-bg: #2c2440;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 960px; margin: 0 auto; padding: 2rem 1.25rem 5rem; }
+  h1 { font-size: 1.7rem; line-height: 1.25; margin: 0 0 .3rem; }
+  h2 { font-size: 1.3rem; margin: 3rem 0 .8rem; padding-top: 1rem; border-top: 2px solid var(--border); }
+  h3 { font-size: 1.05rem; margin: 1.8rem 0 .5rem; }
+  h4 { font-size: .95rem; margin: 1.3rem 0 .4rem; }
+  p, li { max-width: 75ch; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: .86em; }
+  code { background: var(--code-bg); padding: .1em .35em; border-radius: 4px; }
+  pre { background: var(--code-bg); padding: .9rem 1rem; border-radius: 8px; overflow-x: auto; line-height: 1.5; }
+  pre code { background: none; padding: 0; }
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; margin: 1rem 0; }
+  .tablewrap { overflow-x: auto; }
+  th, td { border: 1px solid var(--border); padding: .45rem .6rem; text-align: left; vertical-align: top; }
+  th { background: var(--surface); }
+  .meta { color: var(--muted); font-size: .9rem; margin-bottom: 1.5rem; }
+  .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: .05rem .45rem;
+    border-radius: 99px; border: 1px solid var(--border); background: var(--surface); white-space: nowrap; }
+  .tag.decision { border-color: var(--warn); color: var(--warn); }
+  .tag.ok { border-color: var(--ok); color: var(--ok); }
+  .callout { border: 1px solid var(--border); border-left: 4px solid var(--accent);
+    background: var(--surface); border-radius: 6px; padding: .8rem 1rem; margin: 1rem 0; }
+  .callout.decide { border-left-color: var(--warn); }
+  .callout.risk { border-left-color: var(--err); }
+  .callout h4 { margin: 0 0 .3rem; }
+  ol.flow { counter-reset: step; list-style: none; padding-left: 0; }
+  ol.flow > li { position: relative; padding: .35rem 0 .35rem 2.4rem; border-left: 2px solid var(--border); margin-left: .9rem; }
+  ol.flow > li::before { counter-increment: step; content: counter(step);
+    position: absolute; left: -0.95rem; top: .45rem; width: 1.8rem; height: 1.8rem;
+    border-radius: 50%; background: var(--surface2); border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center; font-size: .78rem; font-weight: 700; }
+  .who { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--muted); margin-right: .4rem; }
+  /* Comment-thread wireframes */
+  .thread { border: 1px solid var(--border); border-radius: 10px; background: var(--surface);
+    padding: .9rem; margin: .8rem 0; max-width: 640px; }
+  .thread.mobile { max-width: 375px; }
+  .thread-title { font-size: .75rem; font-weight: 700; text-transform: uppercase;
+    letter-spacing: .05em; color: var(--muted); margin-bottom: .7rem; }
+  .cmt { display: flex; gap: .55rem; padding: .45rem 0; }
+  .avatar { width: 26px; height: 26px; border-radius: 50%; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .6rem; font-weight: 700; color: var(--accent-fg); background: var(--accent); }
+  .avatar.bot { background: var(--bot); color: var(--bg); }
+  .cmt-body { min-width: 0; flex: 1; }
+  .cmt-head { display: flex; align-items: baseline; gap: .5rem; min-width: 0; }
+  .cmt-name { font-size: .8rem; font-weight: 600; white-space: nowrap; overflow: hidden;
+    text-overflow: ellipsis; min-width: 0; display: inline-flex; align-items: center; gap: .3rem; }
+  .boticon { flex-shrink: 0; width: 13px; height: 13px; color: var(--bot); }
+  .cmt-time { font-size: .68rem; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+  .cmt-text { font-size: .82rem; color: var(--fg); overflow-wrap: break-word; }
+  .cmt-text .mention { color: var(--accent); font-weight: 600; }
+  .badge-bot { font-size: .6rem; font-weight: 700; color: var(--bot); background: var(--bot-bg);
+    border-radius: 4px; padding: 0 .3rem; flex-shrink: 0; }
+  .small { font-size: .85rem; color: var(--muted); }
+  a { color: var(--accent); }
+  .tok { font-weight: 700; }
+  .tok.ct { color: var(--err); }
+  .tok.wt { color: var(--ok); }
+  .errbox { border: 1px solid var(--err); border-radius: 8px; padding: .7rem .9rem;
+    margin: .6rem 0; background: var(--surface); font-size: .86rem; max-width: 75ch; }
+  .errbox .errname { font-weight: 700; color: var(--err); font-size: .8rem; }
+  svg text { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Agents comment in their own voice while doing the work<br><span style="font-weight:400; font-size:1.1rem;">and the ambient identity slot gets retired — design</span></h1>
+<p class="meta">Step 2 of 6 (UX Design) · Author: Compass · 2026-08-08 · Rev 2 — folds in the two Design Review conditions. Builds on the Requirements doc (step 1). Repo: <code>vibe-coding-ideas</code>, branch <code>master</code>.</p>
+
+<h2 id="s0">0 · The design in one paragraph</h2>
+<p>Since the claim-token protocol shipped, the agent does the work but Nick gets the byline: every comment posted during a workflow step lands under the human's account, and the subagent has no way to speak as itself at all. The fix: <code>claim_next_step</code> hands out a <strong>second token</strong>. The orchestrator keeps the existing <span class="tok ct">claim_token</span> (<code>ct_…</code>) for completing the step, exactly as today. The new <span class="tok wt">work_token</span> (<code>wt_…</code>) is the one it <em>gives</em> to the subagent. Any <code>add_task_comment</code> or <code>add_step_comment</code> call that includes a valid work token posts under the step's assigned agent — name, avatar, Bot badge, the lot. No token means a normal human comment, same as today. A stale or wrong token gets a clear error, never a silently misattributed comment. Because the token is checked against the step row on every call, attribution comes from verifiable claim state — there's no session-level "current identity" left to drift. That makes <code>set_agent_identity</code> and the <code>mcp_agent_sessions</code> slot fully redundant, so we retire them, which also kills the persona-mismatch warning that currently fires on every healthy completion. And the board UI needs <strong>zero changes</strong>: bots already render properly everywhere — they just never get to be the author during workflow runs today.</p>
+
+<h2 id="s1">1 · The mechanism: two tokens, one new parameter</h2>
+
+<h3>1.1 Why a second token</h3>
+<p>The obvious shortcuts all fail. Handing the subagent the claim token would give it the power to complete the step — the exact thing the protocol withholds from it on purpose. Trusting a plain "post this as agent X" parameter is self-report, which is how we got the 121-step misattribution audit. And checking only "is this step in progress?" would let <em>any</em> session on the team speak as the persona while a step happens to be running, whether or not it's doing the work. So: a separate token, minted at claim time, that proves you're inside the claim without letting you end it.</p>
+<div class="tablewrap"><table>
+  <tr><th>Option</th><th>Verdict</th><th>Why</th></tr>
+  <tr><td><strong>A. Dedicated <code>work_token</code></strong></td><td><span class="tag ok">CHOSEN</span></td><td>Proves participation in the claim without sharing the completion capability. Multi-use, so the subagent can comment as often as it likes; dies with the claim, so "is this token valid?" is a single testable question.</td></tr>
+  <tr><td>B. Reuse the claim_token for comments</td><td>Rejected</td><td>The subagent would end up holding the completion capability the protocol deliberately denies it (<code>workflows.ts:933</code>).</td></tr>
+  <tr><td>C. No token — just check the step is in progress</td><td>Rejected</td><td>Anyone on the team could voice the persona while the step runs. That binds attribution to timing, not to doing the work — the ambient slot's failure mode, one step removed.</td></tr>
+  <tr><td>D. Keep <code>set_agent_identity</code> and have the subagent call it</td><td>Rejected</td><td>That's the mechanism this card retires. Session-scoped identity is what drifted under concurrency and produced the audit mess.</td></tr>
+</table></div>
+
+<h3>1.2 Token anatomy and lifecycle</h3>
+<div class="tablewrap"><table>
+  <tr><th></th><th><span class="tok ct">claim_token</span> (existing, unchanged)</th><th><span class="tok wt">work_token</span> (new)</th></tr>
+  <tr><td>Prefix</td><td><code>ct_</code></td><td><code>wt_</code> — the prefix does real work: when someone passes the wrong token, the error can say exactly what got mixed up (§1.6, err-5/err-6)</td></tr>
+  <tr><td>What it lets you do</td><td><code>complete_step</code> / <code>fail_step</code></td><td>Comment as the step's agent. Nothing else. <strong>It can't complete, fail, approve, or touch a step.</strong></td></tr>
+  <tr><td>Use</td><td>Single-use</td><td>Multi-use while the step is <code>in_progress</code></td></tr>
+  <tr><td>Who holds it</td><td>Orchestrator only — "do NOT pass it to the subagent" stays</td><td>Orchestrator <em>and</em> the subagent — handing it over is the point</td></tr>
+  <tr><td>Storage</td><td><code>task_workflow_steps.claim_token_hash</code> (sha256)</td><td>New column <code>task_workflow_steps.work_token_hash</code> — same sha256 hygiene, same <code>claim-token.ts</code> primitives with a <code>wt_</code> prefix</td></tr>
+  <tr><td>Minted</td><td colspan="2">Together, in <code>claim_next_step</code>. The work token only exists when the step has an assigned agent (after the optional <code>agent_id</code> pick). An unassigned step gets <code>work_token: null</code> — there's no voice to borrow.</td></tr>
+  <tr><td>Cleared</td><td colspan="2"><strong>Together, at every one of the five places <code>workflows.ts</code> clears <code>claim_token_hash</code>:</strong> <code>complete_step</code> (:1207), <code>fail_step</code> (:1401), cascade reset (:1514), <code>approve_step</code> (:1681), and <code>reset_workflow</code> (:1907). Re-claiming also overwrites both with fresh hashes. <em>Review note:</em> the first draft of this list missed the last two sites. <code>approve_step</code> is belt-and-braces (the hashes are normally already gone by then), but <code>reset_workflow</code> was a real gap — it flips every step back to pending without touching tokens, which would have left a stale work-token hash sitting on the row. Clearing at all five sites keeps the rule honest in the data itself: <em>a work-token hash exists if and only if the step is in progress under a live claim</em> — not just enforced by a status check at read time.</td></tr>
+</table></div>
+
+<div style="overflow-x:auto"><svg viewBox="0 0 860 340" role="img" aria-label="Token flow diagram: claim_next_step returns claim_token to the orchestrator and work_token which is passed to the subagent; the subagent comments with the work token as the persona; the orchestrator completes with the claim token." style="min-width:700px; max-width:100%;">
+  <defs><marker id="arr" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="var(--muted)"/></marker></defs>
+  <rect x="20" y="20" width="240" height="80" rx="10" fill="var(--surface)" stroke="var(--border)"/>
+  <text x="140" y="50" text-anchor="middle" fill="var(--fg)" font-size="15" font-weight="700">Orchestrator session</text>
+  <text x="140" y="74" text-anchor="middle" fill="var(--muted)" font-size="12">holds ct_… (never shared)</text>
+  <rect x="20" y="230" width="240" height="80" rx="10" fill="var(--surface)" stroke="var(--border)"/>
+  <text x="140" y="260" text-anchor="middle" fill="var(--fg)" font-size="15" font-weight="700">Working subagent</text>
+  <text x="140" y="284" text-anchor="middle" fill="var(--muted)" font-size="12">holds wt_… (handed over)</text>
+  <rect x="560" y="20" width="280" height="290" rx="10" fill="var(--surface)" stroke="var(--border)"/>
+  <text x="700" y="50" text-anchor="middle" fill="var(--fg)" font-size="15" font-weight="700">VibeCodes MCP (both modes)</text>
+  <text x="700" y="72" text-anchor="middle" fill="var(--muted)" font-size="12">task_workflow_steps</text>
+  <text x="700" y="92" text-anchor="middle" fill="var(--muted)" font-size="12">claim_token_hash · work_token_hash</text>
+  <line x1="260" y1="45" x2="558" y2="45" stroke="var(--muted)" marker-end="url(#arr)"/>
+  <text x="410" y="38" text-anchor="middle" fill="var(--fg)" font-size="12">claim_next_step → { ct_, wt_, persona_prompt }</text>
+  <line x1="140" y1="100" x2="140" y2="228" stroke="var(--muted)" marker-end="url(#arr)"/>
+  <text x="152" y="150" fill="var(--fg)" font-size="12">spawn with persona</text>
+  <text x="152" y="168" fill="var(--ok)" font-size="12" font-weight="700">+ wt_ (not ct_)</text>
+  <line x1="260" y1="255" x2="558" y2="255" stroke="var(--muted)" marker-end="url(#arr)"/>
+  <text x="410" y="246" text-anchor="middle" fill="var(--fg)" font-size="12">add_step_comment / add_task_comment (wt_)</text>
+  <text x="410" y="272" text-anchor="middle" fill="var(--ok)" font-size="12" font-weight="700">→ authored as the step's bot</text>
+  <line x1="260" y1="75" x2="558" y2="120" stroke="var(--muted)" marker-end="url(#arr)"/>
+  <text x="400" y="92" text-anchor="middle" fill="var(--fg)" font-size="12">complete_step (ct_) → claimed_by = bot_id</text>
+  <text x="400" y="110" text-anchor="middle" fill="var(--err)" font-size="12" font-weight="700">clears BOTH hashes — voice ends with the claim</text>
+</svg></div>
+
+<h3>1.3 What agents actually see</h3>
+<p>The MCP tool surface is the UI here, so it gets the same care as a screen. No new tools — agents already know <code>add_task_comment</code> and <code>add_step_comment</code>. Each grows one optional parameter, and <code>claim_next_step</code> explains it at the moment it matters.</p>
+
+<h4>1.3.1 The new parameter, on both comment tools</h4>
+<pre><code>work_token: z.string().optional().describe(
+  "Optional. The wt_… work token from claim_next_step, for a workflow step that is " +
+  "currently in progress. When valid, this comment is posted in the VOICE of that " +
+  "step's assigned agent — it renders under the agent's name and avatar, and any " +
+  "@mentions notify with the agent as the actor. Omit it to comment as the human " +
+  "account (the default, and the only option outside workflow execution). An " +
+  "invalid or expired token is REJECTED with the reason — the comment is never " +
+  "silently re-attributed. Do not pass the ct_… claim_token here."
+)</code></pre>
+<p class="small">The description answers the three things an agent needs without digging through earlier responses: what happens (posts as the agent), when to use it (step in progress), and what if it goes wrong (rejected, with a reason).</p>
+
+<h4>1.3.2 What <code>claim_next_step</code> says</h4>
+<p>The response gains <code>work_token: "wt_…" | null</code>, plus a new instruction block right after the existing CLAIM TOKEN one, so the two token explanations sit side by side:</p>
+<pre><code>AGENT VOICE: This response also includes a multi-use "work_token" (wt_…) for
+&lt;persona name (role)&gt;. Unlike the claim_token, you GIVE this one to the subagent
+you spawn. Any add_task_comment or add_step_comment call that passes work_token
+posts in &lt;persona&gt;'s voice — use it for progress notes, questions, and findings
+while the step runs, so the board reads as the agent working, not as the human.
+You (the orchestrator) may also pass it on comments you post about this step's
+work. It stops working the moment the step completes, fails, or is reset —
+late comments are rejected with the reason, never re-attributed. To comment as
+the human account (e.g. unrelated board chatter), simply omit work_token.</code></pre>
+<p>The numbered spawn instructions change at the exact line where the hand-over happens. Step 1 becomes: <em>"Keep the claim_token from this response — do NOT pass it to the subagent. (The work_token is the one you pass along.)"</em> Step 2 adds: <em>"…and the work_token (wt_…) so it can comment on the task and step in its own voice as it works."</em></p>
+
+<h4>1.3.3 Tool description touch-ups in <code>register-tools.ts</code></h4>
+<ul>
+  <li><code>claim_next_step</code>: the "set_agent_identity is a fallback…" sentence becomes "Also returns a <code>work_token</code> — hand it to the executing subagent; comments passing it post in the assigned agent's voice."</li>
+  <li><code>complete_step</code>: drop the set_agent_identity mention; add "The wt_… work_token cannot complete a step — only the ct_… claim_token can."</li>
+  <li>Both comment tools: append "Pass the wt_… work_token from claim_next_step to post as the step's assigned agent while the step is in progress."</li>
+</ul>
+
+<h3>1.4 How a comment gets attributed</h3>
+<p>This logic lives in the shared tool handlers (<code>comments.ts</code> and <code>workflows.ts</code>), which both transports run. That's what makes stdio safe: its service-role client bypasses RLS, but it can't bypass code it's running.</p>
+<ol class="flow">
+  <li><strong>No <code>work_token</code>?</strong> Author is <code>ctx.userId</code>. Byte-identical to today.</li>
+  <li><strong>Token starts with <code>ct_</code>?</strong> Reject immediately with err-5. Fail fast, name the mix-up.</li>
+  <li><strong>Find the step.</strong> For <code>add_step_comment</code>, fetch the step by its <code>step_id</code> param. For <code>add_task_comment</code>, look up <code>task_workflow_steps</code> by <code>task_id</code> plus the token's hash — scoped to the task, so no new global index, and you structurally can't voice step A's persona on task B.</li>
+  <li><strong>Verify</strong> (constant-time, reusing <code>verifyClaimToken</code> against <code>work_token_hash</code>): hash matches, step is <code>in_progress</code>, step has a <code>bot_id</code>. Any failure gets the matching error from §1.6. We reject rather than quietly falling back to human attribution — a caller who asked for agent voice and didn't get it needs to know.</li>
+  <li><strong>Attribute.</strong> <code>author_id = step.bot_id</code>, and the same identity flows downstream:
+    <ul>
+      <li><code>logActivity</code> gets an optional <code>actorId</code> override, so the activity timeline shows the agent (it already knows how to render bot actors).</li>
+      <li><code>notifyMentions</code> gets an <code>actorId</code> too: mention notifications carry the agent as the actor, and self-suppression keys on the <em>speaker</em>, not the connection. Concretely: when Compass writes <span class="mention">@Nick</span>, Nick gets notified — even though it was Nick's own JWT that made the call. <span class="tag decision">decision 1, §7</span></li>
+    </ul>
+  </li>
+</ol>
+<p><strong>No back door into completion:</strong> the comment path never touches step status, output, or run state, and a work token presented to <code>complete_step</code> fails its token check — with the helpful err-6 rather than a generic refusal. Commenting is a write to a comment table, full stop.</p>
+
+<h3>1.5 RLS: who may author as which bot</h3>
+<p>In remote mode every insert runs under the human's JWT, so the database is the last line of defence. Today's policies let you author as a bot <em>you own</em>. That's almost right, but it breaks on collaborator runs: the step's bot may belong to a different team member than the person whose session is executing the run, and the owner-only rule would block exactly the comments this feature exists to create.</p>
+<p><strong>The policy this design sets:</strong> a team member may author as a bot that's on the idea's team. The precise "are you actually inside the claim?" check stays in the tool layer — RLS can't verify tokens — but RLS caps the blast radius: never someone else's bot on an idea you're not part of. One additive migration, deployed before the code:</p>
+<pre><code>-- 001xx_work_token_and_team_agent_authoring.sql
+ALTER TABLE task_workflow_steps ADD COLUMN work_token_hash text;
+
+CREATE OR REPLACE FUNCTION public.is_idea_agent(p_bot_id uuid, p_idea_id uuid)
+RETURNS boolean LANGUAGE sql SECURITY DEFINER SET search_path = public STABLE AS $$
+  SELECT EXISTS (SELECT 1 FROM idea_agents WHERE bot_id = p_bot_id AND idea_id = p_idea_id);
+$$;
+
+-- workflow_step_comments INSERT: own-bot OR team-agent, still gated on membership
+--   WITH CHECK ( (auth.uid() = author_id
+--                 OR is_bot_owner(author_id, auth.uid())
+--                 OR is_idea_agent(author_id, idea_id))
+--                AND is_idea_team_member(idea_id, auth.uid()) );
+
+-- board_task_comments INSERT: TIGHTEN to the same shape (closes the 00039:62 gap)
+--   WITH CHECK ( is_idea_team_member(idea_id, auth.uid())
+--                AND (auth.uid() = author_id
+--                     OR is_bot_owner(author_id, auth.uid())
+--                     OR is_idea_agent(author_id, idea_id)) );</code></pre>
+<div class="callout"><h4><span class="tag ok">Settled at design review</span> The <code>board_task_comments</code> tightening is in</h4>
+<p style="margin:0">Task comments have always had a looser insert policy than everything else — it checks team membership and never looks at <code>author_id</code> at all (migration 00039 even left itself a note about it). The review made closing this non-optional, and the safety check is done: there are only two insert paths into the table (the web comment form and the MCP tool), and both write authors the tightened policy still allows. It ships in the same migration.</p></div>
+<p>Net effect: you can never author as a bot outside the set of bots you own plus bots on teams you belong to (database, remote mode), and never as <em>any</em> bot without a live work token for that bot's in-progress step (code, both modes). Edit and delete stay owner-scoped, unchanged — in a collaborator run, the human who executed the step can't edit the resulting bot comment; the bot's owner can. That's the right shape for a board that's supposed to be a trustworthy record.</p>
+
+<h3>1.6 The error catalog</h3>
+<p>Every rejection says what happened, why, and what to do next. None of them changes any state. Each one also logs a structured warning — that's where the operator signal for attribution funny-business now lives (§4.2).</p>
+
+<div class="errbox"><span class="errname">err-1 · step no longer in progress (add_step_comment, known step)</span><br>
+"Step "&lt;title&gt;" is no longer in progress (status: completed). Its work token was retired when the claim ended — the agent's voice covers only work under a live claim. If you are the working subagent, stop and report back to your orchestrator. If this note still matters, resend it WITHOUT work_token to post it as the human account."</div>
+
+<div class="errbox"><span class="errname">err-2 · token superseded (step in progress, hash mismatch)</span><br>
+"This work token is not the current one for this step — the step was re-claimed and a fresh token was minted (last claim wins). Your run may have been restarted. If you are the working subagent, stop and report back to your orchestrator rather than retrying."</div>
+
+<div class="errbox"><span class="errname">err-3 · no matching step (add_task_comment, hash lookup empty)</span><br>
+"This work token doesn't match any in-progress workflow step on this task. Either the step finished, failed, or was reset (tokens retire with the claim), or it was re-claimed with a fresh token, or the token belongs to a different task. If you are the working subagent, report back to your orchestrator. To post as the human account instead, resend without work_token."</div>
+
+<div class="errbox"><span class="errname">err-4 · step has no assigned agent (defensive; normally unmintable)</span><br>
+"This step has no assigned agent, so there is no agent voice to post in. Resend without work_token to comment as the human account."</div>
+
+<div class="errbox"><span class="errname">err-5 · claim token passed to a comment tool</span><br>
+"That's a claim_token (ct_…), which authorises complete_step/fail_step and stays with the orchestrator. Comments take the work_token (wt_…) from the same claim_next_step response. If you weren't given a wt_… token, ask your orchestrator for it, or omit work_token to comment as the human account."</div>
+
+<div class="errbox"><span class="errname">err-6 · work token passed to complete_step / fail_step</span><br>
+"That's a work_token (wt_…) — it can voice comments but can never complete or fail a step. complete_step requires the claim_token (ct_…) that the orchestrator kept from claim_next_step. If you are the subagent: you don't complete steps — return your deliverable to the orchestrator instead."</div>
+
+<h2 id="s2">2 · How it plays out</h2>
+
+<h3>2.1 The happy path</h3>
+<ol class="flow">
+  <li><span class="who">Orchestrator</span><code>claim_next_step(task_id)</code> → step assigned to persona P, <code>persona_prompt</code>, <span class="tok ct">claim_token</span>, <span class="tok wt">work_token</span>, and the AGENT VOICE instructions.</li>
+  <li><span class="who">Orchestrator</span>Spawns a fresh subagent: persona prompt, step description, prior-step context, and the <strong>work token</strong> (plus the task/idea/step ids). Keeps the claim token to itself.</li>
+  <li><span class="who">Subagent</span>Posts progress as it works: <code>add_step_comment(step_id, idea_id, "Auth flow mapped; two edge cases found…", work_token)</code> → appears as <strong>P</strong>.</li>
+  <li><span class="who">Subagent</span>Asks a question on the task: <code>add_task_comment(task_id, idea_id, "@Nick is the legacy import in scope?", work_token)</code> → appears as <strong>P</strong>; Nick is notified with P as the actor.</li>
+  <li><span class="who">Subagent</span>Returns its deliverable. (The instructions tell it to post any final notes <em>before</em> returning — the voice ends at completion.)</li>
+  <li><span class="who">Orchestrator</span>May post its own coordination note with the same work token → also appears as <strong>P</strong>.</li>
+  <li><span class="who">Orchestrator</span><code>complete_step(step_id, claim_token, output, …)</code> → <code>claimed_by = P</code> as today, both token hashes cleared, voice retired. No warnings in the logs.</li>
+  <li><span class="who">Human</span>Reads the thread as an actual team conversation (§3).</li>
+</ol>
+
+<h3>2.2 When things go sideways</h3>
+<div class="tablewrap"><table>
+  <tr><th>Situation</th><th>What happens</th><th>Why it's the right behaviour</th></tr>
+  <tr><td><strong>Late comment after completion</strong></td><td>The old wt_ gets err-1/err-3, with the explicit "resend without work_token" way out.</td><td>Human attribution only ever happens because the caller chose it — never as a silent fallback.</td></tr>
+  <tr><td><strong>Cascade reset mid-step</strong> (a reviewer fails a later step and resets back past this one)</td><td>The reset wipes both hashes and flips the step to pending. The subagent's next comment gets err-1 and is told to stop and report back.</td><td>The rejection <em>is</em> the signal that the ground moved. The orchestrator re-claims and gets fresh tokens. No zombie voice on work that's been thrown away. Bonus: the cascade's snapshot comments were already authored as <code>claimed_by</code> — which is now genuinely the bot.</td></tr>
+  <tr><td><strong>Full reset via <code>reset_workflow</code></strong></td><td>Same story: both hashes cleared (a review condition — this site was missing from the first draft and would have left stale hashes behind), old tokens get err-1/err-3.</td><td>Every path that abandons a claim kills the voice that came with it.</td></tr>
+  <tr><td><strong>Re-claim after context compaction</strong></td><td>Fresh ct_ + wt_ minted; the old wt_ (say, an orphaned subagent still running) gets err-2 "superseded".</td><td>Two generations of subagent can never both speak as P.</td></tr>
+  <tr><td><strong>Concurrent runs, steps, or sessions</strong></td><td>Nothing to handle — it just works.</td><td>There's no shared state to drift. Each comment carries its own token; each token maps to one step; each step to one bot. Cross-attribution isn't prevented by discipline, it's impossible by construction. This is the precise fix for the failure mode in the identity audit.</td></tr>
+  <tr><td><strong>Guessed or invented token</strong></td><td>Pending steps have no hash → err-1/err-3.</td><td>You can't voice a claim that was never made.</td></tr>
+  <tr><td><strong>Wrong token in the wrong tool</strong></td><td>err-5 / err-6, detected by prefix.</td><td>Each error names the other token's job, so the two capabilities stay legible even when misused.</td></tr>
+  <tr><td><strong>Step with no assigned agent</strong></td><td><code>work_token: null</code>, no AGENT VOICE block; comments are human-attributed.</td><td>No persona, no voice — same boundary as today.</td></tr>
+  <tr><td><strong>Step sitting at awaiting_approval</strong></td><td>Both hashes were already cleared at <code>complete_step</code> — no agent voice during the approval conversation.</td><td>The persona's work is done; approval is a human discussion.</td></tr>
+</table></div>
+
+<h3>2.3 Clients that can't spawn subagents</h3>
+<p>Some clients have no Agent/Task tool and do the step inline. Today they're told to call <code>set_agent_identity</code> — that instruction has to go, and it turns out it was never needed: completion attribution already comes from the claim token, and the work token doesn't care who holds it, only that they're inside the claim. So the fallback keeps full agent voice. The rewritten EXCEPTION text:</p>
+<pre><code>EXCEPTION (the ONLY one): if your client genuinely has no subagent/Agent tool at
+all, do the step inline in this conversation. No identity switch is needed or
+possible: completion is attributed to the assigned persona by the claim_token
+automatically. Adopt the persona_prompt as your working style, pass the
+work_token on any add_task_comment/add_step_comment you make so they post in the
+persona's voice, and when done call complete_step with the claim_token, stating
+verbatim in your output: "Completed inline — no subagent capability." If you DO
+have an Agent/Task tool, this exception does not apply to you.</code></pre>
+<ol class="flow">
+  <li><span class="who">Client</span><code>claim_next_step</code> → both tokens land in the same (only) context.</li>
+  <li><span class="who">Client</span>Works inline; comments with <span class="tok wt">wt_</span> → voiced as P.</li>
+  <li><span class="who">Client</span><code>complete_step</code> with <span class="tok ct">ct_</span> → <code>claimed_by = P</code>. Only uses tools that still exist after retirement. No warning fires.</li>
+</ol>
+
+<h2 id="s3">3 · What the human sees on the board</h2>
+<p><strong>Nothing changes in the UI code. Nothing.</strong> Bots are shadow <code>users</code> rows, and every surface already branches on <code>is_bot</code>: task comments (<code>task-comments-section.tsx:345-377</code> — avatar, Bot icon, tooltip with name and role), step comments (<code>step-detail-dialog.tsx:362-388</code>), the activity timeline (<code>activity-timeline.tsx:187</code>), and the notification bell (<code>notification-bell.tsx:227-230</code>). The rendering path for agent-authored comments has been sitting there working the whole time — agents just never get to be the author during workflow runs. This feature changes which rows get written, not how rows render. That's also why history is automatically safe: no renderer changes, no query changes, no data rewrite, so every pre-existing comment renders exactly as before.</p>
+
+<h3>3.1 Before and after — the same run, same thread</h3>
+<p>Realistic data on purpose: a long agent name, an agent with no avatar (initials fallback), and a real human reply.</p>
+
+<div class="thread">
+  <div class="thread-title">Before (today, since 28 Jul) — every worker speaks as Nick</div>
+  <div class="cmt"><div class="avatar">NB</div><div class="cmt-body">
+    <div class="cmt-head"><span class="cmt-name">Nick Ball</span><span class="cmt-time">2h ago</span></div>
+    <div class="cmt-text">[ProdOwner] Requirements drafted — 12 FRs, 7 open questions. Moving to design.</div>
+  </div></div>
+  <div class="cmt"><div class="avatar">NB</div><div class="cmt-body">
+    <div class="cmt-head"><span class="cmt-name">Nick Ball</span><span class="cmt-time">1h ago</span></div>
+    <div class="cmt-text">(as Compass) <span class="mention">@Nick</span> is the legacy import in scope for this design?</div>
+  </div></div>
+  <div class="cmt"><div class="avatar">NB</div><div class="cmt-body">
+    <div class="cmt-head"><span class="cmt-name">Nick Ball</span><span class="cmt-time">1h ago</span></div>
+    <div class="cmt-text">No — out of scope, see the card description.</div>
+  </div></div>
+  <p class="small" style="margin:.5rem 0 0">Who asked, who answered? Three authors, one name. The record can't be trusted.</p>
+</div>
+
+<div class="thread">
+  <div class="thread-title">After — same thread, work-token attribution</div>
+  <div class="cmt"><div class="avatar bot">PO</div><div class="cmt-body">
+    <div class="cmt-head"><span class="cmt-name"><svg class="boticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-label="Agent"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 14h.01M16 14h.01"/></svg>ProdOwner</span><span class="badge-bot">BOT</span><span class="cmt-time">2h ago</span></div>
+    <div class="cmt-text">Requirements drafted — 12 FRs, 7 open questions. Moving to design.</div>
+  </div></div>
+  <div class="cmt"><div class="avatar bot">CO</div><div class="cmt-body">
+    <div class="cmt-head"><span class="cmt-name"><svg class="boticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-label="Agent"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 14h.01M16 14h.01"/></svg>Compass — Principal UX &amp; Interaction Design Archaeologist</span><span class="badge-bot">BOT</span><span class="cmt-time">1h ago</span></div>
+    <div class="cmt-text"><span class="mention">@Nick</span> is the legacy import in scope for this design?</div>
+  </div></div>
+  <div class="cmt"><div class="avatar">NB</div><div class="cmt-body">
+    <div class="cmt-head"><span class="cmt-name">Nick Ball</span><span class="cmt-time">1h ago</span></div>
+    <div class="cmt-text">No — out of scope, see the card description.</div>
+  </div></div>
+  <p class="small" style="margin:.5rem 0 0">Attribution is structural, not narrated. The "(as Compass)" and "[ProdOwner]" prefix conventions die of natural causes.</p>
+</div>
+
+<h3>3.2 Mobile, 375px, long names</h3>
+<div class="thread mobile">
+  <div class="thread-title">375px viewport</div>
+  <div class="cmt"><div class="avatar bot">CO</div><div class="cmt-body">
+    <div class="cmt-head"><span class="cmt-name" style="max-width:180px"><svg class="boticon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-label="Agent"><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 8V4M8 14h.01M16 14h.01"/></svg>Compass — Principal UX &amp; Inter…</span><span class="cmt-time">1h ago</span></div>
+    <div class="cmt-text">Wireframes attached for the claim → comment → complete flow.</div>
+  </div></div>
+</div>
+<p>The existing layout already copes: the comment body has <code>min-w-0 flex-1</code>, the name truncates with an ellipsis, and the timestamp lives outside the truncating span. The full name is still reachable via the Bot-icon tooltip (tap-triggered on touch). No change needed — but the E2E addition in §6 should use one long-named agent so this stays locked in.</p>
+
+<h3>3.3 Notifications</h3>
+<div class="thread">
+  <div class="thread-title">Notification bell entry — agent actor</div>
+  <div class="cmt"><div class="avatar bot">CO</div><div class="cmt-body">
+    <div class="cmt-text"><strong>Compass</strong> mentioned you in a task on <strong>VibeCodes</strong></div>
+    <div class="cmt-time">1h ago · task_mention</div>
+  </div></div>
+</div>
+<p>This comes from the <code>actorId</code> parameter in §1.4. The bell already knows how to render agent actors, and the notifications insert policy is wide open (<code>with check (true)</code>), so a bot <code>actor_id</code> inserts fine under the human's JWT. Anything downstream that renders the actor (email, webhooks) gets the same users-row join.</p>
+
+<h3>3.4 States and accessibility</h3>
+<ul>
+  <li><strong>Empty / loading / error:</strong> no new UI states exist, because there's no new UI — no screens, no client fetches. Threads keep their existing loading text, empty state, and toast-on-error. (Noted but not changed: the thread loader is plain text rather than a skeleton. Pre-existing, out of scope.)</li>
+  <li><strong>Not colour-only:</strong> agent-ness is carried by the Bot icon, its tooltip (name + role), and the rendered agent name — never by colour alone.</li>
+  <li><strong>Screen readers:</strong> the visible agent name is already in the comment header. One optional one-liner: <code>aria-label="Agent"</code> on the Bot icon, so it announces "Agent, Compass" instead of being skipped.</li>
+  <li><strong>Contrast:</strong> no new colour pairs — everything uses the existing zinc/shadcn tokens.</li>
+</ul>
+
+<h2 id="s4">4 · Retiring the ambient identity slot</h2>
+
+<h3>4.1 The sweep — everything that mentions the old mechanism, and what replaces it</h3>
+<div class="callout"><h4>A note on the requirements' list</h4>
+<p style="margin:0">The requirements' Evidence E9 list is accurate but not complete as a removal checklist. A grep turns up four more reference sites: <code>discussions.ts:412,417</code>, <code>agent-skill.ts:136/146/164</code>, the tool descriptions in <code>register-tools.ts:1217/1231/1292/1496</code>, and assorted comments/tests. All are handled below — "nothing references a tool that no longer exists" is only achievable with the extended list. One more nitpick: migration 00115's header still claims stdio uses <code>users.active_bot_id</code>, which stopped being true at 00117/00118; that comment dies with the table.</p></div>
+<div class="tablewrap"><table>
+  <tr><th>Surface</th><th>Replacement</th><th>Phase</th></tr>
+  <tr><td><code>workflows.ts:938,947</code> — the claim fallback EXCEPTION</td><td>Rewritten per §2.3: work inline, no identity switch, claim token attributes completion, work token voices comments.</td><td>A</td></tr>
+  <tr><td><code>workflows.ts:904</code> — "You do NOT need set_agent_identity; pass agent_id directly."</td><td>Drop the first clause; keep "Pass agent_id directly."</td><td>A</td></tr>
+  <tr><td><code>workflows.ts:1652-1662</code> — <code>approve_step</code>'s bot guard</td><td><strong>Keep the guard, rewrite the message.</strong> After retirement, remote callers are always the human, so the guard mostly guards nothing there — but it still protects stdio installs whose configured identity is a bot, and it keeps "approval is a human act" enforced rather than assumed. New message: <em>"Only humans can approve workflow steps. This connection is authenticated as an agent (a stdio install configured with VIBECODES_BOT_ID). Ask the human to approve from the task's workflow panel in the web UI, or run approval from a connection authenticated as the human account. Do NOT approve without explicit human instruction."</em></td><td>A</td></tr>
+  <tr><td><code>board-read.ts:302-311</code> — get_task's self-assign instruction on workflow-less tasks</td><td>Assignment never actually needed the identity slot — <code>update_task</code> takes an explicit <code>assignee_id</code>. New text: <em>"This task has no workflow. Before starting work, pick the team agent that best fits it (your .vibecodes config botId, or choose from list_idea_agents) and call update_task with assignee_id set to that agent's ID so the board shows who is working on it. When finished, move the task to the appropriate done/verify column using move_task."</em> Comments on workflow-less tasks stay human-attributed — there's no claim to bind a voice to (see Q1, §5).</td><td>A</td></tr>
+  <tr><td><code>agent-mentions.ts:106-108</code> + <code>discussions.ts:412,417</code> — "assume persona → reply → reset" instructions</td><td>Discussion replies don't get the work token (they're outside workflow execution), but the mention-reply feature can't just lose its voice. Replacement: an explicit <code>agent_id</code> parameter on <code>add_discussion_reply</code>, verified in code as a bot the caller owns — which matches the existing discussion RLS, so no policy change. The instructions get one step shorter (no more "reset identity" step). This is per-call and explicit, so it has none of the ambient slot's drift problem. <span class="tag decision">decision 2, §7</span></td><td>A</td></tr>
+  <tr><td><code>agent-skill.ts:136,146,164</code></td><td>Description and comments lose the set_agent_identity contrast; the :164 error becomes "Pass agent_id (the bot whose skill you're loading) and check the name against available_skills."</td><td>A</td></tr>
+  <tr><td><code>register-tools.ts:1217,1231,1292,1496</code> — tool descriptions</td><td>Rewritten per §1.3.3 and the approve_step message above.</td><td>A</td></tr>
+  <tr><td><code>src/lib/launch-claude-code.ts:625,656</code> — launch prompts</td><td>Tool lists become "(get_board / get_task / claim_next_step / move_task / add_task_comment / …)". The per-task prompt at :656 also gains the "if the task has a workflow, use claim_next_step" line for parity.</td><td>A</td></tr>
+  <tr><td>Guide pages: <code>workflows</code>, <code>mcp-integration</code>, <code>ai-agent-teams</code></td><td>The "switch identity" step becomes "agent voice": claim_next_step returns a work token; comments made with it appear as the working agent; completion is attributed by the claim token. The set_agent_identity rows in the tool tables come out in Phase B.</td><td>A/B</td></tr>
+  <tr><td>Code comments only: <code>kanban-board.tsx:425</code>, <code>instrument.ts:43</code>, <code>index.ts:23</code></td><td>Reworded — no behaviour.</td><td>B</td></tr>
+  <tr><td>The <code>set_agent_identity</code> tool itself (<code>register-tools.ts:967</code>, handler in <code>bots.ts</code>)</td><td><strong>Phase A:</strong> the handler becomes a pure deprecation error — still listed, so a client with a stale cached tool list gets told what changed instead of a mystery failure: <em>"set_agent_identity is retired. Attribution now flows from claim_next_step: completion via the claim_token, comment voice via the work_token, discussion replies via add_discussion_reply's agent_id. This call changed nothing."</em> <strong>Phase B:</strong> the registration is removed and callers get MCP's standard unknown-tool error.</td><td>A→B</td></tr>
+  <tr><td>The slot plumbing: <code>bot-identity.ts</code>, the per-request resolution in <code>route.ts</code>, the stdio restore in <code>index.ts</code></td><td><strong>Phase A:</strong> both transports stop reading the slot. Remote: <code>ctx.userId</code> is always the real user. Stdio: <code>ctx.userId</code> is <code>VIBECODES_BOT_ID || BOT_USER_ID</code> — a static, config-time install identity that never changes at runtime, so it can't drift; existing stdio installs keep working, with a docs note. <strong>Phase B:</strong> delete <code>bot-identity.ts</code> and the dead plumbing.</td><td>A→B</td></tr>
+  <tr><td><code>mcp_agent_sessions</code> table</td><td>Forward migration: <code>DROP TABLE mcp_agent_sessions</code>, applied only once Phase B code is live and nothing reads or writes it.</td><td>B</td></tr>
+  <tr><td>Tests: <code>register-tools.test.ts</code>, <code>instrument.test.ts</code></td><td>Phase A: assertions flip to "descriptions don't mention set_agent_identity" plus a stub-errors test. Phase B: a tool-absence assertion. New unit tests in §6.</td><td>A/B</td></tr>
+</table></div>
+
+<h3>4.2 Killing the warning without losing the signal</h3>
+<p>The persona-mismatch warning fires on every healthy completion because it compares the step's bot against the ambient slot, and the protocol guarantees the slot is empty. Once the slot is gone, the comparison isn't a drift detector — it's a constant. So:</p>
+<ul>
+  <li><strong>Delete</strong> the warning blocks in <code>complete_step</code> (<code>workflows.ts:1155-1171</code>) and <code>fail_step</code> (<code>:1355-1366</code>). A compliant run now logs zero warnings, and <code>claimed_by</code> keeps being written from the token relationship exactly as today.</li>
+  <li><strong>The real signal moves to where anomalies actually show up now: failed token checks.</strong> Nobody can act as the wrong persona any more — what they <em>can</em> do is present a bad token, and that's loggable:
+    <ul>
+      <li>every err-1…err-6 rejection logs <code>logger.warn("work token rejected", { tool, stepId, taskId, reason, callerUserId, ownerUserId })</code>;</li>
+      <li>the existing claim-token rejections in <code>complete_step</code>/<code>fail_step</code> get the same structured warning (today they only throw);</li>
+      <li>the persona attestation fields (<code>persona_used</code>/<code>persona_honored</code>) and the compliance alerts stay untouched.</li>
+    </ul>
+  </li>
+  <li><strong>The tool log stays honest:</strong> <code>mcp_tool_log.user_id</code> becomes "who's connected" (the human, or a stdio install's static bot) — stable and truthful. "Which agent wrote this?" is answered by the comment row's <code>author_id</code> and the activity row's <code>actor_id</code>, which are now genuinely the agent.</li>
+</ul>
+
+<h3>4.3 Rollout order</h3>
+<p>The constraint: a client running on old instructions must degrade to an error or a human-attributed comment — never to a wrong-persona one. This order guarantees that at every point along the way:</p>
+<ol class="flow">
+  <li><span class="who">Migration 1 — additive, lands first</span>The <code>work_token_hash</code> column, <code>is_idea_agent()</code>, and both policy changes from §1.5. Old code ignores all of it.</li>
+  <li><span class="who">Phase A — one deploy, both transports</span>Everything behavioural: mint and verify work tokens, all instruction rewrites, the sweep, the warning deletion, the discussion <code>agent_id</code> param, set_agent_identity stubbed to a deprecation error, slot reads removed. Stale clients degrade safely: old instructions calling set_agent_identity get an instructive error and their comments post as the human (today's behaviour); steps claimed before the deploy have no work-token hash, so they can't be voiced until re-claimed — fail-safe, not fail-weird.</li>
+  <li><span class="who">Verify in prod</span>One real workflow run on vibecodes.co.uk: voiced comments from subagent and orchestrator, zero persona-mismatch warnings in the Vercel logs, notification actor is the agent.</li>
+  <li><span class="who">Phase B — next release</span>Remove the tool registration, delete <code>bot-identity.ts</code> and dead plumbing, take the guide tool-table rows out, tidy the comments.</li>
+  <li><span class="who">Migration 2 — after Phase B is live</span><code>DROP TABLE mcp_agent_sessions</code>. Forward-only, same pattern as dropping <code>users.active_bot_id</code>.</li>
+</ol>
+
+<h2 id="s5">5 · The requirements' open questions, answered</h2>
+<div class="tablewrap"><table>
+  <tr><th>Q</th><th>Decision</th><th>Rationale</th></tr>
+  <tr><td><strong>Q1</strong> — do workflow-less tasks (agent = assignee) get agent voice?</td><td><strong>No.</strong> The self-assign instruction is rewritten to explicit assignment (§4.1); comments there stay human-attributed.</td><td>"Doing the work" is defined by a claim, and these tasks have none. Giving them a voice would mean either unverified self-report (the door we just closed) or inventing a second claim-like mechanism inside this card. If Nick wants it, it should be its own follow-up card — an assignee-scoped token is a clean shape for it. <span class="tag decision">decision 3, §7</span></td></tr>
+  <tr><td><strong>Q2</strong> — which surfaces?</td><td>Task + step comments get the work-token voice. Discussion replies get an explicit verified <code>agent_id</code> — as the replacement for the mention flow, not an extension of the workflow feature.</td><td>§4.1. Idea comments and votes stay out, per the requirements' scope.</td></tr>
+  <tr><td><strong>Q3</strong> — do no-subagent fallback clients get agent voice?</td><td><strong>Yes, full voice.</strong></td><td>The token doesn't care who holds it, only that they're inside the claim. Denying inline clients would be an arbitrary regression. §2.3.</td></tr>
+  <tr><td><strong>Q4</strong> — orchestrator commenting with no step claimed?</td><td><strong>Human attribution, confirmed.</strong></td><td>No token, no voice — and there's no ambient state left to mis-fire.</td></tr>
+  <tr><td><strong>Q5</strong> — fix historical misattributed comments?</td><td><strong>No, confirmed.</strong></td><td>No renderer or data change touches history; it all renders as before.</td></tr>
+  <tr><td><strong>Q6</strong> — collaborator runs where the bot belongs to someone else?</td><td><strong>A team member may author as a team agent — but only through a live work token.</strong> RLS enforces the team boundary; code enforces the claim. Includes the (now mandatory) task-comments tightening.</td><td>Owner-only would break collaborator runs outright; team-scoped is the boundary the requirements' own security constraint anticipated. §1.5. <span class="tag decision">decision 4, §7</span></td></tr>
+  <tr><td><strong>Q7</strong> — what happens to approve_step's bot guard?</td><td><strong>Keep the guard, replace the message</strong> (no more set_agent_identity reference; it points at web-UI approval or a human-account connection).</td><td>Cheap, still protects stdio bot installs, and keeps "approval is a human act" enforced rather than assumed. §4.1.</td></tr>
+</table></div>
+
+<h2 id="s6">6 · Traceability</h2>
+<p class="small">Requirement IDs are from the step-1 Requirements doc. This is the checklist the implementation and test steps should walk.</p>
+<div class="tablewrap"><table>
+  <tr><th>Req</th><th>Satisfied by</th></tr>
+  <tr><td>FR-1 / AC-1 / AC-2</td><td>Work-token attribution path §1.4 (both comment tables), both transports</td></tr>
+  <tr><td>FR-2</td><td>Token hand-over to the subagent (§1.3.2; flow §2.1 steps 2–4)</td></tr>
+  <tr><td>FR-3 / AC-3</td><td>Orchestrator keeps and may use the same wt_ (§2.1 step 6)</td></tr>
+  <tr><td>FR-4 / AC-4</td><td>Verify-or-reject §1.4 step 4 + error catalog §1.6 (no silent fallback in either direction); edge table §2.2</td></tr>
+  <tr><td>FR-5 / AC-6 / Q4</td><td>No-token path byte-identical to today (§1.4 step 1)</td></tr>
+  <tr><td>FR-6</td><td>complete_step/fail_step unchanged apart from the warning deletion; <code>claimed_by</code> still set from the claim token (§4.2)</td></tr>
+  <tr><td>FR-7 / AC-7</td><td>Warning blocks deleted §4.2</td></tr>
+  <tr><td>AC-8</td><td>Structured warnings on every token rejection + retained attestation/compliance surfaces §4.2</td></tr>
+  <tr><td>FR-8 / AC-9</td><td>Sweep table §4.1 (E9 plus four extra sites), stub-then-remove, drop migration §4.3 step 5</td></tr>
+  <tr><td>FR-9 / AC-10 / Q3</td><td>Inline fallback flow §2.3</td></tr>
+  <tr><td>FR-10</td><td>Checks live in shared tool code; RLS (remote) + identical code checks (stdio) §1.4, §1.5</td></tr>
+  <tr><td>FR-11 / AC-11</td><td><code>actorId</code> on notifyMentions + logActivity §1.4 step 5; UI already renders agent actors §3.3</td></tr>
+  <tr><td>FR-12 / AC-12 / Q5</td><td>No renderer or data changes §3</td></tr>
+  <tr><td>NFR-1 / AC-5</td><td>§1.5 policies (incl. the mandatory board_task_comments tightening) + code-layer token gate; stdio equivalence §1.4</td></tr>
+  <tr><td>NFR-2</td><td>Attribution = hash match against claim-minted state; zero session state (§1.1)</td></tr>
+  <tr><td>NFR-3</td><td>wt_ verified only against <code>work_token_hash</code>; err-6; comment path writes comments only (§1.4)</td></tr>
+  <tr><td>NFR-4 / AC-13</td><td>Per-call explicit tokens; supersession on re-claim; both hashes cleared at all five claim-ending sites incl. <code>reset_workflow</code> (§1.2, §2.2)</td></tr>
+  <tr><td>NFR-5</td><td>Additive-migration-first ordering, deprecation stub, stale-client degradation, VIBECODES_BOT_ID kept (§4.3, §4.1)</td></tr>
+  <tr><td>NFR-6</td><td>§4.2 last bullet</td></tr>
+  <tr><td>NFR-7</td><td>Zero UI changes; the existing bot path lights up (§3)</td></tr>
+  <tr><td>AC-14</td><td>Test plan: unit tests co-located with <code>comments.ts</code>/<code>workflows.ts</code> covering err-1…err-6 and attribution resolution (the AC-4/AC-5 rejection paths), token-clearing tests for all five sites in §1.2, register-tools description assertions (Phase A/B), one workflows E2E extension asserting a bot-authored step comment renders with the Bot badge using a long-named agent (§3.2), <code>npx tsc --noEmit</code> before push</td></tr>
+</table></div>
+
+<h2 id="s7">7 · Decisions</h2>
+<h3>Settled at the design review — now conditions of the design</h3>
+<ol>
+  <li><strong>The <code>board_task_comments</code> insert tightening ships.</strong> No longer optional. The insert-path check is done: two paths (web comment form, MCP tool), both compatible with the tightened policy. Same migration as the work-token column (§1.5).</li>
+  <li><strong><code>work_token_hash</code> is cleared at all five sites that clear <code>claim_token_hash</code>:</strong> <code>complete_step</code> (:1207), <code>fail_step</code> (:1401), cascade reset (:1514), <code>approve_step</code> (:1681), <code>reset_workflow</code> (:1907). The last two were missing from the original lifecycle; <code>reset_workflow</code> was a genuine stale-token gap (§1.2). The unit tests in §6 cover all five.</li>
+</ol>
+<h3>Still open — Nick decides at this gate</h3>
+<ol>
+  <li><strong>Mentions notify the owner even when it's his own JWT posting</strong> (§1.4): when an agent writes <span class="mention">@Nick</span>, Nick gets the notification, because self-suppression now keys on the speaker (the agent), not the connection. <em>Recommend: yes</em> — otherwise agent-to-owner questions silently vanish, which defeats the point of agents asking questions.</li>
+  <li><strong><code>agent_id</code> on <code>add_discussion_reply</code></strong> (§4.1): the one place scope grows beyond task and step comments, as the replacement for the mention-reply flow. <em>Recommend: yes</em> — the alternative is losing agent-voiced mention replies entirely.</li>
+  <li><strong>No agent voice on workflow-less tasks for now</strong> (§5, Q1): follow-up card if wanted. <em>Recommend: defer.</em></li>
+  <li><strong>Collaborators may voice team agents through a live token</strong> (§1.5, Q6): a team member executing a run may post as the step's assigned bot, even if someone else owns it. <em>Recommend: yes</em> — owner-only breaks collaborator runs.</li>
+</ol>
+
+</main>
+</body>
+</html>
