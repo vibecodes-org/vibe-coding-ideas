@@ -276,54 +276,44 @@ export default function AiAgentTeamsPage() {
             Using Agents with Claude Code
           </h2>
           <p className="mb-4 text-muted-foreground">
-            Start Claude Code normally with the VibeCodes MCP server connected,
-            then ask it to switch identity using the{" "}
-            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-              set_agent_identity
-            </code>{" "}
-            tool:
+            Agents don&apos;t need to be manually activated. Assign one to a
+            workflow step (or a task), then ask Claude Code to work the board:
           </p>
           <div className="space-y-3">
             <div className="rounded-lg bg-muted p-4">
               <code className="text-sm">
-                &quot;Switch to my Dev Alpha agent and check what tasks are
-                assigned to it&quot;
+                &quot;Run the workflow on this task&quot;
               </code>
             </div>
             <div className="rounded-lg bg-muted p-4">
               <code className="text-sm">
-                &quot;Set identity to QA Tester and review completed tasks on
-                the board&quot;
+                &quot;Pick up the next step on the board&quot;
               </code>
             </div>
           </div>
           <p className="mt-3 text-muted-foreground">
-            Once identity is set, three things happen automatically:
+            Claiming a step returns the assigned agent&apos;s persona prompt
+            together with a one-time work token. Two things then happen
+            automatically for the life of that claim:
           </p>
           <ul className="mt-2 list-inside list-disc space-y-2 text-muted-foreground">
             <li>
-              All actions (comments, task updates, activity log entries) are{" "}
-              <strong className="text-foreground">attributed to that agent</strong>
+              Claude Code spawns a fresh subagent that{" "}
+              <strong className="text-foreground">adopts the persona</strong>{" "}
+              — no need to manually tell it to follow the prompt
             </li>
             <li>
-              If the agent has a system prompt, Claude{" "}
-              <strong className="text-foreground">automatically adopts the
-              persona</strong> — no need to manually tell it to follow the prompt
-            </li>
-            <li>
-              The identity is{" "}
-              <strong className="text-foreground">persisted to the database</strong>{" "}
-              — it survives reconnections, restarts, and new sessions. No need
-              to re-set identity each time.
+              Comments the subagent posts while working are{" "}
+              <strong className="text-foreground">attributed to that agent</strong>{" "}
+              — name, avatar, and all — because they carry the work token, not
+              because of any session-wide identity switch
             </li>
           </ul>
           <p className="mt-3 text-muted-foreground">
-            To reset back to the default identity, just say{" "}
-            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-              &quot;Reset agent identity&quot;
-            </code>{" "}
-            and Claude will stop following the agent persona. The reset is also
-            persisted.
+            The voice ends when the claim does: completing, failing, or
+            resetting the step retires the token, and the next step&apos;s
+            claim starts the cycle again for whichever agent is assigned to
+            it. There&apos;s no separate identity to set or reset.
           </p>
         </section>
 
@@ -342,9 +332,10 @@ export default function AiAgentTeamsPage() {
               Scout&quot; (QA Tester role)
             </li>
             <li>
-              <strong className="text-foreground">Assign tasks</strong> on your
-              board: drag &quot;Build login page&quot; to Dev Alpha, drag
-              &quot;Write test plan&quot; to QA Scout
+              <strong className="text-foreground">Attach a workflow</strong> to
+              each task with a step assigned to the matching agent: a Dev
+              Alpha step on &quot;Build login page&quot;, a QA Scout step on
+              &quot;Write test plan&quot;
             </li>
             <li>
               <strong className="text-foreground">Open two terminal
@@ -353,13 +344,13 @@ export default function AiAgentTeamsPage() {
             <li>
               In terminal 1:{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                &quot;Switch to Dev Alpha and work on my assigned tasks&quot;
+                &quot;Claim the next step on &apos;Build login page&apos;&quot;
               </code>
             </li>
             <li>
               In terminal 2:{" "}
               <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                &quot;Switch to QA Scout and work on my assigned tasks&quot;
+                &quot;Claim the next step on &apos;Write test plan&apos;&quot;
               </code>
             </li>
             <li>

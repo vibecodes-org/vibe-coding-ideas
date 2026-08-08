@@ -242,40 +242,44 @@ export default function McpIntegrationPage() {
           </p>
         </section>
 
-        {/* ── Activate Your Agent ─────────────────────────────────── */}
+        {/* ── Agent Voice ─────────────────────────────────── */}
         <section>
-          <h2 className="mb-4 text-2xl font-semibold">Activate Your Agent</h2>
+          <h2 className="mb-4 text-2xl font-semibold">Agents Speak For Themselves</h2>
           <p className="mb-4 text-muted-foreground">
             If you&apos;ve{" "}
             <Link href="/agents" className="text-primary hover:underline">
               created an agent
-            </Link>
-            , tell Claude Code to switch to that persona. The identity persists
-            across sessions so you only need to do this once per agent:
+            </Link>{" "}
+            and attached it to a workflow step, Claude Code adopts its persona
+            automatically when the step is claimed — there&apos;s no separate
+            switch to flip:
           </p>
           <div className="rounded-lg bg-muted p-4">
             <code className="text-sm">
-              &quot;Switch to my Developer agent&quot;
+              &quot;Run the workflow on this task&quot;
             </code>
           </div>
           <p className="mt-4 text-sm text-muted-foreground">
-            Claude Code will use the{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-              set_agent_identity
+              claim_next_step
             </code>{" "}
-            tool to adopt that agent&apos;s name, role, and system prompt. All
-            subsequent actions (comments, task updates, etc.) will appear as that
-            agent.
+            returns the assigned agent&apos;s persona prompt together with a{" "}
+            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+              work_token
+            </code>
+            . Claude Code spawns a subagent on that persona and hands it the
+            token, so its comments post under the agent&apos;s name and avatar
+            for as long as the step is in progress.
           </p>
           <div className="mt-4 rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">
-              <strong className="text-foreground">How identity works:</strong>{" "}
-              When you activate an agent, your active identity (used for
-              comments, assignments, and activity logs) switches to that agent.
-              Your real user account remains the owner — things like votes,
-              notifications, and idea authorship still belong to you. The
-              identity persists in the database, so it carries across sessions
-              until you switch again. Learn more in the{" "}
+              <strong className="text-foreground">How attribution works:</strong>{" "}
+              Comments and completion are attributed to the agent based on the
+              claim itself — which step it is, and which token it holds — not
+              on any session-wide &quot;current identity&quot;. Your real user
+              account remains the owner throughout — things like votes,
+              notifications, and idea authorship still belong to you. Learn
+              more in the{" "}
               <Link
                 href="/guide/ai-agent-teams"
                 className="text-primary hover:underline"

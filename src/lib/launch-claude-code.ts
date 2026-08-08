@@ -622,7 +622,7 @@ export function buildBoardBootstrapPrompt({
   • Pick the top unstarted task (e.g. the first item in To Do, then Backlog), read it with get_task, assign it to yourself, and move it to In Progress.
   • If that task has a workflow attached, use claim_next_step to claim its next step and follow the orchestration loop instead.
 
-Use the MCP tools (get_board / get_task / claim_next_step / set_agent_identity / move_task / …) to do the work. Move the task to In Progress and comment as you go.`;
+Use the MCP tools (get_board / get_task / claim_next_step / move_task / add_task_comment / …) to do the work. Move the task to In Progress and comment as you go.`;
 
   // Directory step FIRST so the session is in the right folder before anything
   // else, then MCP setup — both protected from truncation; work is the trimmable tail.
@@ -652,8 +652,9 @@ export function buildTaskBootstrapPrompt({
   const mcp = mcpSetupHead(appUrl);
   const work = `Then, pick up this specific task on the VibeCodes board:
   • Task: "${taskTitle}"  (task_id: ${taskId}, idea_id: ${ideaId})
+  • If that task has a workflow attached, use claim_next_step to claim its next step and follow the orchestration loop instead.
 
-Use the MCP tools (get_task / set_agent_identity / move_task / …) to do the work. Move the task to In Progress and comment as you go.`;
+Use the MCP tools (get_task / claim_next_step / move_task / add_task_comment / …) to do the work. Move the task to In Progress and comment as you go.`;
 
   // Directory step FIRST so the session is in the right folder before anything
   // else, then MCP setup — both protected from truncation; work is the trimmable tail.

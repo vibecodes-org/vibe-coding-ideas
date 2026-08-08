@@ -488,9 +488,10 @@ export default function WorkflowsPage() {
                   2
                 </span>
                 <p>
-                  <strong className="text-foreground">Switch identity</strong>{" "}
-                  — call <code className="rounded bg-muted px-1.5 py-0.5 text-xs">set_agent_identity</code> to
-                  assume the persona of the agent assigned to the step
+                  <strong className="text-foreground">Spawn the agent</strong>{" "}
+                  — the response includes a <code className="rounded bg-muted px-1.5 py-0.5 text-xs">work_token</code>{" "}
+                  alongside the persona prompt; hand both to a fresh subagent so it works — and comments — in
+                  the assigned agent&apos;s voice
                 </p>
               </div>
               <div className="flex gap-3">
@@ -530,9 +531,9 @@ export default function WorkflowsPage() {
             <p className="text-sm text-muted-foreground">
               <strong className="text-foreground">Tip:</strong> You can ask
               Claude Code to &quot;run the workflow on this task&quot; and it
-              will execute the full loop — claiming steps, switching agent
-              personas, doing the work, and completing each step until the
-              workflow is finished or an approval gate is reached.
+              will execute the full loop — claiming steps, spawning each
+              step&apos;s agent, doing the work, and completing each step
+              until the workflow is finished or an approval gate is reached.
             </p>
           </div>
         </section>
