@@ -151,6 +151,31 @@ describe("resolveStepCommentAuthor (add_step_comment path)", () => {
     expect(result).toEqual({ authorId: BOT_ID, stepId: STEP_ID, taskId: TASK_ID });
   });
 
+  it("boundary: an empty-string work_token is treated the same as omitted — no query, human attribution", async () => {
+    const ctx = makeCtx({ id: STEP_ID, task_id: TASK_ID, status: "in_progress", bot_id: BOT_ID });
+    const result = await resolveStepCommentAuthor(ctx, STEP_ID, "");
+    expect(result).toBeNull();
+    expect(ctx.supabase.from).not.toHaveBeenCalled();
+  });
+
+  it("boundary: a malformed/garbage token (neither ct_ nor wt_ prefix) is rejected via ordinary hash mismatch, not a crash", async () => {
+    const warnSpy = vi.spyOn(logger, "warn").mockImplementation(() => {});
+    const { hash: currentHash } = mintWorkToken();
+    const ctx = makeCtx({
+      id: STEP_ID,
+      task_id: TASK_ID,
+      title: "Step",
+      status: "in_progress",
+      bot_id: BOT_ID,
+      work_token_hash: currentHash,
+    });
+
+    await expect(resolveStepCommentAuthor(ctx, STEP_ID, "not-a-real-token")).rejects.toThrow(
+      /not the current one for this step/
+    );
+    warnSpy.mockRestore();
+  });
+
   it("a token minted for a DIFFERENT step's hash never verifies against this step", async () => {
     const { token: otherStepToken } = mintWorkToken();
     const { hash: thisStepHash } = mintWorkToken();

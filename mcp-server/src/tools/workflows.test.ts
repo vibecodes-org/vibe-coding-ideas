@@ -2309,6 +2309,74 @@ describe("approveStep", () => {
     const result = await approveStep(ctx, { step_id: STEP_ID });
     expect(result.step).toMatchObject({ status: "completed" });
   });
+
+  // Design Review condition 2 (agent-voice-comments-design.html §1.2, §7):
+  // approve_step is belt-and-braces — the hashes are normally already gone
+  // by awaiting_approval — but the design's own traceability table (§6,
+  // AC-14) names it as one of the five sites the unit tests should cover,
+  // and it had no assertion at all before this.
+  it("clears work_token_hash alongside claim_token_hash on approval (belt-and-braces)", async () => {
+    const stepData = {
+      claim_token_hash: TCT.hash,
+      id: STEP_ID,
+      run_id: RUN_ID,
+      idea_id: IDEA_ID,
+      status: "awaiting_approval",
+    };
+    const updatedStep = {
+      id: STEP_ID,
+      task_id: TASK_ID,
+      run_id: RUN_ID,
+      title: "Test Step",
+      agent_role: "developer",
+      status: "completed",
+      output: "output",
+      completed_at: "2026-01-01T00:00:00Z",
+    };
+
+    const tableCounts: Record<string, number> = {};
+    let stepUpdateData: Record<string, unknown> | null = null;
+    const ctx = makeContext(((table: string) => {
+      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
+
+      if (table === "users") {
+        return createChain({ is_bot: false }).chain;
+      }
+
+      if (table === "task_workflow_steps") {
+        const callNum = tableCounts[table];
+        if (callNum === 1) {
+          return createChain(stepData).chain;
+        }
+        const chain = createChain(null);
+        chain.chain.update = vi.fn((data: unknown) => {
+          stepUpdateData = data as Record<string, unknown>;
+          return chain.chain;
+        });
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: updatedStep, error: null })
+        );
+        return chain.chain;
+      }
+
+      if (table === "workflow_runs") {
+        const chain = createChain(null);
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ data: [], error: null }).then(resolve);
+        chain.chain.maybeSingle = vi.fn(() =>
+          Promise.resolve({ data: null, error: null })
+        );
+        return chain.chain;
+      }
+
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await approveStep(ctx, { step_id: STEP_ID });
+
+    expect(stepUpdateData!.claim_token_hash).toBeNull();
+    expect(stepUpdateData!.work_token_hash).toBeNull();
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -2764,6 +2832,9 @@ describe("failStep", () => {
 
     expect(stepUpdateData).toHaveProperty("completed_at");
     expect((stepUpdateData as Record<string, unknown>).status).toBe("failed");
+    // Design Review condition 2: work_token_hash clears alongside
+    // claim_token_hash on a plain (non-cascade) failure too.
+    expect((stepUpdateData as Record<string, unknown>).work_token_hash).toBeNull();
   });
 
   it("failure comment uses idea_id not task_id", async () => {
@@ -3826,6 +3897,25 @@ describe("claim-token protocol", () => {
 
     expect(result.status).toBe("completed");
     expect(updateData!.claim_token_hash).toBeNull(); // single-use
+  });
+
+  // Design Review condition 2 (agent-voice-comments-design.html §1.2, §7):
+  // work_token_hash must be cleared at every site claim_token_hash is. The
+  // cascade-reset and reset_workflow sites already assert this explicitly
+  // elsewhere in this file — this closes the gap for complete_step's own
+  // (non-cascade) update, which the traceability table (§6, AC-14) also
+  // names as a site the unit tests should cover.
+  it("completeStep clears work_token_hash alongside claim_token_hash", async () => {
+    const { token, hash } = mintClaimToken();
+    let updateData: Record<string, unknown> | null = null;
+    const ctx = makeCompleteCtx(
+      { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null, claim_token_hash: hash },
+      (d) => (updateData = d as Record<string, unknown>)
+    );
+
+    await completeStep(ctx, { step_id: STEP_ID, claim_token: token, output: "Done" });
+
+    expect(updateData!.work_token_hash).toBeNull();
   });
 
   it("completeStep rejects a wrong token WITHOUT mutating the step (E2)", async () => {

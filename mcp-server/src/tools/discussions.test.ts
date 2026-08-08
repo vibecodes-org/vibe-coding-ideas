@@ -802,3 +802,167 @@ describe("addDiscussionReply", () => {
     ).rejects.toThrow("Failed to add discussion reply: insert failed");
   });
 });
+
+// ---------------------------------------------------------------------------
+// addDiscussionReply — agent_id authorization (agent voice)
+// (docs/agent-voice-comments-design.html §4.1, decision 2 §7 — the
+// replacement for the retired set_agent_identity mention-reply flow)
+//
+// This is new authorization logic (own-bot OR team-agent, else reject) with
+// no coverage in the suite above, which predates agent_id entirely. Covers
+// the equivalence classes: owned bot, team-but-not-owned bot, unowned/
+// off-team bot (must reject, never silently fall back to human), not-found,
+// and inactive.
+// ---------------------------------------------------------------------------
+
+const AGENT_ID = "00000000-0000-4000-a000-000000000030";
+const OWNER_ID = "00000000-0000-4000-a000-000000000002";
+const OTHER_OWNER_ID = "00000000-0000-4000-a000-000000000003";
+
+/** Per-table dispatch mock — the agent_id path queries bot_profiles and
+ *  (conditionally) idea_agents before the shared insert/notifications calls. */
+function makeAgentVoiceCtx(opts: {
+  bot: unknown;
+  teamRow?: unknown;
+  ownerUserId?: string;
+}) {
+  const botChain = createChain(opts.bot);
+  const teamChain = createChain(opts.teamRow ?? null);
+  const insertChain = createChain({
+    id: "r1",
+    content: "reply",
+    created_at: "2026-01-01T00:00:00Z",
+  });
+  const notificationsChain = createChain(null);
+
+  const fromFn = vi.fn((table: string) => {
+    switch (table) {
+      case "bot_profiles":
+        return botChain.chain as unknown as FromReturn;
+      case "idea_agents":
+        return teamChain.chain as unknown as FromReturn;
+      case "idea_discussion_replies":
+        return insertChain.chain as unknown as FromReturn;
+      case "notifications":
+        return notificationsChain.chain as unknown as FromReturn;
+      default:
+        return createChain(null).chain as unknown as FromReturn;
+    }
+  });
+
+  const ctx: McpContext = {
+    supabase: { from: fromFn } as unknown as McpContext["supabase"],
+    userId: USER_ID,
+    ownerUserId: opts.ownerUserId,
+  };
+
+  return { ctx, fromFn, botChain, teamChain, insertChain, notificationsChain };
+}
+
+describe("addDiscussionReply — agent_id authorization", () => {
+  it("posts as the agent when agent_id is a bot the caller owns", async () => {
+    const { ctx, insertChain, notificationsChain, teamChain } = makeAgentVoiceCtx({
+      bot: { id: AGENT_ID, owner_id: OWNER_ID, is_active: true },
+      ownerUserId: OWNER_ID,
+    });
+
+    const result = await addDiscussionReply(ctx, {
+      discussion_id: DISCUSSION_ID,
+      idea_id: IDEA_ID,
+      content: "Confirmed — out of scope.",
+      agent_id: AGENT_ID,
+    });
+
+    expect(result.success).toBe(true);
+    expect(insertChain.captured.inserted).toEqual({
+      discussion_id: DISCUSSION_ID,
+      author_id: AGENT_ID,
+      content: "Confirmed — out of scope.",
+      parent_reply_id: null,
+    });
+    // Ownership alone decides it — no team-membership lookup needed.
+    expect(teamChain.chain.eq).not.toHaveBeenCalled();
+    // Mention notifications get auto-marked-read for the AGENT's inbox, not the caller's.
+    expect(notificationsChain.captured.eqs).toContainEqual(["user_id", AGENT_ID]);
+  });
+
+  it("posts as the agent when the caller doesn't own it but it's on the idea's agent team", async () => {
+    const { ctx, insertChain } = makeAgentVoiceCtx({
+      bot: { id: AGENT_ID, owner_id: OTHER_OWNER_ID, is_active: true },
+      teamRow: { bot_id: AGENT_ID },
+      ownerUserId: OWNER_ID,
+    });
+
+    const result = await addDiscussionReply(ctx, {
+      discussion_id: DISCUSSION_ID,
+      idea_id: IDEA_ID,
+      content: "On it.",
+      agent_id: AGENT_ID,
+    });
+
+    expect(result.success).toBe(true);
+    expect(insertChain.captured.inserted).toMatchObject({ author_id: AGENT_ID });
+  });
+
+  it("rejects a bot the caller neither owns nor shares a team with — never falls back to human attribution", async () => {
+    const { ctx, insertChain } = makeAgentVoiceCtx({
+      bot: { id: AGENT_ID, owner_id: OTHER_OWNER_ID, is_active: true },
+      teamRow: null,
+      ownerUserId: OWNER_ID,
+    });
+
+    await expect(
+      addDiscussionReply(ctx, {
+        discussion_id: DISCUSSION_ID,
+        idea_id: IDEA_ID,
+        content: "Pretending to be someone else's agent.",
+        agent_id: AGENT_ID,
+      })
+    ).rejects.toThrow(/must be a bot you own or a bot on this idea's agent team/);
+    expect(insertChain.chain.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects when agent_id doesn't match any bot", async () => {
+    const { ctx, insertChain } = makeAgentVoiceCtx({ bot: null, ownerUserId: OWNER_ID });
+
+    await expect(
+      addDiscussionReply(ctx, {
+        discussion_id: DISCUSSION_ID,
+        idea_id: IDEA_ID,
+        content: "x",
+        agent_id: AGENT_ID,
+      })
+    ).rejects.toThrow(/Agent not found or inactive/);
+    expect(insertChain.chain.insert).not.toHaveBeenCalled();
+  });
+
+  it("rejects an inactive bot even when owned by the caller", async () => {
+    const { ctx, insertChain } = makeAgentVoiceCtx({
+      bot: { id: AGENT_ID, owner_id: OWNER_ID, is_active: false },
+      ownerUserId: OWNER_ID,
+    });
+
+    await expect(
+      addDiscussionReply(ctx, {
+        discussion_id: DISCUSSION_ID,
+        idea_id: IDEA_ID,
+        content: "x",
+        agent_id: AGENT_ID,
+      })
+    ).rejects.toThrow(/Agent not found or inactive/);
+    expect(insertChain.chain.insert).not.toHaveBeenCalled();
+  });
+
+  it("omitting agent_id never touches bot_profiles — byte-identical human-attributed path", async () => {
+    const { ctx, insertChain, fromFn } = makeAgentVoiceCtx({ bot: null, ownerUserId: OWNER_ID });
+
+    await addDiscussionReply(ctx, {
+      discussion_id: DISCUSSION_ID,
+      idea_id: IDEA_ID,
+      content: "plain human reply",
+    });
+
+    expect(fromFn).not.toHaveBeenCalledWith("bot_profiles");
+    expect(insertChain.captured.inserted).toMatchObject({ author_id: USER_ID });
+  });
+});
