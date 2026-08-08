@@ -226,11 +226,13 @@ describe("registerTools", () => {
     expect(registeredNames).toContain("create_agent");
   });
 
-  it("set_agent_identity calls onIdentityChange when provided", async () => {
+  // set_agent_identity is a Phase A deprecation stub (docs/agent-voice-comments-design.html
+  // §4.1, §4.3): it stays registered so a stale client gets an instructive
+  // error instead of an unknown-tool failure, but it does nothing else — no
+  // DB write, no onIdentityChange call, with or without args.
+  it("set_agent_identity rejects with the deprecation error and touches nothing", async () => {
     const server = createMockServer();
-    // Mock supabase with upsert for the single per-connection identity store
-    const mockUpsert = vi.fn().mockResolvedValue({ error: null });
-    const mockFrom = vi.fn().mockReturnValue({ upsert: mockUpsert });
+    const mockFrom = vi.fn();
     const mockContext: McpContext = {
       supabase: { from: mockFrom } as unknown as McpContext["supabase"],
       userId: "test-user",
@@ -241,36 +243,24 @@ describe("registerTools", () => {
 
     registerTools(server, getContext, onIdentityChange);
 
-    // Find set_agent_identity tool
     const setIdentityCall = server.tool.mock.calls.find(
       (call: unknown[]) => call[0] === "set_agent_identity"
     );
     expect(setIdentityCall).toBeDefined();
 
     const callback = setIdentityCall![3];
-    // Call with no args to reset identity
     const result = await callback({}, {});
 
-    expect(result.isError).toBeUndefined();
-    expect(onIdentityChange).toHaveBeenCalledWith(null);
-    expect(mockFrom).toHaveBeenCalledWith("mcp_agent_sessions");
-    expect(mockUpsert).toHaveBeenCalledWith(
-      expect.objectContaining({
-        user_id: "test-user",
-        session_id: "test-session",
-        active_bot_id: null,
-      }),
-      { onConflict: "user_id,session_id" }
-    );
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("set_agent_identity is retired");
+    expect(onIdentityChange).not.toHaveBeenCalled();
+    expect(mockFrom).not.toHaveBeenCalled();
   });
 
-  it("set_agent_identity uses noop when onIdentityChange not provided", async () => {
+  it("set_agent_identity rejects the same way when onIdentityChange is not provided", async () => {
     const server = createMockServer();
-    // Mock supabase with upsert for the single per-connection identity store
-    const mockUpsert = vi.fn().mockResolvedValue({ error: null });
-    const mockFrom = vi.fn().mockReturnValue({ upsert: mockUpsert });
     const mockContext: McpContext = {
-      supabase: { from: mockFrom } as unknown as McpContext["supabase"],
+      supabase: {} as McpContext["supabase"],
       userId: "test-user",
       sessionId: "test-session",
     };
@@ -284,9 +274,9 @@ describe("registerTools", () => {
     );
     const callback = setIdentityCall![3];
 
-    // Should not throw when onIdentityChange is undefined
-    const result = await callback({}, {});
-    expect(result.isError).toBeUndefined();
+    const result = await callback({ agent_id: "00000000-0000-4000-a000-000000000010" }, {});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("set_agent_identity is retired");
   });
 
   it("list_agents returns error with non-functional supabase", async () => {
@@ -447,5 +437,30 @@ describe("registerTools", () => {
       title: "New idea",
       description: "Draft desc",
     });
+  });
+
+  // Retirement sweep (docs/agent-voice-comments-design.html §4.1): nothing
+  // outside set_agent_identity's own (deprecation) description should
+  // instruct calling it as a working mechanism any more.
+  it("no tool description instructs calling set_agent_identity as a working mechanism", () => {
+    const server = createMockServer();
+    registerTools(server, vi.fn());
+
+    const offenders = server.tool.mock.calls
+      .filter((call: unknown[]) => call[0] !== "set_agent_identity")
+      .filter((call: unknown[]) => (call[1] as string).includes("set_agent_identity"))
+      .map((call: unknown[]) => call[0]);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("add_task_comment and add_step_comment descriptions document work_token", () => {
+    const server = createMockServer();
+    registerTools(server, vi.fn());
+
+    for (const name of ["add_task_comment", "add_step_comment"]) {
+      const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === name);
+      expect(call![1] as string).toContain("work_token");
+    }
   });
 });

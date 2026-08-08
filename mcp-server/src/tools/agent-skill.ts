@@ -132,9 +132,9 @@ export const getAgentSkillContentSchema = z.object({
     .uuid()
     .optional()
     .describe(
-      "Optional bot_id of the agent that owns the skill. Pass this to load a specific agent's skill " +
-      "WITHOUT switching identity (preferred for orchestrators/subagents — no set_agent_identity needed). " +
-      "Omit it to resolve against the active agent identity (back-compatible)."
+      "Optional bot_id of the agent that owns the skill — the step's bot_id when loading a skill for a " +
+      "workflow step. Preferred for orchestrators/subagents. Omit it to resolve against ctx.userId " +
+      "(a stdio install's configured identity; back-compatible)."
     ),
 });
 
@@ -142,9 +142,9 @@ export async function getAgentSkillContent(
   ctx: McpContext,
   args: z.infer<typeof getAgentSkillContentSchema>
 ) {
-  // Resolve the owning bot: an explicit agent_id lets a caller (e.g. a subagent
-  // that never ran set_agent_identity) load skills directly; otherwise fall back
-  // to ctx.userId (the active agent identity set by set_agent_identity).
+  // Resolve the owning bot: an explicit agent_id lets a caller (e.g. a
+  // subagent executing a workflow step) load skills directly; otherwise fall
+  // back to ctx.userId (a stdio install's configured identity — back-compatible).
   const botId = args.agent_id ?? ctx.userId;
 
   const { data: skill, error } = await ctx.supabase
@@ -160,8 +160,8 @@ export async function getAgentSkillContent(
       args.agent_id
         ? `Skill "${args.skill_name}" not found for agent ${args.agent_id}. ` +
           `Check the skill name matches one from this step's available_skills list, and that agent_id is the step's bot_id.`
-        : `Skill "${args.skill_name}" not found for the active agent. ` +
-          `Make sure you've called set_agent_identity first and the skill name matches one from available_skills.`
+        : `Skill "${args.skill_name}" not found. ` +
+          `Pass agent_id (the bot whose skill you're loading) and check the name against available_skills.`
     );
   }
 

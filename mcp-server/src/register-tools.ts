@@ -640,7 +640,7 @@ export function registerTools(
 
   server.tool(
     "add_task_comment",
-    "Add a comment to a board task. Posted as Claude Code bot. Any @Full Name in the content that matches an idea team member is detected automatically and sent a task-mention notification (exact full-name match, case-insensitive; a single unique first name also matches). Given a casual name (e.g. \"tag Chris\"), resolve it against the idea team (list_collaborators) and pass mentioned_user_ids — only write @Full Name in content when you know the exact registered name. Unmatched names never block the comment — they're returned in mentions.unresolved with a reason.",
+    "Add a comment to a board task. Posted as the human account by default. Any @Full Name in the content that matches an idea team member is detected automatically and sent a task-mention notification (exact full-name match, case-insensitive; a single unique first name also matches). Given a casual name (e.g. \"tag Chris\"), resolve it against the idea team (list_collaborators) and pass mentioned_user_ids — only write @Full Name in content when you know the exact registered name. Unmatched names never block the comment — they're returned in mentions.unresolved with a reason. Pass the wt_… work_token from claim_next_step to post as the step's assigned agent while the step is in progress.",
     addTaskCommentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -965,7 +965,7 @@ export function registerTools(
 
   server.tool(
     "set_agent_identity",
-    "Switch session identity to an agent persona. Provide agent_id (preferred — unambiguous) or agent_name. Names resolve in tiers: the idea's agent team when idea_id is passed, then your own agents, then any visible agent; if several agents share the name within a tier the call errors with the candidate ids instead of guessing. Omit agent_id and agent_name to reset to default identity. Returns the agent's system prompt.",
+    "RETIRED (docs/agent-voice-comments-design.html). This call now does nothing but return an instructive error — attribution comes from claim_next_step's claim_token/work_token and add_discussion_reply's agent_id instead of session identity. Kept registered only so a stale client gets a clear error rather than an unknown-tool failure. Do not call this for new work.",
     setBotIdentitySchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1214,7 +1214,7 @@ export function registerTools(
 
   server.tool(
     "claim_next_step",
-    "Claim the next workflow step on a task (the next pending step, or re-claim of an in-progress step — last-claim-wins). The claim is recorded for the step's pre-assigned bot. Returns the step with bot_id, available_agents, a `context` array of prior completed steps' outputs, the assigned `persona_prompt` when there is one, and a one-time `claim_token` — KEEP IT and pass it to complete_step/fail_step for this step. The response's `instruction` field is the single authority on how to execute the step: spawn a fresh subagent on the returned persona, rather than doing the work in your own context. set_agent_identity is a fallback for clients that cannot spawn subagents, not the normal path. If bot_id is null, pick the best match from available_agents (optionally pass agent_id to record the claim for it). Also returns `approval_notes` — every note a human left when approving earlier steps in this run (empty array if none). Treat approval notes as binding constraints: 'approved, but change X' makes X a requirement for this and all later steps. Returns { done: true } when all steps are complete.",
+    "Claim the next workflow step on a task (the next pending step, or re-claim of an in-progress step — last-claim-wins). The claim is recorded for the step's pre-assigned bot. Returns the step with bot_id, available_agents, a `context` array of prior completed steps' outputs, the assigned `persona_prompt` when there is one, and a one-time `claim_token` — KEEP IT and pass it to complete_step/fail_step for this step. Also returns a `work_token` — hand it to the executing subagent; comments passing it post in the assigned agent's voice. The response's `instruction` field is the single authority on how to execute the step: spawn a fresh subagent on the returned persona, rather than doing the work in your own context. If bot_id is null, pick the best match from available_agents (optionally pass agent_id to record the claim for it). Also returns `approval_notes` — every note a human left when approving earlier steps in this run (empty array if none). Treat approval notes as binding constraints: 'approved, but change X' makes X a requirement for this and all later steps. Returns { done: true } when all steps are complete.",
     claimNextStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1228,7 +1228,7 @@ export function registerTools(
 
   server.tool(
     "complete_step",
-    "Mark a workflow step as completed with optional output/deliverable. Pass the `claim_token` you received from claim_next_step — it is the authority for this call, and the step is attributed to its assigned bot regardless of your connection's current identity, so you do not need set_agent_identity to complete a step you hold the token for. If the token is lost, call claim_next_step to re-claim and get a fresh one. The output is stored on the step's `output` column (primary source for context chaining to subsequent steps) and also as a step comment for UI display. If the step requires human approval, it moves to awaiting_approval instead. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it).",
+    "Mark a workflow step as completed with optional output/deliverable. Pass the `claim_token` you received from claim_next_step — it is the authority for this call, and the step is attributed to its assigned bot regardless of your connection's current identity. The wt_… work_token cannot complete a step — only the ct_… claim_token can. If the token is lost, call claim_next_step to re-claim and get a fresh one. The output is stored on the step's `output` column (primary source for context chaining to subsequent steps) and also as a step comment for UI display. If the step requires human approval, it moves to awaiting_approval instead. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it).",
     completeStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1289,7 +1289,7 @@ export function registerTools(
 
   server.tool(
     "approve_step",
-    "Approve a workflow step that is awaiting human approval. HUMAN-ONLY: Only call when a human user has explicitly instructed you to approve — never self-approve. Bot identities are rejected; if you are currently acting as a bot, first call set_agent_identity with no agent_id/agent_name to reset to the human (owner) identity, then call approve_step. Moves the step to completed. The step's existing output is preserved. Optionally adds an approval comment.",
+    "Approve a workflow step that is awaiting human approval. HUMAN-ONLY: Only call when a human user has explicitly instructed you to approve — never self-approve. Bot identities are rejected — approve from a connection authenticated as the human account, or from the task's workflow panel in the web UI. Moves the step to completed. The step's existing output is preserved. Optionally adds an approval comment.",
     approveStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1303,7 +1303,7 @@ export function registerTools(
 
   server.tool(
     "add_step_comment",
-    "Add a comment to a workflow step. Comments are surfaced to other agents: get_task returns each step's latest 10 (types comment/failure/approval/changes_requested), 'failure' and 'changes_requested' feed claim_next_step's rework_instructions, and 'approval' notes feed its approval_notes. Type 'output' is reserved for the UI mirror of complete_step's output — never use it to communicate with agents; put deliverables in complete_step's `output` parameter instead. Reference uploaded attachments by their exact filename — the UI renders them as clickable links. @Full Name mentions of idea team members are detected in the content and notified on the step's PARENT TASK (same exact-match rules as add_task_comment, including single unique first names); mentioned_user_ids works too — given a casual name (e.g. \"tag Chris\"), resolve it against the idea team (list_collaborators) and pass mentioned_user_ids rather than guessing a name. This is independent of the `type` field. Results are reported in mentions.{notified,unresolved} and never affect whether the comment posts.",
+    "Add a comment to a workflow step. Comments are surfaced to other agents: get_task returns each step's latest 10 (types comment/failure/approval/changes_requested), 'failure' and 'changes_requested' feed claim_next_step's rework_instructions, and 'approval' notes feed its approval_notes. Type 'output' is reserved for the UI mirror of complete_step's output — never use it to communicate with agents; put deliverables in complete_step's `output` parameter instead. Reference uploaded attachments by their exact filename — the UI renders them as clickable links. @Full Name mentions of idea team members are detected in the content and notified on the step's PARENT TASK (same exact-match rules as add_task_comment, including single unique first names); mentioned_user_ids works too — given a casual name (e.g. \"tag Chris\"), resolve it against the idea team (list_collaborators) and pass mentioned_user_ids rather than guessing a name. This is independent of the `type` field. Results are reported in mentions.{notified,unresolved} and never affect whether the comment posts. Pass the wt_… work_token from claim_next_step to post as the step's assigned agent while the step is in progress.",
     addStepCommentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1493,7 +1493,7 @@ export function registerTools(
 
   server.tool(
     "get_agent_skill_content",
-    "Load the full SKILL.md instructions for a specific skill attached to an agent. Use this when a task matches a skill's description from an available_skills list (returned by set_agent_identity or claim_next_step). Pass the optional agent_id (a bot_id) to load that agent's skill WITHOUT switching identity — the preferred path for orchestrators/subagents executing a workflow step (no set_agent_identity required). Omit agent_id to resolve against the active agent identity (back-compatible). Progressive disclosure: only call this when you need the skill's detailed instructions.",
+    "Load the full SKILL.md instructions for a specific skill attached to an agent. Use this when a task matches a skill's description from an available_skills list (returned by claim_next_step). Pass the optional agent_id (a bot_id) — the preferred path for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible). Progressive disclosure: only call this when you need the skill's detailed instructions.",
     getAgentSkillContentSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

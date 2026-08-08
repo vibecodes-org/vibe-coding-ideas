@@ -148,222 +148,31 @@ export async function getBotPrompt(
 }
 
 /**
- * Persist the active agent identity in the single per-connection store
- * (`mcp_agent_sessions`). Every transport carries a sessionId: the remote MCP
- * derives it from the caller's JWT; stdio uses a static per-install key.
+ * Phase A deprecation stub (docs/agent-voice-comments-design.html §4.1, §4.3).
+ *
+ * set_agent_identity used to persist an ambient "active bot" onto the
+ * connection (`mcp_agent_sessions`) that every subsequent tool call read back
+ * as ctx.userId. That's the exact mechanism this feature retires: attribution
+ * now comes from verifiable claim state (claim_token for completion,
+ * work_token for comment voice, an explicit agent_id for discussion replies)
+ * instead of session-scoped identity that could drift under concurrency.
+ *
+ * The tool stays REGISTERED through Phase A — a client running on stale
+ * cached instructions that still calls it gets this instructive error
+ * instead of a mystery "unknown tool" failure — and its args are accepted
+ * but ignored: this call changes nothing. onIdentityChange is intentionally
+ * never invoked. Phase B removes the registration entirely.
  */
-async function persistActiveBotId(
-  ctx: McpContext,
-  userId: string,
-  botId: string | null
-): Promise<void> {
-  if (!ctx.sessionId) {
-    throw new Error("Cannot persist agent identity: context has no session id");
-  }
-  await ctx.supabase
-    .from("mcp_agent_sessions")
-    .upsert(
-      {
-        user_id: userId,
-        session_id: ctx.sessionId,
-        active_bot_id: botId,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: "user_id,session_id" }
-    );
-}
-
-interface BotNameCandidate {
-  id: string;
-  name: string;
-  role: string | null;
-  is_active: boolean;
-}
-
-/**
- * Resolve an agent name to a bot id in narrowing tiers (idea team → own agents
- * → any visible). Exact case-insensitive match only. Throws on no match, and
- * on >1 active match within the winning tier (listing the candidates so the
- * caller can retry with agent_id).
- */
-async function resolveBotIdByName(
-  ctx: McpContext,
-  agentName: string,
-  ideaId: string | undefined,
-  ownerId: string
-): Promise<string> {
-  // ilike with no wildcards = exact case-insensitive match. Escape the LIKE
-  // metacharacters so a name containing % or _ can't widen the match.
-  const namePattern = agentName.replace(/[%_\\]/g, "\\$&");
-
-  const tiers: Array<() => Promise<BotNameCandidate[]>> = [];
-
-  if (ideaId) {
-    tiers.push(async () => {
-      const { data, error } = await ctx.supabase
-        .from("idea_agents")
-        .select("bot:bot_profiles!inner(id, name, role, is_active)")
-        .eq("idea_id", ideaId)
-        .ilike("bot.name", namePattern)
-        .limit(20);
-      if (error) throw new Error(error.message);
-      return (data ?? []).flatMap((row) => {
-        const bot = row.bot as BotNameCandidate | BotNameCandidate[] | null;
-        return bot ? (Array.isArray(bot) ? bot : [bot]) : [];
-      });
-    });
-  }
-
-  tiers.push(async () => {
-    const { data, error } = await ctx.supabase
-      .from("bot_profiles")
-      .select("id, name, role, is_active")
-      .eq("owner_id", ownerId)
-      .ilike("name", namePattern)
-      .limit(20);
-    if (error) throw new Error(error.message);
-    return (data ?? []) as BotNameCandidate[];
-  });
-
-  // Legacy fallback: unscoped, exactly what the old lookup searched — kept so
-  // collaborators using a teammate-owned bot without idea_id don't regress.
-  tiers.push(async () => {
-    const { data, error } = await ctx.supabase
-      .from("bot_profiles")
-      .select("id, name, role, is_active")
-      .ilike("name", namePattern)
-      .limit(20);
-    if (error) throw new Error(error.message);
-    return (data ?? []) as BotNameCandidate[];
-  });
-
-  for (const fetchTier of tiers) {
-    const candidates = await fetchTier();
-    if (candidates.length === 0) continue;
-
-    // Prefer active bots; keep inactive ones only when nothing active matches
-    // so the caller still gets the specific "Agent is inactive" error.
-    const active = candidates.filter((c) => c.is_active);
-    const pool = active.length > 0 ? active : candidates;
-
-    if (pool.length > 1) {
-      const list = pool
-        .map((c) => `"${c.name}"${c.role ? ` (${c.role})` : ""} — id ${c.id}`)
-        .join("; ");
-      throw new Error(
-        `Multiple agents match name "${agentName}": ${list}. Pass agent_id to pick one.`
-      );
-    }
-
-    return pool[0].id;
-  }
-
-  throw new Error(`No agent found with name "${agentName}"`);
-}
-
 export async function setBotIdentity(
-  ctx: McpContext,
-  args: z.infer<typeof setBotIdentitySchema>,
-  onIdentityChange: (botId: string | null) => void
-) {
-  const persistUserId = ctx.ownerUserId ?? ctx.userId;
-
-  // Reset to default if neither provided
-  if (!args.agent_id && !args.agent_name) {
-    onIdentityChange(null);
-
-    // Persist null — per-session for remote, per-user for stdio.
-    await persistActiveBotId(ctx, persistUserId, null);
-
-    return {
-      active_bot: null,
-      instruction:
-        "Identity reset to default. You are no longer acting as a specific agent persona. " +
-        "Stop following any previous agent system prompt and return to your normal behavior. " +
-        "This change has been persisted and will survive reconnections.",
-    };
-  }
-
-  let botId = args.agent_id;
-
-  // Look up by name if no ID provided. The old lookup was `ilike(name).limit(1)`
-  // over EVERY visible bot_profile — with duplicate names (e.g. two "Sentinel"
-  // copies) it silently bound an arbitrary one, and on the stdio service-role
-  // client "visible" means all users' bots. Resolve in narrowing tiers instead:
-  //   1. the idea's agent team (when idea_id is provided),
-  //   2. the caller's own agents,
-  //   3. anything visible (legacy fallback, e.g. a collaborator using a
-  //      teammate-owned bot without passing idea_id).
-  // The first non-empty tier decides; >1 active match in it is an explicit
-  // ambiguity error rather than a silent guess.
-  if (!botId && args.agent_name) {
-    botId = await resolveBotIdByName(ctx, args.agent_name, args.idea_id, persistUserId);
-  }
-
-  // Fetch the bot profile
-  const { data: bot, error } = await ctx.supabase
-    .from("bot_profiles")
-    .select("id, name, role, system_prompt, is_active")
-    .eq("id", botId!)
-    .maybeSingle();
-
-  if (error) throw new Error(error.message);
-  if (!bot) throw new Error("Agent not found");
-  if (!bot.is_active) throw new Error("Agent is inactive. Activate it first.");
-
-  onIdentityChange(bot.id);
-
-  // Persist — per-session for remote, per-user for stdio.
-  await persistActiveBotId(ctx, persistUserId, bot.id);
-
-  // Fetch attached skills for progressive disclosure catalog
-  const { data: skills, error: skillsError } = await ctx.supabase
-    .from("agent_skills")
-    .select("name, description")
-    .eq("bot_id", bot.id)
-    .order("created_at")
-    .limit(50);
-
-  // Non-fatal: if skills query fails, proceed without skills
-  if (skillsError) {
-    // Log but don't throw — identity switch should still work
-  }
-
-  const result: Record<string, unknown> = {
-    active_bot: {
-      id: bot.id,
-      name: bot.name,
-      role: bot.role,
-    },
-  };
-
-  // Include skill catalog if agent has skills
-  if (skills && skills.length > 0) {
-    result.available_skills = skills;
-  }
-
-  const skillInstruction = skills && skills.length > 0
-    ? ` This agent has ${skills.length} skill(s) available. When a task matches a skill's description, use the get_agent_skill_content tool with the skill name to load the full instructions before proceeding.`
-    : "";
-
-  if (bot.system_prompt) {
-    result.system_prompt = bot.system_prompt;
-    result.instruction =
-      `You are now acting as "${bot.name}"${bot.role ? ` (${bot.role})` : ""}. ` +
-      `All your actions (comments, task updates, activity) will be attributed to this agent. ` +
-      `This identity has been persisted and will survive reconnections. ` +
-      `IMPORTANT: You MUST follow the system_prompt above for the rest of this session. ` +
-      `It defines your persona, behavior, and how you should approach tasks.` +
-      skillInstruction;
-  } else {
-    result.instruction =
-      `You are now acting as "${bot.name}"${bot.role ? ` (${bot.role})` : ""}. ` +
-      `All your actions (comments, task updates, activity) will be attributed to this agent. ` +
-      `This identity has been persisted and will survive reconnections.` +
-      skillInstruction;
-  }
-
-  return result;
+  _ctx: McpContext,
+  _args: z.infer<typeof setBotIdentitySchema>,
+  _onIdentityChange: (botId: string | null) => void
+): Promise<never> {
+  throw new Error(
+    "set_agent_identity is retired. Attribution now flows from claim_next_step: completion via the " +
+    "claim_token, comment voice via the work_token, discussion replies via add_discussion_reply's " +
+    "agent_id. This call changed nothing."
+  );
 }
 
 export async function createBot(

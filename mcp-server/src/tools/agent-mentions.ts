@@ -103,9 +103,7 @@ export async function getAgentMentions(
     instructions:
       "To respond to a mention:\n" +
       "1. Call get_discussion to read the full thread context\n" +
-      "2. Call set_agent_identity with the agent's ID to assume their persona\n" +
-      "3. Call add_discussion_reply with parent_reply_id set to the mention's reply_id (so the response threads under the comment that @mentioned the agent)\n" +
-      "4. Call set_agent_identity (no args) to reset to your default identity\n" +
+      "2. Call add_discussion_reply with agent_id set to the mentioned agent's ID (so the reply posts in its voice) and parent_reply_id set to the mention's reply_id (so the response threads under the comment that @mentioned the agent)\n" +
       "Note: add_discussion_reply automatically marks the mention notification as read — no separate mark_notification_read call is needed.",
   };
 }

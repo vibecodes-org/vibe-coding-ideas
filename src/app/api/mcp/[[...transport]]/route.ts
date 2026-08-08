@@ -3,7 +3,6 @@ import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { registerTools } from "../../../../../mcp-server/src/register-tools";
 import { instrumentServer } from "../../../../../mcp-server/src/instrument";
-import { resolveActiveBotId } from "../../../../../mcp-server/src/bot-identity";
 import { logger } from "@/lib/logger";
 import { getAttachmentContext } from "@/lib/attachment-context";
 import type { McpContext } from "../../../../../mcp-server/src/context";
@@ -96,14 +95,15 @@ const handler = createMcpHandler(
         const authInfo = extra.authInfo;
         if (!authInfo) throw new Error("Authentication required");
         const realUserId = authInfo.extra?.userId as string;
-        // Resolve identity per request (source of truth: mcp_agent_sessions,
-        // scoped to this connection) so tool-log attribution matches the acting
-        // agent. Not cached — see resolveActiveBotId.
+        // Ambient identity retired (docs/agent-voice-comments-design.html
+        // §4.1): ctx.userId is always the real human on remote connections.
+        // Attribution now flows from claim_next_step's tokens (comment tools,
+        // completion) and add_discussion_reply's agent_id, not a
+        // connection-scoped "active bot" read back on every call.
         const sessionId = sessionKeyFromToken(authInfo.token);
-        const activeBotId = await resolveActiveBotId(serviceClient, realUserId, sessionId);
         return {
           supabase: serviceClient,
-          userId: activeBotId ?? realUserId,
+          userId: realUserId,
           ownerUserId: realUserId,
           sessionId,
         } as McpContext;
@@ -152,23 +152,21 @@ const handler = createMcpHandler(
           }
         );
 
-        // Resolve the active bot identity on EVERY tool call, scoped to this
-        // connection (mcp_agent_sessions, keyed by user + session). No in-memory
-        // cache: serverless instances fan out across requests, and concurrent
-        // connections for the same user must not share identity. set_agent_identity
-        // persists here; complete_step reads it back.
+        // Ambient identity retired (docs/agent-voice-comments-design.html
+        // §4.1): ctx.userId is always the real human here too. Tool-level
+        // attribution comes from claim_next_step's claim_token/work_token
+        // and add_discussion_reply's agent_id instead.
         const sessionId = sessionKeyFromToken(token);
-        const activeBotId = await resolveActiveBotId(supabase, realUserId, sessionId);
 
         return {
           supabase,
-          userId: activeBotId ?? realUserId,
+          userId: realUserId,
           ownerUserId: realUserId,
           sessionId,
         } satisfies McpContext;
       },
-      // Identity is resolved from the DB per request, so there is no in-memory
-      // state to update here. set_agent_identity persists to mcp_agent_sessions.
+      // set_agent_identity is a Phase A deprecation stub — there is no
+      // identity-change state left for this callback to update.
       () => {},
       // Full parity attachment reader (incl. PDF text extraction) for
       // get_idea_enhancement_prompt — the remote transport runs inside the

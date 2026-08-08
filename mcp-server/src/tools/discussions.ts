@@ -128,12 +128,62 @@ export const addDiscussionReplySchema = z.object({
     .optional()
     .nullable()
     .describe("Parent reply ID for nested replies (optional)"),
+  agent_id: z
+    .string()
+    .uuid()
+    .optional()
+    .describe(
+      "Optional bot_id to post this reply in that agent's voice — the replacement for the retired " +
+      "set_agent_identity mention-reply flow (docs/agent-voice-comments-design.html §4.1). Verified as a " +
+      "bot you own or that's on this discussion's idea team; anything else is REJECTED, never silently " +
+      "posted as the human account. Omit to post as yourself (the default)."
+    ),
 });
 
 export async function addDiscussionReply(
   ctx: McpContext,
   params: z.infer<typeof addDiscussionReplySchema>
 ) {
+  // Agent voice for discussion replies (design §4.1): unlike task/step
+  // comments, this isn't gated by a workflow claim — discussion replies sit
+  // outside workflow execution entirely — so the check is a direct,
+  // explicit ownership/team-membership lookup instead of a work_token. This
+  // mirrors the RLS shape already in place (migration 00074): a bot you own,
+  // or a bot on the idea's agent team.
+  let authorId = ctx.userId;
+  if (params.agent_id) {
+    const { data: bot, error: botError } = await ctx.supabase
+      .from("bot_profiles")
+      .select("id, owner_id, is_active")
+      .eq("id", params.agent_id)
+      .maybeSingle();
+
+    if (botError) throw new Error(`Failed to verify agent_id: ${botError.message}`);
+    if (!bot || !bot.is_active) {
+      throw new Error("Agent not found or inactive — pass a valid agent_id, or omit it to reply as yourself.");
+    }
+
+    const isOwner = bot.owner_id === (ctx.ownerUserId ?? ctx.userId);
+    let isTeamAgent = false;
+    if (!isOwner) {
+      const { data: teamRow } = await ctx.supabase
+        .from("idea_agents")
+        .select("bot_id")
+        .eq("idea_id", params.idea_id)
+        .eq("bot_id", params.agent_id)
+        .maybeSingle();
+      isTeamAgent = !!teamRow;
+    }
+
+    if (!isOwner && !isTeamAgent) {
+      throw new Error(
+        "agent_id must be a bot you own or a bot on this idea's agent team. Resend without agent_id to reply as yourself."
+      );
+    }
+
+    authorId = bot.id;
+  }
+
   // Flatten nested replies: if parent has a parent, use grandparent
   let resolvedParentId = params.parent_reply_id ?? null;
   if (resolvedParentId) {
@@ -151,7 +201,7 @@ export async function addDiscussionReply(
     .from("idea_discussion_replies")
     .insert({
       discussion_id: params.discussion_id,
-      author_id: ctx.userId,
+      author_id: authorId,
       content: params.content,
       parent_reply_id: resolvedParentId,
     })
@@ -160,11 +210,12 @@ export async function addDiscussionReply(
 
   if (error) throw new Error(`Failed to add discussion reply: ${error.message}`);
 
-  // Auto-mark any unread mention notifications for this agent on this discussion
+  // Auto-mark any unread mention notifications for the replying identity on
+  // this discussion (the agent's own inbox when agent_id was used).
   await ctx.supabase
     .from("notifications")
     .update({ read: true })
-    .eq("user_id", ctx.userId)
+    .eq("user_id", authorId)
     .eq("discussion_id", params.discussion_id)
     .eq("type", "discussion_mention" as const)
     .eq("read", false);
@@ -409,12 +460,10 @@ export async function getDiscussionsReadyToConvert(
     workflow: [
       "For each discussion:",
       "1. Read the discussion body and all replies to understand the full context",
-      "2. If target_assignee_id is set, call set_agent_identity to switch to that agent",
-      "3. Create a task using create_task with the target_column_id and target_assignee_id",
+      "2. Create a task using create_task with the target_column_id and target_assignee_id",
       "   - Include discussion_id to back-link the task to the discussion",
-      "4. Update the discussion status to 'converted' using update_discussion",
-      "5. Add a discussion reply confirming the task was created",
-      "6. Call set_agent_identity (no args) to reset to default identity",
+      "3. Update the discussion status to 'converted' using update_discussion",
+      "4. Add a discussion reply confirming the task was created — pass agent_id if target_assignee_id names an agent, so the confirmation posts in its voice",
     ],
   };
 }

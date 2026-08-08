@@ -154,9 +154,11 @@ describe("instrumentServer", () => {
     expect(logEntries[0].idea_id).toBeNull();
   });
 
-  // bot_id records the agent a call explicitly names, which is how per-persona
-  // analysis survives the subagent protocol: ctx.userId only carries a bot id
-  // when set_agent_identity was called, and the protocol tells clients not to.
+  // bot_id records the agent a call explicitly names — the only source for
+  // per-persona analysis now that ambient identity is retired
+  // (docs/agent-voice-comments-design.html §4.1): ctx.userId is always the
+  // real human (remote) or a stdio install's static configured identity, so
+  // it never carries a workflow bot id on its own.
   it("extracts bot_id from an explicit agent_id arg", async () => {
     const { server, registeredTools } = createMockServer();
     const logEntries: ToolLogEntry[] = [];

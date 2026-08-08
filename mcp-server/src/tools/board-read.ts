@@ -305,8 +305,9 @@ export async function getTask(ctx: McpContext, params: z.infer<typeof getTaskSch
     } else {
       // No workflow — instruct the agent to assign itself so the board shows in-progress
       workflow_instruction =
-        `This task has no workflow. Before starting work, call update_task with assignee_id set to your bot user ID ` +
-        `(from set_agent_identity) so the board shows you are actively working on it. ` +
+        `This task has no workflow. Before starting work, pick the team agent that best fits it ` +
+        `(your .vibecodes config botId, or choose from list_idea_agents) and call update_task with ` +
+        `assignee_id set to that agent's ID so the board shows who is working on it. ` +
         `When finished, move the task to the appropriate done/verify column using move_task.`;
     }
   }
