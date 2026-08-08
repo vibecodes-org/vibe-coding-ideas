@@ -2,6 +2,7 @@ import { z } from "zod";
 import { logActivity } from "../activity";
 import type { McpContext } from "../context";
 import { notifyMentions } from "../lib/mention-notify";
+import { workTokenSchema, resolveTaskCommentAuthor } from "../lib/work-token-auth";
 
 export const mentionedUserIdsSchema = z
   .array(z.string().uuid())
@@ -43,18 +44,27 @@ export const addTaskCommentSchema = z.object({
   idea_id: z.string().uuid().describe("The idea ID"),
   content: z.string().min(1).max(5000).describe("Comment content (markdown)"),
   mentioned_user_ids: mentionedUserIdsSchema,
+  work_token: workTokenSchema,
 });
 
 export async function addTaskComment(
   ctx: McpContext,
   params: z.infer<typeof addTaskCommentSchema>
 ) {
+  // Agent voice (docs/agent-voice-comments-design.html §1.4): a valid
+  // work_token attributes this comment to the step's assigned agent instead
+  // of ctx.userId. Resolution throws (never falls back) on an invalid/
+  // expired/mismatched token; returns null — byte-identical to today — when
+  // work_token is omitted.
+  const attribution = await resolveTaskCommentAuthor(ctx, params.task_id, params.work_token);
+  const authorId = attribution?.authorId ?? ctx.userId;
+
   const { data, error } = await ctx.supabase
     .from("board_task_comments")
     .insert({
       task_id: params.task_id,
       idea_id: params.idea_id,
-      author_id: ctx.userId,
+      author_id: authorId,
       content: params.content,
     })
     .select("id, content, created_at")
@@ -62,13 +72,14 @@ export async function addTaskComment(
 
   if (error) throw new Error(`Failed to add task comment: ${error.message}`);
 
-  await logActivity(ctx, params.task_id, params.idea_id, "comment_added");
+  await logActivity(ctx, params.task_id, params.idea_id, "comment_added", undefined, attribution?.authorId);
 
   const mentions = await notifyMentions(ctx, {
     ideaId: params.idea_id,
     taskId: params.task_id,
     content: params.content,
     mentionedUserIds: params.mentioned_user_ids,
+    actorId: attribution?.authorId,
   });
 
   return { success: true, comment: data, mentions };

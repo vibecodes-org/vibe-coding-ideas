@@ -7,7 +7,12 @@ import {
   type PlatformModelDefaults,
 } from "../../../src/lib/platform-model-defaults";
 import type { McpContext } from "../context";
-import { mintClaimToken, verifyClaimToken } from "../claim-token";
+import { mintClaimToken, mintWorkToken, verifyClaimToken } from "../claim-token";
+import {
+  workTokenSchema,
+  resolveStepCommentAuthor,
+  WORK_TOKEN_IN_COMPLETION_TOOL_MESSAGE,
+} from "../lib/work-token-auth";
 import { matchRolesWithAiOrFuzzy } from "../../../src/lib/ai-role-matching";
 import { checkAndCompleteRun, propagateTemplateEdits, applyOrSuggest, resolveSuggestionOnApply } from "../../../src/lib/workflow-helpers";
 import { tierRank } from "../../../src/lib/role-matching";
@@ -632,6 +637,15 @@ export async function claimNextStep(
   // verified by complete_step/fail_step).
   const { token: claim_token, hash: claimTokenHash } = mintClaimToken();
 
+  // Work token (docs/agent-voice-comments-design.html §1.2): minted alongside
+  // the claim token, but only when this claim actually has an agent to speak
+  // as — an unassigned step (claimedFor === ctx.userId, the human) has no
+  // persona to voice, so it gets work_token: null. Handed to the subagent
+  // (never the claim token) so it can post comments in the agent's voice
+  // without ever gaining the power to complete/fail the step.
+  const claimedByAgent = claimedFor !== ctx.userId;
+  const workTokenPair = claimedByAgent ? mintWorkToken() : null;
+
   const { data: updated, error: updateError } = await ctx.supabase
     .from("task_workflow_steps")
     .update({
@@ -639,6 +653,7 @@ export async function claimNextStep(
       started_at: new Date().toISOString(),
       claimed_by: claimedFor,
       claim_token_hash: claimTokenHash,
+      work_token_hash: workTokenPair?.hash ?? null,
     })
     .eq("id", step.id)
     .in("status", ["pending", "in_progress"])
@@ -901,7 +916,7 @@ export async function claimNextStep(
       `As you work, if one of these is relevant to your task, call get_agent_skill_content ` +
       `with agent_id "${updated.bot_id}" and the skill name, then follow its instructions. ` +
       `Load ONLY the skills that are relevant to this step — do not load all of them. ` +
-      `You do NOT need set_agent_identity; pass agent_id directly.\n` +
+      `Pass agent_id directly.\n` +
       `EXCEPTION — if your spawned subagent does NOT have the get_agent_skill_content tool in its own context: ` +
       `you (the orchestrator) call get_agent_skill_content yourself for each relevant skill and fold the returned ` +
       `instructions into the subagent's system prompt before spawning it. This is a fallback only — prefer letting the subagent self-load.\n` +
@@ -928,29 +943,59 @@ export async function claimNextStep(
   // unassigned / prompt-less fallback (bot_id null, or an assigned bot with
   // no system_prompt) is UNTOUCHED — byte-identical to today, still fetching
   // via get_agent_prompt (persona-attestation design §2/§A2).
+  // Rewritten EXCEPTION per docs/agent-voice-comments-design.html §2.3: a
+  // client with no Agent/Task tool no longer switches identity (there is
+  // nothing left to switch — set_agent_identity is retired). It works
+  // inline on the persona_prompt and gets full agent voice via the
+  // work_token, exactly like a spawned subagent would.
+  const noSubagentException =
+    `EXCEPTION (the ONLY one): if your client genuinely has no subagent/Agent tool at all, do the step inline in ` +
+    `this conversation. No identity switch is needed or possible: completion is attributed to ${personaRef} by ` +
+    `the claim_token automatically. Adopt the persona_prompt as your working style, pass the work_token on any ` +
+    `add_task_comment/add_step_comment you make so they post in the persona's voice, and when done call ` +
+    `complete_step with the claim_token, stating verbatim in your output: "Completed inline — no subagent ` +
+    `capability." If you DO have an Agent/Task tool, this exception does not apply to you.`;
+
   const identityInstruction = personaEmbeddable
     ? `MANDATORY: this step MUST be executed by a FRESH SUBAGENT that you spawn with your Agent/Task tool. Do NOT do this step's work yourself in this conversation.\n` +
-      `1. Keep the claim_token from this response — do NOT pass it to the subagent.\n` +
-      `2. SPAWN a fresh subagent whose system prompt IS the "persona_prompt" field in this response — this is ${personaRef}, already included in full. Do NOT call get_agent_prompt; the prompt is right here. Give it this step's description plus the prior-step deliverables in the "context" array. It does the work in its own isolated context and returns the deliverable.\n` +
+      `1. Keep the claim_token from this response — do NOT pass it to the subagent. (The work_token is the one you pass along.)\n` +
+      `2. SPAWN a fresh subagent whose system prompt IS the "persona_prompt" field in this response — this is ${personaRef}, already included in full. Do NOT call get_agent_prompt; the prompt is right here. Give it this step's description, the prior-step deliverables in the "context" array, and the work_token (wt_…) so it can comment on the task and step in its own voice as it works. It does the work in its own isolated context and returns the deliverable.\n` +
       `3. When it returns, YOU (the orchestrator) call complete_step with this step's id, the claim_token, the subagent's deliverable as output, and persona_used — "verbatim" if the subagent ran on persona_prompt unchanged, "adapted" if you edited/trimmed/merged it, "none" if you didn't use it. Report honestly: it is recorded as an adherence signal, not verified, and never blocks completion.\n` +
       `DO NOT INLINE: doing the work yourself because it seems simpler, faster, cheaper, or "more convenient" is NOT permitted — a fresh isolated context per persona is the entire point and is lost if you inline it. "It's only a small step" is not a reason. If you catch yourself about to do the work directly, STOP and spawn the subagent instead.\n` +
       `RELIABILITY: if the subagent errors or its connection drops before returning, RETRY or RESUME it (you have its agent id) — do NOT quietly finish the step yourself.\n` +
-      `EXCEPTION (the ONLY one): if your client genuinely has no subagent/Agent tool at all, then call set_agent_identity with agent_id ${agentIdArg} to adopt ${personaRef}, do the step, and state verbatim in your complete_step output: "Completed inline — no subagent capability." If you DO have an Agent/Task tool, this exception does not apply to you.`
+      noSubagentException
     : `MANDATORY: this step MUST be executed by a FRESH SUBAGENT that you spawn with your Agent/Task tool. Do NOT do this step's work yourself in this conversation.\n` +
       pickStep +
-      `1. Keep the claim_token from this response — do NOT pass it to the subagent.\n` +
+      `1. Keep the claim_token from this response — do NOT pass it to the subagent. (The work_token is the one you pass along.)\n` +
       `2. Call get_agent_prompt with agent_id ${agentIdArg} to fetch ${personaRef}'s full system prompt.\n` +
-      `3. SPAWN a fresh subagent whose system prompt IS that persona prompt, with this step's description plus the prior-step deliverables in the "context" array. It does the work in its own isolated context and returns the deliverable.\n` +
+      `3. SPAWN a fresh subagent whose system prompt IS that persona prompt, with this step's description, the prior-step deliverables in the "context" array, and the work_token (wt_…) so it can comment on the task and step in its own voice as it works. It does the work in its own isolated context and returns the deliverable.\n` +
       `4. When it returns, YOU (the orchestrator) call complete_step with this step's id, the claim_token, and the subagent's deliverable as the output.\n` +
       `DO NOT INLINE: doing the work yourself because it seems simpler, faster, cheaper, or "more convenient" is NOT permitted — a fresh isolated context per persona is the entire point and is lost if you inline it. "It's only a small step" is not a reason. If you catch yourself about to do the work directly, STOP and spawn the subagent instead.\n` +
       `RELIABILITY: if the subagent errors or its connection drops before returning, RETRY or RESUME it (you have its agent id) — do NOT quietly finish the step yourself.\n` +
-      `EXCEPTION (the ONLY one): if your client genuinely has no subagent/Agent tool at all, then call set_agent_identity with agent_id ${agentIdArg} to adopt ${personaRef}, do the step, and state verbatim in your complete_step output: "Completed inline — no subagent capability." If you DO have an Agent/Task tool, this exception does not apply to you.`;
+      noSubagentException;
 
   const contextParts: string[] = [];
 
   contextParts.push(
     `CLAIM TOKEN: This response includes a one-time "claim_token" for this step. Keep it and pass it as the "claim_token" parameter of complete_step (or fail_step). If you lose it (e.g. after context compaction), call claim_next_step again to re-claim and receive a fresh one.`
   );
+
+  // AGENT VOICE (docs/agent-voice-comments-design.html §1.3.2) — only added
+  // when a work_token was actually minted (an agent is assigned to this
+  // claim). Sits right after CLAIM TOKEN so the two token explanations read
+  // side by side.
+  if (workTokenPair) {
+    contextParts.push(
+      `AGENT VOICE: This response also includes a multi-use "work_token" (wt_…) for ${personaRef}. ` +
+      `Unlike the claim_token, you GIVE this one to the subagent you spawn. Any add_task_comment or ` +
+      `add_step_comment call that passes work_token posts in ${personaRef}'s voice — use it for progress ` +
+      `notes, questions, and findings while the step runs, so the board reads as the agent working, not as ` +
+      `the human. You (the orchestrator) may also pass it on comments you post about this step's work. It ` +
+      `stops working the moment the step completes, fails, or is reset — late comments are rejected with ` +
+      `the reason, never re-attributed. To comment as the human account (e.g. unrelated board chatter), ` +
+      `simply omit work_token.`
+    );
+  }
 
   if (context.length > 0) {
     const stepNames = context.map((c) => `"${c.step_title}"`).join(", ");
@@ -1077,6 +1122,7 @@ export async function claimNextStep(
     done: false,
     step: updated,
     claim_token,
+    work_token: workTokenPair?.token ?? null,
     ...(personaEmbeddable
       ? {
           persona_prompt: matchedBot!.system_prompt,
@@ -1140,34 +1186,39 @@ export async function completeStep(
 
   if (fetchError || !step) throw new Error(`Step not found: ${params.step_id}`);
 
-  // Two-layer enforcement (docs/claim-token-protocol-design.html §2).
-  // NEITHER layer mutates state on failure — an error is never a state change;
-  // deliberate redo stays a reviewer decision via fail_step cascade.
+  // Capability check (docs/claim-token-protocol-design.html §2). Never
+  // mutates state on failure — an error is never a state change; deliberate
+  // redo stays a reviewer decision via fail_step cascade. The former Layer 2
+  // persona-consistency warning was deleted (docs/agent-voice-comments-design.html
+  // §4.2): it compared the step's bot against the connection's ambient
+  // identity slot, which the protocol now guarantees is never populated — a
+  // constant, not a drift signal. Attribution below is unchanged.
 
-  // Layer 1 — capability: the claim token proves the completer is the claimer (E2).
+  // err-6: a work_token (wt_…) was presented here instead of a claim_token —
+  // name the mix-up rather than falling through to the generic mismatch.
+  if (params.claim_token?.startsWith("wt_")) {
+    logger.warn("claim token rejected", {
+      tool: "complete_step",
+      reason: "work_token_in_completion_tool",
+      stepId: params.step_id,
+      callerUserId: ctx.userId,
+      ownerUserId: ctx.ownerUserId,
+    });
+    throw new Error(WORK_TOKEN_IN_COMPLETION_TOOL_MESSAGE);
+  }
+
   if (!verifyClaimToken(step.claim_token_hash, params.claim_token)) {
+    logger.warn("claim token rejected", {
+      tool: "complete_step",
+      reason: "invalid_or_missing_claim_token",
+      stepId: params.step_id,
+      callerUserId: ctx.userId,
+      ownerUserId: ctx.ownerUserId,
+    });
     throw new Error(
       "This step isn't claimed by you. Call claim_next_step to (re)claim it — " +
       "you'll receive a claim_token to pass to complete_step."
     );
-  }
-
-  // Layer 2 — persona consistency (KEPT per Design Review, but NON-DESTRUCTIVE).
-  // The claim token (Layer 1) already proves capability AND was minted FOR
-  // step.bot_id, so possessing it binds this completion to that persona by
-  // construction — independent of the connection's ambient identity slot
-  // (ctx.userId). That slot can lag behind set_agent_identity under concurrent
-  // sessions sharing one account; rejecting on the lag livelocked the
-  // claim → complete → reject → re-claim loop. So we keep the check for drift
-  // VISIBILITY (logged) but DO NOT reject — and we attribute the work to the
-  // persona the token belongs to, not the possibly-stale ambient identity.
-  if (step.bot_id && ctx.userId !== step.bot_id) {
-    logger.warn("complete_step persona mismatch (token valid — attributing to claimed persona)", {
-      stepId: params.step_id,
-      stepBotId: step.bot_id,
-      callerUserId: ctx.userId,
-      ownerUserId: ctx.ownerUserId,
-    });
   }
 
   // Attribute the completion to the persona the claim token was minted for.
@@ -1200,11 +1251,13 @@ export async function completeStep(
   // persona_used -> both NULL (not reported, not a violation).
   const { personaUsed, personaHonored } = resolvePersonaAdherence(params.persona_used);
 
-  // Token is single-use: clear the hash as part of completion.
+  // Token is single-use: clear both hashes as part of completion (design
+  // §1.2 — work_token_hash is cleared everywhere claim_token_hash is).
   const updateFields: Record<string, unknown> = {
     status: newStatus,
     claimed_by: attributedTo,
     claim_token_hash: null,
+    work_token_hash: null,
     executed_model: executedModel,
     tier_honored: tierHonored,
     persona_used: personaUsed,
@@ -1339,30 +1392,37 @@ export async function failStep(
 
   if (fetchError || !step) throw new Error(`Step not found: ${params.step_id}`);
 
-  // Two-layer enforcement, mirroring complete_step. Both layers are skipped for
-  // awaiting_approval steps — humans reject those regardless of bot_id/token,
-  // and they hold no claim token (design §3d boundary). Neither layer mutates
-  // state on failure.
+  // Capability check, mirroring complete_step. Skipped for awaiting_approval
+  // steps — humans reject those regardless of bot_id/token, and they hold no
+  // claim token (design §3d boundary). Never mutates state on failure. The
+  // former persona-consistency warning was deleted alongside complete_step's
+  // (docs/agent-voice-comments-design.html §4.2) — see that function's
+  // comment for why.
   if (step.status !== "awaiting_approval") {
-    // Layer 1 — capability (E2)
+    // err-6: a work_token (wt_…) was presented here instead of a claim_token.
+    if (params.claim_token?.startsWith("wt_")) {
+      logger.warn("claim token rejected", {
+        tool: "fail_step",
+        reason: "work_token_in_completion_tool",
+        stepId: params.step_id,
+        callerUserId: ctx.userId,
+        ownerUserId: ctx.ownerUserId,
+      });
+      throw new Error(WORK_TOKEN_IN_COMPLETION_TOOL_MESSAGE);
+    }
+
     if (!verifyClaimToken(step.claim_token_hash, params.claim_token)) {
+      logger.warn("claim token rejected", {
+        tool: "fail_step",
+        reason: "invalid_or_missing_claim_token",
+        stepId: params.step_id,
+        callerUserId: ctx.userId,
+        ownerUserId: ctx.ownerUserId,
+      });
       throw new Error(
         "This step isn't claimed by you. Call claim_next_step to (re)claim it — " +
         "you'll receive a claim_token to pass to fail_step."
       );
-    }
-
-    // Layer 2 — persona consistency (KEPT, NON-DESTRUCTIVE — mirrors
-    // complete_step). Token possession already binds this action to step.bot_id;
-    // log drift for visibility but do not reject (rejecting on a stale ambient
-    // identity slot livelocked concurrent sessions).
-    if (step.bot_id && ctx.userId !== step.bot_id) {
-      logger.warn("fail_step persona mismatch (token valid — attributing to claimed persona)", {
-        stepId: params.step_id,
-        stepBotId: step.bot_id,
-        callerUserId: ctx.userId,
-        ownerUserId: ctx.ownerUserId,
-      });
     }
   }
 
@@ -1399,6 +1459,7 @@ export async function failStep(
     status: "failed",
     completed_at: new Date().toISOString(),
     claim_token_hash: null,
+    work_token_hash: null,
     executed_model: executedModel,
     tier_honored: tierHonored,
     persona_used: personaUsed,
@@ -1512,6 +1573,7 @@ export async function failStep(
           completed_at: null,
           claimed_by: null,
           claim_token_hash: null, // FR3: resets invalidate outstanding tokens
+          work_token_hash: null, // design §1.2: cleared everywhere claim_token_hash is
         })
         .eq("run_id", step.run_id)
         .gte("step_order", targetStep.step_order ?? 0)
@@ -1653,11 +1715,17 @@ export async function approveStep(
     .single();
 
   if (caller?.is_bot) {
+    // set_agent_identity is retired — this connection's agent identity is now
+    // either a stdio install's static VIBECODES_BOT_ID or (remotely) can no
+    // longer happen at all, since ctx.userId is always the real human there.
+    // The guard stays (docs/agent-voice-comments-design.html §4.1, Q7 §5):
+    // it still protects a bot-configured stdio install, and it keeps
+    // "approval is a human act" enforced rather than assumed.
     throw new Error(
-      "Only humans can approve workflow steps. Your current identity is a bot. " +
-      "If the human user has explicitly instructed you to approve this step, " +
-      "first call set_agent_identity with no agent_id/agent_name to reset to the human (owner) identity, " +
-      "then call approve_step again. Do NOT approve without explicit human instruction."
+      "Only humans can approve workflow steps. This connection is authenticated as an agent " +
+      "(a stdio install configured with VIBECODES_BOT_ID). Ask the human to approve from the " +
+      "task's workflow panel in the web UI, or run approval from a connection authenticated as " +
+      "the human account. Do NOT approve without explicit human instruction."
     );
   }
 
@@ -1679,6 +1747,7 @@ export async function approveStep(
       status: "completed",
       completed_at: new Date().toISOString(),
       claim_token_hash: null, // token lifecycle ends with the step
+      work_token_hash: null, // belt-and-braces — normally already null by this point
     })
     .eq("id", params.step_id)
     .eq("status", "awaiting_approval")
@@ -1730,18 +1799,27 @@ export const addStepCommentSchema = z.object({
     .default("comment")
     .describe("Comment type (default: comment)"),
   mentioned_user_ids: mentionedUserIdsSchema,
+  work_token: workTokenSchema,
 });
 
 export async function addStepComment(
   ctx: McpContext,
   params: z.infer<typeof addStepCommentSchema>
 ) {
+  // Agent voice (docs/agent-voice-comments-design.html §1.4): a valid
+  // work_token — for THIS step — attributes the comment to the step's
+  // assigned agent instead of ctx.userId. Resolution throws (never falls
+  // back) on an invalid/expired/mismatched token; returns null —
+  // byte-identical to today — when work_token is omitted.
+  const attribution = await resolveStepCommentAuthor(ctx, params.step_id, params.work_token);
+  const authorId = attribution?.authorId ?? ctx.userId;
+
   const { data, error } = await ctx.supabase
     .from("workflow_step_comments")
     .insert({
       step_id: params.step_id,
       idea_id: params.idea_id,
-      author_id: ctx.userId,
+      author_id: authorId,
       type: params.type,
       content: params.content,
     })
@@ -1752,14 +1830,22 @@ export async function addStepComment(
 
   // Resolve the step's parent task (needed to route the notification to a
   // real task view — a step comment carries no task_id of its own, design §6).
-  const { data: stepRow, error: stepError } = await ctx.supabase
-    .from("task_workflow_steps")
-    .select("task_id")
-    .eq("id", params.step_id)
-    .maybeSingle();
+  // A work_token resolution already fetched the step (and its task_id) above
+  // — reuse it instead of a second round-trip.
+  let taskId: string | null = attribution?.taskId ?? null;
+  let stepError: { message: string } | null = null;
+  if (!attribution) {
+    const { data: stepRow, error: fetchError } = await ctx.supabase
+      .from("task_workflow_steps")
+      .select("task_id")
+      .eq("id", params.step_id)
+      .maybeSingle();
+    taskId = stepRow?.task_id ?? null;
+    stepError = fetchError;
+  }
 
   let mentions;
-  if (stepError || !stepRow?.task_id) {
+  if (stepError || !taskId) {
     if (stepError) {
       logger.warn("Failed to resolve step's parent task for mention routing", {
         error: stepError.message,
@@ -1770,9 +1856,10 @@ export async function addStepComment(
   } else {
     mentions = await notifyMentions(ctx, {
       ideaId: params.idea_id,
-      taskId: stepRow.task_id,
+      taskId,
       content: params.content,
       mentionedUserIds: params.mentioned_user_ids,
+      actorId: attribution?.authorId,
     });
   }
 
@@ -1905,6 +1992,10 @@ export async function resetWorkflow(
       completed_at: null,
       claimed_by: null,
       claim_token_hash: null, // FR3: resets invalidate outstanding tokens
+      // Design Review condition 2 (agent-voice-comments-design.html §1.2, §7):
+      // this site was missing from the original claim-token lifecycle and
+      // would have left a stale work_token_hash usable after a full reset.
+      work_token_hash: null,
     })
     .eq("run_id", run.id);
 

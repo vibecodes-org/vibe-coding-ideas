@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, afterEach } from "vitest";
 import type { McpContext } from "../context";
-import { mintClaimToken, hashClaimToken } from "../claim-token";
+import { mintClaimToken, mintWorkToken, hashClaimToken } from "../claim-token";
 import { TIER_ADHERENCE_DISCLOSURE } from "../../../src/lib/constants";
 
 // AI role matching hits the network — stub it so applyWorkflowTemplate can run
@@ -29,6 +29,7 @@ import {
   resolvePersonaAdherence,
   addStepComment,
   addStepCommentSchema,
+  resetWorkflow,
 } from "./workflows";
 import { logger } from "../../../src/lib/logger";
 
@@ -2704,6 +2705,7 @@ describe("failStep", () => {
       completed_at: null,
       claimed_by: null,
       claim_token_hash: null, // FR3: resets invalidate outstanding tokens
+      work_token_hash: null, // design §1.2: cleared everywhere claim_token_hash is
     });
   });
 
@@ -3852,6 +3854,32 @@ describe("claim-token protocol", () => {
     ).rejects.toThrow("This step isn't claimed by you");
   });
 
+  // err-6 (docs/agent-voice-comments-design.html §1.6): a work_token (wt_…)
+  // presented where a claim_token belongs names the mix-up instead of
+  // falling through to the generic "isn't claimed by you".
+  it("completeStep rejects a wt_ work_token with err-6, not the generic mismatch", async () => {
+    const { hash } = mintClaimToken();
+    const { token: workToken } = mintWorkToken();
+    const ctx = makeCompleteCtx({
+      id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, human_check_required: false, status: "in_progress", bot_id: null, claim_token_hash: hash,
+    });
+
+    await expect(
+      completeStep(ctx, { step_id: STEP_ID, claim_token: workToken, output: "Done" })
+    ).rejects.toThrow(/work_token \(wt_…\) — it can voice comments but can never complete or fail a step/);
+  });
+
+  it("failStep rejects a wt_ work_token with err-6, not the generic mismatch", async () => {
+    const { hash } = mintClaimToken();
+    const { token: workToken } = mintWorkToken();
+    const ctx = makeCompleteCtx({
+      id: STEP_ID, run_id: RUN_ID, step_order: 3, idea_id: IDEA_ID, bot_id: null, agent_role: "developer", status: "in_progress", claim_token_hash: hash,
+    });
+
+    await expect(
+      failStep(ctx, { step_id: STEP_ID, claim_token: workToken, output: "bad" })
+    ).rejects.toThrow(/work_token \(wt_…\) — it can voice comments but can never complete or fail a step/);
+  });
 
   it("persona mismatch (E3) does NOT block completion — token is the capability (Fix 1)", async () => {
     // A valid token whose step is assigned to BOT_ID, but the caller's ambient
@@ -3887,6 +3915,54 @@ describe("claim-token protocol", () => {
 
     const result = await failStep(ctx, { step_id: STEP_ID, output: "Rejected by human" });
     expect(result.step).toBeTruthy();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resetWorkflow — token lifecycle (design §1.2, Design Review condition 2)
+//
+// This was the genuine gap the design review found: reset_workflow flips
+// every step back to pending without ever having been exercised by a unit
+// test, so a stale work_token_hash (or even claim_token_hash) could have
+// silently survived a full reset. Covering both hashes here closes it.
+// ---------------------------------------------------------------------------
+
+describe("resetWorkflow", () => {
+  it("clears both claim_token_hash and work_token_hash on every step in the run", async () => {
+    let captured: Record<string, unknown> | null = null;
+
+    const ctx = makeContext(((table: string) => {
+      if (table === "workflow_runs") {
+        const chain = createChain({ id: RUN_ID });
+        chain.chain.maybeSingle = vi.fn(() => Promise.resolve({ data: { id: RUN_ID }, error: null }));
+        chain.chain.update = vi.fn(() => chain.chain);
+        return chain.chain;
+      }
+      if (table === "task_workflow_steps") {
+        const chain = createChain(null);
+        chain.chain.update = vi.fn((data: unknown) => {
+          captured = data as Record<string, unknown>;
+          return chain.chain;
+        });
+        chain.chain.then = (resolve: (val: unknown) => void) =>
+          Promise.resolve({ error: null }).then(resolve);
+        return chain.chain;
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    const result = await resetWorkflow(ctx, { task_id: TASK_ID });
+
+    expect(result.success).toBe(true);
+    expect(captured).toEqual({
+      status: "pending",
+      output: null,
+      started_at: null,
+      completed_at: null,
+      claimed_by: null,
+      claim_token_hash: null,
+      work_token_hash: null,
+    });
   });
 });
 
@@ -4632,5 +4708,113 @@ describe("addStepComment — mentions", () => {
     });
     const result = await addStepComment(ctx, params);
     expect(result.mentions).toEqual({ notified: [], unresolved: [] });
+  });
+
+  // -------------------------------------------------------------------------
+  // addStepComment — agent voice via work_token
+  // (docs/agent-voice-comments-design.html §1.4)
+  // -------------------------------------------------------------------------
+
+  describe("work_token attribution", () => {
+    const BOT_ID = "00000000-0000-4000-a000-000000000030";
+
+    function makeWorkTokenCtx(stepRow: unknown) {
+      const commentChain = simpleChain(COMMENT_ROW);
+      const stepChain = simpleChain(stepRow);
+      const teamChain = simpleChain(TEAM_ROW);
+      const notificationsChain = simpleChain(null);
+
+      const fromFn = vi.fn((table: string) => {
+        switch (table) {
+          case "workflow_step_comments":
+            return commentChain;
+          case "task_workflow_steps":
+            return stepChain;
+          case "ideas":
+            return teamChain;
+          case "notifications":
+            return notificationsChain;
+          default:
+            return simpleChain(null);
+        }
+      });
+
+      const ctx: McpContext = {
+        supabase: { from: fromFn } as unknown as McpContext["supabase"],
+        userId: USER_ID,
+      };
+      return { ctx, commentChain, notificationsChain };
+    }
+
+    it("valid token for THIS step: author_id is the step's bot_id, mentions carry the agent as actor", async () => {
+      const { token, hash } = mintWorkToken();
+      const { ctx, commentChain, notificationsChain } = makeWorkTokenCtx({
+        id: STEP_ID,
+        task_id: TASK_ID,
+        title: "Step",
+        status: "in_progress",
+        bot_id: BOT_ID,
+        work_token_hash: hash,
+      });
+      const params = addStepCommentSchema.parse({
+        step_id: STEP_ID,
+        idea_id: IDEA_ID,
+        content: "@Nick Ball, mapped the auth flow.",
+        work_token: token,
+      });
+
+      const result = await addStepComment(ctx, params);
+
+      expect((commentChain as unknown as { inserted: { author_id: string } }).inserted.author_id).toBe(BOT_ID);
+      expect(result.mentions.notified).toEqual([{ user_id: NICK_ID, full_name: "Nick Ball" }]);
+      expect(notificationsChain.insert).toHaveBeenCalledWith([
+        { user_id: NICK_ID, actor_id: BOT_ID, type: "task_mention", idea_id: IDEA_ID, task_id: TASK_ID },
+      ]);
+    });
+
+    it("wrong-step token (superseded by re-claim): rejects, comment never inserted", async () => {
+      const { token: staleToken } = mintWorkToken();
+      const { hash: currentHash } = mintWorkToken();
+      const { ctx, commentChain } = makeWorkTokenCtx({
+        id: STEP_ID,
+        task_id: TASK_ID,
+        title: "Step",
+        status: "in_progress",
+        bot_id: BOT_ID,
+        work_token_hash: currentHash,
+      });
+      const params = addStepCommentSchema.parse({
+        step_id: STEP_ID,
+        idea_id: IDEA_ID,
+        content: "stale",
+        work_token: staleToken,
+      });
+
+      await expect(addStepComment(ctx, params)).rejects.toThrow(/not the current one for this step/);
+      expect((commentChain as unknown as { insert: ReturnType<typeof vi.fn> }).insert).not.toHaveBeenCalled();
+    });
+
+    it("completed-step token: rejects with the step's title and status, comment never inserted", async () => {
+      const { token, hash } = mintWorkToken();
+      const { ctx, commentChain } = makeWorkTokenCtx({
+        id: STEP_ID,
+        task_id: TASK_ID,
+        title: "Implement the thing",
+        status: "completed",
+        bot_id: BOT_ID,
+        work_token_hash: hash,
+      });
+      const params = addStepCommentSchema.parse({
+        step_id: STEP_ID,
+        idea_id: IDEA_ID,
+        content: "too late",
+        work_token: token,
+      });
+
+      await expect(addStepComment(ctx, params)).rejects.toThrow(
+        /Step "Implement the thing" is no longer in progress \(status: completed\)/
+      );
+      expect((commentChain as unknown as { insert: ReturnType<typeof vi.fn> }).insert).not.toHaveBeenCalled();
+    });
   });
 });
