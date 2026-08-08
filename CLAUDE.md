@@ -49,8 +49,9 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - Shared `checkAndCompleteRun()` helper in `src/lib/workflow-helpers.ts`
 
 ### Identity Enforcement
-- MCP `complete_step`/`fail_step` + server actions reject calls where user doesn't match `step.bot_id`
-- Exception: `awaiting_approval` steps skip identity check (humans approve those)
+- MCP `complete_step`/`fail_step` verify the step's `claim_token`; completion is attributed to `step.bot_id` regardless of the caller's connection identity
+- Agent-voiced comments require the step's live `work_token`; rejected tokens log a structured warn (the attribution-anomaly signal)
+- `approve_step`/rejection of `awaiting_approval` steps are human-gated (no claim token needed; bot identities blocked)
 - Steps with `bot_id = null` are not affected
 
 ### AI Access Resolution
@@ -81,11 +82,12 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 - Prevents premature graduation after onboarding auto-creates content via kits
 
 ### Workflow Orchestration
-- Claude Code orchestrates: `claim_next_step` → `set_agent_identity` → execute → `complete_step` → loop
-- `claim_next_step` returns `bot_id`, `available_agents`, `context` (prior step outputs), `rework_instructions`
+- Claude Code orchestrates: `claim_next_step` → spawn persona subagent (hand it the `work_token`) → execute → `complete_step` with `claim_token` → loop
+- `claim_next_step` returns `claim_token` (single-use, completion), `work_token` (multi-use, agent-voiced comments), `bot_id`, `available_agents`, `context` (prior step outputs), `rework_instructions`
+- Comments posted with `work_token` are authored as the step's agent; without it, as the human; invalid/retired tokens are rejected with an actionable error
 - `human_check_required` routes to `awaiting_approval` instead of `completed`
 - `fail_step` with `reset_to_step_id` enables cascade rejection back to any earlier step
-- Identity mismatch on `complete_step`/`fail_step` resets step to `pending` — forces re-claim
+- Completion is attributed to the step's `bot_id` via the claim token; both token hashes are cleared together on complete/fail/reset/approve
 
 ### Personal Template Library
 - Users can save per-idea workflow templates to `user_workflow_templates` for reuse across boards
@@ -117,7 +119,7 @@ Two modes sharing 83 tools via `mcp-server/src/register-tools.ts`:
 - **Local (stdio)**: `mcp-server/src/index.ts` — service-role client, bypasses RLS
 - **Remote (HTTP)**: `src/app/api/mcp/[[...transport]]/route.ts` — OAuth 2.1 + PKCE, per-user RLS
 
-Identity: `set_agent_identity` persists to DB (`users.active_bot_id`). `ctx.userId` = active identity, `ctx.ownerUserId` = real human. Must exclude MCP/OAuth paths from Next.js middleware.
+Identity: completion attribution flows from the `claim_token`, comment voice from the `work_token` (both minted by `claim_next_step`); `set_agent_identity` is a deprecation-error stub (Phase B removes it — see task ec2bde45). `ctx.userId` = the authenticated human (stdio: the configured `VIBECODES_BOT_ID`), `ctx.ownerUserId` = real human. Must exclude MCP/OAuth paths from Next.js middleware.
 
 ## Environment Variables
 
