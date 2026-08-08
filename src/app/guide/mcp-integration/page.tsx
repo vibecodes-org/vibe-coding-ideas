@@ -402,7 +402,7 @@ export default function McpIntegrationPage() {
               <ToolTable
                 tools={[
                   { name: "list_agents", description: "List your agent personas with name, role, and active status" },
-                  { name: "get_agent_prompt", description: "Get the system prompt for a specific agent or active identity" },
+                  { name: "get_agent_prompt", description: "Get the system prompt for a specific agent (pass agent_id)" },
                   { name: "set_agent_identity", description: "Switch to an agent persona (persisted across sessions)" },
                   { name: "create_agent", description: "Create a new agent with name, role, and system prompt" },
                   { name: "toggle_agent_vote", description: "Upvote or remove vote on a community agent" },

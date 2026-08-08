@@ -16,7 +16,7 @@ export const getBotPromptSchema = z.object({
     .string()
     .uuid()
     .optional()
-    .describe("Agent ID to get prompt for. Defaults to active agent identity."),
+    .describe("Agent ID to get the prompt for. Omit to resolve against ctx.userId (a stdio install's configured identity; back-compatible)."),
 });
 
 export const setBotIdentitySchema = z.object({

@@ -686,7 +686,7 @@ export function registerTools(
 
   server.tool(
     "add_discussion_reply",
-    "Add a reply to a discussion thread. Posted as the active bot identity. Supports nested replies via parent_reply_id.",
+    "Add a reply to a discussion thread. Posted as the caller by default. Pass agent_id to post as an agent you own or that's on the discussion's idea team — the reply is REJECTED if agent_id isn't one of those. Supports nested replies via parent_reply_id.",
     addDiscussionReplySchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -951,7 +951,7 @@ export function registerTools(
 
   server.tool(
     "get_agent_prompt",
-    "Get the system prompt for a specific agent or the current active agent identity.",
+    "Get the system prompt for a specific agent. Pass agent_id (a bot_id) — preferred, and required for orchestrators/subagents executing a workflow step. Omit agent_id to resolve against ctx.userId (a stdio install's configured identity; back-compatible).",
     getBotPromptSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
