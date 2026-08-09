@@ -40,18 +40,22 @@ describe("resolveTerminalPlatform — Apple Silicon Mac (supported)", () => {
   });
 });
 
-describe("resolveTerminalPlatform — Intel Mac (unsupported)", () => {
-  it("routes an x86 Mac to coming-soon with no download target", () => {
+describe("resolveTerminalPlatform — Intel Mac (supported, arm64 default download)", () => {
+  it("an x86 Mac is supported — we ship an x64 DMG now — but keeps the arm64 default target", () => {
     const p = resolveTerminalPlatform({ ...APPLE_SILICON_MAC, architecture: "x86" });
     expect(p.os).toBe("mac");
     expect(p.isAppleSilicon).toBe(false);
-    expect(p.supported).toBe(false);
-    expect(p.downloadUrl).toBeNull();
+    expect(p.supported).toBe(true);
+    // Deliberately NOT auto-switched to x64 — see resolveTerminalPlatform's doc
+    // comment; the UI surfaces a manual "Intel Mac?" opt-in link instead.
+    expect(p.downloadUrl).toBe(TERMINAL_HELPER_DOWNLOAD_URL);
+    expect(p.downloadLabel).toBe("Download for Mac (Apple Silicon)");
   });
 
   it("treats x86_64 the same as x86", () => {
     const p = resolveTerminalPlatform({ ...APPLE_SILICON_MAC, architecture: "x86_64" });
-    expect(p.supported).toBe(false);
+    expect(p.isAppleSilicon).toBe(false);
+    expect(p.supported).toBe(true);
   });
 });
 
