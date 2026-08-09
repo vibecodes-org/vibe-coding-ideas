@@ -20,6 +20,7 @@ import {
   decideResize,
   claimConnectGeneration,
   isConnectSuperseded,
+  decideReconnectNow,
   type TerminalConnectionState,
   type TerminalEvent,
 } from "./connection";
@@ -487,5 +488,84 @@ describe("connect() single-flight generation guard (PR #88)", () => {
     // ever goes live (the "connect fires twice" fix).
     expect(isConnectSuperseded(aGen, counter)).toBe(true);
     expect(isConnectSuperseded(bGen, counter)).toBe(false);
+  });
+});
+
+describe("bring-back-from-pop-out state reset (fix/terminal-bringback-state-reset)", () => {
+  it("a stray `data` event is ignored while status is error (no reducer forward edge — see the 'data' case's comment)", () => {
+    const errored = run([{ type: "connect" }, { type: "session-mint-failed" }]);
+    expect(errored.status).toBe("error");
+    expect(terminalReducer(errored, { type: "data" })).toBe(errored);
+  });
+
+  it("the dock's own leg preempted by a pop-out (relay close 4001) lands in error/duplicate, and a stray data event there is still ignored", () => {
+    const live = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }]);
+    const preempted = terminalReducer(live, { type: "closed", code: RELAY_CLOSE.DUP_BROWSER });
+    expect(preempted.status).toBe("error");
+    expect(preempted.errorKind).toBe("duplicate");
+    // A late message from the socket the relay already closed must not revive it.
+    expect(terminalReducer(preempted, { type: "data" })).toBe(preempted);
+  });
+
+  it("the fresh-attach-reset sequence (connect → session-created → relay-open → data) reaches connected from error, sessionId retained", () => {
+    const live = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }]);
+    const preempted = terminalReducer(live, { type: "closed", code: RELAY_CLOSE.DUP_BROWSER });
+    expect(preempted.status).toBe("error");
+
+    // Exactly the sequence reconnectNow()'s "fresh-attach-reset" branch
+    // dispatches (mirrors attachToExisting's two-dispatch reset) before it
+    // reopens the browser leg — the relay's peer-reattached frame or the first
+    // real PTY byte then lands as this final `data`.
+    const reattached = run(
+      [
+        { type: "connect" },
+        { type: "session-created", sessionId: "a3f9" },
+        { type: "relay-open" },
+        { type: "data" },
+      ],
+      preempted,
+    );
+    expect(reattached.status).toBe("connected");
+    expect(reattached.sessionId).toBe("a3f9");
+    expect(reattached.errorKind).toBeNull();
+  });
+
+  it("grace path is unchanged: a live drop (disconnected) reaches connected on `data` alone, no reset dispatches needed", () => {
+    const dropped = run([
+      { type: "connect" },
+      { type: "relay-open" },
+      { type: "data" },
+      { type: "closed", code: RELAY_CLOSE.PEER_GONE },
+    ]);
+    expect(dropped.status).toBe("disconnected");
+    const reconnected = terminalReducer(dropped, { type: "data" });
+    expect(reconnected.status).toBe("connected");
+    expect(reconnected.sessionId).toBe(dropped.sessionId);
+  });
+});
+
+describe("decideReconnectNow (fix/terminal-bringback-state-reset)", () => {
+  it("no retained pair → full-connect, regardless of status", () => {
+    expect(decideReconnectNow("error", false, 1000, 0)).toBe("full-connect");
+    expect(decideReconnectNow("idle", false, 1000, 0)).toBe("full-connect");
+  });
+
+  it("status error with a pair → fresh-attach-reset, regardless of the deadline bookkeeping", () => {
+    // The ambient case: no prior drop ever routed through scheduleReconnect, so
+    // the deadline is still 0 (exactly what a pop-out preemption looks like).
+    expect(decideReconnectNow("error", true, 1000, 0)).toBe("fresh-attach-reset");
+    // Even a stale/spent or still-open deadline from an unrelated prior drop
+    // must not override an "error" status.
+    expect(decideReconnectNow("error", true, 5000, 1000)).toBe("fresh-attach-reset");
+    expect(decideReconnectNow("error", true, 1000, 5000)).toBe("fresh-attach-reset");
+  });
+
+  it("status disconnected with a pair, deadline unset or still open → grace-reconnect (unchanged ambient path)", () => {
+    expect(decideReconnectNow("disconnected", true, 1000, 0)).toBe("grace-reconnect");
+    expect(decideReconnectNow("disconnected", true, 1000, 5000)).toBe("grace-reconnect");
+  });
+
+  it("status disconnected with a pair, deadline already spent → full-connect (grace window exhausted)", () => {
+    expect(decideReconnectNow("disconnected", true, 5000, 1000)).toBe("full-connect");
   });
 });

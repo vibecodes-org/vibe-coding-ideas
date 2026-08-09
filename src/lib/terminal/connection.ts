@@ -187,6 +187,17 @@ export function terminalReducer(
       if (state.status === "waiting-to-pair" || state.status === "disconnected" || state.status === "connecting") {
         return { ...state, status: "connected", errorKind: null, endedReason: null, closeCode: null };
       }
+      // Deliberately NOT "error" here (fix/terminal-bringback-state-reset): a
+      // genuine error (duplicate-preemption, owner-mismatch, connect-timeout, …)
+      // has no LIVE socket to deliver bytes on — the relay already closed it, or
+      // we never reached one — so a `data` event arriving while the reducer still
+      // reads "error" can only be a STALE socket's late message. Reviving that to
+      // "connected" would show a live terminal over a session this tab actually
+      // lost. The one sanctioned exit from "error" is the explicit
+      // connect → session-created reset `reconnectNow()` dispatches at the call
+      // site (see decideReconnectNow below + use-terminal-session.ts) BEFORE it
+      // reopens the socket — by the time real bytes can arrive, status is already
+      // "connecting", not "error". Keep this guard strict.
       return state;
 
     case "user-end":
@@ -324,6 +335,52 @@ export function claimConnectGeneration(current: number): number {
 /** True if `claimed` is no longer the current generation — a newer attempt superseded it. */
 export function isConnectSuperseded(claimed: number, current: number): boolean {
   return claimed !== current;
+}
+
+/**
+ * Decide what `reconnectNow()` should do, pure so the call-site policy is
+ * unit-tested without a socket/timer (fix/terminal-bringback-state-reset).
+ *
+ *   - "full-connect" — no retained pair (never minted, or the session already
+ *     ended) → mint a fresh session via connect({autoLaunch:true}); no reattach
+ *     is possible.
+ *   - "grace-reconnect" — the AMBIENT case: a transient drop (status
+ *     "disconnected", already being handled by the grace-window scheduler) or a
+ *     healthy pair that's never dropped (deadline still 0) → reopen the SAME sid
+ *     with the retained token via {reconnect:true} (skips CONNECT_TIMEOUT_MS —
+ *     the grace window bounds these retries instead) and dispatch NOTHING, since
+ *     the reducer is already in a state `relay-open`/`data` can drive forward.
+ *     UNCHANGED, prod-proven behaviour.
+ *   - "fresh-attach-reset" — status is "error" with a pair still on hand: the
+ *     bring-back-from-pop-out case, where the dock's OWN leg was preempted
+ *     (relay close 4001 → errorKind "duplicate") while the pop-out placeholder
+ *     masked it. `terminalReducer`'s "error" state has no forward edge for
+ *     `relay-open`/`data` (see the "data" case above), so silently reopening
+ *     the socket — what "grace-reconnect" does — leaves the UI stuck on the
+ *     stale error screen over a healthy link. The caller must dispatch an
+ *     explicit connect → session-created reset (mirroring attachToExisting)
+ *     BEFORE reopening, and open with {reconnect:false} so a dead relay
+ *     produces an honest connect-timeout instead of hanging in "connecting"
+ *     forever.
+ *
+ * `status` is checked BEFORE the grace-window deadline math: an error status
+ * can coexist with a spent-or-never-set deadline (a pop-out preemption never
+ * routes through scheduleReconnect, so reconnectDeadlineRef never gets set at
+ * all) — checking the deadline first would misroute this case into
+ * "grace-reconnect".
+ */
+export type ReconnectNowDecision = "full-connect" | "grace-reconnect" | "fresh-attach-reset";
+
+export function decideReconnectNow(
+  status: TerminalStatus,
+  hasPair: boolean,
+  now: number,
+  reconnectDeadline: number,
+): ReconnectNowDecision {
+  if (!hasPair) return "full-connect";
+  if (status === "error") return "fresh-attach-reset";
+  const withinGraceWindow = reconnectDeadline === 0 || now < reconnectDeadline;
+  return withinGraceWindow ? "grace-reconnect" : "full-connect";
 }
 
 /** Feature flag — OFF unless NEXT_PUBLIC_TERMINAL_ENABLED is exactly "true". */

@@ -274,9 +274,15 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
 
   // Reattach the dock's OWN leg for this session (no re-mint — reconnectNow()
   // reuses the retained sid/browserToken, see use-terminal-session.ts) and
-  // drop the pop-out bookkeeping. This is what BOTH "Bring back to dock" and
-  // the popped window's close-signal do — the only difference is who
-  // triggered it (design §10b: "two paths, never a race").
+  // drop the pop-out bookkeeping. The dock's own leg was preempted the moment
+  // the pop-out attached (relay close 4001), so underneath the "Popped out"
+  // placeholder its connection state is stuck in "error" — reconnectNow()
+  // detects that (decideReconnectNow in connection.ts) and resets the state
+  // machine before reopening the socket, rather than silently reattaching into
+  // a state the reducer has no forward edge out of (fix/terminal-bringback-
+  // state-reset). This is what BOTH "Bring back to dock" and the popped
+  // window's close-signal do — the only difference is who triggered it
+  // (design §10b: "two paths, never a race").
   const bringBackToDock = useCallback(
     (key: string) => {
       actionsMapRef.current.get(key)?.reconnectNow();

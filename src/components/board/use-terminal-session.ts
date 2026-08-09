@@ -56,6 +56,7 @@ import {
   RECONNECT_GRACE_MS,
   buildRelayUrl,
   claimConnectGeneration,
+  decideReconnectNow,
   decideResize,
   isConnectSuperseded,
   encodeHeartbeatFrame,
@@ -1180,19 +1181,60 @@ export function useTerminalSession(
   // wait) using the retained token, or fall back to a clean fresh launch if the
   // grace window is spent. Fixes the old button, which minted an EMPTY session with
   // no autoLaunch and timed out after 30s.
+  //
+  // A THIRD case (fix/terminal-bringback-state-reset): "Bring back to dock" after a
+  // pop-out also lands here. The dock's OWN leg was preempted when the pop-out
+  // attached (relay close 4001 → errorKind "duplicate") while the "Popped out"
+  // placeholder masked it, so the underlying state machine is stuck in "error".
+  // decideReconnectNow (connection.ts) routes THAT case to "fresh-attach-reset"
+  // instead of the ambient "grace-reconnect" path below — grace-reconnect opens
+  // with {reconnect:true} and dispatches nothing, which is exactly the bug: the
+  // reducer has no forward edge out of "error" for `relay-open`/`data` (see its
+  // comment on the "data" case), so the socket came back healthy while the UI
+  // stayed on the stale duplicate-error screen. The fresh-attach-reset branch is
+  // the ONE sanctioned exit from "error" — see connection.ts's decideReconnectNow
+  // doc for the full reasoning.
   const reconnectNow = useCallback(() => {
     const p = pairRef.current;
     const now = Date.now();
-    const withinWindow =
-      reconnectDeadlineRef.current === 0 || now < reconnectDeadlineRef.current;
-    if (p && withinWindow) {
-      clearReconnectTimer();
-      if (reconnectDeadlineRef.current === 0) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
-      openBrowserLeg(p.sessionId, p.browserToken, { reconnect: true });
-    } else {
+    const decision = decideReconnectNow(statusRef.current, !!p, now, reconnectDeadlineRef.current);
+
+    if (decision === "full-connect" || !p) {
       void connect({ autoLaunch: true });
+      return;
     }
-  }, [openBrowserLeg, clearReconnectTimer, connect]);
+
+    if (decision === "fresh-attach-reset") {
+      // Claim a fresh connect generation, exactly as attachToExisting does, so a
+      // newer connect()/reconnectNow() racing this one wins cleanly.
+      const gen = (connectGenRef.current = claimConnectGeneration(connectGenRef.current));
+      // Tear down first (mirrors attachToExisting): nulls the old socket's
+      // handlers so a lingering, already-dead socket can't fire a late event
+      // into this fresh attempt, and clears the reconnect timer/bookkeeping.
+      teardownSocket();
+      reconnectDeadlineRef.current = 0;
+      reconnectAttemptRef.current = 0;
+      // Two dispatches back-to-back, no await between them — the documented
+      // two-dispatch pattern (see attachToExisting): React folds them through
+      // the reducer in order against the queued state, so "session-created"'s
+      // `state.status !== "connecting"` guard sees the "connect" transition
+      // that just landed ahead of it.
+      dispatch({ type: "connect" });
+      dispatch({ type: "session-created", sessionId: p.sessionId });
+      if (isConnectSuperseded(gen, connectGenRef.current)) return;
+      // reconnect:false (the default) arms CONNECT_TIMEOUT_MS, so a dead relay
+      // produces an honest connect-timeout error instead of hanging in
+      // "connecting" forever — unlike grace-reconnect below, nothing else is
+      // bounding this attempt.
+      openBrowserLeg(p.sessionId, p.browserToken);
+      return;
+    }
+
+    // decision === "grace-reconnect" — unchanged, prod-proven path.
+    clearReconnectTimer();
+    if (reconnectDeadlineRef.current === 0) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
+    openBrowserLeg(p.sessionId, p.browserToken, { reconnect: true });
+  }, [openBrowserLeg, clearReconnectTimer, connect, teardownSocket]);
 
   // Install-first entry gate. This is the ONE place a browser "open" is turned into
   // either a setup panel, a coming-soon panel, or an auto-connect — the deep link is
