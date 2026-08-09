@@ -1,9 +1,10 @@
 // In-app terminal — client OS / architecture detection for the install-first flow.
 //
 // The in-browser terminal only works on machines we ship a helper for. Today that
-// is an Apple-Silicon Mac; everything else lands on a calm "coming soon" and NEVER
-// fires the `vibecodes://` deep link (so a non-Mac user is never ambushed by an OS
-// dialog for a scheme nothing can handle).
+// is any Mac — we publish both an arm64 (Apple Silicon) and an x64 (Intel) DMG per
+// release (see src/app/download/terminal-helper/route.ts); everything else lands
+// on a calm "coming soon" and NEVER fires the `vibecodes://` deep link (so a
+// non-Mac user is never ambushed by an OS dialog for a scheme nothing can handle).
 //
 // resolveTerminalPlatform() is PURE — it takes explicit signals so the whole
 // OS/arch policy is unit-testable without a real navigator. readPlatformSignals()
@@ -34,9 +35,9 @@ export interface PlatformSignals {
 
 export interface TerminalPlatform {
   os: TerminalOs;
-  /** Best-effort: is this an Apple-Silicon Mac (the shipped helper target)? */
+  /** Best-effort: is this an Apple-Silicon Mac (the default download target)? */
   isAppleSilicon: boolean;
-  /** Do we ship a helper this machine can run? (Apple-Silicon Mac only, today.) */
+  /** Do we ship a helper this machine can run? (Any Mac, today — arm64 or x64.) */
   supported: boolean;
   /** Download control label — information scent, never "Download" / "Submit". */
   downloadLabel: string;
@@ -74,15 +75,23 @@ function detectOs(signals: PlatformSignals): TerminalOs {
  *
  * Apple-Silicon caveat: browsers report "Intel Mac OS X" in the UA even on Apple
  * Silicon (a compatibility lie), so the UA alone can NEVER prove Apple Silicon. We
- * therefore treat any Mac as Apple Silicon — the only helper we ship is arm64 —
- * UNLESS a trustworthy UA-CH `architecture` says "x86"/"x86_64", the one case where
- * we can be reasonably sure it is an Intel Mac and route it to "coming soon".
+ * therefore treat any Mac as Apple Silicon by default — the primary download button
+ * targets arm64 — UNLESS a trustworthy UA-CH `architecture` says "x86"/"x86_64", the
+ * one case where we can be reasonably sure it is an Intel Mac.
+ *
+ * Every Mac is `supported` now (we ship an x64 DMG alongside arm64), so an Intel
+ * signal no longer routes to "coming soon" — it just flips `isAppleSilicon` to
+ * false. We deliberately do NOT auto-switch `downloadUrl`/`downloadLabel` off of
+ * this signal (UA-CH architecture is opt-in and often absent for the synchronous
+ * read, so silently trusting it here would default plenty of real Apple-Silicon
+ * users onto the wrong DMG); the UI instead surfaces a manual "Intel Mac?" link the
+ * user opts into themselves — see SetupPanel in terminal-session-view.tsx.
  */
 export function resolveTerminalPlatform(signals: PlatformSignals): TerminalPlatform {
   const os = detectOs(signals);
   const arch = signals.architecture?.toLowerCase();
   const isAppleSilicon = os === "mac" && arch !== "x86" && arch !== "x86_64";
-  const supported = os === "mac" && isAppleSilicon;
+  const supported = os === "mac";
 
   if (supported) {
     return {

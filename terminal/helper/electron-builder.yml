@@ -14,8 +14,14 @@ directories:
 # Only the helper's own code goes inside app.asar. The reused bridge + shared
 # modules are shipped as extraResources (below) so node-pty's native binaries
 # stay executable on disk — you cannot exec a spawn-helper from inside an asar.
+#
+# EVERY module main.js require()s with a "./" path MUST be listed here — a
+# missing entry is invisible in dev (`electron .` reads the real directory) and
+# fatal in the packed app ("Cannot find module" on first launch: the 0.2.0 DMG
+# shipped without proto-reg.js and crashed on install, board card 3e9d525e).
 files:
   - main.js
+  - proto-reg.js
   - package.json
 
 extraResources:

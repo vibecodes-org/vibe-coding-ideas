@@ -606,6 +606,21 @@ function SetupPanel({ platform, onConnect }: { platform: TerminalPlatform; onCon
         >
           <Download className="h-4 w-4" /> {platform.downloadLabel}
         </a>
+        {/* We can't reliably tell Apple Silicon from Intel client-side (see
+            platform.ts), so the primary button always targets arm64 and Intel
+            users self-identify via this opt-in link rather than being silently
+            auto-detected onto a DMG that might be wrong. */}
+        <p className="mt-2 text-[12px] text-zinc-500">
+          Intel Mac?{" "}
+          <a
+            href={`${TERMINAL_HELPER_DOWNLOAD_URL}?arch=x64`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-zinc-300 underline decoration-zinc-600 underline-offset-2 hover:text-zinc-100"
+          >
+            Download the x64 version
+          </a>
+        </p>
       </SetupStep>
 
       <SetupStep n={2} title={copy.step2Title}>
