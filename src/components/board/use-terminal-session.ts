@@ -96,6 +96,12 @@ import {
 import { isBrowserPaired, markBrowserPaired, resolveFirstRunEntry } from "@/lib/terminal/paired-flag";
 import { type LaunchPhase, nextLaunchPhaseOnTimeout } from "@/lib/terminal/first-run-flow";
 import { consumeRecentHelperIdleQuit } from "@/lib/terminal/helper-relaunch-signal";
+import {
+  restoreScrollback,
+  serializeScrollback,
+  SCROLLBACK_TRANSFER_CAP_BYTES,
+  type TransferredBuffer,
+} from "@/lib/terminal/scrollback-transfer";
 
 // How long we wait for the helper to attach after firing the deep link before
 // dropping to the calm fallback (~8s, per the approved UX). This is the safety net
@@ -244,6 +250,16 @@ export interface UseTerminalSessionOptions {
 export interface AttachExistingPair {
   sessionId: string;
   browserToken: string;
+  /**
+   * Scrollback transfer (card 35cffc10, Flow A): the dock's serialized
+   * buffer at the moment of pop-out, restored into this window's terminal
+   * AFTER it opens but BEFORE the socket attaches — so handed-over history
+   * sits above the live stream with nothing interleaved. `null`/absent
+   * covers deploy skew (an old dock never sent one) and the case where the
+   * dock had nothing to serialize yet — the terminal just starts empty,
+   * today's pre-this-card behaviour.
+   */
+  initialBuffer?: TransferredBuffer | null;
 }
 
 export interface PairInfo {
@@ -296,6 +312,24 @@ export interface TerminalSessionActions {
    * on a dock re-expand, just triggered on demand instead of by `expanded`.
    */
   refreshView: () => void;
+  /**
+   * Scrollback transfer (card 35cffc10, design §7): serialize THIS
+   * session's live terminal right now, capped at 1 MiB — the dock calls this
+   * fresh inside its pop-out payload builder on every send (including
+   * retries), and the popped window calls it to answer `bring-back-request`
+   * / its own `pagehide`. `null` before the xterm instance has mounted
+   * (nothing to serialize yet) — never throws otherwise
+   * (serializeScrollback's own contract).
+   */
+  serializeNow: () => TransferredBuffer | null;
+  /**
+   * Restore a previously-serialized buffer into THIS session's live
+   * terminal (full reset first — see restoreScrollback's doc). Used by the
+   * dock on both bring-back paths (Flow B's reply, Flow C's stash) to
+   * replace its hidden terminal's history with the popped window's more
+   * complete copy (D1). A no-op if the xterm instance hasn't mounted yet.
+   */
+  restoreBuffer: (buffer: TransferredBuffer) => void;
 }
 
 export interface UseTerminalSessionResult {
@@ -377,6 +411,13 @@ export function useTerminalSession(
   const wsRef = useRef<WebSocket | null>(null);
   const termRef = useRef<XTerm | null>(null);
   const fitRef = useRef<XFitAddon | null>(null);
+  // Scrollback transfer (card 35cffc10): `attachToExisting` can run BEFORE
+  // the async xterm-init effect below has finished mounting the terminal
+  // (attach isn't gated on xtermReady — see attachToExisting's own doc) —
+  // when that happens the buffer it was handed has nowhere to land yet, so
+  // it's stashed here and applied the moment the xterm-init effect sets
+  // `termRef.current`, instead of being silently dropped.
+  const pendingInitialBufferRef = useRef<TransferredBuffer | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const helperTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -475,6 +516,13 @@ export function useTerminalSession(
 
       termRef.current = term;
       fitRef.current = fit;
+      // A buffer arrived (attachToExisting ran) before the terminal itself
+      // was ready to receive it — apply it now that it is (see
+      // pendingInitialBufferRef's doc).
+      if (pendingInitialBufferRef.current) {
+        restoreScrollback(term, pendingInitialBufferRef.current);
+        pendingInitialBufferRef.current = null;
+      }
       setXtermReady(true);
     })().catch((err) => {
       logger.error("Terminal xterm init failed", { error: err instanceof Error ? err.message : String(err) });
@@ -1169,7 +1217,22 @@ export function useTerminalSession(
       setPair({ sessionId: p.sessionId, browserToken: p.browserToken });
       reconnectDeadlineRef.current = 0;
       reconnectAttemptRef.current = 0;
-      termRef.current?.clear();
+      // Scrollback transfer (card 35cffc10, Flow A): a handed-over buffer
+      // REPLACES the plain clear() below — restoreScrollback does its own
+      // full reset before writing the history, so the two are mutually
+      // exclusive, never both. No buffer (deploy skew, or the dock had
+      // nothing to serialize yet) falls back to today's plain clear().
+      if (p.initialBuffer) {
+        if (termRef.current) {
+          restoreScrollback(termRef.current, p.initialBuffer);
+        } else {
+          // Terminal hasn't mounted yet — the xterm-init effect applies this
+          // the moment it does (pendingInitialBufferRef's doc).
+          pendingInitialBufferRef.current = p.initialBuffer;
+        }
+      } else {
+        termRef.current?.clear();
+      }
       // A newer attach/connect raced this one while it was doing its
       // (synchronous, but still checked for symmetry with connect()) setup —
       // abort before opening a socket that a newer attempt would immediately
@@ -1363,6 +1426,23 @@ export function useTerminalSession(
     });
   }, [sendResize]);
 
+  // Scrollback transfer (card 35cffc10, design §7). See TerminalSessionActions'
+  // doc on both for the full contract — these are thin, stable-identity
+  // wrappers around the pure scrollback-transfer.ts functions, reading
+  // termRef fresh on every call (never a stale-closure risk, same pattern
+  // as sendResize/refreshView above).
+  const serializeNow = useCallback((): TransferredBuffer | null => {
+    const term = termRef.current;
+    if (!term) return null;
+    return serializeScrollback(term, SCROLLBACK_TRANSFER_CAP_BYTES);
+  }, []);
+
+  const restoreBuffer = useCallback((buffer: TransferredBuffer) => {
+    const term = termRef.current;
+    if (!term) return;
+    restoreScrollback(term, buffer);
+  }, []);
+
   const copyBridgeCommand = useCallback(() => {
     // No bridge token to copy for an attached (not minted) session — see
     // PairInfo.bridgeToken's doc. The legacy-waiting panel that renders this
@@ -1397,6 +1477,8 @@ export function useTerminalSession(
       setReadOnly,
       copyBridgeCommand,
       refreshView,
+      serializeNow,
+      restoreBuffer,
     },
   };
 }

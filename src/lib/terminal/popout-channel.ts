@@ -62,6 +62,21 @@
 // (`reduceDockHandshake`), and every rejection path now warns with its
 // reason instead of dropping silently.
 //
+// SCROLLBACK TRANSFER (card 35cffc10, docs/design-terminal-scrollback-
+// transfer.html): the buffer that rides pop-out and bring-back is carried
+// entirely inside this module's existing message shapes — a `buffer` field
+// added to `payload` (pop-out direction), and two new messages for bring-back
+// (`bring-back-request` / `buffer-reply`). Design §1's decision: a SEPARATE
+// "buffer" message would reintroduce the exact failure class the handshake
+// rework above just eliminated (two coupled messages where either half can
+// be the one that's lost); embedding the buffer in `payload` inherits the
+// idempotent ready/re-send hardening for free. The `buffer` field is always
+// OPTIONAL and leniently parsed — a malformed buffer is dropped (warned) on
+// its own, never sinking the surrounding message; scrollback is never
+// allowed to sink a hand-off. The actual serialize/restore mechanics live in
+// scrollback-transfer.ts (a separate, transport-agnostic module) — this file
+// only carries the resulting `{ data, truncated }` shape across the channel.
+//
 // REWORK ADDENDUM (fix/terminal-popout-open-guard, board task 4f9cf03d): the
 // retried-handshake hardening above was necessary but NOT sufficient — it
 // shipped and the pop-out STILL failed 100% of the time in production,
@@ -80,6 +95,7 @@
 // success.
 
 import { RELAY_CLOSE } from "@/lib/terminal/connection";
+import type { TransferredBuffer } from "@/lib/terminal/scrollback-transfer";
 
 /** Channel names are namespaced so nothing else on the origin could collide. */
 const POPOUT_CHANNEL_PREFIX = "vibecodes:terminal-popout:";
@@ -173,15 +189,60 @@ export interface PopoutPayload {
   /** The identity line shown in both the dock header and the popped window's header. */
   identity: string;
   readOnly: boolean;
+  /**
+   * The dock's serialized scrollback at the moment of send (design §1/§2,
+   * Flow A) — OPTIONAL and captured FRESH on every send (including retries),
+   * never memoized, so a slow handshake still hands over the newest output.
+   * Absent when the sender predates this card (deploy skew, E7) or when
+   * nothing was available to serialize yet (e.g. the dock's own xterm
+   * instance hasn't mounted). A malformed value here is dropped by
+   * `parsePopoutPayload` without rejecting the rest of the payload —
+   * scrollback is never allowed to sink a hand-off.
+   */
+  buffer?: TransferredBuffer;
 }
 
 export type PopoutChannelMessage =
   | { type: "ready" }
   | { type: "payload"; payload: PopoutPayload }
-  | { type: "closed" };
+  | { type: "closed" }
+  /** Dock → popped (Flow B, design §3): "I'm about to reattach — send me your buffer first." No payload of its own. */
+  | { type: "bring-back-request" }
+  /**
+   * Popped → dock: the popped window's full serialized scrollback, either as
+   * the direct reply to `bring-back-request` (Flow B) or pushed unprompted
+   * immediately before `closed` when the window is simply being closed
+   * (Flow C, design §4) — BroadcastChannel's per-sender ordering guarantees
+   * the reply always lands before that `closed`.
+   */
+  | { type: "buffer-reply"; buffer: TransferredBuffer };
 
 function isNonEmptyString(v: unknown): v is string {
   return typeof v === "string" && v.length > 0;
+}
+
+/**
+ * Lenient `TransferredBuffer` parse — `null` (with a console warning giving
+ * the reason) for anything malformed. Used both for `payload.buffer` (where
+ * the caller must NOT let a bad buffer reject the rest of the payload — see
+ * `parsePopoutPayload`) and for `buffer-reply` (where the buffer IS the
+ * entire message, so a bad one drops the whole message, still without ever
+ * throwing).
+ */
+function parseTransferredBuffer(value: unknown): TransferredBuffer | null {
+  if (!value || typeof value !== "object") {
+    console.warn("[terminal-popout] rejected buffer: not an object", value);
+    return null;
+  }
+  const b = value as Record<string, unknown>;
+  if (typeof b.data !== "string" || typeof b.truncated !== "boolean") {
+    console.warn("[terminal-popout] rejected buffer: invalid/missing field(s)", {
+      hasData: typeof b.data === "string",
+      hasTruncated: typeof b.truncated === "boolean",
+    });
+    return null;
+  }
+  return { data: b.data, truncated: b.truncated };
 }
 
 /**
@@ -211,7 +272,7 @@ function parsePopoutPayload(value: unknown): PopoutPayload | null {
     console.warn("[terminal-popout] rejected payload: invalid/missing field(s)", problems);
     return null;
   }
-  return {
+  const result: PopoutPayload = {
     sid: p.sid as string,
     browserToken: p.browserToken as string,
     relayUrl: p.relayUrl as string,
@@ -221,6 +282,16 @@ function parsePopoutPayload(value: unknown): PopoutPayload | null {
     identity: p.identity as string,
     readOnly: p.readOnly as boolean,
   };
+  // Optional and leniently parsed (design §1's decision callout): a
+  // malformed/absent buffer is dropped on its own — the credentials above
+  // still go through either way. `p.buffer === undefined` is the ordinary
+  // "sender predates this card, or had nothing to serialize yet" case and
+  // warns nothing (that's expected, not an error).
+  if (p.buffer !== undefined) {
+    const buffer = parseTransferredBuffer(p.buffer);
+    if (buffer) result.buffer = buffer;
+  }
+  return result;
 }
 
 /**
@@ -235,13 +306,21 @@ export function parsePopoutChannelMessage(data: unknown): PopoutChannelMessage |
     console.warn("[terminal-popout] ignoring channel message: not an object", data);
     return null;
   }
-  const msg = data as { type?: unknown; payload?: unknown };
+  const msg = data as { type?: unknown; payload?: unknown; buffer?: unknown };
   if (msg.type === "ready") return { type: "ready" };
   if (msg.type === "closed") return { type: "closed" };
+  if (msg.type === "bring-back-request") return { type: "bring-back-request" };
   if (msg.type === "payload") {
     // parsePopoutPayload already warns with the specific reason on rejection.
     const payload = parsePopoutPayload(msg.payload);
     return payload ? { type: "payload", payload } : null;
+  }
+  if (msg.type === "buffer-reply") {
+    // Unlike payload.buffer, the buffer IS the whole message here — a
+    // malformed one drops the whole message (parseTransferredBuffer already
+    // warns with the specific reason).
+    const buffer = parseTransferredBuffer(msg.buffer);
+    return buffer ? { type: "buffer-reply", buffer } : null;
   }
   console.warn("[terminal-popout] ignoring channel message: unrecognised type", msg.type);
   return null;
@@ -309,6 +388,21 @@ export interface PopoutChannelLike {
 }
 
 /**
+ * The dock's per-tab pop-out bookkeeping (terminal-dock.tsx's
+ * `popoutChannelsRef` Map value shape) — exported so the caller and this
+ * module agree on it. `pendingBuffer` is Flow C's stash (design §4): the
+ * popped window's unprompted `buffer-reply`, held here until the `closed`
+ * that always follows it (BroadcastChannel's per-sender ordering) actually
+ * applies it. `undefined`/absent means "nothing stashed" — the ordinary case
+ * for every message that isn't part of a Flow C close sequence.
+ */
+export interface DockPopoutEntry {
+  channel: PopoutChannelLike;
+  handshake: DockHandshakeState;
+  pendingBuffer?: TransferredBuffer;
+}
+
+/**
  * Builds the DOCK side's `channel.onmessage` handler — the exact logic
  * terminal-dock.tsx's `handlePopOut` wires up, extracted so it can be driven
  * by a test double instead of a real `BroadcastChannel` + React state. The
@@ -316,12 +410,21 @@ export interface PopoutChannelLike {
  * did a "Bring back" already tear it down?) stays with the CALLER via
  * `getEntry`/`setEntry` — that's terminal-dock.tsx's `popoutChannelsRef` Map,
  * not something this module should own.
+ *
+ * `buffer-reply` (Flow C, design §4) is handled OUTSIDE the pure handshake
+ * reducer below: it's not a handshake-phase transition, just a stash — the
+ * popped window pushes it unprompted, immediately before its own `closed`,
+ * when the user simply closes the window (no "Bring back" click, no
+ * request/reply round trip like Flow B's `startBringBackRequest`). `onReattach`
+ * receives whatever was stashed (or `null` if nothing was — an old popped
+ * window, a failed serialize, or the hand-off-timeout `closed` that never
+ * carried a payload at all) so the caller can restore it before reconnecting.
  */
 export function createDockPopoutMessageHandler(options: {
-  getEntry: () => { channel: PopoutChannelLike; handshake: DockHandshakeState } | undefined;
-  setEntry: (next: { channel: PopoutChannelLike; handshake: DockHandshakeState }) => void;
+  getEntry: () => DockPopoutEntry | undefined;
+  setEntry: (next: DockPopoutEntry) => void;
   getPayload: () => PopoutPayload;
-  onReattach: () => void;
+  onReattach: (stashedBuffer: TransferredBuffer | null) => void;
 }): (ev: MessageEvent) => void {
   const { getEntry, setEntry, getPayload, onReattach } = options;
   return (ev) => {
@@ -329,12 +432,16 @@ export function createDockPopoutMessageHandler(options: {
     if (!message) return; // already warned with a reason
     const current = getEntry();
     if (!current) return; // already torn down (e.g. a racing bring-back)
+    if (message.type === "buffer-reply") {
+      setEntry({ ...current, pendingBuffer: message.buffer });
+      return;
+    }
     const result = reduceDockHandshake(current.handshake, message);
-    setEntry({ channel: current.channel, handshake: result.state });
+    setEntry({ ...current, handshake: result.state });
     if (result.action === "send-payload") {
       current.channel.postMessage({ type: "payload", payload: getPayload() });
     } else if (result.action === "reattach") {
-      onReattach();
+      onReattach(current.pendingBuffer ?? null);
     }
   };
 }
@@ -465,5 +572,87 @@ export function startPopoutClientHandshake(options: PopoutClientHandshakeOptions
   return () => {
     clearIntervalFn(readyTimer);
     clearIntervalFn(pollTimer);
+  };
+}
+
+// ── dock-side bring-back driver (Flow B, design §3) ─────────────────────────
+//
+// The two-phase "Bring back to dock" button click: request the popped
+// window's buffer, wait a bounded amount of time for the reply, then let the
+// caller proceed either way. Mirrors `startPopoutClientHandshake`'s shape —
+// injectable timer/clock, no DOM — so it's unit-tested the same way.
+
+/** D3: 500ms (the midpoint of the design's 400–600ms band) — see the design doc for the full rationale. */
+export const BRING_BACK_REPLY_TIMEOUT_MS = 500;
+
+export interface BringBackRequestOptions {
+  channel: PopoutChannelLike;
+  /**
+   * Called exactly once, with the popped window's buffer on a timely reply,
+   * or `null` on timeout (D3's deliberate fallback: the caller keeps its own
+   * buffer and proceeds — complete history except the popped-out slice,
+   * never a hang).
+   */
+  onSettle: (buffer: TransferredBuffer | null) => void;
+  now?: () => number;
+  setTimeoutFn?: (cb: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimeoutFn?: (id: ReturnType<typeof setTimeout>) => void;
+  timeoutMs?: number;
+}
+
+/**
+ * The dock's half of Flow B: post `bring-back-request`, then settle exactly
+ * once — either the moment a `buffer-reply` arrives, or after `timeoutMs`
+ * with `null`. A reply that arrives AFTER settling (a late reply racing a
+ * timeout that already fired, or a second call racing a first) is ignored —
+ * `settled` latches permanently the first time either side wins, exactly
+ * like `startPopoutClientHandshake`'s own single-settle guard.
+ *
+ * Deliberately takes over `channel.onmessage` for the duration of the wait
+ * (restored to nothing on settle, same as this module's other drivers) —
+ * the caller owns wiring it back to `createDockPopoutMessageHandler` if the
+ * hand-off fails and the tab stays popped out; on success the whole entry
+ * (channel included) gets torn down anyway (design's `endPopOut`).
+ *
+ * Returns a `cancel()` that settles nothing and just stops the timer — for
+ * an unmount/nonce-change where nothing about the bring-back itself failed.
+ */
+export function startBringBackRequest(options: BringBackRequestOptions): () => void {
+  const {
+    channel,
+    onSettle,
+    setTimeoutFn = (cb, ms) => setTimeout(cb, ms),
+    clearTimeoutFn = (id) => clearTimeout(id),
+    timeoutMs = BRING_BACK_REPLY_TIMEOUT_MS,
+  } = options;
+  let settled = false;
+
+  const finish = (buffer: TransferredBuffer | null) => {
+    if (settled) return;
+    settled = true;
+    clearTimeoutFn(timer);
+    channel.onmessage = null;
+    onSettle(buffer);
+  };
+
+  channel.onmessage = (ev) => {
+    if (settled) return;
+    const message = parsePopoutChannelMessage(ev.data);
+    if (message?.type !== "buffer-reply") return;
+    finish(message.buffer);
+  };
+
+  const timer = setTimeoutFn(() => finish(null), timeoutMs);
+
+  try {
+    channel.postMessage({ type: "bring-back-request" });
+  } catch {
+    /* channel already gone — the timeout above still fires and falls back */
+  }
+
+  return () => {
+    if (settled) return;
+    settled = true;
+    clearTimeoutFn(timer);
   };
 }

@@ -8,26 +8,65 @@
 // connection.test.ts and is NOT re-tested here — this file is about the wiring.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { renderHook, act, waitFor } from "@testing-library/react";
 import { useTerminalSession, type TerminalSessionDescriptor } from "./use-terminal-session";
 
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
+// Tracks every mock Terminal instance created — used by the scrollback
+// transfer tests below to inspect reset()/write() calls, the same way
+// `mockSockets` tracks WebSockets. `vi.hoisted` because the mock factory
+// (itself hoisted above this file's other statements) needs a live
+// reference to push into.
+const mockTerminals = vi.hoisted(() => [] as { written: string[]; resetCount: number }[]);
 vi.mock("@xterm/xterm", () => ({
   Terminal: class {
     cols = 80;
     rows = 24;
+    written: string[] = [];
+    resetCount = 0;
+    buffer = { active: { length: 0 } };
+    constructor() {
+      mockTerminals.push(this);
+    }
     onData() {}
     open() {}
-    loadAddon() {}
-    write() {}
+    loadAddon(addon: { activate: (term: unknown) => void }) {
+      addon.activate(this);
+    }
+    write(data: string) {
+      this.written.push(data);
+    }
     clear() {}
+    reset() {
+      this.resetCount += 1;
+    }
     focus() {}
     dispose() {}
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({
   FitAddon: class {
+    activate() {}
+    dispose() {}
     fit() {}
+  },
+}));
+// scrollback-transfer.ts's own real serialize/restore logic is unit-tested
+// in its own test file (mocking the addon there, since the addon reaches
+// into a real xterm Terminal's internals). Here it's mocked with a tiny fake
+// so the HOOK WIRING (attachExisting.initialBuffer, serializeNow/restoreBuffer)
+// can be exercised against the plain mock Terminal above without either
+// needing to satisfy the real addon's internals.
+vi.mock("@xterm/addon-serialize", () => ({
+  SerializeAddon: class {
+    private term: { written: string[] } | null = null;
+    activate(term: { written: string[] }) {
+      this.term = term;
+    }
+    dispose() {}
+    serialize() {
+      return (this.term?.written ?? []).join("");
+    }
   },
 }));
 
@@ -97,6 +136,12 @@ function latestSocket(): MockWebSocket {
   return s;
 }
 
+function latestTerminal(): { written: string[]; resetCount: number } {
+  const t = mockTerminals[mockTerminals.length - 1];
+  if (!t) throw new Error("no Terminal was constructed");
+  return t;
+}
+
 const descriptor: TerminalSessionDescriptor = {
   ideaId: "idea-1",
   ideaTitle: "Recipe Saver",
@@ -119,10 +164,25 @@ function mintResponse(overrides: Partial<Record<string, unknown>> = {}) {
 describe("useTerminalSession", () => {
   beforeEach(() => {
     mockSockets = [];
+    mockTerminals.length = 0;
     toastError.mockClear();
     toastSuccess.mockClear();
     vi.stubGlobal("WebSocket", MockWebSocket);
     vi.stubGlobal("fetch", vi.fn(async () => mintResponse()));
+    // jsdom doesn't implement ResizeObserver. Every OTHER test in this file
+    // never actually attaches a DOM node to containerRef (renderHook doesn't
+    // render the consumer's <div ref={containerRef}/> for it), so the hook's
+    // resize-observer effect (gated on `containerRef.current`) never used to
+    // fire — the scrollback transfer tests below are the first to attach a
+    // real container, so they're also the first to reach this code path.
+    vi.stubGlobal(
+      "ResizeObserver",
+      class {
+        observe() {}
+        unobserve() {}
+        disconnect() {}
+      },
+    );
   });
 
   afterEach(() => {
@@ -617,6 +677,137 @@ describe("useTerminalSession", () => {
       await flushEffects();
       expect(global.fetch).not.toHaveBeenCalled();
       expect(mockSockets).toHaveLength(1); // exactly the attach's own socket, nothing extra
+    });
+
+    // ── scrollback transfer, Flow A (card 35cffc10) ─────────────────────────
+    //
+    // The xterm-init effect bails out early (`!containerRef.current`) unless
+    // something has attached a real DOM node to `containerRef` — normally the
+    // consumer's `<div ref={containerRef} />`, which `renderHook` never
+    // renders since it exercises the hook in isolation. `mountContainer`
+    // stands in for that JSX by assigning a detached element directly, the
+    // same ref object the hook itself reads at effect-resume time.
+    function mountContainer(result: { current: { containerRef: { current: HTMLDivElement | null } } }) {
+      result.current.containerRef.current = document.createElement("div");
+    }
+
+    it("restores a handed-over initialBuffer into the terminal — reset then marker then data, BEFORE any socket data arrives", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: {
+            sessionId: "sid-popped",
+            browserToken: "popped-browser-token",
+            initialBuffer: { data: "hello from the dock\r\n", truncated: true },
+          },
+        }),
+      );
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      const term = latestTerminal();
+      await waitFor(() => expect(term.resetCount).toBe(1));
+      expect(term.written[0]).toContain("older history trimmed during hand-off");
+      expect(term.written[1]).toBe("hello from the dock\r\n");
+    });
+
+    it("falls back to a plain clear() (no reset/write) when no initialBuffer rides the attach — deploy skew / nothing to serialize", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      await flushEffects();
+
+      const term = latestTerminal();
+      expect(term.resetCount).toBe(0);
+      expect(term.written).toEqual([]);
+    });
+
+    it("restores the buffer even when the terminal mounts AFTER attachToExisting already ran (the pending-buffer race)", async () => {
+      // Reproduces the ordering where the attach effect fires before the
+      // async xterm-init effect has finished mounting the Terminal — the
+      // buffer must not be silently dropped just because termRef was still
+      // null at the moment attachToExisting ran.
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: {
+            sessionId: "sid-popped",
+            browserToken: "popped-browser-token",
+            initialBuffer: { data: "queued before mount\r\n", truncated: false },
+          },
+        }),
+      );
+      mountContainer(result);
+      // No flushEffects() at all yet — attachToExisting may or may not have
+      // already run synchronously; either way the terminal mounts async.
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      const term = latestTerminal();
+      await waitFor(() => expect(term.written).toContain("queued before mount\r\n"));
+      expect(term.resetCount).toBe(1);
+    });
+  });
+
+  // ── scrollback transfer actions: serializeNow / restoreBuffer ────────────
+
+  describe("scrollback transfer actions", () => {
+    it("serializeNow() returns null before the xterm instance has mounted", () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, { enabled: true, expanded: false, requestExpand }),
+      );
+      // Synchronous — no flush, no container attached — the async xterm-init
+      // effect hasn't (and here, can't yet have) resolved.
+      expect(result.current.actions.serializeNow()).toBeNull();
+    });
+
+    it("serializeNow() returns a buffer once the terminal has mounted", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand }),
+      );
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      const buffer = result.current.actions.serializeNow();
+      expect(buffer).toEqual({ data: "", truncated: false }); // nothing written yet — honestly empty, not null
+    });
+
+    it("restoreBuffer() writes into the live terminal (reset, marker, data) and is a no-op before mount", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand }),
+      );
+
+      // Before mount: a no-op, never throws.
+      expect(() =>
+        result.current.actions.restoreBuffer({ data: "too early", truncated: false }),
+      ).not.toThrow();
+
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      act(() => {
+        result.current.actions.restoreBuffer({ data: "restored content", truncated: false });
+      });
+      const term = latestTerminal();
+      expect(term.resetCount).toBeGreaterThanOrEqual(1);
+      expect(term.written).toContain("restored content");
     });
   });
 });

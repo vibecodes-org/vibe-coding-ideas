@@ -67,11 +67,12 @@ import {
   popoutChannelName,
   openPopoutWindow,
   createDockPopoutMessageHandler,
+  startBringBackRequest,
   INITIAL_DOCK_HANDSHAKE_STATE,
-  type DockHandshakeState,
-  type PopoutChannelLike,
+  type DockPopoutEntry,
   type PopoutPayload,
 } from "@/lib/terminal/popout-channel";
+import type { TransferredBuffer } from "@/lib/terminal/scrollback-transfer";
 import {
   type SessionEntry,
   type TabDisplayStatus,
@@ -171,9 +172,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   // from the moment "Pop out" is clicked until either "Bring back" or the
   // popped window's own close-signal).
   const [poppedOutKeys, setPoppedOutKeys] = useState<Set<string>>(() => new Set());
-  const popoutChannelsRef = useRef<Map<string, { channel: PopoutChannelLike; handshake: DockHandshakeState }>>(
-    new Map(),
-  );
+  const popoutChannelsRef = useRef<Map<string, DockPopoutEntry>>(new Map());
   // Mirrors so `deliverLaunch` (used by both the launch-bus subscription and
   // "+") can read the CURRENT list/summaries without depending on them — that
   // keeps its identity stable across renders instead of forcing the launch-bus
@@ -273,22 +272,53 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   }, []);
 
   // Reattach the dock's OWN leg for this session (no re-mint — reconnectNow()
-  // reuses the retained sid/browserToken, see use-terminal-session.ts) and
-  // drop the pop-out bookkeeping. The dock's own leg was preempted the moment
-  // the pop-out attached (relay close 4001), so underneath the "Popped out"
-  // placeholder its connection state is stuck in "error" — reconnectNow()
-  // detects that (decideReconnectNow in connection.ts) and resets the state
-  // machine before reopening the socket, rather than silently reattaching into
-  // a state the reducer has no forward edge out of (fix/terminal-bringback-
-  // state-reset). This is what BOTH "Bring back to dock" and the popped
-  // window's close-signal do — the only difference is who triggered it
-  // (design §10b: "two paths, never a race").
-  const bringBackToDock = useCallback(
-    (key: string) => {
+  // reuses the retained sid/browserToken, see use-terminal-session.ts), first
+  // restoring a handed-over buffer into the dock's own (hidden) terminal when
+  // one is available, then dropping the pop-out bookkeeping. The dock's own
+  // leg was preempted the moment the pop-out attached (relay close 4001), so
+  // underneath the "Popped out" placeholder its connection state is stuck in
+  // "error" — reconnectNow() detects that (decideReconnectNow in
+  // connection.ts) and resets the state machine before reopening the socket,
+  // rather than silently reattaching into a state the reducer has no forward
+  // edge out of (fix/terminal-bringback-state-reset).
+  //
+  // Scrollback transfer (card 35cffc10, D1): a non-null `buffer` here is
+  // always a SUPERSET of the dock's own history (Flow A handed the dock's
+  // pre-pop-out buffer to the popped window; it only grew from there) —
+  // wholesale REPLACE via restoreBuffer, never append. `null` (no buffer
+  // ever arrived — deploy skew, a failed serialize, or the hand-off-timeout
+  // "closed" that never carried a payload) leaves the dock's own buffer
+  // untouched, exactly today's pre-this-card behaviour.
+  //
+  // Shared by BOTH reattach paths — the popped window's own close-signal
+  // (Flow C, `onReattach` below) and the button's two-phase request (Flow B,
+  // `bringBackToDock` below) — the only difference between them is HOW the
+  // buffer got decided, never what happens once it has been.
+  const applyBufferAndReattach = useCallback(
+    (key: string, buffer: TransferredBuffer | null) => {
+      if (buffer) actionsMapRef.current.get(key)?.restoreBuffer(buffer);
       actionsMapRef.current.get(key)?.reconnectNow();
       endPopOut(key);
     },
     [endPopOut],
+  );
+
+  // "Bring back to dock" button click (Flow B, design §3): two-phase —
+  // request the popped window's buffer, wait up to 500ms for the reply (or
+  // proceed on timeout with the dock's own buffer, D3) — THEN reconnect and
+  // tear down. No channel entry means Flow C already completed the reattach
+  // moments earlier (the popped window closed on its own, racing this click)
+  // — a no-op (E1).
+  const bringBackToDock = useCallback(
+    (key: string) => {
+      const entry = popoutChannelsRef.current.get(key);
+      if (!entry) return;
+      startBringBackRequest({
+        channel: entry.channel,
+        onSettle: (buffer) => applyBufferAndReattach(key, buffer),
+      });
+    },
+    [applyBufferAndReattach],
   );
 
   const handlePopOut = useCallback(
@@ -329,7 +359,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       // not just the first — as a reason to (re)send the payload.
       const channel = new BroadcastChannel(popoutChannelName(nonce));
       popoutChannelsRef.current.set(key, { channel, handshake: INITIAL_DOCK_HANDSHAKE_STATE });
-      const payload: PopoutPayload = {
+      // Everything but the buffer is static for the lifetime of this
+      // hand-off — the buffer itself is captured FRESH on every send
+      // (including retries) inside getPayload below (design §1/§2's "as
+      // current as possible"), never memoized alongside the rest.
+      const basePayload: Omit<PopoutPayload, "buffer"> = {
         sid: summary.sessionId,
         browserToken: summary.browserToken,
         relayUrl: relayBaseUrl(),
@@ -342,17 +376,23 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       channel.onmessage = createDockPopoutMessageHandler({
         getEntry: () => popoutChannelsRef.current.get(key),
         setEntry: (next) => popoutChannelsRef.current.set(key, next),
-        getPayload: () => payload,
-        // The popped window told us it's closing (D3) — OR its hand-off
-        // timed out and it's telling us to give up on its behalf (see
-        // startPopoutClientHandshake) — either way, reattach automatically.
-        onReattach: () => bringBackToDock(key),
+        getPayload: () => {
+          const buffer = actionsMapRef.current.get(key)?.serializeNow();
+          return buffer ? { ...basePayload, buffer } : basePayload;
+        },
+        // The popped window told us it's closing (D3, Flow C — possibly with
+        // a stashed buffer that arrived just ahead of "closed") — OR its
+        // hand-off timed out and it's telling us to give up on its behalf
+        // (see startPopoutClientHandshake, always with a null buffer) —
+        // either way, apply whatever buffer was stashed (or none) and
+        // reattach automatically.
+        onReattach: (stashedBuffer) => applyBufferAndReattach(key, stashedBuffer),
       });
 
       posthogRef.current?.capture("terminal_popout_used", { origin: entry?.origin ?? "toolbar" });
       setPoppedOutKeys((prev) => new Set(prev).add(key));
     },
-    [ideaId, ideaTitle, ideaSlug, bringBackToDock],
+    [ideaId, ideaTitle, ideaSlug, applyBufferAndReattach],
   );
 
   // ── close / remove a tab ────────────────────────────────────────────────────

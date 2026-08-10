@@ -10,13 +10,17 @@ import {
   hasPopoutHandoffTimedOut,
   POPOUT_HANDOFF_TIMEOUT_MS,
   POPOUT_READY_RETRY_MS,
+  BRING_BACK_REPLY_TIMEOUT_MS,
   createDockPopoutMessageHandler,
   startPopoutClientHandshake,
+  startBringBackRequest,
   type PopoutPayload,
   type PopoutChannelLike,
   type DockHandshakeState,
+  type DockPopoutEntry,
 } from "./popout-channel";
 import { RELAY_CLOSE } from "./connection";
+import type { TransferredBuffer } from "./scrollback-transfer";
 
 const PAYLOAD: PopoutPayload = {
   sid: "sid-123",
@@ -28,6 +32,8 @@ const PAYLOAD: PopoutPayload = {
   identity: "Recipe Saver · session sid-123",
   readOnly: false,
 };
+
+const BUFFER: TransferredBuffer = { data: "some scrollback\r\n", truncated: false };
 
 describe("popoutChannelName", () => {
   it("namespaces the nonce so it can't collide with anything else on the origin", () => {
@@ -122,6 +128,53 @@ describe("parsePopoutChannelMessage", () => {
       expect(parsePopoutChannelMessage(input)).toBeNull();
     },
   );
+
+  // ── scrollback transfer (card 35cffc10) ───────────────────────────────────
+
+  it("deploy-skew: parses a payload with no buffer field at all exactly as before (old sender)", () => {
+    expect(parsePopoutChannelMessage({ type: "payload", payload: PAYLOAD })).toEqual({
+      type: "payload",
+      payload: PAYLOAD,
+    });
+  });
+
+  it("parses a payload carrying a well-formed buffer", () => {
+    const withBuffer = { ...PAYLOAD, buffer: BUFFER };
+    expect(parsePopoutChannelMessage({ type: "payload", payload: withBuffer })).toEqual({
+      type: "payload",
+      payload: withBuffer,
+    });
+  });
+
+  it("a malformed buffer is dropped WITHOUT rejecting the rest of the payload — scrollback never sinks a hand-off", () => {
+    const malformed = { ...PAYLOAD, buffer: { data: "ok", truncated: "not-a-boolean" } };
+    const result = parsePopoutChannelMessage({ type: "payload", payload: malformed });
+    expect(result).toEqual({ type: "payload", payload: PAYLOAD }); // buffer simply absent, credentials intact
+  });
+
+  it.each([null, 42, "nope", [], { data: 5, truncated: false }, { data: "ok" }])(
+    "drops every other shape of malformed buffer %#, credentials still parse",
+    (badBuffer) => {
+      const result = parsePopoutChannelMessage({ type: "payload", payload: { ...PAYLOAD, buffer: badBuffer } });
+      expect(result).toEqual({ type: "payload", payload: PAYLOAD });
+    },
+  );
+
+  it("parses a bring-back-request message", () => {
+    expect(parsePopoutChannelMessage({ type: "bring-back-request" })).toEqual({ type: "bring-back-request" });
+  });
+
+  it("parses a well-formed buffer-reply message", () => {
+    expect(parsePopoutChannelMessage({ type: "buffer-reply", buffer: BUFFER })).toEqual({
+      type: "buffer-reply",
+      buffer: BUFFER,
+    });
+  });
+
+  it("rejects a buffer-reply with a malformed buffer — here the buffer IS the whole message", () => {
+    expect(parsePopoutChannelMessage({ type: "buffer-reply", buffer: { data: "ok" } })).toBeNull();
+    expect(parsePopoutChannelMessage({ type: "buffer-reply" })).toBeNull();
+  });
 });
 
 describe("reduceDockHandshake", () => {
@@ -291,6 +344,72 @@ describe("createDockPopoutMessageHandler", () => {
     expect(() => handler({ data: "not a message" } as unknown as MessageEvent)).not.toThrow();
     expect(channel.posted).toEqual([]);
   });
+
+  // ── Flow C: buffer-reply stashed, applied on the closed that follows ──────
+  // (design §4 — the popped window pushes its buffer unprompted, immediately
+  // before its own "closed", when the user just closes the window rather
+  // than clicking "Bring back".)
+
+  describe("Flow C — buffer-reply then closed", () => {
+    it("stashes buffer-reply without reattaching, then applies it when closed arrives", () => {
+      const channel = makeSpyChannel();
+      let entry: DockPopoutEntry | undefined = { channel, handshake: "payload-sent" };
+      const onReattach = vi.fn();
+      const handler = createDockPopoutMessageHandler({
+        getEntry: () => entry,
+        setEntry: (next) => {
+          entry = next;
+        },
+        getPayload: () => PAYLOAD,
+        onReattach,
+      });
+
+      handler({ data: { type: "buffer-reply", buffer: BUFFER } } as MessageEvent);
+      expect(onReattach).not.toHaveBeenCalled(); // stash only — not a reattach signal by itself
+      expect(entry?.pendingBuffer).toEqual(BUFFER);
+
+      handler({ data: { type: "closed" } } as MessageEvent);
+      expect(onReattach).toHaveBeenCalledTimes(1);
+      expect(onReattach).toHaveBeenCalledWith(BUFFER);
+    });
+
+    it("closed with no prior buffer-reply reattaches with null — today's path (old window, failed serialize, or hand-off timeout)", () => {
+      const channel = makeSpyChannel();
+      let entry: DockPopoutEntry | undefined = { channel, handshake: "payload-sent" };
+      const onReattach = vi.fn();
+      const handler = createDockPopoutMessageHandler({
+        getEntry: () => entry,
+        setEntry: (next) => {
+          entry = next;
+        },
+        getPayload: () => PAYLOAD,
+        onReattach,
+      });
+
+      handler({ data: { type: "closed" } } as MessageEvent);
+      expect(onReattach).toHaveBeenCalledWith(null);
+    });
+
+    it("a malformed buffer-reply is dropped entirely — never stashed, closed still reattaches with null", () => {
+      const channel = makeSpyChannel();
+      let entry: DockPopoutEntry | undefined = { channel, handshake: "payload-sent" };
+      const onReattach = vi.fn();
+      const handler = createDockPopoutMessageHandler({
+        getEntry: () => entry,
+        setEntry: (next) => {
+          entry = next;
+        },
+        getPayload: () => PAYLOAD,
+        onReattach,
+      });
+
+      handler({ data: { type: "buffer-reply", buffer: { data: "ok" } } } as MessageEvent);
+      expect(entry?.pendingBuffer).toBeUndefined();
+
+      handler({ data: { type: "closed" } } as MessageEvent);
+      expect(onReattach).toHaveBeenCalledWith(null);
+    });
+  });
 });
 
 // ── client-side handshake driver, in isolation (fake timers) ───────────────
@@ -351,6 +470,100 @@ describe("startPopoutClientHandshake", () => {
     stop();
     vi.advanceTimersByTime(POPOUT_HANDOFF_TIMEOUT_MS + 1000);
     expect(channel.posted.length).toBe(postedAtStart); // nothing more posted, ever
+  });
+});
+
+// ── dock-side bring-back driver, in isolation (fake timers) — Flow B ───────
+
+describe("startBringBackRequest", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("posts bring-back-request immediately", () => {
+    const channel = makeSpyChannel();
+    startBringBackRequest({ channel, onSettle: vi.fn() });
+    expect(channel.posted).toEqual([{ type: "bring-back-request" }]);
+  });
+
+  it("settles with the buffer the moment a buffer-reply arrives, before the timeout", () => {
+    const channel = makeSpyChannel();
+    const onSettle = vi.fn();
+    startBringBackRequest({ channel, onSettle });
+
+    vi.advanceTimersByTime(BRING_BACK_REPLY_TIMEOUT_MS - 50);
+    channel.onmessage?.({ data: { type: "buffer-reply", buffer: BUFFER } } as MessageEvent);
+
+    expect(onSettle).toHaveBeenCalledTimes(1);
+    expect(onSettle).toHaveBeenCalledWith(BUFFER);
+
+    // The timeout firing afterwards must be a total no-op — settle already happened.
+    vi.advanceTimersByTime(BRING_BACK_REPLY_TIMEOUT_MS * 2);
+    expect(onSettle).toHaveBeenCalledTimes(1);
+  });
+
+  it("settles with null after the timeout when no reply ever arrives (D3's deliberate fallback)", () => {
+    const channel = makeSpyChannel();
+    const onSettle = vi.fn();
+    startBringBackRequest({ channel, onSettle });
+
+    vi.advanceTimersByTime(BRING_BACK_REPLY_TIMEOUT_MS);
+    expect(onSettle).toHaveBeenCalledTimes(1);
+    expect(onSettle).toHaveBeenCalledWith(null);
+  });
+
+  it("ignores a reply that arrives AFTER the timeout already settled — a late reply can never clobber the fallback", () => {
+    const channel = makeSpyChannel();
+    const onSettle = vi.fn();
+    startBringBackRequest({ channel, onSettle });
+
+    vi.advanceTimersByTime(BRING_BACK_REPLY_TIMEOUT_MS);
+    expect(onSettle).toHaveBeenCalledTimes(1);
+    expect(onSettle).toHaveBeenCalledWith(null);
+
+    // A stray late buffer-reply (e.g. the popped window was just slow, not
+    // dead) must not fire onSettle a second time.
+    channel.onmessage?.({ data: { type: "buffer-reply", buffer: BUFFER } } as MessageEvent);
+    expect(onSettle).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores every non-buffer-reply message while waiting", () => {
+    const channel = makeSpyChannel();
+    const onSettle = vi.fn();
+    startBringBackRequest({ channel, onSettle });
+
+    channel.onmessage?.({ data: { type: "ready" } } as MessageEvent);
+    channel.onmessage?.({ data: { type: "closed" } } as MessageEvent);
+    channel.onmessage?.({ data: "garbage" } as unknown as MessageEvent);
+    expect(onSettle).not.toHaveBeenCalled();
+
+    channel.onmessage?.({ data: { type: "buffer-reply", buffer: BUFFER } } as MessageEvent);
+    expect(onSettle).toHaveBeenCalledTimes(1);
+    expect(onSettle).toHaveBeenCalledWith(BUFFER);
+  });
+
+  it("cancel() stops the timer and settles nothing — for an ordinary unmount, not a failure", () => {
+    const channel = makeSpyChannel();
+    const onSettle = vi.fn();
+    const cancel = startBringBackRequest({ channel, onSettle });
+    cancel();
+    vi.advanceTimersByTime(BRING_BACK_REPLY_TIMEOUT_MS * 2);
+    expect(onSettle).not.toHaveBeenCalled();
+  });
+
+  it("a postMessage failure (channel already gone) doesn't prevent the timeout fallback from still firing", () => {
+    const channel = makeSpyChannel();
+    channel.postMessage = () => {
+      throw new Error("channel closed");
+    };
+    const onSettle = vi.fn();
+    startBringBackRequest({ channel, onSettle });
+    vi.advanceTimersByTime(BRING_BACK_REPLY_TIMEOUT_MS);
+    expect(onSettle).toHaveBeenCalledTimes(1);
+    expect(onSettle).toHaveBeenCalledWith(null);
   });
 });
 
