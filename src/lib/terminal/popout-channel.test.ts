@@ -14,6 +14,8 @@ import {
   createDockPopoutMessageHandler,
   startPopoutClientHandshake,
   startBringBackRequest,
+  startBroughtBackAutoClose,
+  BROUGHT_BACK_AUTO_CLOSE_MS,
   type PopoutPayload,
   type PopoutChannelLike,
   type DockHandshakeState,
@@ -564,6 +566,68 @@ describe("startBringBackRequest", () => {
     vi.advanceTimersByTime(BRING_BACK_REPLY_TIMEOUT_MS);
     expect(onSettle).toHaveBeenCalledTimes(1);
     expect(onSettle).toHaveBeenCalledWith(null);
+  });
+});
+
+describe("startBroughtBackAutoClose", () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("calls closeWindow after BROUGHT_BACK_AUTO_CLOSE_MS", () => {
+    const closeWindow = vi.fn();
+    startBroughtBackAutoClose({ closeWindow });
+
+    vi.advanceTimersByTime(BROUGHT_BACK_AUTO_CLOSE_MS - 1);
+    expect(closeWindow).not.toHaveBeenCalled();
+
+    vi.advanceTimersByTime(1);
+    expect(closeWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("cancel() prevents closeWindow from ever firing", () => {
+    const closeWindow = vi.fn();
+    const cancel = startBroughtBackAutoClose({ closeWindow });
+    cancel();
+    vi.advanceTimersByTime(BROUGHT_BACK_AUTO_CLOSE_MS * 2);
+    expect(closeWindow).not.toHaveBeenCalled();
+  });
+
+  it("swallows a throwing closeWindow — a browser refusing the scripted close must leave the fallback screen intact, not crash", () => {
+    const closeWindow = vi.fn(() => {
+      throw new Error("scripts may not close this window");
+    });
+    expect(() => {
+      startBroughtBackAutoClose({ closeWindow });
+      vi.advanceTimersByTime(BROUGHT_BACK_AUTO_CLOSE_MS);
+    }).not.toThrow();
+    expect(closeWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("a throwing closeWindow doesn't leave any dangling timer or unhandled rejection behind — the process stays clean afterwards", () => {
+    const closeWindow = vi.fn(() => {
+      throw new Error("boom");
+    });
+    startBroughtBackAutoClose({ closeWindow });
+    vi.advanceTimersByTime(BROUGHT_BACK_AUTO_CLOSE_MS);
+    expect(closeWindow).toHaveBeenCalledTimes(1);
+
+    // Nothing else was scheduled by the failure — advancing further changes nothing.
+    vi.advanceTimersByTime(BROUGHT_BACK_AUTO_CLOSE_MS * 5);
+    expect(closeWindow).toHaveBeenCalledTimes(1);
+  });
+
+  it("respects a custom delayMs", () => {
+    const closeWindow = vi.fn();
+    startBroughtBackAutoClose({ closeWindow, delayMs: 100 });
+
+    vi.advanceTimersByTime(99);
+    expect(closeWindow).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1);
+    expect(closeWindow).toHaveBeenCalledTimes(1);
   });
 });
 

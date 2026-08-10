@@ -656,3 +656,58 @@ export function startBringBackRequest(options: BringBackRequestOptions): () => v
     clearTimeoutFn(timer);
   };
 }
+
+// ── popped-window-side auto-close on bring-back (card 101bbb2d) ────────────
+//
+// The popped window was opened BY SCRIPT — `window.open()` in the dock (see
+// `openPopoutWindow` above) — so `window.close()` from ITS OWN script is
+// browser-permitted (the "scripts may only close windows they opened"
+// restriction). By the time this window sees its own 4001 preempted close
+// (`isPreemptedClose` above), the two-phase bring-back (design's Flow B,
+// `startBringBackRequest`) has already crossed the scrollback buffer BEFORE
+// the dock reattached — nothing further is needed from this window, so it
+// closes itself instead of leaving Nick to close a "you can close this
+// window" tab by hand. `BroughtBackOverlay` (terminal-popout-view.tsx) is
+// kept exactly as-is as the FALLBACK: some browsers refuse a scripted close
+// (e.g. the tab wasn't opened by script from that browser's point of view,
+// or the user has multiple tabs in the window) — `closeWindow` swallows
+// whatever it throws so a refusal never surfaces as an error, it just leaves
+// the calm overlay + its Close button sitting there, which is also what's
+// briefly visible during the delay below either way.
+
+/** How long the popped window waits, once brought back, before closing itself — long enough that the "Brought back to the dock" state is visibly readable for a beat, short enough that it reads as automatic rather than stuck. */
+export const BROUGHT_BACK_AUTO_CLOSE_MS = 600;
+
+/**
+ * Schedules `closeWindow()` after `delayMs` and returns a cancel function.
+ * `closeWindow` is injected (rather than this module calling `window.close()`
+ * directly) for the same reason every other driver in this file injects its
+ * side effect — testable without a real `window`. Never throws: a browser
+ * that refuses the scripted close (or any other failure inside `closeWindow`)
+ * must leave the fallback "Moved to dock" screen intact, not crash the
+ * popped window's render.
+ */
+export function startBroughtBackAutoClose(options: {
+  closeWindow: () => void;
+  delayMs?: number;
+  setTimeoutFn?: (cb: () => void, ms: number) => ReturnType<typeof setTimeout>;
+  clearTimeoutFn?: (id: ReturnType<typeof setTimeout>) => void;
+}): () => void {
+  const {
+    closeWindow,
+    delayMs = BROUGHT_BACK_AUTO_CLOSE_MS,
+    setTimeoutFn = (cb, ms) => setTimeout(cb, ms),
+    clearTimeoutFn = (id) => clearTimeout(id),
+  } = options;
+
+  const timer = setTimeoutFn(() => {
+    try {
+      closeWindow();
+    } catch {
+      /* the browser refused the scripted close — the fallback screen (with
+       * its own Close button) is already on screen; nothing else to do. */
+    }
+  }, delayMs);
+
+  return () => clearTimeoutFn(timer);
+}
