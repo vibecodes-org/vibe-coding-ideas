@@ -1,6 +1,6 @@
 {
   "name": "vibecodes-terminal-helper",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "private": true,
   "description": "macOS helper app: registers the vibecodes:// URL scheme and runs the terminal bridge (node-pty PTY -> relay) on launch. A thin, installable, signable wrapper around terminal/bridge (no logic duplication).",
   "author": "VibeCodes",

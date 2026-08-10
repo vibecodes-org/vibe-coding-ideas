@@ -582,33 +582,48 @@ export class TerminalRelay {
       }
     }
 
-    // 5b) HELPER-VERSION ANNOUNCEMENT (release-gate rework 2a). Ordering-independent
-    //     both ways:
-    //       - bridge attaches with a (sanitized) `helperVersion` query param → store
-    //         it durably (attach-ordering independent: outlives this one socket) and,
-    //         if a browser leg is ALREADY live, tell it now.
-    //       - browser attaches → if a bridge version is already on file (the bridge
+    // 5b) HELPER-VERSION + MACHINE-IDENTITY ANNOUNCEMENT (release-gate rework 2a,
+    //     extended by Nick's sign-off change 2 to also carry the bridge's
+    //     hostname). Ordering-independent both ways, and the two fields are
+    //     independent of each other (either alone is a valid update):
+    //       - bridge attaches with a (sanitized) `helperVersion` and/or `host`
+    //         query param → store whichever is present durably (attach-ordering
+    //         independent: outlives this one socket) and, if a browser leg is
+    //         ALREADY live, tell it the CURRENT combined state (freshest of both
+    //         fields, not just what arrived on this one attach — a bridge that
+    //         only re-sends `host` this time must not regress an already-known
+    //         version to "unknown", and vice versa).
+    //       - browser attaches → if anything is already on file (the bridge
     //         attached first, or this is a reattach), tell THIS leg immediately.
-    //     A missing/malformed param is a no-op either way (old bridge, or nothing to
-    //     report yet) — never overwrites a previously-stored version with nothing.
+    //     A missing/malformed param is a no-op either way (old bridge, or nothing
+    //     to report yet) — never overwrites a previously-stored value with nothing.
     if (role === "bridge") {
       const helperVersion = sanitizeHelperVersion(url.searchParams.get("helperVersion"));
-      if (helperVersion) {
-        await this.state.storage.put("bridgeHelperVersion", helperVersion);
+      const bridgeHost = sanitizeMachineLabel(url.searchParams.get("host"));
+      if (helperVersion) await this.state.storage.put("bridgeHelperVersion", helperVersion);
+      if (bridgeHost) await this.state.storage.put("bridgeHost", bridgeHost);
+      if (helperVersion || bridgeHost) {
         const browserPeer = this.findPeer("bridge");
         if (browserPeer) {
+          const [storedVersion, storedHost] = await Promise.all([
+            this.state.storage.get("bridgeHelperVersion"),
+            this.state.storage.get("bridgeHost"),
+          ]);
           try {
-            browserPeer.send(encodeBridgeVersionFrame(helperVersion));
+            browserPeer.send(encodeBridgeVersionFrame(storedVersion, storedHost));
           } catch (e) {
             this.log("bridge-version forward failed", { session, err: String(e) });
           }
         }
       }
     } else if (role === "browser") {
-      const bridgeHelperVersion = await this.state.storage.get("bridgeHelperVersion");
-      if (bridgeHelperVersion) {
+      const [bridgeHelperVersion, bridgeHost] = await Promise.all([
+        this.state.storage.get("bridgeHelperVersion"),
+        this.state.storage.get("bridgeHost"),
+      ]);
+      if (bridgeHelperVersion || bridgeHost) {
         try {
-          server.send(encodeBridgeVersionFrame(bridgeHelperVersion));
+          server.send(encodeBridgeVersionFrame(bridgeHelperVersion, bridgeHost));
         } catch (e) {
           this.log("bridge-version send failed", { session, err: String(e) });
         }
@@ -917,6 +932,7 @@ export class TerminalRelay {
       "lastActivityAt",
       "graceDeadline",
       "bridgeHelperVersion",
+      "bridgeHost",
     ]);
     await this.state.storage.deleteAlarm();
     // MITIGATION 1: invalidate the per-wake soft caches so a LATER attach to
