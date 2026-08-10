@@ -17,8 +17,10 @@
 /** The minimum helper version we no longer nudge the user to update away from.
  *  Bump this in lockstep with terminal/helper/package.json's version — see
  *  that file's header comment and docs/release-process.md for the release
- *  checklist. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.2.1";
+ *  checklist. 0.3.0 (card cc74a067) is the first release with the helper
+ *  lifecycle rework — quit-when-idle, crash log-and-exit, and the "Keep
+ *  helper ready" opt-in. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.0";
 
 export type HelperVersionParts = readonly [number, number, number];
 
