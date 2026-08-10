@@ -1,36 +1,62 @@
-// VibeCodes macOS helper — SLICE 7 (the "install once" piece).
+// VibeCodes macOS helper — SLICE 7 (the "install once" piece) + card cc74a067
+// (helper lifecycle: quit-when-idle, crash handling, the standing control
+// connection, and the "Keep helper ready" always-on opt-in).
 //
 // A thin, installable, URL-scheme-registered wrapper around the existing
-// terminal/bridge. Its ONLY jobs:
+// terminal/bridge. Its jobs:
 //
 //   1. Register the `vibecodes://` URL scheme so the OS routes the app's signed
 //      deep link here (Info.plist CFBundleURLTypes is emitted by electron-builder
 //      from `protocols` — see electron-builder.yml; we also call
 //      app.setAsDefaultProtocolClient at runtime for dev/registration).
-//   2. On `vibecodes://launch?relay&session&token[&cwd]`, run the EXISTING bridge
-//      logic with that URL as `--launch-url`. We do NOT re-implement the PTY/relay
-//      plumbing — we `fork` terminal/bridge/src/index.js using Electron-as-Node
-//      (ELECTRON_RUN_AS_NODE=1). node-pty 1.x is N-API (ABI-stable across Node and
-//      Electron) so its prebuilt pty.node loads unchanged; the bridge itself does
-//      the macOS spawn-helper chmod.
+//   2. On `vibecodes://launch?relay&session&token[&helperToken][&cwd]`, run the
+//      EXISTING bridge logic with that URL as `--launch-url`. We do NOT
+//      re-implement the PTY/relay plumbing — we `fork` terminal/bridge/src/
+//      index.js using Electron-as-Node (ELECTRON_RUN_AS_NODE=1). node-pty 1.x
+//      is N-API (ABI-stable across Node and Electron) so its prebuilt pty.node
+//      loads unchanged; the bridge itself does the macOS spawn-helper chmod.
+//   3. Hold a SEPARATE, standing, per-owner CONTROL connection to the relay
+//      (design §2/§3) for the whole process lifetime — carrying stop/quiesce/
+//      set-always-on commands in and presence/version/always-on out. This is
+//      independent of any bridge child: it opens at launch (from a fresh deep
+//      link's `helperToken`, or a persisted one on a login-item restart) and
+//      stays open through both "Active" (bridges running) and "Lingering"
+//      (idle, counting down) states.
+//   4. Manage its own lifecycle (design §1 decision 2): quit-when-idle by
+//      default (a 60s linger after the last bridge exits — see lifecycle.js),
+//      or never quit while "Keep helper ready" (always-on) is on, in which
+//      case it also registers as a login item and shows a menu-bar icon
+//      (design §5b).
+//   5. Crash log-and-exit: an uncaught error is written to a log file, best-
+//      effort goodbye'd to the relay, and the process exits — never a native
+//      dialog (design §1 decision 5).
 //
-// Headless background helper: no window, no dock icon. It stays alive while a
-// bridge child is running and quits shortly after the last one exits, so it does
-// not linger as a resident process. A subsequent link just cold-launches it again.
+// Headless background helper: no window, no dock icon.
 
-const { app } = require("electron");
+const {
+  app,
+  dialog,
+  Menu,
+  nativeImage,
+  shell,
+  Tray,
+} = require("electron");
 const { fork } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { shouldRegisterProtocolInDev } = require("./proto-reg");
+const lifecycle = require("./lifecycle");
+const { TRAY_ICON_PNG_BASE64 } = require("./tray-icon");
 
 const LAUNCH_PREFIX = "vibecodes://";
 
 // This helper's OWN version — the single source of truth for the update-nudge
-// feature (release-gate rework 2a/2b). Forked through to the bridge as
-// BRIDGE_HELPER_VERSION below; the bridge announces it to the relay, which
-// forwards it to the browser dock (src/lib/terminal/helper-version.ts decides
-// whether that's stale enough to nudge). Bump THIS package.json's `version` on
+// feature (release-gate rework 2a/2b) AND the version this helper announces on
+// its own control connection (helper/status's `version` field). Forked through
+// to the bridge as BRIDGE_HELPER_VERSION below; the bridge announces it to the
+// relay too, via its own bridge leg. Bump THIS package.json's `version` on
 // every release — nothing else needs touching for the announced version to
 // follow.
 const HELPER_VERSION = require("./package.json").version;
@@ -54,6 +80,28 @@ const SHARED_REAP = app.isPackaged
 const SHARED_ALLOWLIST = app.isPackaged
   ? path.join(process.resourcesPath, "shared", "relay-allowlist.mjs")
   : path.resolve(__dirname, "..", "shared", "relay-allowlist.mjs");
+
+// The helper role's mint/decode helpers (helperSessionId is baked into the
+// token's own `sid` claim by mintHelperToken, so decodeTokenClaims is all this
+// process needs to learn its own session id — see connectControl below).
+const SHARED_SESSION_TOKEN = app.isPackaged
+  ? path.join(process.resourcesPath, "shared", "session-token.mjs")
+  : path.resolve(__dirname, "..", "shared", "session-token.mjs");
+
+const SHARED_CONTROL_FRAMES = app.isPackaged
+  ? path.join(process.resourcesPath, "shared", "control-frames.mjs")
+  : path.resolve(__dirname, "..", "shared", "control-frames.mjs");
+
+// The control connection is plain `ws` — the SAME package the bridge already
+// depends on (terminal/bridge/package.json), shipped alongside it under
+// Resources/bridge/node_modules by the SAME extraResources copy that ships the
+// bridge itself (electron-builder.yml never excludes node_modules there). No
+// new dependency: this just resolves the one bridge/src/index.js already uses,
+// exactly like BRIDGE_ENTRY above reuses the bridge's own code.
+const WS_MODULE = app.isPackaged
+  ? path.join(process.resourcesPath, "bridge", "node_modules", "ws")
+  : path.resolve(__dirname, "..", "bridge", "node_modules", "ws");
+const WebSocket = require(WS_MODULE);
 
 // ── logging (metadata only — NEVER log the deep-link token) ───────────────────
 const t0 = Date.now();
@@ -84,7 +132,115 @@ async function allowlistMod() {
   return _allowlist;
 }
 
-// ── child-bridge bookkeeping + idle quit ─────────────────────────────────────
+let _sessionToken = null;
+async function sessionTokenMod() {
+  if (!_sessionToken) _sessionToken = await import(pathToFileURL(SHARED_SESSION_TOKEN).href);
+  return _sessionToken;
+}
+
+let _controlFrames = null;
+async function controlFramesMod() {
+  if (!_controlFrames) _controlFrames = await import(pathToFileURL(SHARED_CONTROL_FRAMES).href);
+  return _controlFrames;
+}
+
+// ── userData persistence (settings + the last control credentials) ───────────
+// Both are small, best-effort JSON files under the helper's own userData dir —
+// never anything sensitive beyond the short-lived control token itself (a
+// device credential, not a password). A missing/corrupt file is treated
+// exactly like "nothing persisted yet"; a write failure is logged and ignored
+// (nothing here is load-bearing for this launch — only for a LATER restart).
+function settingsPath() {
+  return path.join(app.getPath("userData"), "helper-settings.json");
+}
+function controlCredentialsPath() {
+  return path.join(app.getPath("userData"), "helper-control-credentials.json");
+}
+function crashLogPath() {
+  return path.join(app.getPath("userData"), "helper-crash.log");
+}
+
+/** @returns {{ alwaysOn: boolean }} */
+function loadSettings() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(settingsPath(), "utf8"));
+    return { alwaysOn: raw?.alwaysOn === true };
+  } catch {
+    return { alwaysOn: false };
+  }
+}
+function saveSettings(settings) {
+  try {
+    fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
+    fs.writeFileSync(settingsPath(), JSON.stringify(settings), "utf8");
+  } catch (e) {
+    log("warn", "could not persist helper settings", { err: String(e?.message || e) });
+  }
+}
+
+/** @returns {{ token: string, relay: string } | null} */
+function loadControlCredentials() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(controlCredentialsPath(), "utf8"));
+    if (typeof raw?.token === "string" && typeof raw?.relay === "string") return raw;
+    return null;
+  } catch {
+    return null;
+  }
+}
+function saveControlCredentials(creds) {
+  try {
+    fs.mkdirSync(path.dirname(controlCredentialsPath()), { recursive: true });
+    fs.writeFileSync(controlCredentialsPath(), JSON.stringify(creds), "utf8");
+  } catch (e) {
+    log("warn", "could not persist control credentials", { err: String(e?.message || e) });
+  }
+}
+
+// ── crash handling (design §1 decision 5: log-and-exit, never a dialog) ──────
+// Registered FIRST, before anything else runs, so even a startup-time throw is
+// caught. Node shows its own fatal-error stack trace + exit(1) ONLY when
+// `uncaughtException` has NO listener — attaching this one IS the suppression
+// (there is no separate Electron dialog to additionally silence for a plain
+// main-process JS exception; the risk this guards against is a future
+// dependency adding one, or a renderer-side crash reporter default).
+let crashing = false;
+function handleCrash(kind, err) {
+  if (crashing) return; // a crash during crash handling — don't loop
+  crashing = true;
+  const message = err?.stack || err?.message || String(err);
+  try {
+    fs.mkdirSync(path.dirname(crashLogPath()), { recursive: true });
+    fs.appendFileSync(
+      crashLogPath(),
+      `[${new Date().toISOString()}] ${kind}: ${message}\n`,
+      "utf8",
+    );
+  } catch {
+    /* best effort — a failed crash log must never block the exit below */
+  }
+  log("error", "crash — logging and exiting", { kind, err: message });
+  // Best-effort goodbye — no await (the event loop may be unhealthy); a failed
+  // send just means this disconnect is later classed "stopped unexpectedly",
+  // which is the honest outcome for an actual crash anyway.
+  try {
+    sendGoodbye("crash");
+  } catch {
+    /* ignore */
+  }
+  // Kill child bridges directly — no verified-kill escalation here (that's an
+  // async, multi-second process this handler cannot safely wait through); the
+  // crash log preserves diagnosability if a grandchild is left needing a
+  // manual sweep, which is the same trade-off an external `kill -9` already has.
+  for (const child of children) {
+    try { child.kill(); } catch { /* ignore */ }
+  }
+  app.exit(1);
+}
+process.on("uncaughtException", (err) => handleCrash("uncaughtException", err));
+process.on("unhandledRejection", (reason) => handleCrash("unhandledRejection", reason));
+
+// ── child-bridge bookkeeping + quit-when-idle (design §1/§2) ─────────────────
 const children = new Set();
 // bridge child -> its PTY child's pid (the grandchild — `claude`). Reported by
 // the bridge over IPC ({type:"pty-pid"}) right after its pty.spawn. Needed
@@ -92,28 +248,49 @@ const children = new Set();
 // if the bridge dies uncleanly (SIGKILL — it can run no cleanup), WE are the
 // only thing left that can verify the grandchild died and escalate if not.
 const ptyPids = new Map();
-// In-flight grandchild verifications. The idle-quit must NOT fire — and
-// before-quit must not let the process vanish — while one is pending.
+// In-flight grandchild verifications. The linger timer must not conclude the
+// helper is safe to quit — and before-quit must not let the process vanish —
+// while one is pending.
 const activeReaps = new Set();
 let quitting = false;
-let quitTimer = null;
-const IDLE_QUIT_MS = 2000; // grace after the last bridge exits before we quit
+let quitReason = "quit"; // default if app.quit() is ever reached some other way
+let lingerTimer = null;
 const REAP_HUP_WAIT_MS = 1000; // grandchild SIGHUP grace before SIGKILL(+group)
 
-function scheduleQuitIfIdle() {
+// "Keep helper ready" (design §1 decision 1/§3 follow-up, approved for v1 —
+// see the card's design-review note). Loaded synchronously at module load so
+// every code path below (including the very first updateLingerTimer() call)
+// sees the persisted value from the start, not a default that flips under it
+// a tick later.
+let alwaysOn = loadSettings().alwaysOn;
+
+/**
+ * (Re)decide the linger timer given the CURRENT bridge count + always-on
+ * setting — see lifecycle.js for the pure rule. Called on every bridge-count
+ * change and every always-on change.
+ */
+function updateLingerTimer() {
   if (quitting) return;
-  if (children.size > 0 || activeReaps.size > 0) {
-    if (quitTimer) { clearTimeout(quitTimer); quitTimer = null; }
+  const action = lifecycle.decideLingerAction({ bridgeCount: children.size, alwaysOn });
+  if (action === "cancel") {
+    if (lingerTimer) {
+      clearTimeout(lingerTimer);
+      lingerTimer = null;
+    }
     return;
   }
-  if (quitTimer) clearTimeout(quitTimer);
-  quitTimer = setTimeout(() => {
-    if (children.size === 0 && activeReaps.size === 0) {
-      log("info", "idle — no active sessions, quitting");
-      app.quit();
-    }
-  }, IDLE_QUIT_MS);
-  quitTimer.unref?.();
+  // action === "start": (re)arm a fresh window — a new deep link / session
+  // during an existing linger cancels then restarts it via this same path.
+  if (lingerTimer) clearTimeout(lingerTimer);
+  lingerTimer = setTimeout(() => {
+    lingerTimer = null;
+    if (activeReaps.size > 0) return; // still verifying a grandchild; its own
+    // completion below calls updateLingerTimer() again, which re-arms us.
+    if (!lifecycle.shouldQuitOnLingerExpiry({ bridgeCount: children.size, alwaysOn })) return;
+    log("info", "idle for the linger window — quitting", { ms: lifecycle.LINGER_MS });
+    beginCleanQuit("idle-quit");
+  }, lifecycle.LINGER_MS);
+  lingerTimer.unref?.();
 }
 
 /**
@@ -141,7 +318,8 @@ function reapGrandchild(pid, why) {
   activeReaps.add(p);
   p.finally(() => {
     activeReaps.delete(p);
-    scheduleQuitIfIdle();
+    updateLingerTimer();
+    refreshTray();
   });
   return p;
 }
@@ -150,7 +328,10 @@ function reapGrandchild(pid, why) {
  * Hand a `vibecodes://launch?…` URL to the existing bridge. Validates with the
  * SHARED parser first (so we never fork on garbage), then forks the bridge with
  * `--launch-url`. The bridge re-parses the same string (single source of truth)
- * and connects as the relay's bridge leg.
+ * and connects as the relay's bridge leg. Also (re)establishes the standing
+ * control connection from the link's `helperToken`, when present — see
+ * connectControl below; an already-connected helper treats a redundant one as
+ * a no-op (the deep-link module's own doc comment).
  */
 async function handleLaunchUrl(rawUrl) {
   const { parseLaunchDeepLink, redactDeepLinkToken } = await shared();
@@ -177,6 +358,14 @@ async function handleLaunchUrl(rawUrl) {
 
   log("info", "launching bridge for deep link", { url: redactDeepLinkToken(rawUrl) });
 
+  // Every launch that carries a helperToken (re)establishes/refreshes the
+  // control connection — persisting the credential so a later LaunchAgent
+  // restart (no deep link at all) can reconnect with the SAME token.
+  if (parsed.helperToken) {
+    saveControlCredentials({ token: parsed.helperToken, relay: parsed.relay });
+    void connectControl(parsed.relay, parsed.helperToken);
+  }
+
   // ELECTRON_RUN_AS_NODE=1 → the forked process is plain Node (Electron's bundled
   // runtime), so the bridge runs exactly as it does from the CLI. We pass our env
   // through verbatim so test seams (e.g. BRIDGE_CMD) keep working; in production
@@ -196,6 +385,8 @@ async function handleLaunchUrl(rawUrl) {
     stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
   children.add(child);
+  updateLingerTimer();
+  refreshTray();
 
   // Surface the bridge's structured logs on our stderr (already token-redacted by
   // the bridge). Never touch stream content.
@@ -219,11 +410,13 @@ async function handleLaunchUrl(rawUrl) {
     log("info", "bridge exited", { code, signal, active: children.size });
     // Trust nothing: whatever the bridge's exit looked like, VERIFY the
     // grandchild is gone (reapGrandchild registers in activeReaps synchronously,
-    // so the idle-quit below cannot fire before the verification completes).
+    // so the linger timer's fire callback above cannot conclude "safe to quit"
+    // before the verification completes).
     const ptyPid = ptyPids.get(child);
     ptyPids.delete(child);
     if (ptyPid) reapGrandchild(ptyPid, `bridge-exit code=${code} signal=${signal}`);
-    scheduleQuitIfIdle();
+    updateLingerTimer();
+    refreshTray();
   });
   child.on("error", (err) => {
     children.delete(child);
@@ -231,7 +424,8 @@ async function handleLaunchUrl(rawUrl) {
     const ptyPid = ptyPids.get(child);
     ptyPids.delete(child);
     if (ptyPid) reapGrandchild(ptyPid, "bridge-error");
-    scheduleQuitIfIdle();
+    updateLingerTimer();
+    refreshTray();
   });
 }
 
@@ -239,6 +433,259 @@ async function handleLaunchUrl(rawUrl) {
 // Windows, and the second-instance forward).
 function urlFromArgv(argv) {
   return argv.find((a) => typeof a === "string" && a.startsWith(LAUNCH_PREFIX));
+}
+
+// ── the standing control connection (design §2/§3) ────────────────────────────
+// One WebSocket, role=helper, on the owner's reserved session id — opened at
+// launch (from a deep link's helperToken, or a persisted one) and held for the
+// whole process lifetime. Hibernation-friendly: no client-side keepalive
+// beyond what the relay's own WebSocket handling needs (mirrors the design's
+// explicit "no client-side keepalive" note) — we only reconnect on an
+// unexpected drop, with simple capped backoff, never a ping loop.
+let controlWs = null;
+let controlReconnectTimer = null;
+let controlReconnectAttempt = 0;
+const CONTROL_RECONNECT_BASE_MS = 2000;
+const CONTROL_RECONNECT_MAX_MS = 30_000;
+
+/** Best-effort: send a goodbye frame if the control connection is currently open. */
+async function sendGoodbye(reason) {
+  if (!controlWs) return;
+  try {
+    const { encodeGoodbyeFrame } = await controlFramesMod();
+    if (controlWs.readyState === WebSocket.OPEN) controlWs.send(encodeGoodbyeFrame(reason));
+  } catch (e) {
+    log("warn", "could not send goodbye frame", { reason, err: String(e?.message || e) });
+  }
+}
+
+function closeControlConnection() {
+  if (controlReconnectTimer) {
+    clearTimeout(controlReconnectTimer);
+    controlReconnectTimer = null;
+  }
+  const ws = controlWs;
+  controlWs = null;
+  if (ws) {
+    ws.onopen = ws.onmessage = ws.onclose = ws.onerror = null;
+    try { ws.close(); } catch { /* already closing */ }
+  }
+}
+
+/**
+ * Open (or re-open) the control connection to `relay` with the given HELPER
+ * role token. A redundant call for the SAME (relay, token) while already open
+ * is a no-op (the deep-link module's own contract for a repeat launch).
+ */
+async function connectControl(relayBase, token) {
+  if (quitting) return;
+  if (controlWs && controlWs.readyState === WebSocket.OPEN && controlWs.__vcToken === token) {
+    return; // already connected with this exact credential — no-op
+  }
+  closeControlConnection();
+
+  const { decodeTokenClaims } = await sessionTokenMod();
+  const claims = decodeTokenClaims(token);
+  if (!claims?.sid) {
+    log("error", "control token unparseable — cannot open control connection");
+    return;
+  }
+
+  const params = new URLSearchParams({
+    session: claims.sid,
+    role: "helper",
+    token,
+    helperVersion: HELPER_VERSION,
+    machineLabel: os.hostname(),
+    alwaysOn: alwaysOn ? "1" : "0",
+  });
+  const url = `${relayBase.replace(/\/$/, "")}/?${params}`;
+  log("info", "opening control connection", { host: (() => { try { return new URL(relayBase).host; } catch { return "unparseable"; } })() });
+
+  const ws = new WebSocket(url);
+  ws.__vcToken = token;
+  controlWs = ws;
+
+  ws.on("open", () => {
+    controlReconnectAttempt = 0;
+    log("info", "control connection open");
+  });
+  ws.on("message", async (data, isBinary) => {
+    if (isBinary) return; // the control leg never receives binary
+    const text = data.toString();
+    const { parseHelperCommandFrame } = await controlFramesMod();
+    const cmd = parseHelperCommandFrame(text);
+    if (!cmd) return;
+    log("info", "received helper command", { cmd: cmd.cmd });
+    if (cmd.cmd === "stop") beginCleanQuit("stop");
+    else if (cmd.cmd === "quiesce") beginCleanQuit("quiesce");
+    else if (cmd.cmd === "set-always-on") await setAlwaysOn(cmd.value, { echo: false });
+  });
+  ws.on("error", (err) => {
+    log("warn", "control connection error", { err: String(err?.message || err) });
+  });
+  ws.on("close", () => {
+    if (controlWs !== ws) return; // superseded by a newer connect
+    controlWs = null;
+    if (quitting) return; // an intentional close during quit — never reconnect
+    scheduleControlReconnect(relayBase, token);
+  });
+}
+
+function scheduleControlReconnect(relayBase, token) {
+  if (controlReconnectTimer) return;
+  const delay = Math.min(
+    CONTROL_RECONNECT_BASE_MS * 2 ** controlReconnectAttempt,
+    CONTROL_RECONNECT_MAX_MS,
+  );
+  controlReconnectAttempt += 1;
+  log("warn", "control connection dropped — reconnecting", { delayMs: delay });
+  controlReconnectTimer = setTimeout(() => {
+    controlReconnectTimer = null;
+    void connectControl(relayBase, token);
+  }, delay);
+  controlReconnectTimer.unref?.();
+}
+
+/** Load persisted control credentials (if any) and connect proactively — the
+ *  path a LaunchAgent restart takes with no deep link at all. */
+async function maybeConnectControlFromPersisted() {
+  const creds = loadControlCredentials();
+  if (creds) void connectControl(creds.relay, creds.token);
+}
+
+// ── always-on / login item / tray (design §1 decision 1, §5b — approved for v1) ──
+let tray = null;
+
+/** Apply everything "Keep helper ready" implies: login item, tray, the linger timer. */
+function applyAlwaysOnEffects() {
+  try {
+    app.setLoginItemSettings({ openAtLogin: alwaysOn });
+  } catch (e) {
+    // Non-fatal (e.g. sandboxed/dev environments can reject this) — the
+    // setting itself still governs the linger timer either way.
+    log("warn", "could not update login item", { err: String(e?.message || e) });
+  }
+  if (alwaysOn) createTray();
+  else destroyTray();
+  updateLingerTimer();
+}
+
+/**
+ * Change the always-on setting: persist it, apply its effects, and — unless
+ * this call itself IS the echo of an inbound `set-always-on` command — report
+ * the new value back over the control connection (design: "reporting its
+ * persisted setting... and again whenever the setting changes locally").
+ */
+async function setAlwaysOn(value, { echo = true } = {}) {
+  alwaysOn = !!value;
+  saveSettings({ alwaysOn });
+  applyAlwaysOnEffects();
+  if (echo && controlWs && controlWs.readyState === WebSocket.OPEN) {
+    try {
+      const { encodeAlwaysOnFrame } = await controlFramesMod();
+      controlWs.send(encodeAlwaysOnFrame(alwaysOn));
+    } catch (e) {
+      log("warn", "could not report always-on change", { err: String(e?.message || e) });
+    }
+  }
+}
+
+function trayStatusLabel() {
+  const n = children.size;
+  if (n === 0) return "Ready";
+  return `${n} session${n === 1 ? "" : "s"} running`;
+}
+
+function quitFromTray() {
+  if (children.size > 0) {
+    const n = children.size;
+    const choice = dialog.showMessageBoxSync({
+      type: "question",
+      buttons: ["Cancel", "Quit"],
+      defaultId: 0,
+      cancelId: 0,
+      message: `Quit and end ${n} running session${n === 1 ? "" : "s"}?`,
+    });
+    if (choice !== 1) return; // cancelled
+  }
+  beginCleanQuit("quit");
+}
+
+function buildTrayMenu() {
+  return Menu.buildFromTemplate([
+    { label: trayStatusLabel(), enabled: false },
+    { type: "separator" },
+    {
+      label: "Open VibeCodes",
+      click: () => { void shell.openExternal(process.env.VIBECODES_APP_URL || "https://vibecodes.co.uk"); },
+    },
+    {
+      label: "Keep helper ready",
+      type: "checkbox",
+      checked: alwaysOn,
+      // Toggle off the CURRENT value — Electron's own checkbox visual state
+      // updates from the next buildTrayMenu() call (refreshTray, triggered by
+      // setAlwaysOn -> applyAlwaysOnEffects), not from this click flipping it
+      // itself.
+      click: () => { void setAlwaysOn(!alwaysOn, { echo: true }); },
+    },
+    {
+      label: "Quit VibeCodes Helper",
+      click: () => quitFromTray(),
+    },
+  ]);
+}
+
+// Rebuilding the whole template (rather than mutating items in place) keeps
+// the checkbox's `checked` and the status label always in sync with current
+// state — this menu is tiny, so a rebuild on every change is simplest and
+// cheap (design §5b: "minimal by design").
+function refreshTray() {
+  if (!tray) return;
+  tray.setToolTip(`VibeCodes Helper — ${trayStatusLabel()}`);
+  tray.setContextMenu(buildTrayMenu());
+}
+
+function createTray() {
+  if (tray) {
+    refreshTray();
+    return;
+  }
+  const icon = nativeImage.createFromBuffer(Buffer.from(TRAY_ICON_PNG_BASE64, "base64"));
+  icon.setTemplateImage(true);
+  tray = new Tray(icon);
+  refreshTray();
+}
+
+function destroyTray() {
+  if (!tray) return;
+  tray.destroy();
+  tray = null;
+}
+
+// ── clean-quit orchestration ──────────────────────────────────────────────────
+/**
+ * Start a clean shutdown: send the goodbye frame (best effort — see
+ * sendGoodbye), then hand off to Electron's normal quit sequence, which the
+ * `before-quit` handler below turns into "kill children, verify every
+ * grandchild is really dead, then exit(0)". Idempotent — a second call while
+ * one is already underway is a no-op (mirrors the design's "a second Stop is a
+ * no-op").
+ * @param {"idle-quit"|"stop"|"quiesce"|"quit"} reason
+ */
+function beginCleanQuit(reason) {
+  if (quitting) return;
+  quitting = true;
+  quitReason = reason;
+  if (lingerTimer) {
+    clearTimeout(lingerTimer);
+    lingerTimer = null;
+  }
+  void sendGoodbye(reason).finally(() => {
+    closeControlConnection();
+    app.quit();
+  });
 }
 
 // ── single-instance: forward a second click's URL to the running helper ──────
@@ -279,20 +726,43 @@ if (!gotLock) {
       ]);
     }
 
+    // Apply whatever was persisted BEFORE this launch (login item / tray) —
+    // covers a LaunchAgent restart, and repairs drift if the OS-level login
+    // item state ever fell out of sync with our own settings file.
+    applyAlwaysOnEffects();
+    // Reconnect the control connection from a persisted credential (the
+    // LaunchAgent-restart path with no deep link at all). A deep link that
+    // arrives moments later (below) will simply no-op against this if its
+    // helperToken matches, or supersede it if the app was reinstalled/re-auth'd.
+    void maybeConnectControlFromPersisted();
+
     // Drain anything that arrived pre-ready, then a cold-launch argv URL (covers
     // the dev/verify path where the link is passed on the command line).
     for (const u of pending.splice(0)) handleLaunchUrl(u);
     const argvUrl = urlFromArgv(process.argv);
     if (argvUrl) handleLaunchUrl(argvUrl);
 
-    scheduleQuitIfIdle();
+    updateLingerTimer();
   });
 
   // We never open a window; keep the app alive on our own terms.
-  app.on("window-all-closed", () => { /* no-op: managed via scheduleQuitIfIdle */ });
+  app.on("window-all-closed", () => { /* no-op: managed via updateLingerTimer */ });
 
+  let cleanupStarted = false;
   app.on("before-quit", (event) => {
-    if (quitting) return; // our own deferred quit path re-entering — let it go
+    if (!quitting) {
+      // A quit was requested through some path that didn't go via
+      // beginCleanQuit (e.g. an OS session-end/logout signal to app.quit()) —
+      // treat it as the generic "quit" reason so the relay still gets an
+      // honest goodbye rather than being left to infer "stopped unexpectedly".
+      quitting = true;
+      void sendGoodbye(quitReason);
+    }
+    // Re-entrancy guard for the async cleanup below only (sendGoodbye above is
+    // safe to call multiple times; the child-kill + verified-reap block is not
+    // — and Electron hands this listener a FRESH event object on every fire,
+    // so the guard has to live on the module, not on `event`).
+    if (cleanupStarted) return;
     for (const child of children) {
       try { child.kill(); } catch { /* ignore */ }
     }
@@ -301,7 +771,7 @@ if (!gotLock) {
     // Hold the quit until every known grandchild is VERIFIED dead (bounded:
     // ~1s SIGHUP grace then SIGKILL(+group), per pid, in parallel) and any
     // in-flight reaps have finished — then exit for real.
-    quitting = true;
+    cleanupStarted = true;
     event.preventDefault();
     (async () => {
       try {

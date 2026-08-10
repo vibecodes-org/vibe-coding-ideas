@@ -42,7 +42,8 @@ import {
   resolveMs,
 } from "./pairing.js";
 import { shouldPersistActivity, DEFAULT_ACTIVITY_PERSIST_THROTTLE_MS } from "./activity-throttle.js";
-import { authorizeAttach, authorizeControl } from "../../shared/session-token.mjs";
+import { computeHelperStatus } from "./helper-status.js";
+import { authorizeAttach, authorizeControl, HELPER_MAX_BOUND_MS } from "../../shared/session-token.mjs";
 import {
   encodeAttachedFrame,
   encodePeerDegradedFrame,
@@ -52,6 +53,12 @@ import {
   isHeartbeatFrame,
   encodeBridgeVersionFrame,
   sanitizeHelperVersion,
+  sanitizeMachineLabel,
+  encodeHelperCommandFrame,
+  isGoodbyeFrame,
+  parseGoodbyeReason,
+  isAlwaysOnFrame,
+  parseAlwaysOnValue,
 } from "../../shared/control-frames.mjs";
 
 /** Normal WebSocket closure code used for clean, server-initiated session ends. */
@@ -86,6 +93,25 @@ export default {
       const session = url.searchParams.get("session");
       if (!isValidSession(session)) {
         return jsonResponse({ ended: false, reason: "bad-session" }, 400);
+      }
+      const id = env.TERMINAL_RELAY.idFromName(session);
+      const stub = env.TERMINAL_RELAY.get(id);
+      return stub.fetch(request);
+    }
+
+    // Helper lifecycle (card cc74a067): the Helper row's status poll and its
+    // Stop/Update commands, exactly like /end above — a plain HTTP call routed
+    // to the SAME per-session-id DO instance (here, the owner's reserved
+    // `helper-<sub>` id — see shared/session-token.mjs → helperSessionId). Auth
+    // (the control token) is checked inside the DO; a shape-valid session id is
+    // all that's needed to route.
+    if (
+      (url.pathname === "/helper/status" && request.method === "GET") ||
+      (url.pathname === "/helper/command" && request.method === "POST")
+    ) {
+      const session = url.searchParams.get("session");
+      if (!isValidSession(session)) {
+        return jsonResponse({ error: "bad-session" }, 400);
       }
       const id = env.TERMINAL_RELAY.idFromName(session);
       const stub = env.TERMINAL_RELAY.get(id);
@@ -243,15 +269,206 @@ export class TerminalRelay {
     return jsonResponse({ ended: true }, 200);
   }
 
+  // ── Helper lifecycle (card cc74a067) ──────────────────────────────────────
+  //
+  // A `helper` leg is structurally different from bridge/browser: it's a
+  // single, standing, PER-OWNER control connection with no peer to pair with
+  // — so it deliberately bypasses decideAttach/armAlarm/the idle-max alarm
+  // entirely (see fetchHelperLeg, webSocketMessage, handleHelperDetach below).
+  // Its owner binding is STICKY: unlike clearSessionState() for a terminal
+  // session, nothing here ever deletes the "owner" key on disconnect — the
+  // helper is a standing identity for this Mac, not a bounded session, and the
+  // long reattach waiver (HELPER_MAX_BOUND_MS) depends on that binding
+  // surviving the gap between helper process restarts.
+
+  /**
+   * `GET /helper/status?session=<helperSid>` — the Helper row's status poll.
+   * Control-token auth, same pattern as handleEnd.
+   * @param {Request} request @param {URL} url
+   */
+  async handleHelperStatus(request, url) {
+    const session = url.searchParams.get("session");
+    const authHeader = request.headers.get("Authorization") || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;
+    const auth = await authorizeControl({ token, secret: this.env.TERMINAL_SESSION_SECRET, session });
+    if (!auth.ok) {
+      this.log("helper status rejected (auth)", { session, reason: auth.reason });
+      return jsonResponse({ error: "unauthorized" }, 401);
+    }
+
+    const connected = this.state.getWebSockets("role:helper").length > 0;
+    const [version, machineLabel, alwaysOn, uncleanAt] = await Promise.all([
+      this.state.storage.get("helperVersion"),
+      this.state.storage.get("helperMachineLabel"),
+      this.state.storage.get("helperAlwaysOn"),
+      this.state.storage.get("helperUncleanAt"),
+    ]);
+    const status = computeHelperStatus({
+      connected,
+      version: version ?? null,
+      machineLabel: machineLabel ?? null,
+      alwaysOn: alwaysOn ?? false,
+      uncleanAt: uncleanAt ?? null,
+      now: Date.now(),
+    });
+    return jsonResponse(status, 200);
+  }
+
+  /**
+   * `POST /helper/command?session=<helperSid>` body `{ cmd, value? }` — the
+   * Helper row's Stop/Update actions and the always-on toggle. A dumb
+   * forwarder (mirrors the bridge-version frame's relay role): if a helper
+   * leg is live, hand it the encoded command frame and report delivery;
+   * otherwise report `delivered:false` so the web app can treat it as
+   * "already gone" (design's "may already be stopped" toast).
+   * @param {Request} request @param {URL} url
+   */
+  async handleHelperCommand(request, url) {
+    const session = url.searchParams.get("session");
+    const authHeader = request.headers.get("Authorization") || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;
+    const auth = await authorizeControl({ token, secret: this.env.TERMINAL_SESSION_SECRET, session });
+    if (!auth.ok) {
+      this.log("helper command rejected (auth)", { session, reason: auth.reason });
+      return jsonResponse({ error: "unauthorized" }, 401);
+    }
+
+    let body;
+    try {
+      body = await request.json();
+    } catch {
+      return jsonResponse({ error: "bad-body" }, 400);
+    }
+    const cmd = body?.cmd;
+    if (cmd !== "stop" && cmd !== "quiesce" && cmd !== "set-always-on") {
+      return jsonResponse({ error: "bad-command" }, 400);
+    }
+    if (cmd === "set-always-on" && typeof body?.value !== "boolean") {
+      return jsonResponse({ error: "bad-value" }, 400);
+    }
+
+    const helper = this.state.getWebSockets("role:helper")[0] ?? null;
+    if (!helper) {
+      this.log("helper command: no live helper leg", { session, cmd });
+      return jsonResponse({ delivered: false }, 200);
+    }
+    try {
+      helper.send(encodeHelperCommandFrame(cmd, cmd === "set-always-on" ? body.value : undefined));
+    } catch (e) {
+      this.log("helper command send failed", { session, cmd, err: String(e) });
+      return jsonResponse({ delivered: false }, 200);
+    }
+    this.log("helper command delivered", { session, cmd });
+    return jsonResponse({ delivered: true }, 200);
+  }
+
+  /**
+   * The WebSocket-attach path for `role=helper`. Bypasses decideAttach (no
+   * pairing — a helper has no peer) but reuses authorizeAttach exactly like
+   * bridge/browser, including its reattach-expiry waiver — here bounded by
+   * HELPER_MAX_BOUND_MS (passed by the caller) rather than the session
+   * max-duration cap, since a helper is a standing identity, not a bounded
+   * session.
+   * @param {Request} request @param {URL} url @param {string} session
+   *   @param {string} role @param {string} token
+   */
+  async fetchHelperLeg(request, url, session, role, token) {
+    const pair = new WebSocketPair();
+    const client = pair[0];
+    const server = pair[1];
+
+    const boundOwner = (await this.state.storage.get("owner")) ?? null;
+    const auth = await authorizeAttach({
+      token,
+      secret: this.env.TERMINAL_SESSION_SECRET,
+      session,
+      role,
+      boundOwner,
+      // A much longer waiver than a terminal session's (see the "helper" role
+      // doc comment in shared/session-token.mjs): this is a standing device
+      // credential, not a bounded session.
+      maxSessionMs: resolveMs(this.env.TERMINAL_HELPER_MAX_BOUND_MS, HELPER_MAX_BOUND_MS),
+    });
+    if (!auth.ok) {
+      this.log("helper attach rejected (auth)", { session, reason: auth.reason });
+      server.accept();
+      server.close(CLOSE.BAD_TOKEN.code, CLOSE.BAD_TOKEN.reason);
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
+    // Same-owner PREEMPTION (mirrors bridge/browser step 2b): a second helper
+    // leg for the SAME owner (a relaunch racing an old, not-yet-detected-dead
+    // connection) wins latest-first; the stale leg is closed, not left to rot.
+    // A foreign owner can never reach here — authorizeAttach's boundOwner
+    // waiver only accepts a token whose `sub` already matches, and the sid
+    // itself is derived from `sub` (helperSessionId), so cross-owner attach
+    // would already fail at the token/sid level.
+    for (const stale of this.state.getWebSockets("role:helper")) {
+      try {
+        stale.close(CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason);
+      } catch { /* already closing */ }
+    }
+
+    this.state.acceptWebSocket(server, ["role:helper", `sub:${auth.sub}`]);
+    server.serializeAttachment({ role: "helper", sub: auth.sub, goodbye: false });
+
+    if ((await this.state.storage.get("owner")) === null) {
+      await this.state.storage.put("owner", auth.sub);
+    }
+    const version = sanitizeHelperVersion(url.searchParams.get("helperVersion"));
+    const machineLabel = sanitizeMachineLabel(url.searchParams.get("machineLabel"));
+    const alwaysOn = url.searchParams.get("alwaysOn") === "1";
+    await Promise.all([
+      version ? this.state.storage.put("helperVersion", version) : Promise.resolve(),
+      machineLabel ? this.state.storage.put("helperMachineLabel", machineLabel) : Promise.resolve(),
+      this.state.storage.put("helperAlwaysOn", alwaysOn),
+      // Design rule: a fresh attach clears any "stopped unexpectedly" flag.
+      this.state.storage.delete("helperUncleanAt"),
+    ]);
+
+    this.log("helper attached", { session, version, alwaysOn });
+    return new Response(null, { status: 101, webSocket: client });
+  }
+
+  /**
+   * A helper leg's socket closed. If it never sent a goodbye frame first, mark
+   * the disconnect UNCLEAN (drives the Helper row's "stopped unexpectedly"
+   * chip via computeHelperStatus) — otherwise leave the bookkeeping as the
+   * goodbye handler in webSocketMessage already left it. No pairing, no
+   * grace window, no alarm: a helper simply reconnects (or doesn't) on its
+   * own schedule.
+   * @param {WebSocket} ws
+   */
+  async handleHelperDetach(ws) {
+    let goodbye = false;
+    try {
+      goodbye = !!ws.deserializeAttachment()?.goodbye;
+    } catch { /* attachment may be gone */ }
+    this.log("helper detached", { goodbye });
+    if (!goodbye) {
+      await this.state.storage.put("helperUncleanAt", Date.now());
+    }
+  }
+
   /** @param {Request} request */
   async fetch(request) {
     const url = new URL(request.url);
     if (url.pathname === "/end" && request.method === "POST") {
       return this.handleEnd(request, url);
     }
+    if (url.pathname === "/helper/status" && request.method === "GET") {
+      return this.handleHelperStatus(request, url);
+    }
+    if (url.pathname === "/helper/command" && request.method === "POST") {
+      return this.handleHelperCommand(request, url);
+    }
     const role = url.searchParams.get("role");
     const session = url.searchParams.get("session");
     const token = url.searchParams.get("token");
+
+    if (role === "helper") {
+      return this.fetchHelperLeg(request, url, session, role, token);
+    }
 
     const pair = new WebSocketPair();
     const client = pair[0];
@@ -442,6 +659,15 @@ export class TerminalRelay {
 
     const att = ws.deserializeAttachment() || {};
     const role = att.role;
+
+    // A helper leg has no peer to forward to — it only ever sends its own
+    // small control frames (goodbye, always-on). Branch off BEFORE the
+    // bridge/browser forwarding logic below, which a helper never reaches.
+    if (role === "helper") {
+      await this.handleHelperMessage(ws, message);
+      return;
+    }
+
     if (role !== "bridge" && role !== "browser") return;
 
     // Forward verbatim + opaque. Never inspect or log the payload.
@@ -472,15 +698,64 @@ export class TerminalRelay {
   }
 
   /**
+   * A helper leg's own control-frame handling: `goodbye` marks THIS socket's
+   * attachment so the close handler below knows the exit was clean (and
+   * clears any stale "stopped unexpectedly" flag right away — no need to
+   * wait for the close event); `always-on` mirrors the setting into storage
+   * so a `GET /helper/status` right after a toggle is already current. Any
+   * other/malformed frame is a logged no-op (skew-safe, mirrors every other
+   * control frame in this file).
+   * @param {WebSocket} ws @param {string|ArrayBuffer} message
+   */
+  async handleHelperMessage(ws, message) {
+    if (typeof message !== "string") return; // a helper leg never sends binary
+    if (isGoodbyeFrame(message)) {
+      const reason = parseGoodbyeReason(message);
+      if (!reason) return;
+      try {
+        ws.serializeAttachment({ ...(ws.deserializeAttachment() || {}), goodbye: true });
+      } catch { /* attachment already gone (socket closing) */ }
+      await this.state.storage.delete("helperUncleanAt");
+      this.log("helper goodbye", { reason });
+      return;
+    }
+    if (isAlwaysOnFrame(message)) {
+      const value = parseAlwaysOnValue(message);
+      if (value === null) return;
+      await this.state.storage.put("helperAlwaysOn", value);
+      this.log("helper always-on updated", { value });
+      return;
+    }
+    this.log("helper: ignored unknown control frame");
+  }
+
+  /**
    * @param {WebSocket} ws @param {number} code @param {string} reason @param {boolean} wasClean
    */
   async webSocketClose(ws, code, reason, wasClean) {
+    if (this.roleOf(ws) === "helper") {
+      await this.handleHelperDetach(ws);
+      return;
+    }
     await this.handleDetach(ws, "close", { code, wasClean });
   }
 
   /** @param {WebSocket} ws @param {unknown} error */
   async webSocketError(ws, error) {
+    if (this.roleOf(ws) === "helper") {
+      await this.handleHelperDetach(ws);
+      return;
+    }
     await this.handleDetach(ws, "error", { err: String(error) });
+  }
+
+  /** Best-effort read of a socket's own attached role. Never throws. */
+  roleOf(ws) {
+    try {
+      return ws.deserializeAttachment()?.role ?? null;
+    } catch {
+      return null;
+    }
   }
 
   /**

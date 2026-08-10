@@ -31,7 +31,8 @@ import {
   maxCloseReason,
   resolveMs,
 } from "../relay/src/pairing.js";
-import { authorizeAttach, authorizeControl } from "../shared/session-token.mjs";
+import { computeHelperStatus } from "../relay/src/helper-status.js";
+import { authorizeAttach, authorizeControl, HELPER_MAX_BOUND_MS } from "../shared/session-token.mjs";
 import {
   encodeAttachedFrame,
   encodePeerDegradedFrame,
@@ -40,6 +41,12 @@ import {
   isHeartbeatFrame,
   encodeBridgeVersionFrame,
   sanitizeHelperVersion,
+  sanitizeMachineLabel,
+  encodeHelperCommandFrame,
+  isGoodbyeFrame,
+  parseGoodbyeReason,
+  isAlwaysOnFrame,
+  parseAlwaysOnValue,
 } from "../shared/control-frames.mjs";
 
 const NORMAL_CLOSURE = 1000;
@@ -72,6 +79,14 @@ export function startStandinRelay(opts = {}) {
   // (`peer-reattached`); the timer firing still-incomplete runs the OLD teardown.
   const sessions = new Map();
 
+  // Helper lifecycle (card cc74a067): a SEPARATE map, one entry per owner's
+  // reserved `helper-<sub>` session id — mirrors the Cloudflare DO's isolated
+  // per-instance storage (a helper leg never shares a `sessions` entry with a
+  // real bridge/browser pairing). `{ ws, owner, version, machineLabel,
+  // alwaysOn, uncleanAt }`; `uncleanAt` is set whenever a helper's socket
+  // closes without a preceding goodbye frame — see computeHelperStatus.
+  const helperLegs = new Map();
+
   // Multi-session stage 3 (POST /end): the stand-in needs a plain HTTP
   // endpoint alongside the WebSocket upgrade path, so — unlike the original
   // `{ port }` shorthand — we own the http.Server explicitly and hand it to
@@ -91,6 +106,12 @@ export function startStandinRelay(opts = {}) {
   /** Faithful twin of the Cloudflare DO's handleEnd (relay/src/index.js). */
   async function handleHttpRequest(req, res) {
     const url = new URL(req.url, "http://localhost");
+    if (url.pathname === "/helper/status" && req.method === "GET") {
+      return handleHelperStatusHttp(req, res, url);
+    }
+    if (url.pathname === "/helper/command" && req.method === "POST") {
+      return handleHelperCommandHttp(req, res, url);
+    }
     if (url.pathname !== "/end" || req.method !== "POST") {
       res.writeHead(404, { "content-type": "application/json" });
       res.end(JSON.stringify({ error: "not found" }));
@@ -121,6 +142,81 @@ export function startStandinRelay(opts = {}) {
     log("end: session ended", { session });
     res.writeHead(200, { "content-type": "application/json" });
     res.end(JSON.stringify({ ended: true }));
+  }
+
+  /** Faithful twin of the Cloudflare DO's handleHelperStatus. */
+  async function handleHelperStatusHttp(req, res, url) {
+    const session = url.searchParams.get("session");
+    const authHeader = req.headers["authorization"] || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;
+    const auth = await authorizeControl({ token, secret, session });
+    if (!auth.ok) {
+      log("helper status rejected (auth)", { session, reason: auth.reason });
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "unauthorized" }));
+      return;
+    }
+    const leg = helperLegs.get(session);
+    const status = computeHelperStatus({
+      connected: !!leg?.ws && leg.ws.readyState === leg.ws.OPEN,
+      version: leg?.version ?? null,
+      machineLabel: leg?.machineLabel ?? null,
+      alwaysOn: leg?.alwaysOn ?? false,
+      uncleanAt: leg?.uncleanAt ?? null,
+      now: Date.now(),
+    });
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify(status));
+  }
+
+  /** Faithful twin of the Cloudflare DO's handleHelperCommand. */
+  async function handleHelperCommandHttp(req, res, url) {
+    const session = url.searchParams.get("session");
+    const authHeader = req.headers["authorization"] || "";
+    const token = authHeader.startsWith("Bearer ") ? authHeader.slice("Bearer ".length) : null;
+    const auth = await authorizeControl({ token, secret, session });
+    if (!auth.ok) {
+      log("helper command rejected (auth)", { session, reason: auth.reason });
+      res.writeHead(401, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "unauthorized" }));
+      return;
+    }
+    let body;
+    try {
+      const raw = await new Promise((resolve, reject) => {
+        let data = "";
+        req.on("data", (c) => { data += c; });
+        req.on("end", () => resolve(data));
+        req.on("error", reject);
+      });
+      body = JSON.parse(raw);
+    } catch {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "bad-body" }));
+      return;
+    }
+    const cmd = body?.cmd;
+    if (cmd !== "stop" && cmd !== "quiesce" && cmd !== "set-always-on") {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "bad-command" }));
+      return;
+    }
+    if (cmd === "set-always-on" && typeof body?.value !== "boolean") {
+      res.writeHead(400, { "content-type": "application/json" });
+      res.end(JSON.stringify({ error: "bad-value" }));
+      return;
+    }
+    const leg = helperLegs.get(session);
+    const delivered = !!leg?.ws && leg.ws.readyState === leg.ws.OPEN;
+    if (delivered) {
+      try {
+        leg.ws.send(encodeHelperCommandFrame(cmd, cmd === "set-always-on" ? body.value : undefined));
+      } catch { /* leg already closing */ }
+    } else {
+      log("helper command: no live helper leg", { session, cmd });
+    }
+    res.writeHead(200, { "content-type": "application/json" });
+    res.end(JSON.stringify({ delivered }));
   }
 
   /** Close both legs with code 1000 + a lifecycle reason, then forget the session. */
@@ -161,6 +257,79 @@ export function startStandinRelay(opts = {}) {
     legs.idleTimer.unref?.();
   }
 
+  /**
+   * Helper lifecycle (card cc74a067) — faithful twin of the Cloudflare DO's
+   * fetchHelperLeg + handleHelperMessage + handleHelperDetach: bypasses
+   * decideAttach (no pairing — a helper has no peer), reuses authorizeAttach
+   * with the SAME sticky-owner reattach waiver (bounded by HELPER_MAX_BOUND_MS),
+   * preempts a stale same-owner leg, and tracks version/machineLabel/alwaysOn
+   * + "stopped unexpectedly" (uncleanAt) durably per reserved session id.
+   */
+  async function handleHelperConnection(ws, url, session, token) {
+    const existing = helperLegs.get(session);
+    const auth = await authorizeAttach({
+      token,
+      secret,
+      session,
+      role: "helper",
+      boundOwner: existing?.owner ?? null,
+      maxSessionMs: HELPER_MAX_BOUND_MS,
+    });
+    if (!auth.ok) {
+      log("helper attach rejected (auth)", { session, reason: auth.reason });
+      ws.close(CLOSE.BAD_TOKEN.code, CLOSE.BAD_TOKEN.reason);
+      return;
+    }
+
+    // Same-owner PREEMPTION: a second helper leg for the same owner wins
+    // latest-first (mirrors the Cloudflare DO's fetchHelperLeg).
+    if (existing?.ws && existing.ws.readyState === existing.ws.OPEN) {
+      try { existing.ws.close(CLOSE.PREEMPTED.code, CLOSE.PREEMPTED.reason); } catch { /* closing */ }
+    }
+
+    const leg = {
+      ws,
+      owner: auth.sub,
+      version: sanitizeHelperVersion(url.searchParams.get("helperVersion")) ?? existing?.version ?? null,
+      machineLabel: sanitizeMachineLabel(url.searchParams.get("machineLabel")) ?? existing?.machineLabel ?? null,
+      alwaysOn: url.searchParams.get("alwaysOn") === "1",
+      // Design rule: a fresh attach clears any "stopped unexpectedly" flag.
+      uncleanAt: null,
+      goodbye: false,
+    };
+    helperLegs.set(session, leg);
+    log("helper attached", { session, version: leg.version, alwaysOn: leg.alwaysOn });
+
+    ws.on("message", (data, isBinary) => {
+      if (isBinary) return; // a helper leg never sends binary
+      const text = data.toString();
+      if (isGoodbyeFrame(text)) {
+        const reason = parseGoodbyeReason(text);
+        if (!reason) return;
+        leg.goodbye = true;
+        leg.uncleanAt = null;
+        log("helper goodbye", { session, reason });
+        return;
+      }
+      if (isAlwaysOnFrame(text)) {
+        const value = parseAlwaysOnValue(text);
+        if (value === null) return;
+        leg.alwaysOn = value;
+        log("helper always-on updated", { session, value });
+        return;
+      }
+      log("helper: ignored unknown control frame", { session });
+    });
+
+    const teardown = () => {
+      if (helperLegs.get(session) !== leg) return; // a superseding attach already owns this slot
+      log("helper detached", { session, goodbye: leg.goodbye });
+      if (!leg.goodbye) leg.uncleanAt = Date.now();
+    };
+    ws.on("close", teardown);
+    ws.on("error", teardown);
+  }
+
   wss.on("connection", async (ws, req) => {
     const url = new URL(req.url, "ws://localhost");
     const session = url.searchParams.get("session");
@@ -170,6 +339,13 @@ export function startStandinRelay(opts = {}) {
     if (!isValidSession(session)) {
       ws.close(CLOSE.BAD_SESSION.code, CLOSE.BAD_SESSION.reason);
       return;
+    }
+
+    // Helper lifecycle (card cc74a067): a `helper` leg is structurally
+    // different (single, per-owner, no peer) — dispatch to its own handler
+    // BEFORE the bridge/browser pairing logic below, which it never touches.
+    if (role === "helper") {
+      return handleHelperConnection(ws, url, session, token);
     }
 
     // Authenticate the leg with the SAME shared verifier the real relay uses.

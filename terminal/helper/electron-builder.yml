@@ -22,6 +22,8 @@ directories:
 files:
   - main.js
   - proto-reg.js
+  - lifecycle.js
+  - tray-icon.js
   - package.json
 
 extraResources:

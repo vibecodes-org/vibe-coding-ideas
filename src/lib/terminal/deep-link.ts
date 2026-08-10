@@ -35,6 +35,14 @@ export interface LaunchDeepLinkParams {
   session: string;
   /** App-minted, HMAC-signed BRIDGE-role token (secret — keep out of logs). */
   token: string;
+  /**
+   * Optional app-minted HELPER-role token (card cc74a067), carried alongside
+   * the bridge token on every launch so the same click (re)establishes the
+   * helper's persistent control connection to the relay — see
+   * terminal/helper/main.js. A helper that's already connected treats a
+   * redundant one as a no-op. Secret — elided by redactDeepLinkToken.
+   */
+  helperToken?: string;
   /** Optional working directory for the spawned `claude`. */
   cwd?: string;
   /**
@@ -48,12 +56,13 @@ export interface LaunchDeepLinkParams {
 }
 
 /**
- * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&prompt=…]`
- * deep link. Throws when a required field is missing so a malformed link is
- * never fired. `prompt` is always the LAST param so the base-link length (and
- * therefore the prompt budget) is stable.
+ * Build a `vibecodes://launch?relay=…&session=…&token=…[&helperToken=…]
+ * [&cwd=…][&prompt=…]` deep link. Throws when a required field is missing so
+ * a malformed link is never fired. `prompt` is always the LAST param so the
+ * base-link length (and therefore the prompt budget) is stable — `helperToken`
+ * is inserted before it, alongside the other credentials.
  */
-export function buildLaunchDeepLink({ relay, session, token, cwd, prompt }: LaunchDeepLinkParams): string {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt }: LaunchDeepLinkParams): string {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -62,6 +71,7 @@ export function buildLaunchDeepLink({ relay, session, token, cwd, prompt }: Laun
     `session=${encodeURIComponent(session)}`,
     `token=${encodeURIComponent(token)}`,
   ];
+  if (helperToken) parts.push(`helperToken=${encodeURIComponent(helperToken)}`);
   if (cwd) parts.push(`cwd=${encodeURIComponent(cwd)}`);
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
@@ -69,12 +79,13 @@ export function buildLaunchDeepLink({ relay, session, token, cwd, prompt }: Laun
 
 /**
  * Redact the secret/user-content params from a launch link so it is safe to
- * log: the `token` (a credential) and the `prompt` (user task/idea content —
- * log only its length via a separate field if needed) both become `***` while
- * relay/session survive for debugging.
+ * log: the `token` and `helperToken` (both credentials) and the `prompt`
+ * (user task/idea content — log only its length via a separate field if
+ * needed) all become `***` while relay/session survive for debugging.
  */
 export function redactDeepLinkToken(url: string): string {
   return url
     .replace(/([?&]token=)[^&]*/g, "$1***")
+    .replace(/([?&]helperToken=)[^&]*/g, "$1***")
     .replace(/([?&]prompt=)[^&]*/g, "$1***");
 }

@@ -10,11 +10,12 @@
 //
 // Fetch-on-open + refresh-after-action (no realtime, per the stage brief).
 
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { usePostHog } from "posthog-js/react";
-import { Loader2, Power, Terminal as TerminalIcon } from "lucide-react";
+import { Loader2, Power, Terminal as TerminalIcon, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import {
   Popover,
   PopoverContent,
@@ -24,6 +25,40 @@ import { cn } from "@/lib/utils";
 import { slugifyIdeaTitle } from "@/lib/launch-claude-code";
 import { formatSessionAge, formatSessionIdentity } from "@/lib/terminal/session-registry";
 import { deriveTabLabel } from "./terminal-tabs";
+import {
+  MINIMUM_RECOMMENDED_HELPER_VERSION,
+  shouldShowHelperUpdateNudge,
+} from "@/lib/terminal/helper-version";
+import { TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
+import { recordHelperIdleQuitObserved } from "@/lib/terminal/helper-relaunch-signal";
+import {
+  ALWAYS_ON_CONSENT_BODY,
+  ALWAYS_ON_LABEL,
+  HELPER_ROW_STOP_FAILED_TOAST,
+  HELPER_ROW_STOP_TOAST,
+  STOP_CONFIRM_HEADING,
+  deriveHelperChip,
+  formatHelperEventAge,
+  shouldShowStopButton,
+  stopButtonLabel,
+  stopConfirmBody,
+  updateNudgeCopy,
+  type HelperChip,
+  type HelperChipKind,
+  type HelperStatus,
+} from "@/lib/terminal/helper-row";
+import {
+  INITIAL_UPDATE_FLOW_STATE,
+  QUIESCE_TIMEOUT_MS,
+  UPDATE_CONFIRM_ACCEPT_LABEL,
+  UPDATE_CONFIRM_CANCEL_LABEL,
+  UPDATE_CONFIRM_HEADING,
+  UPDATE_QUIESCE_TIMEOUT_COPY,
+  UPDATE_READY_COPY,
+  updateConfirmBody,
+  updateFlowReducer,
+  type UpdateFlowState,
+} from "@/lib/terminal/helper-update-flow";
 
 interface ListedSession {
   sid: string;
@@ -37,6 +72,21 @@ interface ListedSession {
 }
 
 type LoadState = "idle" | "loading" | "ready" | "error";
+
+/** Tailwind classes per chip kind (design §7: status is never colour-alone —
+ *  every chip here also carries an icon dot + text label). */
+function helperChipClassName(kind: HelperChipKind): string {
+  switch (kind) {
+    case "running":
+      return "border-emerald-500/50 bg-emerald-500/10 text-emerald-400";
+    case "winding-down":
+      return "border-amber-500/50 bg-amber-500/10 text-amber-400";
+    case "stopped-unexpectedly":
+      return "border-rose-500/55 bg-rose-500/10 text-rose-400";
+    case "not-running":
+      return "border-zinc-600 bg-zinc-800/60 text-zinc-300";
+  }
+}
 
 interface TerminalMySessionsPanelProps {
   /** Fires whenever the panel's session count is known/changes, so the dock's badge stays in sync. */
@@ -60,14 +110,52 @@ export function TerminalMySessionsPanel({
   const [endingAll, setEndingAll] = useState(false);
   const posthog = usePostHog();
 
+  // ── Helper row state (card cc74a067) ────────────────────────────────────────
+  const [helperStatus, setHelperStatus] = useState<HelperStatus | null>(null);
+  const [confirmingStopHelper, setConfirmingStopHelper] = useState(false);
+  const [stoppingHelper, setStoppingHelper] = useState(false);
+  const [dismissedHelperNudge, setDismissedHelperNudge] = useState(false);
+  const [updateFlow, setUpdateFlow] = useState<UpdateFlowState>(INITIAL_UPDATE_FLOW_STATE);
+  const [alwaysOnConsentOpen, setAlwaysOnConsentOpen] = useState(false);
+  const [togglingAlwaysOn, setTogglingAlwaysOn] = useState(false);
+  // Last chip kind we observed, so `load()` can notice a winding-down ->
+  // not-running transition (an idle-quit) across opens/refreshes — the panel
+  // never polls continuously (fetch-on-open + refresh-after-action, same as
+  // the session list above), so this is only ever compared across those.
+  const prevHelperChipKindRef = useRef<HelperChipKind | null>(null);
+  // Set true right before WE deliberately end the helper (Stop / an
+  // update-triggered quiesce) so that resulting transition is never
+  // mis-recorded as an "idle-quit" — see helper-relaunch-signal.ts's header
+  // comment on how this observation is derived.
+  const suppressIdleQuitSignalRef = useRef(false);
+
   const load = useCallback(async () => {
     setLoadState((s) => (s === "idle" ? "loading" : s));
     try {
-      const res = await fetch("/api/terminal/session/list");
-      if (!res.ok) throw new Error(`Failed to load sessions (${res.status})`);
-      const body = (await res.json()) as { sessions: ListedSession[] };
+      const [sessionsRes, helperRes] = await Promise.all([
+        fetch("/api/terminal/session/list"),
+        fetch("/api/terminal/helper/status"),
+      ]);
+      if (!sessionsRes.ok) throw new Error(`Failed to load sessions (${sessionsRes.status})`);
+      const body = (await sessionsRes.json()) as { sessions: ListedSession[] };
       setSessions(body.sessions);
       onCountChange?.(body.sessions.length);
+
+      if (helperRes.ok) {
+        const nextStatus = (await helperRes.json()) as HelperStatus;
+        const nextChip = deriveHelperChip(nextStatus, body.sessions.length);
+        const prevKind = prevHelperChipKindRef.current;
+        if (prevKind === "winding-down" && nextChip?.kind === "not-running") {
+          if (suppressIdleQuitSignalRef.current) suppressIdleQuitSignalRef.current = false;
+          else recordHelperIdleQuitObserved();
+        }
+        prevHelperChipKindRef.current = nextChip?.kind ?? null;
+        setHelperStatus(nextStatus);
+      }
+      // A helper-status fetch failure is non-fatal to the panel — the session
+      // list is the load-bearing part; the Helper row just keeps its last
+      // known state (or stays blank) until the next open/refresh succeeds.
+
       setLoadState("ready");
     } catch {
       setLoadState("error");
@@ -77,6 +165,15 @@ export function TerminalMySessionsPanel({
   useEffect(() => {
     if (open) void load();
   }, [open, load]);
+
+  // A stale "Ready to update" / timeout notice must not linger forever once
+  // the popover is closed and reopened later — the update flow's own state is
+  // otherwise held in this always-mounted component (PopoverContent unmounts
+  // on close, this doesn't), same as confirmingEndAll already does.
+  useEffect(() => {
+    if (!open) return;
+    setUpdateFlow((s) => (s.phase === "ready" || s.phase === "quiesce-timeout" ? INITIAL_UPDATE_FLOW_STATE : s));
+  }, [open]);
 
   const endOne = useCallback(
     async (sid: string) => {
@@ -114,6 +211,144 @@ export function TerminalMySessionsPanel({
       void load();
     }
   }, [load, posthog, sessions.length]);
+
+  // ── Helper row actions (card cc74a067) ──────────────────────────────────────
+  const stopHelper = useCallback(async () => {
+    setStoppingHelper(true);
+    suppressIdleQuitSignalRef.current = true; // a deliberate Stop is never an "idle-quit"
+    try {
+      const res = await fetch("/api/terminal/helper/command", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cmd: "stop" }),
+      });
+      const body = (await res.json().catch(() => null)) as { delivered?: boolean } | null;
+      if (res.ok && body?.delivered) toast.success(HELPER_ROW_STOP_TOAST);
+      else toast.error(HELPER_ROW_STOP_FAILED_TOAST);
+    } catch {
+      toast.error(HELPER_ROW_STOP_FAILED_TOAST);
+    } finally {
+      setStoppingHelper(false);
+      setConfirmingStopHelper(false);
+      void load();
+    }
+  }, [load]);
+
+  const setAlwaysOnRemote = useCallback(
+    async (value: boolean) => {
+      setTogglingAlwaysOn(true);
+      try {
+        const res = await fetch("/api/terminal/helper/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cmd: "set-always-on", value }),
+        });
+        const body = (await res.json().catch(() => null)) as { delivered?: boolean } | null;
+        if (!res.ok || !body?.delivered) toast.error(HELPER_ROW_STOP_FAILED_TOAST);
+      } catch {
+        toast.error(HELPER_ROW_STOP_FAILED_TOAST);
+      } finally {
+        setTogglingAlwaysOn(false);
+        void load();
+      }
+    },
+    [load],
+  );
+
+  // The toggle's own click never flips the setting directly for the ON
+  // direction — turning it on always passes through the consent expansion
+  // first (design §3 flow F: "before anything changes"). Turning it OFF is
+  // reversible/low-stakes and needs no extra step.
+  const handleAlwaysOnToggle = useCallback((next: boolean) => {
+    if (next) setAlwaysOnConsentOpen(true);
+    else void setAlwaysOnRemote(false);
+  }, [setAlwaysOnRemote]);
+
+  const confirmAlwaysOn = useCallback(() => {
+    setAlwaysOnConsentOpen(false);
+    void setAlwaysOnRemote(true);
+  }, [setAlwaysOnRemote]);
+
+  const startHelperUpdate = useCallback(() => {
+    setUpdateFlow(updateFlowReducer(INITIAL_UPDATE_FLOW_STATE, { type: "update-clicked", sessionCount: sessions.length }));
+  }, [sessions.length]);
+
+  // Drive the "quiescing" phase: end any live sessions first (only reached via
+  // "confirming" when sessions existed), send the quiesce command, then poll
+  // helper status until it reports not-connected or QUIESCE_TIMEOUT_MS elapses
+  // (design §3 flow A's fallback notice) — the download starts regardless
+  // (§3 flow A caption), just with a different notice.
+  useEffect(() => {
+    if (updateFlow.phase !== "quiescing") return;
+    let cancelled = false;
+    suppressIdleQuitSignalRef.current = true; // an update-triggered quiesce is not an idle-quit
+    const hadSessions = sessions.length > 0;
+    (async () => {
+      if (hadSessions) {
+        try {
+          await fetch("/api/terminal/session/end", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ all: true }),
+          });
+        } catch {
+          /* best effort — the quiesce command below still proceeds */
+        }
+      }
+      try {
+        await fetch("/api/terminal/helper/command", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ cmd: "quiesce" }),
+        });
+      } catch {
+        /* best effort — the poll below still resolves via timeout */
+      }
+
+      const deadline = Date.now() + QUIESCE_TIMEOUT_MS;
+      while (!cancelled) {
+        let settled = false;
+        try {
+          const res = await fetch("/api/terminal/helper/status");
+          if (res.ok) {
+            const status = (await res.json()) as HelperStatus;
+            settled = status.connected === false;
+          }
+        } catch {
+          /* transient — keep polling until the deadline */
+        }
+        if (cancelled) return;
+        if (settled) {
+          setUpdateFlow((s) => updateFlowReducer(s, { type: "quiesce-settled" }));
+          return;
+        }
+        if (Date.now() >= deadline) {
+          setUpdateFlow((s) => updateFlowReducer(s, { type: "quiesce-timed-out" }));
+          return;
+        }
+        await new Promise((r) => setTimeout(r, 500));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [updateFlow.phase, sessions.length]);
+
+  // Either outcome of quiescing starts the download (design: the whole point
+  // is drag-to-Applications always succeeds because nothing is running by
+  // now) and refreshes the row so it reflects the now-quiesced helper.
+  useEffect(() => {
+    if (updateFlow.phase !== "ready" && updateFlow.phase !== "quiesce-timeout") return;
+    window.location.assign(TERMINAL_HELPER_DOWNLOAD_URL);
+    void load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [updateFlow.phase]);
+
+  const helperChip: HelperChip | null = deriveHelperChip(helperStatus, sessions.length);
+  const showHelperNudge =
+    updateFlow.phase === "idle" &&
+    !dismissedHelperNudge &&
+    shouldShowHelperUpdateNudge(helperStatus?.version ?? null);
 
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
@@ -234,6 +469,159 @@ export function TerminalMySessionsPanel({
                 </Button>
               </>
             )}
+          </div>
+        )}
+
+        {/* Helper row (design §5a) — lives beneath sessions, above nothing
+            else, so "what's running for me on this Mac" has one home. */}
+        {loadState === "ready" && helperChip && (
+          <div className="flex items-center gap-2.5 border-t border-zinc-800 bg-white/[0.015] px-3.5 py-2.5">
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span
+                  className={cn(
+                    "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11.5px] font-semibold",
+                    helperChipClassName(helperChip.kind),
+                  )}
+                >
+                  <span className="h-1.5 w-1.5 flex-none rounded-full bg-current" />
+                  {helperChip.label}
+                </span>
+                {helperChip.kind !== "not-running" && (helperStatus?.version || helperStatus?.machineLabel) && (
+                  <span className="text-[11.5px] text-zinc-500">
+                    {[helperStatus?.version ? `v${helperStatus.version}` : null, helperStatus?.machineLabel]
+                      .filter(Boolean)
+                      .join(" · ")}
+                  </span>
+                )}
+                {helperChip.kind === "stopped-unexpectedly" && helperStatus?.lastEventAt != null && (
+                  <span className="text-[11.5px] text-zinc-500">
+                    {formatHelperEventAge(helperStatus.lastEventAt)}
+                  </span>
+                )}
+              </div>
+              <div className="mt-0.5 text-[11.5px] text-zinc-500">{helperChip.subline}</div>
+            </div>
+            {shouldShowStopButton(helperChip) && (
+              <Button
+                variant="outline"
+                size="xs"
+                className="flex-none"
+                onClick={() => setConfirmingStopHelper(true)}
+                disabled={stoppingHelper}
+              >
+                {stopButtonLabel(helperChip)}
+              </Button>
+            )}
+          </div>
+        )}
+
+        {confirmingStopHelper && (
+          <div className="border-t border-l-2 border-l-rose-500 bg-rose-500/5 px-3.5 py-2.5">
+            <div className="text-[12.5px] font-bold text-rose-400">{STOP_CONFIRM_HEADING}</div>
+            <div className="text-[11px] text-zinc-500">{stopConfirmBody(sessions.length)}</div>
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <Button variant="ghost" size="xs" onClick={() => setConfirmingStopHelper(false)} disabled={stoppingHelper}>
+                Cancel
+              </Button>
+              <Button
+                size="xs"
+                className="bg-rose-500 text-rose-950 hover:bg-rose-400"
+                onClick={() => void stopHelper()}
+                disabled={stoppingHelper}
+              >
+                {stoppingHelper ? <Loader2 className="h-3 w-3 animate-spin" /> : <Power className="h-3 w-3" />} Stop helper
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {showHelperNudge && (
+          <div className="flex items-center gap-2 border-t border-sky-500/30 bg-sky-500/5 px-3.5 py-1.5 text-[11.5px] text-sky-300">
+            <span className="flex-1">{updateNudgeCopy(MINIMUM_RECOMMENDED_HELPER_VERSION)}</span>
+            <Button size="xs" className="flex-none bg-sky-500 text-sky-950 hover:bg-sky-400" onClick={startHelperUpdate}>
+              Update now
+            </Button>
+            <button
+              type="button"
+              className="flex-none text-sky-400 hover:text-sky-200"
+              onClick={() => setDismissedHelperNudge(true)}
+              aria-label="Dismiss helper update notice"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
+        {updateFlow.phase === "confirming" && (
+          <div className="border-t border-l-2 border-l-sky-500 bg-sky-500/5 px-3.5 py-2.5">
+            <div className="text-[12.5px] font-bold text-sky-300">{UPDATE_CONFIRM_HEADING}</div>
+            <div className="text-[11px] text-zinc-500">{updateConfirmBody(updateFlow.sessionCount)}</div>
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <Button variant="ghost" size="xs" onClick={() => setUpdateFlow((s) => updateFlowReducer(s, { type: "cancelled" }))}>
+                {UPDATE_CONFIRM_CANCEL_LABEL}
+              </Button>
+              <Button
+                size="xs"
+                className="bg-sky-500 text-sky-950 hover:bg-sky-400"
+                onClick={() => setUpdateFlow((s) => updateFlowReducer(s, { type: "confirmed" }))}
+              >
+                {UPDATE_CONFIRM_ACCEPT_LABEL}
+              </Button>
+            </div>
+          </div>
+        )}
+
+        {updateFlow.phase === "quiescing" && (
+          <div className="flex items-center gap-2 border-t border-sky-500/30 bg-sky-500/5 px-3.5 py-1.5 text-[11.5px] text-sky-300">
+            <Loader2 className="h-3 w-3 flex-none animate-spin" /> Closing the helper…
+          </div>
+        )}
+
+        {(updateFlow.phase === "ready" || updateFlow.phase === "quiesce-timeout") && (
+          <div
+            className={cn(
+              "border-t px-3.5 py-2 text-[11.5px]",
+              updateFlow.phase === "ready"
+                ? "border-sky-500/30 bg-sky-500/5 text-sky-300"
+                : "border-amber-500/30 bg-amber-500/5 text-amber-300",
+            )}
+          >
+            {updateFlow.phase === "ready" ? UPDATE_READY_COPY : UPDATE_QUIESCE_TIMEOUT_COPY}
+          </div>
+        )}
+
+        {/* "Keep helper ready" — approved for v1 (card cc74a067's design-review
+            note). The consent expansion below is the moment before anything
+            changes (design §3 flow F); turning it off needs no such step. */}
+        {loadState === "ready" && helperStatus && (
+          <div className="flex items-center gap-2 border-t border-zinc-800 px-3.5 py-2">
+            <span className="flex-1 text-[12px] font-medium text-zinc-300">{ALWAYS_ON_LABEL}</span>
+            <Switch
+              size="sm"
+              checked={helperStatus.alwaysOn}
+              onCheckedChange={handleAlwaysOnToggle}
+              disabled={togglingAlwaysOn}
+              aria-label={ALWAYS_ON_LABEL}
+            />
+          </div>
+        )}
+        {alwaysOnConsentOpen && (
+          <div className="border-t border-l-2 border-l-emerald-500 bg-emerald-500/5 px-3.5 py-2.5">
+            <div className="text-[11px] text-zinc-400">{ALWAYS_ON_CONSENT_BODY}</div>
+            <div className="mt-2 flex items-center justify-end gap-2">
+              <Button variant="ghost" size="xs" onClick={() => setAlwaysOnConsentOpen(false)}>
+                Cancel
+              </Button>
+              <Button
+                size="xs"
+                className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
+                onClick={confirmAlwaysOn}
+                disabled={togglingAlwaysOn}
+              >
+                Turn on
+              </Button>
+            </div>
           </div>
         )}
       </PopoverContent>
