@@ -166,6 +166,15 @@ export function TerminalMySessionsPanel({
     if (open) void load();
   }, [open, load]);
 
+  // A stale "Ready to update" / timeout notice must not linger forever once
+  // the popover is closed and reopened later — the update flow's own state is
+  // otherwise held in this always-mounted component (PopoverContent unmounts
+  // on close, this doesn't), same as confirmingEndAll already does.
+  useEffect(() => {
+    if (!open) return;
+    setUpdateFlow((s) => (s.phase === "ready" || s.phase === "quiesce-timeout" ? INITIAL_UPDATE_FLOW_STATE : s));
+  }, [open]);
+
   const endOne = useCallback(
     async (sid: string) => {
       setEndingSid(sid);
