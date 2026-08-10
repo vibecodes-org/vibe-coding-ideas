@@ -95,6 +95,7 @@ import {
 } from "@/lib/terminal/platform";
 import { isBrowserPaired, markBrowserPaired, resolveFirstRunEntry } from "@/lib/terminal/paired-flag";
 import { type LaunchPhase, nextLaunchPhaseOnTimeout } from "@/lib/terminal/first-run-flow";
+import { consumeRecentHelperIdleQuit } from "@/lib/terminal/helper-relaunch-signal";
 
 // How long we wait for the helper to attach after firing the deep link before
 // dropping to the calm fallback (~8s, per the approved UX). This is the safety net
@@ -672,7 +673,7 @@ export function useTerminalSession(
   // safety net, and the authoritative success signal is the first byte from the
   // bridge (ws.onmessage), which proves the helper actually opened AND attached.
   const fireLaunchDeepLink = useCallback(
-    (sessionId: string, bridgeToken: string) => {
+    (sessionId: string, bridgeToken: string, helperToken?: string) => {
       let link: string;
       let urlChars = 0;
       let hasCwd = false;
@@ -702,6 +703,7 @@ export function useTerminalSession(
               relay: relayBaseUrl(),
               session: sessionId,
               token: bridgeToken,
+              helperToken,
               cwd: linkCwd,
               prompt,
             }),
@@ -1036,7 +1038,7 @@ export function useTerminalSession(
     setHelperVersion(null);
     dispatch({ type: "connect" });
 
-    let data: { sessionId: string; browserToken: string; bridgeToken: string; expiresAt: number };
+    let data: { sessionId: string; browserToken: string; bridgeToken: string; helperToken?: string; expiresAt: number };
     try {
       const res = await fetch("/api/terminal/session", {
         method: "POST",
@@ -1084,6 +1086,13 @@ export function useTerminalSession(
       bridgeToken: data.bridgeToken,
       browserToken: data.browserToken,
     });
+    // Cheap cross-component telemetry (card cc74a067, design §9): pairs THIS
+    // mint with a previously observed helper idle-quit (the Helper row's own
+    // status-transition detection — see helper-relaunch-signal.ts) if one
+    // happened within the last 2 minutes. Consumed at most once per pairing.
+    if (consumeRecentHelperIdleQuit()) {
+      posthogRef.current?.capture("terminal_helper_relaunch_within_2m");
+    }
     // A fresh mint starts a fresh reconnect budget.
     reconnectDeadlineRef.current = 0;
     reconnectAttemptRef.current = 0;
@@ -1108,7 +1117,7 @@ export function useTerminalSession(
     }
 
     // Same-machine: hand the bridge token to the local helper via the deep link.
-    if (autoLaunch) fireLaunchDeepLink(data.sessionId, data.bridgeToken);
+    if (autoLaunch) fireLaunchDeepLink(data.sessionId, data.bridgeToken, data.helperToken);
 
     openBrowserLeg(data.sessionId, data.browserToken);
   }, [

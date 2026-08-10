@@ -14,7 +14,7 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 // One shared implementation of the token scheme — also imported by the relay.
-import { mintSessionTokens } from "../../../../../terminal/shared/session-token.mjs";
+import { mintSessionTokens, mintHelperToken } from "../../../../../terminal/shared/session-token.mjs";
 import {
   getServerTerminalSessionCap,
   getTerminalMintRateLimit,
@@ -217,7 +217,15 @@ export async function POST(req: Request) {
     }
 
     // ── (d) MINT + register. ────────────────────────────────────────────────
-    const tokens = await mintSessionTokens({ sub: user.id, idea: ideaId, secret });
+    // The bridge/browser pair (per-launch, random sid) and the helper's OWN
+    // standing control-connection credential (card cc74a067 — reserved,
+    // per-owner sid, see helperSessionId) are minted together so the SAME
+    // click that starts a terminal also (re)establishes the helper's control
+    // connection to the relay — see terminal/helper/main.js's handleLaunchUrl.
+    const [tokens, helperToken] = await Promise.all([
+      mintSessionTokens({ sub: user.id, idea: ideaId, secret }),
+      mintHelperToken({ sub: user.id, secret }),
+    ]);
 
     const { error: insertErr } = await supabase.from("terminal_sessions").insert({
       sid: tokens.sid,
@@ -248,12 +256,16 @@ export async function POST(req: Request) {
 
     // Return both leg tokens + the session id. The browser token is for the in-app
     // panel; the bridge token is handed to the local helper (slice 3 wiring).
+    // helperToken rides the SAME deep link (card cc74a067) so a same-machine
+    // launch also (re)establishes the helper's standing control connection —
+    // an already-connected helper treats a redundant one as a no-op.
     return NextResponse.json({
       sessionId: tokens.sid,
       ideaId: tokens.idea,
       expiresAt: tokens.exp,
       browserToken: tokens.browser,
       bridgeToken: tokens.bridge,
+      helperToken,
     });
   } catch (err) {
     logger.error("Terminal session mint error", {
