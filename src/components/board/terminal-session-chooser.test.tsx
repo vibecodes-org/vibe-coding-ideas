@@ -8,6 +8,8 @@ import { describe, it, expect, vi } from "vitest";
 import { render, screen, cleanup, fireEvent } from "@testing-library/react";
 import { TerminalSessionChooser } from "./terminal-session-chooser";
 import type { ChooserSections } from "@/lib/terminal/chooser-data";
+import { MINIMUM_RECOMMENDED_HELPER_VERSION } from "@/lib/terminal/helper-version";
+import type { HelperStatus } from "@/lib/terminal/helper-row";
 
 afterEach(cleanup);
 
@@ -294,5 +296,72 @@ describe("TerminalSessionChooser", () => {
     );
     expect(screen.getByRole("button", { name: /start new session/i })).toBeDisabled();
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeDisabled();
+  });
+
+  describe("helper-update nudge (card cbe60db5, rework 3)", () => {
+    // The dock owns the actual `/api/terminal/helper/status` fetch and hands
+    // the chooser its result as a prop (see terminal-dock.tsx) — this
+    // component only renders off that prop, so these tests supply it
+    // directly rather than mocking fetch.
+    function helperStatus(overrides: Partial<HelperStatus> = {}): HelperStatus {
+      return {
+        connected: true,
+        version: null,
+        machineLabel: null,
+        alwaysOn: false,
+        stoppedUnexpectedly: false,
+        lastEventAt: null,
+        ...overrides,
+      };
+    }
+
+    function renderChooser(status: HelperStatus | null) {
+      return render(
+        <TerminalSessionChooser
+          sections={EMPTY}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+          helperStatus={status}
+        />,
+      );
+    }
+
+    it("shows the nudge, above the sections, when the last-known helper is older than the minimum", () => {
+      renderChooser(helperStatus({ version: "0.3.0" }));
+      expect(screen.getByText(/A newer terminal helper is available/)).toBeInTheDocument();
+      const link = screen.getByRole("link", { name: "Download" });
+      expect(link).toHaveAttribute("href", "/download/terminal-helper");
+    });
+
+    it("hides the nudge when the last-known helper is already current", () => {
+      renderChooser(helperStatus({ version: MINIMUM_RECOMMENDED_HELPER_VERSION }));
+      expect(screen.queryByText(/A newer terminal helper is available/)).not.toBeInTheDocument();
+    });
+
+    it("hides the nudge when the last-known helper is newer than the minimum", () => {
+      renderChooser(helperStatus({ version: "9.9.9" }));
+      expect(screen.queryByText(/A newer terminal helper is available/)).not.toBeInTheDocument();
+    });
+
+    it("hides the nudge when no helper version has ever been recorded (fresh account)", () => {
+      renderChooser(helperStatus({ version: null }));
+      expect(screen.queryByText(/A newer terminal helper is available/)).not.toBeInTheDocument();
+    });
+
+    it("hides the nudge, silently, while the status is still loading or the fetch failed", () => {
+      renderChooser(null);
+      expect(screen.queryByText(/A newer terminal helper is available/)).not.toBeInTheDocument();
+      // The chooser itself never errors out — its own content still renders.
+      expect(screen.getByRole("button", { name: /start new session/i })).toBeInTheDocument();
+    });
+
+    it("dismissing the nudge (X) hides it", () => {
+      renderChooser(helperStatus({ version: "0.1.0" }));
+      expect(screen.getByText(/A newer terminal helper is available/)).toBeInTheDocument();
+      fireEvent.click(screen.getByRole("button", { name: "Dismiss helper update notice" }));
+      expect(screen.queryByText(/A newer terminal helper is available/)).not.toBeInTheDocument();
+    });
   });
 });

@@ -70,3 +70,26 @@ export function shouldShowHelperUpdateNudge(
   if (!reported) return true;
   return compareHelperVersions(reported, min) < 0;
 }
+
+/**
+ * Chooser-specific variant (card cbe60db5, rework 3 — Nick's field test: "I
+ * click Open and there's no indication I need to update"). The chooser is now
+ * the front door for EVERY entry, including a fresh account that has never
+ * connected a helper at all — for that account "no version recorded" just
+ * means "no data yet", not "an old helper". That's the opposite assumption
+ * from `shouldShowHelperUpdateNudge` above, which is only ever evaluated once
+ * a session/helper connection already exists (where a missing version safely
+ * implies a pre-2a install and SHOULD nudge). This variant only nudges when a
+ * version WAS reported and is provably older than the minimum — missing or
+ * malformed data stays silent rather than assuming the worst.
+ */
+export function shouldShowChooserHelperNudge(
+  reportedVersion: string | null | undefined,
+  minVersion: string = MINIMUM_RECOMMENDED_HELPER_VERSION,
+): boolean {
+  const min = parseHelperVersion(minVersion);
+  if (!min) return false;
+  const reported = parseHelperVersion(reportedVersion);
+  if (!reported) return false;
+  return compareHelperVersions(reported, min) < 0;
+}

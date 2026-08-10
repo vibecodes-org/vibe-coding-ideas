@@ -22,6 +22,25 @@ export interface HelperStatus {
   lastEventAt: number | null;
 }
 
+/**
+ * Shared fetch for the caller's own helper status (`GET
+ * /api/terminal/helper/status` — see that route's header comment). Both the
+ * My sessions panel and the session chooser (card cbe60db5, rework 3) need
+ * "the last-known helper version", so the fetch + failure handling lives
+ * here once instead of being duplicated. ANY failure — network error,
+ * non-2xx, unparseable body — resolves to `null`; every caller treats a
+ * failed check as best-effort/silent, never a confirmed "not running".
+ */
+export async function fetchHelperStatus(): Promise<HelperStatus | null> {
+  try {
+    const res = await fetch("/api/terminal/helper/status");
+    if (!res.ok) return null;
+    return (await res.json()) as HelperStatus;
+  } catch {
+    return null;
+  }
+}
+
 export type HelperChipKind = "running" | "winding-down" | "not-running" | "stopped-unexpectedly";
 
 export interface HelperChip {

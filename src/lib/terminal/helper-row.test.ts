@@ -1,6 +1,7 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import {
   deriveHelperChip,
+  fetchHelperStatus,
   shouldShowStopButton,
   stopButtonLabel,
   stopConfirmBody,
@@ -90,6 +91,45 @@ describe("copy strings", () => {
 
   it("updateNudgeCopy interpolates the reported version", () => {
     expect(updateNudgeCopy("0.3.0")).toBe("A newer terminal helper is available (v0.3.0).");
+  });
+});
+
+describe("fetchHelperStatus", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it("resolves the parsed status on a 2xx response", async () => {
+    const body = status({ connected: true, version: "0.3.2" });
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({ ok: true, json: async () => body }),
+    );
+    await expect(fetchHelperStatus()).resolves.toEqual(body);
+    expect(fetch).toHaveBeenCalledWith("/api/terminal/helper/status");
+  });
+
+  it("resolves null on a non-2xx response", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, json: async () => ({}) }));
+    await expect(fetchHelperStatus()).resolves.toBeNull();
+  });
+
+  it("resolves null when the fetch itself throws (network error / relay unreachable)", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("network down")));
+    await expect(fetchHelperStatus()).resolves.toBeNull();
+  });
+
+  it("resolves null when the response body isn't valid JSON", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => {
+          throw new SyntaxError("Unexpected token");
+        },
+      }),
+    );
+    await expect(fetchHelperStatus()).resolves.toBeNull();
   });
 });
 
