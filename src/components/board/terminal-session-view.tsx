@@ -244,6 +244,23 @@ export function TerminalSessionView({
   });
   useEffect(() => () => onRegisterActions(entry.key, null), [entry.key, onRegisterActions]);
 
+  // Bring-back reveal (fix/terminal-popout-host-mounted): the host div was
+  // `display:none` (0-size) for the whole time it was popped out, so the
+  // usual `expanded`-keyed resize/focus effects in the hook never re-fire on
+  // bring-back — `expanded` itself doesn't change, only `poppedOut` does.
+  // Force a refit + resize-frame send + focus on the true→false transition
+  // so typing works immediately without an extra click or window resize.
+  const prevPoppedOutRef = useRef(poppedOut);
+  useEffect(() => {
+    const wasPoppedOut = prevPoppedOutRef.current;
+    prevPoppedOutRef.current = poppedOut;
+    if (wasPoppedOut && !poppedOut) actions.refreshView();
+    // actions.refreshView is useCallback-stable (see resolveLaunchPromptParts-
+    // style deps in the hook); depending on the specific property rather than
+    // `actions` itself keeps this from re-running on unrelated renders.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [poppedOut, actions.refreshView]);
+
   const view = resolveDockView(state.status, launchPhase, platform.supported, paired);
   const meta = dockStatusMeta(view, state.errorKind);
   const showStream = state.status === "connected" || state.status === "disconnected";
@@ -262,15 +279,23 @@ export function TerminalSessionView({
     view === "connecting-returning" ||
     view === "legacy-waiting";
 
-  // Multi-session stage 4 (D2/D3, design §10b): once this tab has been popped
-  // out, its whole body becomes the placeholder — no header/pill/stream/input.
-  // The underlying `useTerminalSession` instance above keeps running (its
-  // socket will shortly be preempted by the relay, or already has been); we
-  // just don't SHOW any of that here. The tab strip above this component is
-  // unaffected (owned by terminal-dock.tsx).
-  if (poppedOut) {
-    return (
-      <div className={cn(!isActive && "hidden")} aria-hidden={!isActive}>
+  return (
+    <div className={cn(!isActive && "hidden")} aria-hidden={!isActive}>
+      {/* Multi-session stage 4 (D2/D3, design §10b): once this tab has been
+          popped out, show the placeholder INSTEAD OF the normal
+          header/body/input. Both faces stay mounted here — only CSS `hidden`
+          toggles which one is visible — because the terminal host div below
+          must NEVER unmount: a `poppedOut` early-return used to tear down
+          this whole subtree (including the host), orphaning the xterm
+          instance the hook keeps alive underneath (buffer intact, socket
+          writing invisibly, keyboard handler unreachable) — bring-back had
+          nothing to re-attach to (fix/terminal-popout-host-mounted). The
+          underlying `useTerminalSession` instance keeps running unaffected
+          either way (its socket gets preempted by the relay moments after
+          the popped window attaches, exactly like any other 4001 close) —
+          this is purely this component's PRESENTATION. The tab strip above
+          this component is unaffected (owned by terminal-dock.tsx). */}
+      <div className={cn(!poppedOut && "hidden")} aria-hidden={!poppedOut}>
         <div className="flex h-[38vh] min-h-[220px] flex-col items-center justify-center gap-3 bg-[#0c0c0e] px-6 py-6 text-center">
           <span className="text-2xl text-violet-400" aria-hidden="true">
             ⧉
@@ -289,153 +314,151 @@ export function TerminalSessionView({
           </Button>
         </div>
       </div>
-    );
-  }
 
-  return (
-    <div className={cn(!isActive && "hidden")} aria-hidden={!isActive}>
-      {/* Header: state · identity · controls (safest → most destructive) */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-[#141417] px-3 py-2">
-        <span className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold", meta.className)}>
-          <meta.Icon className={cn("h-3 w-3", meta.spin && "animate-spin")} />
-          {meta.label}
-        </span>
-        {readOnly && state.status === "connected" && (
-          <span className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/55 bg-violet-500/10 px-2 py-1 text-[11px] font-bold text-violet-300">
-            <Lock className="h-3 w-3" /> Read-only
+      <div className={cn(poppedOut && "hidden")} aria-hidden={poppedOut}>
+        {/* Header: state · identity · controls (safest → most destructive) */}
+        <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-[#141417] px-3 py-2">
+          <span className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold", meta.className)}>
+            <meta.Icon className={cn("h-3 w-3", meta.spin && "animate-spin")} />
+            {meta.label}
           </span>
-        )}
-        <span className="hidden font-mono text-xs text-zinc-500 sm:inline">
-          {descriptor.ideaTitle}
-          {pair && <span className="text-zinc-600"> · session {pair.sessionId.slice(0, 8)}</span>}
-        </span>
-        <span className="ml-auto inline-flex items-center gap-1.5">
-          {/* Pop out (D1/D2, design §4 "one new header control, in the old
-              header") — left of Read-only/End, per the design's control
-              cluster ordering (safest → most destructive). Gated on
-              `showStream` like Read-only: popping out only makes sense once
-              there's a live/reconnecting stream to move into another window;
-              `onPopOut` itself is dock-only (the popped window's own view
-              never renders this component with a handler wired). */}
-          {showStream && onPopOut && (
-            <Button
-              variant="outline"
-              size="xs"
-              className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
-              onClick={onPopOut}
-              aria-label="Pop this session out into its own window"
-            >
-              <ExternalLink className="h-3 w-3" /> Pop out
-            </Button>
+          {readOnly && state.status === "connected" && (
+            <span className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/55 bg-violet-500/10 px-2 py-1 text-[11px] font-bold text-violet-300">
+              <Lock className="h-3 w-3" /> Read-only
+            </span>
           )}
-          {showStream && (
-            <Button
-              variant="outline"
-              size="xs"
-              className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
-              onClick={() => actions.setReadOnly((r) => !r)}
-              aria-pressed={readOnly}
-              aria-label={readOnly ? "Read-only is on — click to allow input" : "Switch to read-only"}
-            >
-              {readOnly ? <Lock className="h-3 w-3" /> : <LockOpen className="h-3 w-3" />}
-              {readOnly ? "Read-only · on" : "Read-only"}
-            </Button>
-          )}
-          {showEnd && (
-            <Button
-              variant="outline"
-              size="xs"
-              className="border-rose-500/45 bg-transparent text-rose-400 hover:bg-rose-500/10"
-              onClick={actions.end}
-              aria-label="End session"
-            >
-              <Power className="h-3 w-3" /> End
-            </Button>
-          )}
-        </span>
-      </div>
-
-      {/* Helper-update nudge (release-gate rework 2a) — non-blocking, dismissible.
-          Missing version (every pre-2a helper) OR older than
-          MINIMUM_RECOMMENDED_HELPER_VERSION shows this; the session itself is
-          never gated on it. */}
-      {showHelperNudge && (
-        <div className="flex items-center gap-2 border-b border-sky-500/30 bg-sky-500/5 px-3 py-1.5 text-[11px] text-sky-300">
-          <Info className="h-3 w-3 shrink-0" />
-          <span className="flex-1">
-            Update your terminal helper — faster and lighter on the relay.{" "}
-            <a
-              href={platform.downloadUrl ?? TERMINAL_HELPER_DOWNLOAD_URL}
-              className="underline hover:text-sky-200"
-            >
-              Download
-            </a>
+          <span className="hidden font-mono text-xs text-zinc-500 sm:inline">
+            {descriptor.ideaTitle}
+            {pair && <span className="text-zinc-600"> · session {pair.sessionId.slice(0, 8)}</span>}
           </span>
-          <button
-            type="button"
-            className="shrink-0 text-sky-400 hover:text-sky-200"
-            onClick={() => setDismissedHelperNudge(true)}
-            aria-label="Dismiss helper update notice"
-          >
-            <X className="h-3 w-3" />
-          </button>
+          <span className="ml-auto inline-flex items-center gap-1.5">
+            {/* Pop out (D1/D2, design §4 "one new header control, in the old
+                header") — left of Read-only/End, per the design's control
+                cluster ordering (safest → most destructive). Gated on
+                `showStream` like Read-only: popping out only makes sense once
+                there's a live/reconnecting stream to move into another window;
+                `onPopOut` itself is dock-only (the popped window's own view
+                never renders this component with a handler wired). */}
+            {showStream && onPopOut && (
+              <Button
+                variant="outline"
+                size="xs"
+                className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
+                onClick={onPopOut}
+                aria-label="Pop this session out into its own window"
+              >
+                <ExternalLink className="h-3 w-3" /> Pop out
+              </Button>
+            )}
+            {showStream && (
+              <Button
+                variant="outline"
+                size="xs"
+                className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
+                onClick={() => actions.setReadOnly((r) => !r)}
+                aria-pressed={readOnly}
+                aria-label={readOnly ? "Read-only is on — click to allow input" : "Switch to read-only"}
+              >
+                {readOnly ? <Lock className="h-3 w-3" /> : <LockOpen className="h-3 w-3" />}
+                {readOnly ? "Read-only · on" : "Read-only"}
+              </Button>
+            )}
+            {showEnd && (
+              <Button
+                variant="outline"
+                size="xs"
+                className="border-rose-500/45 bg-transparent text-rose-400 hover:bg-rose-500/10"
+                onClick={actions.end}
+                aria-label="End session"
+              >
+                <Power className="h-3 w-3" /> End
+              </Button>
+            )}
+          </span>
         </div>
-      )}
 
-      {/* Terminal body — the xterm host plus a state overlay. The host stays
-          mounted under every state so scrollback is frozen + readable on end. */}
-      <div className="relative h-[38vh] min-h-[220px]">
-        <div
-          ref={containerRef}
-          className={cn("h-full w-full px-3 py-2", state.status === "disconnected" && "opacity-45")}
-        />
-        {!showStream && (
-          <StateOverlay
-            view={view}
-            state={state}
-            pair={pair}
-            platform={platform}
-            canLaunch={canLaunch}
-            onConnect={() => void actions.connect({ autoLaunch: true })}
-            onRetry={() => void actions.connect({ autoLaunch: true })}
-            onLaunchAgain={actions.beginBrowserLaunch}
-            onCopyBridge={actions.copyBridgeCommand}
-          />
-        )}
-        {state.status === "disconnected" && (
-          <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
-            <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
-            <b>Reconnecting to your session…</b> Your machine may have slept or dropped Wi-Fi. Your agent keeps running locally while we reattach.
-            <button className="ml-2 underline hover:text-amber-200" onClick={actions.reconnectNow}>
-              Reconnect now
+        {/* Helper-update nudge (release-gate rework 2a) — non-blocking, dismissible.
+            Missing version (every pre-2a helper) OR older than
+            MINIMUM_RECOMMENDED_HELPER_VERSION shows this; the session itself is
+            never gated on it. */}
+        {showHelperNudge && (
+          <div className="flex items-center gap-2 border-b border-sky-500/30 bg-sky-500/5 px-3 py-1.5 text-[11px] text-sky-300">
+            <Info className="h-3 w-3 shrink-0" />
+            <span className="flex-1">
+              Update your terminal helper — faster and lighter on the relay.{" "}
+              <a
+                href={platform.downloadUrl ?? TERMINAL_HELPER_DOWNLOAD_URL}
+                className="underline hover:text-sky-200"
+              >
+                Download
+              </a>
+            </span>
+            <button
+              type="button"
+              className="shrink-0 text-sky-400 hover:text-sky-200"
+              onClick={() => setDismissedHelperNudge(true)}
+              aria-label="Dismiss helper update notice"
+            >
+              <X className="h-3 w-3" />
             </button>
           </div>
         )}
-        {state.status === "connected" && peerDegraded && (
-          <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
-            <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
-            <b>Connection interrupted — reconnecting…</b> Your machine may have slept; we&apos;re holding your session and will resume automatically.
-          </div>
+
+        {/* Terminal body — the xterm host plus a state overlay. The host stays
+            mounted under every state so scrollback is frozen + readable on end. */}
+        <div className="relative h-[38vh] min-h-[220px]">
+          <div
+            ref={containerRef}
+            className={cn("h-full w-full px-3 py-2", state.status === "disconnected" && "opacity-45")}
+          />
+          {!showStream && (
+            <StateOverlay
+              view={view}
+              state={state}
+              pair={pair}
+              platform={platform}
+              canLaunch={canLaunch}
+              onConnect={() => void actions.connect({ autoLaunch: true })}
+              onRetry={() => void actions.connect({ autoLaunch: true })}
+              onLaunchAgain={actions.beginBrowserLaunch}
+              onCopyBridge={actions.copyBridgeCommand}
+            />
+          )}
+          {state.status === "disconnected" && (
+            <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
+              <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+              <b>Reconnecting to your session…</b> Your machine may have slept or dropped Wi-Fi. Your agent keeps running locally while we reattach.
+              <button className="ml-2 underline hover:text-amber-200" onClick={actions.reconnectNow}>
+                Reconnect now
+              </button>
+            </div>
+          )}
+          {state.status === "connected" && peerDegraded && (
+            <div className="absolute inset-x-0 bottom-0 border-t border-amber-500/30 bg-amber-500/5 px-3 py-2 text-[11px] text-amber-300">
+              <Loader2 className="mr-1 inline h-3 w-3 animate-spin" />
+              <b>Connection interrupted — reconnecting…</b> Your machine may have slept; we&apos;re holding your session and will resume automatically.
+            </div>
+          )}
+        </div>
+
+        {/* Input affordance — read-write bar, or the read-only explanatory note. */}
+        {state.status === "connected" && (
+          inputEnabled ? (
+            <div className="flex items-center gap-2 border-t border-zinc-800 bg-[#141417] px-3 py-2 text-xs text-zinc-500">
+              <span className="font-mono text-emerald-400">›</span>
+              <span>Click the terminal and type to steer the agent. Enter sends.</span>
+            </div>
+          ) : (
+            <div className="border-t border-zinc-800 bg-violet-500/5 px-3 py-2 text-[11px] text-zinc-400">
+              <Lock className="mr-1 inline h-3 w-3 text-violet-300" />
+              <b className="text-violet-300">Read-only is on.</b> You&apos;re watching live; keystrokes are frozen.
+              <button className="ml-2 underline hover:text-zinc-200" onClick={() => actions.setReadOnly(false)}>
+                Allow input
+              </button>
+            </div>
+          )
         )}
       </div>
-
-      {/* Input affordance — read-write bar, or the read-only explanatory note. */}
-      {state.status === "connected" && (
-        inputEnabled ? (
-          <div className="flex items-center gap-2 border-t border-zinc-800 bg-[#141417] px-3 py-2 text-xs text-zinc-500">
-            <span className="font-mono text-emerald-400">›</span>
-            <span>Click the terminal and type to steer the agent. Enter sends.</span>
-          </div>
-        ) : (
-          <div className="border-t border-zinc-800 bg-violet-500/5 px-3 py-2 text-[11px] text-zinc-400">
-            <Lock className="mr-1 inline h-3 w-3 text-violet-300" />
-            <b className="text-violet-300">Read-only is on.</b> You&apos;re watching live; keystrokes are frozen.
-            <button className="ml-2 underline hover:text-zinc-200" onClick={() => actions.setReadOnly(false)}>
-              Allow input
-            </button>
-          </div>
-        )
-      )}
     </div>
   );
 }
