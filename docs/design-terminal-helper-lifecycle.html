@@ -1,0 +1,505 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design — Terminal helper lifecycle</title>
+<style>
+  :root{
+    --bg:#09090b; --panel:#0c0c0e; --panel2:#131316; --line:#27272a; --line2:#3f3f46;
+    --txt:#e4e4e7; --dim:#a1a1aa; --faint:#71717a;
+    --emerald:#34d399; --amber:#fbbf24; --rose:#fb7185; --sky:#38bdf8; --violet:#a78bfa;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font:14px/1.6 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:40px 20px}
+  main{max-width:960px;margin:0 auto}
+  h1{font-size:24px;letter-spacing:-.02em;margin-bottom:6px}
+  h2{font-size:18px;letter-spacing:-.01em;margin:44px 0 6px;padding-top:20px;border-top:1px solid var(--line)}
+  h3{font-size:14.5px;margin:26px 0 8px;color:var(--txt)}
+  p{color:var(--dim);margin:8px 0;max-width:76ch}
+  .meta{color:var(--faint);font-size:12.5px;margin-bottom:8px}
+  .lead{color:var(--dim);font-size:15px;max-width:76ch}
+  strong{color:var(--txt);font-weight:600}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:12.5px;background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:1px 5px;color:#c4b5fd}
+  table{border-collapse:collapse;width:100%;margin:14px 0;font-size:13px}
+  th{font-size:11.5px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);text-align:left;padding:8px 10px;border-bottom:1px solid var(--line2)}
+  td{padding:9px 10px;border-bottom:1px solid var(--line);color:var(--dim);vertical-align:top}
+  td:first-child{color:var(--txt);font-weight:600;white-space:nowrap}
+  .wrap{overflow-x:auto}
+  .decision td:first-child{white-space:normal;min-width:130px}
+  .num{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;background:var(--panel2);border:1px solid var(--line2);font-size:11px;color:var(--dim);flex:none}
+
+  /* chips — pill, icon + label, never colour alone */
+  .chip{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:2px 10px 2px 8px;font-size:11.5px;font-weight:600;border:1px solid}
+  .chip .dot{width:7px;height:7px;border-radius:50%;background:currentColor;flex:none}
+  .chip.emerald{color:var(--emerald);border-color:rgba(52,211,153,.5);background:rgba(52,211,153,.08)}
+  .chip.amber{color:var(--amber);border-color:rgba(251,191,36,.5);background:rgba(251,191,36,.08)}
+  .chip.rose{color:var(--rose);border-color:rgba(251,113,133,.5);background:rgba(251,113,133,.08)}
+  .chip.sky{color:var(--sky);border-color:rgba(56,189,248,.5);background:rgba(56,189,248,.08)}
+  .chip.zinc{color:var(--faint);border-color:var(--line2);background:var(--panel2)}
+
+  /* buttons — small quiet outlines matching dock chrome */
+  .btn{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;border-radius:6px;padding:3px 10px;border:1px solid var(--line2);background:transparent;color:var(--txt);cursor:default}
+  .btn.rose{border-color:rgba(251,113,133,.45);color:var(--rose)}
+  .btn.rose-solid{border-color:transparent;background:var(--rose);color:#4c0519}
+  .btn.sky-solid{border-color:transparent;background:var(--sky);color:#082f49}
+  .btn.ghost{border-color:transparent;color:var(--dim)}
+
+  /* mock panels */
+  .mock{background:var(--panel);border:1px solid var(--line);border-radius:10px;max-width:420px;margin:14px 0;box-shadow:0 8px 30px rgba(0,0,0,.45);font-size:13px}
+  .mock .hd{display:flex;align-items:center;gap:8px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px;font-weight:700}
+  .mock .hd .sub{margin-left:auto;font-weight:400;font-size:11.5px;color:var(--faint)}
+  .mock .row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--line)}
+  .mock .row:first-of-type,.mock .hd + .row{border-top:none}
+  .mock .grow{flex:1;min-width:0}
+  .mock .t{font-weight:600;color:var(--txt);font-size:13px}
+  .mock .s{font-size:11.5px;color:var(--faint)}
+  .mock .mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;color:var(--faint)}
+  .mock .confirm{border-left:2px solid var(--rose);background:rgba(251,113,133,.05)}
+  .mock .confirm .t{color:var(--rose);font-size:12.5px}
+  .mock .nudge{background:rgba(56,189,248,.05);border-top:1px solid rgba(56,189,248,.3)!important;font-size:11.5px;color:#7dd3fc}
+  .mock .notice-rose{background:rgba(251,113,133,.06);border-top:1px solid rgba(251,113,133,.3)!important;font-size:12px;color:#fda4af}
+  .caption{font-size:11.5px;color:var(--faint);margin:-6px 0 18px;max-width:70ch}
+  .mocks{display:flex;flex-wrap:wrap;gap:20px;align-items:flex-start}
+  .mocks .mock{margin:14px 0 4px}
+
+  /* state diagram */
+  .diagram{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:26px 22px;margin:16px 0;overflow-x:auto}
+  .lane{display:flex;align-items:center;gap:0;min-width:840px;margin:10px 0}
+  .state{border:1px solid var(--line2);background:var(--panel2);border-radius:8px;padding:8px 14px;text-align:center;flex:none;min-width:118px}
+  .state .n{font-weight:700;font-size:12.5px;color:var(--txt)}
+  .state .d{font-size:10.5px;color:var(--faint);margin-top:1px}
+  .state.emerald{border-color:rgba(52,211,153,.55)} .state.emerald .n{color:var(--emerald)}
+  .state.amber{border-color:rgba(251,191,36,.55)} .state.amber .n{color:var(--amber)}
+  .state.rose{border-color:rgba(251,113,133,.55)} .state.rose .n{color:var(--rose)}
+  .state.zinc{border-style:dashed}
+  .arrow{flex:1;min-width:60px;position:relative;height:1px;background:var(--line2);margin:0 2px}
+  .arrow::after{content:"";position:absolute;right:-1px;top:-3.5px;border:4px solid transparent;border-left-color:var(--line2)}
+  .arrow .lbl{position:absolute;left:50%;transform:translateX(-50%);top:-20px;font-size:10px;color:var(--dim);white-space:nowrap;background:var(--panel);padding:0 4px}
+  .arrow.back::after{right:auto;left:-1px;border-left-color:transparent;border-right-color:var(--line2)}
+  .arrow .lbl.below{top:auto;bottom:-20px}
+  .diagram .legendline{font-size:11px;color:var(--faint);margin-top:18px}
+
+  /* flow steps */
+  .flow{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:16px 18px;margin:14px 0}
+  .flow ol{margin:4px 0 0 0;padding-left:0;list-style:none;counter-reset:fs}
+  .flow li{counter-increment:fs;display:flex;gap:12px;padding:7px 0;border-top:1px dashed var(--line);font-size:13px;color:var(--dim)}
+  .flow li:first-child{border-top:none}
+  .flow li::before{content:counter(fs);display:inline-flex;align-items:center;justify-content:center;flex:none;width:20px;height:20px;border-radius:50%;background:var(--panel2);border:1px solid var(--line2);font-size:11px;color:var(--dim);margin-top:1px}
+  .flow .who{display:inline-block;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;border-radius:4px;padding:0 5px;margin-right:6px;vertical-align:1px}
+  .who.u{color:var(--sky);background:rgba(56,189,248,.1)}
+  .who.w{color:var(--violet);background:rgba(167,139,250,.1)}
+  .who.h{color:var(--emerald);background:rgba(52,211,153,.1)}
+  .who.os{color:var(--amber);background:rgba(251,191,36,.1)}
+  .tag{display:inline-block;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;border-radius:4px;padding:1px 7px;vertical-align:2px;margin-left:8px}
+  .tag.followup{color:var(--amber);background:rgba(251,191,36,.12);border:1px solid rgba(251,191,36,.35)}
+  .tag.v1{color:var(--emerald);background:rgba(52,211,153,.12);border:1px solid rgba(52,211,153,.35)}
+
+  .callout{border:1px solid var(--line2);border-left:3px solid var(--sky);background:var(--panel);border-radius:8px;padding:12px 16px;margin:16px 0;font-size:13px;color:var(--dim)}
+  .callout.warn{border-left-color:var(--amber)}
+  .callout.oos{border-left-color:var(--rose)}
+  .copytable td:nth-child(2){color:var(--txt)}
+  .copytable td:first-child{font-weight:500;color:var(--faint);font-size:12px}
+  kbd.string{font-family:inherit;color:var(--txt);background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:2px 8px;display:inline-block;margin:1px 0;font-size:12.5px}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Terminal helper lifecycle — UX design</h1>
+<p class="meta">Card cc74a067 · step 2 “UX Design” · builds on the Requirements step (completed 10 Aug 2026) · Compass, UX Designer</p>
+<p class="lead">The helper must be reliably <strong>there</strong> when a terminal is wanted and reliably <strong>gone</strong> when it isn’t. This design resolves both halves with one rule: <strong>the helper’s life is the life of its sessions, plus one quiet minute</strong> — and always-on becomes an explicit, visible opt-in later, not an accident of never exiting. The design covers both v1 (clean lifecycle) and the always-on follow-up so the follow-up extends this design rather than replacing it.</p>
+
+<!-- ============================================================ -->
+<h2>1 · The six decisions</h2>
+<p>Each open question from Requirements, answered with a concrete recommendation, the rejected alternative, and why.</p>
+<div class="wrap">
+<table class="decision">
+  <tr><th>Question</th><th>Recommendation</th><th>Rejected alternative</th><th>Why</th></tr>
+  <tr>
+    <td>1 · Default posture</td>
+    <td><strong>Quit-when-idle by default.</strong> Always-on is an explicit opt-in in the follow-up. <span class="tag v1">v1</span></td>
+    <td>Always-on by default with an off switch.</td>
+    <td>The OS relaunches the helper on any <code>vibecodes://</code> link, so idle-exit costs the user one click they already make — zero friction lost. Always-on-by-default repeats the exact trust failure of the incident (“a process I never asked for never leaves”), and login-item consent is a moment users should walk into knowingly, not discover.</td>
+  </tr>
+  <tr>
+    <td>2 · Linger window</td>
+    <td><strong>60 seconds</strong> after the last session ends. New sessions during the window cancel the timer. <span class="tag v1">v1</span></td>
+    <td>Immediate exit (0 s); long linger (10–15 min).</td>
+    <td>60 s absorbs the common “end one, immediately start another” churn without a relaunch, and matches the card’s acceptance criterion (“within ~1 min, pgrep finds nothing”). Immediate exit makes rapid restarts feel stuttery; a long linger recreates “mystery resident process” — the thing story 2 exists to kill.</td>
+  </tr>
+  <tr>
+    <td>3 · Quit / status affordance</td>
+    <td><strong>Invisible helper + web-controlled status</strong>: a “Helper” row in the existing My sessions panel (status, version, machine, Stop). The <strong>menu-bar icon ships with the always-on opt-in only</strong>. <span class="tag v1">v1</span></td>
+    <td>Permanent menu-bar icon from v1.</td>
+    <td>Under quit-when-idle the helper is only alive while sessions run — a permanent desktop surface would advertise a thing that’s usually not there, and the web app is already where sessions are seen and ended (one mental home, not two). Once always-on exists, a resident background app <em>should</em> follow the Docker Desktop / Tailscale convention and show a menu-bar presence — so the icon arrives exactly when residency does.</td>
+  </tr>
+  <tr>
+    <td>4 · Update quiescence</td>
+    <td><strong>“Update” tells the helper to stand down first.</strong> No sessions: helper exits immediately, then the download starts. Live sessions: inline confirmation in the web app; on confirm, sessions end, helper exits (no linger), download starts. <span class="tag v1">v1</span></td>
+    <td>Start the download regardless and let the Finder “in use” dialog be the error surface; or silently kill live sessions.</td>
+    <td>The whole incident was the Finder dialog being the error surface. Quiescing first makes drag-to-Applications always succeed. Sessions are never killed silently — the user confirms with a plain statement of consequences, honouring story 1’s AC (“nothing is silently killed mid-work”).</td>
+  </tr>
+  <tr>
+    <td>5 · Crash handling</td>
+    <td><strong>Log-and-exit, no dialog.</strong> The helper writes a crash log and exits. The web app is the notice surface: a rose banner in the affected session view (if one was open) and a “stopped unexpectedly” state in the Helper row. <span class="tag v1">v1</span></td>
+    <td>A visible-but-non-blocking native error window.</td>
+    <td>Any native window keeps the process alive and recreates “in use”. The user’s attention is in the browser — the session going down is the symptom they actually see, so that’s where the explanation and the one-click recovery (“Relaunch”) belong. The crash log preserves diagnosability without a hostage process.</td>
+  </tr>
+  <tr>
+    <td>6 · Slicing</td>
+    <td><strong>v1 = clean lifecycle</strong> (stories 1, 2, 3, 6 + the Helper row as minimal story 5). <strong>Follow-up = always-on</strong> (story 4 + full 5: opt-in, login item, menu-bar icon).</td>
+    <td>Ship always-on in v1.</td>
+    <td>Matches the Requirements recommendation: the incident is recurring pain and cheap to fix; always-on is consent-sensitive and must sit on a trustworthy exit story. Everything in this document that the follow-up needs is designed here (§4 flow F, §5b) so it extends v1’s surfaces instead of redesigning them.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2>2 · Lifecycle state diagram</h2>
+<p>Helper states on the user’s Mac. Solid boxes are running processes; dashed boxes are “no process exists”. Every transition is listed with its trigger in the table below the diagram.</p>
+
+<div class="diagram">
+  <div class="lane">
+    <div class="state zinc"><div class="n">Not installed</div><div class="d">no app in /Applications</div></div>
+    <div class="arrow"><span class="lbl">install DMG</span></div>
+    <div class="state zinc"><div class="n">Not running</div><div class="d">installed, no process</div></div>
+    <div class="arrow"><span class="lbl">vibecodes:// link</span></div>
+    <div class="state amber"><div class="n">Launching</div><div class="d">OS opens helper</div></div>
+    <div class="arrow"><span class="lbl">bridge attaches</span></div>
+    <div class="state emerald"><div class="n">Active</div><div class="d">N ≥ 1 sessions</div></div>
+  </div>
+  <div class="lane">
+    <div class="state emerald"><div class="n">Active</div><div class="d">N ≥ 1 sessions</div></div>
+    <div class="arrow"><span class="lbl">last bridge exits</span><span class="lbl below">End / End all / expiry</span></div>
+    <div class="state amber"><div class="n">Lingering</div><div class="d">0 sessions · 60 s timer</div></div>
+    <div class="arrow"><span class="lbl">timer fires</span></div>
+    <div class="state"><div class="n">Quitting</div><div class="d">clean exit</div></div>
+    <div class="arrow"><span class="lbl">process ends</span></div>
+    <div class="state zinc"><div class="n">Not running</div><div class="d">relaunches on next link</div></div>
+  </div>
+  <div class="lane">
+    <div class="state amber"><div class="n">Lingering</div><div class="d">timer cancelled</div></div>
+    <div class="arrow back"><span class="lbl">new vibecodes:// link / new session</span></div>
+    <div class="state emerald"><div class="n">Active</div><div class="d">back to N ≥ 1</div></div>
+    <div class="arrow" style="visibility:hidden"></div>
+    <div class="state rose"><div class="n">Crashed</div><div class="d">uncaught error</div></div>
+    <div class="arrow"><span class="lbl">log + self-exit</span></div>
+    <div class="state zinc"><div class="n">Not running</div><div class="d">no dialog, no orphans</div></div>
+  </div>
+  <div class="legendline">Also → <strong>Quitting</strong> (skipping the linger) from Active or Lingering when: the user presses <em>Stop</em> in the Helper row, or the update flow quiesces the helper. Crash can occur from any running state and always ends at Not running.</div>
+</div>
+
+<div class="wrap">
+<table>
+  <tr><th>From → To</th><th>Trigger</th><th>Notes</th></tr>
+  <tr><td>Not installed → Not running</td><td>User installs the DMG</td><td>One-time. Nothing runs until first use.</td></tr>
+  <tr><td>Not running → Launching → Active</td><td><code>vibecodes://</code> deep link (Launch button)</td><td>The OS starts the helper; the helper spawns a bridge, which attaches to the relay. This is why quit-when-idle is free.</td></tr>
+  <tr><td>Active → Active (N±1)</td><td>Sessions start/end while others remain</td><td>No lifecycle change while N ≥ 1.</td></tr>
+  <tr><td>Active → Lingering</td><td>Last bridge exits: web “End”, “End all”, 4 h max, or 30 min idle expiry</td><td>60 s single timer starts. Helper stays connectable.</td></tr>
+  <tr><td>Lingering → Active</td><td>New deep link or new session request inside the window</td><td>Timer cancelled; instant start, no relaunch.</td></tr>
+  <tr><td>Lingering → Quitting → Not running</td><td>60 s timer fires with N = 0</td><td>Clean exit; satisfies the pgrep-finds-nothing criterion.</td></tr>
+  <tr><td>Active/Lingering → Quitting</td><td>“Stop” in the Helper row (ends sessions first, after inline confirm if N ≥ 1)</td><td>Skips the linger. Idempotent — a second Stop is a no-op.</td></tr>
+  <tr><td>Active/Lingering → Quitting</td><td>Update quiesce command (after confirm if N ≥ 1)</td><td>Skips the linger so drag-to-Applications succeeds immediately.</td></tr>
+  <tr><td>Any running → Crashed → Not running</td><td>Uncaught exception in the helper</td><td>Write crash log, exit non-zero. No dialog ever. Bridges die with the parent; the relay marks their sessions ended.</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2>3 · Interaction flows</h2>
+<p>Actors: <span class="who u">User</span> <span class="who w">Web app</span> <span class="who h">Helper</span> <span class="who os">macOS</span></p>
+
+<h3>A · The upgrader — update with active sessions <span class="tag v1">v1</span></h3>
+<div class="flow"><ol>
+  <li><div><span class="who u">User</span>Clicks <em>Update now</em> on the update nudge (session view banner or Helper row) while 2 sessions are running.</div></li>
+  <li><div><span class="who w">Web app</span>Shows the inline confirmation (§5c): “Your 2 running sessions will end first…”. Nothing has happened yet — cancel is free.</div></li>
+  <li><div><span class="who u">User</span>Confirms <em>End sessions &amp; update</em>.</div></li>
+  <li><div><span class="who w">Web app</span>Ends all sessions (same path as End all), then sends the quiesce command via the relay.</div></li>
+  <li><div><span class="who h">Helper</span>Bridges exit; helper quits immediately (no linger). Web shows “Ready to update — the helper has closed” and starts the download.</div></li>
+  <li><div><span class="who u">User</span>Drags the new app into /Applications. <strong>No “in use” dialog — nothing is running.</strong></div></li>
+  <li><div><span class="who u">User</span>Launches a terminal; <span class="who os">macOS</span> starts the new helper via the deep link. Helper row now shows the new version. Done — one sitting.</div></li>
+</ol></div>
+<p class="caption">Error recovery: if the quiesce ack doesn’t arrive within ~10 s, the web app still offers the download but shows the fallback notice (§6, “quiesce-timeout”) telling the user the helper may still be closing.</p>
+
+<h3>B · The everyday user — End all → helper exits <span class="tag v1">v1</span></h3>
+<div class="flow"><ol>
+  <li><div><span class="who u">User</span>Opens My sessions, uses <em>End all sessions</em> (existing inline confirm, unchanged).</div></li>
+  <li><div><span class="who w">Web app</span>Ends every session; sessions list empties; Helper row flips to <em>Winding down</em> (amber, §5a-2).</div></li>
+  <li><div><span class="who h">Helper</span>Last bridge exits → 60 s linger timer → clean quit.</div></li>
+  <li><div><span class="who w">Web app</span>On next open/refresh the Helper row shows <em>Not running</em> with its reassurance line. Nothing of VibeCodes is left running on the Mac.</div></li>
+</ol></div>
+
+<h3>C · The crash victim — crash → recover <span class="tag v1">v1</span></h3>
+<div class="flow"><ol>
+  <li><div><span class="who h">Helper</span>Hits an uncaught error mid-session. Writes a crash log, exits. No dialog, no orphan processes.</div></li>
+  <li><div><span class="who w">Web app</span>The open session view loses its stream and shows the rose crash notice (§5d) — plain words, files-are-safe reassurance, one action.</div></li>
+  <li><div><span class="who u">User</span>Clicks <em>Start a new session</em> (the normal Launch path).</div></li>
+  <li><div><span class="who os">macOS</span>Deep link relaunches the helper fresh. No manual cleanup, ever. A later reinstall also succeeds — nothing was left behind.</div></li>
+</ol></div>
+
+<h3>D · The updater — nudge → quiesce → replace → relaunch (no sessions) <span class="tag v1">v1</span></h3>
+<div class="flow"><ol>
+  <li><div><span class="who w">Web app</span>Relay reports an old helper version → sky nudge shows (existing surface, now also in the Helper row).</div></li>
+  <li><div><span class="who u">User</span>Clicks <em>Update now</em>. No sessions are running, so there is no confirmation step.</div></li>
+  <li><div><span class="who w">Web app</span>Sends quiesce; helper (if lingering) exits at once. Shows “Ready to update” + starts the download. If the helper was already gone, this step is instant.</div></li>
+  <li><div><span class="who u">User</span>Drag to /Applications → next launch runs the new version → nudge disappears, Helper row shows the new version number.</div></li>
+</ol></div>
+
+<h3>E · The cautious user — see it, stop it <span class="tag v1">v1</span></h3>
+<div class="flow"><ol>
+  <li><div><span class="who u">User</span>Opens My sessions — the Helper row (§5a) answers “is anything running on my Mac?” at a glance: status chip, version, machine name.</div></li>
+  <li><div><span class="who u">User</span>Clicks <em>Stop</em>. With sessions running, an inline confirm states the consequence (ends N sessions); with none, it stops silently.</div></li>
+  <li><div><span class="who h">Helper</span>Ends bridges (if any) and quits immediately. Toast: “Helper stopped…”.</div></li>
+  <li><div><span class="who w">Web app</span>Helper row shows <em>Not running</em>. It stays stopped until the user launches a terminal again — exactly the promise in story 5.</div></li>
+</ol></div>
+
+<h3>F · Always-on opt-in with its consent moment <span class="tag followup">follow-up</span></h3>
+<div class="flow"><ol>
+  <li><div><span class="who u">User</span>Finds <em>Keep helper ready</em> — an off-by-default toggle in the Helper row (§5b footer). It never self-enables; installing/updating never flips it.</div></li>
+  <li><div><span class="who w">Web app</span>The consent moment, before anything changes: an inline expansion states in full what turning it on means — “The helper starts when you log in to your Mac and stays running so terminals open instantly. It shows an icon in your menu bar, and you can turn this off or quit it there any time.”</div></li>
+  <li><div><span class="who u">User</span>Confirms <em>Turn on</em>. <span class="who os">macOS</span> registers the login item (visible in System Settings → Login Items — we never hide from the OS list).</div></li>
+  <li><div><span class="who h">Helper</span>Switches lifecycle: linger timer disabled; menu-bar icon (§5b) appears. Quit-on-idle no longer applies.</div></li>
+  <li><div><span class="who u">User</span>Can reverse it from either surface: the same toggle, or the menu-bar <em>Quit</em> / <em>Keep helper ready</em> items. Turning it off returns the helper to v1 quit-when-idle behaviour (and it exits right away if idle).</div></li>
+</ol></div>
+<p class="caption">Update flows are unchanged in always-on mode except the last step: after the user replaces the app, the login item relaunches the new helper at next login — and the web app’s “launch a terminal” path still starts it on demand before then.</p>
+
+<!-- ============================================================ -->
+<h2>4 · UI mockups</h2>
+
+<h3>5a · My sessions panel — with the new Helper row <span class="tag v1">v1</span></h3>
+<p>The Helper row lives at the bottom of the existing My sessions popover — beneath sessions, above nothing else — so “what’s running for me” has one home. Four states shown. Status is always a pill chip with icon + label (never colour alone).</p>
+
+<div class="mocks">
+
+<div class="mock" role="img" aria-label="Mockup: My sessions panel, helper running with one session">
+  <div class="hd">My sessions <span class="sub">runs on your machines</span></div>
+  <div class="row">
+    <div class="grow">
+      <div class="t">fix-login-bug <span class="s" style="font-weight:400">VibeCodes</span></div>
+      <div class="mono">Nick’s MacBook Pro · ~/projects/vibecodes</div>
+    </div>
+    <span class="s">12m</span>
+    <span class="btn rose">⏻ End</span>
+  </div>
+  <div class="row">
+    <span class="s">1 session</span>
+    <span class="btn rose" style="margin-left:auto">⏻ End all sessions</span>
+  </div>
+  <div class="row" style="background:rgba(255,255,255,.015)">
+    <div class="grow">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="chip emerald"><span class="dot"></span>Helper running</span>
+        <span class="s">v0.2.1 · Nick’s MacBook Pro</span>
+      </div>
+      <div class="s" style="margin-top:3px">The small app that connects terminals to this Mac.</div>
+    </div>
+    <span class="btn">Stop</span>
+  </div>
+</div>
+
+<div class="mock" role="img" aria-label="Mockup: helper row, winding down state">
+  <div class="hd">My sessions <span class="sub">runs on your machines</span></div>
+  <div class="row">
+    <div class="grow" style="text-align:center;padding:10px 0">
+      <div class="t" style="color:var(--txt)">No terminals running.</div>
+      <div class="s">Launch one from an idea board — Launch Claude Code → In the browser.</div>
+    </div>
+  </div>
+  <div class="row" style="background:rgba(255,255,255,.015)">
+    <div class="grow">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="chip amber"><span class="dot"></span>Winding down</span>
+        <span class="s">v0.2.1 · Nick’s MacBook Pro</span>
+      </div>
+      <div class="s" style="margin-top:3px">No sessions left — the helper quits itself in about a minute.</div>
+    </div>
+    <span class="btn">Stop now</span>
+  </div>
+</div>
+
+<div class="mock" role="img" aria-label="Mockup: helper row, not running state">
+  <div class="hd">My sessions <span class="sub">runs on your machines</span></div>
+  <div class="row">
+    <div class="grow" style="text-align:center;padding:10px 0">
+      <div class="t" style="color:var(--txt)">No terminals running.</div>
+      <div class="s">Launch one from an idea board — Launch Claude Code → In the browser.</div>
+    </div>
+  </div>
+  <div class="row" style="background:rgba(255,255,255,.015)">
+    <div class="grow">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="chip zinc"><span class="dot"></span>Helper not running</span>
+      </div>
+      <div class="s" style="margin-top:3px">It starts automatically next time you launch a terminal.</div>
+    </div>
+  </div>
+</div>
+
+<div class="mock" role="img" aria-label="Mockup: helper row with update nudge and stop confirmation">
+  <div class="hd">My sessions <span class="sub">runs on your machines</span></div>
+  <div class="row" style="background:rgba(255,255,255,.015)">
+    <div class="grow">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="chip emerald"><span class="dot"></span>Helper running</span>
+        <span class="s">v0.1.9 · Nick’s MacBook Pro</span>
+      </div>
+    </div>
+    <span class="btn">Stop</span>
+  </div>
+  <div class="row nudge">
+    <span style="flex:1">A newer terminal helper is available (v0.2.1).</span>
+    <span class="btn sky-solid">Update now</span>
+    <span class="btn ghost" aria-label="Dismiss">✕</span>
+  </div>
+  <div class="row confirm">
+    <div class="grow">
+      <div class="t">Stop the helper?</div>
+      <div class="s">This ends your 2 sessions. Claude stops on your machine — your files and unpushed changes stay on disk.</div>
+    </div>
+    <span class="btn ghost">Cancel</span>
+    <span class="btn rose-solid">⏻ Stop helper</span>
+  </div>
+</div>
+
+</div>
+<p class="caption">Top-left: healthy running state with the Stop affordance always visible (not behind hover). Top-right: the 60-second linger, honestly labelled, with “Stop now” to skip it. Bottom-left: the required “not running” informative empty state — reassurance, no dead controls. Bottom-right: two overlays on one mock — the sky update nudge integrated into the row, and the rose inline Stop confirmation (only shown when sessions would be ended; mirrors the existing End-all confirm pattern).</p>
+
+<h3>5b · macOS menu-bar dropdown <span class="tag followup">follow-up</span></h3>
+<p>Appears <strong>only when “Keep helper ready” is on</strong> (decision 3). Minimal by design — status, sessions, the two controls, quit. Everything here is also available in the web app; the icon exists so a resident background app is never invisible.</p>
+
+<div class="mock" style="max-width:280px" role="img" aria-label="Mockup: macOS menu bar dropdown">
+  <div class="hd" style="font-size:12.5px"><span class="chip emerald" style="font-size:11px"><span class="dot"></span>Connected</span><span class="sub">v0.3.0</span></div>
+  <div class="row"><div class="grow"><div class="t" style="font-size:12.5px">2 sessions running</div><div class="s">for nick@vibecodes.co.uk</div></div></div>
+  <div class="row"><div class="grow t" style="font-size:12.5px;font-weight:500">Open VibeCodes</div></div>
+  <div class="row">
+    <div class="grow t" style="font-size:12.5px;font-weight:500">Keep helper ready</div>
+    <span class="chip emerald" style="font-size:10.5px"><span class="dot"></span>On</span>
+  </div>
+  <div class="row"><div class="grow t" style="font-size:12.5px;font-weight:500">Quit VibeCodes Helper</div></div>
+</div>
+<p class="caption">“Quit” with sessions running asks one native confirmation (“Quit and end 2 running sessions?”) — then exits cleanly. Turning “Keep helper ready” off removes the login item and this icon, returning to v1 behaviour.</p>
+
+<h3>5c · Upgrade with active sessions — confirmation state <span class="tag v1">v1</span></h3>
+<p>Shown in the web app when <em>Update now</em> is clicked while N ≥ 1 sessions run. Inline (in the panel or as the nudge’s expanded state) — not a modal; the board stays usable behind it.</p>
+
+<div class="mock" role="img" aria-label="Mockup: update confirmation with active sessions">
+  <div class="row nudge" style="border-top:none">
+    <span style="flex:1">A newer terminal helper is available (v0.2.1).</span>
+  </div>
+  <div class="row confirm" style="border-left-color:var(--sky);background:rgba(56,189,248,.05)">
+    <div class="grow">
+      <div class="t" style="color:#7dd3fc">Update the helper?</div>
+      <div class="s">Your 2 running sessions will end first — Claude stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.</div>
+    </div>
+  </div>
+  <div class="row" style="justify-content:flex-end;gap:8px">
+    <span class="btn ghost">Not now</span>
+    <span class="btn sky-solid">End sessions &amp; update</span>
+  </div>
+</div>
+<p class="caption">Sky, not rose: this is an informed step forward, not a destructive act — but the consequence (“sessions will end first”) is the first thing stated. After confirm, the row swaps to the progress copy (§6 “Ready to update”) and the download begins.</p>
+
+<h3>5d · Crash notice <span class="tag v1">v1</span></h3>
+<p>Lives where the user is looking when it happens: the terminal session view whose stream just died. The Helper row echoes it for anyone checking status later.</p>
+
+<div class="mock" style="max-width:520px" role="img" aria-label="Mockup: crash notice in the terminal session view">
+  <div class="hd">fix-login-bug <span class="sub"><span class="chip rose" style="font-size:10.5px"><span class="dot"></span>Disconnected</span></span></div>
+  <div class="row" style="padding:26px 20px">
+    <div class="grow" style="text-align:center">
+      <div class="t" style="color:var(--rose);font-size:14px">The helper on your Mac stopped unexpectedly</div>
+      <div class="s" style="margin:6px auto 12px;max-width:360px">This session has ended, but your work on your Mac is safe — files and unpushed changes stay on disk.</div>
+      <span class="btn sky-solid">Start a new session</span>
+      <div class="s" style="margin-top:10px">Keeps happening? <span style="text-decoration:underline">Copy the crash log location</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="mock" role="img" aria-label="Mockup: helper row after a crash">
+  <div class="row" style="background:rgba(255,255,255,.015);border-top:none">
+    <div class="grow">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span class="chip rose"><span class="dot"></span>Stopped unexpectedly</span>
+        <span class="s">3:42 pm · Nick’s MacBook Pro</span>
+      </div>
+      <div class="s" style="margin-top:3px">It starts fresh next time you launch a terminal.</div>
+    </div>
+  </div>
+</div>
+<p class="caption">One primary action (the normal launch path — recognition over recall; recovery is the thing they already know how to do). The crash-log link serves the “keeps happening” case without turning the notice into a debugger. If no session view was open when the crash hit, the Helper row state is the only surface — no toast chasing the user around the app.</p>
+
+<!-- ============================================================ -->
+<h2>5 · Copy — exact strings</h2>
+<p>Voice: plain, calm, consequences first, “your Mac / your files” reassurance where work could be feared lost. Matches the existing dock (“Claude stops on your machine… stay on disk”).</p>
+<div class="wrap">
+<table class="copytable">
+  <tr><th>Where</th><th>String</th></tr>
+  <tr><td>Helper row · label under status</td><td><kbd class="string">The small app that connects terminals to this Mac.</kbd></td></tr>
+  <tr><td>Chip · running</td><td><kbd class="string">Helper running</kbd> &nbsp;meta: <kbd class="string">v0.2.1 · Nick’s MacBook Pro</kbd></td></tr>
+  <tr><td>Chip · lingering</td><td><kbd class="string">Winding down</kbd> &nbsp;sub: <kbd class="string">No sessions left — the helper quits itself in about a minute.</kbd></td></tr>
+  <tr><td>Chip · not running</td><td><kbd class="string">Helper not running</kbd> &nbsp;sub: <kbd class="string">It starts automatically next time you launch a terminal.</kbd></td></tr>
+  <tr><td>Chip · crashed</td><td><kbd class="string">Stopped unexpectedly</kbd> &nbsp;sub: <kbd class="string">It starts fresh next time you launch a terminal.</kbd></td></tr>
+  <tr><td>Buttons · stop</td><td><kbd class="string">Stop</kbd> (running) · <kbd class="string">Stop now</kbd> (lingering)</td></tr>
+  <tr><td>Stop confirm (N ≥ 1)</td><td><kbd class="string">Stop the helper?</kbd> <kbd class="string">This ends your 2 sessions. Claude stops on your machine — your files and unpushed changes stay on disk.</kbd> Buttons: <kbd class="string">Cancel</kbd> / <kbd class="string">⏻ Stop helper</kbd></td></tr>
+  <tr><td>Toast · after stop</td><td><kbd class="string">Helper stopped. It starts again next time you launch a terminal.</kbd></td></tr>
+  <tr><td>Toast · stop failed</td><td><kbd class="string">Couldn’t reach the helper — it may already be stopped. Check again in a moment.</kbd></td></tr>
+  <tr><td>Update nudge</td><td><kbd class="string">A newer terminal helper is available (v0.2.1).</kbd> Button: <kbd class="string">Update now</kbd> · dismiss <kbd class="string">✕</kbd></td></tr>
+  <tr><td>Update confirm (N ≥ 1)</td><td><kbd class="string">Update the helper?</kbd> <kbd class="string">Your 2 running sessions will end first — Claude stops on your machine, and your files stay where they are. You can start fresh sessions as soon as the update finishes.</kbd> Buttons: <kbd class="string">Not now</kbd> / <kbd class="string">End sessions &amp; update</kbd></td></tr>
+  <tr><td>Update · quiesced</td><td><kbd class="string">Ready to update — the helper has closed. Drag the new VibeCodes app into Applications to finish.</kbd></td></tr>
+  <tr><td>Update · quiesce-timeout</td><td><kbd class="string">The helper is taking a moment to close. If the install says the app is “in use”, wait a few seconds and try again.</kbd></td></tr>
+  <tr><td>Crash notice · heading</td><td><kbd class="string">The helper on your Mac stopped unexpectedly</kbd></td></tr>
+  <tr><td>Crash notice · body</td><td><kbd class="string">This session has ended, but your work on your Mac is safe — files and unpushed changes stay on disk.</kbd> Button: <kbd class="string">Start a new session</kbd> · link: <kbd class="string">Copy the crash log location</kbd></td></tr>
+  <tr><td>Always-on toggle <span class="tag followup">follow-up</span></td><td><kbd class="string">Keep helper ready</kbd> &nbsp;consent body: <kbd class="string">The helper starts when you log in to your Mac and stays running so terminals open instantly. It shows an icon in your menu bar, and you can turn this off or quit it there any time.</kbd> Buttons: <kbd class="string">Turn on</kbd> / <kbd class="string">Cancel</kbd></td></tr>
+  <tr><td>Menu bar <span class="tag followup">follow-up</span></td><td><kbd class="string">Connected</kbd> / <kbd class="string">2 sessions running</kbd> / <kbd class="string">Open VibeCodes</kbd> / <kbd class="string">Keep helper ready</kbd> / <kbd class="string">Quit VibeCodes Helper</kbd> · quit confirm: <kbd class="string">Quit and end 2 running sessions?</kbd></td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2>6 · Edge cases</h2>
+<div class="wrap">
+<table>
+  <tr><th>Case</th><th>What happens</th><th>Design rule that makes it safe</th></tr>
+  <tr><td>End all, then relaunch inside the linger window</td><td>Helper is still resident; the new deep link (or direct session request) cancels the 60 s timer and starts instantly — no relaunch, no double process.</td><td>Lingering must remain fully connectable; the timer is cancelled by <em>any</em> new bridge, and launch never spawns a second helper (single-instance lock — the link is handed to the running instance).</td></tr>
+  <tr><td>Two browsers ending sessions at once</td><td>Both browsers call the same server-side end route; the helper exits only when the relay reports zero live bridges. Each browser’s Helper row converges on “Not running” on its next open/refresh.</td><td>The session registry — not any browser — is the source of truth for N. Quit and stop commands are idempotent; a second command to a dead helper is a no-op, surfaced (if user-initiated) by the “may already be stopped” toast.</td></tr>
+  <tr><td>Helper killed externally mid-session (Activity Monitor, pkill)</td><td>Bridges die with it; the open session view shows the same crash notice as §5d; the registry expires the sessions. Next launch relaunches cleanly.</td><td>Crash and external kill are deliberately the same UX — the user never needs to know which happened, and neither leaves state that blocks a reinstall.</td></tr>
+  <tr><td>Update clicked while a session is streaming</td><td>Always the confirmation first (§5c). On confirm: end-all completes, the helper acks, then exits without linger, then the download starts. If the tab closes mid-flow after the command was sent, the helper still quiesces — the exit is helper-side, not tab-side.</td><td>Nothing is silently killed; the order (sessions → exit → download) guarantees the Finder never meets a running process; the command outliving the tab means a half-finished flow can’t strand the old version in memory.</td></tr>
+  <tr><td>Crash during the linger window</td><td>Process dies before the timer fires — the end state (“Not running”) is the same one the timer was heading to. The crash log is still written. No sessions existed, so no crash notice interrupts anyone; the Helper row simply shows “Not running”.</td><td>Crash-to-exit converges with quit-on-idle: every path out of “running” ends at the same clean, dialog-free state. The rose “Stopped unexpectedly” chip is reserved for crashes that took sessions down with them.</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2>7 · Accessibility &amp; conventions checklist</h2>
+<p>Applies across every surface above:</p>
+<table>
+  <tr><td>Status never colour-alone</td><td>Every state is a pill chip with icon/dot + text label; the linger and crash states also carry explanatory sublines.</td></tr>
+  <tr><td>Contrast</td><td>All copy ≥ 4.5:1 on the zinc panels (emerald-400/amber-400/rose-400/sky-300 on #0c0c0e all pass); chip borders ≥ 3:1 for UI affordance.</td></tr>
+  <tr><td>Keyboard</td><td>The Helper row’s Stop, nudge Update, confirm buttons and crash-notice action are ordinary buttons in the popover’s tab order; confirms are inline (focus moves to Cancel first), no focus traps, Esc closes the popover as today.</td></tr>
+  <tr><td>No modals, nothing behind hover</td><td>All confirmations are inline row-swaps (the existing End-all pattern); Stop/Update are always visible, not hover-revealed.</td></tr>
+  <tr><td>Jakob’s law</td><td>Quit-when-idle mirrors macOS document-app expectations for invisible agents; the follow-up menu-bar presence mirrors Docker Desktop / Tailscale / 1Password exactly where residency begins.</td></tr>
+</table>
+
+<!-- ============================================================ -->
+<h2>8 · Explicitly out of scope</h2>
+<div class="callout oos">
+  <strong>Not in this design</strong> (mirrors the Requirements step):
+  <ul style="margin:6px 0 0 18px;color:var(--dim)">
+    <li>Windows / Linux helpers (separate backlog card).</li>
+    <li>Auto-update mechanics beyond the existing nudge — silent background updating is a future card; this design only makes the manual replace always succeed.</li>
+    <li>Relay/cloud-side changes beyond the lifecycle events used here (quiesce/stop commands, version report, zero-bridge signal).</li>
+    <li>Multi-machine management UI — the Helper row shows the machine a running helper reports; fleet views are out.</li>
+    <li>Changes to session limits (4 h / 30 min) or to the My sessions panel beyond the Helper row and the confirms described here.</li>
+  </ul>
+</div>
+
+<h2>9 · Open questions for Design Review</h2>
+<div class="callout">
+  <ul style="margin:2px 0 0 18px;color:var(--dim)">
+    <li><strong>Linger length (60 s)</strong> — agreed, or do we want telemetry first? (PostHog already captures end-all; a relaunch-within-2-min counter would validate the window cheaply.)</li>
+    <li><strong>Crash-log affordance</strong> — is “Copy the crash log location” enough for v1, or should the helper offer “Reveal in Finder” via a deep-link action?</li>
+    <li><strong>Quiesce transport</strong> — this design assumes the relay can deliver a stop/quiesce command to a session-less (lingering) helper. If the helper only holds a connection while bridges exist, implementation may need a short-lived control channel during linger — flagging so Implementation costs it.</li>
+    <li><strong>Always-on scope check</strong> — the follow-up consent copy promises “terminals open instantly”; confirm the auto-discovery work (story 4) lands in the same follow-up card so the toggle isn’t over-promising.</li>
+  </ul>
+</div>
+
+</main>
+</body>
+</html>
