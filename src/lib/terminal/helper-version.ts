@@ -20,7 +20,7 @@
  *  checklist. 0.3.0 (card cc74a067) is the first release with the helper
  *  lifecycle rework — quit-when-idle, crash log-and-exit, and the "Keep
  *  helper ready" opt-in. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.0";
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.1";
 
 export type HelperVersionParts = readonly [number, number, number];
 

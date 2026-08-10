@@ -1,0 +1,581 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design options — Terminal session entry (reconnect / new / resume)</title>
+<style>
+:root{
+  --bg:#09090b; --panel:#0c0c0e; --panel2:#111114; --panel3:#141417;
+  --border:#27272a; --border2:#3f3f46;
+  --txt:#e4e4e7; --dim:#a1a1aa; --faint:#71717a;
+  --emerald:#34d399; --emerald-bg:rgba(52,211,153,.09); --emerald-bd:rgba(52,211,153,.4);
+  --sky:#38bdf8; --sky-bg:rgba(56,189,248,.09); --sky-bd:rgba(56,189,248,.4);
+  --amber:#fbbf24; --amber-bg:rgba(251,191,36,.09); --amber-bd:rgba(251,191,36,.4);
+  --rose:#fb7185; --rose-bg:rgba(251,113,133,.09); --rose-bd:rgba(251,113,133,.45);
+  --violet:#a78bfa;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.6 -apple-system,'Segoe UI',Roboto,sans-serif;padding:40px 20px 80px}
+.wrap{max-width:1020px;margin:0 auto}
+h1{font-size:24px;margin-bottom:4px}
+h2{font-size:18px;margin:48px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h3{font-size:14.5px;margin:24px 0 8px}
+h4{font-size:12.5px;margin:18px 0 6px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
+p{margin:8px 0;color:var(--dim)}
+strong{color:var(--txt)}
+.sub{color:var(--faint);font-size:13px;margin-bottom:20px}
+.meta{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
+.chip{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--border2);color:var(--dim)}
+.chip.em{border-color:var(--emerald-bd);color:var(--emerald);background:var(--emerald-bg)}
+.chip.rose{border-color:var(--rose-bd);color:var(--rose);background:var(--rose-bg)}
+code{font-family:var(--mono);font-size:12px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--txt)}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin:12px 0}
+.reject{border-left:3px solid var(--rose)}
+.reject .rtitle{font-size:14px;font-weight:700;color:var(--rose);margin-bottom:6px}
+.found{border-left:3px solid var(--emerald)}
+.veto{border:1px dashed var(--amber-bd);background:var(--amber-bg);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12.5px;color:var(--amber)}
+.veto b{color:var(--amber)}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px}
+th{text-align:left;padding:7px 10px;color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border2);vertical-align:bottom}
+td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--dim);vertical-align:top}
+td:first-child{color:var(--txt);font-weight:600}
+.tblwrap{overflow-x:auto}
+.copytab td:nth-child(2){font-family:var(--mono);font-size:11.5px;color:var(--txt)}
+.rec td{background:var(--emerald-bg)}
+.pick{color:var(--emerald);font-weight:700}
+/* flows */
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0;padding:4px 0}
+.step{background:var(--panel2);border:1px solid var(--border2);border-radius:7px;padding:6px 11px;font-size:12px;color:var(--txt)}
+.step small{display:block;color:var(--faint);font-size:10.5px;max-width:210px}
+.step.sys{border-style:dashed;color:var(--dim)}
+.step.good{border-color:var(--emerald-bd);background:var(--emerald-bg)}
+.step.warn{border-color:var(--amber-bd);background:var(--amber-bg)}
+.step.act{border-color:var(--sky-bd);background:var(--sky-bg)}
+.arr{color:var(--faint);font-size:13px;flex:none}
+/* mockups */
+.mock{background:var(--panel);border:1px solid var(--border2);border-radius:10px;margin:14px 0;overflow:hidden;font-size:13px}
+.mock-cap{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin:20px 0 -6px}
+.dockbar{display:flex;align-items:center;gap:10px;background:var(--panel3);padding:7px 12px;font-size:12.5px}
+.dockbar .brand{display:inline-flex;align-items:center;gap:8px;font-weight:700;color:var(--txt)}
+.dockbar .right{margin-left:auto;display:inline-flex;align-items:center;gap:8px}
+.dot{width:8px;height:8px;border-radius:50%;flex:none;display:inline-block}
+.dot.g{background:var(--emerald)} .dot.s{background:var(--sky)} .dot.a{background:var(--amber)} .dot.z{background:var(--faint)} .dot.o{background:transparent;border:1.5px solid var(--sky)}
+.pill{display:inline-flex;align-items:center;gap:6px;border:1px solid var(--border2);border-radius:6px;padding:2px 9px;font-size:11px;font-weight:600;color:var(--dim)}
+.pill.sky{border-color:var(--sky-bd);color:var(--sky);background:var(--sky-bg)}
+.pill.em{border-color:var(--emerald-bd);color:var(--emerald);background:var(--emerald-bg)}
+.pill.zn{color:var(--dim)}
+.btn{display:inline-flex;align-items:center;gap:6px;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:600;border:1px solid var(--border2);color:var(--txt);background:transparent;white-space:nowrap}
+.btn.sky{border-color:var(--sky-bd);color:var(--sky);background:var(--sky-bg)}
+.btn.em{border-color:var(--emerald-bd);color:var(--emerald);background:var(--emerald-bg)}
+.btn.em.solid{background:var(--emerald);color:#052e22;border-color:var(--emerald)}
+.btn.rose{border-color:var(--rose-bd);color:var(--rose)}
+.btn.ghost{border-color:transparent;color:var(--dim)}
+.btn.sm{padding:2px 9px;font-size:11.5px}
+.row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--border)}
+.row .who{min-width:0;flex:1}
+.row .who .t{font-weight:600;color:var(--txt);font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row .who .t .idea{font-weight:400;color:var(--faint);font-size:11.5px}
+.row .who .m{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.row .age{font-size:11.5px;color:var(--faint);flex:none}
+.sect{padding:6px 14px;font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);background:var(--panel2);border-top:1px solid var(--border)}
+.badge{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:4px;padding:1px 6px}
+.badge.here{background:var(--sky-bg);border:1px solid var(--sky-bd);color:var(--sky)}
+.badge.other{background:var(--panel2);border:1px solid var(--border2);color:var(--dim)}
+.badge.was{background:var(--amber-bg);border:1px solid var(--amber-bd);color:var(--amber)}
+.term{background:#0a0a0c;padding:14px 16px;font-family:var(--mono);font-size:12px;color:var(--dim);min-height:48px}
+.note-amber{display:flex;gap:9px;align-items:flex-start;background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:7px;padding:8px 12px;font-size:12px;color:var(--amber)}
+.caption{font-size:11.5px;color:var(--faint)}
+.tabstrip{display:flex;align-items:stretch;background:var(--panel3);border-bottom:1px solid var(--border)}
+.ttab{display:flex;align-items:center;gap:7px;padding:8px 12px;border-right:1px solid var(--border);border-top:2px solid transparent;font-size:12.5px;color:var(--dim);white-space:nowrap}
+.ttab.on{border-top-color:var(--sky);background:var(--panel);color:var(--txt);font-weight:600}
+.ttab .x{color:var(--faint);font-size:11px;margin-left:2px}
+.ttab .st{font-size:10px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--sky)}
+.plus{display:flex;align-items:center;padding:8px 13px;border-left:1px solid var(--border);margin-left:auto;color:var(--dim);font-weight:700}
+.recentrow{display:flex;align-items:center;gap:12px;background:var(--panel2);border-top:1px solid var(--border);padding:6px 14px;font-size:12px;color:var(--dim);flex-wrap:wrap}
+.recentrow .lbl{font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--faint)}
+.centerpanel{display:flex;flex-direction:column;align-items:center;gap:10px;padding:28px 20px;text-align:center;background:var(--panel)}
+.centerpanel .hl{font-size:14px;font-weight:700;color:var(--txt)}
+.centerpanel .mono{font-family:var(--mono);font-size:11.5px;color:var(--faint)}
+.centerpanel .warn{font-size:11.5px;color:var(--amber);max-width:420px}
+ul.tight{margin:6px 0 6px 20px;color:var(--dim)}
+ul.tight li{margin:4px 0}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:760px){.cols{grid-template-columns:1fr}}
+.pro h4{color:var(--emerald)} .con h4{color:var(--rose)}
+.opt-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.opt-h .tag{font-size:11px;font-weight:800;letter-spacing:.08em;border-radius:5px;padding:2px 8px}
+.opt-h .tag.a{background:var(--emerald-bg);border:1px solid var(--emerald-bd);color:var(--emerald)}
+.opt-h .tag.b{background:var(--sky-bg);border:1px solid var(--sky-bd);color:var(--sky)}
+.opt-h .tag.c{background:var(--amber-bg);border:1px solid var(--amber-bd);color:var(--amber)}
+.kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--border2);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--dim)}
+.confirmbox{border-left:2px solid var(--emerald);background:var(--emerald-bg);padding:10px 14px;font-size:12.5px;color:var(--dim)}
+.confirmbox b{color:var(--txt)}
+.takeover{font-size:11.5px;color:var(--faint);display:flex;gap:7px;align-items:flex-start}
+.takeover .i{color:var(--amber);flex:none}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Terminal session entry — three options</h1>
+<p class="sub">Rework of card cbe60db5 · reconnect / new / resume — <strong>Nick chooses the direction</strong>; nothing below is decided.</p>
+<div class="meta">
+  <span class="chip rose">REWORK — v1 rejected</span>
+  <span class="chip em">3 options, equal depth</span>
+  <span class="chip">Dock · My sessions · Pop-out</span>
+  <span class="chip">WCAG 2.1 AA · no hover-only · never colour alone</span>
+</div>
+
+<div class="panel reject">
+  <div class="rtitle">Why v1 was rejected — and what every option below fixes</div>
+  <p><strong>1 · It designed for a dock that was already open.</strong> In reality the dock loads <em>collapsed</em>, and expanding it silently mints a brand-new session (the paired auto-connect on expand). The v1 "Reconnect" state was unreachable; every refresh-and-reopen spawned a duplicate — Nick ended up with three.</p>
+  <p><strong>2 · It auto-decided.</strong> Nick, verbatim: <em>"I should be able to decide myself whether I want an existing one, a new one or a resumed one."</em></p>
+  <p><strong>Fixed in all three options:</strong> whenever you have any live or recent session, opening the terminal — via the dock chevron, the toolbar button, or a task launch — <strong>never silently creates and never silently reconnects</strong>. It always lands on a choice with three first-class answers: <strong>Reconnect</strong> · <strong>New session</strong> · <strong>Resume</strong>. The only automatic behaviour anywhere is the optional "instant continue" refresh variant in §2, clearly marked as Nick's to veto.</p>
+</div>
+
+<!-- ============================================================ -->
+<h2>1 · Side-by-side comparison</h2>
+<div class="tblwrap">
+<table>
+  <tr><th style="width:20%"></th><th>A — Chooser panel</th><th>B — My sessions is the front door</th><th>C — Tabs-first</th></tr>
+  <tr><td>Opening the dock shows</td>
+      <td>A session chooser inside the dock body: live sessions, a Recent strip, a prominent "Start new session". Nothing runs until a click.</td>
+      <td>The (upgraded) My sessions panel. The terminal area itself only opens once a session is chosen or created.</td>
+      <td>The tab strip, immediately — one resting "Reconnect" tab per live session, a "+" tab, a slim Recent row beneath.</td></tr>
+  <tr><td>Clicks to reconnect (the common case)</td>
+      <td>2 — open dock, click Reconnect on a row. (1 or 0 with the optional instant-continue variant.)</td>
+      <td>2 — click the header, click Reconnect on a row. (Same variant applies.)</td>
+      <td>2 — open dock, click Reconnect in the pre-selected tab. (Same variant applies.)</td></tr>
+  <tr><td>Clicks to a new session</td>
+      <td>2 — open, "Start new session".</td>
+      <td>2 — header, "New session".</td>
+      <td>2 — open, "+".</td></tr>
+  <tr><td>Live sessions on <em>other</em> boards</td>
+      <td>Listed in the chooser ("on Helper Tools") — reconnect navigates there.</td>
+      <td>Listed natively — the panel is already global.</td>
+      <td><strong>Not in the strip</strong> (tabs are board-scoped) — still needs the My sessions panel.</td></tr>
+  <tr><td>Where Resume lives</td>
+      <td>Recent strip at the bottom of the chooser.</td>
+      <td>Recent section of the panel.</td>
+      <td>Slim Recent row under the tab strip.</td></tr>
+  <tr><td>Discoverability of the three choices</td>
+      <td>Highest — one purpose-built screen shows all three at once.</td>
+      <td>Good, but launching lives inside a management popover next to End/End&nbsp;all.</td>
+      <td>Good for reconnect/new; Resume in a slim row is easy to overlook.</td></tr>
+  <tr><td>Crowding / new chrome</td>
+      <td>One new full-body view; dock header gains counts.</td>
+      <td>Almost none new — header text + three buttons in an existing panel.</td>
+      <td>Strip now renders for a single session too (today it needs 2+), plus a permanent Recent row.</td></tr>
+  <tr><td>Implementation weight</td>
+      <td>Medium — new chooser component; registry fetch on board load; header counts.</td>
+      <td>Low — panel upgrade + header rewire; registry fetch for counts.</td>
+      <td>Medium-high — resting-tab state in the strip machine, single-tab strip exception, Recent row, per-tab reconnect panels.</td></tr>
+  <tr><td>Closeness to today's mental model</td>
+      <td>New screen, familiar parts.</td>
+      <td>Familiar panel, new role.</td>
+      <td>Closest — same tabs, new resting state.</td></tr>
+  <tr class="rec"><td>Recommendation</td>
+      <td class="pick">Preferred — the decision moment is explicit and everything (here / elsewhere / recent / new) is in one glance.</td>
+      <td>Cheapest to build, but launching from an admin popover feels indirect and puts Start next to End.</td>
+      <td>Most familiar, but hides other-board sessions and complicates the strip rules the most.</td></tr>
+</table>
+</div>
+<p class="caption">The recommendation is one reviewer's preference with reasoning — Nick decides.</p>
+
+<!-- ============================================================ -->
+<h2>2 · Common foundations (shared by all three options)</h2>
+<div class="panel found">
+  <p><strong>F1 · The silent auto-mint dies.</strong> Today, expanding the dock auto-connects a paired browser (<code>autoConnectWhenExpanded</code> on the pristine slot). That behaviour survives <em>only</em> in the true empty state: <strong>no live sessions anywhere and no recent ended sessions</strong> → opening the dock launches a new session exactly as today (there is nothing to choose between, and this is explicitly fine). The moment the registry lists any live session or any resumable recent session for this user, every entry point routes to the option's choice surface instead. On board load the dock fetches the registry once (it already fetches for the My sessions badge) to know which world it's in.</p>
+  <p><strong>F2 · Reconnect mechanics.</strong> Reattaching mints a fresh browser token for an owned live session id: <em>no new registry row, exempt from the session cap and the mint rate limit</em> (recovering capacity, not consuming it), but fully authenticated and ownership-checked. Scrollback: while attached, the dock snapshots the buffer to this tab's sessionStorage (pagehide + 20&nbsp;s dirty-flag cadence); on reattach a snapshot restores with the divider <code>— reconnected · earlier output restored —</code>; with no snapshot, a dismissible amber note is pinned above the terminal — never a silently blank screen.</p>
+  <p><strong>F3 · Take-over is always stated, never sniffed.</strong> We don't trust ourselves to know reliably whether another window currently holds the session, so every Reconnect control carries the same generic warning <em>visibly, before the click</em> — the click on Reconnect is the informed confirmation; no second click, no conditional logic: <em>"If this session is open in another window or browser, connecting here takes over — that view stops receiving output."</em></p>
+  <p><strong>F4 · Resume mechanics.</strong> Resume runs <code>claude --continue</code> in the session's recorded project folder, as a <em>new</em> session through the normal capped launch path (the confirm says so). Recent = ended in the last 48&nbsp;h, max 5, one per project folder. <strong>Resume is hidden entirely when the project folder wasn't recorded</strong> — no disabled ghost button. The machine line uses the cautious copy <em>by default</em>: "The conversation lives on the machine that ran it — resume from a browser on that machine.", appending "(recorded as Nick's&nbsp;MacBook)" only when a label exists.</p>
+  <p><strong>F5 · Popped-out window reload (same in all options).</strong> The popped window stashes its session id in its own sessionStorage at hand-off. On reload it shows a one-button Reconnect panel (with the F3 warning) — it never auto-attaches unless the instant-continue variant below is approved, in which case its own &lt;60&nbsp;s snapshot counts as proof. If the mint says the session is gone: "This session has ended. You can close this window — start a new one from the board." + a Close-window button.</p>
+</div>
+
+<div class="veto">
+  <b>Optional variant — "instant continue" on accidental same-tab refresh (Nick's to veto).</b><br>
+  Justification: sessionStorage is per-tab and survives reload; a snapshot for this session id time-stamped under 60&nbsp;seconds ago proves <em>this exact tab</em> held the session moments before. Only in that case, the dock may skip the choice and reattach automatically (restoring scrollback, zero clicks) — the refresher never even notices the reload. Every other case — new tab, restored browser, second machine, stale snapshot — always gets the explicit choice. This is <b>off by default in this document</b>; it ships only if Nick approves it, and it is the <em>only</em> automatic connect anywhere in any option.
+</div>
+
+<p class="caption">Accessibility, all options: every state carries text (never colour alone — dots always sit next to words); all actions are visible buttons (no hover-reveals); choice surfaces are keyboard-traversable lists (<span class="kbd">Tab</span>/<span class="kbd">↑↓</span>, <span class="kbd">Enter</span> activates); focus lands on the first live session's primary action when the surface opens; counts in headers are real text, not badge-only.</p>
+
+<!-- ============================================================ -->
+<h2 id="opt-a">3 · Option A — "Chooser panel"</h2>
+<div class="opt-h"><span class="tag a">OPTION A</span><p>Opening the terminal from anywhere lands on a session chooser <em>inside the dock body</em>. Nothing happens until a click.</p></div>
+
+<h3>Flow walkthrough</h3>
+<div class="flow">
+  <span class="step act">Open terminal<small>chevron, toolbar "In the browser", or task launch</small></span><span class="arr">→</span>
+  <span class="step sys">Sessions exist?<small>registry fetched on board load</small></span><span class="arr">→</span>
+  <span class="step">Chooser fills the dock body<small>live here · live elsewhere · Recent · Start new</small></span><span class="arr">→</span>
+  <span class="step act">One click: Reconnect / Start new / Resume</span><span class="arr">→</span>
+  <span class="step good">Terminal live<small>chooser replaced by the normal terminal; tab strip appears as sessions accumulate</small></span>
+</div>
+<p>Task launches pass their context in: the chooser's "Start new session" row becomes "Start new session for this task — fix-login-bug" (primary, emerald), and if that task already has a live session its row is badged "already running for this task" with Reconnect as the obvious answer — the same dedupe rule as today, made visible instead of automatic.</p>
+
+<p class="mock-cap">Mockup A1 — collapsed dock header (sessions exist)</p>
+<div class="mock">
+  <div class="dockbar">
+    <span class="brand"><span class="dot s" aria-hidden="true"></span>▸_ Terminal</span>
+    <span class="pill sky">2 running here</span>
+    <span class="pill zn">1 on another board</span>
+    <span class="pill zn">2 recent</span>
+    <span class="right">
+      <span class="btn ghost sm">☰ My sessions <span class="pill sky" style="padding:0 6px">3</span></span>
+      <span class="btn sm sky">⌃ Open</span>
+    </span>
+  </div>
+</div>
+<p class="caption">The chevron reads "Open", not "Expand" — it opens the chooser, it never connects. Counts are plain text pills, not colour-only dots.</p>
+
+<p class="mock-cap">Mockup A2 — the chooser (2 live on this board, 1 live on another board, 2 recent)</p>
+<div class="mock">
+  <div class="dockbar">
+    <span class="brand">▸_ Terminal</span>
+    <span class="right"><span class="btn ghost sm">⌄ Collapse</span></span>
+  </div>
+  <div style="padding:12px 14px;border-bottom:1px solid var(--border)">
+    <span class="btn em solid">＋ Start new session</span>
+    <span class="caption" style="margin-left:10px">Runs Claude Code on your machine · counts toward your session limit</span>
+  </div>
+  <div class="sect">Running now — this board · VibeCodes</div>
+  <div class="row">
+    <span class="dot g" aria-hidden="true"></span>
+    <div class="who">
+      <div class="t">fix-login-bug <span class="badge here">this board</span></div>
+      <div class="m">Nick's MacBook · ~/projects/vibecodes · started 3h ago</div>
+      <div class="takeover"><span class="i" aria-hidden="true">⚠</span> If this session is open in another window or browser, connecting here takes over — that view stops receiving output.</div>
+    </div>
+    <span class="btn sky">⇄ Reconnect</span>
+  </div>
+  <div class="row">
+    <span class="dot g" aria-hidden="true"></span>
+    <div class="who">
+      <div class="t">vibecodes · session 4f9a12c8 <span class="badge here">this board</span></div>
+      <div class="m">Nick's MacBook · ~/projects/vibecodes · started 45m ago</div>
+      <div class="takeover"><span class="i" aria-hidden="true">⚠</span> If this session is open in another window or browser, connecting here takes over — that view stops receiving output.</div>
+    </div>
+    <span class="btn sky">⇄ Reconnect</span>
+  </div>
+  <div class="sect">Running now — other boards</div>
+  <div class="row">
+    <span class="dot g" aria-hidden="true"></span>
+    <div class="who">
+      <div class="t">docs-pass <span class="idea">Helper Tools</span> <span class="badge other">other board</span></div>
+      <div class="m">Nick's MacBook · ~/projects/helper · started 1h ago</div>
+    </div>
+    <span class="btn sky">⇄ Open board &amp; reconnect</span>
+  </div>
+  <div class="sect">Recent — ended in the last 48h</div>
+  <div class="row">
+    <span class="dot z" aria-hidden="true"></span>
+    <div class="who">
+      <div class="t">api-cleanup <span class="idea">VibeCodes</span></div>
+      <div class="m">~/projects/vibecodes · ended 2h ago</div>
+    </div>
+    <span class="btn em">↻ Resume</span>
+  </div>
+  <div class="row">
+    <span class="dot z" aria-hidden="true"></span>
+    <div class="who">
+      <div class="t">helper-docs <span class="idea">Helper Tools</span></div>
+      <div class="m">~/projects/helper · ended 1d ago</div>
+    </div>
+    <span class="btn em">↻ Resume</span>
+  </div>
+</div>
+<p class="caption">Clicking Resume swaps the row into the shared inline confirm (F4): new session · counts toward the limit · continues the most recent conversation in that folder · machine-truth line. A recent session whose folder wasn't recorded simply doesn't appear.</p>
+
+<h3>Required cases</h3>
+<ul class="tight">
+  <li><strong>Collapsed header:</strong> mockup A1 — counts for running-here / running-elsewhere / recent; single neutral state dot with text beside it.</li>
+  <li><strong>Toolbar "Launch Claude Code → In the browser":</strong> expands the dock onto the chooser with the task-scoped "Start new session for this task" primary row (above). With no sessions anywhere: launches immediately, as today.</li>
+  <li><strong>Popped-out window reload:</strong> foundations F5 — its own one-button Reconnect panel; no chooser needed, the window already knows which session it is.</li>
+  <li><strong>Accidental same-tab refresh:</strong> dock returns collapsed with the A1 header. Opening shows the chooser with the tab's own last session badged <span class="badge was">was open in this tab</span> and pre-focused, so <span class="kbd">Enter</span> reconnects. With the instant-continue variant approved: that one session reattaches automatically (&lt;60&nbsp;s proof), chooser skipped.</li>
+  <li><strong>Empty state:</strong> unchanged — open → paired auto-connect / setup panel, exactly today's behaviour.</li>
+</ul>
+
+<h3>What changes vs today</h3>
+<ul class="tight">
+  <li>The pristine slot's <code>autoConnectWhenExpanded</code> is gated on "registry empty &amp; no recents" instead of always-on.</li>
+  <li>New chooser view rendered in the dock body when sessions exist; new registry fetch on board load (extends the existing badge fetch).</li>
+  <li>Collapsed bar gains the three count pills; chevron copy "Open/Collapse".</li>
+  <li>Launch-bus payloads route into the chooser instead of straight into <code>deliverLaunch</code>'s mint.</li>
+</ul>
+
+<div class="cols">
+  <div class="panel pro"><h4>Pros</h4>
+    <ul class="tight">
+      <li>The decision moment is a purpose-built screen — all three choices plus other-board sessions visible at once; nothing to recall.</li>
+      <li>Explicit primary action for the newcomer path ("Start new session") — no ambiguity about what the big button does.</li>
+      <li>Task dedupe becomes visible and user-controlled rather than automatic.</li>
+      <li>One consistent surface regardless of entry point (chevron, toolbar, task).</li>
+    </ul>
+  </div>
+  <div class="panel con"><h4>Cons</h4>
+    <ul class="tight">
+      <li>Two clicks to a terminal every time sessions exist (unless the variant is approved).</li>
+      <li>Overlaps the My sessions panel — two surfaces listing sessions must stay consistent (mitigation: both read the same list endpoint).</li>
+      <li>A new full-body dock view to build and test; the heaviest <em>new</em> UI of the three (though not the heaviest overall — see C).</li>
+    </ul>
+  </div>
+</div>
+
+<h3>New copy — Option A</h3>
+<div class="tblwrap">
+<table class="copytab">
+  <tr><th>Where</th><th>String</th></tr>
+  <tr><td>Header pills</td><td>{n} running here · {n} on another board · {n} recent</td></tr>
+  <tr><td>Chevron</td><td>Open / Collapse</td></tr>
+  <tr><td>New-session row</td><td>Start new session</td></tr>
+  <tr><td>New-session row (task launch)</td><td>Start new session for this task — {task title}</td></tr>
+  <tr><td>New-session caption</td><td>Runs Claude Code on your machine · counts toward your session limit</td></tr>
+  <tr><td>Section headers</td><td>Running now — this board · {idea} / Running now — other boards / Recent — ended in the last 48h</td></tr>
+  <tr><td>Other-board reconnect</td><td>Open board &amp; reconnect</td></tr>
+  <tr><td>Task dedupe badge</td><td>already running for this task</td></tr>
+  <tr><td>Refresh badge</td><td>was open in this tab</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="opt-b">4 · Option B — "My sessions is the front door"</h2>
+<div class="opt-h"><span class="tag b">OPTION B</span><p>The collapsed dock header becomes informative and <em>is</em> the entry point: clicking it opens the existing My sessions panel, upgraded with Reconnect, Resume, and New session. The terminal area only opens once a session is chosen or created.</p></div>
+
+<h3>Flow walkthrough</h3>
+<div class="flow">
+  <span class="step act">Click the dock header<small>"2 sessions running · 2 recent" — or toolbar / task launch</small></span><span class="arr">→</span>
+  <span class="step">My sessions panel opens<small>New session on top · Reconnect on live rows · Resume on recent rows</small></span><span class="arr">→</span>
+  <span class="step act">One click in the panel</span><span class="arr">→</span>
+  <span class="step sys">Panel closes · dock expands<small>other-board rows navigate first</small></span><span class="arr">→</span>
+  <span class="step good">Terminal live</span>
+</div>
+<p>The separate "My sessions" button disappears — the whole header is the trigger, so there is exactly one front door. Task launches open the panel with a context line ("Launching for task: fix-login-bug") and the New session button pre-scoped to that task; a live session for the same task shows Reconnect as its row's first action with the dedupe badge.</p>
+
+<p class="mock-cap">Mockup B1 — informative collapsed header (the whole bar is one button)</p>
+<div class="mock">
+  <div class="dockbar" style="cursor:default">
+    <span class="brand"><span class="dot g" aria-hidden="true"></span>▸_ Terminal — 3 sessions running · 2 recent</span>
+    <span class="right"><span class="caption">Click to choose: reconnect, resume, or start new</span> <span class="btn sm sky">⌃</span></span>
+  </div>
+</div>
+<p class="caption">With no sessions anywhere the bar reads "Terminal" and the chevron opens straight into today's launch/setup — current behaviour, unchanged.</p>
+
+<p class="mock-cap">Mockup B2 — upgraded My sessions panel</p>
+<div class="mock" style="max-width:460px">
+  <div class="dockbar"><span class="brand">My sessions</span><span class="right"><span class="caption">runs on your machines</span></span></div>
+  <div style="padding:10px 14px;border-bottom:1px solid var(--border)">
+    <span class="btn em solid">＋ New session on this board</span>
+  </div>
+  <div class="sect">Running</div>
+  <div class="row">
+    <span class="dot g" aria-hidden="true"></span>
+    <div class="who">
+      <div class="t">fix-login-bug <span class="idea">VibeCodes</span> <span class="badge here">this board</span></div>
+      <div class="m">Nick's MacBook · ~/projects/vibecodes</div>
+    </div>
+    <span class="age">3h</span>
+    <span class="btn sky sm">⇄ Reconnect</span>
+    <span class="btn rose sm">⏻ End</span>
+  </div>
+  <div class="row">
+    <span class="dot g" aria-hidden="true"></span>
+    <div class="who">
+      <div class="t">vibecodes · 4f9a12c8 <span class="idea">VibeCodes</span> <span class="badge here">this board</span></div>
+      <div class="m">Nick's MacBook · ~/projects/vibecodes</div>
+    </div>
+    <span class="age">45m</span>
+    <span class="btn sky sm">⇄ Reconnect</span>
+    <span class="btn rose sm">⏻ End</span>
+  </div>
+  <div class="row">
+    <span class="dot g" aria-hidden="true"></span>
+    <div class="who">
+      <div class="t">docs-pass <span class="idea">Helper Tools</span></div>
+      <div class="m">Nick's MacBook · ~/projects/helper</div>
+    </div>
+    <span class="age">1h</span>
+    <span class="btn sky sm">⇄ Reconnect</span>
+    <span class="btn rose sm">⏻ End</span>
+  </div>
+  <div style="padding:6px 14px 10px" class="takeover"><span class="i" aria-hidden="true">⚠</span> Reconnecting takes over if a session is open in another window or browser — that view stops receiving output.</div>
+  <div class="sect">Recent — ended in the last 48h</div>
+  <div class="row">
+    <span class="dot z" aria-hidden="true"></span>
+    <div class="who"><div class="t">api-cleanup <span class="idea">VibeCodes</span></div><div class="m">~/projects/vibecodes</div></div>
+    <span class="age">ended 2h</span>
+    <span class="btn em sm">↻ Resume</span>
+  </div>
+  <div class="row">
+    <span class="dot z" aria-hidden="true"></span>
+    <div class="who"><div class="t">helper-docs <span class="idea">Helper Tools</span></div><div class="m">~/projects/helper</div></div>
+    <span class="age">ended 1d</span>
+    <span class="btn em sm">↻ Resume</span>
+  </div>
+  <div class="row" style="background:var(--panel2)">
+    <span class="caption">3 running</span>
+    <span class="btn rose sm" style="margin-left:auto">⏻ End all sessions</span>
+  </div>
+</div>
+<p class="caption">The take-over warning is stated once above the list (F3 — visible before any click, applies to every Reconnect). Resume rows swap into the shared inline confirm (F4). End keeps its existing no-confirm behaviour; End all keeps its inline confirm.</p>
+
+<h3>Required cases</h3>
+<ul class="tight">
+  <li><strong>Collapsed header:</strong> mockup B1 — the count line <em>is</em> the affordance; a caption tells first-timers what clicking does (recognition, not recall).</li>
+  <li><strong>Toolbar "Launch Claude Code → In the browser":</strong> opens the same panel, task-scoped New session on top. With no sessions anywhere: launches immediately, as today.</li>
+  <li><strong>Popped-out window reload:</strong> foundations F5 — unchanged by this option.</li>
+  <li><strong>Accidental same-tab refresh:</strong> header shows counts; the panel badges the tab's own last session <span class="badge was">was open in this tab</span> and focuses its Reconnect. Instant-continue variant (if approved): dock reattaches that session directly, panel never opens.</li>
+  <li><strong>Empty state:</strong> unchanged — plain "Terminal" bar, chevron launches/sets up as today.</li>
+</ul>
+
+<h3>What changes vs today</h3>
+<ul class="tight">
+  <li>My sessions panel gains: New session button, Reconnect on live rows, a Recent section with Resume, this-board badges, one shared take-over caption.</li>
+  <li>Collapsed bar rebuilt as a single large trigger with live counts; separate My sessions button removed.</li>
+  <li>Expand is decoupled from connect: the dock body opens only on a panel choice; <code>autoConnectWhenExpanded</code> gated as in F1.</li>
+  <li>Other-board Reconnect navigates with <code>?reconnect=&lt;sid&gt;</code> (an identifier, not a credential — mint still auth + ownership checked).</li>
+</ul>
+
+<div class="cols">
+  <div class="panel pro"><h4>Pros</h4>
+    <ul class="tight">
+      <li>Least new UI — one existing panel upgraded, one list to maintain, global scope for free.</li>
+      <li>The collapsed bar finally tells the truth at a glance ("3 running · 2 recent") even when you don't open anything.</li>
+      <li>One front door for every entry point — no second surface to keep in sync.</li>
+    </ul>
+  </div>
+  <div class="panel con"><h4>Cons</h4>
+    <ul class="tight">
+      <li>Launching happens from a management popover — Start/Reconnect sit in the same rows as destructive End (adjacency risk; mitigated by colour + position + labels, but still the weakest separation of the three).</li>
+      <li>The terminal opens <em>behind</em> a popover — an indirect, slightly admin-flavoured moment for the most common action.</li>
+      <li>Clicking a bar to get a popover (not an expansion) bends the dock's expand/collapse convention.</li>
+      <li>A popover is a cramped home for the task-launch context.</li>
+    </ul>
+  </div>
+</div>
+
+<h3>New copy — Option B</h3>
+<div class="tblwrap">
+<table class="copytab">
+  <tr><th>Where</th><th>String</th></tr>
+  <tr><td>Collapsed bar</td><td>Terminal — {n} sessions running · {n} recent</td></tr>
+  <tr><td>Bar caption</td><td>Click to choose: reconnect, resume, or start new</td></tr>
+  <tr><td>Panel primary</td><td>New session on this board</td></tr>
+  <tr><td>Panel primary (task launch)</td><td>New session for this task — {task title}</td></tr>
+  <tr><td>Shared take-over caption</td><td>Reconnecting takes over if a session is open in another window or browser — that view stops receiving output.</td></tr>
+  <tr><td>Section headers</td><td>Running / Recent — ended in the last 48h</td></tr>
+  <tr><td>Badges</td><td>this board · was open in this tab</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2 id="opt-c">5 · Option C — "Tabs-first"</h2>
+<div class="opt-h"><span class="tag c">OPTION C</span><p>Opening the dock shows the tab strip immediately — one tab per live session in a resting "Reconnect" state, a "+" tab for new, and a slim Recent row beneath for Resume. Nothing connects until a tab's Reconnect is clicked. Closest to the current multi-tab mental model.</p></div>
+
+<h3>Flow walkthrough</h3>
+<div class="flow">
+  <span class="step act">Open dock<small>chevron / toolbar / task launch</small></span><span class="arr">→</span>
+  <span class="step">Strip renders resting tabs<small>one per live session on this board · ring-dot + "reconnect" text · first tab pre-selected</small></span><span class="arr">→</span>
+  <span class="step">Selected tab's body shows its Reconnect panel<small>identity, age, folder, take-over warning</small></span><span class="arr">→</span>
+  <span class="step act">Click Reconnect (or "+", or Resume in the Recent row)</span><span class="arr">→</span>
+  <span class="step good">That tab goes live<small>others stay resting until clicked</small></span>
+</div>
+<p>Task launches focus the matching resting tab if that task already has a live session (dedupe made visible — it does <em>not</em> connect), otherwise they open a fresh tab whose body shows a "Start session for this task" panel with a single Start button.</p>
+
+<p class="mock-cap">Mockup C1 — expanded dock: resting reconnect tabs + Recent row</p>
+<div class="mock">
+  <div class="dockbar">
+    <span class="brand">▸_ Terminals</span>
+    <span class="pill sky">2 to reconnect</span>
+    <span class="right"><span class="btn ghost sm">☰ My sessions <span class="pill sky" style="padding:0 6px">3</span></span> <span class="btn ghost sm">⌄ Collapse</span></span>
+  </div>
+  <div class="tabstrip" role="tablist">
+    <span class="ttab on"><span class="dot o" aria-hidden="true"></span> fix-login-bug <span class="st">· reconnect</span> <span class="x">✕</span></span>
+    <span class="ttab"><span class="dot o" aria-hidden="true"></span> vibecodes-4f9a <span class="st">· reconnect</span> <span class="x">✕</span></span>
+    <span class="plus" title="New terminal session">＋</span>
+  </div>
+  <div class="centerpanel">
+    <div class="hl">This session is still running on Nick's MacBook</div>
+    <div class="mono">Started 3h ago · ~/projects/vibecodes</div>
+    <div class="warn">⚠ If this session is open in another window or browser, connecting here takes over — that view stops receiving output.</div>
+    <div><span class="btn sky">⇄ Reconnect</span> <span class="btn ghost">⏻ End session</span></div>
+  </div>
+  <div class="recentrow">
+    <span class="lbl">Recent</span>
+    <span>api-cleanup · ended 2h ago</span><span class="btn em sm">↻ Resume</span>
+    <span style="color:var(--border2)">|</span>
+    <span>helper-docs <span class="caption">(Helper Tools)</span> · ended 1d ago</span><span class="btn em sm">↻ Resume</span>
+  </div>
+</div>
+<p class="caption">Resting tabs use a hollow ring dot <em>plus</em> the word "reconnect" in the tab (never colour alone); a live tab keeps today's filled emerald dot. The collapsed header shows the existing chip summary with a new chip: <code>◌ 2 to reconnect</code>. The Recent row hides itself when empty; Resume opens the shared inline confirm (F4) as a small popover anchored to the button.</p>
+
+<h3>Required cases</h3>
+<ul class="tight">
+  <li><strong>Collapsed header:</strong> today's chip summary plus the resting chip — e.g. <code>◌ 2 to reconnect · ● 1 connected</code>; "Terminals" wording unchanged.</li>
+  <li><strong>Toolbar "Launch Claude Code → In the browser":</strong> opens the dock on the strip; task with a live session → focuses its resting tab; otherwise a new tab with a "Start session for this task — fix-login-bug" panel and one Start button. No sessions anywhere: launches immediately, as today.</li>
+  <li><strong>Popped-out window reload:</strong> foundations F5 — unchanged by this option.</li>
+  <li><strong>Accidental same-tab refresh:</strong> the tab this browser tab held is pre-selected in its resting state — reconnect is one click after opening. Instant-continue variant (if approved): that tab auto-connects on open (&lt;60&nbsp;s proof); the others stay resting.</li>
+  <li><strong>Empty state:</strong> unchanged — no strip, no Recent row, today's single-session launch/setup panel.</li>
+  <li><strong>Other-board live sessions:</strong> not in the strip (tabs stay board-scoped). The My sessions button remains the path — its live rows gain Reconnect in this option too, or those sessions would be reachable only by walking to their boards.</li>
+</ul>
+
+<h3>What changes vs today</h3>
+<ul class="tight">
+  <li>New "resting/reconnect" tab state in the strip machine (glyph, aria text, body panel); tabs seeded from the registry on load instead of only from launches.</li>
+  <li>The strip now renders for a <em>single</em> resting session too — today's "no strip until 2+ tabs" rule gets an exception, or a sole session shows the C1 body panel without a strip (recommended: the exception; consistency beats minimalism here).</li>
+  <li>New Recent row chrome under the strip; <code>autoConnectWhenExpanded</code> gated as in F1; My sessions rows gain Reconnect for cross-board reach.</li>
+</ul>
+
+<div class="cols">
+  <div class="panel pro"><h4>Pros</h4>
+    <ul class="tight">
+      <li>Zero new mental model — the tabs Nick already uses, with one new resting state.</li>
+      <li>Reconnect is two clicks with the right tab usually pre-selected; multiple reconnects are naturally per-tab.</li>
+      <li>After connecting, you're already in the exact UI you'll keep using — no surface hand-off.</li>
+    </ul>
+  </div>
+  <div class="panel con"><h4>Cons</h4>
+    <ul class="tight">
+      <li>Board-scoped: other boards' sessions are invisible in the strip — the three-way choice is only complete for this board; cross-board still detours through My sessions.</li>
+      <li>A slim Recent row is the least discoverable Resume home of the three.</li>
+      <li>Resting tabs risk reading as "connected" at a glance (mitigated by ring-dot + the literal word, but the risk is real).</li>
+      <li>Heaviest implementation: strip state machine, single-tab strip exception, Recent row, per-tab reconnect panels, plus the My sessions Reconnect upgrade anyway.</li>
+    </ul>
+  </div>
+</div>
+
+<h3>New copy — Option C</h3>
+<div class="tblwrap">
+<table class="copytab">
+  <tr><th>Where</th><th>String</th></tr>
+  <tr><td>Collapsed chip</td><td>◌ {n} to reconnect</td></tr>
+  <tr><td>Resting tab (aria + visible)</td><td>{label} · reconnect</td></tr>
+  <tr><td>Resting tab body, headline</td><td>This session is still running on {machine label} / …on your machine</td></tr>
+  <tr><td>Resting tab body, sub</td><td>Started {age} ago · {cwd}</td></tr>
+  <tr><td>Recent row label</td><td>Recent · {label} · ended {age} ago</td></tr>
+  <tr><td>Task-launch new tab</td><td>Start session for this task — {task title} → [Start session]</td></tr>
+</table>
+</div>
+
+<!-- ============================================================ -->
+<h2>6 · Shared edge cases (all options)</h2>
+<div class="tblwrap">
+<table>
+  <tr><th style="width:30%">Edge case</th><th>Behaviour</th></tr>
+  <tr><td>Reload during the helper's 60&nbsp;s post-exit linger</td>
+      <td>The registry may still list a session whose Claude process has already exited. The choice surface honestly shows it live; clicking Reconnect mints fine but the attach lands on a dying/dead leg → the standard failure path shows <em>"Couldn't reconnect — the session may have just ended."</em> with Retry, the list refreshes, and the session reappears under Recent (with Resume, if its folder was recorded). No special pre-detection — the copy absorbs the race.</td></tr>
+  <tr><td>Session ends between listing and click</td>
+      <td>The reattach mint returns "gone" → same inline error and list refresh as above. The row/tab is replaced, never left as a dead button. In the popped window this becomes the F5 end-state ("This session has ended…").</td></tr>
+  <tr><td>Two browser tabs both showing the choice surface</td>
+      <td>Both legitimately list the same live session — that's why the take-over warning is unconditional (F3). Whoever clicks first attaches; the second click also succeeds and takes over (the first view gets the existing duplicate-preemption close and shows its normal "connection replaced" state, with its own Reconnect path back). Lists refresh on window focus so counts don't go stale between the two tabs.</td></tr>
+  <tr><td>Cap reached while choosing</td>
+      <td>Only "Start new session" / "+" / Resume are capped (F2/F4) — they fail with the existing cap toast that opens My sessions. Reconnect always works: it is exempt by design.</td></tr>
+</table>
+</div>
+
+<p class="caption" style="margin-top:36px">Deliverable for card cbe60db5 (rework). All mockups are styled divs with realistic data; colours follow the app conventions (emerald = go/new, sky = reconnect/info, amber = caution/honesty notes, rose = destructive). Nothing here ships until Nick picks an option and rules on the instant-continue variant.</p>
+
+</div>
+</body>
+</html>
