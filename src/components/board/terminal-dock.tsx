@@ -52,11 +52,13 @@
 // zero new UI anywhere, including the tab strip and "+".
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
-import { ChevronUp, ChevronDown, Circle, ListTree, Plus, Terminal as TerminalIcon, X } from "lucide-react";
+import { useRouter, useSearchParams, usePathname } from "next/navigation";
+import { ChevronUp, ChevronDown, Circle, ListTree, Loader2, Plus, Terminal as TerminalIcon, X } from "lucide-react";
 import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 import { isTerminalEnabled, relayBaseUrl, type TerminalStatus } from "@/lib/terminal/connection";
 import { subscribeBrowserLaunch, type BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import { resolveDockView } from "@/lib/terminal/first-run-flow";
@@ -74,6 +76,16 @@ import {
 } from "@/lib/terminal/popout-channel";
 import type { TransferredBuffer } from "@/lib/terminal/scrollback-transfer";
 import {
+  deriveChooserSections,
+  chooserHeaderCounts,
+  type ChooserSections,
+  type ChooserRegistryRow,
+  type ChooserLiveRow,
+  type ChooserRecentRow,
+} from "@/lib/terminal/chooser-data";
+import { decideEntryBehaviour, type EntryDecision } from "@/lib/terminal/entry-decision";
+import { loadSessionSnapshot, readLastTabSid, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
+import {
   type SessionEntry,
   type TabDisplayStatus,
   type TabTone,
@@ -90,8 +102,9 @@ import {
   dockStatusMeta,
   type SessionSummary,
 } from "./terminal-session-view";
+import { TerminalSessionChooser } from "./terminal-session-chooser";
 import { TerminalMySessionsPanel } from "./terminal-my-sessions-panel";
-import type { TerminalSessionActions, TerminalSessionDescriptor } from "./use-terminal-session";
+import type { AttachExistingPair, TerminalSessionActions, TerminalSessionDescriptor } from "./use-terminal-session";
 
 interface TerminalDockProps {
   ideaId: string;
@@ -143,9 +156,29 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   // no dock, no entry point, board unchanged (B9).
   const enabled = isTerminalEnabled();
   const [expanded, setExpanded] = useState(false);
-  const [sessions, setSessions] = useState<SessionEntry[]>(() => [createPristineEntry()]);
-  const [activeKey, setActiveKey] = useState<string>(() => sessions[0].key);
+  // Session entry chooser (card cbe60db5, F1): the dock no longer seeds a
+  // pristine tab unconditionally at page load — whether it does at all (and
+  // whether the chooser renders instead) depends on `entryDecision`, which
+  // needs the registry fetch below FIRST. `sessions` starts genuinely empty;
+  // the seeding effect further down populates it once that decision is known.
+  const [sessions, setSessions] = useState<SessionEntry[]>([]);
+  const [activeKey, setActiveKey] = useState<string>("");
   const [summaries, setSummaries] = useState<Record<string, SessionSummary>>({});
+  // Every one of the caller's active-or-recent (≤48h) sessions across all
+  // ideas — null while the initial fetch is in flight (the "checking your
+  // sessions…" beat: nothing may auto-mint before this is known, F1).
+  const [registryRows, setRegistryRows] = useState<ChooserRegistryRow[] | null>(null);
+  // A task-scoped (or board-level) launch that arrived while the chooser was
+  // showing — carried so "Start new session" / the task-dedupe banner can
+  // act on it once the user actually picks something (F1: nothing mints on
+  // the bus event itself while there's a choice to make).
+  const [pendingLaunch, setPendingLaunch] = useState<BrowserLaunchPayload | null>(null);
+  // Disables every chooser action while a click's async work (reattach mint,
+  // resume launch) is in flight — never a silent double-submit.
+  const [chooserBusy, setChooserBusy] = useState(false);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   // Tab close arms an inline confirm on a LIVE session (OQ1) — the second click
   // on the SAME tab's × (or a second Delete keypress) actually ends it. Ended
   // tabs close instantly, no confirm.
@@ -181,6 +214,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   const summariesRef = useRef(summaries);
   const posthog = usePostHog();
   const posthogRef = useRef(posthog);
+  // Session entry chooser (card cbe60db5): mirrors `entryDecision` (declared
+  // below, after the registry fetch) for the same reason as the refs above —
+  // `deliverLaunch` needs a synchronous, always-current read without being a
+  // dependency that would force the launch-bus effect to resubscribe.
+  const entryDecisionRef = useRef<EntryDecision | null>(null);
   // Refs must only be WRITTEN outside render (react-hooks/refs) — sync them in
   // an effect, which always commits before any later event handler can read
   // them, so `deliverLaunch` (called only from event handlers / the launch-bus
@@ -190,6 +228,59 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     summariesRef.current = summaries;
     posthogRef.current = posthog;
   }, [sessions, summaries, posthog]);
+
+  // ── session entry chooser (card cbe60db5) — registry fetch + entry decision ──
+  //
+  // F1: "On board load the dock fetches the registry once (it already
+  // fetches for the My sessions badge)". `refreshRegistry` is also reused
+  // after a failed reattach (the row may have just gone stale) and by the
+  // `?reconnect=` handler below.
+  const refreshRegistry = useCallback(async () => {
+    try {
+      const res = await fetch("/api/terminal/session/list");
+      if (!res.ok) throw new Error(`status ${res.status}`);
+      const body = (await res.json()) as { sessions: ChooserRegistryRow[] };
+      setRegistryRows(body.sessions);
+    } catch (err) {
+      logger.error("Terminal registry fetch failed", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+      // Fail OPEN (matches the mint route's own R2 read-error posture): never
+      // let a transient registry read wedge the dock in "checking…" forever.
+      // A never-loaded dock falls back to today's empty-launch behaviour; an
+      // already-loaded dock just keeps its last known rows.
+      setRegistryRows((prev) => prev ?? []);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!enabled) return;
+    void refreshRegistry();
+  }, [enabled, refreshRegistry]);
+
+  // This tab's own snapshot info (session-snapshot.ts) — read once; a tab
+  // doesn't gain a NEW "last sid" mid-session except by attaching another
+  // session itself, at which point the chooser is long since resolved.
+  const [entrySnapshotInfo] = useState(() => {
+    const sid = readLastTabSid();
+    if (!sid) return null;
+    const snap = loadSessionSnapshot(sid);
+    return snap ? { sid, savedAt: snap.savedAt } : null;
+  });
+
+  const entryDecision: EntryDecision | null = useMemo(() => {
+    if (registryRows === null) return null; // still loading
+    return decideEntryBehaviour(registryRows, entrySnapshotInfo, Date.now());
+  }, [registryRows, entrySnapshotInfo]);
+  useEffect(() => {
+    entryDecisionRef.current = entryDecision;
+  }, [entryDecision]);
+
+  const chooserSections: ChooserSections = useMemo(
+    () => deriveChooserSections(registryRows ?? [], ideaId, Date.now(), entrySnapshotInfo?.sid ?? readLastTabSid()),
+    [registryRows, ideaId, entrySnapshotInfo],
+  );
+  const chooserCounts = useMemo(() => chooserHeaderCounts(chooserSections), [chooserSections]);
 
   // Close every open pop-out hand-off channel if the dock itself unmounts
   // (board navigation away) — the popped windows keep running independently
@@ -457,7 +548,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   const cancelClose = useCallback(() => setConfirmingKey(null), []);
 
   // ── launch routing (B7/B10) + the pristine-slot reuse for the FIRST launch ──
-  const deliverLaunch = useCallback((payload: BrowserLaunchPayload | null) => {
+  // Renamed from the pre-chooser `deliverLaunch` — this is the ACTUAL mint
+  // path (today's unchanged mint/dedupe/pristine-reuse behaviour), now
+  // reached either directly (F1's empty-launch state — nothing to choose
+  // between) or via the chooser's "Start new session" (see `deliverLaunch`
+  // below, which decides which of the two applies).
+  const mintAndDeliver = useCallback((payload: BrowserLaunchPayload | null) => {
     const currentSessions = sessionsRef.current;
     const currentSummaries = summariesRef.current;
     const candidates: DedupeCandidate[] = currentSessions.map((s) => ({
@@ -474,14 +570,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     }
 
     setExpanded(true);
-    const pristineKey = findPristineSlot(currentSessions.map((s) => ({ key: s.key, launchSeq: s.launchSeq })));
+    const pristineKey = findPristineSlot(
+      currentSessions.map((s) => ({ key: s.key, launchSeq: s.launchSeq, hasAttach: !!s.attach })),
+    );
     if (pristineKey) {
       setSessions((prev) =>
         prev.map((s) =>
           s.key === pristineKey
             ? {
                 ...s,
-                origin: payload?.taskId ? "task" : "toolbar",
+                origin: payload?.resume ? "resume" : payload?.taskId ? "task" : "toolbar",
                 taskId: payload?.taskId,
                 taskTitle: payload?.taskTitle,
                 launchSeq: s.launchSeq + 1,
@@ -496,7 +594,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
 
     const entry: SessionEntry = {
       key: freshSessionKey(),
-      origin: payload?.taskId ? "task" : "toolbar",
+      origin: payload?.resume ? "resume" : payload?.taskId ? "task" : "toolbar",
       taskId: payload?.taskId,
       taskTitle: payload?.taskTitle,
       createdAt: Date.now(),
@@ -510,6 +608,25 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     // same as P1, and isn't a "multi-session" event).
     posthogRef.current?.capture("terminal_tab_opened", { origin: entry.origin });
   }, []);
+
+  // Session entry chooser (card cbe60db5, F1): the actual entry point every
+  // launch source (toolbar bus event, task-launch bus event, "+") calls.
+  // Routes into the chooser instead of minting whenever the chooser is still
+  // the dock's resting state for THIS pageview (no local tabs yet AND the
+  // registry says there's something to choose between) — once any tab
+  // exists, the chooser has already resolved and every launch after that is
+  // `mintAndDeliver`'s unchanged behaviour.
+  const deliverLaunch = useCallback(
+    (payload: BrowserLaunchPayload | null) => {
+      if (sessionsRef.current.length === 0 && entryDecisionRef.current?.kind === "chooser") {
+        setExpanded(true);
+        setPendingLaunch(payload);
+        return;
+      }
+      mintAndDeliver(payload);
+    },
+    [mintAndDeliver],
+  );
 
   // The "In the browser" menu item (board toolbar) and task-card menus fire the
   // launch bus; forward every event to the routing decision above. Called
@@ -526,6 +643,150 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     // this always mints a genuinely new, board-level tab (B7).
     deliverLaunch(null);
   }, [deliverLaunch]);
+
+  // ── reattach (chooser Reconnect, instant-continue, ?reconnect=<sid>) ───────
+  // Sibling to `mintAndDeliver`: mints NOTHING new (F2 — the reattach route
+  // is exempt from the cap/rate-limit) and reuses the pristine-slot rule
+  // (`findPristineSlot`) so, in the rare case an attach entry is the dock's
+  // sole existing tab and ANOTHER reattach is requested, it doesn't leak a
+  // stray idle slot either. `focus` controls whether the dock expands to
+  // show the result immediately (an explicit chooser/My-sessions click) or
+  // stays collapsed (instant-continue — attach quietly, reopening feels
+  // instant, design's veto-note wording: "the refresher never even notices
+  // the reload").
+  const performReattach = useCallback(async (sid: string, opts: { focus: boolean }) => {
+    setChooserBusy(true);
+    try {
+      const res = await fetch("/api/terminal/session/reattach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sid }),
+      });
+      if (!res.ok) {
+        const body = (await res.json().catch(() => null)) as { error?: string } | null;
+        toast.error(body?.error || "Couldn't reconnect — the session may have just ended.", {
+          action: { label: "Retry", onClick: () => void performReattach(sid, opts) },
+        });
+        void refreshRegistry(); // the row may have just ended/expired — let the chooser reflect that
+        return;
+      }
+      const data = (await res.json()) as { sessionId: string; browserToken: string };
+      const snapshot = loadSessionSnapshot(sid);
+      const initialBuffer = snapshot ? toReconnectBuffer(snapshot) : null;
+      const attach: AttachExistingPair = { sessionId: data.sessionId, browserToken: data.browserToken, initialBuffer };
+
+      const currentSessions = sessionsRef.current;
+      const pristineKey = findPristineSlot(
+        currentSessions.map((s) => ({ key: s.key, launchSeq: s.launchSeq, hasAttach: !!s.attach })),
+      );
+      const entry: SessionEntry = {
+        key: pristineKey ?? freshSessionKey(),
+        origin: "reconnect",
+        taskId: undefined,
+        taskTitle: undefined,
+        createdAt: Date.now(),
+        launchSeq: 0,
+        launchPayload: null,
+        attach,
+        showReconnectedNoHistoryNote: !initialBuffer,
+      };
+      setSessions((prev) => (pristineKey ? prev.map((s) => (s.key === pristineKey ? entry : s)) : [...prev, entry]));
+      setActiveKey(entry.key);
+      if (opts.focus) setExpanded(true);
+      posthogRef.current?.capture("terminal_session_reconnected", { instant: !opts.focus });
+    } catch (err) {
+      logger.error("Terminal reattach failed", { sid, error: err instanceof Error ? err.message : String(err) });
+      toast.error("Couldn't reconnect — check your connection and try again.");
+    } finally {
+      setChooserBusy(false);
+    }
+  }, [refreshRegistry]);
+
+  // F1's empty-launch state ("today's open→launch behaviour remains") and
+  // the instant-continue variant (design's veto note, Nick: yes) are both
+  // driven off `entryDecision` the moment it resolves — neither waits for
+  // the user to open the dock. Guarded on `sessions.length === 0` so this
+  // only ever seeds/attaches ONCE per pageview; every launch after that is
+  // real user action.
+  const instantContinueTriggeredRef = useRef(false);
+  useEffect(() => {
+    if (!entryDecision || sessions.length > 0) return;
+    if (entryDecision.kind === "empty-launch") {
+      const fresh = createPristineEntry();
+      setSessions([fresh]);
+      setActiveKey(fresh.key);
+    } else if (entryDecision.kind === "instant-continue" && !instantContinueTriggeredRef.current) {
+      instantContinueTriggeredRef.current = true;
+      void performReattach(entryDecision.sid, { focus: false });
+    }
+    // "chooser": nothing to seed — the chooser renders in the body below.
+  }, [entryDecision, sessions.length, performReattach]);
+
+  // ── other-board Reconnect (`?reconnect=<sid>`, design item 2) ──────────────
+  // "Open board & reconnect" navigates here with the target sid on the URL;
+  // once the registry confirms it, reattach immediately (no second chooser —
+  // the click on the OTHER board's chooser was already the informed
+  // confirmation, F3) and strip the param without a server round-trip (same
+  // recipe as kit-applied-toast.tsx — this board route is force-dynamic).
+  const reconnectParam = searchParams.get("reconnect");
+  const reconnectHandledRef = useRef(false);
+  useEffect(() => {
+    if (!reconnectParam || reconnectHandledRef.current || registryRows === null) return;
+    reconnectHandledRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    params.delete("reconnect");
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${pathname}${qs ? `?${qs}` : ""}`);
+    void performReattach(reconnectParam, { focus: true });
+  }, [reconnectParam, registryRows, pathname, performReattach]);
+
+  // ── chooser action handlers ─────────────────────────────────────────────────
+  const handleChooserStartNew = useCallback(() => {
+    const payload = pendingLaunch;
+    setPendingLaunch(null);
+    mintAndDeliver(payload);
+  }, [pendingLaunch, mintAndDeliver]);
+
+  const handleChooserReconnectHere = useCallback(
+    (row: ChooserLiveRow) => {
+      setPendingLaunch(null);
+      void performReattach(row.sid, { focus: true });
+    },
+    [performReattach],
+  );
+
+  const handleChooserOpenBoardAndReconnect = useCallback(
+    (row: ChooserLiveRow) => {
+      router.push(`/ideas/${row.ideaId}/board?reconnect=${encodeURIComponent(row.sid)}`);
+    },
+    [router],
+  );
+
+  const handleChooserResume = useCallback(
+    (row: ChooserRecentRow) => {
+      setPendingLaunch(null);
+      // F4's Resume: the EXISTING (capped) launch flow, carrying `resume` +
+      // the ended row's own recorded folder instead of a bootstrap prompt —
+      // see BrowserLaunchPayload's doc and use-terminal-session.ts's
+      // fireLaunchDeepLink, which fires `claude --continue` there.
+      mintAndDeliver({ resume: true, cwd: row.cwd, taskId: row.taskId ?? undefined, taskTitle: row.taskTitle ?? undefined });
+    },
+    [mintAndDeliver],
+  );
+
+  // My sessions panel Reconnect (design item 9) — the SAME reattach flow;
+  // "this board" attaches in place, any other board navigates + reconnects.
+  const handleMySessionsReconnect = useCallback(
+    (sid: string, targetIdeaId: string) => {
+      setMySessionsOpen(false);
+      if (targetIdeaId === ideaId) {
+        void performReattach(sid, { focus: true });
+      } else {
+        router.push(`/ideas/${targetIdeaId}/board?reconnect=${encodeURIComponent(sid)}`);
+      }
+    },
+    [ideaId, performReattach, router],
+  );
 
   const handleTabKeyDown = useCallback(
     (e: KeyboardEvent<HTMLDivElement>, index: number, key: string) => {
@@ -562,6 +823,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   const multi = sessions.length > 1;
   const activeIsPoppedOut = poppedOutKeys.has(activeKey);
   const soleIsPoppedOut = !multi && !!sessions[0] && poppedOutKeys.has(sessions[0].key);
+  // Session entry chooser (card cbe60db5): the dock's resting state for this
+  // pageview — no local tab yet, and the registry says there's something to
+  // choose between (mockup A1's collapsed header + A2's chooser body).
+  const showingChooser = sessions.length === 0 && entryDecision?.kind === "chooser";
+  const pendingTask = pendingLaunch?.taskId
+    ? { taskId: pendingLaunch.taskId, taskTitle: pendingLaunch.taskTitle ?? "" }
+    : null;
 
   // Substitute "popped-out" for any tab the dock knows it popped — its real
   // status is usually mid-preemption at this exact moment and would
@@ -585,7 +853,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       {/* Collapsed dock bar — always visible */}
       <div className="flex items-center gap-2.5 px-3 py-1.5">
         <span className="inline-flex items-center gap-2 text-xs font-semibold">
-          {!multi && (
+          {!multi && sessions.length > 0 && (
             <Circle
               className={cn("h-2.5 w-2.5 fill-current", activeIsPoppedOut ? "text-violet-400" : dotClass(activeStatus))}
             />
@@ -599,7 +867,30 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
           )}
         </span>
         <span className="ml-auto inline-flex items-center gap-1.5">
-          {multi &&
+          {/* Mockup A1: header count pills, only while the chooser is the
+              resting state — real text, never badge-only (a11y, design §2). */}
+          {showingChooser && registryRows === null && (
+            <span className="inline-flex items-center gap-1 text-[11px] text-zinc-500">
+              <Loader2 className="h-3 w-3 animate-spin" /> Checking your sessions…
+            </span>
+          )}
+          {showingChooser && chooserCounts.here > 0 && (
+            <span className="rounded-md border border-sky-500/50 bg-sky-500/10 px-2 py-0.5 text-[11px] font-semibold text-sky-300">
+              {chooserCounts.here} running here
+            </span>
+          )}
+          {showingChooser && chooserCounts.elsewhere > 0 && (
+            <span className="rounded-md border border-zinc-600 bg-zinc-800/60 px-2 py-0.5 text-[11px] font-semibold text-zinc-400">
+              {chooserCounts.elsewhere} on another board
+            </span>
+          )}
+          {showingChooser && chooserCounts.recent > 0 && (
+            <span className="rounded-md border border-zinc-600 bg-zinc-800/60 px-2 py-0.5 text-[11px] font-semibold text-zinc-400">
+              {chooserCounts.recent} recent
+            </span>
+          )}
+          {sessions.length > 0 &&
+            multi &&
             statusChips.map((chip) => (
               <span
                 key={chip.label}
@@ -617,12 +908,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
                 {chip.label}
               </span>
             ))}
-          {!multi && soleIsPoppedOut && (
+          {sessions.length > 0 && !multi && soleIsPoppedOut && (
             <span className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/50 bg-violet-500/10 px-2 py-0.5 text-[11px] font-semibold text-violet-300">
               <span aria-hidden="true">⧉</span> Popped out
             </span>
           )}
-          {!multi && !soleIsPoppedOut && (
+          {sessions.length > 0 && !multi && !soleIsPoppedOut && (
             <span className={cn("inline-flex items-center gap-1.5 rounded-md border px-2 py-0.5 text-[11px] font-semibold", singleMeta.className)}>
               <singleMeta.Icon className={cn("h-3 w-3", singleMeta.spin && "animate-spin")} />
               {singleMeta.label}
@@ -633,6 +924,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
           open={mySessionsOpen}
           onOpenChange={setMySessionsOpen}
           onCountChange={setMySessionsCount}
+          onReconnect={handleMySessionsReconnect}
         >
           <Button
             variant="ghost"
@@ -655,11 +947,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
           size="xs"
           className="text-zinc-300 hover:text-zinc-100"
           onClick={() => setExpanded((e) => !e)}
-          aria-label={expanded ? "Collapse terminal panel" : "Expand terminal panel"}
+          aria-label={expanded ? "Collapse terminal panel" : showingChooser ? "Open terminal sessions" : "Expand terminal panel"}
           aria-expanded={expanded}
         >
           {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
-          <span className="hidden sm:inline">{expanded ? "Collapse" : "Expand"}</span>
+          <span className="hidden sm:inline">{expanded ? "Collapse" : showingChooser ? "Open" : "Expand"}</span>
         </Button>
       </div>
 
@@ -667,6 +959,24 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
           instance and its scrollback survive collapse/expand and live bytes are
           never lost. */}
       <div className={cn("border-t border-zinc-800 bg-[#0c0c0e]", !expanded && "hidden")}>
+        {sessions.length === 0 && registryRows === null && (
+          <div className="flex items-center justify-center gap-2 px-4 py-10 text-[12.5px] text-zinc-500">
+            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Checking your sessions…
+          </div>
+        )}
+
+        {showingChooser && (
+          <TerminalSessionChooser
+            sections={chooserSections}
+            pendingTask={pendingTask}
+            busy={chooserBusy}
+            onReconnectHere={handleChooserReconnectHere}
+            onOpenBoardAndReconnect={handleChooserOpenBoardAndReconnect}
+            onResume={handleChooserResume}
+            onStartNew={handleChooserStartNew}
+          />
+        )}
+
         {multi && (
           <div role="tablist" aria-label="Terminal sessions" className="flex items-stretch border-b border-zinc-800 bg-[#141417]">
             {/* Tabs shrink then scroll; "+" (below) stays pinned OUTSIDE this
@@ -780,7 +1090,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
             isActive={entry.key === activeKey}
             expanded={expanded && entry.key === activeKey}
             onRequestExpand={requestExpand}
-            autoConnectWhenExpanded={entry.launchSeq === 0}
+            autoConnectWhenExpanded={entry.launchSeq === 0 && !entry.attach}
             onReportSummary={reportSummary}
             onRegisterActions={registerActions}
             onAnnounce={announce}

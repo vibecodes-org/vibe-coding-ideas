@@ -20,6 +20,7 @@
 
 import type { TerminalStatus } from "@/lib/terminal/connection";
 import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
+import type { AttachExistingPair } from "./use-terminal-session";
 
 /**
  * One tab = one `useTerminalSession` instance, mounted by a dedicated
@@ -35,12 +36,32 @@ import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
  */
 export interface SessionEntry {
   key: string;
-  origin: "toolbar" | "task";
+  origin: "toolbar" | "task" | "reconnect" | "resume";
   taskId?: string;
   taskTitle?: string;
   createdAt: number;
   launchSeq: number;
   launchPayload: BrowserLaunchPayload | null;
+  /**
+   * Session entry chooser (card cbe60db5): set for a Reconnect / instant-
+   * continue entry — this tab attaches directly to an ALREADY-MINTED session
+   * (no mint, no launch-bus delivery, no install-first gate) via
+   * `useTerminalSession`'s own `attachExisting` option (see
+   * terminal-session-view.tsx). Always paired with `launchSeq: 0` and
+   * `launchPayload: null` (there is nothing to "deliver" — the hook's own
+   * attach-once-per-sid effect does the work) — but is NOT a reusable
+   * "pristine" slot in the auto-connect sense, so `findPristineSlot` and the
+   * dock's `autoConnectWhenExpanded` gate both exclude any entry with this
+   * set (see the `hasAttach` field on `PristineCandidate`).
+   */
+  attach?: AttachExistingPair | null;
+  /**
+   * Common foundations F2: this is a reconnect/instant-continue entry whose
+   * `attach.initialBuffer` came back null (no fresh snapshot to restore) —
+   * render the dismissible amber note ("History from before you reconnected
+   * isn't shown here…") instead of a silently blank terminal.
+   */
+  showReconnectedNoHistoryNote?: boolean;
 }
 
 // ── shared tone vocabulary (drives both the per-tab glyph and the collapsed
@@ -139,23 +160,32 @@ export function deriveTabLabel(input: TabLabelInput): string {
 export interface PristineCandidate {
   key: string;
   launchSeq: number;
+  /**
+   * Session entry chooser (card cbe60db5): true for a Reconnect / instant-
+   * continue entry (`SessionEntry.attach` set). Such an entry has
+   * `launchSeq === 0` too (nothing was ever "delivered" to it) but is NOT a
+   * reusable pristine slot — it's already attached to a specific live
+   * session, so a later fresh launch must open a genuinely new tab rather
+   * than overwrite it.
+   */
+  hasAttach?: boolean;
 }
 
 /**
  * The dock always keeps at least one `useTerminalSession` instance mounted from
  * page load (matching P1's single always-mounted hook — see the `SessionEntry`
  * doc above). That entry is "pristine" — never yet handed a launch — for exactly
- * as long as it's the ONLY entry and its `launchSeq` is still 0. The very FIRST
- * launch on a board reuses it in place (bump its `launchSeq`, attach the
- * payload) instead of minting a second, redundant idle instance; every launch
- * after that opens a genuinely new tab (B7). Returns the reusable entry's key,
- * or null when there's nothing to reuse (a second+ launch, or the single entry
- * has already been used).
+ * as long as it's the ONLY entry, its `launchSeq` is still 0, AND it isn't a
+ * chooser-attach entry (`hasAttach`). The very FIRST launch on a board reuses it
+ * in place (bump its `launchSeq`, attach the payload) instead of minting a
+ * second, redundant idle instance; every launch after that opens a genuinely
+ * new tab (B7). Returns the reusable entry's key, or null when there's nothing
+ * to reuse (a second+ launch, an already-used entry, or a chooser-attach entry).
  */
 export function findPristineSlot(sessions: PristineCandidate[]): string | null {
   if (sessions.length !== 1) return null;
   const [only] = sessions;
-  return only.launchSeq === 0 ? only.key : null;
+  return only.launchSeq === 0 && !only.hasAttach ? only.key : null;
 }
 
 // ── B10: dedupe a task-scoped launch against existing tabs ─────────────────

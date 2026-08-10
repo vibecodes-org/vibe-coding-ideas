@@ -162,6 +162,11 @@ export function TerminalSessionView({
     taskId: entry.taskId,
     taskTitle: entry.taskTitle,
     onCapExceeded,
+    // Session entry chooser (card cbe60db5): a Reconnect/instant-continue
+    // entry carries a ready-minted `attach` pair instead of a launch to
+    // deliver — the hook's own attach-once-per-sid effect handles it below,
+    // independent of `launchSeq`/`launchPayload` (see SessionEntry's doc).
+    attachExisting: entry.attach ?? null,
   });
   const {
     state,
@@ -181,6 +186,9 @@ export function TerminalSessionView({
   // thing that satisfies "dismissible", and a fresh tab/reload re-evaluating the
   // gate is exactly the desired behaviour (still-stale helper, nudge again).
   const [dismissedHelperNudge, setDismissedHelperNudge] = useState(false);
+  // Common foundations F2: a reconnect/instant-continue entry with no fresh
+  // snapshot to restore — the dismissible "history isn't shown here" note.
+  const [dismissedReconnectNote, setDismissedReconnectNote] = useState(false);
 
   // Deliver this entry's launch exactly once per `launchSeq` bump (B7/B10): a
   // real bus payload goes through `launchFromBus` (carries the resolved
@@ -398,6 +406,26 @@ export function TerminalSessionView({
               className="shrink-0 text-sky-400 hover:text-sky-200"
               onClick={() => setDismissedHelperNudge(true)}
               aria-label="Dismiss helper update notice"
+            >
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
+        {/* Session entry chooser — reconnect with no snapshot to restore
+            (common foundations F2): never a silently blank screen. Shown
+            once there's a stream to sit above; dismissible, per-session. */}
+        {showStream && entry.showReconnectedNoHistoryNote && !dismissedReconnectNote && (
+          <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/5 px-3 py-1.5 text-[11px] text-amber-300">
+            <Info className="h-3 w-3 shrink-0" />
+            <span className="flex-1">
+              History from before you reconnected isn&apos;t shown here — it&apos;s still in Claude&apos;s context.
+            </span>
+            <button
+              type="button"
+              className="shrink-0 text-amber-400 hover:text-amber-200"
+              onClick={() => setDismissedReconnectNote(true)}
+              aria-label="Dismiss reconnect notice"
             >
               <X className="h-3 w-3" />
             </button>
