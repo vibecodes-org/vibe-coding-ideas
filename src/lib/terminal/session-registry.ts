@@ -66,6 +66,30 @@ export function decideRateLimit(recentCount: number, limit: number): RateLimitDe
   return { ok: true };
 }
 
+export type ReattachDecision =
+  | { ok: true }
+  | { ok: false; reason: "not-found" | "ended" | "expired" };
+
+/**
+ * Session entry chooser + reload-reattach (card cbe60db5): the reattach mint
+ * route's OWN decision — separate from `decideCap`/`decideRateLimit` because a
+ * reattach is exempt from both (F2: "no new registry row, exempt from the
+ * session cap and the mint rate limit"). Ownership itself is enforced by the
+ * caller's `.eq("user_id", ...)` read (RLS-scoped too) — a `row` reaching this
+ * function already belongs to the caller; `null` here means "no row for this
+ * sid + this user", which reads identically to "not found" whether the sid
+ * never existed, belongs to someone else, or was deleted.
+ */
+export function decideReattach(
+  row: { status: "active" | "ended"; expires_at: string } | null,
+  nowMs: number = Date.now(),
+): ReattachDecision {
+  if (!row) return { ok: false, reason: "not-found" };
+  if (row.status !== "active") return { ok: false, reason: "ended" };
+  if (isSessionExpired(row.expires_at, nowMs)) return { ok: false, reason: "expired" };
+  return { ok: true };
+}
+
 /**
  * Compact "age" string for the My-sessions list (design §9: "12m", "41m",
  * "2h", "3h 50m"). Minutes below 60; hours + minutes above, dropping the

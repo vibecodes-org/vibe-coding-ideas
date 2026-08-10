@@ -10,9 +10,9 @@
 //
 // Fetch-on-open + refresh-after-action (no realtime, per the stage brief).
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { usePostHog } from "posthog-js/react";
-import { Loader2, Power, Terminal as TerminalIcon, X } from "lucide-react";
+import { Loader2, Power, RefreshCw, Terminal as TerminalIcon, X } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -69,6 +69,11 @@ interface ListedSession {
   machineLabel: string | null;
   cwd: string | null;
   createdAt: string;
+  /** Session entry chooser (card cbe60db5): the list route now also returns
+   *  recently-ended rows (for the chooser) — this panel still shows only
+   *  "Running", so it filters on this field client-side (see `running` below). */
+  status: "active" | "ended";
+  endedAt: string | null;
 }
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -89,11 +94,20 @@ function helperChipClassName(kind: HelperChipKind): string {
 }
 
 interface TerminalMySessionsPanelProps {
-  /** Fires whenever the panel's session count is known/changes, so the dock's badge stays in sync. */
+  /** Fires whenever the panel's RUNNING session count is known/changes, so the dock's badge stays in sync. */
   onCountChange?: (count: number) => void;
   /** Imperative open control — the cap-refusal toast's action opens this panel (design §7b). */
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  /**
+   * Session entry chooser (card cbe60db5, design item 9): "live rows gain
+   * Reconnect wired to the same flow (the panel already reaches the dock)".
+   * Called with a running row's sid + ideaId; the dock decides whether that's
+   * an in-place reattach (this board) or a navigate-and-reconnect (another
+   * board). Omitted → no Reconnect button (keeps the panel usable standalone,
+   * e.g. in tests).
+   */
+  onReconnect?: (sid: string, ideaId: string) => void;
   children: ReactNode;
 }
 
@@ -101,6 +115,7 @@ export function TerminalMySessionsPanel({
   onCountChange,
   open,
   onOpenChange,
+  onReconnect,
   children,
 }: TerminalMySessionsPanelProps) {
   const [loadState, setLoadState] = useState<LoadState>("idle");
@@ -109,6 +124,10 @@ export function TerminalMySessionsPanel({
   const [confirmingEndAll, setConfirmingEndAll] = useState(false);
   const [endingAll, setEndingAll] = useState(false);
   const posthog = usePostHog();
+  // The panel still shows only "Running" (the chooser is the front door for
+  // Recent/Resume now — design item 9) — the list route returns recently-
+  // ended rows too (for the chooser), so this filters them back out.
+  const running = useMemo(() => sessions.filter((s) => s.status === "active"), [sessions]);
 
   // ── Helper row state (card cc74a067) ────────────────────────────────────────
   const [helperStatus, setHelperStatus] = useState<HelperStatus | null>(null);
@@ -139,11 +158,12 @@ export function TerminalMySessionsPanel({
       if (!sessionsRes.ok) throw new Error(`Failed to load sessions (${sessionsRes.status})`);
       const body = (await sessionsRes.json()) as { sessions: ListedSession[] };
       setSessions(body.sessions);
-      onCountChange?.(body.sessions.length);
+      const runningCount = body.sessions.filter((s) => s.status === "active").length;
+      onCountChange?.(runningCount);
 
       if (helperRes.ok) {
         const nextStatus = (await helperRes.json()) as HelperStatus;
-        const nextChip = deriveHelperChip(nextStatus, body.sessions.length);
+        const nextChip = deriveHelperChip(nextStatus, runningCount);
         const prevKind = prevHelperChipKindRef.current;
         if (prevKind === "winding-down" && nextChip?.kind === "not-running") {
           if (suppressIdleQuitSignalRef.current) suppressIdleQuitSignalRef.current = false;
@@ -196,7 +216,7 @@ export function TerminalMySessionsPanel({
 
   const endAll = useCallback(async () => {
     setEndingAll(true);
-    posthog?.capture("terminal_end_all_used", { count: sessions.length });
+    posthog?.capture("terminal_end_all_used", { count: running.length });
     try {
       await fetch("/api/terminal/session/end", {
         method: "POST",
@@ -210,7 +230,7 @@ export function TerminalMySessionsPanel({
       setConfirmingEndAll(false);
       void load();
     }
-  }, [load, posthog, sessions.length]);
+  }, [load, posthog, running.length]);
 
   // ── Helper row actions (card cc74a067) ──────────────────────────────────────
   const stopHelper = useCallback(async () => {
@@ -270,8 +290,8 @@ export function TerminalMySessionsPanel({
   }, [setAlwaysOnRemote]);
 
   const startHelperUpdate = useCallback(() => {
-    setUpdateFlow(updateFlowReducer(INITIAL_UPDATE_FLOW_STATE, { type: "update-clicked", sessionCount: sessions.length }));
-  }, [sessions.length]);
+    setUpdateFlow(updateFlowReducer(INITIAL_UPDATE_FLOW_STATE, { type: "update-clicked", sessionCount: running.length }));
+  }, [running.length]);
 
   // Drive the "quiescing" phase: end any live sessions first (only reached via
   // "confirming" when sessions existed), send the quiesce command, then poll
@@ -282,7 +302,7 @@ export function TerminalMySessionsPanel({
     if (updateFlow.phase !== "quiescing") return;
     let cancelled = false;
     suppressIdleQuitSignalRef.current = true; // an update-triggered quiesce is not an idle-quit
-    const hadSessions = sessions.length > 0;
+    const hadSessions = running.length > 0;
     (async () => {
       if (hadSessions) {
         try {
@@ -332,7 +352,7 @@ export function TerminalMySessionsPanel({
     return () => {
       cancelled = true;
     };
-  }, [updateFlow.phase, sessions.length]);
+  }, [updateFlow.phase, running.length]);
 
   // Either outcome of quiescing starts the download (design: the whole point
   // is drag-to-Applications always succeeds because nothing is running by
@@ -344,7 +364,7 @@ export function TerminalMySessionsPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [updateFlow.phase]);
 
-  const helperChip: HelperChip | null = deriveHelperChip(helperStatus, sessions.length);
+  const helperChip: HelperChip | null = deriveHelperChip(helperStatus, running.length);
   const showHelperNudge =
     updateFlow.phase === "idle" &&
     !dismissedHelperNudge &&
@@ -374,7 +394,7 @@ export function TerminalMySessionsPanel({
           </div>
         )}
 
-        {loadState === "ready" && sessions.length === 0 && (
+        {loadState === "ready" && running.length === 0 && (
           <div className="flex flex-col items-center gap-1 px-4 py-8 text-center">
             <TerminalIcon className="h-5 w-5 text-zinc-600" />
             <p className="text-[13px] font-semibold text-zinc-300">No terminals running.</p>
@@ -384,9 +404,15 @@ export function TerminalMySessionsPanel({
           </div>
         )}
 
-        {loadState === "ready" && sessions.length > 0 && (
+        {loadState === "ready" && running.length > 0 && onReconnect && (
+          <div className="border-t border-zinc-800 px-3.5 py-1.5 text-[11px] text-zinc-500">
+            Reconnecting takes over if a session is open in another window or browser — that view stops receiving
+            output.
+          </div>
+        )}
+        {loadState === "ready" && running.length > 0 && (
           <ul className="max-h-80 overflow-y-auto">
-            {sessions.map((s) => {
+            {running.map((s) => {
               const ideaSlug = slugifyIdeaTitle(s.ideaTitle ?? "");
               const label = deriveTabLabel({
                 taskTitle: s.taskTitle,
@@ -413,6 +439,18 @@ export function TerminalMySessionsPanel({
                     <div className="truncate font-mono text-[11px] text-zinc-500">{identity}</div>
                   </div>
                   <span className="flex-none text-[11.5px] text-zinc-500">{formatSessionAge(s.createdAt)}</span>
+                  {onReconnect && (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      className="flex-none border-sky-500/45 bg-transparent text-sky-400 hover:bg-sky-500/10"
+                      disabled={ending}
+                      onClick={() => onReconnect(s.sid, s.ideaId)}
+                      aria-label={`Reconnect: ${label}`}
+                    >
+                      <RefreshCw className="h-3 w-3" /> Reconnect
+                    </Button>
+                  )}
                   <Button
                     variant="outline"
                     size="xs"
@@ -429,7 +467,7 @@ export function TerminalMySessionsPanel({
           </ul>
         )}
 
-        {loadState === "ready" && sessions.length > 0 && (
+        {loadState === "ready" && running.length > 0 && (
           <div
             className={cn(
               "flex items-center gap-2.5 border-t border-zinc-800 px-3.5 py-2.5",
@@ -439,7 +477,7 @@ export function TerminalMySessionsPanel({
             {confirmingEndAll ? (
               <>
                 <div className="min-w-0 flex-1">
-                  <div className="text-[12.5px] font-bold text-rose-400">End all {sessions.length} sessions?</div>
+                  <div className="text-[12.5px] font-bold text-rose-400">End all {running.length} sessions?</div>
                   <div className="text-[11px] text-zinc-500">
                     Claude stops on your machine in every one. Unpushed worktree changes stay on disk.
                   </div>
@@ -458,7 +496,7 @@ export function TerminalMySessionsPanel({
               </>
             ) : (
               <>
-                <span className="text-[11.5px] text-zinc-500">{sessions.length} sessions</span>
+                <span className="text-[11.5px] text-zinc-500">{running.length} sessions</span>
                 <Button
                   variant="outline"
                   size="xs"
@@ -519,7 +557,7 @@ export function TerminalMySessionsPanel({
         {confirmingStopHelper && (
           <div className="border-t border-l-2 border-l-rose-500 bg-rose-500/5 px-3.5 py-2.5">
             <div className="text-[12.5px] font-bold text-rose-400">{STOP_CONFIRM_HEADING}</div>
-            <div className="text-[11px] text-zinc-500">{stopConfirmBody(sessions.length)}</div>
+            <div className="text-[11px] text-zinc-500">{stopConfirmBody(running.length)}</div>
             <div className="mt-2 flex items-center justify-end gap-2">
               <Button variant="ghost" size="xs" onClick={() => setConfirmingStopHelper(false)} disabled={stoppingHelper}>
                 Cancel

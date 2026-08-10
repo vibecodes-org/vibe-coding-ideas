@@ -81,6 +81,27 @@ describe("buildLaunchDeepLink with a helperToken (card cc74a067)", () => {
   });
 });
 
+describe("buildLaunchDeepLink with resume (card cbe60db5)", () => {
+  it("includes resume=1, positioned before prompt, and round-trips", () => {
+    const withResume = { ...SAMPLE, resume: true };
+    const url = buildLaunchDeepLink(withResume);
+    expect(url).toContain("resume=1");
+    expect(parseLaunchDeepLink(url)).toEqual(withResume);
+  });
+
+  it("omits resume entirely when false/absent — no version-skew risk for an old bridge", () => {
+    const url = buildLaunchDeepLink(SAMPLE);
+    expect(url).not.toContain("resume=");
+    const falseUrl = buildLaunchDeepLink({ ...SAMPLE, resume: false });
+    expect(falseUrl).not.toContain("resume=");
+  });
+
+  it("resume rides before prompt, mirroring helperToken's position", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, resume: true, prompt: "ignored on a real resume link" });
+    expect(url.indexOf("resume=")).toBeLessThan(url.indexOf("prompt="));
+  });
+});
+
 describe("redactDeepLinkToken", () => {
   it("replaces the token value with *** and never leaks the secret", () => {
     const url = buildLaunchDeepLink(SAMPLE);

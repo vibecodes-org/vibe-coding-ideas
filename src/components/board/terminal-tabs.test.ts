@@ -128,6 +128,11 @@ describe("findPristineSlot (first-launch reuse)", () => {
     ];
     expect(findPristineSlot(sessions)).toBeNull();
   });
+
+  it("never reuses a chooser-attach entry, even at launchSeq 0 (card cbe60db5)", () => {
+    const sessions: PristineCandidate[] = [{ key: "s1", launchSeq: 0, hasAttach: true }];
+    expect(findPristineSlot(sessions)).toBeNull();
+  });
 });
 
 describe("decideTaskLaunch (B10)", () => {

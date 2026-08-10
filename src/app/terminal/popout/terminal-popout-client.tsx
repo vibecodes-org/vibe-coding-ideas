@@ -20,15 +20,40 @@
 // could ever actually work. Either way the nonce carries NO session meaning
 // by itself (see popout-channel.ts's module doc) — it only names the
 // rendezvous channel.
+//
+// RELOAD-REATTACH (card cbe60db5, design item 8): a reload of THIS window
+// gets a fresh nonce with no dock listening on it — the handshake above
+// always times out for a reload. `popout-reload-stash.ts` is this window's
+// OWN memory of which session it last held (stashed in its own
+// sessionStorage the moment a hand-off succeeds); on a handshake timeout we
+// check it BEFORE falling to the generic "lost the hand-off" dead end:
+//   - no stash at all → genuinely lost (never attached in this window before,
+//     or the stash was cleared) — the original dead-end copy, unchanged.
+//   - a stash + this window's OWN snapshot for that sid is fresh (<60s) →
+//     instant-continue, exactly like the dock's own reload path: reattach
+//     silently, no button.
+//   - a stash + a stale/absent snapshot → the one-button Reconnect panel
+//     (F3's take-over line applies here too — reconnecting always can take
+//     over another leg).
+//   - the reattach mint itself reports the session gone → the clean "this
+//     session has ended" end state + a Close-window button.
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { AlertTriangle, Loader2 } from "lucide-react";
+import { AlertTriangle, Loader2, RefreshCw, Square } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { relayBaseUrl } from "@/lib/terminal/connection";
 import {
   popoutChannelName,
   parsePopoutChannelMessage,
   startPopoutClientHandshake,
   type PopoutPayload,
 } from "@/lib/terminal/popout-channel";
+import { loadSessionSnapshot, isSnapshotFresh, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
+import {
+  loadPopoutStash,
+  savePopoutStash,
+  type PopoutStash,
+} from "@/lib/terminal/popout-reload-stash";
 import { TerminalPopoutView } from "@/components/board/terminal-popout-view";
 import type { TerminalSessionActions } from "@/components/board/use-terminal-session";
 
@@ -47,6 +72,39 @@ function resolveNonce(): string | null {
   return name || null;
 }
 
+/** Reattach for a stashed session, rebuilding a full `PopoutPayload` from the stash + the mint response + (if any) this window's own fresh snapshot. */
+async function reattachForStash(
+  stash: PopoutStash,
+): Promise<{ ok: true; payload: PopoutPayload } | { ok: false; gone: boolean }> {
+  try {
+    const res = await fetch("/api/terminal/session/reattach", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ sid: stash.sid }),
+    });
+    if (!res.ok) return { ok: false, gone: true };
+    const data = (await res.json()) as { sessionId: string; browserToken: string };
+    const snapshot = loadSessionSnapshot(stash.sid);
+    const buffer = snapshot ? toReconnectBuffer(snapshot) : undefined;
+    return {
+      ok: true,
+      payload: {
+        sid: data.sessionId,
+        browserToken: data.browserToken,
+        relayUrl: relayBaseUrl(),
+        ideaId: stash.ideaId,
+        ideaTitle: stash.ideaTitle,
+        label: stash.label,
+        identity: stash.identity,
+        readOnly: stash.readOnly,
+        buffer,
+      },
+    };
+  } catch {
+    return { ok: false, gone: false };
+  }
+}
+
 export function TerminalPopoutClient() {
   // Read once, at initial render — a derived, render-time fact about this
   // window (its hash/name), not something that needs its own effect+setState
@@ -55,6 +113,12 @@ export function TerminalPopoutClient() {
   const [nonce] = useState<string | null>(() => (typeof window === "undefined" ? null : resolveNonce()));
   const [payload, setPayload] = useState<PopoutPayload | null>(null);
   const [timedOut, setTimedOut] = useState(false);
+  // Reload-reattach (design item 8): a stash found on handshake timeout with
+  // no fresh snapshot to auto-continue — the one-button Reconnect panel.
+  const [reloadStash, setReloadStash] = useState<PopoutStash | null>(null);
+  const [reloadBusy, setReloadBusy] = useState(false);
+  const [reloadError, setReloadError] = useState(false);
+  const [reloadGone, setReloadGone] = useState(false);
   // Scrollback transfer (card 35cffc10): TerminalPopoutView's live session
   // actions, handed up via onSessionActions the same way terminal-dock.tsx's
   // TerminalSessionView reports into its parent's actionsMapRef — this
@@ -69,6 +133,37 @@ export function TerminalPopoutClient() {
   const handleSessionActions = useCallback((actions: TerminalSessionActions | null) => {
     sessionActionsRef.current = actions;
   }, []);
+
+  const attachPayload = useCallback((p: PopoutPayload) => {
+    setPayload(p);
+    savePopoutStash({
+      sid: p.sid,
+      label: p.label,
+      identity: p.identity,
+      readOnly: p.readOnly,
+      ideaId: p.ideaId,
+      ideaTitle: p.ideaTitle,
+    });
+  }, []);
+
+  const handleManualReconnect = useCallback(() => {
+    if (!reloadStash) return;
+    setReloadBusy(true);
+    setReloadError(false);
+    void (async () => {
+      const result = await reattachForStash(reloadStash);
+      setReloadBusy(false);
+      if (result.ok) {
+        setReloadStash(null);
+        attachPayload(result.payload);
+      } else if (result.gone) {
+        setReloadStash(null);
+        setReloadGone(true);
+      } else {
+        setReloadError(true); // network hiccup — stash + button stay, Retry is just clicking again
+      }
+    })();
+  }, [reloadStash, attachPayload]);
 
   useEffect(() => {
     if (!nonce) return;
@@ -91,7 +186,7 @@ export function TerminalPopoutClient() {
     const stopHandshake = startPopoutClientHandshake({
       channel,
       onPayload: (p) => {
-        setPayload(p);
+        attachPayload(p);
         // Scrollback transfer, Flow B (design §3): once attached, this same
         // channel switches roles from "waiting for the hand-off" to
         // "answering bring-back-request" — safe to reassign onmessage here
@@ -114,10 +209,31 @@ export function TerminalPopoutClient() {
           }
         };
       },
-      // On timeout this ALSO posts "closed" on the channel (same module),
-      // so a dock that's still listening auto-reattaches instead of being
-      // stuck showing "Popped out" forever with nothing on the other end.
-      onTimeout: () => setTimedOut(true),
+      // On timeout this ALSO posts "closed" on the channel (same module), so
+      // a dock that's still listening auto-reattaches instead of being stuck
+      // showing "Popped out" forever with nothing on the other end — that
+      // path is unaffected by the reload-reattach recovery below (it's about
+      // THIS window's own next render, not the dock's).
+      onTimeout: () => {
+        const stash = loadPopoutStash();
+        if (!stash) {
+          setTimedOut(true); // genuinely lost — never attached here before
+          return;
+        }
+        const snapshot = loadSessionSnapshot(stash.sid);
+        if (snapshot && isSnapshotFresh(snapshot.savedAt)) {
+          // Instant continue (design's veto note, Nick: yes) — this window's
+          // OWN <60s snapshot is proof enough; reattach silently.
+          void (async () => {
+            const result = await reattachForStash(stash);
+            if (result.ok) attachPayload(result.payload);
+            else if (result.gone) setReloadGone(true);
+            else setReloadStash(stash); // network hiccup — fall back to the manual button
+          })();
+          return;
+        }
+        setReloadStash(stash);
+      },
     });
 
     // Flow C (design §4): closing this window pushes the FULL serialized
@@ -161,13 +277,56 @@ export function TerminalPopoutClient() {
       // never look like the user closing the window. Only the real browser
       // lifecycle events above count as "closed".
     };
-  }, [nonce]);
+  }, [nonce, attachPayload]);
 
   // Once `payload` is set, the render below returns the live view BEFORE it
-  // ever looks at `timedOut` — so a late interval tick racing a just-arrived
-  // payload is harmless; there's no need to also clear `timedOut` here.
+  // ever looks at `timedOut`/reload state — so a late interval tick racing a
+  // just-arrived payload is harmless; there's no need to also clear those
+  // here.
   if (payload) {
     return <TerminalPopoutView payload={payload} onSessionActions={handleSessionActions} />;
+  }
+
+  if (reloadGone) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+        <Square className="h-7 w-7 text-zinc-400" />
+        <div className="text-base font-semibold text-zinc-200">This session has ended</div>
+        <p className="max-w-sm text-[13px] text-zinc-400">
+          You can close this window — start a new one from the board.
+        </p>
+        <Button
+          variant="outline"
+          className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
+          onClick={() => window.close()}
+        >
+          Close window
+        </Button>
+      </div>
+    );
+  }
+
+  if (reloadStash) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
+        <RefreshCw className={reloadBusy ? "h-7 w-7 animate-spin text-sky-400" : "h-7 w-7 text-sky-400"} />
+        <div className="text-base font-semibold text-sky-400">Reconnect this window</div>
+        <p className="max-w-sm text-[13px] text-zinc-400">{reloadStash.label}</p>
+        <p className="max-w-sm text-[11.5px] text-zinc-500">
+          If this session is open somewhere else, reconnecting here takes it over.
+        </p>
+        <Button
+          className="bg-sky-500 text-sky-950 hover:bg-sky-400"
+          disabled={reloadBusy}
+          onClick={handleManualReconnect}
+        >
+          <RefreshCw className="h-4 w-4" /> Reconnect
+        </Button>
+        {reloadError && (
+          <p className="text-[11.5px] text-rose-400">Couldn&apos;t reconnect — check your connection and try again.</p>
+        )}
+      </div>
+    );
   }
 
   if (!nonce || timedOut) {

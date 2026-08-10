@@ -128,7 +128,13 @@ if (!isRelayHostAllowed(RELAY, { allowLoopback: ALLOW_LOOPBACK_RELAY })) {
 }
 const SESSION = launched?.session || args.session || process.env.SESSION_ID || `dev-${Math.random().toString(36).slice(2, 10)}`;
 const TOKEN = launched?.token || args.token || process.env.BRIDGE_TOKEN || "";
-const CMD = args.cmd || process.env.BRIDGE_CMD || "claude";
+// Session entry chooser — Resume (card cbe60db5, design item 7/F4): a
+// `resume=1` launch runs `claude --continue` instead of the default `claude`,
+// continuing the most recent conversation in CWD rather than bootstrapping a
+// new one. An explicit `--cmd`/`BRIDGE_CMD` override still wins (dev/test
+// convenience), same precedence as every other launched field here.
+const RESUME = !!launched?.resume;
+const CMD = args.cmd || process.env.BRIDGE_CMD || (RESUME ? "claude --continue" : "claude");
 const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd();
 // The URL-carried bootstrap prompt (deep-link launches only). INERT DATA with two
 // hard rules (see docs/terminal-bootstrap-prompt-ux.html + the shared deep-link
@@ -140,7 +146,10 @@ const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd()
 //      until the relay confirms the owner-bound token with the `attached`
 //      control frame (accept-then-close rejections make ws.onopen meaningless
 //      as an auth signal). No frame in time → exit WITHOUT spawning anything.
-const PROMPT = launched?.prompt || "";
+// A resume launch never carries a prompt (nothing to bootstrap) — RESUME
+// forces it empty even if a caller somehow sent both, so `--continue` is
+// never followed by a stray argv element.
+const PROMPT = RESUME ? "" : launched?.prompt || "";
 // ── helper-version announcement (release-gate rework 2a) ─────────────────────
 // Read the RUNNING helper's own version so the relay/dock can nudge stale
 // installs to update. Priority: BRIDGE_HELPER_VERSION (set by the packaged

@@ -60,15 +60,34 @@ const LAUNCH_EVENT = "vibecodes:terminal-browser-launch";
  * identically (never overflow, never a half-truncated protocol fragment).
  */
 export interface BrowserLaunchPayload {
-  essentials: CompactPromptEssentials;
+  /**
+   * Optional ONLY for a `resume` payload (see below) — a `--continue` launch
+   * carries no bootstrap prompt at all, so there is nothing to build
+   * essentials for. Every other payload always sets this.
+   */
+  essentials?: CompactPromptEssentials;
   /**
    * The working directory the launch should open in — resolved by the button
    * with the SAME rule the claude-cli:// path uses (resolveLaunchCwd over the
    * pinned/effective path), so a pinned or recorded existing-mode folder is
    * honoured in the browser too. Omitted when the state carries no cwd
    * (repo-backed, or a brand-new ~/projects/<slug> the agent creates).
+   *
+   * REQUIRED when `resume` is true — a resumed session always runs in a
+   * SPECIFIC recorded folder (the ended session's own `cwd`), never the
+   * board's default target.
    */
   cwd?: string;
+  /**
+   * Session entry chooser — Resume (card cbe60db5, design item 7, F4): this
+   * launch is a chooser "Resume" pick, not a fresh bootstrap. The dock skips
+   * building/sending a prompt entirely and fires the deep link with the
+   * `resume` flag instead, so the local bridge runs `claude --continue` in
+   * `cwd` (the ended session's recorded folder) rather than spawning a new
+   * bootstrap conversation. Always paired with `cwd`; `essentials` is not
+   * read for a resume payload.
+   */
+  resume?: boolean;
   /**
    * Multi-session stage 2 (B10 dedupe, B3 tab labels): the task this launch was
    * scoped to, when it came from a task card ("task-icon" / "task-menu-item"

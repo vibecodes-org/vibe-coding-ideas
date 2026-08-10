@@ -26,6 +26,14 @@
 //             DATA: the bridge passes it as ONE argv element (never through
 //             shellSplit / a shell) and only spawns AFTER the relay has accepted
 //             the owner-bound token (R1 — see bridge/src/index.js).
+//   resume  — session entry chooser (card cbe60db5, design item 7/F4): when
+//             `"1"`, the bridge spawns `claude --continue` in `cwd` instead of
+//             `claude "<prompt>"` — the chooser's Resume action, continuing the
+//             most recent conversation in that folder rather than bootstrapping
+//             a new one. `prompt` is ignored (and normally absent) on a resume
+//             link. An old bridge that doesn't recognise `resume` simply never
+//             sees the param (it's omitted unless truthy) — no version-skew
+//             risk in either direction.
 //
 // `token` and `helperToken` are secrets and `prompt` is user content. NEVER log
 // a raw link — use redactDeepLinkToken first (it elides all three). `prompt` is
@@ -51,10 +59,10 @@ export const LAUNCH_HOST = "launch";
  * (and therefore the app-side prompt budget) is stable. Throws when a required
  * field is missing so a malformed link is never fired.
  *
- * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string }} params
+ * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -65,6 +73,7 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   ];
   if (helperToken) parts.push(`helperToken=${encodeURIComponent(helperToken)}`);
   if (cwd) parts.push(`cwd=${encodeURIComponent(cwd)}`);
+  if (resume) parts.push(`resume=1`);
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
@@ -79,7 +88,7 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
  * param existed (version-skew safe both ways).
  *
  * @param {unknown} url
- * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string } | null}
+ * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean } | null}
  */
 export function parseLaunchDeepLink(url) {
   if (typeof url !== "string" || url.length === 0) return null;
@@ -101,11 +110,13 @@ export function parseLaunchDeepLink(url) {
   const helperToken = parsed.searchParams.get("helperToken") || undefined;
   const cwd = parsed.searchParams.get("cwd") || undefined;
   const prompt = parsed.searchParams.get("prompt") || undefined;
+  const resume = parsed.searchParams.get("resume") === "1" || undefined;
   if (!relay || !session || !token) return null;
 
   const out = { relay, session, token };
   if (helperToken) out.helperToken = helperToken;
   if (cwd) out.cwd = cwd;
+  if (resume) out.resume = true;
   if (prompt) out.prompt = prompt;
   return out;
 }
