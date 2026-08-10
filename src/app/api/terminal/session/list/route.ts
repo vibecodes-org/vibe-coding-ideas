@@ -1,13 +1,21 @@
-// Terminal session LIST — multi-session stage 3 (C3/C4: the "My sessions" panel).
+// Terminal session LIST — multi-session stage 3 (C3/C4: the "My sessions"
+// panel) EXTENDED for the session entry chooser (card cbe60db5, design F1):
+// the chooser needs to know about recently-ended sessions too (its "Recent ·
+// ended in the last 48h" section), not just active ones, so this route now
+// returns BOTH — every active row, plus every row that ended within the last
+// 48h — each carrying `status`/`endedAt` so a caller that only wants
+// "Running" (the My-sessions panel) can filter client-side.
 //
-// GET returns every one of the caller's ACTIVE sessions, across all ideas,
-// newest first — the registry row plus the idea title (a second query; small
-// N per user, not worth a join). RLS scopes this to the caller's own rows
-// regardless; the explicit `.eq("user_id", ...)` keeps the query itself honest.
+// GET returns every one of the caller's active-or-recently-ended sessions,
+// across all ideas, newest-created first — the registry row plus the idea
+// title (a second query; small N per user, not worth a join). RLS scopes
+// this to the caller's own rows regardless; the explicit `.eq("user_id", ...)`
+// keeps the query itself honest.
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
+import { RECENT_WINDOW_MS } from "@/lib/terminal/chooser-data";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -22,11 +30,12 @@ export async function GET() {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
+    const recentSince = new Date(Date.now() - RECENT_WINDOW_MS).toISOString();
     const { data: rows, error } = await supabase
       .from("terminal_sessions")
-      .select("sid, idea_id, task_id, task_title, machine_label, cwd, created_at")
+      .select("sid, idea_id, task_id, task_title, machine_label, cwd, created_at, status, ended_at")
       .eq("user_id", user.id)
-      .eq("status", "active")
+      .or(`status.eq.active,ended_at.gte.${recentSince}`)
       .order("created_at", { ascending: false });
     if (error) {
       logger.error("Terminal session list failed", { error: error.message });
@@ -49,6 +58,8 @@ export async function GET() {
       machineLabel: row.machine_label,
       cwd: row.cwd,
       createdAt: row.created_at,
+      status: row.status,
+      endedAt: row.ended_at,
     }));
 
     return NextResponse.json({ sessions });

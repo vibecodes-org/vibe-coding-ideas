@@ -7,6 +7,7 @@ import {
   rateLimitWindowStart,
   decideCap,
   decideRateLimit,
+  decideReattach,
   formatSessionAge,
   formatSessionIdentity,
 } from "./session-registry";
@@ -112,5 +113,40 @@ describe("formatSessionIdentity", () => {
     expect(formatSessionIdentity({ machineLabel: "Nick's MacBook Pro", cwd: null, sid: "a3f9beef" })).toBe(
       "Nick's MacBook Pro · a3f9beef",
     );
+  });
+});
+
+describe("decideReattach", () => {
+  it("refuses when no row is found for this sid + user (foreign, deleted, or never existed)", () => {
+    expect(decideReattach(null, NOW)).toEqual({ ok: false, reason: "not-found" });
+  });
+
+  it("refuses an already-ended row", () => {
+    const future = new Date(NOW + 60_000).toISOString();
+    expect(decideReattach({ status: "ended", expires_at: future }, NOW)).toEqual({
+      ok: false,
+      reason: "ended",
+    });
+  });
+
+  it("refuses an active row past its expiry", () => {
+    const past = new Date(NOW - 1).toISOString();
+    expect(decideReattach({ status: "active", expires_at: past }, NOW)).toEqual({
+      ok: false,
+      reason: "expired",
+    });
+  });
+
+  it("allows an active, unexpired row", () => {
+    const future = new Date(NOW + 60_000).toISOString();
+    expect(decideReattach({ status: "active", expires_at: future }, NOW)).toEqual({ ok: true });
+  });
+
+  it("checks status before expiry — an ended-but-still-unexpired row is still refused as ended", () => {
+    const future = new Date(NOW + 60_000).toISOString();
+    expect(decideReattach({ status: "ended", expires_at: future }, NOW)).toEqual({
+      ok: false,
+      reason: "ended",
+    });
   });
 });
