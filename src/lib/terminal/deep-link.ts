@@ -53,16 +53,32 @@ export interface LaunchDeepLinkParams {
    * redactDeepLinkToken (it can contain user task/idea content).
    */
   prompt?: string;
+  /**
+   * Session entry chooser — Resume (card cbe60db5, design item 7/F4): when
+   * true, the bridge spawns `claude --continue` in `cwd` instead of
+   * `claude "<prompt>"`. `prompt` is ignored (and normally absent) on a
+   * resume link.
+   */
+  resume?: boolean;
 }
 
 /**
  * Build a `vibecodes://launch?relay=…&session=…&token=…[&helperToken=…]
- * [&cwd=…][&prompt=…]` deep link. Throws when a required field is missing so
- * a malformed link is never fired. `prompt` is always the LAST param so the
- * base-link length (and therefore the prompt budget) is stable — `helperToken`
- * is inserted before it, alongside the other credentials.
+ * [&cwd=…][&resume=1][&prompt=…]` deep link. Throws when a required field is
+ * missing so a malformed link is never fired. `prompt` is always the LAST
+ * param so the base-link length (and therefore the prompt budget) is stable —
+ * `helperToken`/`resume` are inserted before it, alongside the other
+ * credentials.
  */
-export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt }: LaunchDeepLinkParams): string {
+export function buildLaunchDeepLink({
+  relay,
+  session,
+  token,
+  helperToken,
+  cwd,
+  prompt,
+  resume,
+}: LaunchDeepLinkParams): string {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -73,6 +89,7 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   ];
   if (helperToken) parts.push(`helperToken=${encodeURIComponent(helperToken)}`);
   if (cwd) parts.push(`cwd=${encodeURIComponent(cwd)}`);
+  if (resume) parts.push(`resume=1`);
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }

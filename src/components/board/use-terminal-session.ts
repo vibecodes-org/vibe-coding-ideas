@@ -102,6 +102,12 @@ import {
   SCROLLBACK_TRANSFER_CAP_BYTES,
   type TransferredBuffer,
 } from "@/lib/terminal/scrollback-transfer";
+import {
+  saveSessionSnapshot,
+  clearSessionSnapshot,
+  rememberLastTabSid,
+  SNAPSHOT_SAVE_INTERVAL_MS,
+} from "@/lib/terminal/session-snapshot";
 
 // How long we wait for the helper to attach after firing the deep link before
 // dropping to the calm fallback (~8s, per the approved UX). This is the safety net
@@ -441,6 +447,12 @@ export function useTerminalSession(
   const degradeTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pairRef = useRef<PairInfo | null>(null);
   const scheduleReconnectRef = useRef<() => void>(() => {});
+  // Reload-reattach instant-continue (card cbe60db5, design item 5): true
+  // once output has arrived since the last snapshot save — the periodic
+  // snapshot effect below only writes to sessionStorage when this is set, so
+  // a quiet connected session doesn't re-serialize+re-write an unchanged
+  // buffer every 20s. Cleared the instant a snapshot is taken.
+  const snapshotDirtyRef = useRef(false);
   // Silent-link watchdog bookkeeping (fix/terminal-dock-heartbeat).
   // `lastInboundAtRef` is stamped on EVERY inbound frame (PTY bytes, control
   // frames, hb-acks); `hbArmedRef` is a PER-SOCKET latch set on the socket's first
@@ -730,14 +742,104 @@ export function useTerminalSession(
   // Firefox may still surface a milder prompt) — the ~8s timeout below is the real
   // safety net, and the authoritative success signal is the first byte from the
   // bridge (ws.onmessage), which proves the helper actually opened AND attached.
+  // Fire `link` via the hidden-iframe (falling back to a direct assign) and
+  // arm the ~8s helper-open timeout — the tail every launch variant shares,
+  // whether it built a bootstrap prompt or a bare resume link. Returns false
+  // when even the fallback assign threw, so the caller can set the honest
+  // "helper-timeout" phase itself (its own log fields differ per variant, so
+  // logging stays with the caller).
+  const openLaunchLinkAndArmTimeout = useCallback(
+    (link: string): boolean => {
+      setLaunchPhase("opening");
+      removeLaunchIframe();
+      try {
+        const frame = document.createElement("iframe");
+        frame.setAttribute("aria-hidden", "true");
+        frame.style.display = "none";
+        frame.src = link;
+        document.body.appendChild(frame);
+        launchIframeRef.current = frame;
+      } catch {
+        // Iframe path unavailable — fall back to a direct assign.
+        try {
+          window.location.assign(link);
+        } catch {
+          return false;
+        }
+      }
+
+      // If the helper doesn't stream within ~8s, drop to the calm fallback (never an
+      // infinite spinner — criterion #8).
+      clearHelperTimer();
+      helperTimerRef.current = setTimeout(() => {
+        removeLaunchIframe();
+        setLaunchPhase(nextLaunchPhaseOnTimeout);
+      }, HELPER_OPEN_TIMEOUT_MS);
+      return true;
+    },
+    [clearHelperTimer, removeLaunchIframe],
+  );
+
   const fireLaunchDeepLink = useCallback(
     (sessionId: string, bridgeToken: string, helperToken?: string) => {
+      // Session entry chooser — Resume (card cbe60db5, design item 7/F4): a
+      // resume launch carries no bootstrap prompt at all — a minimal link
+      // with `resume: true` + the ended session's recorded `cwd`, so the
+      // local bridge runs `claude --continue` there instead of building a
+      // prompt (see terminal/bridge/src/index.js). Checked FIRST so the
+      // normal essentials/budgeting path below never runs for a resume.
+      const carriedForResume = promptPartsRef.current;
+      if (carriedForResume?.resume) {
+        const cwd = carriedForResume.cwd;
+        if (!cwd) {
+          // Should never happen — the chooser only offers Resume for a row
+          // with a recorded folder (F4) — but stay honest rather than fire a
+          // directory-less --continue.
+          logger.error("Terminal resume launch missing cwd — refusing to fire");
+          toast.error("Couldn't resume — no folder was recorded for that session");
+          setLaunchPhase("helper-timeout");
+          return;
+        }
+        let link: string;
+        try {
+          link = buildLaunchDeepLink({
+            relay: relayBaseUrl(),
+            session: sessionId,
+            token: bridgeToken,
+            helperToken,
+            cwd,
+            resume: true,
+          });
+        } catch (err) {
+          logger.error("Terminal resume deep-link build failed", {
+            error: err instanceof Error ? err.message : String(err),
+          });
+          setLaunchPhase("helper-timeout");
+          return;
+        }
+        logger.info("Terminal firing resume deep link", {
+          sessionId,
+          url: redactDeepLinkToken(link).replace(/([?&]cwd=)[^&]*/g, "$1***"),
+          urlChars: link.length,
+        });
+        if (!openLaunchLinkAndArmTimeout(link)) setLaunchPhase("helper-timeout");
+        return;
+      }
+
       let link: string;
       let urlChars = 0;
       let hasCwd = false;
       let droppedCwd = false;
       try {
         const { essentials, cwd } = resolveLaunchPromptParts();
+        if (!essentials) {
+          // Only reachable for a resume-shaped payload that somehow bypassed
+          // the branch above — defensive, never expected in practice (see
+          // BrowserLaunchPayload's doc: essentials is optional ONLY for resume).
+          logger.error("Terminal deep-link build failed", { reason: "missing_essentials" });
+          setLaunchPhase("helper-timeout");
+          return;
+        }
         hasCwd = !!cwd;
         // Budget the prompt against the vibecodes:// URL ceiling via
         // buildBoundedDeepLink (FIX A, QA BUG A) — the SAME shared helper the
@@ -794,35 +896,9 @@ export function useTerminalSession(
         hasCwd,
         droppedCwd,
       });
-      setLaunchPhase("opening");
-
-      removeLaunchIframe();
-      try {
-        const frame = document.createElement("iframe");
-        frame.setAttribute("aria-hidden", "true");
-        frame.style.display = "none";
-        frame.src = link;
-        document.body.appendChild(frame);
-        launchIframeRef.current = frame;
-      } catch {
-        // Iframe path unavailable — fall back to a direct assign.
-        try {
-          window.location.assign(link);
-        } catch {
-          setLaunchPhase("helper-timeout");
-          return;
-        }
-      }
-
-      // If the helper doesn't stream within ~8s, drop to the calm fallback (never an
-      // infinite spinner — criterion #8).
-      clearHelperTimer();
-      helperTimerRef.current = setTimeout(() => {
-        removeLaunchIframe();
-        setLaunchPhase(nextLaunchPhaseOnTimeout);
-      }, HELPER_OPEN_TIMEOUT_MS);
+      if (!openLaunchLinkAndArmTimeout(link)) setLaunchPhase("helper-timeout");
     },
-    [clearHelperTimer, removeLaunchIframe, resolveLaunchPromptParts],
+    [resolveLaunchPromptParts, openLaunchLinkAndArmTimeout],
   );
 
   const teardownSocket = useCallback(() => {
@@ -955,6 +1031,10 @@ export function useTerminalSession(
         }
         dispatch({ type: "data" });
         termRef.current?.write(new Uint8Array(ev.data as ArrayBuffer));
+        // Reload-reattach instant-continue (design item 5): mark the buffer
+        // dirty so the periodic snapshot effect below has something new to
+        // save next tick.
+        snapshotDirtyRef.current = true;
       };
       ws.onerror = () => {
         logger.warn("Terminal relay socket error", { sessionId });
@@ -1075,6 +1155,52 @@ export function useTerminalSession(
       window.removeEventListener("offline", check);
     };
   }, [enabled, state.status, declareLinkSilent]);
+
+  // ── reload-reattach instant-continue (card cbe60db5, design item 5) ────────
+  // Mirror this session's live scrollback into THIS TAB's own sessionStorage
+  // while connected: every SNAPSHOT_SAVE_INTERVAL_MS (20s) if output arrived
+  // since the last save (snapshotDirtyRef), and unconditionally on pagehide
+  // (a refresh/close is exactly the moment a fresh snapshot matters most —
+  // worth the write even if nothing changed since the last tick). A same-tab
+  // reload within SNAPSHOT_FRESHNESS_MS (60s) then lets the dock's
+  // `decideEntryBehaviour` skip the chooser and reattach automatically,
+  // restoring this buffer with the "reconnected" divider (design's veto
+  // note — Nick: yes).
+  const doSnapshotNow = useCallback(() => {
+    const sid = pairRef.current?.sessionId;
+    const term = termRef.current;
+    if (!sid || !term || !snapshotDirtyRef.current) return;
+    const buffer = serializeScrollback(term, SCROLLBACK_TRANSFER_CAP_BYTES);
+    saveSessionSnapshot(sid, buffer);
+    snapshotDirtyRef.current = false;
+  }, []);
+
+  useEffect(() => {
+    if (!enabled || state.status !== "connected") return;
+    const interval = setInterval(doSnapshotNow, SNAPSHOT_SAVE_INTERVAL_MS);
+    window.addEventListener("pagehide", doSnapshotNow);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("pagehide", doSnapshotNow);
+    };
+  }, [enabled, state.status, doSnapshotNow]);
+
+  // Remember this tab's own sid the moment a pair is established (mint,
+  // attach-existing, or a fresh-attach-reset reconnect) — independent of the
+  // snapshot's own freshness, this is the chooser's "was open in this tab"
+  // badge (session-snapshot.ts's `rememberLastTabSid`).
+  useEffect(() => {
+    if (pair?.sessionId) rememberLastTabSid(pair.sessionId);
+  }, [pair?.sessionId]);
+
+  // Clear this session's snapshot on any terminal end (user End, idle,
+  // max-duration, or a reconnect-grace exhaustion) — a later reload must
+  // never restore a dead session's output as if it were still live.
+  useEffect(() => {
+    if (state.status !== "session-ended") return;
+    const sid = pairRef.current?.sessionId;
+    if (sid) clearSessionSnapshot(sid);
+  }, [state.status]);
 
   // ── connect (browser leg) ───────────────────────────────────────────────────
   // `autoLaunch` = the same-machine path: after minting, fire the vibecodes:// deep

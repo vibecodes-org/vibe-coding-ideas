@@ -45,7 +45,7 @@ describe("launch bus payload (bootstrap-prompt transport)", () => {
       cwd: "/Users/me/projects/my-idea",
     };
     requestBrowserLaunch(payload);
-    expect(handler.mock.calls[0][0]?.essentials.protocol).toBe("WORKTREE_PROTOCOL");
+    expect(handler.mock.calls[0][0]?.essentials?.protocol).toBe("WORKTREE_PROTOCOL");
     unsubscribe();
   });
 
