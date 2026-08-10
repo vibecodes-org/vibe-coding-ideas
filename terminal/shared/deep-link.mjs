@@ -15,14 +15,23 @@
 //   session — relay session id (sid)
 //   token   — the app-minted, HMAC-signed BRIDGE-role token (this IS the launch's
 //             credential; the relay verifies it, so no extra signature is needed)
+//   helperToken — OPTIONAL: an app-minted HELPER-role token (session-token.mjs →
+//             mintHelperToken), carried alongside the bridge token on every
+//             launch (card cc74a067) so the SAME click that starts a bridge also
+//             (re)establishes the helper's own persistent control connection to
+//             the relay — see terminal/helper/main.js. A helper that's already
+//             connected treats a redundant one as a no-op.
 //   cwd     — optional working directory
 //   prompt  — optional compact bootstrap prompt for the spawned `claude`. INERT
 //             DATA: the bridge passes it as ONE argv element (never through
 //             shellSplit / a shell) and only spawns AFTER the relay has accepted
 //             the owner-bound token (R1 — see bridge/src/index.js).
 //
-// The `token` is a secret and the `prompt` is user content. NEVER log a raw
-// link — use redactDeepLinkToken first (it elides both).
+// `token` and `helperToken` are secrets and `prompt` is user content. NEVER log
+// a raw link — use redactDeepLinkToken first (it elides all three). `prompt` is
+// always the LAST param (the dock's URL-length budgeting relies on this — see
+// src/lib/terminal/deep-link.ts's doc comment) — `helperToken` is inserted
+// BEFORE it, alongside the other credentials, so that invariant holds.
 //
 // Pure + dependency-free (only the global WHATWG `URL`), so it runs unchanged in
 // Node (bridge) and is trivially unit-testable.
@@ -42,10 +51,10 @@ export const LAUNCH_HOST = "launch";
  * (and therefore the app-side prompt budget) is stable. Throws when a required
  * field is missing so a malformed link is never fired.
  *
- * @param {{ relay: string, session: string, token: string, cwd?: string, prompt?: string }} params
+ * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, cwd, prompt } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -54,6 +63,7 @@ export function buildLaunchDeepLink({ relay, session, token, cwd, prompt } = {})
     `session=${encodeURIComponent(session)}`,
     `token=${encodeURIComponent(token)}`,
   ];
+  if (helperToken) parts.push(`helperToken=${encodeURIComponent(helperToken)}`);
   if (cwd) parts.push(`cwd=${encodeURIComponent(cwd)}`);
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
@@ -69,7 +79,7 @@ export function buildLaunchDeepLink({ relay, session, token, cwd, prompt } = {})
  * param existed (version-skew safe both ways).
  *
  * @param {unknown} url
- * @returns {{ relay: string, session: string, token: string, cwd?: string, prompt?: string } | null}
+ * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string } | null}
  */
 export function parseLaunchDeepLink(url) {
   if (typeof url !== "string" || url.length === 0) return null;
@@ -88,11 +98,13 @@ export function parseLaunchDeepLink(url) {
   const relay = parsed.searchParams.get("relay");
   const session = parsed.searchParams.get("session");
   const token = parsed.searchParams.get("token");
+  const helperToken = parsed.searchParams.get("helperToken") || undefined;
   const cwd = parsed.searchParams.get("cwd") || undefined;
   const prompt = parsed.searchParams.get("prompt") || undefined;
   if (!relay || !session || !token) return null;
 
   const out = { relay, session, token };
+  if (helperToken) out.helperToken = helperToken;
   if (cwd) out.cwd = cwd;
   if (prompt) out.prompt = prompt;
   return out;
@@ -100,9 +112,10 @@ export function parseLaunchDeepLink(url) {
 
 /**
  * Redact the secret/user-content params from a launch link so it is safe to
- * log: the `token` (a credential) and the `prompt` (user task/idea content)
- * both become `***` while relay/session survive for debugging. Callers that
- * want to debug prompt delivery log the prompt LENGTH as a separate field.
+ * log: the `token` and `helperToken` (both credentials) and the `prompt`
+ * (user task/idea content) all become `***` while relay/session survive for
+ * debugging. Callers that want to debug prompt delivery log the prompt
+ * LENGTH as a separate field.
  *
  * @param {unknown} url
  * @returns {string}
@@ -110,5 +123,6 @@ export function parseLaunchDeepLink(url) {
 export function redactDeepLinkToken(url) {
   return String(url)
     .replace(/([?&]token=)[^&]*/g, "$1***")
+    .replace(/([?&]helperToken=)[^&]*/g, "$1***")
     .replace(/([?&]prompt=)[^&]*/g, "$1***");
 }

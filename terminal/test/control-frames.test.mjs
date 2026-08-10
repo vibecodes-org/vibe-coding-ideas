@@ -23,6 +23,16 @@ import {
   isBridgeVersionFrame,
   parseBridgeVersionFrame,
   sanitizeHelperVersion,
+  sanitizeMachineLabel,
+  encodeHelperCommandFrame,
+  isHelperCommandFrame,
+  parseHelperCommandFrame,
+  encodeGoodbyeFrame,
+  isGoodbyeFrame,
+  parseGoodbyeReason,
+  encodeAlwaysOnFrame,
+  isAlwaysOnFrame,
+  parseAlwaysOnValue,
 } from "../shared/control-frames.mjs";
 import { parseControlMessage } from "../bridge/src/framing.js";
 
@@ -107,4 +117,83 @@ test("sanitizeHelperVersion accepts only strict x.y.z", () => {
   assert.equal(sanitizeHelperVersion("0.2"), null);
   assert.equal(sanitizeHelperVersion("v0.2.0"), null);
   assert.equal(sanitizeHelperVersion("0.2.0; DROP TABLE users;"), null);
+});
+
+test("sanitizeMachineLabel trims, bounds length, and rejects non-strings", () => {
+  assert.equal(sanitizeMachineLabel(" Nick's MacBook Pro "), "Nick's MacBook Pro");
+  assert.equal(sanitizeMachineLabel(""), null);
+  assert.equal(sanitizeMachineLabel("   "), null);
+  assert.equal(sanitizeMachineLabel(null), null);
+  assert.equal(sanitizeMachineLabel(undefined), null);
+  assert.equal(sanitizeMachineLabel(42), null);
+  assert.equal(sanitizeMachineLabel("x".repeat(200)).length, 80);
+});
+
+// ── helper lifecycle frames (card cc74a067) ────────────────────────────────
+
+test("helper-command frame encode ⇄ detect ⇄ parse round-trips for stop/quiesce", () => {
+  for (const cmd of ["stop", "quiesce"]) {
+    const frame = encodeHelperCommandFrame(cmd);
+    assert.equal(isHelperCommandFrame(frame), true);
+    assert.deepEqual(parseHelperCommandFrame(frame), { cmd });
+  }
+});
+
+test("helper-command frame carries a boolean value for set-always-on", () => {
+  const on = encodeHelperCommandFrame("set-always-on", true);
+  assert.deepEqual(parseHelperCommandFrame(on), { cmd: "set-always-on", value: true });
+  const off = encodeHelperCommandFrame("set-always-on", false);
+  assert.deepEqual(parseHelperCommandFrame(off), { cmd: "set-always-on", value: false });
+});
+
+test("parseHelperCommandFrame rejects unknown commands and a missing/non-boolean value", () => {
+  assert.equal(parseHelperCommandFrame(JSON.stringify({ t: "helper-cmd", cmd: "shutdown-everything" })), null);
+  assert.equal(parseHelperCommandFrame(JSON.stringify({ t: "helper-cmd", cmd: "set-always-on" })), null);
+  assert.equal(parseHelperCommandFrame(JSON.stringify({ t: "helper-cmd", cmd: "set-always-on", value: "yes" })), null);
+  assert.equal(parseHelperCommandFrame(JSON.stringify({ t: "helper-cmd" })), null);
+  assert.equal(parseHelperCommandFrame("not json"), null);
+  assert.equal(parseHelperCommandFrame(null), null);
+});
+
+test("goodbye frame encode ⇄ detect ⇄ parse round-trips for every valid reason", () => {
+  for (const reason of ["idle-quit", "stop", "quiesce", "quit", "crash"]) {
+    const frame = encodeGoodbyeFrame(reason);
+    assert.equal(isGoodbyeFrame(frame), true);
+    assert.equal(parseGoodbyeReason(frame), reason);
+  }
+});
+
+test("parseGoodbyeReason rejects a reason outside the closed set", () => {
+  assert.equal(parseGoodbyeReason(JSON.stringify({ t: "goodbye", reason: "bored" })), null);
+  assert.equal(parseGoodbyeReason(JSON.stringify({ t: "goodbye" })), null);
+  assert.equal(parseGoodbyeReason("not json"), null);
+});
+
+test("always-on frame encode ⇄ detect ⇄ parse round-trips both booleans", () => {
+  assert.equal(parseAlwaysOnValue(encodeAlwaysOnFrame(true)), true);
+  assert.equal(parseAlwaysOnValue(encodeAlwaysOnFrame(false)), false);
+  assert.equal(isAlwaysOnFrame(encodeAlwaysOnFrame(true)), true);
+});
+
+test("parseAlwaysOnValue rejects a non-boolean value", () => {
+  assert.equal(parseAlwaysOnValue(JSON.stringify({ t: "always-on", value: "true" })), null);
+  assert.equal(parseAlwaysOnValue(JSON.stringify({ t: "always-on" })), null);
+});
+
+test("the three new helper frames stay mutually disjoint and disjoint from every existing frame", () => {
+  const frames = [
+    encodeHelperCommandFrame("stop"),
+    encodeGoodbyeFrame("crash"),
+    encodeAlwaysOnFrame(true),
+  ];
+  const detectors = [isHelperCommandFrame, isGoodbyeFrame, isAlwaysOnFrame];
+  for (let i = 0; i < frames.length; i++) {
+    for (let j = 0; j < detectors.length; j++) {
+      assert.equal(detectors[j](frames[i]), i === j, `frame ${i} vs detector ${j}`);
+    }
+    assert.equal(isAttachedFrame(frames[i]), false);
+    assert.equal(isHeartbeatFrame(frames[i]), false);
+    assert.equal(isBridgeVersionFrame(frames[i]), false);
+    assert.equal(parseControlMessage(frames[i]), null);
+  }
 });

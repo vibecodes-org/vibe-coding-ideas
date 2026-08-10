@@ -30,7 +30,7 @@
 // session age. `verifyToken` itself stays strict (expired is always a failure).
 
 /**
- * @typedef {"bridge"|"browser"|"control"} Role
+ * @typedef {"bridge"|"browser"|"control"|"helper"} Role
  *
  * "control" (multi-session stage 3, terminal/api/session/end) is a THIRD kind
  * of leg: it never opens a WebSocket. It authorizes a single HTTP call — the
@@ -43,6 +43,22 @@
  * gets the reattach expiry waiver a live session's owner gets on bridge/
  * browser tokens, because there is no "session" for a control call to be
  * live inside of — it's a one-shot admin action, not a leg that attaches.
+ *
+ * "helper" (card cc74a067, helper lifecycle) is a FOURTH kind of leg: a
+ * single, PER-OWNER (not per-session) WebSocket the packaged Electron helper
+ * opens at launch and holds for its whole process lifetime — the "control
+ * connection" that carries stop/quiesce/set-always-on commands and reports
+ * presence/version/always-on back to the relay (see relay/src/index.js and
+ * terminal/helper/main.js). It attaches through the SAME `authorizeAttach`
+ * used by bridge/browser (nothing role-specific in that function — it just
+ * compares `role` against the connection's own claim), always on the RESERVED
+ * session id `helperSessionId(sub)` — see below. Unlike a bridge/browser
+ * session, the relay's owner binding for a helper leg is STICKY (never
+ * cleared on disconnect — see relay/src/index.js's helper-leg fetch path), so
+ * `authorizeAttach`'s reattach-expiry waiver (normally scoped to a LIVE
+ * session) also covers a helper reconnecting long after its token's TTL
+ * lapsed — e.g. a LaunchAgent restart days later, using the SAME token it
+ * persisted in userData. `HELPER_MAX_BOUND_MS` bounds that waiver.
  */
 
 /**
@@ -67,10 +83,20 @@ export const DEFAULT_TTL_SECONDS = 300;
  */
 export const DEFAULT_MAX_SESSION_MS = 4 * 60 * 60 * 1000;
 
-const ROLES = Object.freeze(["bridge", "browser", "control"]);
+const ROLES = Object.freeze(["bridge", "browser", "control", "helper"]);
 
 /** Control-token lifetime (multi-session stage 3): short-lived, one-shot. */
 export const CONTROL_TTL_SECONDS = 60;
+
+/**
+ * Belt-and-braces cap on the HELPER reattach waiver (mirrors
+ * DEFAULT_MAX_SESSION_MS's role for bridge/browser, but much longer): a
+ * helper's control connection is a standing device credential, not a
+ * bounded session, so it needs to keep working across a laptop reboot or a
+ * few weeks away — but a token from a YEAR ago should still eventually stop
+ * working. 30 days is a boring, generous choice with no further meaning.
+ */
+export const HELPER_MAX_BOUND_MS = 30 * 24 * 60 * 60 * 1000;
 const enc = new TextEncoder();
 const dec = new TextDecoder();
 
@@ -327,4 +353,66 @@ export async function authorizeControl({ token, secret, session, now }) {
   if (c.role !== "control") return { ok: false, reason: "role mismatch" };
   if (c.sid !== session) return { ok: false, reason: "sid mismatch" };
   return { ok: true, sub: c.sub, claims: c };
+}
+
+/**
+ * The RESERVED relay session id a helper leg always connects on: one per
+ * owner, never a per-launch random id (a helper is a standing per-Mac
+ * connection, not a terminal session). Deterministic + collision-free with
+ * every real terminal session id (those are `crypto.randomUUID()`, which
+ * never produces the `helper-` prefix) — see relay/src/index.js's helper-leg
+ * fetch path, which routes `role=helper` to the Durable Object instance this
+ * id addresses (the SAME `TerminalRelay` class, a boring reuse: "one DO per
+ * session id" already holds, this is just a session id that happens to mean
+ * "this owner's helper" instead of "one terminal"). Supabase user ids are
+ * UUIDs, so the result already satisfies isValidSession's charset — no
+ * hashing needed.
+ * @param {string} sub
+ * @returns {string}
+ */
+export function helperSessionId(sub) {
+  return `helper-${sub}`;
+}
+
+/**
+ * Mint a HELPER-role token: the credential the packaged Electron helper
+ * carries on its `vibecodes://launch` payload (see terminal/shared/deep-link.mjs)
+ * and persists in userData so a later LaunchAgent restart can reconnect with
+ * the SAME token (the relay's sticky owner binding + HELPER_MAX_BOUND_MS
+ * waiver cover the gap — see the "helper" role's doc comment above). Minted
+ * alongside the bridge/browser tokens on every launch (POST /api/terminal/session)
+ * so the helper always has a fresh one, even though it usually only needs it
+ * once per boot.
+ * @param {{ sub: string, secret: string, ttlSeconds?: number, now?: number }} args
+ * @returns {Promise<string>}
+ */
+export async function mintHelperToken({
+  sub,
+  secret,
+  ttlSeconds = DEFAULT_TTL_SECONDS,
+  now = Math.floor(Date.now() / 1000),
+}) {
+  const exp = now + ttlSeconds;
+  return signToken({ sub, sid: helperSessionId(sub), idea: "", role: "helper", iat: now, exp }, secret);
+}
+
+/**
+ * Read a token's claims WITHOUT verifying its signature — used only so a
+ * receiver that doesn't hold the secret (the local helper process) can learn
+ * which sid its own freshly-minted token addresses before it ever talks to
+ * the relay. This is safe ONLY because the relay re-verifies the signature
+ * authoritatively on attach (authorizeAttach) — nothing here is ever treated
+ * as authorization. Returns null for anything unparseable; never throws.
+ * @param {unknown} token
+ * @returns {SessionClaims | null}
+ */
+export function decodeTokenClaims(token) {
+  if (typeof token !== "string") return null;
+  const dot = token.indexOf(".");
+  if (dot <= 0 || dot === token.length - 1) return null;
+  try {
+    return JSON.parse(dec.decode(base64urlToBytes(token.slice(0, dot))));
+  } catch {
+    return null;
+  }
 }

@@ -82,6 +82,30 @@ test("promptless links keep today's exact shape — no prompt key, no prompt par
   assert.ok(!("prompt" in parsed), "no prompt key on a promptless link");
 });
 
+// ── helper token param (card cc74a067, helper lifecycle) ──────────────────────
+
+test("build ⇄ parse round-trips helperToken, positioned before prompt", () => {
+  const withHelper = { ...SAMPLE, helperToken: "eyJzdWIiOiJ1c2VyIn0.helperSig", prompt: "hello" };
+  const url = buildLaunchDeepLink(withHelper);
+  assert.ok(url.includes("helperToken="));
+  assert.ok(url.indexOf("helperToken=") < url.indexOf("prompt="), "helperToken precedes the LAST param, prompt");
+  assert.deepEqual(parseLaunchDeepLink(url), withHelper);
+});
+
+test("omits helperToken entirely when absent", () => {
+  const url = buildLaunchDeepLink(SAMPLE);
+  assert.ok(!url.includes("helperToken="));
+  assert.ok(!("helperToken" in parseLaunchDeepLink(url)));
+});
+
+test("redactDeepLinkToken hides helperToken as well as token", () => {
+  const withHelper = { ...SAMPLE, helperToken: "super-secret-helper-token" };
+  const redacted = redactDeepLinkToken(buildLaunchDeepLink(withHelper));
+  assert.match(redacted, /helperToken=\*\*\*/);
+  assert.ok(!redacted.includes("super-secret-helper-token"));
+  assert.ok(redacted.includes(`session=${SAMPLE.session}`));
+});
+
 test("redactDeepLinkToken elides the prompt (user content) as well as the token", () => {
   const url = buildLaunchDeepLink({ ...SAMPLE, prompt: HOSTILE_PROMPT });
   const redacted = redactDeepLinkToken(url);

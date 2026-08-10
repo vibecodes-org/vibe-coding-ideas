@@ -63,6 +63,41 @@
 //     helper-version.ts). Skew-safe: an OLD bridge never sends `helperVersion` (the
 //     relay simply has nothing to forward), and a dock that predates this frame
 //     ignores an unknown `t` tag exactly like it already does for any other one.
+//
+// HELPER LIFECYCLE (card cc74a067) adds three more control frames, all scoped to
+// the NEW `helper` leg (terminal/helper/main.js's persistent control connection —
+// see session-token.mjs's "helper" role) — never sent on a bridge/browser leg:
+//   - `{"t":"helper-cmd","cmd":"stop"|"quiesce"|"set-always-on","value"?:boolean}`
+//     — sent by the relay to the HELPER leg, forwarding a web-originated command
+//     (POST /helper/command, see relay/src/index.js). `value` is present only for
+//     `set-always-on`. The relay never interprets `cmd` — it is a dumb forwarder,
+//     exactly like the bridge-version frame above; the helper decides what each
+//     command means.
+//   - `{"t":"goodbye","reason":"idle-quit"|"stop"|"quiesce"|"quit"|"crash"}` — sent
+//     by the HELPER to the relay immediately before every CLEAN exit (never on a
+//     crash-then-kill — there the process may not get a chance to flush). Its
+//     ABSENCE before a helper leg's socket closes is exactly what the relay/web
+//     app class as "stopped unexpectedly" (design §5a chip) — see
+//     HELPER_GOODBYE_REASONS below for the closed set of valid reasons.
+//   - `{"t":"always-on","value":boolean}` — sent by the HELPER to the relay right
+//     after attach (reporting its persisted setting) and again whenever the
+//     setting changes locally (the tray checkbox, or echoing a `set-always-on`
+//     command). The relay stores it durably so a `GET /helper/status` call always
+//     has a current answer without waking the helper.
+// All three are skew-safe the same way as every frame above: an old relay/helper
+// that doesn't know a tag treats it as an unknown control frame and ignores it.
+
+/** The closed set of reasons a helper's goodbye frame may carry (design §2 table). */
+export const HELPER_GOODBYE_REASONS = Object.freeze([
+  "idle-quit",
+  "stop",
+  "quiesce",
+  "quit",
+  "crash",
+]);
+
+/** The closed set of commands the web app may forward to a helper leg. */
+export const HELPER_COMMANDS = Object.freeze(["stop", "quiesce", "set-always-on"]);
 
 /** Detect any control TEXT frame with a given `t` tag. Cheap + strict + bounded. */
 function isControlFrame(text, tag) {
@@ -175,4 +210,130 @@ export function sanitizeHelperVersion(raw) {
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
   return SEMVER_RE.test(trimmed) ? trimmed : null;
+}
+
+/**
+ * Validate a raw machine-label value (e.g. `os.hostname()`, carried as a URL
+ * query param on the helper's connect URL) before it's stored/forwarded. Unlike
+ * the version, this is a free-form display string — the only gate is "not
+ * absurd": bounded length, trimmed, never a non-string. Never trust it as
+ * anything but display text (never used in a path, command, or comparison).
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+export function sanitizeMachineLabel(raw) {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  if (trimmed.length === 0) return null;
+  return trimmed.slice(0, 80);
+}
+
+// ── helper-command frame (web -> relay -> helper leg) ─────────────────────────
+
+/**
+ * The TEXT frame the relay forwards to a live `helper` leg. `value` is included
+ * only for `set-always-on` (a boolean); omitted for `stop`/`quiesce`.
+ * @param {"stop"|"quiesce"|"set-always-on"} cmd
+ * @param {boolean} [value]
+ * @returns {string}
+ */
+export function encodeHelperCommandFrame(cmd, value) {
+  return JSON.stringify(value === undefined ? { t: "helper-cmd", cmd } : { t: "helper-cmd", cmd, value });
+}
+
+/** @param {unknown} text @returns {boolean} */
+export function isHelperCommandFrame(text) {
+  return isControlFrame(text, "helper-cmd");
+}
+
+/**
+ * Extract + validate a helper-command frame's `cmd` (and `value` for
+ * `set-always-on`). Returns null for anything not shaped like a known command —
+ * a malformed or hostile frame is treated identically to "no command", never
+ * forwarded to helper-side logic that could misinterpret it.
+ * @param {unknown} text
+ * @returns {{ cmd: "stop"|"quiesce"|"set-always-on", value?: boolean } | null}
+ */
+export function parseHelperCommandFrame(text) {
+  if (!isHelperCommandFrame(text)) return null;
+  try {
+    const msg = JSON.parse(text);
+    if (typeof msg.cmd !== "string" || !HELPER_COMMANDS.includes(msg.cmd)) return null;
+    if (msg.cmd === "set-always-on") {
+      return typeof msg.value === "boolean" ? { cmd: msg.cmd, value: msg.value } : null;
+    }
+    return { cmd: msg.cmd };
+  } catch {
+    return null;
+  }
+}
+
+// ── goodbye frame (helper leg -> relay, sent immediately before every clean exit) ──
+
+/**
+ * The TEXT frame a helper sends the relay right before a CLEAN close. Its
+ * absence before the socket actually closes is what marks a disconnect
+ * "stopped unexpectedly" (design §5a) — see HELPER_GOODBYE_REASONS.
+ * @param {"idle-quit"|"stop"|"quiesce"|"quit"|"crash"} reason
+ * @returns {string}
+ */
+export function encodeGoodbyeFrame(reason) {
+  return JSON.stringify({ t: "goodbye", reason });
+}
+
+/** @param {unknown} text @returns {boolean} */
+export function isGoodbyeFrame(text) {
+  return isControlFrame(text, "goodbye");
+}
+
+/**
+ * Extract + validate a goodbye frame's reason. Null for anything outside the
+ * closed HELPER_GOODBYE_REASONS set — an unrecognised reason is treated the
+ * same as no goodbye at all (never invent a lifecycle state the UI can't show).
+ * @param {unknown} text
+ * @returns {"idle-quit"|"stop"|"quiesce"|"quit"|"crash"|null}
+ */
+export function parseGoodbyeReason(text) {
+  if (!isGoodbyeFrame(text)) return null;
+  try {
+    const msg = JSON.parse(text);
+    return typeof msg.reason === "string" && HELPER_GOODBYE_REASONS.includes(msg.reason) ? msg.reason : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── always-on frame (helper leg -> relay, on attach + whenever the setting changes) ──
+
+/**
+ * The TEXT frame a helper sends the relay to report its current "Keep helper
+ * ready" setting — once right after attach, and again whenever it changes
+ * locally (the tray checkbox, or echoing a `set-always-on` command).
+ * @param {boolean} value
+ * @returns {string}
+ */
+export function encodeAlwaysOnFrame(value) {
+  return JSON.stringify({ t: "always-on", value: !!value });
+}
+
+/** @param {unknown} text @returns {boolean} */
+export function isAlwaysOnFrame(text) {
+  return isControlFrame(text, "always-on");
+}
+
+/**
+ * Extract + validate an always-on frame's boolean value. Null for anything
+ * malformed — the caller keeps whatever value it last had rather than trusting
+ * a non-boolean.
+ * @param {unknown} text
+ * @returns {boolean | null}
+ */
+export function parseAlwaysOnValue(text) {
+  if (!isAlwaysOnFrame(text)) return null;
+  try {
+    const msg = JSON.parse(text);
+    return typeof msg.value === "boolean" ? msg.value : null;
+  } catch {
+    return null;
+  }
 }

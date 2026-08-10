@@ -12,6 +12,10 @@ import {
   newSessionId,
   DEFAULT_TTL_SECONDS,
   CONTROL_TTL_SECONDS,
+  helperSessionId,
+  mintHelperToken,
+  decodeTokenClaims,
+  HELPER_MAX_BOUND_MS,
 } from "./session-token.mjs";
 
 const SECRET = "test-secret-do-not-ship";
@@ -243,6 +247,78 @@ test("authorizeControl: expiry is ALWAYS strict — no reattach waiver exists fo
   const expired = await authorizeControl({ token, secret: SECRET, session: "sess-1", now: NOW + CONTROL_TTL_SECONDS + 1 });
   assert.equal(expired.ok, false);
   assert.equal(expired.reason, "expired");
+});
+
+// ── helper tokens (card cc74a067, helper lifecycle) ────────────────────────
+
+test("helperSessionId is deterministic and relay-safe", () => {
+  assert.equal(helperSessionId("user-A"), "helper-user-A");
+  assert.match(helperSessionId("user-A"), /^[A-Za-z0-9._-]+$/);
+});
+
+test("mintHelperToken -> authorizeAttach happy path (role helper, reserved sid)", async () => {
+  const token = await mintHelperToken({ sub: "user-A", secret: SECRET, now: NOW });
+  const res = await authorizeAttach({
+    token, secret: SECRET, session: helperSessionId("user-A"), role: "helper", now: NOW,
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.sub, "user-A");
+  assert.equal(res.claims.role, "helper");
+});
+
+test("a helper token cannot attach as bridge/browser, and vice versa (role mismatch)", async () => {
+  const helperToken = await mintHelperToken({ sub: "user-A", secret: SECRET, now: NOW });
+  const asBridge = await authorizeAttach({
+    token: helperToken, secret: SECRET, session: helperSessionId("user-A"), role: "bridge", now: NOW,
+  });
+  assert.equal(asBridge.ok, false);
+  assert.equal(asBridge.reason, "role mismatch");
+
+  const { bridge } = await mintSessionTokens({ sub: "user-A", idea: "idea-1", secret: SECRET, now: NOW });
+  const bridgeAsHelper = await authorizeAttach({
+    token: bridge, secret: SECRET, session: helperSessionId("user-A"), role: "helper", now: NOW,
+  });
+  assert.equal(bridgeAsHelper.ok, false);
+  assert.equal(bridgeAsHelper.reason, "sid mismatch");
+});
+
+test("an expired helper token reattaches when the relay's sticky owner binding matches, within HELPER_MAX_BOUND_MS", async () => {
+  const token = await mintHelperToken({ sub: "user-A", secret: SECRET, now: NOW });
+  const justInside = NOW + Math.floor(HELPER_MAX_BOUND_MS / 1000) - 1;
+  const res = await authorizeAttach({
+    token, secret: SECRET, session: helperSessionId("user-A"), role: "helper",
+    now: justInside, boundOwner: "user-A", maxSessionMs: HELPER_MAX_BOUND_MS,
+  });
+  assert.equal(res.ok, true);
+  assert.equal(res.expired, true);
+
+  const justOutside = NOW + Math.ceil(HELPER_MAX_BOUND_MS / 1000) + 1;
+  const tooOld = await authorizeAttach({
+    token, secret: SECRET, session: helperSessionId("user-A"), role: "helper",
+    now: justOutside, boundOwner: "user-A", maxSessionMs: HELPER_MAX_BOUND_MS,
+  });
+  assert.equal(tooOld.ok, false);
+  assert.equal(tooOld.reason, "expired");
+});
+
+test("decodeTokenClaims reads claims without verifying — for the helper to learn its own sid before talking to the relay", async () => {
+  const token = await mintHelperToken({ sub: "user-A", secret: SECRET, now: NOW });
+  const claims = decodeTokenClaims(token);
+  assert.equal(claims.sub, "user-A");
+  assert.equal(claims.sid, helperSessionId("user-A"));
+  assert.equal(claims.role, "helper");
+  // Unverified: a tampered payload still decodes (never treated as authorization).
+  const [payloadB64, sig] = token.split(".");
+  const forged = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+  forged.sub = "user-EVIL";
+  const forgedToken = `${Buffer.from(JSON.stringify(forged)).toString("base64url")}.${sig}`;
+  assert.equal(decodeTokenClaims(forgedToken).sub, "user-EVIL");
+});
+
+test("decodeTokenClaims never throws on malformed input", () => {
+  for (const bad of ["", "noseparator", ".", "a.", ".b", null, undefined, 42, "not-json.sig"]) {
+    assert.equal(decodeTokenClaims(bad), null, `expected null for ${JSON.stringify(bad)}`);
+  }
 });
 
 test("authorizeControl: a tampered control token is rejected (bad signature)", async () => {

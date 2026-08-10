@@ -58,6 +58,29 @@ describe("buildLaunchDeepLink", () => {
   });
 });
 
+describe("buildLaunchDeepLink with a helperToken (card cc74a067)", () => {
+  it("includes helperToken, positioned before prompt, and round-trips", () => {
+    const withHelper = { ...SAMPLE, helperToken: "eyJzdWIiOiJ1c2VyIn0.helperSig", prompt: "hello" };
+    const url = buildLaunchDeepLink(withHelper);
+    expect(url).toContain(`helperToken=${encodeURIComponent(withHelper.helperToken)}`);
+    expect(url.indexOf("helperToken=")).toBeLessThan(url.indexOf("prompt="));
+    expect(parseLaunchDeepLink(url)).toEqual(withHelper);
+  });
+
+  it("omits helperToken entirely when absent", () => {
+    const url = buildLaunchDeepLink(SAMPLE);
+    expect(url).not.toContain("helperToken=");
+    expect(parseLaunchDeepLink(url)).toEqual(SAMPLE);
+  });
+
+  it("is redacted by redactDeepLinkToken like the bridge token", () => {
+    const withHelper = { ...SAMPLE, helperToken: "super-secret-helper-token" };
+    const redacted = redactDeepLinkToken(buildLaunchDeepLink(withHelper));
+    expect(redacted).toContain("helperToken=***");
+    expect(redacted).not.toContain("super-secret-helper-token");
+  });
+});
+
 describe("redactDeepLinkToken", () => {
   it("replaces the token value with *** and never leaks the secret", () => {
     const url = buildLaunchDeepLink(SAMPLE);
