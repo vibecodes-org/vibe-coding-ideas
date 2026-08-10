@@ -21,14 +21,16 @@
 // by itself (see popout-channel.ts's module doc) — it only names the
 // rendezvous channel.
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import {
   popoutChannelName,
+  parsePopoutChannelMessage,
   startPopoutClientHandshake,
   type PopoutPayload,
 } from "@/lib/terminal/popout-channel";
 import { TerminalPopoutView } from "@/components/board/terminal-popout-view";
+import type { TerminalSessionActions } from "@/components/board/use-terminal-session";
 
 // The dock's window.open() target name is `vibecodes-terminal-<nonce>` (see
 // openPopoutWindow in popout-channel.ts) — NOW that the feature string omits
@@ -53,6 +55,20 @@ export function TerminalPopoutClient() {
   const [nonce] = useState<string | null>(() => (typeof window === "undefined" ? null : resolveNonce()));
   const [payload, setPayload] = useState<PopoutPayload | null>(null);
   const [timedOut, setTimedOut] = useState(false);
+  // Scrollback transfer (card 35cffc10): TerminalPopoutView's live session
+  // actions, handed up via onSessionActions the same way terminal-dock.tsx's
+  // TerminalSessionView reports into its parent's actionsMapRef — this
+  // window has no dock chrome to register into, so a single ref is enough.
+  // `null` until the view mounts AND its useTerminalSession instance is
+  // ready, which doubles as the "have we actually attached yet?" signal
+  // below (sendClosed / the bring-back-request reply both read it).
+  const sessionActionsRef = useRef<TerminalSessionActions | null>(null);
+  // Stable identity so TerminalPopoutView's registration effect doesn't churn
+  // on every render of this component (same reasoning as terminal-dock.tsx's
+  // own registerActions).
+  const handleSessionActions = useCallback((actions: TerminalSessionActions | null) => {
+    sessionActionsRef.current = actions;
+  }, []);
 
   useEffect(() => {
     if (!nonce) return;
@@ -74,14 +90,59 @@ export function TerminalPopoutClient() {
     // to (re)send — see createDockPopoutMessageHandler / reduceDockHandshake.
     const stopHandshake = startPopoutClientHandshake({
       channel,
-      onPayload: (p) => setPayload(p),
+      onPayload: (p) => {
+        setPayload(p);
+        // Scrollback transfer, Flow B (design §3): once attached, this same
+        // channel switches roles from "waiting for the hand-off" to
+        // "answering bring-back-request" — safe to reassign onmessage here
+        // because the handshake driver's own handler already latched
+        // `settled = true` (it's the very thing that just called this
+        // callback) and permanently no-ops from now on; nothing double-
+        // handles a later message.
+        channel.onmessage = (ev) => {
+          const message = parsePopoutChannelMessage(ev.data);
+          if (message?.type !== "bring-back-request") return;
+          const buffer = sessionActionsRef.current?.serializeNow();
+          // null = session not attached yet (shouldn't happen once payload
+          // has landed, but never worth a throw) — skip the reply; the
+          // dock's own 500ms timeout covers it (D3's deliberate fallback).
+          if (!buffer) return;
+          try {
+            channel.postMessage({ type: "buffer-reply", buffer });
+          } catch {
+            /* channel already gone — nothing to reply to */
+          }
+        };
+      },
       // On timeout this ALSO posts "closed" on the channel (same module),
       // so a dock that's still listening auto-reattaches instead of being
       // stuck showing "Popped out" forever with nothing on the other end.
       onTimeout: () => setTimedOut(true),
     });
 
+    // Flow C (design §4): closing this window pushes the FULL serialized
+    // scrollback (pre-pop-out history it was handed, plus everything
+    // produced since) immediately before "closed" — BroadcastChannel's
+    // per-sender ordering guarantees the reply lands first. Before this
+    // window has actually attached (`sessionActionsRef.current` still null —
+    // still mid hand-off, or the hand-off never completed), there's nothing
+    // to serialize, so this is exactly today's "closed" alone. Bounded and
+    // never-throws (design E4): a serialize failure — or simply having
+    // nothing to send — falls straight through to "closed" alone rather
+    // than blocking it.
     const sendClosed = () => {
+      try {
+        const buffer = sessionActionsRef.current?.serializeNow();
+        if (buffer) {
+          try {
+            channel.postMessage({ type: "buffer-reply", buffer });
+          } catch {
+            /* channel already gone — still try "closed" below */
+          }
+        }
+      } catch {
+        /* serialize blew up — skip straight to "closed" alone (E4) */
+      }
       try {
         channel.postMessage({ type: "closed" });
       } catch {
@@ -105,7 +166,9 @@ export function TerminalPopoutClient() {
   // Once `payload` is set, the render below returns the live view BEFORE it
   // ever looks at `timedOut` — so a late interval tick racing a just-arrived
   // payload is harmless; there's no need to also clear `timedOut` here.
-  if (payload) return <TerminalPopoutView payload={payload} />;
+  if (payload) {
+    return <TerminalPopoutView payload={payload} onSessionActions={handleSessionActions} />;
+  }
 
   if (!nonce || timedOut) {
     return (

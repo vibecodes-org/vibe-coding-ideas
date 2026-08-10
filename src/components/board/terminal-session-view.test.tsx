@@ -51,6 +51,8 @@ function mockActions(): TerminalSessionActions {
     setReadOnly: vi.fn(),
     copyBridgeCommand: vi.fn(),
     refreshView: vi.fn(),
+    serializeNow: vi.fn(),
+    restoreBuffer: vi.fn(),
   };
 }
 

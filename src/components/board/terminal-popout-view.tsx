@@ -20,25 +20,47 @@
 // runs the install-first gate. See use-terminal-session.ts's `attachExisting`
 // doc for why that's safe (same-owner reattach, relay's existing 4001 path).
 
-import { useEffect, useState } from "react";
-import { CircleAlert, Info, Loader2, Lock, LockOpen, Power, Square, Undo2 } from "lucide-react";
+import { useEffect } from "react";
+import { CircleAlert, Loader2, Lock, LockOpen, Power, Square, Undo2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { resolveDockView, type DockView } from "@/lib/terminal/first-run-flow";
 import type { TerminalConnectionState } from "@/lib/terminal/connection";
 import { isPreemptedClose, type PopoutPayload } from "@/lib/terminal/popout-channel";
-import { dockStatusMeta } from "./terminal-session-view";
+import { dockStatusMeta, type StatusMeta } from "./terminal-session-view";
 import {
   useTerminalSession,
   type AttachExistingPair,
+  type TerminalSessionActions,
   type TerminalSessionDescriptor,
 } from "./use-terminal-session";
 
+// Pill fix (card 35cffc10, design §6): "Brought back to the dock" is a
+// deliberate, successful user action — the rose "Error" pill dockStatusMeta
+// would otherwise render for the underlying error/4001 state contradicts the
+// calm overlay sitting right below it. Sky/informational, Undo2 icon —
+// same family as BroughtBackOverlay below (icon + text + colour together,
+// never colour alone, per the existing pill contract).
+const MOVED_TO_DOCK_META: StatusMeta = {
+  label: "Moved to dock",
+  Icon: Undo2,
+  className: "border-sky-500/50 bg-sky-500/10 text-sky-400",
+};
+
 interface TerminalPopoutViewProps {
   payload: PopoutPayload;
+  /**
+   * Scrollback transfer (card 35cffc10): hands this session's live
+   * `TerminalSessionActions` up to TerminalPopoutClient, which needs
+   * `actions.serializeNow()` to answer `bring-back-request` and to push its
+   * own buffer ahead of `closed` on `pagehide` (Flows B/C) — neither of
+   * which this component owns (it has no BroadcastChannel of its own).
+   * Optional so the component stays usable standalone (e.g. in tests).
+   */
+  onSessionActions?: (actions: TerminalSessionActions | null) => void;
 }
 
-export function TerminalPopoutView({ payload }: TerminalPopoutViewProps) {
+export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopoutViewProps) {
   const descriptor: TerminalSessionDescriptor = {
     ideaId: payload.ideaId,
     ideaTitle: payload.ideaTitle,
@@ -47,7 +69,16 @@ export function TerminalPopoutView({ payload }: TerminalPopoutViewProps) {
     // simply never read here.
     ideaGithubUrl: null,
   };
-  const attach: AttachExistingPair = { sessionId: payload.sid, browserToken: payload.browserToken };
+  const attach: AttachExistingPair = {
+    sessionId: payload.sid,
+    browserToken: payload.browserToken,
+    // Scrollback transfer, Flow A (design §2): the dock's serialized buffer
+    // at pop-out, if one rode the payload — restored (by the hook, before
+    // the socket attaches) rather than left for this component to apply
+    // directly. Absent covers deploy skew and "the dock had nothing to
+    // serialize yet".
+    initialBuffer: payload.buffer ?? null,
+  };
 
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -63,6 +94,15 @@ export function TerminalPopoutView({ payload }: TerminalPopoutViewProps) {
   });
   const { state, readOnly, inputEnabled, launchPhase, platform, paired, containerRef, actions } = session;
 
+  // Keep the parent's action registry current — same "every render, no deps"
+  // pattern as terminal-session-view.tsx's onRegisterActions, since `actions`
+  // isn't a referentially-stable object as a whole even though its individual
+  // methods are memoized.
+  useEffect(() => {
+    onSessionActions?.(actions);
+  });
+  useEffect(() => () => onSessionActions?.(null), [onSessionActions]);
+
   // Apply the read-only toggle state the dock tab was in at the moment of
   // pop-out (D1's payload) — once, on mount. `actions.setReadOnly` is the
   // hook's own `useState` setter, so it's referentially stable; this is safe
@@ -76,9 +116,7 @@ export function TerminalPopoutView({ payload }: TerminalPopoutViewProps) {
     document.title = `Terminal · ${payload.label}`;
   }, [payload.label]);
 
-  const [noticeDismissed, setNoticeDismissed] = useState(false);
   const view = resolveDockView(state.status, launchPhase, platform.supported, paired);
-  const meta = dockStatusMeta(view, state.errorKind);
   const showStream = state.status === "connected" || state.status === "disconnected";
   const showEnd =
     view === "connected" || view === "disconnected" || view === "connecting" || view === "connecting-returning";
@@ -88,6 +126,14 @@ export function TerminalPopoutView({ payload }: TerminalPopoutViewProps) {
   // dock" (explicit or via this window's own close-signal racing it). Show a
   // calm hand-off message, never the generic "duplicate session" error copy.
   const broughtBack = state.status === "error" && isPreemptedClose(state.closeCode);
+
+  // Pill fix (card 35cffc10, design §6): the underlying status legitimately
+  // stays error/4001 (that's the mechanism) — only the PRESENTATION changes.
+  // When broughtBack, substitute a dedicated informational meta instead of
+  // ever calling dockStatusMeta for this state; dockStatusMeta itself stays
+  // untouched, so every genuine dock error keeps its rose pill everywhere
+  // else.
+  const meta = broughtBack ? MOVED_TO_DOCK_META : dockStatusMeta(view, state.errorKind);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -134,27 +180,6 @@ export function TerminalPopoutView({ payload }: TerminalPopoutViewProps) {
           )}
         </span>
       </div>
-
-      {/* One-time MVP scrollback honesty (D5, AC 17): dismissible, never
-          reappears once closed. Disappears entirely once a future
-          serialize-addon transfer ships real scrollback (design §10a). */}
-      {showStream && !noticeDismissed && (
-        <div
-          role="status"
-          className="flex items-center gap-2 border-b border-sky-500/25 bg-sky-500/[0.07] px-3 py-1.5 text-[11.5px] text-sky-300"
-        >
-          <Info className="h-3.5 w-3.5 flex-none" />
-          Showing output from pop-out onward.
-          <button
-            type="button"
-            className="ml-auto flex-none text-sky-400/70 hover:text-sky-200"
-            aria-label="Dismiss notice"
-            onClick={() => setNoticeDismissed(true)}
-          >
-            ✕
-          </button>
-        </div>
-      )}
 
       <div className="relative min-h-0 flex-1">
         <div
