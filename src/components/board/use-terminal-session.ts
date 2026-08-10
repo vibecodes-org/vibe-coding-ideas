@@ -286,6 +286,16 @@ export interface TerminalSessionActions {
   end: () => void;
   setReadOnly: (value: boolean | ((prev: boolean) => boolean)) => void;
   copyBridgeCommand: () => void;
+  /**
+   * Force a refit + resize-frame send + focus, for a reveal that un-hides
+   * the host WITHOUT `expanded` itself changing — e.g. the caller's own
+   * `poppedOut` prop flipping false on bring-back (fix/terminal-popout-host-
+   * mounted). The container was `display:none` (0-size) the whole time it
+   * was hidden that way, so the `expanded`-keyed resize/focus effects above
+   * never re-fire for it; this is the same recovery those effects already do
+   * on a dock re-expand, just triggered on demand instead of by `expanded`.
+   */
+  refreshView: () => void;
 }
 
 export interface UseTerminalSessionResult {
@@ -1342,6 +1352,17 @@ export function useTerminalSession(
     connect,
   ]);
 
+  // See `refreshView`'s doc on TerminalSessionActions. Mirrors the expand-rAF
+  // resize + expand-focus effects above (next paint, so the container has
+  // already been un-hidden before fit()/focus() land) — just callable
+  // directly rather than gated on `expanded`.
+  const refreshView = useCallback(() => {
+    window.requestAnimationFrame(() => {
+      sendResize();
+      termRef.current?.focus();
+    });
+  }, [sendResize]);
+
   const copyBridgeCommand = useCallback(() => {
     // No bridge token to copy for an attached (not minted) session — see
     // PairInfo.bridgeToken's doc. The legacy-waiting panel that renders this
@@ -1375,6 +1396,7 @@ export function useTerminalSession(
       end: endSession,
       setReadOnly,
       copyBridgeCommand,
+      refreshView,
     },
   };
 }
