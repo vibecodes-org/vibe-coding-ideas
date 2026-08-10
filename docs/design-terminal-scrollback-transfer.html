@@ -1,0 +1,520 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Terminal Scrollback Transfer — UX / Mechanism Design</title>
+<style>
+  :root {
+    --bg: #0c0c0e;
+    --panel: #141417;
+    --panel2: #1a1a1f;
+    --border: #27272a;
+    --border-soft: #1f1f23;
+    --text: #e4e4e7;
+    --muted: #a1a1aa;
+    --dim: #71717a;
+    --emerald: #34d399;
+    --sky: #38bdf8;
+    --amber: #fbbf24;
+    --rose: #fb7185;
+    --violet: #a78bfa;
+    --mono: ui-monospace, "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    padding: 40px 24px 80px;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 26px; font-weight: 700; letter-spacing: -0.02em; }
+  h2 { font-size: 19px; font-weight: 650; margin: 48px 0 12px; padding-top: 24px; border-top: 1px solid var(--border-soft); letter-spacing: -0.01em; }
+  h2 .num { color: var(--dim); font-weight: 500; margin-right: 8px; }
+  h3 { font-size: 15.5px; font-weight: 600; margin: 24px 0 8px; }
+  p { margin: 10px 0; color: var(--muted); }
+  p strong, li strong { color: var(--text); font-weight: 600; }
+  ul, ol { margin: 10px 0 10px 22px; color: var(--muted); }
+  li { margin: 4px 0; }
+  code {
+    font-family: var(--mono);
+    font-size: 12.5px;
+    background: var(--panel2);
+    border: 1px solid var(--border-soft);
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: #c4b5fd;
+  }
+  .meta { color: var(--dim); font-size: 13px; margin-top: 6px; }
+  .tagline { color: var(--muted); font-size: 15px; margin-top: 14px; max-width: 760px; }
+
+  .callout {
+    border: 1px solid var(--border);
+    border-left: 3px solid var(--sky);
+    background: var(--panel);
+    border-radius: 8px;
+    padding: 14px 18px;
+    margin: 18px 0;
+    font-size: 14px;
+  }
+  .callout.warn { border-left-color: var(--amber); }
+  .callout.decision { border-left-color: var(--emerald); }
+  .callout .title { font-weight: 650; color: var(--text); margin-bottom: 4px; font-size: 13.5px; }
+
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; font-size: 13.5px; }
+  th {
+    text-align: left; padding: 8px 12px; color: var(--dim);
+    font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.06em;
+    border-bottom: 1px solid var(--border);
+  }
+  td { padding: 9px 12px; border-bottom: 1px solid var(--border-soft); color: var(--muted); vertical-align: top; }
+  td:first-child { color: var(--text); }
+  tr:last-child td { border-bottom: none; }
+
+  /* ── sequence diagrams ─────────────────────────────────────────── */
+  .seq {
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    background: var(--panel);
+    margin: 18px 0;
+    overflow: hidden;
+  }
+  .seq-head {
+    display: grid; grid-template-columns: 1fr 1fr;
+    border-bottom: 1px solid var(--border);
+    background: var(--panel2);
+  }
+  .seq-head > div {
+    padding: 10px 16px; font-weight: 650; font-size: 13px;
+    letter-spacing: 0.02em;
+  }
+  .seq-head > div:first-child { border-right: 1px solid var(--border); color: var(--emerald); }
+  .seq-head > div:last-child { color: var(--violet); }
+  .seq-body { padding: 6px 0 10px; }
+  .step {
+    display: grid; grid-template-columns: 1fr 1fr;
+    align-items: center;
+    padding: 2px 0;
+  }
+  .step .cell { padding: 5px 16px; font-size: 13px; }
+  .act {
+    display: inline-block;
+    background: var(--panel2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 10px;
+    color: var(--text);
+  }
+  .act small { display: block; color: var(--dim); font-size: 11.5px; line-height: 1.45; }
+  .msg { grid-column: 1 / -1; padding: 5px 16px; }
+  .msg .arrow {
+    display: flex; align-items: center; gap: 10px;
+    font-family: var(--mono); font-size: 12px;
+  }
+  .msg .line { flex: 1; border-top: 2px solid var(--border); position: relative; top: 1px; }
+  .msg.r .line { border-top-style: solid; }
+  .msg .label {
+    background: var(--panel2); border: 1px solid var(--border);
+    border-radius: 999px; padding: 2px 12px; white-space: nowrap;
+  }
+  .msg.to-pop .label { color: var(--sky); border-color: rgba(56,189,248,0.35); }
+  .msg.to-dock .label { color: var(--violet); border-color: rgba(167,139,250,0.35); }
+  .msg .dir { color: var(--dim); font-size: 14px; }
+  .seq-note {
+    margin: 6px 16px; padding: 8px 12px; font-size: 12.5px;
+    color: var(--amber); background: rgba(251,191,36,0.06);
+    border: 1px solid rgba(251,191,36,0.25); border-radius: 6px;
+  }
+  .seq-note.ok { color: var(--emerald); background: rgba(52,211,153,0.06); border-color: rgba(52,211,153,0.25); }
+
+  /* ── pill mockups ──────────────────────────────────────────────── */
+  .mock {
+    border: 1px solid var(--border); border-radius: 10px;
+    background: var(--bg); margin: 14px 0; overflow: hidden;
+  }
+  .mock-label {
+    padding: 6px 14px; font-size: 11.5px; text-transform: uppercase;
+    letter-spacing: 0.07em; color: var(--dim); background: var(--panel2);
+    border-bottom: 1px solid var(--border);
+  }
+  .mock-bar {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+    padding: 10px 14px; background: var(--panel);
+    border-bottom: 1px solid var(--border);
+  }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    border-radius: 6px; border: 1px solid; padding: 4px 10px;
+    font-size: 12px; font-weight: 600;
+  }
+  .pill .ic { font-size: 11px; line-height: 1; }
+  .pill.rose { border-color: rgba(251,113,133,0.55); background: rgba(251,113,133,0.1); color: var(--rose); }
+  .pill.sky { border-color: rgba(56,189,248,0.5); background: rgba(56,189,248,0.1); color: var(--sky); }
+  .mock-id { font-family: var(--mono); font-size: 11.5px; color: var(--dim); }
+  .mock-body {
+    padding: 26px 20px; text-align: center; background: rgba(12,12,14,0.95);
+  }
+  .mock-body .big { font-size: 15px; font-weight: 650; color: var(--sky); margin: 6px 0 4px; }
+  .mock-body p { font-size: 12.5px; color: var(--muted); margin: 2px 0; }
+  .verdict { font-size: 12px; font-weight: 650; padding: 8px 14px; }
+  .verdict.bad { color: var(--rose); background: rgba(251,113,133,0.05); }
+  .verdict.good { color: var(--emerald); background: rgba(52,211,153,0.05); }
+
+  .term-mock {
+    font-family: var(--mono); font-size: 12px; line-height: 1.55;
+    background: var(--bg); border: 1px solid var(--border);
+    border-radius: 8px; padding: 12px 16px; margin: 12px 0;
+    color: var(--muted); overflow-x: auto;
+  }
+  .term-mock .trim { color: var(--dim); font-style: italic; }
+  .term-mock .out { color: #d4d4d8; }
+
+  .oos {
+    border: 1px dashed var(--border); border-radius: 10px;
+    padding: 14px 18px; margin: 18px 0; background: var(--panel);
+  }
+  .oos .title { font-size: 12px; text-transform: uppercase; letter-spacing: 0.07em; color: var(--dim); margin-bottom: 6px; font-weight: 650; }
+  .oos ul { margin-bottom: 2px; }
+
+  .filepath { font-family: var(--mono); font-size: 12px; color: var(--dim); }
+  .kbd-note { font-size: 12.5px; color: var(--dim); margin-top: 4px; }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <h1>Terminal Scrollback Transfer</h1>
+  <div class="meta">UX / mechanism design · card 35cffc10 · builds on the multi-session pop-out design (D1–D7) and the host-mounted dock fix (PR #143)</div>
+  <p class="tagline">
+    When a terminal session moves between the dock and a popped-out window, its on-screen history must move with it —
+    in <strong>both</strong> directions, over the existing same-origin <code>BroadcastChannel</code> hand-off, inside the
+    existing ~5s handshake budget. This is mostly message sequencing with one small UI change (a mislabelled pill).
+  </p>
+
+  <div class="callout">
+    <div class="title">What changed since Requirements — and why it reshapes this design</div>
+    The host-mounted fix (PR #143) keeps the dock's terminal <em>alive but hidden</em> while a session is popped out.
+    So on bring-back the dock already shows its full pre-pop-out history instantly. The remaining gaps are exactly two:
+    the <strong>popped window starts empty</strong> at pop-out, and the dock is <strong>missing only the slice produced
+    while the session lived in the popped window</strong>. Both are closed below. This also retires the
+    “Showing output from pop-out onward” notice banner in the popped window (design §10a said it disappears once real
+    scrollback transfer ships — that is this card).
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <h2><span class="num">1</span>Protocol additions</h2>
+  <p>
+    Everything rides the existing per-pop-out <code>BroadcastChannel</code> (nonce-named, same origin — no new transport,
+    no server involvement). The message set grows from three to five, and one existing message gains a field:
+  </p>
+  <table>
+    <tr><th>Message</th><th>Direction</th><th>Change</th><th>Purpose</th></tr>
+    <tr>
+      <td><code>ready</code></td><td>popped → dock</td><td>unchanged</td>
+      <td>Announce + retry every ~300ms until payload lands (existing hardening).</td>
+    </tr>
+    <tr>
+      <td><code>payload</code></td><td>dock → popped</td><td><strong>+ optional <code>buffer</code> field</strong></td>
+      <td>Credentials as today, plus <code>buffer: { data, truncated }</code> — the dock's serialized scrollback,
+      captured fresh inside <code>getPayload()</code> at each send so it's as current as possible.</td>
+    </tr>
+    <tr>
+      <td><code>bring-back-request</code></td><td>dock → popped</td><td><strong>new</strong></td>
+      <td>“I'm about to reattach — send me your buffer first.”</td>
+    </tr>
+    <tr>
+      <td><code>buffer-reply</code></td><td>popped → dock</td><td><strong>new</strong></td>
+      <td><code>{ buffer: { data, truncated } }</code> — the popped window's full serialized scrollback
+      (pre-pop-out history it was handed <em>plus</em> the popped-out slice).</td>
+    </tr>
+    <tr>
+      <td><code>closed</code></td><td>popped → dock</td><td>unchanged shape</td>
+      <td>Still the auto-reattach signal. On real window close it is now <em>preceded</em> by a
+      <code>buffer-reply</code> on the same channel (BroadcastChannel preserves per-sender order).</td>
+    </tr>
+  </table>
+  <div class="callout decision">
+    <div class="title">Decision: buffer rides inside <code>payload</code>, not as a sibling message (pop-out direction)</div>
+    A separate “buffer” message would reintroduce the exact failure class the handshake rework just eliminated: two
+    coupled messages where either half can be the one that got lost, with per-half recovery logic. Embedding it in
+    <code>payload</code> inherits the idempotent ready/re-send hardening for free — retries stop the moment the payload
+    lands, so in practice the ~1&nbsp;MB clone happens once or twice, well within budget.
+    The field is <strong>optional and leniently parsed</strong>: a malformed <code>buffer</code> is dropped with a
+    console warning while the credentials still go through — scrollback is never allowed to sink a hand-off.
+    (Optional also keeps deploy-skew graceful: an older popped window simply ignores the field.)
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <h2><span class="num">2</span>Flow A — pop-out carries the buffer</h2>
+  <div class="seq">
+    <div class="seq-head"><div>Dock (board tab)</div><div>Popped window</div></div>
+    <div class="seq-body">
+      <div class="step"><div class="cell"><span class="act">User clicks <b>Pop out</b><small>window.open + channel, exactly as today</small></span></div><div class="cell"></div></div>
+      <div class="msg to-dock"><div class="arrow"><span class="dir">◀</span><span class="line"></span><span class="label">ready&nbsp;&nbsp;(retried ~300ms)</span><span class="line"></span></div></div>
+      <div class="step"><div class="cell"><span class="act">On each <code>ready</code>: serialize own buffer<small>serializeScrollback(term, 1 MiB) — fresh capture per send, so the newest output makes it across</small></span></div><div class="cell"></div></div>
+      <div class="msg to-pop"><div class="arrow"><span class="line"></span><span class="label">payload&nbsp;{ sid, token, …, buffer }</span><span class="line"></span><span class="dir">▶</span></div></div>
+      <div class="step"><div class="cell"></div><div class="cell"><span class="act">Open terminal → <b>restore buffer</b> → attach<small>restoreScrollback runs before the socket attach, so handed-over history sits above live output. No “output from pop-out onward” banner any more.</small></span></div></div>
+      <div class="step"><div class="cell"><span class="act">4001 preempt → “Popped out” placeholder<small>hidden terminal stays alive (PR #143), unchanged</small></span></div><div class="cell"></div></div>
+      <div class="seq-note">Timeout path (unchanged): no payload within 5s → popped window posts <code>closed</code>, shows “Lost the session hand-off”; dock auto-reattaches. A missing/invalid <code>buffer</code> field alone never triggers this — the window attaches with an empty scrollback instead (today's behaviour, as the degraded case).</div>
+    </div>
+  </div>
+  <p class="kbd-note">
+    Gap honesty: output arriving in the milliseconds between the dock's serialize and the relay's 4001 preempt is not in
+    the handed buffer. It is bounded to one network round-trip and invisible in practice; accepted (edge case E6).
+  </p>
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <h2><span class="num">3</span>Flow B — bring-back via the button (request / reply)</h2>
+  <p>
+    Today <code>bringBackToDock</code> reconnects and tears the channel down <em>immediately</em>. It becomes a
+    two-phase sequence: ask first, reattach after (or after a short timeout).
+  </p>
+  <div class="seq">
+    <div class="seq-head"><div>Dock (board tab)</div><div>Popped window</div></div>
+    <div class="seq-body">
+      <div class="step"><div class="cell"><span class="act">User clicks <b>Bring back to dock</b><small>do NOT reconnect yet; start 500ms timer</small></span></div><div class="cell"></div></div>
+      <div class="msg to-pop"><div class="arrow"><span class="line"></span><span class="label">bring-back-request</span><span class="line"></span><span class="dir">▶</span></div></div>
+      <div class="step"><div class="cell"></div><div class="cell"><span class="act">Serialize own buffer<small>full history: handed-over past + popped-out slice</small></span></div></div>
+      <div class="msg to-dock"><div class="arrow"><span class="dir">◀</span><span class="line"></span><span class="label">buffer-reply&nbsp;{ buffer }</span><span class="line"></span></div></div>
+      <div class="step"><div class="cell"><span class="act"><b>Restore</b>: reset hidden terminal, write buffer<small>REPLACES the dock's own copy — see decision D1</small></span></div><div class="cell"></div></div>
+      <div class="step"><div class="cell"><span class="act">Then <code>reconnectNow()</code> + channel teardown<small>existing endPopOut, unchanged — just moved after the reply</small></span></div><div class="cell"><span class="act">4001 preempt → “Moved to dock” state<small>calm pill — see §6</small></span></div></div>
+      <div class="seq-note">Timeout path: no <code>buffer-reply</code> within <b>500ms</b> → dock keeps its own buffer (complete except the popped-out slice — the pre-this-card status quo) and proceeds with reconnect + teardown exactly as today. A dead or frozen popped window can never hang bring-back.</div>
+      <div class="seq-note ok">A late <code>buffer-reply</code> arriving after the timeout fallback already reconnected is ignored — the channel entry is gone by then (existing <code>getEntry() → undefined</code> guard), so a stale restore can never clobber a live stream.</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <h2><span class="num">4</span>Flow C — bring-back via window close (buffer, then closed)</h2>
+  <p>
+    The popped window also triggers bring-back by simply being closed. There is no time for a request/reply round-trip
+    inside <code>pagehide</code> — so the window pushes its buffer unprompted, immediately before its existing
+    <code>closed</code> signal. BroadcastChannel guarantees per-sender ordering, so the reply always lands first.
+  </p>
+  <div class="seq">
+    <div class="seq-head"><div>Dock (board tab)</div><div>Popped window</div></div>
+    <div class="seq-body">
+      <div class="step"><div class="cell"></div><div class="cell"><span class="act">User closes the window → <code>pagehide</code><small>serialize inside a try/catch — bounded, ~ms for a 5,000-line buffer; on ANY failure, skip straight to “closed”</small></span></div></div>
+      <div class="msg to-dock"><div class="arrow"><span class="dir">◀</span><span class="line"></span><span class="label">buffer-reply&nbsp;{ buffer }</span><span class="line"></span></div></div>
+      <div class="msg to-dock"><div class="arrow"><span class="dir">◀</span><span class="line"></span><span class="label">closed</span><span class="line"></span></div></div>
+      <div class="step"><div class="cell"><span class="act">On <code>buffer-reply</code>: stash per-key<small>held in the channel entry, not yet applied</small></span></div><div class="cell"></div></div>
+      <div class="step"><div class="cell"><span class="act">On <code>closed</code>: restore stashed buffer → reconnect → teardown<small>no stash (old window / serialize failed)? reconnect without restoring — today's path</small></span></div><div class="cell"></div></div>
+      <div class="seq-note">The hand-off-timeout <code>closed</code> (popped window never got the payload) arrives with no stash by construction — the dock reattaches keeping its own buffer, which in that case is the complete history anyway.</div>
+    </div>
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <h2><span class="num">5</span>The three design decisions</h2>
+
+  <div class="callout decision">
+    <div class="title">D1 — Bring-back REPLACES the dock's buffer with the popped window's (chosen) vs. keep-and-gap (rejected)</div>
+    Because Flow A hands the full history over at pop-out, the popped window's buffer is always a <em>superset</em> of
+    the dock's: everything the dock has, plus the popped-out slice. Wholesale replace (reset the hidden terminal, write
+    the reply) therefore guarantees completeness with the simplest possible mental model — “the terminal you see is the
+    terminal that comes back.”
+    <br><br>
+    <strong>Rejected — keep dock's buffer, append nothing:</strong> leaves a permanent hole where the popped-out work
+    happened; explicitly rejected by Nick (“sort this out”). It survives only as the <em>timeout fallback</em>, where
+    it is honest and strictly better than hanging.
+    <strong>Also rejected — compute and append just the popped-out slice:</strong> the relay stream carries no sequence
+    numbers or markers for “where pop-out began”, so a reliable diff isn't computable; a heuristic splice risks
+    duplicated or interleaved lines, which reads far worse than either clean outcome.
+  </div>
+
+  <div class="callout decision">
+    <div class="title">D2 — Size cap: 1 MiB per transfer, oldest-first truncation, one dim marker line</div>
+    Serialized payload is capped at <strong>1 MiB</strong> (1,048,576 bytes of serialized data). Rationale: xterm's
+    scrollback is already capped at 5,000 lines, which serializes well under 1&nbsp;MiB in normal use (heavy full-width
+    ANSI output is the only way near it); a 1&nbsp;MiB structured clone posts in single-digit milliseconds, keeping both
+    the 5s pop-out budget and the 500ms bring-back reply budget safe, and keeping the <code>pagehide</code> path fast.
+    <br><br>
+    <strong>Truncation is oldest-first by whole rows, never by bytes:</strong> if a full serialize exceeds the cap, the
+    serialize addon is re-run with a smaller <code>scrollback</code> row count (halving until under cap). Slicing the
+    serialized string at a byte offset was rejected — it can cut mid-escape-sequence and corrupt every line rendered
+    after the cut.
+    <br><br>
+    <strong>Marker copy (exact):</strong> when <code>truncated</code> is true, restore writes one dim line at the very
+    top of the buffer before the payload:
+    <div class="term-mock">
+      <div class="trim">— older history trimmed during hand-off —</div>
+      <div class="out">✓ Ran npm run build (exit 0)</div>
+      <div class="out">✓ 214 tests passed</div>
+      <div class="out">› Working on src/actions/ai.ts…</div>
+    </div>
+    Rendered dim via SGR (<code>\x1b[2m…\x1b[0m</code>) — style is secondary; the em-dash-framed sentence carries the
+    meaning on its own (never colour alone, WCAG 1.4.1). <strong>Rejected — no cap:</strong> an unbounded clone re-sent
+    on every payload retry, and unbounded serialize work inside <code>pagehide</code>, are exactly the two places this
+    feature could regress the handshake it rides on.
+  </div>
+
+  <div class="callout decision">
+    <div class="title">D3 — Bring-back reply timeout: 500ms, falling back to the dock's own buffer</div>
+    A live popped window answers a BroadcastChannel round-trip in low single-digit milliseconds; 500ms (the midpoint of
+    the 400–600ms band) covers a busy/GC-pausing window with two orders of magnitude of headroom while keeping the
+    button feeling instant — the dock shows its normal “Connecting…” treatment during the wait, no new intermediate
+    state. The fallback (keep own buffer, reconnect) is deliberately the pre-this-card status quo: complete history
+    except the popped-out slice, fully usable session.
+    <strong>Rejected — 2s+ “to be safe”:</strong> the only scenario a longer wait rescues is a window that is alive but
+    seconds-frozen, vanishingly rare against making <em>every</em> bring-back on an already-closed window feel broken
+    for 2 seconds. <strong>Rejected — wait indefinitely:</strong> a closed-without-signal window (crashed tab, killed
+    process) would hang bring-back forever.
+  </div>
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <h2><span class="num">6</span>Pill fix — the popped window's “brought back” state</h2>
+  <p>
+    When the dock reattaches, the popped window's own leg closes with 4001 and the view shows the calm
+    “Brought back to the dock” overlay — but the header pill still renders from
+    <code>dockStatusMeta("error")</code>: a rose <strong>“Error”</strong> pill floating above copy that says everything
+    is fine. The underlying status legitimately stays <code>error/4001</code> (that's the mechanism); only the
+    <em>presentation</em> changes: when <code>isPreemptedClose</code> is true, the view substitutes a dedicated meta
+    instead of calling <code>dockStatusMeta</code> at all.
+  </p>
+
+  <div class="mock">
+    <div class="mock-label">Before — contradicts the overlay</div>
+    <div class="mock-bar">
+      <span class="pill rose"><span class="ic" aria-hidden="true">⚠</span>Error</span>
+      <span class="mock-id">My Idea · session 3f9a21c8</span>
+    </div>
+    <div class="mock-body">
+      <div style="font-size:20px" aria-hidden="true">↩</div>
+      <div class="big">Brought back to the dock</div>
+      <p>This session moved back to its board tab — you can close this window.</p>
+    </div>
+    <div class="verdict bad">✗ An alarm pill on a deliberate, successful user action</div>
+  </div>
+
+  <div class="mock">
+    <div class="mock-label">After — informational, matches the overlay</div>
+    <div class="mock-bar">
+      <span class="pill sky"><span class="ic" aria-hidden="true">↩</span>Moved to dock</span>
+      <span class="mock-id">My Idea · session 3f9a21c8</span>
+    </div>
+    <div class="mock-body">
+      <div style="font-size:20px" aria-hidden="true">↩</div>
+      <div class="big">Brought back to the dock</div>
+      <p>This session moved back to its board tab — you can close this window.</p>
+    </div>
+    <div class="verdict good">✓ Sky informational pill, Undo2 icon — same family as the overlay it sits above</div>
+  </div>
+
+  <p>
+    <strong>Exact mapping change</strong> (in <span class="filepath">terminal-popout-view.tsx</span>): <code>const meta
+    = broughtBack ? MOVED_TO_DOCK_META : dockStatusMeta(view, state.errorKind)</code>, where
+    <code>MOVED_TO_DOCK_META = { label: "Moved to dock", Icon: Undo2, className: "border-sky-500/50 bg-sky-500/10
+    text-sky-400" }</code>. <code>dockStatusMeta</code> itself is untouched — the dock's genuine error states keep their
+    rose pill, and no other view changes. Icon + text + colour together, per the existing pill contract (WCAG: never
+    colour alone). No hover-dependent behaviour anywhere in this card.
+  </p>
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <h2><span class="num">7</span>Reusable module boundary</h2>
+  <p>
+    All serialize/restore mechanics live in one new pure module, <span class="filepath">src/lib/terminal/scrollback-transfer.ts</span>,
+    with the transport kept entirely outside it — the reload-reattach card reuses these functions verbatim with a
+    different transport (e.g. <code>sessionStorage</code>) and a different trigger:
+  </p>
+  <table>
+    <tr><th>Export</th><th>Contract</th></tr>
+    <tr>
+      <td><code>TransferredBuffer</code></td>
+      <td><code>{ data: string; truncated: boolean }</code> — the only shape that crosses any transport.</td>
+    </tr>
+    <tr>
+      <td><code>serializeScrollback(term, capBytes)</code></td>
+      <td>→ <code>TransferredBuffer</code>. Wraps <code>@xterm/addon-serialize</code> (new dependency); enforces the
+      cap by re-serializing with halved <code>scrollback</code> row counts (oldest-first, whole rows). Never throws —
+      returns <code>{ data: "", truncated: false }</code> on internal failure.</td>
+    </tr>
+    <tr>
+      <td><code>restoreScrollback(term, buffer)</code></td>
+      <td>Resets the terminal (full reset, not <code>clear()</code> — scrollback must actually empty), writes the dim
+      truncation marker when <code>truncated</code>, then writes <code>data</code>. Safe on an empty buffer (no-op
+      beyond the reset).</td>
+    </tr>
+  </table>
+  <p>
+    Both are pure with respect to everything but the passed terminal, so they unit-test against a stub terminal the
+    same way <span class="filepath">popout-channel.ts</span> tests against a stub channel. The hook surface:
+    <code>useTerminalSession</code>'s <code>attachExisting</code> gains an optional <code>initialBuffer</code>
+    (restored after terminal open, before socket attach), and exposes a <code>serializeNow()</code> action for the dock
+    and popped window to call.
+  </p>
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <h2><span class="num">8</span>Edge cases</h2>
+  <table>
+    <tr><th>#</th><th>Scenario</th><th>Behaviour</th></tr>
+    <tr>
+      <td>E1</td>
+      <td>Popped window already closed (or frozen) when “Bring back” is clicked</td>
+      <td>No <code>buffer-reply</code> arrives; 500ms timer fires; dock keeps its own buffer and reconnects.
+      Worst case = pre-this-card behaviour. If the window closed <em>cleanly</em> moments earlier, its pagehide
+      <code>buffer-reply</code>/<code>closed</code> usually landed first and Flow C already completed — the button click
+      then finds no channel entry and is a no-op.</td>
+    </tr>
+    <tr>
+      <td>E2</td>
+      <td>Both paths race: user clicks “Bring back” while the popped window is closing</td>
+      <td>First completed path wins. Restore + reconnect + teardown run once; teardown deletes the channel entry, and
+      every later message on that channel is dropped by the existing <code>getEntry() → undefined</code> guard. A
+      double restore is impossible because restore only ever runs while the entry still exists.</td>
+    </tr>
+    <tr>
+      <td>E3</td>
+      <td>Buffer over the 1 MiB cap</td>
+      <td>Oldest rows dropped at serialize time (halved row counts until under cap); <code>truncated: true</code>
+      rides with the data; restore writes the dim “— older history trimmed during hand-off —” line at the top.
+      Applies identically in both directions.</td>
+    </tr>
+    <tr>
+      <td>E4</td>
+      <td>Serialize throws (or is slow) inside <code>pagehide</code></td>
+      <td><code>serializeScrollback</code> never throws by contract; if it returns empty/failed, the handler skips the
+      <code>buffer-reply</code> and posts <code>closed</code> alone — the dock reconnects keeping its own buffer.
+      Work is bounded: one synchronous serialize of a ≤5,000-line buffer (~ms) — no loops, no awaits, no allocation
+      beyond the output string.</td>
+    </tr>
+    <tr>
+      <td>E5</td>
+      <td>Second pop-out immediately after a bring-back</td>
+      <td>Clean by construction: each pop-out mints a fresh nonce + channel, and the dock serializes fresh at
+      payload-send time — so the new window receives the just-restored complete buffer, including the previous
+      popped-out slice. No state survives from the previous pop-out's channel (it was fully torn down).</td>
+    </tr>
+    <tr>
+      <td>E6</td>
+      <td>Output races the hand-off (either direction)</td>
+      <td>Pop-out: lines arriving between the dock's serialize and the 4001 preempt miss the handed buffer (bounded to
+      one round-trip; the dock's fresh-serialize-per-send minimises it). Bring-back: lines arriving after the popped
+      window's serialize but before its preempt miss the reply the same way. Accepted as invisible-in-practice; fixing
+      it needs relay-side sequencing, which is out of scope.</td>
+    </tr>
+    <tr>
+      <td>E7</td>
+      <td>Deploy skew: one side predates this card</td>
+      <td>Old popped window ignores the <code>payload.buffer</code> field and <code>bring-back-request</code>
+      (unknown-type warn, already in the parser) → dock's 500ms fallback covers bring-back; pop-out shows the old
+      empty-scrollback behaviour with its notice banner. Old dock ignores <code>buffer-reply</code> the same way.
+      Nothing breaks; everything degrades to today's behaviour.</td>
+    </tr>
+  </table>
+
+  <!-- ══════════════════════════════════════════════════════════════ -->
+  <h2><span class="num">9</span>Out of scope</h2>
+  <div class="oos">
+    <div class="title">Explicitly not this card</div>
+    <ul>
+      <li><strong>Server/relay-side scrollback persistence</strong> — no buffering at the relay, no replay-on-attach, no sequence numbers (would also be the only real fix for E6).</li>
+      <li><strong>Reload-reattach transport</strong> — that card reuses <code>serializeScrollback</code>/<code>restoreScrollback</code> with its own storage + trigger; nothing here binds to it beyond the module boundary in §7.</li>
+      <li><strong>Raising the 5,000-line scrollback limit</strong> or making the cap user-configurable.</li>
+      <li><strong>Cross-browser / cross-device hand-off</strong> — BroadcastChannel is same-origin, same-browser-profile by definition; unchanged.</li>
+    </ul>
+  </div>
+
+</div>
+</body>
+</html>
