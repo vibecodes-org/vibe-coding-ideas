@@ -126,6 +126,52 @@ describe("deriveChooserSections", () => {
     const sections = deriveChooserSections(rows, IDEA_A, NOW, "some-other-sid");
     expect(sections.liveHere[0].wasOpenInThisTab).toBe(false);
   });
+
+  // Machine identity (Nick's sign-off change 2): Recent-section filtering
+  // against this browser's own recorded machine identity.
+  describe("machine identity filtering (Recent section only)", () => {
+    function endedRow(overrides: Partial<ChooserRegistryRow> & { sid: string }): ChooserRegistryRow {
+      return row({
+        status: "ended",
+        cwd: `~/projects/${overrides.sid}`,
+        endedAt: new Date(NOW - 60_000).toISOString(),
+        ...overrides,
+      });
+    }
+
+    it("shows a Recent row whose machineLabel matches the stored identity", () => {
+      const rows = [endedRow({ sid: "match", machineLabel: "Nicks-MacBook-Pro" })];
+      const recent = deriveChooserSections(rows, IDEA_A, NOW, null, "Nicks-MacBook-Pro").recent;
+      expect(recent.map((r) => r.sid)).toEqual(["match"]);
+    });
+
+    it("hides a Recent row whose machineLabel differs from the stored identity", () => {
+      const rows = [endedRow({ sid: "mismatch", machineLabel: "Nicks-Mac-Studio" })];
+      const recent = deriveChooserSections(rows, IDEA_A, NOW, null, "Nicks-MacBook-Pro").recent;
+      expect(recent).toEqual([]);
+    });
+
+    it("shows a Recent row with a null machineLabel even when an identity is stored", () => {
+      const rows = [endedRow({ sid: "no-label", machineLabel: null })];
+      const recent = deriveChooserSections(rows, IDEA_A, NOW, null, "Nicks-MacBook-Pro").recent;
+      expect(recent.map((r) => r.sid)).toEqual(["no-label"]);
+    });
+
+    it("shows every Recent row when no identity is stored, regardless of machineLabel", () => {
+      const rows = [
+        endedRow({ sid: "labeled", machineLabel: "Nicks-Mac-Studio" }),
+        endedRow({ sid: "unlabeled", machineLabel: null }),
+      ];
+      const recent = deriveChooserSections(rows, IDEA_A, NOW, null, null).recent;
+      expect(recent.map((r) => r.sid).sort()).toEqual(["labeled", "unlabeled"]);
+    });
+
+    it("never filters live sections, even on a machine mismatch", () => {
+      const rows = [row({ sid: "live-mismatch", ideaId: IDEA_A, status: "active", machineLabel: "Nicks-Mac-Studio" })];
+      const sections = deriveChooserSections(rows, IDEA_A, NOW, null, "Nicks-MacBook-Pro");
+      expect(sections.liveHere.map((r) => r.sid)).toEqual(["live-mismatch"]);
+    });
+  });
 });
 
 describe("chooserHeaderCounts", () => {

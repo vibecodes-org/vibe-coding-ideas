@@ -18,7 +18,7 @@ import { RefreshCw, Terminal as TerminalIcon } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatSessionAge } from "@/lib/terminal/session-registry";
-import { newSessionTooltip } from "@/lib/terminal/session-cap";
+import { newSessionTooltip, getTerminalSessionCap, isNearSessionCap, terminalLimitLine } from "@/lib/terminal/session-cap";
 import {
   findLiveSessionForTask,
   type ChooserSections,
@@ -76,6 +76,14 @@ export function TerminalSessionChooser({
     sections.liveHere.find((r) => r.wasOpenInThisTab)?.sid ??
     sections.liveElsewhere.find((r) => r.wasOpenInThisTab)?.sid ??
     null;
+
+  // Resume confirm's honesty limit line (Nick's sign-off change 1): shown only
+  // when the user is close enough to the cap that resuming matters — the live
+  // count is every session this browser already knows about across BOTH live
+  // sections (the cap itself is per-user, not per-board).
+  const resolvedCap = cap ?? getTerminalSessionCap();
+  const liveCount = sections.liveHere.length + sections.liveElsewhere.length;
+  const limitLine = isNearSessionCap(liveCount, resolvedCap) ? terminalLimitLine(liveCount, resolvedCap) : null;
 
   const startNewLabel = pendingTask
     ? `Start new session for this task — ${pendingTask.taskTitle}`
@@ -157,6 +165,7 @@ export function TerminalSessionChooser({
               row={row}
               busy={busy}
               confirming={confirmingResumeSid === row.sid}
+              limitLine={limitLine}
               onRequestConfirm={() => setConfirmingResumeSid(row.sid)}
               onCancelConfirm={() => setConfirmingResumeSid(null)}
               onConfirm={() => {
@@ -229,15 +238,11 @@ function LiveRow({
   );
 }
 
-function machineLine(machineLabel: string | null): string {
-  const base = "The conversation lives on the machine that ran it — resume from a browser on that machine.";
-  return machineLabel ? `${base} (recorded as ${machineLabel})` : base;
-}
-
 function RecentRow({
   row,
   busy,
   confirming,
+  limitLine,
   onRequestConfirm,
   onCancelConfirm,
   onConfirm,
@@ -245,6 +250,8 @@ function RecentRow({
   row: ChooserRecentRow;
   busy: boolean;
   confirming: boolean;
+  /** Resume confirm's honesty limit line (Nick's sign-off change 1) — null unless the user is near the cap. */
+  limitLine: string | null;
   onRequestConfirm: () => void;
   onCancelConfirm: () => void;
   onConfirm: () => void;
@@ -276,10 +283,10 @@ function RecentRow({
       {confirming && (
         <div className="mt-2 border-l-2 border-emerald-500 pl-2.5 text-[11.5px] text-zinc-400">
           <p>
-            This starts a <b className="text-zinc-200">new session</b> (counts toward your limit) that continues the
-            most recent conversation in <span className="font-mono text-zinc-300">{row.cwd}</span>.
+            Starts a new terminal that picks up your last conversation in{" "}
+            <span className="font-mono text-zinc-300">{row.cwd}</span>.
           </p>
-          <p className="mt-1">{machineLine(row.machineLabel)}</p>
+          {limitLine && <p className="mt-1">{limitLine}</p>}
           <div className="mt-2 flex items-center justify-end gap-2">
             <Button variant="ghost" size="xs" onClick={onCancelConfirm} disabled={busy}>
               Cancel

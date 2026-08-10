@@ -107,11 +107,13 @@ export function formatSessionAge(createdAt: string, nowMs: number = Date.now()):
 
 /**
  * The My-sessions identity line (design §9: "machine · cwd · short sid,
- * whatever's non-null"). `machine_label` is never actually populated today
- * (no browser API can read it — see the PATCH route's doc comment), but the
- * shape stays ready for whenever a real signal exists; `cwd` is set
- * best-effort post-connect. The short sid is always present so a row is never
- * a blank line.
+ * whatever's non-null"). `machine_label` is populated best-effort once the
+ * bridge announces its hostname over the relay (Nick's sign-off change 2 —
+ * see use-terminal-session.ts's bridge-version handling and the PATCH route's
+ * doc comment); `cwd` is set best-effort post-connect. Either can still be
+ * null (an old bridge that never announces a host, or a PATCH that hasn't
+ * landed yet) — the short sid is always present so a row is never a blank
+ * line.
  */
 export function formatSessionIdentity(input: {
   machineLabel?: string | null;

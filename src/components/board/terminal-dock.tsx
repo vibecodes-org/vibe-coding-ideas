@@ -85,6 +85,7 @@ import {
 } from "@/lib/terminal/chooser-data";
 import { decideEntryBehaviour, type EntryDecision } from "@/lib/terminal/entry-decision";
 import { loadSessionSnapshot, readLastTabSid, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
+import { getMachineIdentity } from "@/lib/terminal/machine-identity";
 import {
   type SessionEntry,
   type TabDisplayStatus,
@@ -277,7 +278,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   }, [entryDecision]);
 
   const chooserSections: ChooserSections = useMemo(
-    () => deriveChooserSections(registryRows ?? [], ideaId, Date.now(), entrySnapshotInfo?.sid ?? readLastTabSid()),
+    () =>
+      deriveChooserSections(
+        registryRows ?? [],
+        ideaId,
+        Date.now(),
+        entrySnapshotInfo?.sid ?? readLastTabSid(),
+        getMachineIdentity(),
+      ),
     [registryRows, ideaId, entrySnapshotInfo],
   );
   const chooserCounts = useMemo(() => chooserHeaderCounts(chooserSections), [chooserSections]);
