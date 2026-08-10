@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design — Terminal reload reattach + resume last conversation</title>
+<style>
+  :root{
+    --bg:#09090b; --panel:#0c0c0e; --panel2:#111114; --border:#27272a; --border2:#3f3f46;
+    --txt:#e4e4e7; --dim:#a1a1aa; --faint:#71717a;
+    --emerald:#34d399; --emerald-bg:rgba(52,211,153,.09); --emerald-bd:rgba(52,211,153,.4);
+    --sky:#38bdf8; --sky-bg:rgba(56,189,248,.09); --sky-bd:rgba(56,189,248,.4);
+    --amber:#fbbf24; --amber-bg:rgba(251,191,36,.09); --amber-bd:rgba(251,191,36,.4);
+    --rose:#fb7185; --rose-bg:rgba(251,113,133,.09); --rose-bd:rgba(251,113,133,.45);
+    --violet:#a78bfa;
+    --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--txt);font:14px/1.6 -apple-system,'Segoe UI',Roboto,sans-serif;padding:40px 20px 80px}
+  .wrap{max-width:980px;margin:0 auto}
+  h1{font-size:24px;margin-bottom:4px}
+  h2{font-size:17px;margin:44px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+  h3{font-size:14px;margin:22px 0 8px;color:var(--txt)}
+  p{margin:8px 0;color:var(--dim)}
+  strong{color:var(--txt)}
+  .sub{color:var(--faint);font-size:13px;margin-bottom:24px}
+  .meta{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
+  .chip{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--border2);color:var(--dim)}
+  .chip.em{border-color:var(--emerald-bd);color:var(--emerald);background:var(--emerald-bg)}
+  code{font-family:var(--mono);font-size:12px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--txt)}
+  .panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin:12px 0}
+  .decision{border-left:3px solid var(--emerald)}
+  .decision .dtitle{font-size:14px;font-weight:700;margin-bottom:6px}
+  .decision .dtag{display:inline-block;font-size:10.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--emerald);margin-right:8px}
+  .rej{margin-top:10px;padding:9px 12px;background:var(--panel2);border:1px solid var(--border);border-radius:7px;font-size:12.5px;color:var(--faint)}
+  .rej b{color:var(--dim);font-weight:600}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px}
+  th{text-align:left;padding:7px 10px;color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border2)}
+  td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--dim);vertical-align:top}
+  td:first-child{color:var(--txt)}
+  .copytab td:nth-child(2){font-family:var(--mono);font-size:12px;color:var(--txt)}
+  /* flows */
+  .flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0;overflow-x:auto;padding:4px 0}
+  .step{background:var(--panel2);border:1px solid var(--border2);border-radius:7px;padding:6px 11px;font-size:12px;color:var(--txt);white-space:nowrap}
+  .step small{display:block;color:var(--faint);font-size:10.5px;white-space:normal;max-width:190px}
+  .step.sys{border-style:dashed;color:var(--dim)}
+  .step.good{border-color:var(--emerald-bd);background:var(--emerald-bg)}
+  .step.warn{border-color:var(--amber-bd);background:var(--amber-bg)}
+  .step.act{border-color:var(--sky-bd);background:var(--sky-bg)}
+  .arr{color:var(--faint);font-size:13px;flex:none}
+  .branch{margin-left:18px;padding-left:14px;border-left:2px solid var(--border2)}
+  .blabel{font-size:11px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;margin:10px 0 2px}
+  .blabel.a{color:var(--emerald)} .blabel.b{color:var(--sky)} .blabel.c{color:var(--amber)}
+  /* mockups */
+  .mock{background:var(--panel);border:1px solid var(--border2);border-radius:10px;padding:0;margin:14px 0;overflow:hidden;font-size:13px}
+  .mock-cap{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin:18px 0 -8px}
+  .dockbar{display:flex;align-items:center;gap:2px;background:var(--panel2);border-bottom:1px solid var(--border);padding:5px 8px}
+  .tab{display:flex;align-items:center;gap:7px;padding:5px 12px;border-radius:6px;font-size:12.5px;color:var(--dim)}
+  .tab.on{background:#1b1b1f;color:var(--txt);border:1px solid var(--border2)}
+  .dot{width:7px;height:7px;border-radius:50%;flex:none}
+  .dot.g{background:var(--emerald)} .dot.s{background:var(--sky)} .dot.a{background:var(--amber)} .dot.z{background:var(--faint)}
+  .term{background:#0a0a0c;padding:14px 16px;font-family:var(--mono);font-size:12px;color:var(--dim);min-height:60px}
+  .btn{display:inline-flex;align-items:center;gap:6px;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:600;border:1px solid var(--border2);color:var(--txt);background:transparent}
+  .btn.sky{border-color:var(--sky-bd);color:var(--sky);background:var(--sky-bg)}
+  .btn.em{border-color:var(--emerald-bd);color:var(--emerald);background:var(--emerald-bg)}
+  .btn.em.solid{background:var(--emerald);color:#052e22;border-color:var(--emerald)}
+  .btn.rose{border-color:var(--rose-bd);color:var(--rose)}
+  .btn.ghost{border-color:transparent;color:var(--dim)}
+  .note-amber{display:flex;gap:9px;align-items:flex-start;background:var(--amber-bg);border:1px solid var(--amber-bd);border-radius:7px;padding:8px 12px;font-size:12px;color:var(--amber)}
+  .note-amber .x{margin-left:auto;color:var(--amber);opacity:.7;font-weight:700;cursor:default}
+  .row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--border)}
+  .row:first-child{border-top:0}
+  .row .who{min-width:0;flex:1}
+  .row .who .t{font-weight:600;color:var(--txt);font-size:13px}
+  .row .who .m{font-family:var(--mono);font-size:11px;color:var(--faint)}
+  .row .age{font-size:11.5px;color:var(--faint);flex:none}
+  .sect{padding:7px 14px;font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);background:var(--panel2);border-top:1px solid var(--border)}
+  .confirm{border-left:2px solid var(--emerald);background:var(--emerald-bg);padding:10px 14px;font-size:12.5px}
+  .kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--border2);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--dim)}
+  ul.tight{margin:6px 0 6px 20px;color:var(--dim)}
+  ul.tight li{margin:3px 0}
+  .oos{border:1px dashed var(--border2);border-radius:10px;padding:14px 18px;margin:14px 0;color:var(--faint)}
+  .oos h3{margin-top:0;color:var(--dim)}
+  .divider-line{color:var(--faint);text-align:center;font-size:11px;padding:2px 0}
+  .a11y{border-left:3px solid var(--sky)}
+</style>
+</head>
+<body><div class="wrap">
+
+<h1>Terminal: reload reattach &amp; resume last conversation</h1>
+<p class="sub">UX design — card <code>cbe60db5</code> · builds on the Requirements step's six stories · Half&nbsp;A (reattach) first-class, Half&nbsp;B (resume) minimal-but-real</p>
+<div class="meta">
+  <span class="chip em">Design</span>
+  <span class="chip">Dock · My sessions · Pop-out</span>
+  <span class="chip">WCAG 2.1 AA · no hover-only · never colour alone</span>
+</div>
+
+<h2>1 · Decisions at a glance</h2>
+<table>
+  <tr><th>#</th><th>Question</th><th>Decision</th></tr>
+  <tr><td>D1</td><td>Board reload behaviour</td><td><strong>Hybrid</strong>: auto-reattach only when this tab can prove it held the session seconds ago; one-click "Reconnect" everywhere else.</td></tr>
+  <tr><td>D2</td><td>Pre-reload scrollback</td><td><strong>sessionStorage snapshot</strong> (pagehide + 20&nbsp;s dirty-flag cadence), honest amber note when absent.</td></tr>
+  <tr><td>D3</td><td>My sessions reconnect</td><td>Sky <strong>Reconnect</strong> button on live rows, left of End; inline take-over confirm when attached elsewhere.</td></tr>
+  <tr><td>D4</td><td>Ended-session resume</td><td>New <strong>"Recent"</strong> section in My sessions; emerald <strong>Resume</strong> with inline confirm stating new-session cost + machine truth.</td></tr>
+  <tr><td>D5</td><td>Popped-window reload</td><td><strong>Reattach in place</strong>: sid stashed in the popped window's sessionStorage → reattach mint → same session.</td></tr>
+  <tr><td>D6</td><td>Cap / rate</td><td>Server requirement only: reattach mint skips cap + rate limit; auth + registry ownership still enforced.</td></tr>
+</table>
+
+<h2>2 · Decisions in full</h2>
+
+<div class="panel decision">
+  <div class="dtitle"><span class="dtag">D1</span>Board reload: hybrid auto / one-click</div>
+  <p>On board load the dock queries the registry for live sessions on this idea (it already fetches for the My sessions badge). Each live session gets a dock tab in a <strong>"Reconnect available"</strong> state. Then:</p>
+  <ul class="tight">
+    <li><strong>Auto path</strong> — if <code>sessionStorage</code> holds a snapshot key for that sid whose timestamp is <strong>&lt; 60&nbsp;s old</strong>, this exact tab held the session moments ago (sessionStorage is per-tab and survives reload). The dock reattaches automatically: mint → <code>attachExisting</code> → restore snapshot. Zero clicks; the refresher never even sees the Reconnect state.</li>
+    <li><strong>One-click path</strong> — no fresh proof (new tab, restored browser session, second browser): the tab shows a Reconnect panel (§4, mockup&nbsp;M1). One click reattaches. This satisfies the "at most one click" requirement while making take-over of a possibly-live view elsewhere a deliberate act.</li>
+  </ul>
+  <p><strong>Why the 60&nbsp;s guard:</strong> some browsers restore sessionStorage across a full browser restart. A tab restored hours later auto-grabbing the session would silently kick a view that moved to another machine in the meantime. Fresh timestamp = safe; stale = ask.</p>
+  <div class="rej"><b>Rejected — unconditional auto-reattach:</b> attaching is same-owner take-over; a second browser opening the board would automatically kick the first browser's live terminal with no warning. Automatic preemption is a surprise-machine. <b>Rejected — always one-click:</b> punishes the accidental-reload story (the most common case) with a needless click and a flash of "disconnected" UI when we have proof it's the same tab.</div>
+</div>
+
+<div class="panel decision">
+  <div class="dtitle"><span class="dtag">D2</span>Pre-reload scrollback: sessionStorage snapshot + honest fallback</div>
+  <p>While attached, the dock snapshots the serialized buffer (existing scrollback module, already capped at 1&nbsp;MiB) into sessionStorage:</p>
+  <ul class="tight">
+    <li><strong>When:</strong> on <code>pagehide</code> (the reload moment) <em>and</em> every <strong>20&nbsp;s</strong>, but only if output arrived since the last write (dirty flag) — no idle churn.</li>
+    <li><strong>Key scheme:</strong> <code>vc:term:snap:&lt;sid&gt;</code> → <code>{ v:1, ts, data }</code>. Versioned so a format change can be dropped cleanly.</li>
+    <li><strong>Eviction:</strong> deleted when the session ends cleanly, when the tab is closed via ×, and on successful restore-then-supersede (each new write replaces the old). On <code>QuotaExceededError</code>: delete all other <code>vc:term:snap:*</code> keys, retry once, otherwise skip silently — the honest note covers it.</li>
+    <li><strong>Restore:</strong> reattach passes the snapshot as <code>initialBuffer</code> through the existing <code>attachExisting</code> path, then renders the divider <em>"— reconnected · earlier output restored —"</em>.</li>
+    <li><strong>Honest fallback:</strong> no snapshot (tab-closer, second browser, quota skip, stale version) → dismissible amber note pinned above the terminal (mockup&nbsp;M3): <em>"History from before you reconnected isn't shown here — it's still in Claude's context. New output appears below."</em> Never silently blank.</li>
+  </ul>
+  <p><strong>Truth split, stated plainly:</strong> sessionStorage survives reload in the <em>same tab</em> only. The refresher gets history back; the tab-closer and second-browser cases get the honest note. The note never claims history is lost — Claude's own context is intact on the machine.</p>
+  <div class="rej"><b>Rejected — no snapshot, note only:</b> the refresher story explicitly asks for continuity; a blank terminal after a 2-second accident feels like data loss even with a note. <b>Rejected — server-side scrollback store:</b> real continuity everywhere, but new storage, retention, and privacy surface for terminal output — out of proportion for this card (listed in out-of-scope).</div>
+</div>
+
+<div class="panel decision">
+  <div class="dtitle"><span class="dtag">D3</span>Reconnect in My sessions (live rows)</div>
+  <p>Every live row gains a sky <strong>Reconnect</strong> button placed <em>left of</em> the rose End button (primary-action-first, destructive-last — matches the row's existing layout grammar). Behaviour:</p>
+  <ul class="tight">
+    <li><strong>Same idea's board:</strong> activates/creates the dock tab and reattaches in place. Panel closes.</li>
+    <li><strong>Different idea:</strong> navigates to that idea's board with <code>?reconnect=&lt;sid&gt;</code>; the dock reads it, reattaches, and cleans the URL. A sid is an identifier, not a credential — the mint still requires auth + ownership, so no token ever appears in a URL.</li>
+    <li><strong>States:</strong> default → <em>Connecting…</em> (spinner + word, not spinner alone) → success closes panel / failure shows inline row error <em>"Couldn't reconnect — the session may have just ended."</em> with Retry.</li>
+    <li><strong>Attached elsewhere:</strong> if the registry marks the session as currently attached, the button first swaps the row into an inline amber confirm (same inline-confirm pattern as End all): <em>"This session is open somewhere else (Nick's MacBook · Chrome). Reconnecting here takes it over — the other view stops receiving output."</em> → <span class="kbd">Cancel</span> / <span class="kbd">Take over</span>.</li>
+  </ul>
+  <div class="rej"><b>Rejected — whole-row click to reconnect:</b> an invisible affordance next to a destructive End button invites misclicks and fails recognition-over-recall; explicit labelled buttons are the panel's established pattern.</div>
+</div>
+
+<div class="panel decision">
+  <div class="dtitle"><span class="dtag">D4</span>Resume for ended sessions (Half B — minimal but real)</div>
+  <p>My sessions gains a second section, <strong>"Recent"</strong>, under the live list: the user's most recently ended sessions (last 48&nbsp;h, max 5, newest first, one per project directory). Each row shows the same identity line (task/idea, machine label, age → "ended 2h ago") and an emerald <strong>Resume</strong> button. Clicking swaps the row into an inline confirm (mockup&nbsp;M2, third row) that tells the whole truth before anything launches:</p>
+  <ul class="tight">
+    <li>It starts a <strong>new session</strong> and counts toward the session limit.</li>
+    <li>It continues the <strong>most recent conversation in that project folder</strong> (exact-conversation pick is deferred — the copy says "most recent", never "this exact one").</li>
+    <li><strong>Machine truth:</strong> the conversation lives on the machine that ran it. Confirm line: <em>"Runs on Nick's MacBook — resume from a browser on that machine."</em> If the label is unknown: <em>"We can't tell which machine ran this — resume only works on the machine that holds the conversation."</em> We cannot detect which machine the current browser sits on, so we state the requirement rather than pretend to verify it; if the wrong machine launches, the standard launch-failure state appears and the user has been fore-warned.</li>
+  </ul>
+  <p>Confirming fires the <strong>existing</strong> <code>vibecodes://</code> launch flow with the recorded project directory and a <code>claude --continue</code> variant of the launch command. The helper's quit-when-idle is a non-event: the protocol link wakes it exactly as a fresh launch does, and the new dock tab shows the existing launch-phase progress ("Starting the helper… · Launching Claude…").</p>
+  <div class="rej"><b>Rejected — Resume button on the board / ended dock tab:</b> ended sessions vanish from the dock by design; resurrecting ghost tabs to host a button reintroduces clutter the linger design removed. My sessions is already the "everything of mine, across ideas" surface — one home, findable (Jakob: matches "recent items" sections users know from editors and terminals).</div>
+</div>
+
+<div class="panel decision">
+  <div class="dtitle"><span class="dtag">D5</span>Popped-window reload: reattach in place</div>
+  <p>Today a popped window's reload dead-ends on "Lost the session hand-off" (stale nonce, no opener). Fix: at hand-off time the popped window stashes <code>vc:pop:sid</code> (+ idea id, for labels) into its <em>own</em> sessionStorage — same-tab, so it survives reload. On load, if the nonce hand-off fails but the stash exists: reattach mint → <code>attachExisting</code> → same session in the same window, with its own D2 snapshots giving it the same scrollback behaviour as the dock. If the mint says the session is gone, an end-state replaces the error: <em>"This session has ended. You can close this window — start a new one from the board."</em> + a "Close window" button.</p>
+  <div class="rej"><b>Rejected — window.name carrying the sid:</b> window.name persists across cross-origin navigation (leaky) and already carries the nonce; overloading it is fragile. <b>Rejected — "return to the board" message:</b> fails the stated requirement that a pop-out reload reattaches, and punishes an accidental <span class="kbd">⌘R</span> in the very window the user deliberately isolated.</div>
+</div>
+
+<div class="panel decision">
+  <div class="dtitle"><span class="dtag">D6</span>Cap / rate exemption (requirement for Implementation)</div>
+  <p>The reattach mint is a new mode on the existing session API: given an <strong>owned, live</strong> sid it returns a fresh browser token, creates <strong>no</strong> registry row, and <strong>bypasses both the session cap and the rate limit</strong> — reattaching is recovering existing capacity, not consuming new capacity. It remains fully authenticated and ownership-checked against the registry (owner-only, per requirements). Resume (D4) is deliberately <em>not</em> exempt: it is a genuine new launch and goes through the normal capped path — the confirm copy says so.</p>
+  <div class="rej"><b>Rejected — counting reattach against the rate limit:</b> a flaky network or impatient double-reload would lock a user out of their own still-running session — the exact failure the refresher story forbids.</div>
+</div>
+
+<h2>3 · Flows</h2>
+
+<h3>Flow 1 — Board reload</h3>
+<div class="flow">
+  <div class="step">Reload on board page</div><span class="arr">→</span>
+  <div class="step sys">Dock loads · registry lists live sessions for this idea</div><span class="arr">→</span>
+  <div class="step sys">Tabs created in "Reconnect available" state</div>
+</div>
+<div class="branch">
+  <div class="blabel a">A · Auto (snapshot &lt; 60 s proves this tab held it)</div>
+  <div class="flow">
+    <div class="step sys">Mint reattach token (no cap/rate)</div><span class="arr">→</span>
+    <div class="step sys">attachExisting + snapshot as initialBuffer</div><span class="arr">→</span>
+    <div class="step good">Live again · divider "— reconnected · earlier output restored —" · 0 clicks</div>
+  </div>
+  <div class="blabel b">B · One-click (no fresh proof)</div>
+  <div class="flow">
+    <div class="step">Tab shows Reconnect panel (M1)</div><span class="arr">→</span>
+    <div class="step act">Click "Reconnect"</div><span class="arr">→</span>
+    <div class="step sys">Mint → attach</div><span class="arr">→</span>
+    <div class="step good">Live · amber history note (M3) if no snapshot</div>
+  </div>
+  <div class="blabel c">C · Mint fails (session ended meanwhile)</div>
+  <div class="flow">
+    <div class="step warn">Tab flips to the existing ended state<small>"This session has ended." — plus a Resume shortcut if it's in Recent</small></div>
+  </div>
+</div>
+
+<h3>Flow 2 — My sessions → Reconnect</h3>
+<div class="flow">
+  <div class="step">Open My sessions</div><span class="arr">→</span>
+  <div class="step act">Click "Reconnect" on a live row</div><span class="arr">→</span>
+  <div class="step sys">Attached elsewhere?<small>yes → inline take-over confirm first</small></div><span class="arr">→</span>
+  <div class="step sys">Same idea: activate tab · Other idea: navigate with ?reconnect=sid</div><span class="arr">→</span>
+  <div class="step sys">Mint → attach</div><span class="arr">→</span>
+  <div class="step good">Terminal live · honest history note (no snapshot in this tab)</div>
+</div>
+
+<h3>Flow 3 — Ended session → Resume (Half B)</h3>
+<div class="flow">
+  <div class="step">My sessions → Recent</div><span class="arr">→</span>
+  <div class="step act">Click "Resume"</div><span class="arr">→</span>
+  <div class="step">Inline confirm<small>new session · counts toward limit · most recent conversation · machine truth</small></div><span class="arr">→</span>
+  <div class="step act">"Resume conversation"</div><span class="arr">→</span>
+  <div class="step sys">Navigate to that idea's board · new dock tab</div><span class="arr">→</span>
+  <div class="step sys">vibecodes:// launch — wakes helper if it quit-when-idled<small>existing launch-phase UI: "Starting the helper… Launching Claude…"</small></div><span class="arr">→</span>
+  <div class="step sys">claude --continue in recorded project dir</div><span class="arr">→</span>
+  <div class="step good">New live session, conversation continued</div>
+</div>
+<p style="font-size:12.5px">Wrong machine / conversation not found there: the launch proceeds but Claude starts fresh or the helper isn't installed — both land in <em>existing</em> launch-failure/plain-start states. The confirm's machine line is the honesty layer; we add no new failure UI.</p>
+
+<h3>Flow 4 — Popped-window reload</h3>
+<div class="flow">
+  <div class="step">Reload in popped window</div><span class="arr">→</span>
+  <div class="step sys">Nonce hand-off fails → check vc:pop:sid stash</div><span class="arr">→</span>
+  <div class="step sys">Mint → attachExisting (+ own snapshot if fresh)</div><span class="arr">→</span>
+  <div class="step good">Same session, same window</div>
+</div>
+<div class="branch"><div class="blabel c">Mint fails</div>
+  <div class="flow"><div class="step warn">"This session has ended. You can close this window — start a new one from the board." + Close window</div></div>
+</div>
+
+<h2>4 · Mockups</h2>
+
+<p class="mock-cap">M1 · Dock tab — "Reconnect available" (one-click path)</p>
+<div class="mock">
+  <div class="dockbar">
+    <div class="tab on"><span class="dot s"></span> fix-login-bug <span style="color:var(--faint)">×</span></div>
+    <div class="tab"><span class="dot g"></span> api-cleanup <span style="color:var(--faint)">×</span></div>
+    <div class="tab" style="color:var(--faint)">＋</div>
+  </div>
+  <div class="term" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:28px;font-family:inherit">
+    <div style="font-size:13px;color:var(--txt);font-weight:600">This session is still running on Nick's MacBook</div>
+    <div style="font-size:12px;color:var(--faint)">Started 3h ago · ~/projects/vibecodes</div>
+    <div style="display:flex;gap:8px;margin-top:2px">
+      <span class="btn sky">⇄ Reconnect</span>
+      <span class="btn rose">End session</span>
+    </div>
+  </div>
+</div>
+<p style="font-size:12.5px">Tab dot: <strong>sky + tooltip-independent state text inside the panel</strong> (never colour alone — the panel headline carries the meaning). While connecting, the button reads <em>"Connecting…"</em> with a spinner and stays focusable-disabled.</p>
+
+<p class="mock-cap">M2 · My sessions — live row with Reconnect · take-over confirm · Recent with Resume</p>
+<div class="mock">
+  <div style="display:flex;align-items:center;gap:8px;padding:9px 14px;border-bottom:1px solid var(--border);font-weight:700;font-size:13px">My sessions <span style="margin-left:auto;font-size:11.5px;font-weight:400;color:var(--faint)">runs on your machines</span></div>
+  <div class="row">
+    <div class="who"><div class="t">fix-login-bug <span style="font-weight:400;color:var(--faint);font-size:11.5px">VibeCodes</span></div><div class="m">Nick's MacBook · ~/projects/vibecodes</div></div>
+    <span class="age">3h</span>
+    <span class="btn sky">⇄ Reconnect</span>
+    <span class="btn rose">⏻ End</span>
+  </div>
+  <div class="row" style="border-left:2px solid var(--amber);background:var(--amber-bg)">
+    <div class="who"><div class="t" style="color:var(--amber);font-size:12.5px">Open somewhere else</div><div style="font-size:11px;color:var(--dim)">This session is open on Nick's MacBook · Chrome. Reconnecting here takes it over — the other view stops receiving output.</div></div>
+    <span class="btn ghost">Cancel</span>
+    <span class="btn sky">Take over</span>
+  </div>
+  <div class="sect">Recent · ended in the last 48h</div>
+  <div class="row">
+    <div class="who"><div class="t">api-cleanup <span style="font-weight:400;color:var(--faint);font-size:11.5px">VibeCodes</span></div><div class="m">Nick's MacBook · ~/projects/vibecodes</div></div>
+    <span class="age">ended 2h ago</span>
+    <span class="btn em">↻ Resume</span>
+  </div>
+  <div class="confirm" style="border-top:1px solid var(--border)">
+    <div style="font-weight:700;color:var(--emerald);margin-bottom:3px">Resume this conversation?</div>
+    <ul class="tight" style="font-size:12px">
+      <li>Starts a <strong>new session</strong> — counts toward your session limit.</li>
+      <li>Continues the <strong>most recent conversation</strong> in ~/projects/vibecodes.</li>
+      <li>Runs on <strong>Nick's MacBook</strong> — resume from a browser on that machine.</li>
+    </ul>
+    <div style="display:flex;gap:8px;justify-content:flex-end;margin-top:8px"><span class="btn ghost">Cancel</span><span class="btn em solid">↻ Resume conversation</span></div>
+  </div>
+  <div class="row">
+    <div class="who"><div class="t">docs-pass <span style="font-weight:400;color:var(--faint);font-size:11.5px">Helper</span></div><div class="m">unknown machine · ~/projects/helper</div></div>
+    <span class="age">ended 1d ago</span>
+    <span class="btn em">↻ Resume</span>
+  </div>
+</div>
+<p style="font-size:12.5px">Unknown-machine variant swaps the confirm's third bullet for: <em>"We can't tell which machine ran this — resume only works on the machine that holds the conversation."</em></p>
+
+<p class="mock-cap">M3 · Honest history note (pinned above the terminal, dismissible) + restore divider</p>
+<div class="mock" style="padding:12px 14px">
+  <div class="note-amber"><span aria-hidden="true">ℹ</span><span>History from before you reconnected isn't shown here — it's still in Claude's context. New output appears below.</span><span class="x" role="button" aria-label="Dismiss">×</span></div>
+  <div class="term" style="margin-top:10px;border:1px solid var(--border);border-radius:7px">$ …new output streams here…</div>
+  <div style="margin-top:14px;border-top:1px dashed var(--border2);padding-top:10px">
+    <div style="font-size:11px;color:var(--faint);margin-bottom:6px">When a snapshot WAS restored, no note — just an inline divider in the buffer:</div>
+    <div class="term" style="border:1px solid var(--border);border-radius:7px"><span style="color:var(--faint)">…earlier output…</span><div class="divider-line">— reconnected · earlier output restored —</div>$ █</div>
+  </div>
+</div>
+
+<h2>5 · Copy — every new string</h2>
+<table class="copytab">
+  <tr><th>Where</th><th>String</th></tr>
+  <tr><td>Dock tab panel, headline</td><td>This session is still running on {machine label}<br><span style="color:var(--faint)">label unknown → "This session is still running on your machine"</span></td></tr>
+  <tr><td>Dock tab panel, sub</td><td>Started {age} ago · {cwd}</td></tr>
+  <tr><td>Reconnect button / busy</td><td>Reconnect · Connecting…</td></tr>
+  <tr><td>Reconnect failure (tab + row)</td><td>Couldn't reconnect — the session may have just ended.</td></tr>
+  <tr><td>Restore divider</td><td>— reconnected · earlier output restored —</td></tr>
+  <tr><td>History note (no snapshot)</td><td>History from before you reconnected isn't shown here — it's still in Claude's context. New output appears below.</td></tr>
+  <tr><td>Take-over confirm</td><td>Open somewhere else — This session is open on {machine} · {browser?}. Reconnecting here takes it over — the other view stops receiving output. [Cancel] [Take over]</td></tr>
+  <tr><td>Recent section header</td><td>Recent · ended in the last 48h</td></tr>
+  <tr><td>Recent row age</td><td>ended {age} ago</td></tr>
+  <tr><td>Resume confirm, title</td><td>Resume this conversation?</td></tr>
+  <tr><td>Resume confirm, bullets</td><td>Starts a new session — counts toward your session limit. / Continues the most recent conversation in {cwd}. / Runs on {machine} — resume from a browser on that machine.</td></tr>
+  <tr><td>Resume confirm, machine unknown</td><td>We can't tell which machine ran this — resume only works on the machine that holds the conversation.</td></tr>
+  <tr><td>Resume confirm, buttons</td><td>[Cancel] [Resume conversation]</td></tr>
+  <tr><td>Popped window, session gone</td><td>This session has ended. You can close this window — start a new one from the board. [Close window]</td></tr>
+</table>
+
+<h2>6 · Edge cases</h2>
+<table>
+  <tr><th>Case</th><th>Behaviour</th></tr>
+  <tr><td>Reload during linger (session ending, helper counting down to quit)</td><td>Registry still says live → reattach succeeds and the user sees the normal linger/ended progression. If it flipped to ended mid-mint, the mint fails → Flow 1C ended state. No special UI.</td></tr>
+  <tr><td>Session expired between snapshot and reattach</td><td>Mint returns "gone" → ended state; the stale snapshot for that sid is deleted. Never render a dead snapshot as if live.</td></tr>
+  <tr><td>Two tabs, same sid</td><td>Attach is same-owner take-over: last attach wins; the earlier tab drops to the Reconnect panel (M1) rather than a broken stream. The auto path can't ping-pong — only a tab with a &lt;60&nbsp;s snapshot auto-attaches, and losing the attachment stops its snapshots.</td></tr>
+  <tr><td>Snapshot write exceeds quota</td><td>Evict other <code>vc:term:snap:*</code> keys, retry once, else skip. Reattach then shows the honest note — degraded, never wrong.</td></tr>
+  <tr><td>Resume clicked while helper is mid-quit</td><td><code>vibecodes://</code> relaunches the helper (existing path). Worst case the launch-phase UI sits on "Starting the helper…" a few seconds longer. Timeout uses the existing launch-failure state.</td></tr>
+  <tr><td>Resume on a machine without the conversation</td><td>Fore-warned in the confirm; Claude simply starts fresh (--continue with nothing to continue) or the launch fails on a machine without the helper — both are existing states.</td></tr>
+  <tr><td>?reconnect=sid for a session that isn't yours / doesn't exist</td><td>Mint is auth + ownership checked → param ignored, URL cleaned, no error surfaced (nothing the user did wrong on this page).</td></tr>
+</table>
+
+<div class="panel a11y">
+  <h3 style="margin-top:0">Accessibility notes</h3>
+  <ul class="tight">
+    <li>All new actions are visible buttons — nothing hover-revealed; every state has a text label alongside its colour/icon (dots never stand alone; the panel headline restates the state).</li>
+    <li>Reattach state changes announce via the dock's existing <code>aria-live</code> region ("Reconnected to fix-login-bug", "Session ended").</li>
+    <li>Inline confirms (take-over, resume) move focus to the confirm's first button and restore it on cancel; <span class="kbd">Esc</span> cancels.</li>
+    <li>The history note is <code>role="status"</code>, dismiss is a real button with <code>aria-label</code>.</li>
+  </ul>
+</div>
+
+<div class="oos">
+  <h3>Out of scope (this card)</h3>
+  <ul class="tight">
+    <li>Server-side scrollback persistence (cross-tab / cross-machine history restore).</li>
+    <li>Exact conversation-id capture and a conversation picker — Resume is most-recent-in-directory only (deferred per requirements).</li>
+    <li>Detecting which machine the current browser is on (would need helper-side pairing signals).</li>
+    <li>Realtime registry push to the dock (fetch-on-load / on-open stays, per the My sessions brief).</li>
+    <li>Resuming into a <em>different</em> project directory, or resume for sessions older than the registry window.</li>
+  </ul>
+</div>
+
+</div></body>
+</html>
