@@ -14,7 +14,7 @@
 // clicks to the callbacks the dock supplies.
 
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw, Terminal as TerminalIcon } from "lucide-react";
+import { Info, RefreshCw, Terminal as TerminalIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatSessionAge } from "@/lib/terminal/session-registry";
@@ -25,6 +25,9 @@ import {
   type ChooserLiveRow,
   type ChooserRecentRow,
 } from "@/lib/terminal/chooser-data";
+import { updateNudgeCopy, type HelperStatus } from "@/lib/terminal/helper-row";
+import { MINIMUM_RECOMMENDED_HELPER_VERSION, shouldShowChooserHelperNudge } from "@/lib/terminal/helper-version";
+import { TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
 
 // F3 (common foundations): the SAME generic warning, visible before every
 // single Reconnect click — never conditional, never sniffed.
@@ -46,6 +49,17 @@ export interface TerminalSessionChooserProps {
   /** "Start new session" — the only action that mints (capped, rate-limited, exactly today's mint path). */
   onStartNew: () => void;
   cap?: number;
+  /**
+   * The caller's own last-known helper status (card cbe60db5, rework 3 —
+   * Nick's field test: "I click Open and there's no indication I need to
+   * update the helper"). The dock owns the fetch — the SAME
+   * `/api/terminal/helper/status` response the My sessions panel polls
+   * on-open (see terminal-my-sessions-panel.tsx's `load()`) — and passes the
+   * result down, so this stays a pure render component like the rest of the
+   * chooser; `undefined`/`null` (still loading, or the fetch failed) simply
+   * renders no nudge, never an error state.
+   */
+  helperStatus?: HelperStatus | null;
 }
 
 export function TerminalSessionChooser({
@@ -57,9 +71,16 @@ export function TerminalSessionChooser({
   onResume,
   onStartNew,
   cap,
+  helperStatus = null,
 }: TerminalSessionChooserProps) {
   const [confirmingResumeSid, setConfirmingResumeSid] = useState<string | null>(null);
   const firstFocusRef = useRef<HTMLButtonElement | null>(null);
+
+  // Helper-update nudge (card cbe60db5, rework 3): dismissed for the rest of
+  // the browser session only — component-local state, not persisted, same
+  // mechanism as `dismissedHelperNudge` in terminal-session-view.tsx.
+  const [dismissedHelperNudge, setDismissedHelperNudge] = useState(false);
+  const showHelperNudge = !dismissedHelperNudge && shouldShowChooserHelperNudge(helperStatus?.version);
 
   // Focus the first row's primary action when the chooser opens (design:
   // "focus lands on the first live session's primary action when the choice
@@ -91,6 +112,26 @@ export function TerminalSessionChooser({
 
   return (
     <div className="max-h-[60vh] overflow-y-auto" data-testid="terminal-session-chooser">
+      {showHelperNudge && (
+        <div className="flex items-center gap-2 border-b border-sky-500/30 bg-sky-500/5 px-3.5 py-1.5 text-[11px] text-sky-300">
+          <Info className="h-3 w-3 shrink-0" />
+          <span className="flex-1">
+            {updateNudgeCopy(MINIMUM_RECOMMENDED_HELPER_VERSION)}{" "}
+            <a href={TERMINAL_HELPER_DOWNLOAD_URL} className="underline hover:text-sky-200">
+              Download
+            </a>
+          </span>
+          <button
+            type="button"
+            className="shrink-0 text-sky-400 hover:text-sky-200"
+            onClick={() => setDismissedHelperNudge(true)}
+            aria-label="Dismiss helper update notice"
+          >
+            <X className="h-3 w-3" />
+          </button>
+        </div>
+      )}
+
       {taskMatch && (
         <div className="flex items-center gap-2.5 border-b border-sky-500/25 bg-sky-500/5 px-3.5 py-2.5">
           <div className="min-w-0 flex-1">

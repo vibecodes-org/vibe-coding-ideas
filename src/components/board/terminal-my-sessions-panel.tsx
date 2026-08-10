@@ -38,6 +38,7 @@ import {
   HELPER_ROW_STOP_TOAST,
   STOP_CONFIRM_HEADING,
   deriveHelperChip,
+  fetchHelperStatus,
   formatHelperEventAge,
   shouldShowStopButton,
   stopButtonLabel,
@@ -151,9 +152,9 @@ export function TerminalMySessionsPanel({
   const load = useCallback(async () => {
     setLoadState((s) => (s === "idle" ? "loading" : s));
     try {
-      const [sessionsRes, helperRes] = await Promise.all([
+      const [sessionsRes, nextStatus] = await Promise.all([
         fetch("/api/terminal/session/list"),
-        fetch("/api/terminal/helper/status"),
+        fetchHelperStatus(),
       ]);
       if (!sessionsRes.ok) throw new Error(`Failed to load sessions (${sessionsRes.status})`);
       const body = (await sessionsRes.json()) as { sessions: ListedSession[] };
@@ -161,8 +162,7 @@ export function TerminalMySessionsPanel({
       const runningCount = body.sessions.filter((s) => s.status === "active").length;
       onCountChange?.(runningCount);
 
-      if (helperRes.ok) {
-        const nextStatus = (await helperRes.json()) as HelperStatus;
+      if (nextStatus) {
         const nextChip = deriveHelperChip(nextStatus, runningCount);
         const prevKind = prevHelperChipKindRef.current;
         if (prevKind === "winding-down" && nextChip?.kind === "not-running") {

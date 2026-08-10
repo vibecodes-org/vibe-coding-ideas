@@ -4,6 +4,7 @@ import {
   parseHelperVersion,
   compareHelperVersions,
   shouldShowHelperUpdateNudge,
+  shouldShowChooserHelperNudge,
 } from "./helper-version";
 
 describe("parseHelperVersion", () => {
@@ -86,5 +87,44 @@ describe("shouldShowHelperUpdateNudge", () => {
   it("fails open (never nudges) if the configured minimum is itself malformed", () => {
     expect(shouldShowHelperUpdateNudge("0.1.0", "not-a-version")).toBe(false);
     expect(shouldShowHelperUpdateNudge(null, "not-a-version")).toBe(false);
+  });
+});
+
+describe("shouldShowChooserHelperNudge", () => {
+  const min = "0.2.0";
+
+  it("nudges when the version is older than the minimum", () => {
+    expect(shouldShowChooserHelperNudge("0.1.0", min)).toBe(true);
+    expect(shouldShowChooserHelperNudge("0.1.99", min)).toBe(true);
+  });
+
+  it("does not nudge when the version equals the minimum", () => {
+    expect(shouldShowChooserHelperNudge("0.2.0", min)).toBe(false);
+  });
+
+  it("does not nudge when the version is newer than the minimum", () => {
+    expect(shouldShowChooserHelperNudge("0.2.1", min)).toBe(false);
+    expect(shouldShowChooserHelperNudge("1.0.0", min)).toBe(false);
+  });
+
+  it("does NOT nudge on a missing/unknown version — unlike shouldShowHelperUpdateNudge, a fresh account with no recorded helper is not provably stale", () => {
+    expect(shouldShowChooserHelperNudge(null, min)).toBe(false);
+    expect(shouldShowChooserHelperNudge(undefined, min)).toBe(false);
+    expect(shouldShowChooserHelperNudge("", min)).toBe(false);
+  });
+
+  it("does not nudge on a malformed version", () => {
+    expect(shouldShowChooserHelperNudge("not-a-version", min)).toBe(false);
+    expect(shouldShowChooserHelperNudge("0.2", min)).toBe(false);
+    expect(shouldShowChooserHelperNudge("v0.2.0", min)).toBe(false);
+  });
+
+  it("uses MINIMUM_RECOMMENDED_HELPER_VERSION as the default threshold", () => {
+    expect(shouldShowChooserHelperNudge(MINIMUM_RECOMMENDED_HELPER_VERSION)).toBe(false);
+    expect(shouldShowChooserHelperNudge(null)).toBe(false);
+  });
+
+  it("fails open (never nudges) if the configured minimum is itself malformed", () => {
+    expect(shouldShowChooserHelperNudge("0.1.0", "not-a-version")).toBe(false);
   });
 });

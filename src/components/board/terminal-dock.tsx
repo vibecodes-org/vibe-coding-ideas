@@ -86,6 +86,7 @@ import {
 import { decideEntryBehaviour, type EntryDecision } from "@/lib/terminal/entry-decision";
 import { loadSessionSnapshot, readLastTabSid, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
 import { getMachineIdentity } from "@/lib/terminal/machine-identity";
+import { fetchHelperStatus, type HelperStatus } from "@/lib/terminal/helper-row";
 import {
   type SessionEntry,
   type TabDisplayStatus,
@@ -169,6 +170,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   // ideas — null while the initial fetch is in flight (the "checking your
   // sessions…" beat: nothing may auto-mint before this is known, F1).
   const [registryRows, setRegistryRows] = useState<ChooserRegistryRow[] | null>(null);
+  // Chooser helper-update nudge (card cbe60db5, rework 3): the caller's own
+  // last-known helper status, fetched once alongside the registry — same
+  // `/api/terminal/helper/status` response the My sessions panel polls
+  // on-open. Best-effort only: a failed fetch leaves this `null`, which the
+  // chooser's own predicate treats as "nothing to nudge about", never an
+  // error state.
+  const [helperStatus, setHelperStatus] = useState<HelperStatus | null>(null);
   // A task-scoped (or board-level) launch that arrived while the chooser was
   // showing — carried so "Start new session" / the task-dedupe banner can
   // act on it once the user actually picks something (F1: nothing mints on
@@ -258,6 +266,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     if (!enabled) return;
     void refreshRegistry();
   }, [enabled, refreshRegistry]);
+
+  useEffect(() => {
+    if (!enabled) return;
+    void fetchHelperStatus().then(setHelperStatus);
+  }, [enabled]);
 
   // This tab's own snapshot info (session-snapshot.ts) — read once; a tab
   // doesn't gain a NEW "last sid" mid-session except by attaching another
@@ -982,6 +995,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
             onOpenBoardAndReconnect={handleChooserOpenBoardAndReconnect}
             onResume={handleChooserResume}
             onStartNew={handleChooserStartNew}
+            helperStatus={helperStatus}
           />
         )}
 
