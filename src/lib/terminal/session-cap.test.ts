@@ -14,6 +14,8 @@ import {
   RATE_LIMIT_CODE,
   DAILY_RELAY_BUDGET_CODE,
   DAILY_RELAY_BUDGET_MESSAGE,
+  isNearSessionCap,
+  terminalLimitLine,
 } from "./session-cap";
 
 describe("getTerminalSessionCap", () => {
@@ -142,5 +144,42 @@ describe("daily-relay-budget copy stays distinct (MITIGATION 3 — account-wide 
 
   it("is never misclassified as a cap refusal", () => {
     expect(isCapRefusalMessage(DAILY_RELAY_BUDGET_MESSAGE)).toBe(false);
+  });
+});
+
+describe("isNearSessionCap — Resume confirm's honesty limit line (sign-off change 1)", () => {
+  it("is false when comfortably under the cap", () => {
+    expect(isNearSessionCap(1, 5)).toBe(false);
+    expect(isNearSessionCap(2, 5)).toBe(false);
+    expect(isNearSessionCap(3, 5)).toBe(false);
+  });
+
+  it("is true once the live count is within one of the cap", () => {
+    expect(isNearSessionCap(4, 5)).toBe(true); // one more session hits the cap
+  });
+
+  it("is true at and beyond the cap", () => {
+    expect(isNearSessionCap(5, 5)).toBe(true);
+    expect(isNearSessionCap(6, 5)).toBe(true);
+  });
+
+  it("is true at a cap of 1 (any live session is already the last slot)", () => {
+    expect(isNearSessionCap(0, 1)).toBe(true);
+  });
+
+  it("defaults cap to getTerminalSessionCap()", () => {
+    expect(isNearSessionCap(4)).toBe(true); // default cap is 5
+    expect(isNearSessionCap(2)).toBe(false);
+  });
+});
+
+describe("terminalLimitLine", () => {
+  it("templates the live count and cap, never a hardcoded number", () => {
+    expect(terminalLimitLine(4, 5)).toBe("You're using 4 of your 5 terminals.");
+    expect(terminalLimitLine(3, 3)).toBe("You're using 3 of your 3 terminals.");
+  });
+
+  it("defaults cap to getTerminalSessionCap()", () => {
+    expect(terminalLimitLine(4)).toBe("You're using 4 of your 5 terminals.");
   });
 });

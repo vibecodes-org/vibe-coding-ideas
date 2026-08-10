@@ -64,6 +64,19 @@
 //     relay simply has nothing to forward), and a dock that predates this frame
 //     ignores an unknown `t` tag exactly like it already does for any other one.
 //
+// MACHINE IDENTITY (Nick's sign-off change 2 — "hide conversations that aren't on
+// the machine that you're running vibecodes on") extends this SAME frame with an
+// optional `host` field: `{"t":"bridge-version","v":"x.y.z","host":"Nicks-MBP"}`.
+// The bridge announces `os.hostname()` (sanitized with `sanitizeMachineLabel`
+// below — same query-param path as `helperVersion`, see terminal/bridge/src/
+// index.js) alongside its version; the relay stores it durably as `bridgeHost`
+// (mirroring `bridgeHelperVersion`) and replays it to a late-attaching browser
+// leg exactly like the version. Extending the existing frame (rather than adding
+// a new one) keeps this skew-safe the same way: an OLD bridge never sends `host`
+// at all (the relay has nothing to forward, `host` is simply absent), and a dock
+// that predates this field ignores the unknown key. `host` is OPTIONAL even on a
+// frame that also carries `v` — either field alone is a valid, useful frame.
+//
 // HELPER LIFECYCLE (card cc74a067) adds three more control frames, all scoped to
 // the NEW `helper` leg (terminal/helper/main.js's persistent control connection —
 // see session-token.mjs's "helper" role) — never sent on a bridge/browser leg:
@@ -99,9 +112,13 @@ export const HELPER_GOODBYE_REASONS = Object.freeze([
 /** The closed set of commands the web app may forward to a helper leg. */
 export const HELPER_COMMANDS = Object.freeze(["stop", "quiesce", "set-always-on"]);
 
-/** Detect any control TEXT frame with a given `t` tag. Cheap + strict + bounded. */
+/** Detect any control TEXT frame with a given `t` tag. Cheap + strict + bounded.
+ *  160 (not the original 64) is sized to fit the bridge-version frame's worst
+ *  case — `v` (semver) plus a full 80-char `host` (sanitizeMachineLabel's own
+ *  cap) plus JSON overhead — while staying a trivially bounded, DoS-safe size
+ *  for every other (much shorter) control frame that shares this same gate. */
 function isControlFrame(text, tag) {
-  if (typeof text !== "string" || text.length === 0 || text.length > 64) return false;
+  if (typeof text !== "string" || text.length === 0 || text.length > 160) return false;
   try {
     const msg = JSON.parse(text);
     return !!msg && typeof msg === "object" && msg.t === tag;
@@ -171,9 +188,20 @@ export function isHeartbeatAckFrame(text) {
  *  something the dock's gating logic can't parse. */
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
-/** TEXT frame the relay sends the BROWSER leg announcing the bridge's helper version. */
-export function encodeBridgeVersionFrame(version) {
-  return JSON.stringify({ t: "bridge-version", v: version });
+/**
+ * TEXT frame the relay sends the BROWSER leg announcing the bridge's helper
+ * version and/or machine identity. `host` is optional (omitted whenever falsy)
+ * so a call site that only knows one of the two fields still emits a valid,
+ * minimal frame — see this module's MACHINE IDENTITY header comment.
+ * @param {string | null | undefined} version
+ * @param {string | null | undefined} [host]
+ * @returns {string}
+ */
+export function encodeBridgeVersionFrame(version, host) {
+  const msg = { t: "bridge-version" };
+  if (version) msg.v = version;
+  if (host) msg.host = host;
+  return JSON.stringify(msg);
 }
 
 /** @param {unknown} text @returns {boolean} */
@@ -193,6 +221,27 @@ export function parseBridgeVersionFrame(text) {
   try {
     const msg = JSON.parse(text);
     return typeof msg.v === "string" && SEMVER_RE.test(msg.v) ? msg.v : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Extract + validate the HOST carried by a bridge-version frame (Nick's
+ * sign-off change 2 — per-session machine identity). Returns null for
+ * anything absent/malformed — an OLD bridge never sends `host` at all, which
+ * parses identically to "unknown" here (the same graceful-degrade shape as a
+ * missing `v`). Re-validated with `sanitizeMachineLabel` even though the relay
+ * already sanitized it before forwarding — defense in depth, never trust the
+ * wire twice-removed from the source.
+ * @param {unknown} text
+ * @returns {string | null}
+ */
+export function parseBridgeVersionHost(text) {
+  if (!isBridgeVersionFrame(text)) return null;
+  try {
+    const msg = JSON.parse(text);
+    return typeof msg.host === "string" ? sanitizeMachineLabel(msg.host) : null;
   } catch {
     return null;
   }

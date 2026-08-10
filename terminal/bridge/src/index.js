@@ -40,7 +40,7 @@ import { createRequire } from "node:module";
 import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
-import { sanitizeHelperVersion } from "../../shared/control-frames.mjs";
+import { sanitizeHelperVersion, sanitizeMachineLabel } from "../../shared/control-frames.mjs";
 import { parseLaunchDeepLink, redactDeepLinkToken } from "../../shared/deep-link.mjs";
 import { isRelayHostAllowed } from "../../shared/relay-allowlist.mjs";
 import {
@@ -171,6 +171,18 @@ function resolveHelperVersion() {
   }
 }
 const HELPER_VERSION = resolveHelperVersion();
+
+// ── machine identity announcement (Nick's sign-off change 2) ─────────────────
+// This machine's hostname, sanitized with the SAME rules the relay applies to
+// `helperVersion` (bounded, defensive re-validation on every hop — see
+// terminal/shared/control-frames.mjs's `sanitizeMachineLabel`). Sent alongside
+// `helperVersion` on the SAME relay connect URL so the browser dock can learn
+// (and remember) which physical machine a session ran on, and later hide
+// Recent rows recorded on a DIFFERENT machine (chooser-data.ts). `null` for an
+// unreadable/absurd hostname is an honest omission, never a crash — the relay
+// simply has nothing to forward, identical to an old bridge that never sends
+// this param at all.
+const HOST = sanitizeMachineLabel(os.hostname());
 
 const MAX_SECONDS = Number(args["max-seconds"] || process.env.BRIDGE_MAX_SECONDS || 28800);
 const CONNECT_TIMEOUT_MS = Number(args["connect-timeout-ms"] || 30000);
@@ -510,7 +522,8 @@ async function main() {
   const url =
     `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
     `&role=bridge&token=${encodeURIComponent(TOKEN)}` +
-    (HELPER_VERSION ? `&helperVersion=${encodeURIComponent(HELPER_VERSION)}` : "");
+    (HELPER_VERSION ? `&helperVersion=${encodeURIComponent(HELPER_VERSION)}` : "") +
+    (HOST ? `&host=${encodeURIComponent(HOST)}` : "");
   const redactedUrl = url.replace(/token=[^&]*/, "token=***");
 
   // The absolute max-duration cap is armed ONCE and spans reconnects (a link drop

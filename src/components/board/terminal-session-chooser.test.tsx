@@ -178,13 +178,12 @@ describe("TerminalSessionChooser", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Resume" }));
     expect(onResume).not.toHaveBeenCalled(); // confirm first, no launch yet
-    expect(screen.getByText(/This starts a/)).toBeInTheDocument();
-    expect(screen.getByText(/recorded as Nick's MacBook/)).toBeInTheDocument();
+    expect(screen.getByText(/Starts a new terminal that picks up your last conversation in/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
-    expect(screen.queryByText(/This starts a/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Starts a new terminal/)).not.toBeInTheDocument();
   });
 
-  it("Recent row: confirming Resume calls onResume with the row", () => {
+  it("Recent row: confirming Resume calls onResume with the row, and never shows the removed machine-warning line", () => {
     const onResume = vi.fn();
     const row = {
       sid: "sid-recent",
@@ -206,10 +205,69 @@ describe("TerminalSessionChooser", () => {
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: "Resume" }));
-    expect(screen.getByText(/The conversation lives on the machine that ran it/)).toBeInTheDocument();
+    expect(screen.queryByText(/The conversation lives on the machine that ran it/)).not.toBeInTheDocument();
     const confirmButtons = screen.getAllByRole("button", { name: "Resume" });
     fireEvent.click(confirmButtons[confirmButtons.length - 1]);
     expect(onResume).toHaveBeenCalledWith(row);
+  });
+
+  function liveRow(sid: string) {
+    return {
+      sid,
+      ideaId: "idea-1",
+      ideaTitle: "VibeCodes",
+      taskId: null,
+      taskTitle: null,
+      machineLabel: null,
+      cwd: "~/projects/vibecodes",
+      createdAt: new Date().toISOString(),
+      wasOpenInThisTab: false,
+    };
+  }
+
+  const recentRow = {
+    sid: "sid-recent",
+    ideaId: "idea-1",
+    ideaTitle: "VibeCodes",
+    taskId: null,
+    taskTitle: null,
+    cwd: "~/projects/vibecodes",
+    machineLabel: null,
+    endedAt: new Date().toISOString(),
+  };
+
+  it("Recent row: hides the limit line when comfortably under the session cap", () => {
+    render(
+      <TerminalSessionChooser
+        sections={sections({ recent: [recentRow], liveHere: [liveRow("live-1")] })}
+        cap={5}
+        onReconnectHere={vi.fn()}
+        onOpenBoardAndReconnect={vi.fn()}
+        onResume={vi.fn()}
+        onStartNew={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    expect(screen.queryByText(/You're using/)).not.toBeInTheDocument();
+  });
+
+  it("Recent row: shows the limit line when near the session cap", () => {
+    render(
+      <TerminalSessionChooser
+        sections={sections({
+          recent: [recentRow],
+          liveHere: [liveRow("live-1"), liveRow("live-2")],
+          liveElsewhere: [liveRow("live-3"), liveRow("live-4")],
+        })}
+        cap={5}
+        onReconnectHere={vi.fn()}
+        onOpenBoardAndReconnect={vi.fn()}
+        onResume={vi.fn()}
+        onStartNew={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    expect(screen.getByText("You're using 4 of your 5 terminals.")).toBeInTheDocument();
   });
 
   it("disables every action while busy", () => {

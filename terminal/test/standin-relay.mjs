@@ -378,6 +378,7 @@ export function startStandinRelay(opts = {}) {
         maxTimer: null,
         graceTimer: null,
         bridgeHelperVersion: null,
+        bridgeHost: null,
       });
     }
     const legs = sessions.get(session);
@@ -415,21 +416,27 @@ export function startStandinRelay(opts = {}) {
       try { ws.send(encodeAttachedFrame()); } catch { /* leg already gone */ }
     }
 
-    // HELPER-VERSION ANNOUNCEMENT (release-gate rework 2a) — mirrors the Cloudflare
-    // DO's fetch() step 5b: ordering-independent both ways. A bridge attaching with
-    // a sanitized `helperVersion` stores it on the session and forwards it to an
-    // already-live browser leg; a browser attaching (before or after the bridge)
-    // gets whatever version is already on file, if any.
+    // HELPER-VERSION + MACHINE-IDENTITY ANNOUNCEMENT (release-gate rework 2a,
+    // extended by Nick's sign-off change 2) — mirrors the Cloudflare DO's fetch()
+    // step 5b: ordering-independent both ways, and the two fields are independent
+    // of each other. A bridge attaching with a sanitized `helperVersion` and/or
+    // `host` stores whichever is present on the session and forwards the CURRENT
+    // combined state to an already-live browser leg; a browser attaching (before
+    // or after the bridge) gets whatever's already on file, if any.
     if (role === "bridge") {
       const helperVersion = sanitizeHelperVersion(url.searchParams.get("helperVersion"));
-      if (helperVersion) {
-        legs.bridgeHelperVersion = helperVersion;
-        if (legs.browser && legs.browser.readyState === legs.browser.OPEN) {
-          try { legs.browser.send(encodeBridgeVersionFrame(helperVersion)); } catch { /* closing */ }
-        }
+      const host = sanitizeMachineLabel(url.searchParams.get("host"));
+      if (helperVersion) legs.bridgeHelperVersion = helperVersion;
+      if (host) legs.bridgeHost = host;
+      if ((helperVersion || host) && legs.browser && legs.browser.readyState === legs.browser.OPEN) {
+        try {
+          legs.browser.send(encodeBridgeVersionFrame(legs.bridgeHelperVersion, legs.bridgeHost));
+        } catch { /* closing */ }
       }
-    } else if (role === "browser" && legs.bridgeHelperVersion) {
-      try { ws.send(encodeBridgeVersionFrame(legs.bridgeHelperVersion)); } catch { /* leg already gone */ }
+    } else if (role === "browser" && (legs.bridgeHelperVersion || legs.bridgeHost)) {
+      try {
+        ws.send(encodeBridgeVersionFrame(legs.bridgeHelperVersion, legs.bridgeHost));
+      } catch { /* leg already gone */ }
     }
 
     // GRACE-WINDOW REATTACH reconciliation: if this session was being HELD for a

@@ -19,8 +19,9 @@
  *  that file's header comment and docs/release-process.md for the release
  *  checklist. 0.3.0 (card cc74a067) is the first release with the helper
  *  lifecycle rework — quit-when-idle, crash log-and-exit, and the "Keep
- *  helper ready" opt-in. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.1";
+ *  helper ready" opt-in. 0.3.2 (card cbe60db5, sign-off change 2) adds the
+ *  bridge's machine-identity (hostname) announcement. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.2";
 
 export type HelperVersionParts = readonly [number, number, number];
 

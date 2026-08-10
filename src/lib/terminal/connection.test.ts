@@ -14,6 +14,7 @@ import {
   isHeartbeatAckFrame,
   isBridgeVersionFrame,
   parseBridgeVersionFrame,
+  parseBridgeVersionHost,
   shouldDeclareLinkSilent,
   buildRelayUrl,
   encodeResizeMessage,
@@ -442,6 +443,35 @@ describe("silent-link watchdog (fix/terminal-dock-heartbeat)", () => {
     expect(parseBridgeVersionFrame('{"t":"bridge-version","v":123}')).toBeNull();
     expect(parseBridgeVersionFrame('{"t":"bridge-version"}')).toBeNull();
     expect(parseBridgeVersionFrame('{"t":"bridge-version"' /* truncated */)).toBeNull();
+  });
+
+  // Machine identity (Nick's sign-off change 2): the SAME frame gains an
+  // optional `host` field — pin byte-for-byte against the real shared encoder,
+  // same as the version field above.
+  it("detects the shared bridge-version frame's host field byte-for-byte", () => {
+    const frame = encodeSharedBridgeVersionFrame("0.3.2", "Nicks-MacBook-Pro");
+    expect(isBridgeVersionFrame(frame)).toBe(true);
+    expect(parseBridgeVersionFrame(frame)).toBe("0.3.2");
+    expect(parseBridgeVersionHost(frame)).toBe("Nicks-MacBook-Pro");
+  });
+
+  it("parseBridgeVersionHost returns null when `host` is absent (old bridge — graceful degrade)", () => {
+    const frame = encodeSharedBridgeVersionFrame("0.3.2");
+    expect(parseBridgeVersionHost(frame)).toBeNull();
+    expect(parseBridgeVersionFrame(frame)).toBe("0.3.2"); // version still parses fine
+  });
+
+  it("parseBridgeVersionHost returns null for a non-string `host` or malformed JSON", () => {
+    expect(parseBridgeVersionHost('{"t":"bridge-version","v":"0.3.2","host":42}')).toBeNull();
+    expect(parseBridgeVersionHost('{"t":"bridge-version"}')).toBeNull();
+    expect(parseBridgeVersionHost('{"t":"bridge-version"' /* truncated */)).toBeNull();
+  });
+
+  it("a frame carrying only `host` (no version) still parses the host", () => {
+    const frame = encodeSharedBridgeVersionFrame(undefined, "Nicks-MacBook-Pro");
+    expect(isBridgeVersionFrame(frame)).toBe(true);
+    expect(parseBridgeVersionFrame(frame)).toBeNull();
+    expect(parseBridgeVersionHost(frame)).toBe("Nicks-MacBook-Pro");
   });
 
   it("shouldDeclareLinkSilent: exactly the threshold is NOT yet dead; strictly beyond is", () => {

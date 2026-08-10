@@ -98,6 +98,24 @@ export function capReachedToastCopy(cap: number = getTerminalSessionCap()): {
   };
 }
 
+// ── Resume confirm's honesty limit line (Nick's sign-off change 1) ─────────
+//
+// The chooser's Resume inline confirm shows a one-line "you're close to the
+// limit" hint ONLY when the user is near the cap — never on every Resume
+// (that would be noise for the common case of 1 of 5 running). "Near" means
+// the live count already accounts for all but one remaining slot, i.e. one
+// more session (this Resume) would either hit or exceed the cap.
+
+/** Pure predicate: is `liveCount` close enough to `cap` that Resume should warn? */
+export function isNearSessionCap(liveCount: number, cap: number = getTerminalSessionCap()): boolean {
+  return liveCount >= cap - 1;
+}
+
+/** The Resume confirm's honesty limit line, templated from config (never a hardcoded number). */
+export function terminalLimitLine(liveCount: number, cap: number = getTerminalSessionCap()): string {
+  return `You're using ${liveCount} of your ${cap} terminals.`;
+}
+
 // ── stage 3: server-side refusal bodies (mint route) ────────────────────────
 //
 // The mint route returns a distinct `code` per refusal reason so the client

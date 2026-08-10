@@ -22,6 +22,7 @@ import {
   encodeBridgeVersionFrame,
   isBridgeVersionFrame,
   parseBridgeVersionFrame,
+  parseBridgeVersionHost,
   sanitizeHelperVersion,
   sanitizeMachineLabel,
   encodeHelperCommandFrame,
@@ -106,6 +107,52 @@ test("parseBridgeVersionFrame rejects a malformed/hostile `v` even inside a well
   assert.equal(parseBridgeVersionFrame(JSON.stringify({ t: "bridge-version", v: 123 })), null);
   assert.equal(parseBridgeVersionFrame("not json"), null);
   assert.equal(parseBridgeVersionFrame(null), null);
+});
+
+// ── machine identity (Nick's sign-off change 2 — the SAME frame's `host` field) ──
+
+test("bridge-version frame's `host` field encode ⇄ detect ⇄ parse round-trips alongside `v`", () => {
+  const frame = encodeBridgeVersionFrame("0.3.2", "Nicks-MacBook-Pro");
+  assert.equal(isBridgeVersionFrame(frame), true);
+  assert.equal(parseBridgeVersionFrame(frame), "0.3.2");
+  assert.equal(parseBridgeVersionHost(frame), "Nicks-MacBook-Pro");
+});
+
+test("a frame with no `host` (old bridge) parses host as null — the version still parses fine", () => {
+  const frame = encodeBridgeVersionFrame("0.3.2");
+  assert.equal(parseBridgeVersionHost(frame), null);
+  assert.equal(parseBridgeVersionFrame(frame), "0.3.2");
+});
+
+test("a frame carrying only `host` (no version) is still a valid, parseable frame", () => {
+  const frame = encodeBridgeVersionFrame(undefined, "Nicks-MacBook-Pro");
+  assert.equal(isBridgeVersionFrame(frame), true);
+  assert.equal(parseBridgeVersionFrame(frame), null);
+  assert.equal(parseBridgeVersionHost(frame), "Nicks-MacBook-Pro");
+});
+
+test("parseBridgeVersionHost rejects a malformed/hostile `host` even inside a well-formed frame", () => {
+  assert.equal(parseBridgeVersionHost(JSON.stringify({ t: "bridge-version", v: "0.3.2", host: 42 })), null);
+  assert.equal(parseBridgeVersionHost(JSON.stringify({ t: "bridge-version" })), null);
+  assert.equal(parseBridgeVersionHost("not json"), null);
+  assert.equal(parseBridgeVersionHost(null), null);
+});
+
+test("parseBridgeVersionHost re-sanitizes (trims + bounds) even a well-formed `host`", () => {
+  assert.equal(
+    parseBridgeVersionHost(JSON.stringify({ t: "bridge-version", host: " Nicks-MacBook-Pro " })),
+    "Nicks-MacBook-Pro",
+  );
+  assert.equal(
+    parseBridgeVersionHost(JSON.stringify({ t: "bridge-version", host: "" })),
+    null,
+  );
+});
+
+test("a bridge-version frame carrying a full-length host stays within the control-frame length bound", () => {
+  const frame = encodeBridgeVersionFrame("999.999.999", "x".repeat(80));
+  assert.equal(isBridgeVersionFrame(frame), true);
+  assert.equal(parseBridgeVersionHost(frame), "x".repeat(80));
 });
 
 test("sanitizeHelperVersion accepts only strict x.y.z", () => {

@@ -403,8 +403,13 @@ export function relayBaseUrl(): string {
 // drift is pinned by connection.test.ts, which imports the real encoders and checks
 // these detectors agree byte-for-byte.
 
+// 160 (not the original 64) is sized to fit the bridge-version frame's worst
+// case — `v` (semver) plus a full 80-char `host` (sanitizeMachineLabel's own
+// cap, terminal/shared/control-frames.mjs) plus JSON overhead — while staying
+// a trivially bounded size for every other (much shorter) control frame that
+// shares this same gate. Kept in lockstep with the .mjs's own isControlFrame.
 function isControlFrame(text: string, tag: string): boolean {
-  if (text.length === 0 || text.length > 64) return false;
+  if (text.length === 0 || text.length > 160) return false;
   try {
     const msg = JSON.parse(text) as unknown;
     return !!msg && typeof msg === "object" && (msg as { t?: unknown }).t === tag;
@@ -501,6 +506,29 @@ export function parseBridgeVersionFrame(text: string): string | null {
   try {
     const msg = JSON.parse(text) as { v?: unknown };
     return typeof msg.v === "string" ? msg.v : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── machine identity (Nick's sign-off change 2) ───────────────────────────────
+//
+// The SAME bridge-version frame gains an optional `host` field carrying the
+// bridge's machine identity (terminal/shared/control-frames.mjs's
+// MACHINE IDENTITY header comment has the full picture). Extracted here rather
+// than folded into parseBridgeVersionFrame so a frame carrying only ONE of the
+// two fields still yields a clean result for whichever one it's missing,
+// instead of the caller having to re-parse the JSON itself.
+
+/** Extract the announced HOST from a bridge-version control frame, or null for
+ *  anything absent/malformed (a non-string `host`, bad JSON, wrong tag) — an
+ *  OLD bridge never sends `host` at all, which parses identically to "unknown"
+ *  here (the same graceful-degrade shape as a missing `v`). */
+export function parseBridgeVersionHost(text: string): string | null {
+  if (!isControlFrame(text, "bridge-version")) return null;
+  try {
+    const msg = JSON.parse(text) as { host?: unknown };
+    return typeof msg.host === "string" ? msg.host : null;
   } catch {
     return null;
   }

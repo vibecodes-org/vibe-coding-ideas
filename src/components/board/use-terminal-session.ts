@@ -69,6 +69,7 @@ import {
   isPeerReattachedFrame,
   mapCloseCode,
   parseBridgeVersionFrame,
+  parseBridgeVersionHost,
   relayBaseUrl,
   shouldDeclareLinkSilent,
   terminalReducer,
@@ -94,6 +95,7 @@ import {
   resolveTerminalPlatform,
 } from "@/lib/terminal/platform";
 import { isBrowserPaired, markBrowserPaired, resolveFirstRunEntry } from "@/lib/terminal/paired-flag";
+import { setMachineIdentity } from "@/lib/terminal/machine-identity";
 import { type LaunchPhase, nextLaunchPhaseOnTimeout } from "@/lib/terminal/first-run-flow";
 import { consumeRecentHelperIdleQuit } from "@/lib/terminal/helper-relaunch-signal";
 import {
@@ -461,6 +463,11 @@ export function useTerminalSession(
   // openBrowserLeg when a fresh socket is opened.
   const lastInboundAtRef = useRef(0);
   const hbArmedRef = useRef(false);
+  // Machine identity (Nick's sign-off change 2): once-per-session guard so a
+  // bridge that re-announces the SAME host on every attach (grace-window
+  // reconnect, etc.) doesn't re-fire the identity PATCH each time — keyed by
+  // sessionId so a genuinely NEW session (a fresh mint) always fires again.
+  const machineIdentityAnnouncedSidRef = useRef<string | null>(null);
   // The compact bootstrap prompt ESSENTIALS (BUG5 follow-through, 4th rework
   // cycle) the LAST launch-bus event carried — i.e. what the launch button
   // resolved. Hook-initiated launches with no bus payload (paired auto-connect
@@ -985,6 +992,24 @@ export function useTerminalSession(
             // regresses a known-good value to "unknown").
             const v = parseBridgeVersionFrame(ev.data);
             if (v) setHelperVersion(v);
+            // Machine identity (Nick's sign-off change 2): the SAME frame
+            // optionally carries the bridge's hostname. Recorded once per
+            // session (see machineIdentityAnnouncedSidRef's doc) — (1) as this
+            // browser's own remembered identity (machine-identity.ts, read by
+            // the chooser's Recent filter), and (2) a best-effort PATCH onto
+            // the registry row so OTHER browsers can filter against it too.
+            // Never awaited/blocking — an old bridge that omits `host` simply
+            // never triggers this (parses to null, nothing to record).
+            const host = parseBridgeVersionHost(ev.data);
+            if (host && machineIdentityAnnouncedSidRef.current !== sessionId) {
+              machineIdentityAnnouncedSidRef.current = sessionId;
+              setMachineIdentity(host);
+              void fetch(`/api/terminal/session/${encodeURIComponent(sessionId)}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ machineLabel: host }),
+              }).catch(() => {});
+            }
             return;
           }
           if (isPeerDegradedFrame(ev.data)) {

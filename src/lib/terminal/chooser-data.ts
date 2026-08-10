@@ -13,6 +13,18 @@
 //     the project folder wasn't recorded — no disabled ghost button").
 //   - Live sessions split by whether they belong to the board currently open
 //     (`currentIdeaId`) or another one.
+//
+// MACHINE IDENTITY (Nick's sign-off change 2 — "hide conversations that
+// aren't on the machine that you're running vibecodes on"): Recent rows also
+// get filtered against `storedMachineLabel` (this browser's own recorded
+// identity — see machine-identity.ts). A row is hidden ONLY when BOTH sides
+// are known and disagree (`row.machineLabel` set AND differs from the stored
+// one) — a row with no recorded machine label stays visible (honest
+// omission, not assumed foreign), and when this browser has never recorded
+// an identity at all, nothing is filtered (F4-style: never a silently empty
+// section over data we simply don't have an opinion on yet). "Running now"
+// sections are NEVER filtered — a live session is unambiguously reachable
+// regardless of which machine it's on.
 
 export const RECENT_WINDOW_MS = 48 * 60 * 60 * 1000;
 export const RECENT_MAX = 5;
@@ -75,13 +87,17 @@ function withinRecentWindow(endedAt: string, nowMs: number): boolean {
  * session-snapshot.ts's `readLastTabSid`) badges the matching LIVE row
  * `wasOpenInThisTab`, independent of snapshot freshness — a stale snapshot
  * still deserves the "was open in this tab" hint even once instant-continue
- * itself no longer applies.
+ * itself no longer applies. `storedMachineLabel` (this browser's own recorded
+ * machine identity, see machine-identity.ts) filters the Recent section per
+ * this module's MACHINE IDENTITY header comment — omit/pass null to show
+ * every recent row unfiltered (the pre-this-card behaviour).
  */
 export function deriveChooserSections(
   rows: ChooserRegistryRow[],
   currentIdeaId: string,
   nowMs: number = Date.now(),
   lastTabSid: string | null = null,
+  storedMachineLabel: string | null = null,
 ): ChooserSections {
   const toLiveRow = (r: ChooserRegistryRow): ChooserLiveRow => ({
     sid: r.sid,
@@ -104,7 +120,11 @@ export function deriveChooserSections(
       if (r.status !== "ended") return false;
       if (!r.cwd || !r.cwd.trim()) return false; // F4: no recorded folder → never shown
       if (!r.endedAt) return false;
-      return withinRecentWindow(r.endedAt, nowMs);
+      if (!withinRecentWindow(r.endedAt, nowMs)) return false;
+      // Machine identity: hide only when BOTH sides are known and disagree —
+      // see this module's header comment.
+      if (storedMachineLabel && r.machineLabel && r.machineLabel !== storedMachineLabel) return false;
+      return true;
     })
     .sort((a, b) => Date.parse(b.endedAt) - Date.parse(a.endedAt)); // newest-ended first
 
