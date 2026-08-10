@@ -26,7 +26,7 @@ import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { resolveDockView, type DockView } from "@/lib/terminal/first-run-flow";
 import type { TerminalConnectionState } from "@/lib/terminal/connection";
-import { isPreemptedClose, type PopoutPayload } from "@/lib/terminal/popout-channel";
+import { isPreemptedClose, startBroughtBackAutoClose, type PopoutPayload } from "@/lib/terminal/popout-channel";
 import { dockStatusMeta, type StatusMeta } from "./terminal-session-view";
 import {
   useTerminalSession,
@@ -134,6 +134,19 @@ export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopout
   // untouched, so every genuine dock error keeps its rose pill everywhere
   // else.
   const meta = broughtBack ? MOVED_TO_DOCK_META : dockStatusMeta(view, state.errorKind);
+
+  // card 101bbb2d: this window was opened BY SCRIPT (the dock's window.open
+  // in openPopoutWindow), so `window.close()` from its OWN script is
+  // browser-permitted — and by the time broughtBack is true, the two-phase
+  // bring-back has already crossed the scrollback buffer, so nothing further
+  // is needed from this window. The BroughtBackOverlay below (and its Close
+  // button) stays exactly as-is as the fallback for a browser that refuses
+  // the scripted close — startBroughtBackAutoClose swallows that refusal
+  // rather than letting it surface as an error.
+  useEffect(() => {
+    if (!broughtBack) return;
+    return startBroughtBackAutoClose({ closeWindow: () => window.close() });
+  }, [broughtBack]);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
