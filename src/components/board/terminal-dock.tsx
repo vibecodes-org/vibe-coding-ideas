@@ -85,6 +85,7 @@ import {
 } from "@/lib/terminal/chooser-data";
 import { decideEntryBehaviour, type EntryDecision } from "@/lib/terminal/entry-decision";
 import { loadSessionSnapshot, readLastTabSid, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
+import { readDockOpen, writeDockOpen } from "@/lib/terminal/dock-open-persistence";
 import { getMachineIdentity } from "@/lib/terminal/machine-identity";
 import { fetchHelperStatus, type HelperStatus } from "@/lib/terminal/helper-row";
 import {
@@ -157,6 +158,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   // Defence-in-depth: also gated at the page mount. When off, render nothing —
   // no dock, no entry point, board unchanged (B9).
   const enabled = isTerminalEnabled();
+  // Dock-open persistence (rework 5, card cbe60db5 — Nick's field test: "fix
+  // the terminal panel staying open as well"). Initial paint stays collapsed
+  // (SSR-safe, matches every other install-first input use-terminal-session.ts
+  // corrects on mount) — the effect below flips it open right after mount if
+  // this tab last left it expanded, so the entry-decision (instant-continue
+  // or chooser) still runs exactly as if the reload never happened.
   const [expanded, setExpanded] = useState(false);
   // Session entry chooser (card cbe60db5, F1): the dock no longer seeds a
   // pristine tab unconditionally at page load — whether it does at all (and
@@ -237,6 +244,22 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     summariesRef.current = summaries;
     posthogRef.current = posthog;
   }, [sessions, summaries, posthog]);
+
+  // ── dock-open persistence (rework 5, card cbe60db5) ─────────────────────────
+  // Correct the collapsed initial paint on mount if this tab last left the
+  // dock expanded (mirrors the platform/paired install-first corrections in
+  // use-terminal-session.ts — SSR paints collapsed, a mount effect flips it
+  // open). Then persist every subsequent change, whatever caused it (a user
+  // click, or any of the programmatic setExpanded(true) calls throughout this
+  // file) — so the NEXT refresh keeps reflecting reality.
+  useEffect(() => {
+    if (readDockOpen()) setExpanded(true);
+    // Mount-only correction (empty deps, intentional) — re-running this on
+    // every render would fight the user's own collapse.
+  }, []);
+  useEffect(() => {
+    writeDockOpen(expanded);
+  }, [expanded]);
 
   // ── session entry chooser (card cbe60db5) — registry fetch + entry decision ──
   //
@@ -600,7 +623,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
           s.key === pristineKey
             ? {
                 ...s,
-                origin: payload?.resume ? "resume" : payload?.taskId ? "task" : "toolbar",
+                origin: payload?.resume || payload?.resumeId ? "resume" : payload?.taskId ? "task" : "toolbar",
                 taskId: payload?.taskId,
                 taskTitle: payload?.taskTitle,
                 launchSeq: s.launchSeq + 1,
@@ -615,7 +638,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
 
     const entry: SessionEntry = {
       key: freshSessionKey(),
-      origin: payload?.resume ? "resume" : payload?.taskId ? "task" : "toolbar",
+      origin: payload?.resume || payload?.resumeId ? "resume" : payload?.taskId ? "task" : "toolbar",
       taskId: payload?.taskId,
       taskTitle: payload?.taskTitle,
       createdAt: Date.now(),
@@ -786,11 +809,21 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   const handleChooserResume = useCallback(
     (row: ChooserRecentRow) => {
       setPendingLaunch(null);
-      // F4's Resume: the EXISTING (capped) launch flow, carrying `resume` +
-      // the ended row's own recorded folder instead of a bootstrap prompt —
-      // see BrowserLaunchPayload's doc and use-terminal-session.ts's
-      // fireLaunchDeepLink, which fires `claude --continue` there.
-      mintAndDeliver({ resume: true, cwd: row.cwd, taskId: row.taskId ?? undefined, taskTitle: row.taskTitle ?? undefined });
+      // F4's Resume: the EXISTING (capped) launch flow, carrying the ended
+      // row's own recorded folder instead of a bootstrap prompt — see
+      // BrowserLaunchPayload's doc and use-terminal-session.ts's
+      // fireLaunchDeepLink. A row with a tracked `claudeSessionId` (rework 5,
+      // exact-conversation Resume) fires `claude --resume <id>` — the exact
+      // conversation the row described, never whatever else has run in that
+      // folder since; a row without one falls back to the legacy
+      // `claude --continue`.
+      mintAndDeliver({
+        resume: row.claudeSessionId ? undefined : true,
+        resumeId: row.claudeSessionId ?? undefined,
+        cwd: row.cwd,
+        taskId: row.taskId ?? undefined,
+        taskTitle: row.taskTitle ?? undefined,
+      });
     },
     [mintAndDeliver],
   );

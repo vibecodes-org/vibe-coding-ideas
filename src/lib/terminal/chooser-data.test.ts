@@ -20,6 +20,7 @@ function row(overrides: Partial<ChooserRegistryRow> & { sid: string }): ChooserR
     taskTitle: null,
     machineLabel: null,
     cwd: null,
+    claudeSessionId: null,
     createdAt: new Date(NOW - 60_000).toISOString(),
     status: "active",
     endedAt: null,
@@ -99,6 +100,92 @@ describe("deriveChooserSections", () => {
     const recent = deriveChooserSections(rows, IDEA_A, NOW).recent;
     expect(recent).toHaveLength(1);
     expect(recent[0].sid).toBe("newer");
+  });
+
+  // Root-cause hardening (rework 5, card cbe60db5 — Nick's field test: a
+  // Recent row was labelled "ended 8h 54m ago" when a newer conversation for
+  // the same folder had ended minutes earlier). The dedupe above already
+  // sorts by `endedAt` DESC before keeping one row per folder — these two
+  // tests lock that in against regressions the task explicitly called out:
+  // wrong INPUT ORDERING, and reading the wrong timestamp field.
+  it("keeps the newest-ended row per folder regardless of the INPUT array's order (not first-seen)", () => {
+    // The newer row is listed FIRST here — a naive "keep first-seen" dedupe
+    // would already pass by accident. Flip the order so only a real
+    // endedAt-based sort (not input order) can produce the right answer.
+    const rows = [
+      row({
+        sid: "newer",
+        status: "ended",
+        cwd: "~/projects/dupe",
+        endedAt: new Date(NOW - 1 * 60 * 60 * 1000).toISOString(),
+      }),
+      row({
+        sid: "older",
+        status: "ended",
+        cwd: "~/projects/dupe",
+        endedAt: new Date(NOW - 3 * 60 * 60 * 1000).toISOString(),
+      }),
+    ];
+    const recent = deriveChooserSections(rows, IDEA_A, NOW).recent;
+    expect(recent).toHaveLength(1);
+    expect(recent[0].sid).toBe("newer");
+  });
+
+  it("orders Recent by endedAt across DIFFERENT folders too, not by createdAt or input order", () => {
+    // Each row's createdAt/input-position is the OPPOSITE of its endedAt
+    // recency, so only a correct endedAt-desc sort produces b, a, c.
+    const rows = [
+      row({
+        sid: "a",
+        status: "ended",
+        cwd: "~/projects/a",
+        createdAt: new Date(NOW - 10 * 60 * 60 * 1000).toISOString(),
+        endedAt: new Date(NOW - 5 * 60 * 1000).toISOString(), // 5m ago — 2nd newest
+      }),
+      row({
+        sid: "b",
+        status: "ended",
+        cwd: "~/projects/b",
+        createdAt: new Date(NOW - 1 * 60 * 60 * 1000).toISOString(),
+        endedAt: new Date(NOW - 1 * 60 * 1000).toISOString(), // 1m ago — newest
+      }),
+      row({
+        sid: "c",
+        status: "ended",
+        cwd: "~/projects/c",
+        createdAt: new Date(NOW - 20 * 60 * 60 * 1000).toISOString(),
+        endedAt: new Date(NOW - 30 * 60 * 1000).toISOString(), // 30m ago — oldest
+      }),
+    ];
+    const recent = deriveChooserSections(rows, IDEA_A, NOW).recent;
+    expect(recent.map((r) => r.sid)).toEqual(["b", "a", "c"]);
+  });
+
+  it("Recent rows carry endedAt from the `ended_at` field, never createdAt — a stale label never masks a truly-recent end", () => {
+    const staleCreatedAt = new Date(NOW - 30 * 60 * 60 * 1000).toISOString(); // 30h ago
+    const freshEndedAt = new Date(NOW - 5 * 60 * 1000).toISOString(); // 5m ago
+    const rows = [
+      row({ sid: "x", status: "ended", cwd: "~/projects/x", createdAt: staleCreatedAt, endedAt: freshEndedAt }),
+    ];
+    const recent = deriveChooserSections(rows, IDEA_A, NOW).recent;
+    expect(recent[0].endedAt).toBe(freshEndedAt);
+    expect(recent[0].endedAt).not.toBe(staleCreatedAt);
+  });
+
+  it("carries claudeSessionId through to the Recent row (exact-conversation Resume, rework 5)", () => {
+    const rows = [
+      row({
+        sid: "tracked",
+        status: "ended",
+        cwd: "~/projects/tracked",
+        endedAt: new Date(NOW - 60_000).toISOString(),
+        claudeSessionId: "99999999-8888-7777-6666-555555555555",
+      }),
+      row({ sid: "untracked", status: "ended", cwd: "~/projects/untracked", endedAt: new Date(NOW - 60_000).toISOString() }),
+    ];
+    const recent = deriveChooserSections(rows, IDEA_A, NOW).recent;
+    expect(recent.find((r) => r.sid === "tracked")?.claudeSessionId).toBe("99999999-8888-7777-6666-555555555555");
+    expect(recent.find((r) => r.sid === "untracked")?.claudeSessionId).toBeNull();
   });
 
   it("caps Recent at RECENT_MAX, newest first", () => {

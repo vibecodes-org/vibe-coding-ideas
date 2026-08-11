@@ -167,6 +167,7 @@ describe("TerminalSessionChooser", () => {
       taskTitle: null,
       cwd: "~/projects/vibecodes",
       machineLabel: "Nick's MacBook",
+      claudeSessionId: null,
       endedAt: new Date().toISOString(),
     };
     render(
@@ -180,9 +181,38 @@ describe("TerminalSessionChooser", () => {
     );
     fireEvent.click(screen.getByRole("button", { name: "Resume" }));
     expect(onResume).not.toHaveBeenCalled(); // confirm first, no launch yet
-    expect(screen.getByText(/Starts a new terminal that picks up your last conversation in/)).toBeInTheDocument();
+    expect(
+      screen.getByText(/Starts a new terminal that picks up the most recent conversation in/),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
     expect(screen.queryByText(/Starts a new terminal/)).not.toBeInTheDocument();
+  });
+
+  it("Recent row with a tracked claudeSessionId: the confirm copy promises the EXACT conversation (rework 5)", () => {
+    const onResume = vi.fn();
+    const row = {
+      sid: "sid-recent-exact",
+      ideaId: "idea-1",
+      ideaTitle: "VibeCodes",
+      taskId: null,
+      taskTitle: null,
+      cwd: "~/projects/vibecodes",
+      machineLabel: null,
+      claudeSessionId: "99999999-8888-7777-6666-555555555555",
+      endedAt: new Date().toISOString(),
+    };
+    render(
+      <TerminalSessionChooser
+        sections={sections({ recent: [row] })}
+        onReconnectHere={vi.fn()}
+        onOpenBoardAndReconnect={vi.fn()}
+        onResume={onResume}
+        onStartNew={vi.fn()}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Resume" }));
+    expect(screen.getByText(/Continues this exact conversation in/)).toBeInTheDocument();
+    expect(screen.queryByText(/most recent conversation/)).not.toBeInTheDocument();
   });
 
   it("Recent row: confirming Resume calls onResume with the row, and never shows the removed machine-warning line", () => {
@@ -195,6 +225,7 @@ describe("TerminalSessionChooser", () => {
       taskTitle: null,
       cwd: "~/projects/vibecodes",
       machineLabel: null,
+      claudeSessionId: null,
       endedAt: new Date().toISOString(),
     };
     render(
@@ -235,6 +266,7 @@ describe("TerminalSessionChooser", () => {
     taskTitle: null,
     cwd: "~/projects/vibecodes",
     machineLabel: null,
+    claudeSessionId: null,
     endedAt: new Date().toISOString(),
   };
 

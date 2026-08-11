@@ -38,6 +38,14 @@ export interface ChooserRegistryRow {
   taskTitle: string | null;
   machineLabel: string | null;
   cwd: string | null;
+  /**
+   * Exact-conversation Resume (rework 5, card cbe60db5): the id of the claude
+   * conversation this session's bridge spawned/resumed, once announced —
+   * null before the bridge attaches, or forever for a bridge too old to
+   * announce one. Only meaningful on an ENDED row (a live row is reconnected
+   * to, never "resumed" — see `findLiveSessionForTask`/the live sections).
+   */
+  claudeSessionId: string | null;
   createdAt: string;
   status: "active" | "ended";
   endedAt: string | null;
@@ -65,6 +73,8 @@ export interface ChooserRecentRow {
   /** Never null/empty — rows without a recorded folder never reach this list (F4). */
   cwd: string;
   machineLabel: string | null;
+  /** Exact-conversation Resume (rework 5) — see ChooserRegistryRow's doc. Null → the chooser falls back to the legacy `--continue` resume. */
+  claudeSessionId: string | null;
   endedAt: string;
 }
 
@@ -142,6 +152,7 @@ export function deriveChooserSections(
       taskTitle: r.taskTitle,
       cwd,
       machineLabel: r.machineLabel,
+      claudeSessionId: r.claudeSessionId,
       endedAt: r.endedAt,
     });
     if (recent.length >= RECENT_MAX) break;
