@@ -79,15 +79,27 @@ export interface BrowserLaunchPayload {
    */
   cwd?: string;
   /**
-   * Session entry chooser — Resume (card cbe60db5, design item 7, F4): this
-   * launch is a chooser "Resume" pick, not a fresh bootstrap. The dock skips
-   * building/sending a prompt entirely and fires the deep link with the
-   * `resume` flag instead, so the local bridge runs `claude --continue` in
-   * `cwd` (the ended session's recorded folder) rather than spawning a new
-   * bootstrap conversation. Always paired with `cwd`; `essentials` is not
-   * read for a resume payload.
+   * Session entry chooser — Resume (card cbe60db5, design item 7, F4), LEGACY
+   * path for a row with no tracked conversation id: this launch is a chooser
+   * "Resume" pick, not a fresh bootstrap. The dock skips building/sending a
+   * prompt entirely and fires the deep link with the `resume` flag instead,
+   * so the local bridge runs `claude --continue` in `cwd` (the ended
+   * session's recorded folder) rather than spawning a new bootstrap
+   * conversation. Always paired with `cwd`; `essentials` is not read for a
+   * resume payload. Superseded by `resumeId` when present.
    */
   resume?: boolean;
+  /**
+   * EXACT-CONVERSATION Resume (rework 5, card cbe60db5 — the proper fix): the
+   * SPECIFIC claude conversation id to resume
+   * (`terminal_sessions.claude_session_id`, tracked from the row the user
+   * clicked). When set, the dock fires the deep link with `resumeId` instead
+   * of `resume`, so the local bridge runs `claude --resume <id>` — the
+   * resumed content is always exactly the row the user clicked, never
+   * whatever else has run in that folder since. Always paired with `cwd`,
+   * same as `resume`.
+   */
+  resumeId?: string;
   /**
    * Multi-session stage 2 (B10 dedupe, B3 tab labels): the task this launch was
    * scoped to, when it came from a task card ("task-icon" / "task-menu-item"

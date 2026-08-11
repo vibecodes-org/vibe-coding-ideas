@@ -10,7 +10,10 @@
 // across all ideas, newest-created first — the registry row plus the idea
 // title (a second query; small N per user, not worth a join). RLS scopes
 // this to the caller's own rows regardless; the explicit `.eq("user_id", ...)`
-// keeps the query itself honest.
+// keeps the query itself honest. `claudeSessionId` (rework 5, card cbe60db5)
+// is the exact-conversation Resume field — chooser-data.ts consumes it to
+// decide whether a Recent row can offer an exact `--resume <id>` or falls
+// back to the legacy `--continue`.
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
@@ -33,7 +36,7 @@ export async function GET() {
     const recentSince = new Date(Date.now() - RECENT_WINDOW_MS).toISOString();
     const { data: rows, error } = await supabase
       .from("terminal_sessions")
-      .select("sid, idea_id, task_id, task_title, machine_label, cwd, created_at, status, ended_at")
+      .select("sid, idea_id, task_id, task_title, machine_label, cwd, claude_session_id, created_at, status, ended_at")
       .eq("user_id", user.id)
       .or(`status.eq.active,ended_at.gte.${recentSince}`)
       .order("created_at", { ascending: false });
@@ -57,6 +60,7 @@ export async function GET() {
       taskTitle: row.task_title,
       machineLabel: row.machine_label,
       cwd: row.cwd,
+      claudeSessionId: row.claude_session_id,
       createdAt: row.created_at,
       status: row.status,
       endedAt: row.ended_at,

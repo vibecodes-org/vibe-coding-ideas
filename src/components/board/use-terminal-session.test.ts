@@ -275,6 +275,54 @@ describe("useTerminalSession", () => {
     expect(result.current.helperVersion).toBeNull();
   });
 
+  it("PATCHes the announced conv id onto the registry row, once per session (exact-conversation Resume, rework 5)", async () => {
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockClear();
+
+    const conv = "99999999-8888-7777-6666-555555555555";
+    act(() => {
+      latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", conv }) });
+    });
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/terminal/session/sid-abc123",
+        expect.objectContaining({
+          method: "PATCH",
+          body: JSON.stringify({ claudeSessionId: conv }),
+        }),
+      );
+    });
+
+    // Re-announcing the SAME id on a later frame (e.g. a grace-window
+    // reconnect) must not re-fire the PATCH — once-per-session, mirroring
+    // the machine-identity guard.
+    fetchMock.mockClear();
+    act(() => {
+      latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", conv }) });
+    });
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/terminal/session/sid-abc123", expect.anything());
+  });
+
+  it("does not PATCH a malformed conv id (non-UUID) — never forwarded to the registry", async () => {
+    const { result } = setup();
+    await act(async () => {
+      await result.current.actions.connect({ autoLaunch: false });
+    });
+    act(() => latestSocket().simulateOpen());
+    const fetchMock = vi.mocked(fetch);
+    fetchMock.mockClear();
+
+    act(() => {
+      latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", conv: "not-a-uuid" }) });
+    });
+    expect(fetchMock).not.toHaveBeenCalledWith("/api/terminal/session/sid-abc123", expect.anything());
+  });
+
   it("read-only gates inputEnabled while connected, independent of status", async () => {
     const { result } = setup();
     await act(async () => {
