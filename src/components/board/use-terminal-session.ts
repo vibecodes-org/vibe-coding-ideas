@@ -70,6 +70,7 @@ import {
   mapCloseCode,
   parseBridgeVersionFrame,
   parseBridgeVersionHost,
+  parseBridgeVersionConv,
   relayBaseUrl,
   shouldDeclareLinkSilent,
   terminalReducer,
@@ -468,6 +469,12 @@ export function useTerminalSession(
   // reconnect, etc.) doesn't re-fire the identity PATCH each time — keyed by
   // sessionId so a genuinely NEW session (a fresh mint) always fires again.
   const machineIdentityAnnouncedSidRef = useRef<string | null>(null);
+  // Exact-conversation Resume (rework 5, card cbe60db5): the SAME once-per-
+  // session pattern for the claude conversation id the bridge announces
+  // (relay `bridge-version` frame's `conv` field) — keyed by sessionId so a
+  // fresh mint always re-fires, but a grace-window reconnect re-announcing
+  // the SAME id doesn't re-PATCH on every reattach.
+  const convIdAnnouncedSidRef = useRef<string | null>(null);
   // The compact bootstrap prompt ESSENTIALS (BUG5 follow-through, 4th rework
   // cycle) the LAST launch-bus event carried — i.e. what the launch button
   // resolved. Hook-initiated launches with no bus payload (paired auto-connect
@@ -791,17 +798,19 @@ export function useTerminalSession(
     (sessionId: string, bridgeToken: string, helperToken?: string) => {
       // Session entry chooser — Resume (card cbe60db5, design item 7/F4): a
       // resume launch carries no bootstrap prompt at all — a minimal link
-      // with `resume: true` + the ended session's recorded `cwd`, so the
-      // local bridge runs `claude --continue` there instead of building a
-      // prompt (see terminal/bridge/src/index.js). Checked FIRST so the
-      // normal essentials/budgeting path below never runs for a resume.
+      // with `resumeId` (exact-conversation, rework 5) or the legacy
+      // `resume: true` + the ended session's recorded `cwd`, so the local
+      // bridge runs `claude --resume <id>` or `claude --continue` there
+      // instead of building a prompt (see terminal/bridge/src/index.js).
+      // Checked FIRST so the normal essentials/budgeting path below never
+      // runs for a resume.
       const carriedForResume = promptPartsRef.current;
-      if (carriedForResume?.resume) {
+      if (carriedForResume?.resume || carriedForResume?.resumeId) {
         const cwd = carriedForResume.cwd;
         if (!cwd) {
           // Should never happen — the chooser only offers Resume for a row
           // with a recorded folder (F4) — but stay honest rather than fire a
-          // directory-less --continue.
+          // directory-less resume.
           logger.error("Terminal resume launch missing cwd — refusing to fire");
           toast.error("Couldn't resume — no folder was recorded for that session");
           setLaunchPhase("helper-timeout");
@@ -815,7 +824,8 @@ export function useTerminalSession(
             token: bridgeToken,
             helperToken,
             cwd,
-            resume: true,
+            resume: carriedForResume.resumeId ? undefined : true,
+            resumeId: carriedForResume.resumeId,
           });
         } catch (err) {
           logger.error("Terminal resume deep-link build failed", {
@@ -826,6 +836,7 @@ export function useTerminalSession(
         }
         logger.info("Terminal firing resume deep link", {
           sessionId,
+          exact: !!carriedForResume.resumeId,
           url: redactDeepLinkToken(link).replace(/([?&]cwd=)[^&]*/g, "$1***"),
           urlChars: link.length,
         });
@@ -1008,6 +1019,22 @@ export function useTerminalSession(
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ machineLabel: host }),
+              }).catch(() => {});
+            }
+            // Exact-conversation Resume (rework 5): the SAME frame optionally
+            // carries the id of the claude conversation this bridge just
+            // spawned/resumed. Best-effort PATCH onto the registry row (same
+            // once-per-session guard as machine identity above) so a FUTURE
+            // Resume of this row can pass `--resume <id>` instead of falling
+            // back to `--continue` — never awaited/blocking, and an old
+            // bridge that omits `conv` simply never triggers this.
+            const conv = parseBridgeVersionConv(ev.data);
+            if (conv && convIdAnnouncedSidRef.current !== sessionId) {
+              convIdAnnouncedSidRef.current = sessionId;
+              void fetch(`/api/terminal/session/${encodeURIComponent(sessionId)}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ claudeSessionId: conv }),
               }).catch(() => {});
             }
             return;

@@ -1,0 +1,25 @@
+-- Exact-conversation Resume (rework 5, card cbe60db5) — Nick's field test:
+-- a Resume click on a Recent row resumed a DIFFERENT conversation than the
+-- one the row described. Root cause: `claude --continue` resumes whatever's
+-- most recent ON DISK in a folder, decoupled from which registry row/session
+-- was actually clicked. The fix is to track the SPECIFIC claude conversation
+-- id per row (minted by the bridge itself at spawn time via
+-- `claude --session-id <uuid>`, or handed a tracked id to resume via
+-- `claude --resume <uuid>`) and resume by that id instead of by folder.
+--
+-- Nullable, best-effort — mirrors `machine_label`'s own column (added in the
+-- original 00141_terminal_sessions.sql CREATE TABLE, not a later ALTER): it
+-- is populated ONLY once the bridge announces the id it spawned/resumed with
+-- (relay `bridge-version` control frame's new `conv` field →
+-- PATCH /api/terminal/session/[sid]), so a row can legitimately have no
+-- value yet (before the bridge attaches) or forever (a bridge too old to
+-- announce one). Absence is an honest "unknown", exactly like machine_label,
+-- never treated as an error.
+--
+-- No RLS changes needed: terminal_sessions' existing owner-only policies
+-- (00141) already cover every column on the row, including this new one —
+-- there is nothing column-specific to grant/restrict here (unlike
+-- 00151/00152's users-table column-level lockdown, which existed because
+-- `authenticated` had broader-than-owner table-level access to that table).
+alter table public.terminal_sessions
+  add column claude_session_id uuid null;

@@ -1,24 +1,30 @@
 // Terminal session PATCH — multi-session stage 3 (C4: the My-sessions identity
 // line — "machine · cwd · short sid"), extended by Nick's sign-off change 2
-// for the bridge-announced machine identity.
+// for the bridge-announced machine identity, and rework 5 (exact-conversation
+// Resume) for the bridge-announced claude conversation id.
 //
 // Best-effort, client-known identity fields ONLY: `cwd` (the dock already
 // resolves it client-side to build the launch prompt/deep link — see
-// use-terminal-session.ts → resolveLaunchPromptParts) and, now, `machineLabel`
-// (the bridge's own `os.hostname()`, forwarded via the relay's `bridge-version`
-// control frame — see that same file's bridge-version handling). Both are
-// called fire-and-forget; a failure here never surfaces to the user (the
-// registry row simply keeps whichever field was already there — an honest
-// omission, not a broken feature). `machineLabel` is re-sanitized here with
-// the SAME rules the relay applies before ever forwarding it — never trust the
-// client alone — and is ONLY EVER SET, never cleared: a request with no valid
-// field to write is a silent no-op, not an error.
+// use-terminal-session.ts → resolveLaunchPromptParts), `machineLabel` (the
+// bridge's own `os.hostname()`), and `claudeSessionId` (the id of the claude
+// conversation the bridge just spawned/resumed) — the latter two both
+// forwarded via the relay's `bridge-version` control frame (see that same
+// file's bridge-version handling). All three are called fire-and-forget; a
+// failure here never surfaces to the user (the registry row simply keeps
+// whichever field was already there — an honest omission, not a broken
+// feature). `machineLabel`/`claudeSessionId` are re-sanitized here with the
+// SAME rules the relay applies before ever forwarding them — never trust the
+// client alone — and are ONLY EVER SET, never cleared: a request with no
+// valid field to write is a silent no-op, not an error.
 
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
-import { sanitizeMachineLabel } from "../../../../../../terminal/shared/control-frames.mjs";
+import {
+  sanitizeMachineLabel,
+  sanitizeConversationId,
+} from "../../../../../../terminal/shared/control-frames.mjs";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -27,10 +33,12 @@ const BodySchema = z
   .object({
     cwd: z.string().trim().min(1).max(1024).optional(),
     machineLabel: z.string().trim().min(1).max(200).optional(),
+    claudeSessionId: z.string().trim().min(1).max(64).optional(),
   })
-  .refine((data) => data.cwd !== undefined || data.machineLabel !== undefined, {
-    message: "At least one of cwd or machineLabel is required",
-  });
+  .refine(
+    (data) => data.cwd !== undefined || data.machineLabel !== undefined || data.claudeSessionId !== undefined,
+    { message: "At least one of cwd, machineLabel or claudeSessionId is required" },
+  );
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ sid: string }> }) {
   try {
@@ -48,11 +56,15 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ sid: s
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
 
-    const update: { cwd?: string; machine_label?: string } = {};
+    const update: { cwd?: string; machine_label?: string; claude_session_id?: string } = {};
     if (parsed.data.cwd) update.cwd = parsed.data.cwd;
     if (parsed.data.machineLabel) {
       const sanitized = sanitizeMachineLabel(parsed.data.machineLabel);
       if (sanitized) update.machine_label = sanitized;
+    }
+    if (parsed.data.claudeSessionId) {
+      const sanitized = sanitizeConversationId(parsed.data.claudeSessionId);
+      if (sanitized) update.claude_session_id = sanitized;
     }
     if (Object.keys(update).length === 0) {
       // Nothing valid survived sanitization (e.g. a machineLabel-only request

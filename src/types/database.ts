@@ -2777,6 +2777,7 @@ export type Database = {
         task_title: string | null;
         machine_label: string | null;
         cwd: string | null;
+        claude_session_id: string | null;
         status: "active" | "ended";
         created_at: string;
         ended_at: string | null;
@@ -2791,6 +2792,7 @@ export type Database = {
         task_title?: string | null;
         machine_label?: string | null;
         cwd?: string | null;
+        claude_session_id?: string | null;
         status?: "active" | "ended";
         created_at?: string;
         ended_at?: string | null;
@@ -2805,6 +2807,7 @@ export type Database = {
         task_title?: string | null;
         machine_label?: string | null;
         cwd?: string | null;
+        claude_session_id?: string | null;
         status?: "active" | "ended";
         created_at?: string;
         ended_at?: string | null;

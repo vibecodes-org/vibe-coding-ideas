@@ -54,12 +54,25 @@ export interface LaunchDeepLinkParams {
    */
   prompt?: string;
   /**
-   * Session entry chooser — Resume (card cbe60db5, design item 7/F4): when
-   * true, the bridge spawns `claude --continue` in `cwd` instead of
-   * `claude "<prompt>"`. `prompt` is ignored (and normally absent) on a
-   * resume link.
+   * Session entry chooser — Resume (card cbe60db5, design item 7/F4), LEGACY
+   * path for a row with no tracked conversation id: when true, the bridge
+   * spawns `claude --continue` in `cwd` instead of `claude "<prompt>"` —
+   * continuing whatever's most recent ON DISK in that folder, not
+   * necessarily the row the user clicked. `prompt` is ignored (and normally
+   * absent) on a resume link. Superseded by `resumeId` when present — see
+   * that field's doc.
    */
   resume?: boolean;
+  /**
+   * EXACT-CONVERSATION Resume (rework 5, card cbe60db5 — the proper fix for
+   * Nick's field test: a `resume` link resumed the wrong conversation
+   * because `--continue` doesn't know which row was clicked). A validated
+   * UUID naming the SPECIFIC claude conversation to resume
+   * (`terminal_sessions.claude_session_id`) — the bridge runs
+   * `claude --resume <id>` instead of `--continue`. Wins over `resume` when
+   * both are somehow set (see buildLaunchDeepLink).
+   */
+  resumeId?: string;
 }
 
 /**
@@ -78,6 +91,7 @@ export function buildLaunchDeepLink({
   cwd,
   prompt,
   resume,
+  resumeId,
 }: LaunchDeepLinkParams): string {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
@@ -89,7 +103,13 @@ export function buildLaunchDeepLink({
   ];
   if (helperToken) parts.push(`helperToken=${encodeURIComponent(helperToken)}`);
   if (cwd) parts.push(`cwd=${encodeURIComponent(cwd)}`);
-  if (resume) parts.push(`resume=1`);
+  // resumeId (exact-conversation) wins over the legacy resume=1 flag — mirrors
+  // terminal/shared/deep-link.mjs's precedence exactly (drift-tested).
+  if (resumeId) {
+    parts.push(`resume_id=${encodeURIComponent(resumeId)}`);
+  } else if (resume) {
+    parts.push(`resume=1`);
+  }
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }

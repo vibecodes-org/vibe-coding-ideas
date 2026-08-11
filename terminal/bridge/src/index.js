@@ -35,12 +35,18 @@
 import os from "node:os";
 import fs from "node:fs";
 import path from "node:path";
+import crypto from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
-import { sanitizeHelperVersion, sanitizeMachineLabel } from "../../shared/control-frames.mjs";
+import { resolveClaudeLaunch } from "./resume-cmd.js";
+import {
+  sanitizeHelperVersion,
+  sanitizeMachineLabel,
+  sanitizeConversationId,
+} from "../../shared/control-frames.mjs";
 import { parseLaunchDeepLink, redactDeepLinkToken } from "../../shared/deep-link.mjs";
 import { isRelayHostAllowed } from "../../shared/relay-allowlist.mjs";
 import {
@@ -128,13 +134,30 @@ if (!isRelayHostAllowed(RELAY, { allowLoopback: ALLOW_LOOPBACK_RELAY })) {
 }
 const SESSION = launched?.session || args.session || process.env.SESSION_ID || `dev-${Math.random().toString(36).slice(2, 10)}`;
 const TOKEN = launched?.token || args.token || process.env.BRIDGE_TOKEN || "";
-// Session entry chooser — Resume (card cbe60db5, design item 7/F4): a
-// `resume=1` launch runs `claude --continue` instead of the default `claude`,
-// continuing the most recent conversation in CWD rather than bootstrapping a
-// new one. An explicit `--cmd`/`BRIDGE_CMD` override still wins (dev/test
-// convenience), same precedence as every other launched field here.
+// Session entry chooser — Resume (card cbe60db5, design item 7/F4), LEGACY
+// path: a `resume=1` launch (no tracked conversation id) runs
+// `claude --continue`, continuing whatever's most recent ON DISK in CWD —
+// not necessarily the row the user clicked. See RESUME_ID below for the
+// EXACT-CONVERSATION path (rework 5) every row minted after this feature
+// carries instead.
 const RESUME = !!launched?.resume;
-const CMD = args.cmd || process.env.BRIDGE_CMD || (RESUME ? "claude --continue" : "claude");
+// Exact-conversation Resume (rework 5, card cbe60db5 — Nick's field test: a
+// Resume click landed on the wrong conversation because `--continue` doesn't
+// know which row was clicked). A validated UUID from a `resume_id=` deep
+// link (already UUID-checked by parseLaunchDeepLink; re-checked here as
+// defense in depth — same posture as HOST/sanitizeMachineLabel above) names
+// the SPECIFIC claude conversation to resume.
+const RESUME_ID = sanitizeConversationId(launched?.resumeId);
+// An explicit `--cmd`/`BRIDGE_CMD` override always wins (dev/test
+// convenience) — see resolveClaudeLaunch's doc for the full launch-shape
+// priority order and the empirical finding behind CONV.
+const explicitCmd = args.cmd || process.env.BRIDGE_CMD || null;
+const { cmd: CMD, conv: CONV } = resolveClaudeLaunch({
+  explicitCmd,
+  resumeId: RESUME_ID,
+  resume: RESUME,
+  mintId: () => crypto.randomUUID(),
+});
 const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd();
 // The URL-carried bootstrap prompt (deep-link launches only). INERT DATA with two
 // hard rules (see docs/terminal-bootstrap-prompt-ux.html + the shared deep-link
@@ -146,10 +169,11 @@ const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd()
 //      until the relay confirms the owner-bound token with the `attached`
 //      control frame (accept-then-close rejections make ws.onopen meaningless
 //      as an auth signal). No frame in time → exit WITHOUT spawning anything.
-// A resume launch never carries a prompt (nothing to bootstrap) — RESUME
-// forces it empty even if a caller somehow sent both, so `--continue` is
-// never followed by a stray argv element.
-const PROMPT = RESUME ? "" : launched?.prompt || "";
+// A resume launch (legacy `--continue` OR exact-conversation `--resume`)
+// never carries a prompt (nothing to bootstrap) — forced empty even if a
+// caller somehow sent both, so the resumed command is never followed by a
+// stray argv element.
+const PROMPT = RESUME || RESUME_ID ? "" : launched?.prompt || "";
 // ── helper-version announcement (release-gate rework 2a) ─────────────────────
 // Read the RUNNING helper's own version so the relay/dock can nudge stale
 // installs to update. Priority: BRIDGE_HELPER_VERSION (set by the packaged
@@ -523,7 +547,14 @@ async function main() {
     `${RELAY.replace(/\/$/, "")}/?session=${encodeURIComponent(SESSION)}` +
     `&role=bridge&token=${encodeURIComponent(TOKEN)}` +
     (HELPER_VERSION ? `&helperVersion=${encodeURIComponent(HELPER_VERSION)}` : "") +
-    (HOST ? `&host=${encodeURIComponent(HOST)}` : "");
+    (HOST ? `&host=${encodeURIComponent(HOST)}` : "") +
+    // Exact-conversation Resume (rework 5): announce the id of the claude
+    // conversation this launch just spawned/resumed, alongside
+    // helperVersion/host — same query-param path, same skew-safe shape (see
+    // terminal/shared/control-frames.mjs's EXACT-CONVERSATION RESUME header
+    // comment). Absent for an explicit --cmd override or a legacy --continue
+    // launch (CONV is null there — nothing honest to announce).
+    (CONV ? `&conv=${encodeURIComponent(CONV)}` : "");
   const redactedUrl = url.replace(/token=[^&]*/, "token=***");
 
   // The absolute max-duration cap is armed ONCE and spans reconnects (a link drop

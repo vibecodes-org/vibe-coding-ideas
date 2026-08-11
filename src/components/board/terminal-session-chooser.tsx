@@ -321,8 +321,17 @@ function RecentRow({
       {confirming && (
         <div className="mt-2 border-l-2 border-emerald-500 pl-2.5 text-[11.5px] text-zinc-400">
           <p>
-            Starts a new terminal that picks up your last conversation in{" "}
-            <span className="font-mono text-zinc-300">{row.cwd}</span>.
+            {row.claudeSessionId ? (
+              <>
+                Continues this exact conversation in{" "}
+                <span className="font-mono text-zinc-300">{row.cwd}</span>.
+              </>
+            ) : (
+              <>
+                Starts a new terminal that picks up the most recent conversation in{" "}
+                <span className="font-mono text-zinc-300">{row.cwd}</span>.
+              </>
+            )}
           </p>
           {limitLine && <p className="mt-1">{limitLine}</p>}
           <div className="mt-2 flex items-center justify-end gap-2">

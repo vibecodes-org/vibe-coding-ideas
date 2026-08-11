@@ -26,14 +26,30 @@
 //             DATA: the bridge passes it as ONE argv element (never through
 //             shellSplit / a shell) and only spawns AFTER the relay has accepted
 //             the owner-bound token (R1 — see bridge/src/index.js).
-//   resume  — session entry chooser (card cbe60db5, design item 7/F4): when
+//   resume  — session entry chooser (card cbe60db5, design item 7/F4), LEGACY
+//             path for a Recent row with no tracked conversation id: when
 //             `"1"`, the bridge spawns `claude --continue` in `cwd` instead of
-//             `claude "<prompt>"` — the chooser's Resume action, continuing the
-//             most recent conversation in that folder rather than bootstrapping
-//             a new one. `prompt` is ignored (and normally absent) on a resume
-//             link. An old bridge that doesn't recognise `resume` simply never
-//             sees the param (it's omitted unless truthy) — no version-skew
-//             risk in either direction.
+//             `claude "<prompt>"`. `--continue` resumes whatever's most
+//             recent ON DISK in that folder — NOT necessarily the row the
+//             user clicked (Nick's field test: this is exactly how a Resume
+//             click landed on the wrong conversation). `prompt` is ignored
+//             (and normally absent) on a resume link. An old bridge that
+//             doesn't recognise `resume` simply never sees the param (it's
+//             omitted unless truthy) — no version-skew risk in either
+//             direction.
+//   resume_id — EXACT-CONVERSATION Resume (rework 5, the proper fix): a
+//             validated UUID naming the SPECIFIC claude conversation to
+//             resume (`terminal_sessions.claude_session_id`, tracked from the
+//             moment a session was minted — see terminal/bridge/src/index.js's
+//             resolveClaudeLaunch). The bridge runs `claude --resume <id>`
+//             instead of `--continue`, so the resumed content is always
+//             exactly the row the user clicked, never whatever else has run
+//             in that folder since. Mutually exclusive with `resume` on a
+//             real link (a row either has a tracked id or it doesn't); when
+//             both are somehow present, `resume_id` wins (see parse below) —
+//             it is the verified-safe, exact path. Malformed/non-UUID values
+//             are rejected at parse time (never forwarded to a shell-split
+//             CMD string).
 //
 // `token` and `helperToken` are secrets and `prompt` is user content. NEVER log
 // a raw link — use redactDeepLinkToken first (it elides all three). `prompt` is
@@ -49,6 +65,11 @@ export const LAUNCH_SCHEME = "vibecodes";
 /** The single action this scheme exposes today: `vibecodes://launch?…`. */
 export const LAUNCH_HOST = "launch";
 
+/** Strict UUID shape — mirrors control-frames.mjs's `sanitizeConversationId`.
+ *  Duplicated (not imported) to keep this module dependency-free (see the
+ *  file header) — `resume_id` is validated at the same strictness either way. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 /**
  * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&prompt=…]`
  * deep link.
@@ -59,10 +80,10 @@ export const LAUNCH_HOST = "launch";
  * (and therefore the app-side prompt budget) is stable. Throws when a required
  * field is missing so a malformed link is never fired.
  *
- * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean }} params
+ * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -73,7 +94,14 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   ];
   if (helperToken) parts.push(`helperToken=${encodeURIComponent(helperToken)}`);
   if (cwd) parts.push(`cwd=${encodeURIComponent(cwd)}`);
-  if (resume) parts.push(`resume=1`);
+  // resumeId (exact-conversation) wins over the legacy resume=1 flag — see the
+  // header comment. A caller should only ever set one, but this keeps a
+  // malformed double-set from firing a link with BOTH params.
+  if (resumeId) {
+    parts.push(`resume_id=${encodeURIComponent(resumeId)}`);
+  } else if (resume) {
+    parts.push(`resume=1`);
+  }
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
@@ -88,7 +116,7 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
  * param existed (version-skew safe both ways).
  *
  * @param {unknown} url
- * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean } | null}
+ * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string } | null}
  */
 export function parseLaunchDeepLink(url) {
   if (typeof url !== "string" || url.length === 0) return null;
@@ -110,13 +138,20 @@ export function parseLaunchDeepLink(url) {
   const helperToken = parsed.searchParams.get("helperToken") || undefined;
   const cwd = parsed.searchParams.get("cwd") || undefined;
   const prompt = parsed.searchParams.get("prompt") || undefined;
-  const resume = parsed.searchParams.get("resume") === "1" || undefined;
+  // resume_id (exact-conversation) wins over the legacy resume=1 flag — same
+  // precedence as the builder. A malformed (non-UUID) resume_id is rejected
+  // outright rather than forwarded — it's about to be interpolated into a
+  // shell-split bridge CMD string, so there is no safe partial value here.
+  const rawResumeId = parsed.searchParams.get("resume_id");
+  const resumeId = rawResumeId && UUID_RE.test(rawResumeId) ? rawResumeId.toLowerCase() : undefined;
+  const resume = !resumeId && parsed.searchParams.get("resume") === "1" ? true : undefined;
   if (!relay || !session || !token) return null;
 
   const out = { relay, session, token };
   if (helperToken) out.helperToken = helperToken;
   if (cwd) out.cwd = cwd;
-  if (resume) out.resume = true;
+  if (resumeId) out.resumeId = resumeId;
+  else if (resume) out.resume = true;
   if (prompt) out.prompt = prompt;
   return out;
 }
