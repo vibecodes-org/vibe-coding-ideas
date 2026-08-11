@@ -25,6 +25,7 @@ import { cn } from "@/lib/utils";
 import { slugifyIdeaTitle } from "@/lib/launch-claude-code";
 import { formatSessionAge, formatSessionIdentity } from "@/lib/terminal/session-registry";
 import { deriveTabLabel } from "./terminal-tabs";
+import { HelperUpdateButton } from "./terminal-helper-update-button";
 import {
   MINIMUM_RECOMMENDED_HELPER_VERSION,
   shouldShowHelperUpdateNudge,
@@ -577,9 +578,7 @@ export function TerminalMySessionsPanel({
         {showHelperNudge && (
           <div className="flex items-center gap-2 border-t border-sky-500/30 bg-sky-500/5 px-3.5 py-1.5 text-[11.5px] text-sky-300">
             <span className="flex-1">{updateNudgeCopy(MINIMUM_RECOMMENDED_HELPER_VERSION)}</span>
-            <Button size="xs" className="flex-none bg-sky-500 text-sky-950 hover:bg-sky-400" onClick={startHelperUpdate}>
-              Update now
-            </Button>
+            <HelperUpdateButton onClick={startHelperUpdate} />
             <button
               type="button"
               className="flex-none text-sky-400 hover:text-sky-200"
