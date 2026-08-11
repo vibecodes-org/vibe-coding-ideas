@@ -10,6 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useTerminalSession, type TerminalSessionDescriptor } from "./use-terminal-session";
+import { isSameOwnerPreemptedClose } from "@/lib/terminal/connection";
 
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 // Tracks every mock Terminal instance created — used by the scrollback
@@ -676,6 +677,34 @@ describe("useTerminalSession", () => {
       expect(result.current.state.status).toBe("error");
       expect(result.current.state.errorKind).toBe("duplicate");
       expect(result.current.state.closeCode).toBe(4001);
+    });
+
+    // Card cbe60db5 rework 6: the SAME 4001 close, but with the relay's
+    // same-owner PREEMPTION reason — the embedded dock's discriminator
+    // (isSameOwnerPreemptedClose) needs this to render the calm "taken over"
+    // state instead of the generic duplicate-session error (see
+    // terminal-session-view.tsx / connection.ts for where it's consumed).
+    it("carries the relay's preempted close REASON through onclose, not just the code", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+      await flushEffects();
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+
+      act(() => latestSocket().close(4001, "preempted"));
+      expect(result.current.state.status).toBe("error");
+      expect(result.current.state.closeCode).toBe(4001);
+      expect(result.current.state.closeReason).toBe("preempted");
+      expect(isSameOwnerPreemptedClose(result.current.state.closeCode, result.current.state.closeReason)).toBe(true);
     });
 
     it("only attaches once per distinct transferred sessionId — a stable object on a later render is a no-op", async () => {

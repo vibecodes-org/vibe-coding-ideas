@@ -71,6 +71,15 @@ export interface TerminalConnectionState {
   endedReason: EndedReason | null;
   /** The WebSocket close code that produced the current state (when applicable). */
   closeCode: number | null;
+  /**
+   * The WebSocket close REASON that produced the current state (when
+   * applicable) — travels alongside `closeCode` everywhere it's set/cleared.
+   * Card cbe60db5 rework 6: the relay reuses close code 4001 for TWO distinct
+   * causes (terminal/relay/src/pairing.js → CLOSE.DUP_BROWSER vs
+   * CLOSE.PREEMPTED) that only differ by this string — see
+   * `isSameOwnerPreemptedClose` below for why the embedded dock needs it.
+   */
+  closeReason: string | null;
 }
 
 export type TerminalEvent =
@@ -92,6 +101,7 @@ export const initialConnectionState: TerminalConnectionState = {
   errorKind: null,
   endedReason: null,
   closeCode: null,
+  closeReason: null,
 };
 
 /** A status that means "we are mid-handshake, no bridge stream yet". */
@@ -154,6 +164,47 @@ function parseEndedReason(reason: string | undefined): EndedReason {
   return "remote";
 }
 
+// ── same-owner takeover vs. genuine attach-rejection (card cbe60db5, rework 6) ─
+//
+// Nick's field test item 4: the tab a same-owner reconnect TOOK OVER showed the
+// generic "This session is already open elsewhere" error — alarming, and wrong:
+// that tab didn't fail to attach, it was deliberately (and successfully) handed
+// off. mapCloseCode above deliberately leaves BOTH cases as errorKind "duplicate"
+// (the underlying mechanism/status is unchanged — same as the popped-out window's
+// `isPreemptedClose` in popout-channel.ts, which also never touches `status`) —
+// only the embedded dock's PRESENTATION needs to tell them apart.
+//
+// Close code 4001 alone can't do that: the relay reuses DUP_BROWSER's code for
+// BOTH a plain "someone else already has this" rejection AND a same-owner
+// preemption (terminal/relay/src/pairing.js → CLOSE.DUP_BROWSER vs
+// CLOSE.PREEMPTED) — they only differ by the close REASON string. The popped-out
+// window doesn't need this finer check: within that narrow context (it only ever
+// attaches to an already-live session it was handed) every 4001 IS a preemption.
+// The embedded dock can genuinely race a STRANGER's attach attempt, so it needs
+// the sharper signal.
+
+/**
+ * The relay's same-owner PREEMPTION reason string — the stale leg's 4001 close
+ * when a newer same-owner attach (a reconnect / take-over from another tab)
+ * replaces it. Duplicated (not imported) for the same reason RELAY_CLOSE is:
+ * that module is plain .mjs outside the app's TS build graph; the relay's own
+ * pairing.test.js pins the code, and connection.test.ts pins this string.
+ */
+export const PREEMPTED_CLOSE_REASON = "preempted";
+
+/**
+ * True when a close was the relay's same-owner preemption signal — this leg
+ * was live (or attaching) and a newer same-owner attach just replaced it —
+ * rather than a genuine "another leg already holds this session" rejection.
+ * Any OTHER reason (including undefined/empty — an older relay that predates
+ * this distinction, or a truly sub-less rejection) is treated as the honest
+ * error, never guessed into a takeover: this only trusts the relay's own
+ * close-frame reason, never the rendered error copy.
+ */
+export function isSameOwnerPreemptedClose(closeCode: number | null, closeReason: string | null): boolean {
+  return closeCode === RELAY_CLOSE.DUP_BROWSER && closeReason === PREEMPTED_CLOSE_REASON;
+}
+
 /**
  * The connection state machine. Pure: `(state, event) => state`. Drives the dock's
  * six visible states; the component owns the side effects (fetch, socket, timers)
@@ -166,7 +217,14 @@ export function terminalReducer(
   switch (event.type) {
     case "connect":
       // Fresh attempt — clear any prior error/ended metadata.
-      return { status: "connecting", sessionId: null, errorKind: null, endedReason: null, closeCode: null };
+      return {
+        status: "connecting",
+        sessionId: null,
+        errorKind: null,
+        endedReason: null,
+        closeCode: null,
+        closeReason: null,
+      };
 
     case "session-created":
       // Only meaningful while we're opening a session; ignore stray late arrivals.
@@ -174,7 +232,7 @@ export function terminalReducer(
       return { ...state, sessionId: event.sessionId };
 
     case "session-mint-failed":
-      return { ...state, status: "error", errorKind: "session-mint-failed", closeCode: null };
+      return { ...state, status: "error", errorKind: "session-mint-failed", closeCode: null, closeReason: null };
 
     case "relay-open":
       // Relay reached; the bridge may not have attached yet → waiting-to-pair.
@@ -185,7 +243,7 @@ export function terminalReducer(
       // First (or any) bytes from the bridge prove it's attached and streaming.
       if (state.status === "connected") return state;
       if (state.status === "waiting-to-pair" || state.status === "disconnected" || state.status === "connecting") {
-        return { ...state, status: "connected", errorKind: null, endedReason: null, closeCode: null };
+        return { ...state, status: "connected", errorKind: null, endedReason: null, closeCode: null, closeReason: null };
       }
       // Deliberately NOT "error" here (fix/terminal-bringback-state-reset): a
       // genuine error (duplicate-preemption, owner-mismatch, connect-timeout, …)
@@ -206,7 +264,7 @@ export function terminalReducer(
     case "connect-timeout":
       // Only the connect clock — irrelevant once a stream is live.
       if (!isHandshaking(state.status)) return state;
-      return { ...state, status: "error", errorKind: "connect-timeout", closeCode: null };
+      return { ...state, status: "error", errorKind: "connect-timeout", closeCode: null, closeReason: null };
 
     case "reconnect-exhausted":
       // The grace window / token validity elapsed while disconnected and no reattach
@@ -229,9 +287,11 @@ export function terminalReducer(
     case "closed": {
       // A user-initiated end already produced the terminal state; the socket's own
       // close event must not clobber it back to a generic disconnect.
-      if (state.status === "session-ended") return { ...state, closeCode: event.code };
+      if (state.status === "session-ended") {
+        return { ...state, closeCode: event.code, closeReason: event.reason ?? null };
+      }
       const mapped = mapCloseCode(event.code, event.reason, state.status);
-      return { ...state, ...mapped, closeCode: event.code };
+      return { ...state, ...mapped, closeCode: event.code, closeReason: event.reason ?? null };
     }
 
     case "reset":

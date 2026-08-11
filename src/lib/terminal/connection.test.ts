@@ -23,6 +23,8 @@ import {
   claimConnectGeneration,
   isConnectSuperseded,
   decideReconnectNow,
+  isSameOwnerPreemptedClose,
+  PREEMPTED_CLOSE_REASON,
   type TerminalConnectionState,
   type TerminalEvent,
 } from "./connection";
@@ -36,6 +38,7 @@ import {
   isHeartbeatFrame as isSharedHeartbeatFrame,
   encodeBridgeVersionFrame as encodeSharedBridgeVersionFrame,
 } from "../../../terminal/shared/control-frames.mjs";
+import { CLOSE as RELAY_PAIRING_CLOSE } from "../../../terminal/relay/src/pairing.js";
 
 // Helper: fold a sequence of events through the reducer from the initial state.
 function run(events: TerminalEvent[], start = initialConnectionState): TerminalConnectionState {
@@ -213,6 +216,82 @@ describe("mapCloseCode", () => {
     expect(owner.status).toBe("error");
     expect(owner.errorKind).toBe("owner-mismatch");
     expect(owner.closeCode).toBe(RELAY_CLOSE.OWNER_MISMATCH);
+  });
+
+  it("closed event also carries the close REASON alongside closeCode", () => {
+    const live = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }]);
+    const closed = terminalReducer(live, { type: "closed", code: RELAY_CLOSE.DUP_BROWSER, reason: "preempted" });
+    expect(closed.closeCode).toBe(RELAY_CLOSE.DUP_BROWSER);
+    expect(closed.closeReason).toBe("preempted");
+  });
+
+  it("a missing reason on the closed event stores null, not undefined", () => {
+    const live = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }]);
+    const closed = terminalReducer(live, { type: "closed", code: 1006 });
+    expect(closed.closeReason).toBeNull();
+  });
+});
+
+// ── same-owner takeover vs. genuine attach-rejection (card cbe60db5, rework 6) ─
+//
+// Nick's field-test item 4: the tab a same-owner reconnect TOOK OVER showed the
+// generic "This session is already open elsewhere" error even though it was a
+// deliberate, successful hand-off, not a failed attach. The relay tells the two
+// apart via the close REASON on the shared 4001 code — see
+// terminal/relay/src/pairing.js → CLOSE.DUP_BROWSER vs CLOSE.PREEMPTED, imported
+// here directly (a pure, dependency-free module) so this test is pinned against
+// the RELAY'S OWN literal strings, not a hand-copied guess.
+describe("isSameOwnerPreemptedClose", () => {
+  it("pins PREEMPTED_CLOSE_REASON against the relay's own CLOSE.PREEMPTED.reason", () => {
+    expect(PREEMPTED_CLOSE_REASON).toBe(RELAY_PAIRING_CLOSE.PREEMPTED.reason);
+    // Same code as DUP_BROWSER — only the reason string tells them apart.
+    expect(RELAY_PAIRING_CLOSE.PREEMPTED.code).toBe(RELAY_CLOSE.DUP_BROWSER);
+  });
+
+  it("true for a same-owner takeover close (4001 + \"preempted\")", () => {
+    expect(isSameOwnerPreemptedClose(RELAY_CLOSE.DUP_BROWSER, PREEMPTED_CLOSE_REASON)).toBe(true);
+  });
+
+  it("false for the genuine attach-rejection close — same code, the relay's real rejection reason", () => {
+    expect(isSameOwnerPreemptedClose(RELAY_CLOSE.DUP_BROWSER, RELAY_PAIRING_CLOSE.DUP_BROWSER.reason)).toBe(false);
+  });
+
+  it("false when the reason is missing entirely (older relay, or a raw abnormal close)", () => {
+    expect(isSameOwnerPreemptedClose(RELAY_CLOSE.DUP_BROWSER, null)).toBe(false);
+  });
+
+  it("false for any other close code, even with the preempted reason string", () => {
+    expect(isSameOwnerPreemptedClose(RELAY_CLOSE.DUP_BRIDGE, PREEMPTED_CLOSE_REASON)).toBe(false);
+    expect(isSameOwnerPreemptedClose(null, PREEMPTED_CLOSE_REASON)).toBe(false);
+  });
+
+  it("end to end: a takeover close on a LIVE session reaches the reducer as errorKind duplicate, discriminated as a takeover", () => {
+    const live = run([{ type: "connect" }, { type: "relay-open" }, { type: "data" }]);
+    const takenOver = terminalReducer(live, {
+      type: "closed",
+      code: RELAY_CLOSE.DUP_BROWSER,
+      reason: RELAY_PAIRING_CLOSE.PREEMPTED.reason,
+    });
+    // The mechanism is UNCHANGED — same status/errorKind as any other duplicate
+    // close (mirrors the popped-out window's isPreemptedClose, which also never
+    // touches status). Only the discriminator flips.
+    expect(takenOver.status).toBe("error");
+    expect(takenOver.errorKind).toBe("duplicate");
+    expect(isSameOwnerPreemptedClose(takenOver.closeCode, takenOver.closeReason)).toBe(true);
+  });
+
+  it("end to end: a genuine attach-rejection close reaches the reducer identically on status/errorKind, but is NOT discriminated as a takeover", () => {
+    // This tab never got past the handshake — it tried to attach while another
+    // leg already held the session and was refused outright.
+    const handshaking = run([{ type: "connect" }, { type: "relay-open" }]);
+    const rejected = terminalReducer(handshaking, {
+      type: "closed",
+      code: RELAY_CLOSE.DUP_BROWSER,
+      reason: RELAY_PAIRING_CLOSE.DUP_BROWSER.reason,
+    });
+    expect(rejected.status).toBe("error");
+    expect(rejected.errorKind).toBe("duplicate");
+    expect(isSameOwnerPreemptedClose(rejected.closeCode, rejected.closeReason)).toBe(false);
   });
 });
 
