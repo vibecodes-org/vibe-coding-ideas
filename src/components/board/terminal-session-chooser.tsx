@@ -28,6 +28,7 @@ import {
 import { updateNudgeCopy, type HelperStatus } from "@/lib/terminal/helper-row";
 import { MINIMUM_RECOMMENDED_HELPER_VERSION, shouldShowChooserHelperNudge } from "@/lib/terminal/helper-version";
 import { TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
+import { HelperUpdateButton } from "./terminal-helper-update-button";
 
 // F3 (common foundations): the SAME generic warning, visible before every
 // single Reconnect click — never conditional, never sniffed.
@@ -115,12 +116,8 @@ export function TerminalSessionChooser({
       {showHelperNudge && (
         <div className="flex items-center gap-2 border-b border-sky-500/30 bg-sky-500/5 px-3.5 py-1.5 text-[11px] text-sky-300">
           <Info className="h-3 w-3 shrink-0" />
-          <span className="flex-1">
-            {updateNudgeCopy(MINIMUM_RECOMMENDED_HELPER_VERSION)}{" "}
-            <a href={TERMINAL_HELPER_DOWNLOAD_URL} className="underline hover:text-sky-200">
-              Download
-            </a>
-          </span>
+          <span className="flex-1">{updateNudgeCopy(MINIMUM_RECOMMENDED_HELPER_VERSION)}</span>
+          <HelperUpdateButton href={TERMINAL_HELPER_DOWNLOAD_URL} />
           <button
             type="button"
             className="shrink-0 text-sky-400 hover:text-sky-200"

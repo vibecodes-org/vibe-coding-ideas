@@ -331,7 +331,7 @@ describe("TerminalSessionChooser", () => {
     it("shows the nudge, above the sections, when the last-known helper is older than the minimum", () => {
       renderChooser(helperStatus({ version: "0.3.0" }));
       expect(screen.getByText(/A newer terminal helper is available/)).toBeInTheDocument();
-      const link = screen.getByRole("link", { name: "Download" });
+      const link = screen.getByRole("link", { name: "Update now" });
       expect(link).toHaveAttribute("href", "/download/terminal-helper");
     });
 
