@@ -51,10 +51,12 @@ import {
   CircleDashed,
   ExternalLink,
   Undo2,
+  RefreshCw,
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { isSameOwnerPreemptedClose } from "@/lib/terminal/connection";
 import type { TerminalConnectionState, TerminalStatus } from "@/lib/terminal/connection";
 import { type TerminalPlatform, TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
 import { shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
@@ -136,6 +138,17 @@ interface TerminalSessionViewProps {
   onPopOut?: () => void;
   /** "Bring back to dock" (D3) — only rendered while `poppedOut`. */
   onBringBack?: () => void;
+  /**
+   * Card cbe60db5 rework 6: this tab's leg was closed by a same-owner
+   * takeover (`isSameOwnerPreemptedClose` — see the calm "Taken over" state
+   * below) and the user clicked "Reconnect here". Reattaches THIS sid via
+   * the SAME reattach-mint flow the session chooser's Reconnect uses (a
+   * fresh browser token, no cap consumed — see terminal-dock.tsx's
+   * `performReattach`); omitted hides the button (defensive — the state only
+   * renders once a `pair` is known, so the sid is always available in
+   * practice).
+   */
+  onReconnectTakenOver?: (sid: string) => void;
 }
 
 export function TerminalSessionView({
@@ -153,6 +166,7 @@ export function TerminalSessionView({
   poppedOut = false,
   onPopOut,
   onBringBack,
+  onReconnectTakenOver,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -270,7 +284,15 @@ export function TerminalSessionView({
   }, [poppedOut, actions.refreshView]);
 
   const view = resolveDockView(state.status, launchPhase, platform.supported, paired);
-  const meta = dockStatusMeta(view, state.errorKind);
+  // Card cbe60db5 rework 6 (Nick's field-test item 4): the "error"/4001 state
+  // legitimately stays the underlying mechanism (unchanged, same as the
+  // popped-out window's isPreemptedClose) — this only swaps the PRESENTATION
+  // for the one cause that's actually a deliberate, successful hand-off
+  // rather than a failed attach. See connection.ts's isSameOwnerPreemptedClose
+  // doc for why the close REASON (not just the 4001 code) is required to
+  // tell the two apart.
+  const takenOver = view === "error" && isSameOwnerPreemptedClose(state.closeCode, state.closeReason);
+  const meta = takenOver ? TAKEN_OVER_META : dockStatusMeta(view, state.errorKind);
   const showStream = state.status === "connected" || state.status === "disconnected";
   // Only worth showing once there's an actual (live or reconnecting) bridge to
   // update — a setup/coming-soon/idle panel has nothing to nudge about yet.
@@ -446,10 +468,14 @@ export function TerminalSessionView({
               pair={pair}
               platform={platform}
               canLaunch={canLaunch}
+              takenOver={takenOver}
               onConnect={() => void actions.connect({ autoLaunch: true })}
               onRetry={() => void actions.connect({ autoLaunch: true })}
               onLaunchAgain={actions.beginBrowserLaunch}
               onCopyBridge={actions.copyBridgeCommand}
+              onReconnectTakenOver={() => {
+                if (pair) onReconnectTakenOver?.(pair.sessionId);
+              }}
             />
           )}
           {state.status === "disconnected" && (
@@ -532,6 +558,20 @@ export function dockStatusMeta(
   }
 }
 
+// Same-owner takeover pill (card cbe60db5, rework 6): the underlying view
+// legitimately stays "error"/4001 (that's the mechanism — see
+// isSameOwnerPreemptedClose's doc) but a deliberate, successful hand-off to
+// another tab is not an error — the rose "Error" pill dockStatusMeta would
+// otherwise render for this state contradicts the calm overlay below it.
+// Sky/informational, same family + wording as the popped-out window's own
+// "Moved to dock" pill (terminal-popout-view.tsx's MOVED_TO_DOCK_META) for
+// the analogous same-owner-preemption case.
+const TAKEN_OVER_META: StatusMeta = {
+  label: "Taken over",
+  Icon: Undo2,
+  className: "border-sky-500/50 bg-sky-500/10 text-sky-400",
+};
+
 // ── per-view centred overlays (icon + text + next step) ───────────────────────
 function StateOverlay({
   view,
@@ -539,20 +579,25 @@ function StateOverlay({
   pair,
   platform,
   canLaunch,
+  takenOver,
   onConnect,
   onRetry,
   onLaunchAgain,
   onCopyBridge,
+  onReconnectTakenOver,
 }: {
   view: DockView;
   state: TerminalConnectionState;
   pair: PairInfo | null;
   platform: TerminalPlatform;
   canLaunch: boolean;
+  /** Card cbe60db5 rework 6 — see the same-named const in TerminalSessionView. */
+  takenOver: boolean;
   onConnect: () => void;
   onRetry: () => void;
   onLaunchAgain: () => void;
   onCopyBridge: () => void;
+  onReconnectTakenOver: () => void;
 }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
@@ -613,7 +658,24 @@ function StateOverlay({
         </>
       )}
 
-      {view === "error" && (
+      {/* Card cbe60db5 rework 6: a same-owner takeover is a deliberate,
+          successful hand-off — not a failed attach — so it gets its own
+          calm branch instead of falling into the generic error copy below
+          (Nick's field-test item 4: "that's backwards"). */}
+      {view === "error" && takenOver && (
+        <>
+          <Undo2 className="h-7 w-7 text-sky-400" />
+          <div className="text-base font-semibold text-sky-400">Taken over</div>
+          <p className="max-w-md text-[13px] text-zinc-400">
+            This session was taken over in another tab.
+          </p>
+          <Button className="bg-sky-500 text-sky-950 hover:bg-sky-400" onClick={onReconnectTakenOver}>
+            <RefreshCw className="h-3.5 w-3.5" /> Reconnect here
+          </Button>
+        </>
+      )}
+
+      {view === "error" && !takenOver && (
         <>
           <CircleAlert className="h-7 w-7 text-rose-400" />
           <div className="text-base font-semibold text-rose-400">{errorTitle(state)}</div>

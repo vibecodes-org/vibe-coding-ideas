@@ -1153,6 +1153,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
             poppedOut={poppedOutKeys.has(entry.key)}
             onPopOut={() => handlePopOut(entry.key)}
             onBringBack={() => bringBackToDock(entry.key)}
+            onReconnectTakenOver={(sid) => void performReattach(sid, { focus: true })}
           />
         ))}
       </div>
