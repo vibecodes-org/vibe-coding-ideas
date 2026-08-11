@@ -99,6 +99,21 @@
 //     has a current answer without waking the helper.
 // All three are skew-safe the same way as every frame above: an old relay/helper
 // that doesn't know a tag treats it as an unknown control frame and ignores it.
+//
+// EXACT-CONVERSATION RESUME (rework 5, card cbe60db5 — Nick's field test: a
+// Resume click resumed the wrong conversation because `claude --continue`
+// only ever continues whatever's most recent ON DISK in a folder, not the
+// specific chooser row clicked) extends the SAME bridge-version frame with a
+// third optional field: `{"t":"bridge-version","v":"x.y.z","host":"…","conv":
+// "<uuid>"}`. `conv` is the id of the CLAUDE CONVERSATION the bridge just
+// spawned or resumed — minted by the bridge itself via `--session-id <uuid>`
+// for a brand-new session, or the `--resume <uuid>` id it was handed for a
+// tracked one (terminal/bridge/src/index.js's resolveClaudeLaunch). Verified
+// empirically: `claude --resume <id>` keeps appending to the SAME <id>.jsonl
+// transcript forever (never forks to a new id), so the id announced here is
+// exactly the id every future Resume of this row needs to reach the same
+// conversation. Same skew-safe shape as `v`/`host`: optional, independently
+// present, ignored by anything that predates it.
 
 /** The closed set of reasons a helper's goodbye frame may carry (design §2 table). */
 export const HELPER_GOODBYE_REASONS = Object.freeze([
@@ -113,12 +128,14 @@ export const HELPER_GOODBYE_REASONS = Object.freeze([
 export const HELPER_COMMANDS = Object.freeze(["stop", "quiesce", "set-always-on"]);
 
 /** Detect any control TEXT frame with a given `t` tag. Cheap + strict + bounded.
- *  160 (not the original 64) is sized to fit the bridge-version frame's worst
- *  case — `v` (semver) plus a full 80-char `host` (sanitizeMachineLabel's own
- *  cap) plus JSON overhead — while staying a trivially bounded, DoS-safe size
- *  for every other (much shorter) control frame that shares this same gate. */
+ *  200 (not the original 64, bumped from 160 for the `conv` field) is sized to
+ *  fit the bridge-version frame's worst case — `v` (semver) plus a full
+ *  80-char `host` (sanitizeMachineLabel's own cap) plus a 36-char `conv` UUID
+ *  plus JSON overhead (176 bytes measured) — while staying a trivially
+ *  bounded, DoS-safe size for every other (much shorter) control frame that
+ *  shares this same gate. */
 function isControlFrame(text, tag) {
-  if (typeof text !== "string" || text.length === 0 || text.length > 160) return false;
+  if (typeof text !== "string" || text.length === 0 || text.length > 200) return false;
   try {
     const msg = JSON.parse(text);
     return !!msg && typeof msg === "object" && msg.t === tag;
@@ -190,17 +207,21 @@ const SEMVER_RE = /^\d+\.\d+\.\d+$/;
 
 /**
  * TEXT frame the relay sends the BROWSER leg announcing the bridge's helper
- * version and/or machine identity. `host` is optional (omitted whenever falsy)
- * so a call site that only knows one of the two fields still emits a valid,
- * minimal frame — see this module's MACHINE IDENTITY header comment.
+ * version, machine identity, and/or the id of the claude conversation it just
+ * spawned/resumed (exact-conversation Resume, rework 5). Every field is
+ * optional (omitted whenever falsy) so a call site that only knows a subset
+ * still emits a valid, minimal frame — see this module's MACHINE IDENTITY and
+ * EXACT-CONVERSATION RESUME header comments.
  * @param {string | null | undefined} version
  * @param {string | null | undefined} [host]
+ * @param {string | null | undefined} [conv]
  * @returns {string}
  */
-export function encodeBridgeVersionFrame(version, host) {
+export function encodeBridgeVersionFrame(version, host, conv) {
   const msg = { t: "bridge-version" };
   if (version) msg.v = version;
   if (host) msg.host = host;
+  if (conv) msg.conv = conv;
   return JSON.stringify(msg);
 }
 
@@ -248,6 +269,27 @@ export function parseBridgeVersionHost(text) {
 }
 
 /**
+ * Extract + validate the claude conversation id carried by a bridge-version
+ * frame (exact-conversation Resume, rework 5). Returns null for anything
+ * absent/malformed — an OLD bridge never sends `conv` at all, which parses
+ * identically to "unknown" here (the same graceful-degrade shape as a missing
+ * `v`/`host`). Re-validated with `sanitizeConversationId` even though the
+ * relay already sanitized it before forwarding — defense in depth, never
+ * trust the wire twice-removed from the source.
+ * @param {unknown} text
+ * @returns {string | null}
+ */
+export function parseBridgeVersionConv(text) {
+  if (!isBridgeVersionFrame(text)) return null;
+  try {
+    const msg = JSON.parse(text);
+    return typeof msg.conv === "string" ? sanitizeConversationId(msg.conv) : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Validate a raw `helperVersion` value (e.g. straight off a URL query param)
  * before it's ever stored/forwarded — the ONE gate the relay applies so a
  * hostile/malformed bridge can't smuggle arbitrary text into a control frame
@@ -275,6 +317,29 @@ export function sanitizeMachineLabel(raw) {
   const trimmed = raw.trim();
   if (trimmed.length === 0) return null;
   return trimmed.slice(0, 80);
+}
+
+/** Strict UUID shape (any version/variant — `crypto.randomUUID()`'s own shape,
+ *  and whatever `claude --session-id`/`--resume` accept). Mirrors the format
+ *  the `claude` CLI itself requires ("must be a valid UUID"). */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Validate a raw claude-conversation-id value (exact-conversation Resume,
+ * rework 5 — e.g. a `conv`/`resume_id` query param, or a `claude_session_id`
+ * DB column value) before it's stored/forwarded/spawned-with. A strict UUID
+ * gate: this value is later interpolated into a shell-split bridge CMD
+ * string (`claude --resume <id>`/`claude --session-id <id>`), so anything
+ * that isn't exactly a UUID is rejected outright rather than sanitized —
+ * there is no safe partial value here, unlike the free-form machine label.
+ * Lower-cased so a case-varying but otherwise valid id always compares equal.
+ * @param {unknown} raw
+ * @returns {string | null}
+ */
+export function sanitizeConversationId(raw) {
+  if (typeof raw !== "string") return null;
+  const trimmed = raw.trim();
+  return UUID_RE.test(trimmed) ? trimmed.toLowerCase() : null;
 }
 
 // ── helper-command frame (web -> relay -> helper leg) ─────────────────────────

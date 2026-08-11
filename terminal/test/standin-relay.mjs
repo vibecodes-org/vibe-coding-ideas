@@ -42,6 +42,7 @@ import {
   encodeBridgeVersionFrame,
   sanitizeHelperVersion,
   sanitizeMachineLabel,
+  sanitizeConversationId,
   encodeHelperCommandFrame,
   isGoodbyeFrame,
   parseGoodbyeReason,
@@ -379,6 +380,7 @@ export function startStandinRelay(opts = {}) {
         graceTimer: null,
         bridgeHelperVersion: null,
         bridgeHost: null,
+        bridgeConv: null,
       });
     }
     const legs = sessions.get(session);
@@ -426,16 +428,20 @@ export function startStandinRelay(opts = {}) {
     if (role === "bridge") {
       const helperVersion = sanitizeHelperVersion(url.searchParams.get("helperVersion"));
       const host = sanitizeMachineLabel(url.searchParams.get("host"));
+      // Exact-conversation Resume (rework 5) — mirrors the Cloudflare DO's
+      // `conv` handling, same store-durably + forward-combined-state shape.
+      const conv = sanitizeConversationId(url.searchParams.get("conv"));
       if (helperVersion) legs.bridgeHelperVersion = helperVersion;
       if (host) legs.bridgeHost = host;
-      if ((helperVersion || host) && legs.browser && legs.browser.readyState === legs.browser.OPEN) {
+      if (conv) legs.bridgeConv = conv;
+      if ((helperVersion || host || conv) && legs.browser && legs.browser.readyState === legs.browser.OPEN) {
         try {
-          legs.browser.send(encodeBridgeVersionFrame(legs.bridgeHelperVersion, legs.bridgeHost));
+          legs.browser.send(encodeBridgeVersionFrame(legs.bridgeHelperVersion, legs.bridgeHost, legs.bridgeConv));
         } catch { /* closing */ }
       }
-    } else if (role === "browser" && (legs.bridgeHelperVersion || legs.bridgeHost)) {
+    } else if (role === "browser" && (legs.bridgeHelperVersion || legs.bridgeHost || legs.bridgeConv)) {
       try {
-        ws.send(encodeBridgeVersionFrame(legs.bridgeHelperVersion, legs.bridgeHost));
+        ws.send(encodeBridgeVersionFrame(legs.bridgeHelperVersion, legs.bridgeHost, legs.bridgeConv));
       } catch { /* leg already gone */ }
     }
 

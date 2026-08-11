@@ -54,6 +54,7 @@ import {
   encodeBridgeVersionFrame,
   sanitizeHelperVersion,
   sanitizeMachineLabel,
+  sanitizeConversationId,
   encodeHelperCommandFrame,
   isGoodbyeFrame,
   parseGoodbyeReason,
@@ -582,17 +583,19 @@ export class TerminalRelay {
       }
     }
 
-    // 5b) HELPER-VERSION + MACHINE-IDENTITY ANNOUNCEMENT (release-gate rework 2a,
-    //     extended by Nick's sign-off change 2 to also carry the bridge's
-    //     hostname). Ordering-independent both ways, and the two fields are
-    //     independent of each other (either alone is a valid update):
-    //       - bridge attaches with a (sanitized) `helperVersion` and/or `host`
+    // 5b) HELPER-VERSION + MACHINE-IDENTITY + CONVERSATION-ID ANNOUNCEMENT
+    //     (release-gate rework 2a, extended by Nick's sign-off change 2 for the
+    //     bridge's hostname, and rework 5's exact-conversation Resume for the
+    //     claude conversation id). Ordering-independent both ways, and all
+    //     three fields are independent of each other (any one alone is a
+    //     valid update):
+    //       - bridge attaches with a (sanitized) `helperVersion`/`host`/`conv`
     //         query param → store whichever is present durably (attach-ordering
     //         independent: outlives this one socket) and, if a browser leg is
-    //         ALREADY live, tell it the CURRENT combined state (freshest of both
-    //         fields, not just what arrived on this one attach — a bridge that
-    //         only re-sends `host` this time must not regress an already-known
-    //         version to "unknown", and vice versa).
+    //         ALREADY live, tell it the CURRENT combined state (freshest of all
+    //         three fields, not just what arrived on this one attach — a bridge
+    //         that only re-sends `host` this time must not regress an
+    //         already-known version/conv to "unknown", and vice versa).
     //       - browser attaches → if anything is already on file (the bridge
     //         attached first, or this is a reattach), tell THIS leg immediately.
     //     A missing/malformed param is a no-op either way (old bridge, or nothing
@@ -600,30 +603,39 @@ export class TerminalRelay {
     if (role === "bridge") {
       const helperVersion = sanitizeHelperVersion(url.searchParams.get("helperVersion"));
       const bridgeHost = sanitizeMachineLabel(url.searchParams.get("host"));
+      // Exact-conversation Resume (rework 5): the id of the claude
+      // conversation this bridge just spawned/resumed — same store-durably +
+      // forward-current-combined-state treatment as helperVersion/host (see
+      // this block's own header comment and control-frames.mjs's
+      // EXACT-CONVERSATION RESUME doc).
+      const bridgeConv = sanitizeConversationId(url.searchParams.get("conv"));
       if (helperVersion) await this.state.storage.put("bridgeHelperVersion", helperVersion);
       if (bridgeHost) await this.state.storage.put("bridgeHost", bridgeHost);
-      if (helperVersion || bridgeHost) {
+      if (bridgeConv) await this.state.storage.put("bridgeConv", bridgeConv);
+      if (helperVersion || bridgeHost || bridgeConv) {
         const browserPeer = this.findPeer("bridge");
         if (browserPeer) {
-          const [storedVersion, storedHost] = await Promise.all([
+          const [storedVersion, storedHost, storedConv] = await Promise.all([
             this.state.storage.get("bridgeHelperVersion"),
             this.state.storage.get("bridgeHost"),
+            this.state.storage.get("bridgeConv"),
           ]);
           try {
-            browserPeer.send(encodeBridgeVersionFrame(storedVersion, storedHost));
+            browserPeer.send(encodeBridgeVersionFrame(storedVersion, storedHost, storedConv));
           } catch (e) {
             this.log("bridge-version forward failed", { session, err: String(e) });
           }
         }
       }
     } else if (role === "browser") {
-      const [bridgeHelperVersion, bridgeHost] = await Promise.all([
+      const [bridgeHelperVersion, bridgeHost, bridgeConv] = await Promise.all([
         this.state.storage.get("bridgeHelperVersion"),
         this.state.storage.get("bridgeHost"),
+        this.state.storage.get("bridgeConv"),
       ]);
-      if (bridgeHelperVersion || bridgeHost) {
+      if (bridgeHelperVersion || bridgeHost || bridgeConv) {
         try {
-          server.send(encodeBridgeVersionFrame(bridgeHelperVersion, bridgeHost));
+          server.send(encodeBridgeVersionFrame(bridgeHelperVersion, bridgeHost, bridgeConv));
         } catch (e) {
           this.log("bridge-version send failed", { session, err: String(e) });
         }
@@ -933,6 +945,7 @@ export class TerminalRelay {
       "graceDeadline",
       "bridgeHelperVersion",
       "bridgeHost",
+      "bridgeConv",
     ]);
     await this.state.storage.deleteAlarm();
     // MITIGATION 1: invalidate the per-wake soft caches so a LATER attach to

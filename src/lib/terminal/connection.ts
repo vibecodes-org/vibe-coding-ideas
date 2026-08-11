@@ -403,13 +403,15 @@ export function relayBaseUrl(): string {
 // drift is pinned by connection.test.ts, which imports the real encoders and checks
 // these detectors agree byte-for-byte.
 
-// 160 (not the original 64) is sized to fit the bridge-version frame's worst
-// case — `v` (semver) plus a full 80-char `host` (sanitizeMachineLabel's own
-// cap, terminal/shared/control-frames.mjs) plus JSON overhead — while staying
-// a trivially bounded size for every other (much shorter) control frame that
-// shares this same gate. Kept in lockstep with the .mjs's own isControlFrame.
+// 200 (not the original 64, bumped from 160 for the `conv` field) is sized to
+// fit the bridge-version frame's worst case — `v` (semver) plus a full
+// 80-char `host` (sanitizeMachineLabel's own cap) plus a 36-char `conv` UUID
+// (exact-conversation Resume, rework 5) plus JSON overhead (176 bytes
+// measured, terminal/shared/control-frames.mjs) — while staying a trivially
+// bounded size for every other (much shorter) control frame that shares this
+// same gate. Kept in lockstep with the .mjs's own isControlFrame.
 function isControlFrame(text: string, tag: string): boolean {
-  if (text.length === 0 || text.length > 160) return false;
+  if (text.length === 0 || text.length > 200) return false;
   try {
     const msg = JSON.parse(text) as unknown;
     return !!msg && typeof msg === "object" && (msg as { t?: unknown }).t === tag;
@@ -529,6 +531,37 @@ export function parseBridgeVersionHost(text: string): string | null {
   try {
     const msg = JSON.parse(text) as { host?: unknown };
     return typeof msg.host === "string" ? msg.host : null;
+  } catch {
+    return null;
+  }
+}
+
+// ── exact-conversation resume (rework 5, card cbe60db5) ───────────────────────
+//
+// The SAME bridge-version frame gains an optional `conv` field carrying the id
+// of the claude conversation the bridge just spawned/resumed (terminal/shared/
+// control-frames.mjs's EXACT-CONVERSATION RESUME header comment has the full
+// picture). Extracted here rather than folded into parseBridgeVersionFrame for
+// the same reason parseBridgeVersionHost is separate: a frame carrying only
+// SOME of the three fields still yields a clean result for whichever ones are
+// present.
+
+/** Strict UUID shape — mirrors control-frames.mjs's `sanitizeConversationId`.
+ *  Duplicated (not imported) for the same reason RELAY_CLOSE/isControlFrame
+ *  are: that module is plain .mjs outside the app's TS build graph. */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** Extract + validate the claude conversation id from a bridge-version control
+ *  frame, or null for anything absent/malformed/hostile (a non-string/non-UUID
+ *  `conv`, bad JSON, wrong tag) — an OLD bridge never sends `conv` at all,
+ *  which parses identically to "unknown" here. */
+export function parseBridgeVersionConv(text: string): string | null {
+  if (!isControlFrame(text, "bridge-version")) return null;
+  try {
+    const msg = JSON.parse(text) as { conv?: unknown };
+    if (typeof msg.conv !== "string") return null;
+    const trimmed = msg.conv.trim();
+    return UUID_RE.test(trimmed) ? trimmed.toLowerCase() : null;
   } catch {
     return null;
   }

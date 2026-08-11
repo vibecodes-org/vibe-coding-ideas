@@ -106,6 +106,40 @@ test("redactDeepLinkToken hides helperToken as well as token", () => {
   assert.ok(redacted.includes(`session=${SAMPLE.session}`));
 });
 
+// ── exact-conversation resume (rework 5, card cbe60db5) ────────────────────────
+
+const RESUME_ID = "99999999-8888-7777-6666-555555555555";
+
+test("build ⇄ parse round-trips resume_id, positioned before prompt", () => {
+  const withResumeId = { ...SAMPLE, resumeId: RESUME_ID, prompt: "ignored on a real resume link" };
+  const url = buildLaunchDeepLink(withResumeId);
+  assert.ok(url.includes(`resume_id=${RESUME_ID}`));
+  assert.ok(url.indexOf("resume_id=") < url.indexOf("prompt="), "resume_id precedes the LAST param, prompt");
+  assert.deepEqual(parseLaunchDeepLink(url), withResumeId);
+});
+
+test("omits resume_id entirely when absent", () => {
+  const url = buildLaunchDeepLink(SAMPLE);
+  assert.ok(!url.includes("resume_id="));
+  assert.ok(!("resumeId" in parseLaunchDeepLink(url)));
+});
+
+test("resumeId wins over the legacy resume flag when both are somehow set", () => {
+  const url = buildLaunchDeepLink({ ...SAMPLE, resume: true, resumeId: RESUME_ID });
+  assert.ok(url.includes(`resume_id=${RESUME_ID}`));
+  assert.ok(!url.includes("resume=1"));
+  const parsed = parseLaunchDeepLink(url);
+  assert.equal(parsed.resumeId, RESUME_ID);
+  assert.ok(!("resume" in parsed));
+});
+
+test("a malformed resume_id is rejected outright — never forwarded to the caller", () => {
+  const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=r&session=s&token=t&resume_id=not-a-uuid`;
+  const parsed = parseLaunchDeepLink(url);
+  assert.ok(parsed !== null);
+  assert.ok(!("resumeId" in parsed));
+});
+
 test("redactDeepLinkToken elides the prompt (user content) as well as the token", () => {
   const url = buildLaunchDeepLink({ ...SAMPLE, prompt: HOSTILE_PROMPT });
   const redacted = redactDeepLinkToken(url);

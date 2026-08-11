@@ -23,8 +23,10 @@ import {
   isBridgeVersionFrame,
   parseBridgeVersionFrame,
   parseBridgeVersionHost,
+  parseBridgeVersionConv,
   sanitizeHelperVersion,
   sanitizeMachineLabel,
+  sanitizeConversationId,
   encodeHelperCommandFrame,
   isHelperCommandFrame,
   parseHelperCommandFrame,
@@ -153,6 +155,60 @@ test("a bridge-version frame carrying a full-length host stays within the contro
   const frame = encodeBridgeVersionFrame("999.999.999", "x".repeat(80));
   assert.equal(isBridgeVersionFrame(frame), true);
   assert.equal(parseBridgeVersionHost(frame), "x".repeat(80));
+});
+
+// ── exact-conversation resume (rework 5, card cbe60db5) ────────────────────
+
+const CONV_ID = "99999999-8888-7777-6666-555555555555";
+
+test("bridge-version frame's `conv` field encode ⇄ detect ⇄ parse round-trips alongside v/host", () => {
+  const frame = encodeBridgeVersionFrame("0.3.3", "Nicks-MacBook-Pro", CONV_ID);
+  assert.equal(isBridgeVersionFrame(frame), true);
+  assert.equal(parseBridgeVersionFrame(frame), "0.3.3");
+  assert.equal(parseBridgeVersionHost(frame), "Nicks-MacBook-Pro");
+  assert.equal(parseBridgeVersionConv(frame), CONV_ID);
+});
+
+test("a frame with no `conv` (old bridge) parses conv as null — v/host still parse fine", () => {
+  const frame = encodeBridgeVersionFrame("0.3.3", "Nicks-MacBook-Pro");
+  assert.equal(parseBridgeVersionConv(frame), null);
+  assert.equal(parseBridgeVersionFrame(frame), "0.3.3");
+  assert.equal(parseBridgeVersionHost(frame), "Nicks-MacBook-Pro");
+});
+
+test("a frame carrying only `conv` (no version/host) is still a valid, parseable frame", () => {
+  const frame = encodeBridgeVersionFrame(undefined, undefined, CONV_ID);
+  assert.equal(isBridgeVersionFrame(frame), true);
+  assert.equal(parseBridgeVersionFrame(frame), null);
+  assert.equal(parseBridgeVersionHost(frame), null);
+  assert.equal(parseBridgeVersionConv(frame), CONV_ID);
+});
+
+test("parseBridgeVersionConv rejects a non-UUID, non-string, or malformed `conv`", () => {
+  assert.equal(parseBridgeVersionConv(JSON.stringify({ t: "bridge-version", conv: "not-a-uuid" })), null);
+  assert.equal(parseBridgeVersionConv(JSON.stringify({ t: "bridge-version", conv: 42 })), null);
+  assert.equal(parseBridgeVersionConv(JSON.stringify({ t: "bridge-version" })), null);
+  assert.equal(parseBridgeVersionConv("not json"), null);
+  assert.equal(parseBridgeVersionConv(null), null);
+});
+
+test("a bridge-version frame carrying full-length v + host + conv stays within the control-frame length bound", () => {
+  const frame = encodeBridgeVersionFrame("999.999.999", "x".repeat(80), CONV_ID);
+  assert.equal(isBridgeVersionFrame(frame), true);
+  assert.equal(parseBridgeVersionHost(frame), "x".repeat(80));
+  assert.equal(parseBridgeVersionConv(frame), CONV_ID);
+});
+
+test("sanitizeConversationId accepts only a strict UUID shape, case-insensitive, lower-cased", () => {
+  assert.equal(sanitizeConversationId(CONV_ID), CONV_ID);
+  assert.equal(sanitizeConversationId(CONV_ID.toUpperCase()), CONV_ID);
+  assert.equal(sanitizeConversationId(` ${CONV_ID} `), CONV_ID);
+  assert.equal(sanitizeConversationId(""), null);
+  assert.equal(sanitizeConversationId(null), null);
+  assert.equal(sanitizeConversationId(undefined), null);
+  assert.equal(sanitizeConversationId("not-a-uuid"), null);
+  assert.equal(sanitizeConversationId(CONV_ID + "; DROP TABLE users;"), null);
+  assert.equal(sanitizeConversationId(CONV_ID.slice(0, -1)), null); // one char short
 });
 
 test("sanitizeHelperVersion accepts only strict x.y.z", () => {

@@ -15,6 +15,7 @@ import {
   isBridgeVersionFrame,
   parseBridgeVersionFrame,
   parseBridgeVersionHost,
+  parseBridgeVersionConv,
   shouldDeclareLinkSilent,
   buildRelayUrl,
   encodeResizeMessage,
@@ -472,6 +473,47 @@ describe("silent-link watchdog (fix/terminal-dock-heartbeat)", () => {
     expect(isBridgeVersionFrame(frame)).toBe(true);
     expect(parseBridgeVersionFrame(frame)).toBeNull();
     expect(parseBridgeVersionHost(frame)).toBe("Nicks-MacBook-Pro");
+  });
+
+  // Exact-conversation resume (rework 5, card cbe60db5): the SAME frame gains
+  // an optional `conv` field — pin byte-for-byte against the real shared
+  // encoder, same as version/host above.
+  const CONV_ID = "99999999-8888-7777-6666-555555555555";
+
+  it("detects the shared bridge-version frame's conv field byte-for-byte", () => {
+    const frame = encodeSharedBridgeVersionFrame("0.3.3", "Nicks-MacBook-Pro", CONV_ID);
+    expect(isBridgeVersionFrame(frame)).toBe(true);
+    expect(parseBridgeVersionFrame(frame)).toBe("0.3.3");
+    expect(parseBridgeVersionHost(frame)).toBe("Nicks-MacBook-Pro");
+    expect(parseBridgeVersionConv(frame)).toBe(CONV_ID);
+  });
+
+  it("parseBridgeVersionConv returns null when `conv` is absent (old bridge — graceful degrade)", () => {
+    const frame = encodeSharedBridgeVersionFrame("0.3.3");
+    expect(parseBridgeVersionConv(frame)).toBeNull();
+    expect(parseBridgeVersionFrame(frame)).toBe("0.3.3"); // version still parses fine
+  });
+
+  it("parseBridgeVersionConv rejects a non-UUID/non-string `conv` or malformed JSON", () => {
+    expect(parseBridgeVersionConv(`{"t":"bridge-version","conv":"not-a-uuid"}`)).toBeNull();
+    expect(parseBridgeVersionConv('{"t":"bridge-version","conv":42}')).toBeNull();
+    expect(parseBridgeVersionConv('{"t":"bridge-version"}')).toBeNull();
+    expect(parseBridgeVersionConv('{"t":"bridge-version"' /* truncated */)).toBeNull();
+  });
+
+  it("a frame carrying only `conv` (no version/host) still parses the conv", () => {
+    const frame = encodeSharedBridgeVersionFrame(undefined, undefined, CONV_ID);
+    expect(isBridgeVersionFrame(frame)).toBe(true);
+    expect(parseBridgeVersionFrame(frame)).toBeNull();
+    expect(parseBridgeVersionHost(frame)).toBeNull();
+    expect(parseBridgeVersionConv(frame)).toBe(CONV_ID);
+  });
+
+  it("a frame carrying a full-length version + host + conv stays within the control-frame length bound", () => {
+    const frame = encodeSharedBridgeVersionFrame("999.999.999", "x".repeat(80), CONV_ID);
+    expect(isBridgeVersionFrame(frame)).toBe(true);
+    expect(parseBridgeVersionHost(frame)).toBe("x".repeat(80));
+    expect(parseBridgeVersionConv(frame)).toBe(CONV_ID);
   });
 
   it("shouldDeclareLinkSilent: exactly the threshold is NOT yet dead; strictly beyond is", () => {

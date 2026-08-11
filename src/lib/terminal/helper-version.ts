@@ -20,8 +20,10 @@
  *  checklist. 0.3.0 (card cc74a067) is the first release with the helper
  *  lifecycle rework — quit-when-idle, crash log-and-exit, and the "Keep
  *  helper ready" opt-in. 0.3.2 (card cbe60db5, sign-off change 2) adds the
- *  bridge's machine-identity (hostname) announcement. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.2";
+ *  bridge's machine-identity (hostname) announcement. 0.3.3 (rework 5,
+ *  exact-conversation Resume) adds the bridge's own conversation-id minting
+ *  (`--session-id`/`--resume`) and its announcement alongside version/host. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.3";
 
 export type HelperVersionParts = readonly [number, number, number];
 

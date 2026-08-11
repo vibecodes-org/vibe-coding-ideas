@@ -102,6 +102,43 @@ describe("buildLaunchDeepLink with resume (card cbe60db5)", () => {
   });
 });
 
+describe("buildLaunchDeepLink with resumeId (rework 5, exact-conversation resume)", () => {
+  const RESUME_ID = "99999999-8888-7777-6666-555555555555";
+
+  it("includes resume_id, positioned before prompt, and round-trips", () => {
+    const withResumeId = { ...SAMPLE, resumeId: RESUME_ID };
+    const url = buildLaunchDeepLink(withResumeId);
+    expect(url).toContain(`resume_id=${RESUME_ID}`);
+    expect(parseLaunchDeepLink(url)).toEqual(withResumeId);
+  });
+
+  it("omits resume_id entirely when absent — no version-skew risk for an old bridge", () => {
+    const url = buildLaunchDeepLink(SAMPLE);
+    expect(url).not.toContain("resume_id=");
+  });
+
+  it("resume_id rides before prompt, mirroring resume's position", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, resumeId: RESUME_ID, prompt: "ignored on a real resume link" });
+    expect(url.indexOf("resume_id=")).toBeLessThan(url.indexOf("prompt="));
+  });
+
+  it("wins over the legacy resume flag when both are somehow set — only resume_id is fired", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, resume: true, resumeId: RESUME_ID });
+    expect(url).toContain(`resume_id=${RESUME_ID}`);
+    expect(url).not.toContain("resume=1");
+    const parsed = parseLaunchDeepLink(url);
+    expect(parsed?.resumeId).toBe(RESUME_ID);
+    expect(parsed).not.toHaveProperty("resume");
+  });
+
+  it("a malformed resume_id on the wire is rejected by the shared parser, never forwarded", () => {
+    const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=${encodeURIComponent(SAMPLE.relay)}&session=${SAMPLE.session}&token=${encodeURIComponent(SAMPLE.token)}&resume_id=not-a-uuid`;
+    const parsed = parseLaunchDeepLink(url);
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty("resumeId");
+  });
+});
+
 describe("redactDeepLinkToken", () => {
   it("replaces the token value with *** and never leaks the secret", () => {
     const url = buildLaunchDeepLink(SAMPLE);
