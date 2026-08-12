@@ -188,7 +188,7 @@ describe("deriveChooserSections", () => {
     expect(recent.find((r) => r.sid === "untracked")?.claudeSessionId).toBeNull();
   });
 
-  it("caps Recent at RECENT_MAX, newest first", () => {
+  it("caps Recent at RECENT_MAX (now 10), newest first", () => {
     const rows = Array.from({ length: RECENT_MAX + 3 }, (_, i) =>
       row({
         sid: `ended-${i}`,
@@ -200,6 +200,124 @@ describe("deriveChooserSections", () => {
     const recent = deriveChooserSections(rows, IDEA_A, NOW).recent;
     expect(recent).toHaveLength(RECENT_MAX);
     expect(recent[0].sid).toBe("ended-0"); // newest (smallest offset) first
+  });
+
+  // Rework 8b (card cbe60db5) — Nick's explicit, superseding instruction:
+  // "is there any way we can show MORE than one resume session?" → "yes,
+  // make that change." Every ID-bearing ended session gets its own row; only
+  // ID-less rows (which Resume genuinely can't tell apart) still collapse
+  // one-per-folder. See chooser-data.ts's header comment for the full rule.
+  describe("every resumable conversation (rework 8b — no dedupe for ID-bearing rows)", () => {
+    it("shows every ID-bearing row for the SAME folder — none collapsed", () => {
+      const rows = [
+        row({
+          sid: "convo-1",
+          status: "ended",
+          cwd: "~/projects/multi",
+          endedAt: new Date(NOW - 3 * 60 * 60 * 1000).toISOString(),
+          claudeSessionId: "11111111-1111-1111-1111-111111111111",
+        }),
+        row({
+          sid: "convo-2",
+          status: "ended",
+          cwd: "~/projects/multi",
+          endedAt: new Date(NOW - 2 * 60 * 60 * 1000).toISOString(),
+          claudeSessionId: "22222222-2222-2222-2222-222222222222",
+        }),
+        row({
+          sid: "convo-3",
+          status: "ended",
+          cwd: "~/projects/multi",
+          endedAt: new Date(NOW - 1 * 60 * 60 * 1000).toISOString(),
+          claudeSessionId: "33333333-3333-3333-3333-333333333333",
+        }),
+      ];
+      const recent = deriveChooserSections(rows, IDEA_A, NOW).recent;
+      // Newest-ended first; all three distinct conversations kept.
+      expect(recent.map((r) => r.sid)).toEqual(["convo-3", "convo-2", "convo-1"]);
+    });
+
+    it("still collapses ID-LESS rows to the single newest per folder", () => {
+      const rows = [
+        row({
+          sid: "idless-older",
+          status: "ended",
+          cwd: "~/projects/legacy",
+          endedAt: new Date(NOW - 3 * 60 * 60 * 1000).toISOString(),
+          claudeSessionId: null,
+        }),
+        row({
+          sid: "idless-newer",
+          status: "ended",
+          cwd: "~/projects/legacy",
+          endedAt: new Date(NOW - 1 * 60 * 60 * 1000).toISOString(),
+          claudeSessionId: null,
+        }),
+      ];
+      const recent = deriveChooserSections(rows, IDEA_A, NOW).recent;
+      expect(recent.map((r) => r.sid)).toEqual(["idless-newer"]);
+    });
+
+    it("mixed folder: shows every ID-bearing row PLUS the single newest ID-less row for that same folder", () => {
+      const rows = [
+        row({
+          sid: "id-a",
+          status: "ended",
+          cwd: "~/projects/mixed",
+          endedAt: new Date(NOW - 4 * 60 * 60 * 1000).toISOString(),
+          claudeSessionId: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+        }),
+        row({
+          sid: "id-b",
+          status: "ended",
+          cwd: "~/projects/mixed",
+          endedAt: new Date(NOW - 1 * 60 * 60 * 1000).toISOString(),
+          claudeSessionId: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        }),
+        row({
+          sid: "idless-old-1",
+          status: "ended",
+          cwd: "~/projects/mixed",
+          endedAt: new Date(NOW - 5 * 60 * 60 * 1000).toISOString(),
+          claudeSessionId: null,
+        }),
+        row({
+          sid: "idless-old-2",
+          status: "ended",
+          cwd: "~/projects/mixed",
+          endedAt: new Date(NOW - 6 * 60 * 60 * 1000).toISOString(),
+          claudeSessionId: null,
+        }),
+      ];
+      const recent = deriveChooserSections(rows, IDEA_A, NOW).recent;
+      // Both id-bearing rows shown, plus only the newest of the two id-less
+      // rows ("idless-old-1", 5h ago beats "idless-old-2", 6h ago).
+      expect(recent.map((r) => r.sid)).toEqual(["id-b", "id-a", "idless-old-1"]);
+    });
+
+    it("caps the combined id-bearing + id-less selection at RECENT_MAX, newest first", () => {
+      const idBearing = Array.from({ length: RECENT_MAX }, (_, i) =>
+        row({
+          sid: `id-${i}`,
+          status: "ended",
+          cwd: "~/projects/flood",
+          endedAt: new Date(NOW - i * 60_000).toISOString(),
+          claudeSessionId: `${i}0000000-0000-0000-0000-000000000000`,
+        }),
+      );
+      // An older row (would-be 11th) that must be truncated by the cap.
+      const overflow = row({
+        sid: "id-overflow",
+        status: "ended",
+        cwd: "~/projects/flood",
+        endedAt: new Date(NOW - RECENT_MAX * 60_000).toISOString(),
+        claudeSessionId: "99999999-0000-0000-0000-000000000000",
+      });
+      const recent = deriveChooserSections([...idBearing, overflow], IDEA_A, NOW).recent;
+      expect(recent).toHaveLength(RECENT_MAX);
+      expect(recent.map((r) => r.sid)).not.toContain("id-overflow");
+      expect(recent[0].sid).toBe("id-0"); // newest (smallest offset) first
+    });
   });
 
   it("badges the row matching lastTabSid as wasOpenInThisTab, regardless of freshness", () => {

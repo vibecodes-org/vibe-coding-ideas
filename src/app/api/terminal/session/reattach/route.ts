@@ -17,7 +17,8 @@ import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 import { mintSessionTokens } from "../../../../../../terminal/shared/session-token.mjs";
-import { decideReattach, isSessionExpired } from "@/lib/terminal/session-registry";
+import { decideReattach } from "@/lib/terminal/session-registry";
+import { reapExpiredSessions } from "@/lib/terminal/session-reap";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,30 +51,13 @@ export async function POST(req: Request) {
     const nowMs = Date.now();
 
     // Reap this user's own expired-but-still-"active" rows first (same R2
-    // mitigation as the mint route) — mirrors that route's reap step so the
-    // registry never drifts further behind just because reattach reads never
-    // triggered it. Best-effort: a failed reap never blocks the decision
+    // mitigation as the mint route, now shared via session-reap.ts — rework
+    // 8) — mirrors that route's reap step so the registry never drifts
+    // further behind just because reattach reads never triggered it, and so
+    // a reaped row's ended_at is backdated to its own expires_at the same
+    // way everywhere. Best-effort: a failed reap never blocks the decision
     // below (decideReattach checks expires_at itself either way).
-    const { data: activeRows, error: activeErr } = await supabase
-      .from("terminal_sessions")
-      .select("id, expires_at")
-      .eq("user_id", user.id)
-      .eq("status", "active");
-    if (activeErr) {
-      logger.error("Terminal session reattach: registry read failed", { error: activeErr.message });
-    }
-    const staleIds = (activeRows ?? [])
-      .filter((row) => isSessionExpired(row.expires_at, nowMs))
-      .map((row) => row.id);
-    if (staleIds.length > 0) {
-      const { error: reapErr } = await supabase
-        .from("terminal_sessions")
-        .update({ status: "ended", ended_at: new Date(nowMs).toISOString() })
-        .in("id", staleIds);
-      if (reapErr) {
-        logger.error("Terminal session reattach: reap failed", { error: reapErr.message, count: staleIds.length });
-      }
-    }
+    await reapExpiredSessions(supabase, user.id, nowMs, "Terminal session reattach");
 
     // Ownership: the row must belong to THIS user (RLS also scopes this, but
     // the explicit filter keeps the query honest regardless of client).

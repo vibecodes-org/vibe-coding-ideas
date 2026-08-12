@@ -29,9 +29,9 @@ import {
   computeSessionExpiresAt,
   decideCap,
   decideRateLimit,
-  isSessionExpired,
   rateLimitWindowStart,
 } from "@/lib/terminal/session-registry";
+import { reapExpiredSessions } from "@/lib/terminal/session-reap";
 import {
   getTerminalDailyBudget,
   getTerminalBudgetSoftPct,
@@ -149,30 +149,16 @@ export async function POST(req: Request) {
     // BEFORE trusting any count below (R2 mitigation) — the registry is
     // best-effort and can drift from the relay (e.g. a max-duration close the
     // registry was never told about), so an unreaped stale row would wrongly
-    // count against the cap/rate-limit forever.
-    const { data: activeRows, error: activeErr } = await supabase
-      .from("terminal_sessions")
-      .select("id, expires_at")
-      .eq("user_id", user.id)
-      .eq("status", "active");
-    if (activeErr) {
-      logger.error("Terminal session registry read failed", { error: activeErr.message });
-    }
-    const staleIds = (activeRows ?? [])
-      .filter((row) => isSessionExpired(row.expires_at, nowMs))
-      .map((row) => row.id);
-    if (staleIds.length > 0) {
-      const { error: reapErr } = await supabase
-        .from("terminal_sessions")
-        .update({ status: "ended", ended_at: new Date(nowMs).toISOString() })
-        .in("id", staleIds);
-      if (reapErr) {
-        logger.error("Terminal session reap failed", { error: reapErr.message, count: staleIds.length });
-      } else {
-        logger.info("Reaped expired terminal session rows", { userId: user.id, count: staleIds.length });
-      }
-    }
-    const activeCount = (activeRows?.length ?? 0) - staleIds.length;
+    // count against the cap/rate-limit forever. Shared with the reattach and
+    // list routes (session-reap.ts, rework 8) so every reaped row's ended_at
+    // is backdated to its own expires_at the same way everywhere.
+    const { activeBefore, reapedIds } = await reapExpiredSessions(
+      supabase,
+      user.id,
+      nowMs,
+      "Terminal session mint",
+    );
+    const activeCount = activeBefore - reapedIds.length;
 
     // ── (b) CAP (E1) — refuse before minting anything. ──────────────────────
     const cap = getServerTerminalSessionCap();

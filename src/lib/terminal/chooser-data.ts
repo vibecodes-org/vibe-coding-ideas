@@ -6,11 +6,14 @@
 // of the caller's rows that's either still ACTIVE or ENDED within the last
 // 48h (extended for this card — see that route's doc) — this module turns
 // that flat list into "Running now · this board", "Running now · other
-// boards", and "Recent · ended in the last 48h", applying the design's exact
-// rules (docs/design-terminal-session-entry-options.html §3):
-//   - Recent = ended ≤48h ago, max 5, ONE per project folder (`cwd`), rows
-//     with a null `cwd` hidden entirely (F4: "Resume is hidden entirely when
-//     the project folder wasn't recorded — no disabled ghost button").
+// boards", and "Recent · ended in the last 48h", applying the design's rules
+// (docs/design-terminal-session-entry-options.html §3), AS SUPERSEDED for
+// Recent by Nick's rework 8b instruction below:
+//   - Recent = ended ≤48h ago, max 10, rows with a null `cwd` hidden entirely
+//     (F4: "Resume is hidden entirely when the project folder wasn't
+//     recorded — no disabled ghost button"). Dedupe is per-conversation, not
+//     strictly per-folder any more — see the EVERY RESUMABLE CONVERSATION
+//     section below.
 //   - Live sessions split by whether they belong to the board currently open
 //     (`currentIdeaId`) or another one.
 //
@@ -25,9 +28,42 @@
 // section over data we simply don't have an opinion on yet). "Running now"
 // sections are NEVER filtered — a live session is unambiguously reachable
 // regardless of which machine it's on.
+//
+// EVERY RESUMABLE CONVERSATION (rework 8b, card cbe60db5 — Nick, explicit,
+// 2026-08-12: "is there any way we can show MORE than one resume session?"
+// → "yes, make that change."). The design doc's original binding spec (§3)
+// said Recent is "max 5, one per project folder" — that one-per-folder rule
+// existed only because the legacy Resume path (`claude --continue`) could
+// reopen nothing more specific than "the folder's most recent conversation";
+// showing several rows for one folder would all have resumed the SAME
+// conversation, which is why they were collapsed. Rework 5 gave rows their
+// own exact `claudeSessionId` (a real, distinct conversation to resume) —
+// once a row can point at ITS OWN conversation, collapsing it into another
+// row of the same folder hides genuine history instead of avoiding a
+// duplicate. Nick's instruction above supersedes the one-per-folder spec for
+// those rows; see this module's row-selection rules just below.
+//
+// Selection rules, applied AFTER the existing 48h/machine/null-cwd filtering
+// above (unchanged) and the existing newest-ended-first sort:
+//   1. Every row that carries a `claudeSessionId` is kept, no matter how many
+//      other rows share its `cwd` — each one resumes its own exact
+//      conversation, so none of them is a duplicate of another.
+//   2. Rows WITHOUT a `claudeSessionId` still can't be told apart from one
+//      another by Resume (it falls back to "most recent in this folder", the
+//      pre-rework-5 behaviour) — so they keep the old one-per-folder collapse,
+//      keeping only the newest such row per `cwd`.
+//   3. A folder that already has an ID-bearing row shown ALSO gets its single
+//      newest ID-less row shown (not suppressed) — that ID-less row is a
+//      distinct, older-era conversation pointer (from before the bridge
+//      announced ids, or a bridge too old to ever announce one) that the
+//      ID-bearing rows cannot stand in for. This is the simplest honest rule:
+//      "one ID-less pointer per folder, plus every distinct ID we have."
+//   4. The combined result is capped at RECENT_MAX (raised 5 → 10 for this
+//      rework — more rows are now legitimately distinct, so the old cap would
+//      truncate real history), newest-ended first.
 
 export const RECENT_WINDOW_MS = 48 * 60 * 60 * 1000;
-export const RECENT_MAX = 5;
+export const RECENT_MAX = 10;
 
 /** One row as the (extended) list route returns it — active or recently-ended. */
 export interface ChooserRegistryRow {
@@ -138,25 +174,36 @@ export function deriveChooserSections(
     })
     .sort((a, b) => Date.parse(b.endedAt) - Date.parse(a.endedAt)); // newest-ended first
 
-  const seenCwd = new Set<string>();
-  const recent: ChooserRecentRow[] = [];
+  // Rework 8b (see header comment): rows WITH a claudeSessionId are never
+  // deduped against each other — each resumes its own exact conversation.
+  // Rows WITHOUT one still collapse to the single newest per folder, since
+  // Resume can't tell them apart. `recentCandidates` is already sorted
+  // newest-ended-first, so "first row seen per folder" is "newest per
+  // folder" for the id-less collapse.
+  const seenIdlessCwd = new Set<string>();
+  const selected: (ChooserRegistryRow & { cwd: string; endedAt: string })[] = [];
   for (const r of recentCandidates) {
     const cwd = r.cwd.trim();
-    if (seenCwd.has(cwd)) continue; // one per project folder
-    seenCwd.add(cwd);
-    recent.push({
-      sid: r.sid,
-      ideaId: r.ideaId,
-      ideaTitle: r.ideaTitle,
-      taskId: r.taskId,
-      taskTitle: r.taskTitle,
-      cwd,
-      machineLabel: r.machineLabel,
-      claudeSessionId: r.claudeSessionId,
-      endedAt: r.endedAt,
-    });
-    if (recent.length >= RECENT_MAX) break;
+    if (r.claudeSessionId) {
+      selected.push(r);
+      continue;
+    }
+    if (seenIdlessCwd.has(cwd)) continue; // one id-less row per project folder
+    seenIdlessCwd.add(cwd);
+    selected.push(r);
   }
+
+  const recent: ChooserRecentRow[] = selected.slice(0, RECENT_MAX).map((r) => ({
+    sid: r.sid,
+    ideaId: r.ideaId,
+    ideaTitle: r.ideaTitle,
+    taskId: r.taskId,
+    taskTitle: r.taskTitle,
+    cwd: r.cwd.trim(),
+    machineLabel: r.machineLabel,
+    claudeSessionId: r.claudeSessionId,
+    endedAt: r.endedAt,
+  }));
 
   return { liveHere, liveElsewhere, recent };
 }
