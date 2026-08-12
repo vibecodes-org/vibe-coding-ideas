@@ -22,16 +22,25 @@
 // browser ever calling mint/reattach again stayed "active" in the registry
 // forever, and the chooser presented it as "Running now" (Nick's field
 // evidence, 2026-08-12: an 8h32m-old row with no live helper/bridge/claude
-// process on his machine). Reap first, using the exact same staleness rule
-// those routes use (`selectExpiredSessionIds`, built on `isSessionExpired`),
-// so a reaped row is returned as a "recent · ended" row in the same response
-// instead of a stale "active" one.
+// process on his machine). Reap first, so a reaped row is returned as a
+// "recent · ended" row in the same response instead of a stale "active" one.
+//
+// TRUE END TIME (rework 8): the reap write is now shared with the mint and
+// reattach routes (session-reap.ts) — a reaped row's `ended_at` is backdated
+// to its OWN `expires_at`, not the moment this route happened to notice it.
+// Nick's follow-up field evidence (2026-08-12): a row created 19:01,
+// expires_at 23:01, reaped 03:58 the next day previously showed "ended 0m
+// ago" instead of the true "ended ~5h ago". One consequence worth flagging:
+// the 48h Recent window (RECENT_WINDOW_MS below) now ages a reaped row from
+// its TRUE death time, so a ghost first noticed more than 48h after it
+// actually died correctly won't appear in Recent at all — that's desired
+// honesty, not a bug.
 
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
 import { RECENT_WINDOW_MS } from "@/lib/terminal/chooser-data";
-import { selectExpiredSessionIds } from "@/lib/terminal/session-registry";
+import { reapExpiredSessions } from "@/lib/terminal/session-reap";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -50,37 +59,14 @@ export async function GET() {
 
     // ── REAP: mark this user's own expired-but-still-"active" rows ended
     // BEFORE the list read below, so a ghost never renders as "Running now".
-    // Same fields the mint/reattach routes write (status: "ended", ended_at:
-    // now) — Resume still works on the reaped row since claude_session_id is
-    // untouched. The update is guarded by `.eq("status", "active")` (on top
-    // of the `.in("id", ...)` from this user's own just-read active rows) so
-    // a session ending normally (POST .../end) at the same instant is never
+    // Shared with the mint/reattach routes (session-reap.ts, rework 8) — each
+    // reaped row's ended_at is backdated to its own expires_at, and the write
+    // still carries the mandated `.eq("status", "active")` per-row guard so a
+    // session ending normally (POST .../end) at the same instant is never
     // double-written — the codebase's `.eq("status", expected)` concurrency
-    // pattern (see CLAUDE.md's Concurrency Guards).
-    const { data: activeRows, error: activeErr } = await supabase
-      .from("terminal_sessions")
-      .select("id, status, expires_at")
-      .eq("user_id", user.id)
-      .eq("status", "active");
-    if (activeErr) {
-      logger.error("Terminal session list: registry read for reap failed", { error: activeErr.message });
-    }
-    const staleIds = selectExpiredSessionIds(activeRows ?? [], nowMs);
-    if (staleIds.length > 0) {
-      const { error: reapErr } = await supabase
-        .from("terminal_sessions")
-        .update({ status: "ended", ended_at: new Date(nowMs).toISOString() })
-        .in("id", staleIds)
-        .eq("status", "active");
-      if (reapErr) {
-        logger.error("Terminal session list: reap failed", { error: reapErr.message, count: staleIds.length });
-      } else {
-        logger.info("Reaped expired terminal session rows before list", {
-          userId: user.id,
-          count: staleIds.length,
-        });
-      }
-    }
+    // pattern (see CLAUDE.md's Concurrency Guards). Resume still works on a
+    // reaped row since claude_session_id is untouched.
+    await reapExpiredSessions(supabase, user.id, nowMs, "Terminal session list");
 
     const recentSince = new Date(nowMs - RECENT_WINDOW_MS).toISOString();
     const { data: rows, error } = await supabase

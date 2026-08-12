@@ -11,6 +11,7 @@ import {
   formatSessionAge,
   formatSessionIdentity,
   selectExpiredSessionIds,
+  selectReapUpdates,
 } from "./session-registry";
 
 const NOW = Date.parse("2026-07-20T12:00:00.000Z");
@@ -167,6 +168,58 @@ describe("selectExpiredSessionIds", () => {
     expect(
       selectExpiredSessionIds([{ id: "e", status: "active", expires_at: "not-a-date" }], NOW),
     ).toEqual([]);
+  });
+});
+
+describe("selectReapUpdates", () => {
+  it("leaves a fresh active row untouched", () => {
+    const future = new Date(NOW + 60_000).toISOString();
+    expect(selectReapUpdates([{ id: "a", status: "active", expires_at: future }], NOW)).toEqual([]);
+  });
+
+  it("backdates a stale active row's ended_at to its OWN expires_at, not now", () => {
+    const past = new Date(NOW - 5 * 60 * 60 * 1000).toISOString(); // died ~5h before "now"
+    expect(selectReapUpdates([{ id: "b", status: "active", expires_at: past }], NOW)).toEqual([
+      { id: "b", endedAt: past },
+    ]);
+  });
+
+  it("leaves an already-ended row's real ended_at alone even if expires_at is in the past", () => {
+    const past = new Date(NOW - 1).toISOString();
+    expect(selectReapUpdates([{ id: "c", status: "ended", expires_at: past }], NOW)).toEqual([]);
+  });
+
+  it("reaps exactly at the staleness boundary (expires_at === now)", () => {
+    const boundary = new Date(NOW).toISOString();
+    expect(selectReapUpdates([{ id: "d", status: "active", expires_at: boundary }], NOW)).toEqual([
+      { id: "d", endedAt: boundary },
+    ]);
+  });
+
+  it("gives each row in a mixed batch ITS OWN expires_at — never one shared value", () => {
+    const pastA = new Date(NOW - 5 * 60 * 60 * 1000).toISOString();
+    const pastB = new Date(NOW - 30 * 60 * 1000).toISOString();
+    const future = new Date(NOW + 60_000).toISOString();
+    const updates = selectReapUpdates(
+      [
+        { id: "fresh", status: "active", expires_at: future },
+        { id: "stale-a", status: "active", expires_at: pastA },
+        { id: "ended", status: "ended", expires_at: pastB },
+        { id: "stale-b", status: "active", expires_at: pastB },
+      ],
+      NOW,
+    );
+    expect(updates).toEqual([
+      { id: "stale-a", endedAt: pastA },
+      { id: "stale-b", endedAt: pastB },
+    ]);
+    // The two stale rows died at different times — asserting distinctness
+    // guards against a regression back to one shared "now" timestamp.
+    expect(updates[0].endedAt).not.toBe(updates[1].endedAt);
+  });
+
+  it("never reaps a malformed timestamp", () => {
+    expect(selectReapUpdates([{ id: "e", status: "active", expires_at: "not-a-date" }], NOW)).toEqual([]);
   });
 });
 

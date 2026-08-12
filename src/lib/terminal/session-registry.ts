@@ -44,23 +44,49 @@ export interface ReapCandidateRow {
   expires_at: string;
 }
 
+export interface ReapUpdate {
+  id: string;
+  /** The row's TRUE death time — its own `expires_at`, never "now". */
+  endedAt: string;
+}
+
 /**
- * The reap step's pure decision (R2 mitigation, card cbe60db5 rework 7):
- * given a batch of the caller's own rows, returns the ids that are still
- * marked "active" but whose `expires_at` has passed — the exact ids a caller
- * must mark ended. Originally inlined identically in the mint route (POST
- * /api/terminal/session) and the reattach route; extracted here so the list
- * route (GET /api/terminal/session/list) can reap ghost sessions before
- * returning them too, without a second staleness rule — this reuses
- * `isSessionExpired` unchanged (same boundary: `expires_at <= now`; same
- * malformed-timestamp safety: never reaps on a bad timestamp).
+ * The reap step's pure decision (R2 mitigation, card cbe60db5; rework 8:
+ * tells the truth about WHEN a row died). Given a batch of the caller's own
+ * rows, returns the write each still-"active"-but-expired row needs: its
+ * `ended_at` backdated to ITS OWN `expires_at` — the relay's 4h ceiling
+ * (REGISTRY_SESSION_TTL_MS) is the moment the session actually died, not
+ * whenever a caller happened to notice (Nick's field evidence, 2026-08-12: a
+ * row created 19:01, expires_at 23:01, reaped 03:58 the next day previously
+ * showed "ended 0m ago" instead of "ended ~5h ago"). Rows are only selected
+ * when `isSessionExpired` says `expires_at` has passed, and that function
+ * never reaps on a malformed timestamp — so `endedAt` here is always a
+ * well-formed timestamp in the past.
  *
  * Defensively re-checks `status === "active"` per row rather than trusting
  * the caller's own `.eq("status", "active")` query filter — a row that
- * somehow reached here already ended is never re-marked or double-counted.
+ * somehow reached here already ended is never re-marked or double-counted,
+ * and its real `ended_at` is left alone.
+ *
+ * Originally inlined as an id-only batch update identically in the mint
+ * route (POST /api/terminal/session) and the reattach route (rework 7
+ * extracted the list route's copy into `selectExpiredSessionIds` below);
+ * rework 8 unifies all three onto this richer per-row form via the shared
+ * `reapExpiredSessions` write helper (session-reap.ts) so the timestamp
+ * truth can't drift between call sites again.
+ */
+export function selectReapUpdates(rows: ReapCandidateRow[], nowMs: number = Date.now()): ReapUpdate[] {
+  return rows
+    .filter((row) => row.status === "active" && isSessionExpired(row.expires_at, nowMs))
+    .map((row) => ({ id: row.id, endedAt: row.expires_at }));
+}
+
+/**
+ * Id-only view of `selectReapUpdates`, kept for callers that only need to
+ * know WHICH rows are stale, not what to backdate them to.
  */
 export function selectExpiredSessionIds(rows: ReapCandidateRow[], nowMs: number = Date.now()): string[] {
-  return rows.filter((row) => row.status === "active" && isSessionExpired(row.expires_at, nowMs)).map((row) => row.id);
+  return selectReapUpdates(rows, nowMs).map((update) => update.id);
 }
 
 /** The start of the trailing rate-limit window, as an ISO string for a `.gte()` filter. */
