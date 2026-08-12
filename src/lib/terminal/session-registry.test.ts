@@ -10,6 +10,7 @@ import {
   decideReattach,
   formatSessionAge,
   formatSessionIdentity,
+  selectExpiredSessionIds,
 } from "./session-registry";
 
 const NOW = Date.parse("2026-07-20T12:00:00.000Z");
@@ -113,6 +114,59 @@ describe("formatSessionIdentity", () => {
     expect(formatSessionIdentity({ machineLabel: "Nick's MacBook Pro", cwd: null, sid: "a3f9beef" })).toBe(
       "Nick's MacBook Pro · a3f9beef",
     );
+  });
+});
+
+describe("selectExpiredSessionIds", () => {
+  it("leaves a fresh active row untouched", () => {
+    const future = new Date(NOW + 60_000).toISOString();
+    expect(
+      selectExpiredSessionIds([{ id: "a", status: "active", expires_at: future }], NOW),
+    ).toEqual([]);
+  });
+
+  it("reaps a stale active row", () => {
+    const past = new Date(NOW - 1).toISOString();
+    expect(
+      selectExpiredSessionIds([{ id: "b", status: "active", expires_at: past }], NOW),
+    ).toEqual(["b"]);
+  });
+
+  it("leaves an already-ended row untouched even if its expires_at is in the past", () => {
+    const past = new Date(NOW - 1).toISOString();
+    expect(
+      selectExpiredSessionIds([{ id: "c", status: "ended", expires_at: past }], NOW),
+    ).toEqual([]);
+  });
+
+  it("reaps exactly at the staleness boundary (expires_at === now)", () => {
+    expect(
+      selectExpiredSessionIds(
+        [{ id: "d", status: "active", expires_at: new Date(NOW).toISOString() }],
+        NOW,
+      ),
+    ).toEqual(["d"]);
+  });
+
+  it("mixes fresh, stale, and ended rows correctly in one batch", () => {
+    const past = new Date(NOW - 1).toISOString();
+    const future = new Date(NOW + 60_000).toISOString();
+    const ids = selectExpiredSessionIds(
+      [
+        { id: "fresh", status: "active", expires_at: future },
+        { id: "stale-1", status: "active", expires_at: past },
+        { id: "ended", status: "ended", expires_at: past },
+        { id: "stale-2", status: "active", expires_at: past },
+      ],
+      NOW,
+    );
+    expect(ids).toEqual(["stale-1", "stale-2"]);
+  });
+
+  it("never reaps a malformed timestamp", () => {
+    expect(
+      selectExpiredSessionIds([{ id: "e", status: "active", expires_at: "not-a-date" }], NOW),
+    ).toEqual([]);
   });
 });
 
