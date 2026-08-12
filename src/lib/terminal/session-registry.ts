@@ -38,6 +38,31 @@ export function isSessionExpired(expiresAt: string, nowMs: number = Date.now()):
   return t <= nowMs;
 }
 
+export interface ReapCandidateRow {
+  id: string;
+  status: "active" | "ended";
+  expires_at: string;
+}
+
+/**
+ * The reap step's pure decision (R2 mitigation, card cbe60db5 rework 7):
+ * given a batch of the caller's own rows, returns the ids that are still
+ * marked "active" but whose `expires_at` has passed — the exact ids a caller
+ * must mark ended. Originally inlined identically in the mint route (POST
+ * /api/terminal/session) and the reattach route; extracted here so the list
+ * route (GET /api/terminal/session/list) can reap ghost sessions before
+ * returning them too, without a second staleness rule — this reuses
+ * `isSessionExpired` unchanged (same boundary: `expires_at <= now`; same
+ * malformed-timestamp safety: never reaps on a bad timestamp).
+ *
+ * Defensively re-checks `status === "active"` per row rather than trusting
+ * the caller's own `.eq("status", "active")` query filter — a row that
+ * somehow reached here already ended is never re-marked or double-counted.
+ */
+export function selectExpiredSessionIds(rows: ReapCandidateRow[], nowMs: number = Date.now()): string[] {
+  return rows.filter((row) => row.status === "active" && isSessionExpired(row.expires_at, nowMs)).map((row) => row.id);
+}
+
 /** The start of the trailing rate-limit window, as an ISO string for a `.gte()` filter. */
 export function rateLimitWindowStart(
   nowMs: number = Date.now(),
