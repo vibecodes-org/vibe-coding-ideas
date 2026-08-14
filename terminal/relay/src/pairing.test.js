@@ -10,6 +10,7 @@ import {
   detach,
   peerRole,
   CLOSE,
+  shouldReplayStoredBridgeAnnouncement,
 } from "./pairing.js";
 
 test("empty session accepts a first bridge and a first browser", () => {
@@ -163,6 +164,20 @@ test("preemption: the stale-leg close reuses the DUP_BROWSER code with a distinc
   assert.equal(CLOSE.PREEMPTED.code, CLOSE.DUP_BROWSER.code);
   assert.equal(CLOSE.PREEMPTED.code, 4001);
   assert.match(CLOSE.PREEMPTED.reason, /preempted/);
+});
+
+// ── stale bridge-announcement replay guard (card cbe60db5) ───────────────────
+
+test("shouldReplayStoredBridgeAnnouncement: replays only when a bridge is live now", () => {
+  assert.equal(shouldReplayStoredBridgeAnnouncement(true), true);
+  assert.equal(shouldReplayStoredBridgeAnnouncement(false), false);
+});
+
+test("shouldReplayStoredBridgeAnnouncement: coerces truthy/falsy inputs to a strict boolean", () => {
+  assert.equal(shouldReplayStoredBridgeAnnouncement(1), true);
+  assert.equal(shouldReplayStoredBridgeAnnouncement(0), false);
+  assert.equal(shouldReplayStoredBridgeAnnouncement(undefined), false);
+  assert.equal(shouldReplayStoredBridgeAnnouncement(null), false);
 });
 
 test("isValidSession accepts url-safe tokens and rejects junk", () => {

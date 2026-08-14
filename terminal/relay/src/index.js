@@ -40,6 +40,7 @@ import {
   idleCloseReason,
   maxCloseReason,
   resolveMs,
+  shouldReplayStoredBridgeAnnouncement,
 } from "./pairing.js";
 import { shouldPersistActivity, DEFAULT_ACTIVITY_PERSIST_THROTTLE_MS } from "./activity-throttle.js";
 import { computeHelperStatus } from "./helper-status.js";
@@ -628,16 +629,26 @@ export class TerminalRelay {
         }
       }
     } else if (role === "browser") {
-      const [bridgeHelperVersion, bridgeHost, bridgeConv] = await Promise.all([
-        this.state.storage.get("bridgeHelperVersion"),
-        this.state.storage.get("bridgeHost"),
-        this.state.storage.get("bridgeConv"),
-      ]);
-      if (bridgeHelperVersion || bridgeHost || bridgeConv) {
-        try {
-          server.send(encodeBridgeVersionFrame(bridgeHelperVersion, bridgeHost, bridgeConv));
-        } catch (e) {
-          this.log("bridge-version send failed", { session, err: String(e) });
+      // Only replay the durably-stored announcement when a bridge is
+      // genuinely attached RIGHT NOW — `post` (computed just above, after
+      // this leg was already accepted) is the same live getWebSockets()
+      // check computeAttachState() uses for `pairWhole`/`peer-reattached`.
+      // Storage outlives the socket that wrote it, so without this gate a
+      // browser attaching after its bridge is long gone gets told a machine
+      // is live when none is — see shouldReplayStoredBridgeAnnouncement's
+      // doc comment in pairing.js for the incident this fixes.
+      if (shouldReplayStoredBridgeAnnouncement(post.bridge)) {
+        const [bridgeHelperVersion, bridgeHost, bridgeConv] = await Promise.all([
+          this.state.storage.get("bridgeHelperVersion"),
+          this.state.storage.get("bridgeHost"),
+          this.state.storage.get("bridgeConv"),
+        ]);
+        if (bridgeHelperVersion || bridgeHost || bridgeConv) {
+          try {
+            server.send(encodeBridgeVersionFrame(bridgeHelperVersion, bridgeHost, bridgeConv));
+          } catch (e) {
+            this.log("bridge-version send failed", { session, err: String(e) });
+          }
         }
       }
     }
