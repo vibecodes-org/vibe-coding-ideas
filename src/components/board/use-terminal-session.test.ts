@@ -887,4 +887,97 @@ describe("useTerminalSession", () => {
       expect(term.written).toContain("restored content");
     });
   });
+
+  // Card cbe60db5 rework 9 (Bug A — Nick's field test 2026-08-14): the
+  // session-ended overlay's "Resume this conversation" action needs THIS
+  // tab's own cwd/claudeSessionId to survive past the session actually
+  // ending (unlike `promptPartsRef`, which the hook deliberately clears on
+  // session-ended — see that effect). These pin the exposed `cwd`/
+  // `claudeSessionId` result fields' full lifecycle: resolved at connect()
+  // time, seeded from a carried resumeId, overwritten by the bridge's own
+  // announcement, and retained (never reset) once the session ends.
+  describe("cwd/claudeSessionId bookkeeping (Bug A)", () => {
+    it("resolves no cwd/claudeSessionId for a plain (non-resume) launch with no recorded folder", async () => {
+      const { result } = setup();
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      // This idea has no GitHub repo, no saved localStorage path, and no
+      // recorded DB path — resolveDefaultLaunchState falls to "new" mode,
+      // whose cwd is the caller's effective target (undefined here), so no
+      // cwd is ever resolved. Deterministic, not a false negative.
+      expect(result.current.cwd).toBeNull();
+      expect(result.current.claudeSessionId).toBeNull();
+    });
+
+    it("seeds claudeSessionId from a carried resumeId and exposes the carried cwd immediately after mint", async () => {
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+      vi.stubGlobal("navigator", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        maxTouchPoints: 0,
+      });
+      const { result } = setup();
+      act(() => {
+        result.current.actions.launchFromBus({
+          resumeId: "claude-conv-carried",
+          cwd: "/Users/nick/projects/vibe-coding-ideas",
+        });
+      });
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await flushEffects();
+
+      expect(result.current.cwd).toBe("/Users/nick/projects/vibe-coding-ideas");
+      // Seeded from the carried resumeId even before the bridge announces
+      // anything — a legacy bridge that never announces a `conv` still lets a
+      // LATER resume-of-this-resume carry the right id.
+      expect(result.current.claudeSessionId).toBe("claude-conv-carried");
+    });
+
+    it("overwrites the seeded claudeSessionId once the bridge announces its own conv id", async () => {
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+      vi.stubGlobal("navigator", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        maxTouchPoints: 0,
+      });
+      const { result } = setup();
+      act(() => {
+        result.current.actions.launchFromBus({
+          resumeId: "claude-conv-carried",
+          cwd: "/Users/nick/projects/vibe-coding-ideas",
+        });
+      });
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await flushEffects();
+      act(() => latestSocket().simulateOpen());
+
+      const announced = "99999999-8888-7777-6666-555555555555";
+      act(() => {
+        latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", conv: announced }) });
+      });
+      expect(result.current.claudeSessionId).toBe(announced);
+    });
+
+    it("keeps cwd/claudeSessionId once the session ends (unlike promptPartsRef, never cleared on session-ended)", async () => {
+      const { result } = setup();
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      act(() => latestSocket().simulateOpen());
+      const announced = "99999999-8888-7777-6666-555555555555";
+      act(() => {
+        latestSocket().onmessage?.({ data: JSON.stringify({ t: "bridge-version", conv: announced }) });
+      });
+      expect(result.current.claudeSessionId).toBe(announced);
+
+      act(() => {
+        result.current.actions.end();
+      });
+      expect(result.current.state.status).toBe("session-ended");
+      // The Resume action reads exactly these two fields off the ended
+      // session — they must still be here to read.
+      expect(result.current.claudeSessionId).toBe(announced);
+    });
+  });
 });

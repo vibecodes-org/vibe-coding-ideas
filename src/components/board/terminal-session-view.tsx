@@ -60,6 +60,7 @@ import { isSameOwnerPreemptedClose } from "@/lib/terminal/connection";
 import type { TerminalConnectionState, TerminalStatus } from "@/lib/terminal/connection";
 import { type TerminalPlatform, TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
 import { shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
+import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import { FIRST_RUN_COPY } from "@/lib/terminal/first-run-copy";
 import { type DockView, type LaunchPhase, resolveDockView } from "@/lib/terminal/first-run-flow";
 import {
@@ -149,6 +150,20 @@ interface TerminalSessionViewProps {
    * practice).
    */
   onReconnectTakenOver?: (sid: string) => void;
+  /**
+   * Card cbe60db5 rework 9 (Bug A — Nick's field test, 2026-08-14): the
+   * session-ended overlay's "Resume this conversation" action for a
+   * NON-user ending (idle / max-duration / a dropped-and-exhausted
+   * reconnect) — the ended session's own `claudeSessionId`/`cwd` (this
+   * hook's `session.claudeSessionId`/`session.cwd`, see use-terminal-
+   * session.ts), carried into a FRESH mint via the SAME capped launch flow
+   * the session chooser's own Resume uses (terminal-dock.tsx's
+   * `handleChooserResume` → `mintAndDeliver`) — mirrors the
+   * `onReconnectTakenOver` prop pattern above. Omitted hides the Resume
+   * button entirely (defensive — the overlay itself already gates on
+   * `session.cwd` being known before ever calling this).
+   */
+  onResumeEndedSession?: (payload: BrowserLaunchPayload) => void;
 }
 
 export function TerminalSessionView({
@@ -167,6 +182,7 @@ export function TerminalSessionView({
   onPopOut,
   onBringBack,
   onReconnectTakenOver,
+  onResumeEndedSession,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -188,6 +204,8 @@ export function TerminalSessionView({
     peerDegraded,
     helperVersion,
     pair,
+    cwd: sessionCwd,
+    claudeSessionId,
     readOnly,
     inputEnabled,
     platform,
@@ -308,6 +326,29 @@ export function TerminalSessionView({
     view === "connecting" ||
     view === "connecting-returning" ||
     view === "legacy-waiting";
+  // Card cbe60db5 rework 9 (Bug A): a NON-user ending (idle / max-duration /
+  // an exhausted reconnect) is the whole point of this fix — the user didn't
+  // choose to stop, so a "Resume this conversation" primary action beats a
+  // blind fresh mint. A deliberate `endedReason === "user"` end keeps the
+  // original single "Launch again" action untouched (excluded per the QA
+  // root-cause: only the involuntary endings need the resume path). `cwd` is
+  // REQUIRED to resume anything (legacy `--continue` still needs a folder);
+  // `claudeSessionId` is optional — its absence just falls back to
+  // `--continue` (same graceful degrade the chooser's own Resume already
+  // does for a pre-rework-5 row, or a session whose bridge never announced
+  // one, e.g. pre-0.3.3).
+  const canResume =
+    view === "session-ended" && state.endedReason !== "user" && !!sessionCwd && !!onResumeEndedSession;
+  const handleResume = () => {
+    if (!sessionCwd) return;
+    onResumeEndedSession?.({
+      resume: claudeSessionId ? undefined : true,
+      resumeId: claudeSessionId ?? undefined,
+      cwd: sessionCwd,
+      taskId: entry.taskId,
+      taskTitle: entry.taskTitle,
+    });
+  };
 
   return (
     <div className={cn(!isActive && "hidden")} aria-hidden={!isActive}>
@@ -469,9 +510,11 @@ export function TerminalSessionView({
               platform={platform}
               canLaunch={canLaunch}
               takenOver={takenOver}
+              canResume={canResume}
               onConnect={() => void actions.connect({ autoLaunch: true })}
               onRetry={() => void actions.connect({ autoLaunch: true })}
               onLaunchAgain={actions.beginBrowserLaunch}
+              onResume={handleResume}
               onCopyBridge={actions.copyBridgeCommand}
               onReconnectTakenOver={() => {
                 if (pair) onReconnectTakenOver?.(pair.sessionId);
@@ -580,9 +623,11 @@ function StateOverlay({
   platform,
   canLaunch,
   takenOver,
+  canResume,
   onConnect,
   onRetry,
   onLaunchAgain,
+  onResume,
   onCopyBridge,
   onReconnectTakenOver,
 }: {
@@ -593,9 +638,12 @@ function StateOverlay({
   canLaunch: boolean;
   /** Card cbe60db5 rework 6 — see the same-named const in TerminalSessionView. */
   takenOver: boolean;
+  /** Card cbe60db5 rework 9 (Bug A) — see the same-named const in TerminalSessionView. */
+  canResume: boolean;
   onConnect: () => void;
   onRetry: () => void;
   onLaunchAgain: () => void;
+  onResume: () => void;
   onCopyBridge: () => void;
   onReconnectTakenOver: () => void;
 }) {
@@ -652,9 +700,33 @@ function StateOverlay({
           <Square className="h-7 w-7 text-zinc-400" />
           <div className="text-base font-semibold text-zinc-300">{endedTitle(state)}</div>
           <p className="max-w-md text-[13px] text-zinc-400">{endedMessage(state)}</p>
-          <Button className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400" onClick={onLaunchAgain}>
-            <TerminalIcon className="h-4 w-4" /> Launch again
-          </Button>
+          {/* Card cbe60db5 rework 9 (Bug A, Nick's field test 2026-08-14): a
+              timed-out/dropped session's only option used to be this ONE
+              blind-new-mint button — no path back to the conversation that
+              was running. When we know where to resume it (`canResume`),
+              that becomes the primary action; the blind mint stays as an
+              explicit, clearly-labelled fallback so it's never confused with
+              resuming. A deliberate user End (or a session we have no
+              cwd/claudeSessionId for — legacy pre-0.3.3) keeps the original
+              single "Launch again" button. */}
+          {canResume ? (
+            <div className="flex flex-wrap justify-center gap-2.5">
+              <Button className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400" onClick={onResume}>
+                <RefreshCw className="h-4 w-4" /> Resume this conversation
+              </Button>
+              <Button
+                variant="outline"
+                className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
+                onClick={onLaunchAgain}
+              >
+                <TerminalIcon className="h-4 w-4" /> Start fresh
+              </Button>
+            </div>
+          ) : (
+            <Button className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400" onClick={onLaunchAgain}>
+              <TerminalIcon className="h-4 w-4" /> Launch again
+            </Button>
+          )}
         </>
       )}
 

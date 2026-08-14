@@ -244,6 +244,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     summariesRef.current = summaries;
     posthogRef.current = posthog;
   }, [sessions, summaries, posthog]);
+  // Bug B (card cbe60db5 rework 9 — RELEASE-BLOCKING, Nick's field test
+  // 2026-08-14): `deliverLaunch` below used to treat `entryDecisionRef.current
+  // === null` (the registry fetch is STILL LOADING — genuinely unknown, never
+  // "nothing to choose between") the same as "no chooser needed", falling
+  // through to an unconditional mint that bypassed the chooser entirely on a
+  // fast click. Set true only while a launch is queued specifically because
+  // the decision wasn't known yet; the seed effect below (which reacts to
+  // `entryDecision` settling) reads and clears it, delivering the SAME outcome
+  // `deliverLaunch` would have produced had the fetch simply finished first.
+  const deferredLaunchPendingRef = useRef(false);
 
   // ── dock-open persistence (rework 5, card cbe60db5) ─────────────────────────
   // Correct the collapsed initial paint on mount if this tab last left the
@@ -662,10 +672,23 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   // `mintAndDeliver`'s unchanged behaviour.
   const deliverLaunch = useCallback(
     (payload: BrowserLaunchPayload | null) => {
-      if (sessionsRef.current.length === 0 && entryDecisionRef.current?.kind === "chooser") {
-        setExpanded(true);
-        setPendingLaunch(payload);
-        return;
+      if (sessionsRef.current.length === 0) {
+        if (entryDecisionRef.current === null) {
+          // Bug B: the registry fetch that decides chooser-vs-mint hasn't
+          // resolved yet — null here means "don't know", NOT "empty-launch".
+          // Queue exactly like the (already-decided) chooser branch below —
+          // same expand + pendingLaunch — and let the seed effect (keyed on
+          // `entryDecision`) replay this the instant it settles.
+          setExpanded(true);
+          setPendingLaunch(payload);
+          deferredLaunchPendingRef.current = true;
+          return;
+        }
+        if (entryDecisionRef.current.kind === "chooser") {
+          setExpanded(true);
+          setPendingLaunch(payload);
+          return;
+        }
       }
       mintAndDeliver(payload);
     },
@@ -755,6 +778,24 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   const instantContinueTriggeredRef = useRef(false);
   useEffect(() => {
     if (!entryDecision || sessions.length > 0) return;
+    // Bug B (card cbe60db5 rework 9): a launch that raced the still-loading
+    // registry (`deliverLaunch` queued it via `deferredLaunchPendingRef`
+    // instead of guessing) gets resolved HERE, the instant the real decision
+    // is known — takes priority over the passive empty-launch/instant-
+    // continue defaults below, exactly as if the fetch had finished before
+    // the click that triggered it.
+    if (deferredLaunchPendingRef.current) {
+      deferredLaunchPendingRef.current = false;
+      if (entryDecision.kind === "chooser") {
+        // Already expanded with `pendingLaunch` set by `deliverLaunch` — the
+        // chooser renders itself from that state; nothing else to do.
+        return;
+      }
+      const payload = pendingLaunch;
+      setPendingLaunch(null);
+      mintAndDeliver(payload);
+      return;
+    }
     if (entryDecision.kind === "empty-launch") {
       const fresh = createPristineEntry();
       setSessions([fresh]);
@@ -764,7 +805,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       void performReattach(entryDecision.sid, { focus: false });
     }
     // "chooser": nothing to seed — the chooser renders in the body below.
-  }, [entryDecision, sessions.length, performReattach]);
+  }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver]);
 
   // ── other-board Reconnect (`?reconnect=<sid>`, design item 2) ──────────────
   // "Open board & reconnect" navigates here with the target sid on the URL;
@@ -1154,6 +1195,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
             onPopOut={() => handlePopOut(entry.key)}
             onBringBack={() => bringBackToDock(entry.key)}
             onReconnectTakenOver={(sid) => void performReattach(sid, { focus: true })}
+            onResumeEndedSession={(payload) => mintAndDeliver(payload)}
           />
         ))}
       </div>

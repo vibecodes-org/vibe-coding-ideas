@@ -63,6 +63,8 @@ function installMockSession(status: "connected" | "error", closeCode: number | n
       peerDegraded: false,
       helperVersion: null,
       pair: { sessionId: "sess-1", bridgeToken: "bridge-tok", browserToken: "browser-tok" },
+      cwd: null,
+      claudeSessionId: null,
       readOnly: false,
       inputEnabled: true,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
