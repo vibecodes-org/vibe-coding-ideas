@@ -10,7 +10,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
 import { useTerminalSession, type TerminalSessionDescriptor } from "./use-terminal-session";
-import { isSameOwnerPreemptedClose } from "@/lib/terminal/connection";
+import { isSameOwnerPreemptedClose, RECONNECT_GRACE_MS } from "@/lib/terminal/connection";
 
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
 // Tracks every mock Terminal instance created — used by the scrollback
@@ -978,6 +978,134 @@ describe("useTerminalSession", () => {
       // The Resume action reads exactly these two fields off the ended
       // session — they must still be here to read.
       expect(result.current.claudeSessionId).toBe(announced);
+    });
+  });
+
+  // Card cbe60db5 rework 10 (stuck-pairing watchdog, 2026-08-14 incident): QA
+  // root-caused a session stuck forever on "Waiting for your machine to
+  // attach" — attachToExisting (reload-reattach/instant-continue, the
+  // chooser's Reconnect) and reconnectNow's fresh-attach-reset (bring-back-
+  // from-pop-out) both reach status "waiting-to-pair" with launchPhase
+  // "idle" and NOTHING re-fires the vibecodes:// deep link, so the existing
+  // 8s helperTimerRef (which only bounds a FRESH same-pageview
+  // connect({autoLaunch:true}) launch) never engages. `pairingTimedOut`
+  // reports the new watchdog's own outcome; the presentational swap to
+  // TimeoutPanel is covered separately in terminal-session-view.test.tsx.
+  describe("pairing watchdog (stuck 'waiting for your machine to attach')", () => {
+    it("a manual connect({autoLaunch:false}) never times out — the one legitimate indefinite wait", async () => {
+      vi.useFakeTimers();
+      const { result } = setup();
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      act(() => latestSocket().simulateOpen());
+      expect(result.current.state.status).toBe("waiting-to-pair");
+      expect(result.current.launchPhase).toBe("idle");
+
+      await act(async () => {
+        vi.advanceTimersByTime(RECONNECT_GRACE_MS + 1000);
+      });
+      expect(result.current.pairingTimedOut).toBe(false);
+    });
+
+    it("attachToExisting arms the watchdog — pairingTimedOut fires after RECONNECT_GRACE_MS with no bridge attach", async () => {
+      vi.useFakeTimers();
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => latestSocket().simulateOpen());
+      expect(result.current.state.status).toBe("waiting-to-pair");
+      expect(result.current.launchPhase).toBe("idle");
+      expect(result.current.pairingTimedOut).toBe(false);
+
+      // Just short of the deadline — still waiting, no false positive.
+      await act(async () => {
+        vi.advanceTimersByTime(RECONNECT_GRACE_MS - 1000);
+      });
+      expect(result.current.pairingTimedOut).toBe(false);
+
+      await act(async () => {
+        vi.advanceTimersByTime(2000);
+      });
+      expect(result.current.pairingTimedOut).toBe(true);
+    });
+
+    it("cancels the watchdog the instant the bridge attaches before the deadline", async () => {
+      vi.useFakeTimers();
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => latestSocket().simulateOpen());
+
+      await act(async () => {
+        vi.advanceTimersByTime(RECONNECT_GRACE_MS / 2);
+      });
+      act(() => latestSocket().simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+
+      // Advance well past the original deadline — a cleared timer must never
+      // fire late and flip a now-connected session into "timed out".
+      await act(async () => {
+        vi.advanceTimersByTime(RECONNECT_GRACE_MS);
+      });
+      expect(result.current.pairingTimedOut).toBe(false);
+    });
+
+    it("reconnectNow's fresh-attach-reset (bring-back-from-pop-out) arms the watchdog when the bridge never returns", async () => {
+      vi.useFakeTimers();
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+      await act(async () => {
+        await Promise.resolve();
+      });
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+
+      // Bring-back-from-pop-out: this window's own leg was preempted (relay
+      // 4001 "preempted") while the popped window took over — decideReconnectNow
+      // routes this to "fresh-attach-reset".
+      act(() => latestSocket().close(4001, "preempted"));
+      expect(result.current.state.status).toBe("error");
+
+      act(() => result.current.actions.reconnectNow());
+      expect(result.current.state.status).toBe("connecting");
+      act(() => latestSocket().simulateOpen());
+      expect(result.current.state.status).toBe("waiting-to-pair");
+      expect(result.current.launchPhase).toBe("idle");
+
+      await act(async () => {
+        vi.advanceTimersByTime(RECONNECT_GRACE_MS + 1000);
+      });
+      expect(result.current.pairingTimedOut).toBe(true);
     });
   });
 });

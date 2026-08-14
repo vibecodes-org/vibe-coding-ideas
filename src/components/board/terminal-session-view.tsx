@@ -211,6 +211,7 @@ export function TerminalSessionView({
     platform,
     paired,
     containerRef,
+    pairingTimedOut,
     actions,
   } = session;
   // Non-blocking "update your terminal helper" nudge (release-gate rework 2a).
@@ -511,6 +512,7 @@ export function TerminalSessionView({
               canLaunch={canLaunch}
               takenOver={takenOver}
               canResume={canResume}
+              pairingTimedOut={pairingTimedOut}
               onConnect={() => void actions.connect({ autoLaunch: true })}
               onRetry={() => void actions.connect({ autoLaunch: true })}
               onLaunchAgain={actions.beginBrowserLaunch}
@@ -624,6 +626,7 @@ function StateOverlay({
   canLaunch,
   takenOver,
   canResume,
+  pairingTimedOut,
   onConnect,
   onRetry,
   onLaunchAgain,
@@ -640,6 +643,17 @@ function StateOverlay({
   takenOver: boolean;
   /** Card cbe60db5 rework 9 (Bug A) — see the same-named const in TerminalSessionView. */
   canResume: boolean;
+  /**
+   * Card cbe60db5 rework 10 (stuck-pairing watchdog): the hook's
+   * legacy-waiting session has sat unpaired for a full RECONNECT_GRACE_MS
+   * with no bridge ever attaching. Overrides the open-ended "legacy-waiting"
+   * body (NOT the header pill) with the existing TimeoutPanel's "returning"
+   * copy — reused as-is rather than resolveDockView's own paired-based
+   * new/returning split, since a stuck-pairing recovery is always the
+   * "we've seen this Mac before" framing regardless of the `paired` flag's
+   * current value.
+   */
+  pairingTimedOut: boolean;
   onConnect: () => void;
   onRetry: () => void;
   onLaunchAgain: () => void;
@@ -664,7 +678,11 @@ function StateOverlay({
         <TimeoutPanel variant="returning" downloadUrl={platform.downloadUrl} onRetry={onRetry} />
       )}
 
-      {view === "legacy-waiting" && (
+      {view === "legacy-waiting" && pairingTimedOut && (
+        <TimeoutPanel variant="returning" downloadUrl={platform.downloadUrl} onRetry={onRetry} />
+      )}
+
+      {view === "legacy-waiting" && !pairingTimedOut && (
         <>
           <Loader2 className="h-7 w-7 animate-spin text-sky-400" />
           <div className="text-base font-semibold text-sky-400">Waiting for your machine to attach</div>

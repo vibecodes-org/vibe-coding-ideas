@@ -151,6 +151,34 @@ export function peerRole(role) {
   return role === "bridge" ? "browser" : "bridge";
 }
 
+// ── Stale bridge-announcement replay guard (card cbe60db5) ────────────────────
+//
+// The bridge's helperVersion/host/conv announcement is stored DURABLY
+// (state.storage) so a fast bridge reattach doesn't lose it. But durable
+// storage outlives the socket that wrote it: a bridge that attached once and
+// then dropped for good leaves those fields on file forever. Replaying them
+// unconditionally to every newly-attaching browser only proves a bridge
+// showed up at SOME point in the past — it says nothing about whether one is
+// live right now. A browser that attaches to a session whose bridge already
+// left sees the stored frame, believes a machine is attached, and the
+// "Waiting for your machine to attach" view never times out (2026-08-14
+// incident: exactly this replay kept a stuck pairing session waiting
+// forever). `peer-reattached` already gets this right by gating on
+// computeAttachState()'s LIVE getWebSockets() check — this mirrors that.
+//
+/**
+ * Whether a browser leg attaching right now may be told the durably-stored
+ * bridge announcement. Pure: the caller supplies the live-bridge check
+ * (computeAttachState().bridge, i.e. `getWebSockets("role:bridge").length >
+ * 0`) so this has no socket/storage access of its own.
+ *
+ * @param {boolean} bridgeLive - is a bridge leg attached to this session RIGHT NOW
+ * @returns {boolean}
+ */
+export function shouldReplayStoredBridgeAnnouncement(bridgeLive) {
+  return !!bridgeLive;
+}
+
 // ── Session lifecycle limits (slice 6) ────────────────────────────────────────
 //
 // Two server-side caps end a forgotten session cleanly so a DO can't live (and
