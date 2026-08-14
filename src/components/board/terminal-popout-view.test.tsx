@@ -71,6 +71,7 @@ function installMockSession(status: "connected" | "error", closeCode: number | n
       paired: true,
       xtermReady: true,
       containerRef,
+      pairingTimedOut: false,
       actions: mockActions(),
     };
   });

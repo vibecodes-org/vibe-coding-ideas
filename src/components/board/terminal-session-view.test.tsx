@@ -84,9 +84,50 @@ function installMockSession() {
       paired: true,
       xtermReady: true,
       containerRef,
+      pairingTimedOut: false,
       actions: mockActions(),
     };
   });
+}
+
+// Card cbe60db5 rework 10 (stuck-pairing watchdog, 2026-08-14 incident):
+// installs the mock hook in the "legacy-waiting" condition
+// (status: "waiting-to-pair", launchPhase: "idle") with a caller-supplied
+// `pairingTimedOut` — standing in for whatever the real hook's watchdog
+// effect (use-terminal-session.test.ts covers that timing logic directly)
+// decided. This file only checks TerminalSessionView renders the right
+// body for a given `pairingTimedOut` value and wires Retry correctly.
+function installMockWaitingSession(pairingTimedOut: boolean) {
+  const actions = mockActions();
+  mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    lastContainerRef = containerRef;
+    return {
+      state: {
+        status: "waiting-to-pair",
+        sessionId: "sess-1",
+        errorKind: null,
+        endedReason: null,
+        closeCode: null,
+        closeReason: null,
+      },
+      launchPhase: "idle",
+      peerDegraded: false,
+      helperVersion: null,
+      pair: { sessionId: "sess-1", bridgeToken: "bridge-tok", browserToken: "browser-tok" },
+      cwd: null,
+      claudeSessionId: null,
+      readOnly: false,
+      inputEnabled: false,
+      platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
+      paired: true,
+      xtermReady: true,
+      containerRef,
+      pairingTimedOut,
+      actions,
+    };
+  });
+  return actions;
 }
 
 // Card cbe60db5 rework 6: installs the mock hook in an "error" state with a
@@ -121,6 +162,7 @@ function installMockErrorSession(state: Partial<TerminalConnectionState> = {}) {
       paired: true,
       xtermReady: true,
       containerRef,
+      pairingTimedOut: false,
       actions: mockActions(),
     };
   });
@@ -161,6 +203,7 @@ function installMockEndedSession(
       paired: true,
       xtermReady: true,
       containerRef,
+      pairingTimedOut: false,
       actions: mockActions(),
     };
   });
@@ -444,5 +487,43 @@ describe("TerminalSessionView — session-ended resume (Bug A)", () => {
 
     expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Launch again$/ })).toBeInTheDocument();
+  });
+});
+
+// Card cbe60db5 rework 10 (stuck-pairing watchdog, 2026-08-14 incident): a
+// session stuck on "Waiting for your machine to attach" (legacy-waiting)
+// used to have no timeout at all. Once the hook's watchdog reports
+// `pairingTimedOut`, the body must swap to the existing TimeoutPanel's
+// "returning" copy — reusing it exactly, not the open-ended waiting panel —
+// with Retry wired to a genuine fresh connect({autoLaunch:true}), never a
+// reattach helper. The watchdog's OWN timing (does it actually fire after
+// RECONNECT_GRACE_MS, does the opt-out manual flow ever arm it) is covered
+// in use-terminal-session.test.ts; this file only checks the presentational
+// swap and the Retry wiring, same division of labour as every other view
+// test in here.
+describe("TerminalSessionView — stuck-pairing watchdog timeout panel", () => {
+  it("shows the normal 'Waiting for your machine to attach' panel while pairingTimedOut is false", () => {
+    installMockWaitingSession(false);
+    renderView(false);
+
+    expect(screen.getByText("Waiting for your machine to attach")).toBeInTheDocument();
+    expect(screen.queryByText("Couldn’t reach the helper on this Mac")).not.toBeInTheDocument();
+  });
+
+  it("swaps to the TimeoutPanel's 'returning' copy once pairingTimedOut is true, wiring Retry to a fresh connect({autoLaunch:true})", () => {
+    const actions = installMockWaitingSession(true);
+    renderView(false);
+
+    // The existing "returning" variant's copy, reused exactly — not the
+    // open-ended legacy-waiting text.
+    expect(screen.getByText("Couldn’t reach the helper on this Mac")).toBeInTheDocument();
+    expect(screen.queryByText("Waiting for your machine to attach")).not.toBeInTheDocument();
+    expect(screen.queryByText("Didn’t connect yet")).not.toBeInTheDocument();
+
+    const retry = screen.getByRole("button", { name: /Retry/ });
+    fireEvent.click(retry);
+    expect(actions.connect).toHaveBeenCalledWith({ autoLaunch: true });
+    // Never a reattach helper — connect() is the only action Retry calls.
+    expect(actions.reconnectNow).not.toHaveBeenCalled();
   });
 });

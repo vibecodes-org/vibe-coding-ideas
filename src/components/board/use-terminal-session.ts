@@ -382,6 +382,19 @@ export interface UseTerminalSessionResult {
   xtermReady: boolean;
   /** Attach this to the DOM node that should host the xterm viewport. */
   containerRef: RefObject<HTMLDivElement | null>;
+  /**
+   * Card cbe60db5 (2026-08-14 incident): true once the stuck-pairing
+   * watchdog has fired — the session sat on "waiting-to-pair" with an
+   * idle launchPhase (the "legacy-waiting" view) for a full
+   * RECONNECT_GRACE_MS with no bridge ever attaching, and this wasn't the
+   * one legitimate indefinite-wait case (a manual `connect({autoLaunch:
+   * false})`). The consumer should surface the existing TimeoutPanel's
+   * "returning" variant instead of the open-ended legacy-waiting panel,
+   * with Retry wired to `actions.connect({ autoLaunch: true })`. Resets to
+   * false the instant the stuck condition clears (fresh connect/attach,
+   * data arrives, an error/end supersedes it, …).
+   */
+  pairingTimedOut: boolean;
   actions: TerminalSessionActions;
 }
 
@@ -511,6 +524,57 @@ export function useTerminalSession(
   // via the same shared builder (see resolveLaunchPromptParts), so every launch
   // is primed.
   const promptPartsRef = useRef<BrowserLaunchPayload | null>(null);
+
+  // ── stuck-pairing recovery watchdog (card cbe60db5, 2026-08-14 incident) ───
+  // Nothing re-fires the vibecodes:// deep link for an already-minted sid
+  // except a fresh connect({autoLaunch:true}) — so a session that reaches
+  // "waiting-to-pair" with launchPhase "idle" (the "legacy-waiting" view,
+  // "Waiting for your machine to attach") has NO timeout unless something
+  // arms one: the existing helperTimerRef only bounds the "opening" phase of
+  // a FRESH same-pageview launch, which this state has already passed
+  // through (or, for attachToExisting/fresh-attach-reset, never entered at
+  // all). OPT-OUT design: every path that expects its own auto-attach to
+  // eventually resolve (or time out) arms this true; the ONE legitimate
+  // indefinite wait — a literal manual `connect({autoLaunch:false})`, the
+  // "Advanced — pair a remote machine by hand" cross-machine flow — leaves
+  // it false so that panel keeps waiting forever, as designed.
+  const expectsAutoAttachRef = useRef(true);
+  const pairingWatchdogRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Surfaces the existing TimeoutPanel ("returning" copy) over the
+  // legacy-waiting overlay once the watchdog below expires. Reset back to
+  // false the instant we're no longer sitting in the stuck condition (a
+  // fresh connect/attach moves launchPhase off "idle", data arriving moves
+  // status off "waiting-to-pair", etc.) — see the arming effect.
+  const [pairingTimedOut, setPairingTimedOut] = useState(false);
+
+  const clearPairingWatchdog = useCallback(() => {
+    if (pairingWatchdogRef.current) {
+      clearTimeout(pairingWatchdogRef.current);
+      pairingWatchdogRef.current = null;
+    }
+  }, []);
+
+  // Arm/disarm the watchdog whenever the "legacy-waiting" condition
+  // (status === "waiting-to-pair" && launchPhase === "idle" — see
+  // first-run-flow.ts's resolveDockView) becomes true or false. Re-runs on
+  // every status/launchPhase change, so the effect's own cleanup (returned
+  // below) clears any pending timer before re-evaluating — the same
+  // React-managed cleanup the other per-status effects in this hook rely on,
+  // no separate unmount effect needed. `expectsAutoAttachRef` is a ref (read
+  // at arm-time, not a dependency) so a manual-pairing session that later
+  // times out some OTHER way never retroactively arms a stale watchdog.
+  useEffect(() => {
+    clearPairingWatchdog();
+    const stuck = state.status === "waiting-to-pair" && launchPhase === "idle" && expectsAutoAttachRef.current;
+    if (!stuck) {
+      setPairingTimedOut(false);
+      return;
+    }
+    pairingWatchdogRef.current = setTimeout(() => {
+      setPairingTimedOut(true);
+    }, RECONNECT_GRACE_MS);
+    return clearPairingWatchdog;
+  }, [state.status, launchPhase, clearPairingWatchdog]);
 
   // Mirror live state into refs so the stable xterm onData handler + socket handlers
   // read current values without re-binding on every render.
@@ -1301,6 +1365,10 @@ export function useTerminalSession(
     teardownSocket();
     clearHelperTimer();
     removeLaunchIframe();
+    // Stuck-pairing watchdog (card cbe60db5): the ONE opt-out — a literal
+    // manual connect({autoLaunch:false}) is the legitimate indefinite-wait
+    // cross-machine flow, so it alone leaves this false.
+    expectsAutoAttachRef.current = autoLaunch;
     setLaunchPhase(autoLaunch ? "opening" : "idle");
     requestExpand();
     lastDimsRef.current = "";
@@ -1424,6 +1492,11 @@ export function useTerminalSession(
       clearHelperTimer();
       removeLaunchIframe();
       setLaunchPhase("idle");
+      // Stuck-pairing watchdog (card cbe60db5): a reload-reattach / instant-
+      // continue / chooser Reconnect all expect the bridge to show back up
+      // on its own — no deep link fires here, so nothing else times this
+      // out. See expectsAutoAttachRef's doc above.
+      expectsAutoAttachRef.current = true;
       lastDimsRef.current = "";
       setHelperVersion(null);
       // Two dispatches back-to-back, no await between them — React folds them
@@ -1501,6 +1574,8 @@ export function useTerminalSession(
     const decision = decideReconnectNow(statusRef.current, !!p, now, reconnectDeadlineRef.current);
 
     if (decision === "full-connect" || !p) {
+      // connect({autoLaunch:true}) arms expectsAutoAttachRef itself — no
+      // separate wiring needed here (card cbe60db5's watchdog).
       void connect({ autoLaunch: true });
       return;
     }
@@ -1515,6 +1590,14 @@ export function useTerminalSession(
       teardownSocket();
       reconnectDeadlineRef.current = 0;
       reconnectAttemptRef.current = 0;
+      // Stuck-pairing watchdog (card cbe60db5): this branch never touches
+      // launchPhase (it stays whatever it already was — typically "idle"),
+      // and opens with reconnect:false's honest CONNECT_TIMEOUT_MS bounding
+      // only the RELAY handshake, not the bridge showing back up once
+      // relay-open lands us on "waiting-to-pair". Without arming here, a
+      // bring-back/pop-out reattach whose peer never comes back hangs on
+      // legacy-waiting forever, same as attachToExisting's case.
+      expectsAutoAttachRef.current = true;
       // Two dispatches back-to-back, no await between them — the documented
       // two-dispatch pattern (see attachToExisting): React folds them through
       // the reducer in order against the queued state, so "session-created"'s
@@ -1531,7 +1614,14 @@ export function useTerminalSession(
       return;
     }
 
-    // decision === "grace-reconnect" — unchanged, prod-proven path.
+    // decision === "grace-reconnect" — unchanged, prod-proven path. No
+    // watchdog wiring needed (card cbe60db5): this reopens with
+    // {reconnect:true} against a status that's "disconnected" (never
+    // "connecting"), and the reducer's `relay-open` case only advances to
+    // "waiting-to-pair" from "connecting" — so this path never reaches
+    // legacy-waiting at all. It stays "disconnected" until either `data`
+    // (→ connected) or the grace window's own existing exhaustion
+    // (→ session-ended via reconnect-exhausted), both already bounded.
     clearReconnectTimer();
     if (reconnectDeadlineRef.current === 0) reconnectDeadlineRef.current = now + RECONNECT_GRACE_MS;
     openBrowserLeg(p.sessionId, p.browserToken, { reconnect: true });
@@ -1689,6 +1779,7 @@ export function useTerminalSession(
     paired,
     xtermReady,
     containerRef,
+    pairingTimedOut,
     actions: {
       connect,
       beginBrowserLaunch,
