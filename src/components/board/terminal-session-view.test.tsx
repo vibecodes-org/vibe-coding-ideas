@@ -76,6 +76,8 @@ function installMockSession() {
       peerDegraded: false,
       helperVersion: null,
       pair: { sessionId: "sess-1", bridgeToken: "bridge-tok", browserToken: "browser-tok" },
+      cwd: null,
+      claudeSessionId: null,
       readOnly: false,
       inputEnabled: true,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
@@ -111,6 +113,48 @@ function installMockErrorSession(state: Partial<TerminalConnectionState> = {}) {
       peerDegraded: false,
       helperVersion: null,
       pair: { sessionId: "sess-1", bridgeToken: "bridge-tok", browserToken: "browser-tok" },
+      cwd: null,
+      claudeSessionId: null,
+      readOnly: false,
+      inputEnabled: false,
+      platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
+      paired: true,
+      xtermReady: true,
+      containerRef,
+      actions: mockActions(),
+    };
+  });
+}
+
+// Card cbe60db5 rework 9 (Bug A): installs the mock hook in a "session-ended"
+// state with a caller-supplied endedReason/cwd/claudeSessionId, standing in
+// for the ended session's own resume bookkeeping (use-terminal-session.ts's
+// `sessionCwd`/`claudeSessionId`) — this file never reaches into the real
+// reducer/socket, it only checks TerminalSessionView renders the right
+// Resume-vs-Launch-again branch for a given state.
+function installMockEndedSession(
+  overrides: Partial<TerminalConnectionState> & { cwd?: string | null; claudeSessionId?: string | null } = {},
+) {
+  const { cwd = null, claudeSessionId = null, ...stateOverrides } = overrides;
+  mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    lastContainerRef = containerRef;
+    return {
+      state: {
+        status: "session-ended",
+        sessionId: "sess-1",
+        errorKind: null,
+        endedReason: "idle",
+        closeCode: 1000,
+        closeReason: null,
+        ...stateOverrides,
+      },
+      launchPhase: "idle",
+      peerDegraded: false,
+      helperVersion: null,
+      pair: { sessionId: "sess-1", bridgeToken: "bridge-tok", browserToken: "browser-tok" },
+      cwd,
+      claudeSessionId,
       readOnly: false,
       inputEnabled: false,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
@@ -159,6 +203,24 @@ function renderErrorView(onReconnectTakenOver: (sid: string) => void = vi.fn()) 
       onRegisterActions={vi.fn()}
       onAnnounce={vi.fn()}
       onReconnectTakenOver={onReconnectTakenOver}
+    />,
+  );
+}
+
+function renderEndedView(onResumeEndedSession: (payload: unknown) => void = vi.fn()) {
+  return render(
+    <TerminalSessionView
+      entry={baseEntry()}
+      descriptor={{ ideaId: "idea-1", ideaTitle: "My Idea", ideaGithubUrl: null }}
+      label="Session 1"
+      isActive
+      expanded
+      onRequestExpand={vi.fn()}
+      autoConnectWhenExpanded={false}
+      onReportSummary={vi.fn()}
+      onRegisterActions={vi.fn()}
+      onAnnounce={vi.fn()}
+      onResumeEndedSession={onResumeEndedSession}
     />,
   );
 }
@@ -309,5 +371,78 @@ describe("TerminalSessionView — same-owner takeover state", () => {
 
     expect(screen.getByText("This session is already open elsewhere")).toBeInTheDocument();
     expect(screen.queryByText("Taken over")).not.toBeInTheDocument();
+  });
+});
+
+// Card cbe60db5 rework 9 (Bug A, Nick's field test 2026-08-14): a timed-out
+// session's only option used to be a blind "Launch again" mint, with no way
+// back to the conversation that just ended. These pin the new "Resume this
+// conversation" primary action for the non-user endings we know a
+// cwd/claudeSessionId for, its graceful fallback when we don't, and that a
+// deliberate user End never offers it.
+describe("TerminalSessionView — session-ended resume (Bug A)", () => {
+  it("offers Resume as the primary action for an idle ending with a known cwd + claudeSessionId, wired with the exact-conversation payload shape", () => {
+    const onResumeEndedSession = vi.fn();
+    installMockEndedSession({
+      endedReason: "idle",
+      cwd: "/Users/nick/projects/vibe-coding-ideas",
+      claudeSessionId: "claude-conv-abc",
+    });
+    renderEndedView(onResumeEndedSession);
+
+    const resumeButton = screen.getByRole("button", { name: /Resume this conversation/ });
+    fireEvent.click(resumeButton);
+    expect(onResumeEndedSession).toHaveBeenCalledWith({
+      resume: undefined,
+      resumeId: "claude-conv-abc",
+      cwd: "/Users/nick/projects/vibe-coding-ideas",
+      taskId: undefined,
+      taskTitle: undefined,
+    });
+
+    // The blind mint stays available too, but relabelled so it's never
+    // confused with Resume.
+    expect(screen.getByRole("button", { name: /Start fresh/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Launch again$/ })).not.toBeInTheDocument();
+  });
+
+  it("falls back to the legacy --continue shape (resume:true, no resumeId) when only cwd is known", () => {
+    const onResumeEndedSession = vi.fn();
+    installMockEndedSession({
+      endedReason: "max-duration",
+      cwd: "/Users/nick/projects/vibe-coding-ideas",
+      claudeSessionId: null,
+    });
+    renderEndedView(onResumeEndedSession);
+
+    fireEvent.click(screen.getByRole("button", { name: /Resume this conversation/ }));
+    expect(onResumeEndedSession).toHaveBeenCalledWith({
+      resume: true,
+      resumeId: undefined,
+      cwd: "/Users/nick/projects/vibe-coding-ideas",
+      taskId: undefined,
+      taskTitle: undefined,
+    });
+  });
+
+  it("hides Resume entirely and keeps the plain 'Launch again' button when no cwd is known (legacy pre-0.3.3 session)", () => {
+    installMockEndedSession({ endedReason: "idle", cwd: null, claudeSessionId: null });
+    renderEndedView();
+
+    expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Launch again$/ })).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /Start fresh/ })).not.toBeInTheDocument();
+  });
+
+  it("never offers Resume for a deliberate user-initiated end, even with a known cwd + claudeSessionId", () => {
+    installMockEndedSession({
+      endedReason: "user",
+      cwd: "/Users/nick/projects/vibe-coding-ideas",
+      claudeSessionId: "claude-conv-abc",
+    });
+    renderEndedView();
+
+    expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Launch again$/ })).toBeInTheDocument();
   });
 });

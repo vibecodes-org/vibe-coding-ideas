@@ -357,6 +357,21 @@ export interface UseTerminalSessionResult {
   helperVersion: string | null;
   /** The minted session's ids/tokens (null before mint / after end). */
   pair: PairInfo | null;
+  /**
+   * Card cbe60db5 rework 9 (Bug A): the folder this tab's current/just-ended
+   * session launched into. See the `sessionCwd` state doc above for the full
+   * lifecycle — unlike `pair`, this is never cleared on session-ended, so the
+   * session-ended overlay's "Resume this conversation" action can read it.
+   */
+  cwd: string | null;
+  /**
+   * Card cbe60db5 rework 9 (Bug A): the id of the claude conversation this
+   * tab's current/just-ended session is running, once known. See the
+   * `claudeSessionId` state doc above. Null → the session-ended overlay's
+   * Resume falls back to the legacy `--continue` resume (or hides Resume
+   * entirely if `cwd` is also unknown), exactly like the chooser's Resume.
+   */
+  claudeSessionId: string | null;
   readOnly: boolean;
   /** isInputEnabled(state, readOnly) — convenience, the same predicate xterm's onData gates on. */
   inputEnabled: boolean;
@@ -395,6 +410,20 @@ export function useTerminalSession(
   const [readOnly, setReadOnly] = useState(false);
   const [pair, setPair] = useState<PairInfo | null>(null);
   const [xtermReady, setXtermReady] = useState(false);
+  // Card cbe60db5 rework 9 (Bug A — timeout resume): the folder + claude
+  // conversation id THIS tab's current/just-ended session launched with,
+  // captured at connect()-time and (unlike `promptPartsRef`, which clears on
+  // session-ended — see that effect below) kept around so the session-ended
+  // overlay's "Resume this conversation" action has something to carry into
+  // a fresh mint. `sessionCwd` is set from the same resolveLaunchPromptParts()
+  // the deep link itself used; `claudeSessionId` is seeded from this launch's
+  // own carried `resumeId` (if it WAS a resume) and overwritten the moment
+  // the bridge announces its actual `conv` (rework 5's exact-conversation
+  // Resume, see the bridge-version-frame handler below). Both null before any
+  // connect() on this tab, or forever for a plain launch whose bridge is too
+  // old to ever announce a conversation id.
+  const [sessionCwd, setSessionCwd] = useState<string | null>(null);
+  const [claudeSessionId, setClaudeSessionId] = useState<string | null>(null);
   // Same-machine auto-launch UI (the vibecodes:// deep-link path). "idle" = the
   // manual cross-machine flow (copy a command); "opening" = we fired a deep link and
   // are waiting on the local helper; "helper-timeout" = the calm ~8s fallback.
@@ -1031,6 +1060,10 @@ export function useTerminalSession(
             const conv = parseBridgeVersionConv(ev.data);
             if (conv && convIdAnnouncedSidRef.current !== sessionId) {
               convIdAnnouncedSidRef.current = sessionId;
+              // Bug A: the bridge's own announcement is the authoritative id —
+              // supersedes whatever `claudeSessionId` was seeded with at
+              // connect()-time (a carried resumeId, or null).
+              setClaudeSessionId(conv);
               void fetch(`/api/terminal/session/${encodeURIComponent(sessionId)}`, {
                 method: "PATCH",
                 headers: { "Content-Type": "application/json" },
@@ -1334,6 +1367,13 @@ export function useTerminalSession(
     reconnectAttemptRef.current = 0;
     termRef.current?.clear();
 
+    // Bug A (card cbe60db5 rework 9): seed this tab's own resume bookkeeping
+    // for THIS mint. `claudeSessionId` starts as whatever resumeId this very
+    // launch carried (if it WAS a resume) — the bridge-version-frame handler
+    // above overwrites it with the bridge's own announced `conv` once that
+    // arrives, which is the more authoritative id.
+    setClaudeSessionId(promptPartsRef.current?.resumeId ?? null);
+
     // Best-effort identity PATCH (C4): the browser already resolves a cwd to
     // build the launch prompt — forward it to the registry row so "My
     // sessions" can show it. Never awaited/blocking: a failure here changes
@@ -1341,6 +1381,7 @@ export function useTerminalSession(
     // blank until it lands (or forever, if there's no cwd to report).
     try {
       const { cwd } = resolveLaunchPromptParts();
+      setSessionCwd(cwd && cwd.trim() ? cwd.trim() : null);
       if (cwd && cwd.trim()) {
         void fetch(`/api/terminal/session/${encodeURIComponent(data.sessionId)}`, {
           method: "PATCH",
@@ -1640,6 +1681,8 @@ export function useTerminalSession(
     peerDegraded,
     helperVersion,
     pair,
+    cwd: sessionCwd,
+    claudeSessionId,
     readOnly,
     inputEnabled: isInputEnabled(state, readOnly),
     platform,
