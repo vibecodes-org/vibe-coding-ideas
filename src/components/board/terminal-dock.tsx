@@ -57,6 +57,7 @@ import { ChevronUp, ChevronDown, Circle, ListTree, Loader2, Plus, Terminal as Te
 import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { isTerminalEnabled, relayBaseUrl, type TerminalStatus } from "@/lib/terminal/connection";
@@ -192,6 +193,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   // Disables every chooser action while a click's async work (reattach mint,
   // resume launch) is in flight — never a silent double-submit.
   const [chooserBusy, setChooserBusy] = useState(false);
+  // Chooser OVERLAY (card cbe60db5, rework 11 — QA root cause: `deliverLaunch`
+  // gated the chooser-vs-mint decision on "no local tabs yet", so once ANY
+  // tab existed every subsequent launch (toolbar, "+", task launch) bypassed
+  // the chooser regardless of what else the registry knew about). Visibility
+  // is now a SEPARATE concern from "does a local tab already exist":
+  // `showingChooser` (below) still owns the sessions.length === 0 full
+  // dock-body swap — today's unchanged behaviour, nothing to protect.
+  // `chooserOpen` gates a small non-destructive Dialog overlay for the case
+  // a tab is already open (possibly actively connected) — the tab strip and
+  // that tab's live `TerminalSessionView` stay mounted, connected, and
+  // visible underneath; only clicking an action inside the overlay closes it.
+  const [chooserOpen, setChooserOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -663,32 +676,40 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
     posthogRef.current?.capture("terminal_tab_opened", { origin: entry.origin });
   }, []);
 
-  // Session entry chooser (card cbe60db5, F1): the actual entry point every
-  // launch source (toolbar bus event, task-launch bus event, "+") calls.
-  // Routes into the chooser instead of minting whenever the chooser is still
-  // the dock's resting state for THIS pageview (no local tabs yet AND the
-  // registry says there's something to choose between) — once any tab
-  // exists, the chooser has already resolved and every launch after that is
-  // `mintAndDeliver`'s unchanged behaviour.
+  // Session entry chooser (card cbe60db5, F1; rework 11 fixes the gate below).
+  // The actual entry point every launch source (toolbar bus event,
+  // task-launch bus event, "+") calls. Always consults `entryDecisionRef`
+  // — NOT gated on whether a local tab already exists — so a launch fired
+  // while another tab is open (or actively connected) still routes through
+  // the chooser instead of blindly minting a duplicate/parallel session
+  // whenever the registry knows about other live/recent sessions.
   const deliverLaunch = useCallback(
     (payload: BrowserLaunchPayload | null) => {
-      if (sessionsRef.current.length === 0) {
-        if (entryDecisionRef.current === null) {
-          // Bug B: the registry fetch that decides chooser-vs-mint hasn't
-          // resolved yet — null here means "don't know", NOT "empty-launch".
-          // Queue exactly like the (already-decided) chooser branch below —
-          // same expand + pendingLaunch — and let the seed effect (keyed on
-          // `entryDecision`) replay this the instant it settles.
-          setExpanded(true);
-          setPendingLaunch(payload);
-          deferredLaunchPendingRef.current = true;
-          return;
-        }
-        if (entryDecisionRef.current.kind === "chooser") {
-          setExpanded(true);
-          setPendingLaunch(payload);
-          return;
-        }
+      if (entryDecisionRef.current === null) {
+        // Bug B (rework 9): the registry fetch that decides chooser-vs-mint
+        // hasn't resolved yet — null here means "don't know", NOT
+        // "empty-launch". Queue regardless of how many tabs are already
+        // open — the seed/replay effect below (keyed on `entryDecision`)
+        // replays this the instant it settles, picking the body-swap or the
+        // overlay exactly as this function would have, had the fetch simply
+        // finished first.
+        setExpanded(true);
+        setPendingLaunch(payload);
+        deferredLaunchPendingRef.current = true;
+        return;
+      }
+      if (entryDecisionRef.current.kind === "chooser") {
+        // Rework 11 (card cbe60db5): no longer gated on
+        // `sessionsRef.current.length === 0`. With no local tabs there's
+        // nothing to protect, so it's today's unchanged full dock-body swap
+        // (`showingChooser` below); with a tab already open, the SAME
+        // chooser renders in a non-destructive overlay instead
+        // (`chooserOpen`) — the existing tab stays mounted, connected, and
+        // visible underneath.
+        setExpanded(true);
+        setPendingLaunch(payload);
+        if (sessionsRef.current.length > 0) setChooserOpen(true);
+        return;
       }
       mintAndDeliver(payload);
     },
@@ -777,18 +798,24 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   // real user action.
   const instantContinueTriggeredRef = useRef(false);
   useEffect(() => {
-    if (!entryDecision || sessions.length > 0) return;
-    // Bug B (card cbe60db5 rework 9): a launch that raced the still-loading
-    // registry (`deliverLaunch` queued it via `deferredLaunchPendingRef`
-    // instead of guessing) gets resolved HERE, the instant the real decision
-    // is known — takes priority over the passive empty-launch/instant-
+    if (!entryDecision) return;
+    // Bug B (card cbe60db5 rework 9) / rework 11: a launch that raced the
+    // still-loading registry (`deliverLaunch` queued it via
+    // `deferredLaunchPendingRef` instead of guessing) gets resolved HERE, the
+    // instant the real decision is known — regardless of how many tabs exist
+    // by then — taking priority over the passive empty-launch/instant-
     // continue defaults below, exactly as if the fetch had finished before
     // the click that triggered it.
     if (deferredLaunchPendingRef.current) {
       deferredLaunchPendingRef.current = false;
       if (entryDecision.kind === "chooser") {
-        // Already expanded with `pendingLaunch` set by `deliverLaunch` — the
-        // chooser renders itself from that state; nothing else to do.
+        // `deliverLaunch` already expanded the dock and set `pendingLaunch`.
+        // With no local tabs, `showingChooser` renders the body-swap chooser
+        // from that state alone — nothing else to do. With a tab already
+        // open, `deliverLaunch` couldn't know the resolved kind yet at queue
+        // time, so the overlay hasn't been shown — open it now,
+        // non-destructively.
+        if (sessions.length > 0) setChooserOpen(true);
         return;
       }
       const payload = pendingLaunch;
@@ -796,6 +823,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       mintAndDeliver(payload);
       return;
     }
+    if (sessions.length > 0) return; // a real tab already exists — nothing left to seed
     if (entryDecision.kind === "empty-launch") {
       const fresh = createPristineEntry();
       setSessions([fresh]);
@@ -826,15 +854,24 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   }, [reconnectParam, registryRows, pathname, performReattach]);
 
   // ── chooser action handlers ─────────────────────────────────────────────────
+  // Shared by BOTH the sessions.length === 0 body-swap chooser and the
+  // sessions.length > 0 overlay (rework 11) — the `setChooserOpen(false)` in
+  // each is a no-op when it was never opened (the body-swap case), and the
+  // one thing that's allowed to close the overlay per the design's
+  // non-disruption guarantee: only an explicit action in here, never an
+  // outside click/Escape (see the Dialog's `onInteractOutside`/
+  // `onEscapeKeyDown` below).
   const handleChooserStartNew = useCallback(() => {
     const payload = pendingLaunch;
     setPendingLaunch(null);
+    setChooserOpen(false);
     mintAndDeliver(payload);
   }, [pendingLaunch, mintAndDeliver]);
 
   const handleChooserReconnectHere = useCallback(
     (row: ChooserLiveRow) => {
       setPendingLaunch(null);
+      setChooserOpen(false);
       void performReattach(row.sid, { focus: true });
     },
     [performReattach],
@@ -842,6 +879,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
 
   const handleChooserOpenBoardAndReconnect = useCallback(
     (row: ChooserLiveRow) => {
+      setChooserOpen(false);
       router.push(`/ideas/${row.ideaId}/board?reconnect=${encodeURIComponent(row.sid)}`);
     },
     [router],
@@ -850,6 +888,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   const handleChooserResume = useCallback(
     (row: ChooserRecentRow) => {
       setPendingLaunch(null);
+      setChooserOpen(false);
       // F4's Resume: the EXISTING (capped) launch flow, carrying the ended
       // row's own recorded folder instead of a bootstrap prompt — see
       // BrowserLaunchPayload's doc and use-terminal-session.ts's
@@ -1199,6 +1238,41 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
           />
         ))}
       </div>
+
+      {/* Chooser OVERLAY (card cbe60db5, rework 11): the same
+          `TerminalSessionChooser` used by `showingChooser` above, but for the
+          sessions.length > 0 case — a launch fired while a tab is already
+          open (possibly actively connected). The tab strip and every
+          `TerminalSessionView` render in the (untouched) block above this
+          one, so opening this Dialog neither unmounts nor re-renders them —
+          it's a Portal-rendered overlay layered on top, nothing more. Forced
+          choice (matches onboarding-dialog.tsx's pattern): no close button,
+          outside-click and Escape are both suppressed — only an action
+          inside the chooser (wired to also call `setChooserOpen(false)`)
+          closes it. */}
+      <Dialog open={chooserOpen && sessions.length > 0} onOpenChange={() => {}}>
+        <DialogContent
+          showCloseButton={false}
+          className="max-w-lg gap-0 border-zinc-700 bg-[#141417] p-0 text-zinc-200 sm:max-w-xl"
+          onInteractOutside={(e) => e.preventDefault()}
+          onEscapeKeyDown={(e) => e.preventDefault()}
+        >
+          <DialogTitle className="sr-only">Choose a terminal session</DialogTitle>
+          <DialogDescription className="sr-only">
+            You already have a terminal open. Pick a session to reconnect to, resume, or start a new one.
+          </DialogDescription>
+          <TerminalSessionChooser
+            sections={chooserSections}
+            pendingTask={pendingTask}
+            busy={chooserBusy}
+            onReconnectHere={handleChooserReconnectHere}
+            onOpenBoardAndReconnect={handleChooserOpenBoardAndReconnect}
+            onResume={handleChooserResume}
+            onStartNew={handleChooserStartNew}
+            helperStatus={helperStatus}
+          />
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }
