@@ -269,6 +269,22 @@ export interface AttachExistingPair {
    * today's pre-this-card behaviour.
    */
   initialBuffer?: TransferredBuffer | null;
+  /**
+   * Bug cbe60db5-followup: the registry's own record of the folder/
+   * conversation this session was running, forwarded by the reattach route
+   * (`/api/terminal/session/reattach`) for reload-reattach / instant-
+   * continue / chooser-Reconnect. `attachToExisting` seeds `sessionCwd`/
+   * `claudeSessionId` from these — mirroring exactly what `connect()` seeds
+   * from `resolveLaunchPromptParts()` — so a session that later ends for a
+   * non-user reason can still offer "Resume this conversation" (`canResume`
+   * in terminal-session-view.tsx requires `sessionCwd`). Undefined/null for
+   * a popped-out window's hand-off (terminal-popout-view.tsx never carries
+   * these — the pop-out channel doesn't transfer them) or a pre-this-fix
+   * reattach response — falls back to the pre-existing null/no-resume
+   * behaviour, same as any other missing optional field here.
+   */
+  cwd?: string | null;
+  claudeSessionId?: string | null;
 }
 
 export interface PairInfo {
@@ -1507,6 +1523,18 @@ export function useTerminalSession(
       dispatch({ type: "connect" });
       dispatch({ type: "session-created", sessionId: p.sessionId });
       setPair({ sessionId: p.sessionId, browserToken: p.browserToken });
+      // Bug cbe60db5-followup: mirror connect()'s cwd/claudeSessionId seeding
+      // (lines ~1443/1452 above) so a reload-reattach / instant-continue /
+      // chooser-Reconnect / pop-out bring-back can still resume once this
+      // session later ends for a non-user reason. `p.cwd`/`p.claudeSessionId`
+      // come from the reattach route's registry read; a pop-out hand-off
+      // (attachExisting prop, no reattach round-trip) simply omits them, same
+      // as today's null/no-resume behaviour. The bridge's own bridge-version
+      // "conv" announcement (line ~1124 above) is still authoritative and
+      // will overwrite this the moment it arrives — last-write-wins, same as
+      // it already does over connect()'s seeded resumeId.
+      setSessionCwd(p.cwd ?? null);
+      setClaudeSessionId(p.claudeSessionId ?? null);
       reconnectDeadlineRef.current = 0;
       reconnectAttemptRef.current = 0;
       // Scrollback transfer (card 35cffc10, Flow A): a handed-over buffer

@@ -979,6 +979,67 @@ describe("useTerminalSession", () => {
       // session — they must still be here to read.
       expect(result.current.claudeSessionId).toBe(announced);
     });
+
+    // Bug cbe60db5-followup (QA, 2026-08-16): a reload-reattach / instant-
+    // continue / chooser-Reconnect never showed "Resume this conversation"
+    // once the reattached session later ended for a non-user reason, even
+    // though the server had the folder on record — attachToExisting() never
+    // called setSessionCwd/setClaudeSessionId, unlike connect(). Fixed by
+    // threading the reattach route's cwd/claudeSessionId through
+    // AttachExistingPair into attachToExisting.
+    it("attachToExisting seeds cwd/claudeSessionId from the attach pair, and they survive a non-user session end", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: {
+            sessionId: "sid-reattached",
+            browserToken: "reattached-browser-token",
+            cwd: "/Users/nick/projects/vibe-coding-ideas",
+            claudeSessionId: "claude-conv-from-registry",
+          },
+        }),
+      );
+      await flushEffects();
+
+      // Seeded immediately, before the socket ever opens — mirrors connect()'s
+      // seeding, not something that only shows up once a bridge announces.
+      expect(result.current.cwd).toBe("/Users/nick/projects/vibe-coding-ideas");
+      expect(result.current.claudeSessionId).toBe("claude-conv-from-registry");
+
+      act(() => latestSocket().simulateOpen());
+      act(() => latestSocket().simulateBinaryMessage());
+      expect(result.current.state.status).toBe("connected");
+
+      // Ends for a NON-user reason (the bridge's own idle/max-duration close,
+      // or an exhausted reconnect) — exactly the case canResume in
+      // terminal-session-view.tsx cares about.
+      act(() => latestSocket().close(1000, "idle timeout"));
+      expect(result.current.state.status).toBe("session-ended");
+      expect(result.current.state.endedReason).toBe("idle");
+      expect(result.current.cwd).toBe("/Users/nick/projects/vibe-coding-ideas");
+      expect(result.current.claudeSessionId).toBe("claude-conv-from-registry");
+    });
+
+    it("attachToExisting falls back to null cwd/claudeSessionId when the attach pair omits them (pop-out hand-off, or a pre-fix reattach response)", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+      await flushEffects();
+
+      expect(result.current.cwd).toBeNull();
+      expect(result.current.claudeSessionId).toBeNull();
+    });
   });
 
   // Card cbe60db5 rework 10 (stuck-pairing watchdog, 2026-08-14 incident): QA
