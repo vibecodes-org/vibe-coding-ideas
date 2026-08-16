@@ -79,10 +79,12 @@ import type { TransferredBuffer } from "@/lib/terminal/scrollback-transfer";
 import {
   deriveChooserSections,
   chooserHeaderCounts,
+  findTaskSessionMatch,
   type ChooserSections,
   type ChooserRegistryRow,
   type ChooserLiveRow,
   type ChooserRecentRow,
+  type TaskSessionMatch,
 } from "@/lib/terminal/chooser-data";
 import { decideEntryBehaviour, type EntryDecision } from "@/lib/terminal/entry-decision";
 import { loadSessionSnapshot, readLastTabSid, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
@@ -107,6 +109,7 @@ import {
   type SessionSummary,
 } from "./terminal-session-view";
 import { TerminalSessionChooser } from "./terminal-session-chooser";
+import { TerminalTaskLaunchChoice } from "./terminal-task-launch-choice";
 import { TerminalMySessionsPanel } from "./terminal-my-sessions-panel";
 import type { AttachExistingPair, TerminalSessionActions, TerminalSessionDescriptor } from "./use-terminal-session";
 
@@ -219,6 +222,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // that tab's live `TerminalSessionView` stay mounted, connected, and
   // visible underneath; only clicking an action inside the overlay closes it.
   const [chooserOpen, setChooserOpen] = useState(false);
+  // Task-launch-skip-chooser (Nick's explicit product decision, 2026-08-16):
+  // a per-task launch (payload carries `taskId`) never opens the full
+  // chooser above — it either mints immediately (no existing session for
+  // THIS exact task) or opens this minimal, task-scoped choice instead (see
+  // `TerminalTaskLaunchChoice`). Mutually exclusive with `chooserOpen` —
+  // `deliverLaunch` only ever sets one of the two.
+  const [taskChoiceOpen, setTaskChoiceOpen] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -385,6 +395,15 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     [registryRows, ideaId, entrySnapshotInfo],
   );
   const chooserCounts = useMemo(() => chooserHeaderCounts(chooserSections), [chooserSections]);
+  // Task-launch-skip-chooser: `deliverLaunch` needs a synchronous,
+  // always-current read of `chooserSections` (to check whether THIS exact
+  // task already has a match) without becoming a dependency that would force
+  // the launch-bus effect to resubscribe — same rationale as
+  // `entryDecisionRef` above.
+  const chooserSectionsRef = useRef(chooserSections);
+  useEffect(() => {
+    chooserSectionsRef.current = chooserSections;
+  }, [chooserSections]);
 
   // Close every open pop-out hand-off channel if the dock itself unmounts
   // (board navigation away) — the popped windows keep running independently
@@ -735,6 +754,24 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         deferredLaunchPendingRef.current = true;
         return;
       }
+      if (payload?.taskId) {
+        // Task-launch-skip-chooser (Nick's explicit product decision,
+        // 2026-08-16): a task-specific launch is unambiguous intent — it
+        // NEVER routes through the full cross-board chooser, regardless of
+        // `entryDecisionRef.current.kind`. It keys ONLY on whether THIS
+        // exact task already has a live-or-recent match; unrelated sessions
+        // elsewhere (which would put the global decision at "chooser") are
+        // irrelevant here.
+        const match = findTaskSessionMatch(chooserSectionsRef.current, payload.taskId);
+        if (!match) {
+          mintAndDeliver(payload);
+          return;
+        }
+        setExpanded(true);
+        setPendingLaunch(payload);
+        setTaskChoiceOpen(true);
+        return;
+      }
       if (entryDecisionRef.current.kind === "chooser") {
         // Rework 11 (card cbe60db5): no longer gated on
         // `sessionsRef.current.length === 0`. With no local tabs there's
@@ -870,6 +907,23 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     // the click that triggered it.
     if (deferredLaunchPendingRef.current) {
       deferredLaunchPendingRef.current = false;
+      if (pendingLaunch?.taskId) {
+        // Task-launch-skip-chooser: the same per-task predicate
+        // `deliverLaunch` uses, replayed here now that the registry (and so
+        // `chooserSections`) has actually resolved — never the global
+        // `entryDecision.kind`, which would wrongly route on unrelated
+        // sessions elsewhere.
+        const match = findTaskSessionMatch(chooserSections, pendingLaunch.taskId);
+        if (!match) {
+          const payload = pendingLaunch;
+          setPendingLaunch(null);
+          mintAndDeliver(payload);
+          return;
+        }
+        // `pendingLaunch` stays set — `TerminalTaskLaunchChoice` reads it below.
+        setTaskChoiceOpen(true);
+        return;
+      }
       if (entryDecision.kind === "chooser") {
         // `deliverLaunch` already expanded the dock and set `pendingLaunch`.
         // With no local tabs, `showingChooser` renders the body-swap chooser
@@ -895,7 +949,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       void performReattach(entryDecision.sid, { focus: false });
     }
     // "chooser": nothing to seed — the chooser renders in the body below.
-  }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver]);
+  }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver, chooserSections]);
 
   // ── other-board Reconnect (`?reconnect=<sid>`, design item 2) ──────────────
   // "Open board & reconnect" navigates here with the target sid on the URL;
@@ -970,6 +1024,42 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     [mintAndDeliver],
   );
 
+  // Task-launch-skip-chooser: the minimal task-scoped choice's two actions.
+  // Re-derives the match from the CURRENT `chooserSections` (rather than
+  // trusting a stale value captured when the dialog opened) so a registry
+  // refresh in the meantime — the row expiring past 48h, for instance — is
+  // never acted on with a match that no longer exists.
+  const handleTaskChoiceReconnect = useCallback(() => {
+    const taskId = pendingLaunch?.taskId;
+    const match = taskId ? findTaskSessionMatch(chooserSectionsRef.current, taskId) : null;
+    setPendingLaunch(null);
+    setTaskChoiceOpen(false);
+    if (!match) return; // the match expired between render and click — nothing safe to reconnect to
+    if (match.kind === "recent") {
+      const row = match.row;
+      mintAndDeliver({
+        resume: row.claudeSessionId ? undefined : true,
+        resumeId: row.claudeSessionId ?? undefined,
+        cwd: row.cwd,
+        taskId: row.taskId ?? undefined,
+        taskTitle: row.taskTitle ?? undefined,
+      });
+      return;
+    }
+    if (match.kind === "live-here") {
+      void performReattach(match.row.sid, { focus: true });
+    } else {
+      router.push(`/ideas/${match.row.ideaId}/board?reconnect=${encodeURIComponent(match.row.sid)}`);
+    }
+  }, [pendingLaunch, mintAndDeliver, performReattach, router]);
+
+  const handleTaskChoiceStartFresh = useCallback(() => {
+    const payload = pendingLaunch;
+    setPendingLaunch(null);
+    setTaskChoiceOpen(false);
+    mintAndDeliver(payload);
+  }, [pendingLaunch, mintAndDeliver]);
+
   // My sessions panel Reconnect (design item 9) — the SAME reattach flow;
   // "this board" attaches in place, any other board navigates + reconnects.
   const handleMySessionsReconnect = useCallback(
@@ -1022,9 +1112,22 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // Session entry chooser (card cbe60db5): the dock's resting state for this
   // pageview — no local tab yet, and the registry says there's something to
   // choose between (mockup A1's collapsed header + A2's chooser body).
-  const showingChooser = sessions.length === 0 && entryDecision?.kind === "chooser";
+  // Task-launch-skip-chooser: excludes `taskChoiceOpen` — the board's
+  // resting state (nothing minted yet, and SOME unrelated live/recent
+  // session exists somewhere) would otherwise still satisfy this predicate
+  // while a task-scoped launch's minimal choice is the one interstitial
+  // that's actually allowed to show; the full chooser must never render
+  // underneath/alongside it.
+  const showingChooser = sessions.length === 0 && entryDecision?.kind === "chooser" && !taskChoiceOpen;
   const pendingTask = pendingLaunch?.taskId
     ? { taskId: pendingLaunch.taskId, taskTitle: pendingLaunch.taskTitle ?? "" }
+    : null;
+  // Task-launch-skip-chooser: re-derived every render (not cached at the
+  // moment the dialog opened) so a registry refresh while it's showing —
+  // e.g. the matched row expiring past the 48h recent window — is always
+  // reflected; `taskChoiceOpen` alone gates whether the dialog is mounted.
+  const pendingTaskMatch: TaskSessionMatch | null = pendingLaunch?.taskId
+    ? findTaskSessionMatch(chooserSections, pendingLaunch.taskId)
     : null;
 
   // Substitute "popped-out" for any tab the dock knows it popped — its real
@@ -1337,6 +1440,25 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           />
         </DialogContent>
       </Dialog>
+
+      {/* Task-launch-skip-chooser (Nick's explicit product decision,
+          2026-08-16): the per-task launch's ONLY interstitial — rendered
+          instead of (never alongside) either Dialog above, and only when
+          `pendingTaskMatch` is non-null (this exact task has a live/recent
+          session). Mounted conditionally rather than just `open`-gated, so a
+          match that expires out from under an open dialog (a registry
+          refresh crossing the 48h window) unmounts it instead of leaving a
+          dialog with nothing to act on. */}
+      {pendingTaskMatch && (
+        <TerminalTaskLaunchChoice
+          open={taskChoiceOpen}
+          taskTitle={pendingTask?.taskTitle ?? ""}
+          match={pendingTaskMatch}
+          busy={chooserBusy}
+          onReconnect={handleTaskChoiceReconnect}
+          onStartFresh={handleTaskChoiceStartFresh}
+        />
+      )}
     </div>
   );
 }

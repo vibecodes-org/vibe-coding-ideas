@@ -39,6 +39,7 @@ import type {
   ChooserLiveRow,
   ChooserRecentRow,
   ChooserSections,
+  TaskSessionMatch,
 } from "@/lib/terminal/chooser-data";
 
 vi.mock("next/navigation", () => ({
@@ -123,6 +124,34 @@ vi.mock("./terminal-session-chooser", () => ({
       ))}
     </div>
   ),
+}));
+
+// Task-launch-skip-chooser (2026-08-16): the minimal task-scoped choice —
+// exposes one button per action (`onReconnect`/`onStartFresh`) and the
+// match's `kind`, skipping the real component's layout/copy (covered by
+// terminal-task-launch-choice.test.tsx).
+vi.mock("./terminal-task-launch-choice", () => ({
+  TerminalTaskLaunchChoice: ({
+    open,
+    match,
+    onReconnect,
+    onStartFresh,
+  }: {
+    open: boolean;
+    match: TaskSessionMatch;
+    onReconnect: () => void;
+    onStartFresh: () => void;
+  }) =>
+    open ? (
+      <div data-testid="task-choice" data-match-kind={match.kind} data-match-sid={match.row.sid}>
+        <button data-testid="task-choice-reconnect" onClick={onReconnect}>
+          Reconnect
+        </button>
+        <button data-testid="task-choice-start-fresh" onClick={onStartFresh}>
+          Start fresh anyway
+        </button>
+      </div>
+    ) : null,
 }));
 
 import { TerminalDock } from "./terminal-dock";
@@ -221,6 +250,29 @@ function liveHereRow(): ChooserRegistryRow {
   };
 }
 
+/** A live session on THIS board, scoped to `taskId` — the exact-task match
+ * task-launch-skip-chooser's dedupe should find. */
+function liveHereRowForTask(taskId: string): ChooserRegistryRow {
+  return { ...liveHereRow(), sid: `sid-live-here-${taskId}`, taskId };
+}
+
+/** An ENDED session (within the 48h recent window), scoped to `taskId`. */
+function recentRowForTask(taskId: string): ChooserRegistryRow {
+  return {
+    sid: `sid-recent-${taskId}`,
+    ideaId: "idea-1",
+    ideaTitle: "My Idea",
+    taskId,
+    taskTitle: "Do the thing",
+    machineLabel: null,
+    cwd: "/Users/nick/projects/here",
+    claudeSessionId: null,
+    createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+    status: "ended",
+    endedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(), // 1h ago — well within 48h
+  };
+}
+
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_TERMINAL_ENABLED", "true");
 });
@@ -262,14 +314,19 @@ describe("TerminalDock — launch-bus race with the still-loading registry (Bug 
     expect(screen.getAllByTestId("session-view")).toHaveLength(1); // never double-minted
   });
 
-  it("routes a raced launch into the chooser (never a blind mint) once the resolved decision has something to choose between", async () => {
+  it("routes a raced BOARD-LEVEL launch into the chooser (never a blind mint) once the resolved decision has something to choose between", async () => {
     const registry = deferredRegistryResponse();
     stubFetch(registry.promise);
 
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
+    // No taskId — a board-level launch (toolbar / dock "+"), unlike the
+    // task-scoped tests further down (task-launch-skip-chooser, 2026-08-16):
+    // a task-scoped launch now keys ONLY on whether ITS task has a match,
+    // never on the global "is anything worth choosing between" decision this
+    // test exercises.
     act(() => {
-      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+      requestBrowserLaunch();
     });
     expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
     expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
@@ -456,5 +513,127 @@ describe("TerminalDock — registry fetch failure never collapses into confirmed
 
     await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument(), { timeout: 5000 });
     expect(toast.error).not.toHaveBeenCalled();
+  });
+});
+
+// Task-launch-skip-chooser (Nick's explicit product decision, 2026-08-16):
+// QA confirmed the cross-board chooser was working exactly as originally
+// designed for EVERY launch source, task-scoped or not — Nick then decided
+// that's wrong for a task-specific launch specifically. Clicking "Launch
+// Claude Code" on a specific task is unambiguous intent: it must start
+// immediately with NO chooser, UNLESS this EXACT task already has a
+// live-or-recent session, in which case a small task-scoped choice (never
+// the full cross-board chooser) is the only interstitial allowed.
+describe("TerminalDock — task-launch-skip-chooser (Nick's explicit product decision, 2026-08-16)", () => {
+  it("auto-starts a task launch with no chooser at all when this exact task has no existing session, even though other sessions exist elsewhere", async () => {
+    // A live session exists (on another board, for no particular task) —
+    // under the OLD behaviour this alone put the global decision at
+    // "chooser" and would have blocked every launch, task-scoped or not.
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+    });
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    expect(screen.getByTestId("session-view").dataset.taskId).toBe("task-9");
+    expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("task-choice")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  it("shows the minimal task-scoped choice (never the full chooser) when this exact task already has a LIVE session", async () => {
+    stubFetch(Promise.resolve([liveHereRowForTask("task-9"), liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+    });
+
+    await waitFor(() => expect(screen.getByTestId("task-choice")).toBeInTheDocument());
+    expect(screen.getByTestId("task-choice").dataset.matchKind).toBe("live-here");
+    expect(screen.getByTestId("task-choice").dataset.matchSid).toBe("sid-live-here-task-9");
+    // Never the full generic chooser — no cross-board content, no other tasks.
+    expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+  });
+
+  it("shows the minimal task-scoped choice when this exact task has a RECENT (ended, ≤48h) session", async () => {
+    stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+    });
+
+    await waitFor(() => expect(screen.getByTestId("task-choice")).toBeInTheDocument());
+    expect(screen.getByTestId("task-choice").dataset.matchKind).toBe("recent");
+    expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+  });
+
+  it("auto-starts (no false-positive dedupe) when the only existing session belongs to a DIFFERENT task", async () => {
+    stubFetch(Promise.resolve([liveHereRowForTask("task-OTHER")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+    });
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    expect(screen.getByTestId("session-view").dataset.taskId).toBe("task-9");
+    expect(screen.queryByTestId("task-choice")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
+  });
+
+  it("Reconnect inside the task choice reattaches the exact-task live session", async () => {
+    stubFetch(Promise.resolve([liveHereRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+    });
+    await waitFor(() => expect(screen.getByTestId("task-choice")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("task-choice-reconnect"));
+
+    await waitFor(() => expect(screen.queryByTestId("task-choice")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+  });
+
+  it("Start fresh anyway inside the task choice mints a brand-new session for the task, ignoring the match", async () => {
+    stubFetch(Promise.resolve([liveHereRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+    });
+    await waitFor(() => expect(screen.getByTestId("task-choice")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("task-choice-start-fresh"));
+
+    await waitFor(() => expect(screen.queryByTestId("task-choice")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    expect(screen.getByTestId("session-view").dataset.taskId).toBe("task-9");
+  });
+
+  it("still queues a task launch during the still-loading registry race, then resolves to the minimal task choice once the match is known", async () => {
+    const registry = deferredRegistryResponse();
+    stubFetch(registry.promise);
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+    });
+    expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("task-choice")).not.toBeInTheDocument();
+
+    registry.resolve([liveHereRowForTask("task-9")]);
+
+    await waitFor(() => expect(screen.getByTestId("task-choice")).toBeInTheDocument());
+    expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
   });
 });
