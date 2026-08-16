@@ -165,6 +165,10 @@ function dotClass(status: TerminalStatus): string {
   }
 }
 
+// Bug A retry schedule (card cbe60db5) — immediate attempt, then two backoff
+// retries, before `refreshRegistry` gives up and surfaces the failure.
+const REGISTRY_RETRY_DELAYS_MS = [0, 400, 1200];
+
 export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths }: TerminalDockProps) {
   // Defence-in-depth: also gated at the page mount. When off, render nothing —
   // no dock, no entry point, board unchanged (B9).
@@ -300,22 +304,45 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // fetches for the My sessions badge)". `refreshRegistry` is also reused
   // after a failed reattach (the row may have just gone stale) and by the
   // `?reconnect=` handler below.
+  // Bug A (card cbe60db5, Nick's field report 2026-08-15 — hard refresh
+  // silently minted a brand-new session instead of reattaching): this used
+  // to be a single, no-retry fetch whose catch collapsed EVERY failure into
+  // `[]`. `decideEntryBehaviour` can't tell a real empty registry apart from
+  // "we never actually asked" — an empty array reads as "confirmed nothing
+  // live or recent", which routes straight to `empty-launch` and the seed
+  // effect auto-mints with no chooser and no error, exactly like a genuinely
+  // fresh session. That's the SAME null-vs-[] confusion rework 9 already
+  // fixed for the still-loading path (see the comment above
+  // `entryDecisionRef`) — just reintroduced on the error path instead.
+  // Retry with backoff first; if every attempt fails, leave `registryRows`
+  // exactly as it was (null on first load keeps the dock in "still
+  // checking…" and blocks the seed effect the same way an in-flight fetch
+  // does; a stale array from an earlier successful load just keeps showing
+  // what we last knew) rather than lying that we confirmed empty.
   const refreshRegistry = useCallback(async () => {
-    try {
-      const res = await fetch("/api/terminal/session/list");
-      if (!res.ok) throw new Error(`status ${res.status}`);
-      const body = (await res.json()) as { sessions: ChooserRegistryRow[] };
-      setRegistryRows(body.sessions);
-    } catch (err) {
-      logger.error("Terminal registry fetch failed", {
-        error: err instanceof Error ? err.message : String(err),
-      });
-      // Fail OPEN (matches the mint route's own R2 read-error posture): never
-      // let a transient registry read wedge the dock in "checking…" forever.
-      // A never-loaded dock falls back to today's empty-launch behaviour; an
-      // already-loaded dock just keeps its last known rows.
-      setRegistryRows((prev) => prev ?? []);
+    let lastErr: unknown;
+    for (const delay of REGISTRY_RETRY_DELAYS_MS) {
+      if (delay > 0) await new Promise((resolve) => setTimeout(resolve, delay));
+      try {
+        const res = await fetch("/api/terminal/session/list");
+        if (!res.ok) throw new Error(`status ${res.status}`);
+        const body = (await res.json()) as { sessions: ChooserRegistryRow[] };
+        setRegistryRows(body.sessions);
+        return;
+      } catch (err) {
+        lastErr = err;
+      }
     }
+    logger.error("Terminal registry fetch failed after retries", {
+      error: lastErr instanceof Error ? lastErr.message : String(lastErr),
+    });
+    // Same retry-affordance idiom as the reattach failure toast below
+    // (`Couldn't reconnect…` action: Retry) — never silently strand the user
+    // on a registry we couldn't confirm.
+    toast.error("Couldn't check your terminal sessions", {
+      description: "We couldn't confirm whether a session is already running. Check your connection and retry.",
+      action: { label: "Retry", onClick: () => void refreshRegistry() },
+    });
   }, []);
 
   useEffect(() => {

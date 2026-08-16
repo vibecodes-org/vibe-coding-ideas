@@ -127,6 +127,7 @@ vi.mock("./terminal-session-chooser", () => ({
 
 import { TerminalDock } from "./terminal-dock";
 import { requestBrowserLaunch } from "@/lib/terminal/launch-mode";
+import { toast } from "sonner";
 
 function deferredRegistryResponse() {
   let resolve!: (rows: ChooserRegistryRow[]) => void;
@@ -148,6 +149,31 @@ function stubFetch(registryPromise: Promise<ChooserRegistryRow[]>) {
     vi.fn((url: string) => {
       if (url === "/api/terminal/session/list") {
         return registryPromise.then((sessions) => ({ ok: true, json: async () => ({ sessions }) }));
+      }
+      if (url === "/api/terminal/session/reattach") {
+        return Promise.resolve({
+          ok: true,
+          json: async () => ({ sessionId: "reattached-session-id", browserToken: "reattached-token" }),
+        });
+      }
+      return Promise.resolve({ ok: false, json: async () => ({}) });
+    }),
+  );
+}
+
+/** Registry fetch that fails `failCount` times before resolving with `rows`
+ * (or fails on every attempt within the retry budget when `rows` is
+ * omitted) — drives Bug A's retry-then-fail-closed path. Every other
+ * endpoint behaves like `stubFetch`'s defaults. */
+function stubFlakyRegistryFetch(failCount: number, rows?: ChooserRegistryRow[]) {
+  let calls = 0;
+  vi.stubGlobal(
+    "fetch",
+    vi.fn((url: string) => {
+      if (url === "/api/terminal/session/list") {
+        calls += 1;
+        if (calls <= failCount) return Promise.reject(new Error("network down"));
+        return Promise.resolve({ ok: true, json: async () => ({ sessions: rows ?? [] }) });
       }
       if (url === "/api/terminal/session/reattach") {
         return Promise.resolve({
@@ -392,5 +418,43 @@ describe("TerminalDock — chooser overlay when a tab is already open (rework 11
     expect(screen.getAllByTestId("session-view")).toHaveLength(1);
     expect(screen.getByTestId("session-view").dataset.key).toBe(firstKey);
     expect(sessionViewUnmountSpy).not.toHaveBeenCalled();
+  });
+});
+
+// Card cbe60db5, Nick's field report 2026-08-15 (Bug A): a hard refresh
+// silently minted a brand-new session instead of reattaching, because the
+// registry fetch's catch block collapsed EVERY failure into `[]` —
+// indistinguishable from a genuinely empty registry, so `decideEntryBehaviour`
+// routed to `empty-launch` and the seed effect auto-minted with no chooser
+// and no visible error. This is the SAME null-vs-`[]` bug rework 9 already
+// fixed for the still-loading path, reintroduced on the error path.
+describe("TerminalDock — registry fetch failure never collapses into confirmed-empty (Bug A)", () => {
+  it("keeps registryRows unresolved (never auto-mints) and surfaces a retryable error once every retry is exhausted", async () => {
+    stubFlakyRegistryFetch(99); // fails every attempt within the retry budget
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    // Still "checking…" throughout — a failed fetch must never masquerade as
+    // a confirmed-empty registry.
+    expect(screen.getByText(/Checking your sessions/)).toBeInTheDocument();
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled(), { timeout: 5000 });
+    const [, opts] = vi.mocked(toast.error).mock.calls[0] as [string, { action?: { label: string } }];
+    expect(opts.action?.label).toBe("Retry");
+
+    // Never auto-minted a fresh session — the old bug's exact failure mode —
+    // and the dock is still honestly showing "still checking", not a chooser
+    // or an empty-launch tab.
+    expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+    expect(screen.getByText(/Checking your sessions/)).toBeInTheDocument();
+  });
+
+  it("recovers once a retry succeeds and proceeds with the resolved decision", async () => {
+    stubFlakyRegistryFetch(1, []); // first attempt fails, the retry succeeds with a genuinely empty registry
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument(), { timeout: 5000 });
+    expect(toast.error).not.toHaveBeenCalled();
   });
 });

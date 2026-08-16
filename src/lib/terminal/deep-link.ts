@@ -73,15 +73,30 @@ export interface LaunchDeepLinkParams {
    * both are somehow set (see buildLaunchDeepLink).
    */
   resumeId?: string;
+  /**
+   * Bug B (card cbe60db5, Nick's field test 2026-08-15): the browser's real
+   * panel size, computed via the SAME fit-addon call `sendResize()` already
+   * uses (see use-terminal-session.ts's `currentLaunchDims`). Carrying it on
+   * the launch link lets the bridge spawn the PTY at the correct size
+   * instead of a hardcoded default — a promptless (Resume) launch spawns its
+   * PTY synchronously, before the browser's own resize can ever reach a
+   * not-yet-existent process (resize send is gated on status "connected",
+   * which itself can't flip before something spawns and streams a byte).
+   * Only meaningful as a pair; a caller that hasn't mounted xterm yet (an
+   * unlikely fast-click race) omits both and the bridge falls back to its
+   * pre-existing hardcoded default, exactly like before this field existed.
+   */
+  cols?: number;
+  rows?: number;
 }
 
 /**
  * Build a `vibecodes://launch?relay=…&session=…&token=…[&helperToken=…]
- * [&cwd=…][&resume=1][&prompt=…]` deep link. Throws when a required field is
- * missing so a malformed link is never fired. `prompt` is always the LAST
- * param so the base-link length (and therefore the prompt budget) is stable —
- * `helperToken`/`resume` are inserted before it, alongside the other
- * credentials.
+ * [&cwd=…][&resume=1][&cols=…&rows=…][&prompt=…]` deep link. Throws when a
+ * required field is missing so a malformed link is never fired. `prompt` is
+ * always the LAST param so the base-link length (and therefore the prompt
+ * budget) is stable — every other optional param, including `cols`/`rows`,
+ * is inserted before it, alongside the other credentials.
  */
 export function buildLaunchDeepLink({
   relay,
@@ -92,6 +107,8 @@ export function buildLaunchDeepLink({
   prompt,
   resume,
   resumeId,
+  cols,
+  rows,
 }: LaunchDeepLinkParams): string {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
@@ -110,8 +127,21 @@ export function buildLaunchDeepLink({
   } else if (resume) {
     parts.push(`resume=1`);
   }
+  // Only ever sent as a pair — a lone dimension is useless to the bridge's
+  // pty.spawn call. Mirrors terminal/shared/deep-link.mjs's `isValidLaunchDim`
+  // guard exactly (drift-tested).
+  if (isValidLaunchDim(cols) && isValidLaunchDim(rows)) {
+    parts.push(`cols=${cols}`, `rows=${rows}`);
+  }
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
+}
+
+/** A terminal dimension must be a positive, finite, sane integer — mirrors
+ * connection.ts's `isValidDim` (duplicated, not imported, to keep this
+ * builder dependency-free — same posture as its shared .mjs counterpart). */
+function isValidLaunchDim(n: number | undefined): n is number {
+  return typeof n === "number" && Number.isInteger(n) && n > 0 && n <= 1000;
 }
 
 /**

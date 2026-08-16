@@ -50,6 +50,16 @@
 //             it is the verified-safe, exact path. Malformed/non-UUID values
 //             are rejected at parse time (never forwarded to a shell-split
 //             CMD string).
+//   cols/rows — Bug B (card cbe60db5, Nick's field test 2026-08-15): the
+//             browser's real panel size at launch time, so the bridge can
+//             spawn the PTY at the correct size instead of a hardcoded
+//             default. A PROMPTLESS launch spawns its PTY synchronously,
+//             before the browser's own resize control frame can ever reach a
+//             not-yet-existent process — see terminal/bridge/src/index.js's
+//             `resolveSpawnDims`. Only meaningful as a pair; either missing
+//             or non-sane falls back to the bridge's pre-existing hardcoded
+//             default, exactly like before this field existed (no
+//             version-skew risk).
 //
 // `token` and `helperToken` are secrets and `prompt` is user content. NEVER log
 // a raw link — use redactDeepLinkToken first (it elides all three). `prompt` is
@@ -70,8 +80,18 @@ export const LAUNCH_HOST = "launch";
  *  file header) — `resume_id` is validated at the same strictness either way. */
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** A terminal dimension must be a positive, finite, sane integer — mirrors
+ *  src/lib/terminal/connection.ts's `isValidDim` / terminal/bridge/src/
+ *  framing.js's `isValidDim`. Duplicated (not imported) for the same
+ *  dependency-free reason as UUID_RE above.
+ *  @param {unknown} n
+ *  @returns {boolean} */
+function isValidLaunchDim(n) {
+  return Number.isInteger(n) && n > 0 && n <= 1000;
+}
+
 /**
- * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&prompt=…]`
+ * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&prompt=…]`
  * deep link.
  *
  * Uses encodeURIComponent so reserved characters in the relay URL / token /
@@ -80,10 +100,10 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
  * (and therefore the app-side prompt budget) is stable. Throws when a required
  * field is missing so a malformed link is never fired.
  *
- * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string }} params
+ * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -102,6 +122,11 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   } else if (resume) {
     parts.push(`resume=1`);
   }
+  // Only ever sent as a pair — a lone dimension is useless to the bridge's
+  // pty.spawn call (see the header comment).
+  if (isValidLaunchDim(cols) && isValidLaunchDim(rows)) {
+    parts.push(`cols=${cols}`, `rows=${rows}`);
+  }
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
@@ -116,7 +141,7 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
  * param existed (version-skew safe both ways).
  *
  * @param {unknown} url
- * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string } | null}
+ * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number } | null}
  */
 export function parseLaunchDeepLink(url) {
   if (typeof url !== "string" || url.length === 0) return null;
@@ -145,6 +170,14 @@ export function parseLaunchDeepLink(url) {
   const rawResumeId = parsed.searchParams.get("resume_id");
   const resumeId = rawResumeId && UUID_RE.test(rawResumeId) ? rawResumeId.toLowerCase() : undefined;
   const resume = !resumeId && parsed.searchParams.get("resume") === "1" ? true : undefined;
+  // cols/rows (Bug B — see header comment): re-validated here exactly like
+  // resumeId above — a malformed/absurd value is about to reach pty.spawn, so
+  // there is no safe partial value; only accepted as a validated PAIR.
+  const rawCols = parsed.searchParams.get("cols");
+  const rawRows = parsed.searchParams.get("rows");
+  const parsedCols = rawCols === null ? NaN : Number(rawCols);
+  const parsedRows = rawRows === null ? NaN : Number(rawRows);
+  const dimsValid = isValidLaunchDim(parsedCols) && isValidLaunchDim(parsedRows);
   if (!relay || !session || !token) return null;
 
   const out = { relay, session, token };
@@ -152,6 +185,10 @@ export function parseLaunchDeepLink(url) {
   if (cwd) out.cwd = cwd;
   if (resumeId) out.resumeId = resumeId;
   else if (resume) out.resume = true;
+  if (dimsValid) {
+    out.cols = parsedCols;
+    out.rows = parsedRows;
+  }
   if (prompt) out.prompt = prompt;
   return out;
 }
