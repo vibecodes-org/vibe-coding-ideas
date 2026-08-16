@@ -1,9 +1,13 @@
 // Terminal session REATTACH — session entry chooser + reload-reattach (card
 // cbe60db5, design item 4). A SIBLING to the mint route (POST /api/terminal/
-// session), not a variant of it: this mints a fresh BROWSER-role token for a
-// session id that's ALREADY LIVE — the chooser's Reconnect, instant-continue,
-// and the popped-window reload's own reconnect panel all call this instead
-// of the mint route, because none of them are starting a NEW session.
+// session), not a variant of it: this mints fresh browser/bridge/helper
+// tokens for a session id that's ALREADY LIVE — the chooser's Reconnect,
+// instant-continue, "My sessions" Reconnect, and the popped-window reload's
+// own reconnect panel all call this instead of the mint route, because none
+// of them are starting a NEW session. Reconnect-relaunch fix: it used to mint
+// ONLY the browser token, which left nothing able to fire the vibecodes://
+// deep link that relaunches the local helper — see the bridge/helper minting
+// below.
 //
 // Deliberately exempt from the cap (E1) and the mint rate limit (E2) — F2:
 // "no new registry row, exempt from the session cap and the mint rate limit
@@ -16,7 +20,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
 import { logger } from "@/lib/logger";
-import { mintSessionTokens } from "../../../../../../terminal/shared/session-token.mjs";
+import { mintSessionTokens, mintHelperToken } from "../../../../../../terminal/shared/session-token.mjs";
 import { decideReattach } from "@/lib/terminal/session-registry";
 import { reapExpiredSessions } from "@/lib/terminal/session-reap";
 
@@ -85,17 +89,30 @@ export async function POST(req: Request) {
       return NextResponse.json({ error, code: `reattach_${reason}` }, { status });
     }
 
-    // Mint a fresh BROWSER token for the SAME sid. No registry insert (F2:
-    // not a new session), no cap/rate-limit bookkeeping to touch.
-    const tokens = await mintSessionTokens({ sub: user.id, idea: row.idea_id, sid, secret });
+    // Mint a fresh BROWSER token for the SAME sid — plus a fresh BRIDGE token
+    // (mintSessionTokens mints both off the same sid/claims) and a fresh
+    // HELPER token, exactly like the mint route does. Reconnect-relaunch fix:
+    // a reattach used to hand back ONLY the browser token, so nothing could
+    // ever fire the vibecodes:// deep link that relaunches the local helper —
+    // the browser leg would open and then wait forever for a bridge that had
+    // no way to know it should attach (the helper auto-quits when idle, so in
+    // the common case there's no bridge running at all). These two extra
+    // tokens are exactly what `fireLaunchDeepLink` needs to relaunch it, the
+    // same way the initial mint does for a fresh `connect({autoLaunch:true})`.
+    const [tokens, helperToken] = await Promise.all([
+      mintSessionTokens({ sub: user.id, idea: row.idea_id, sid, secret }),
+      mintHelperToken({ sub: user.id, secret }),
+    ]);
 
-    logger.info("Reattached terminal session (fresh browser token)", { userId: user.id, sid });
+    logger.info("Reattached terminal session (fresh browser/bridge/helper tokens)", { userId: user.id, sid });
 
     return NextResponse.json({
       sessionId: tokens.sid,
       ideaId: tokens.idea,
       expiresAt: tokens.exp,
       browserToken: tokens.browser,
+      bridgeToken: tokens.bridge,
+      helperToken,
       // Bug cbe60db5-followup: the registry row already knows the folder/
       // conversation this session was running — forward it so the reattached
       // browser leg can seed its own cwd/claudeSessionId (attachToExisting),

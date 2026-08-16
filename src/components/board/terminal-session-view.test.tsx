@@ -213,7 +213,7 @@ function baseEntry(): SessionEntry {
   return { key: "tab-1", origin: "toolbar", createdAt: Date.now(), launchSeq: 0, launchPayload: null };
 }
 
-function renderView(poppedOut: boolean) {
+function renderView(poppedOut: boolean, onRetryReconnect?: (sid: string) => void) {
   return render(
     <TerminalSessionView
       entry={baseEntry()}
@@ -228,6 +228,7 @@ function renderView(poppedOut: boolean) {
       onAnnounce={vi.fn()}
       poppedOut={poppedOut}
       onBringBack={vi.fn()}
+      onRetryReconnect={onRetryReconnect}
     />,
   );
 }
@@ -494,13 +495,19 @@ describe("TerminalSessionView — session-ended resume (Bug A)", () => {
 // session stuck on "Waiting for your machine to attach" (legacy-waiting)
 // used to have no timeout at all. Once the hook's watchdog reports
 // `pairingTimedOut`, the body must swap to the existing TimeoutPanel's
-// "returning" copy — reusing it exactly, not the open-ended waiting panel —
-// with Retry wired to a genuine fresh connect({autoLaunch:true}), never a
-// reattach helper. The watchdog's OWN timing (does it actually fire after
-// RECONNECT_GRACE_MS, does the opt-out manual flow ever arm it) is covered
-// in use-terminal-session.test.ts; this file only checks the presentational
+// "returning" copy — reusing it exactly, not the open-ended waiting panel.
+// The watchdog's OWN timing (does it actually fire after RECONNECT_GRACE_MS,
+// does the opt-out manual flow ever arm it) is covered in
+// use-terminal-session.test.ts; this file only checks the presentational
 // swap and the Retry wiring, same division of labour as every other view
 // test in here.
+//
+// Reconnect-relaunch fix: Retry used to be wired to a blind fresh
+// connect({autoLaunch:true}) — minting an entirely unrelated NEW session
+// instead of re-attempting the one stuck on screen. It's now wired to
+// `onRetryReconnect` (terminal-dock.tsx's performReattach, the SAME reattach
+// flow "My sessions"/chooser Reconnect use) with a defensive fallback to the
+// old connect() behaviour for a caller that doesn't wire it.
 describe("TerminalSessionView — stuck-pairing watchdog timeout panel", () => {
   it("shows the normal 'Waiting for your machine to attach' panel while pairingTimedOut is false", () => {
     installMockWaitingSession(false);
@@ -510,9 +517,10 @@ describe("TerminalSessionView — stuck-pairing watchdog timeout panel", () => {
     expect(screen.queryByText("Couldn’t reach the helper on this Mac")).not.toBeInTheDocument();
   });
 
-  it("swaps to the TimeoutPanel's 'returning' copy once pairingTimedOut is true, wiring Retry to a fresh connect({autoLaunch:true})", () => {
+  it("swaps to the TimeoutPanel's 'returning' copy once pairingTimedOut is true, wiring Retry to re-attempt the ORIGINAL sid", () => {
     const actions = installMockWaitingSession(true);
-    renderView(false);
+    const onRetryReconnect = vi.fn();
+    renderView(false, onRetryReconnect);
 
     // The existing "returning" variant's copy, reused exactly — not the
     // open-ended legacy-waiting text.
@@ -522,8 +530,20 @@ describe("TerminalSessionView — stuck-pairing watchdog timeout panel", () => {
 
     const retry = screen.getByRole("button", { name: /Retry/ });
     fireEvent.click(retry);
-    expect(actions.connect).toHaveBeenCalledWith({ autoLaunch: true });
-    // Never a reattach helper — connect() is the only action Retry calls.
+    // The stuck session's own sid ("sess-1", installMockWaitingSession's pair)
+    // — never a blind fresh mint, which orphans the stuck session and burns a
+    // new cap slot for no reason (the bug this fixes).
+    expect(onRetryReconnect).toHaveBeenCalledWith("sess-1");
+    expect(actions.connect).not.toHaveBeenCalled();
     expect(actions.reconnectNow).not.toHaveBeenCalled();
+  });
+
+  it("falls back to a fresh connect({autoLaunch:true}) when no reattach handler is wired (defensive)", () => {
+    const actions = installMockWaitingSession(true);
+    renderView(false); // no onRetryReconnect passed
+
+    const retry = screen.getByRole("button", { name: /Retry/ });
+    fireEvent.click(retry);
+    expect(actions.connect).toHaveBeenCalledWith({ autoLaunch: true });
   });
 });

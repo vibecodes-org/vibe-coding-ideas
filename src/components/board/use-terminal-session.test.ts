@@ -9,7 +9,11 @@
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
-import { useTerminalSession, type TerminalSessionDescriptor } from "./use-terminal-session";
+import {
+  useTerminalSession,
+  type AttachExistingPair,
+  type TerminalSessionDescriptor,
+} from "./use-terminal-session";
 import { isSameOwnerPreemptedClose, RECONNECT_GRACE_MS } from "@/lib/terminal/connection";
 
 vi.mock("@xterm/xterm/css/xterm.css", () => ({}));
@@ -727,6 +731,122 @@ describe("useTerminalSession", () => {
       rerender({ attachExisting: { ...attachExisting } }); // same sessionId, new object identity
       await flushEffects();
       expect(mockSockets).toHaveLength(1); // no second socket opened
+    });
+
+    // Card cbe60db5-followup / reconnect-relaunch fix: every OTHER test above
+    // mounts the hook with `attachExisting` already populated in
+    // `initialProps` — that's the popped-out window's shape (a fresh
+    // component instance whose payload arrives async but before this
+    // effect's first run), not the dock's own "My sessions"/chooser Reconnect
+    // shape. There, the SAME already-mounted tab slot gets its `attach` field
+    // set on a LATER render (terminal-dock.tsx's pristine-slot-reuse,
+    // `performReattach` around lines 781-796) — `attachExisting` starts out
+    // `null`/absent and flips to a real pair well after mount. This test
+    // exercises THAT transition directly, confirming the effect still fires
+    // (and the watchdog still arms) rather than assuming the dedupe test
+    // above already covers it.
+    it("attaches when attachExisting flips from null to populated on a LATER render (the real pristine-slot-reuse transition, not an already-populated mount)", async () => {
+      vi.useFakeTimers();
+      const requestExpand = vi.fn();
+      const { result, rerender } = renderHook(
+        (props: { attachExisting: AttachExistingPair | null }) =>
+          useTerminalSession(descriptor, {
+            enabled: true,
+            expanded: true,
+            requestExpand,
+            autoConnectWhenExpanded: false,
+            attachExisting: props.attachExisting,
+          }),
+        { initialProps: { attachExisting: null as AttachExistingPair | null } },
+      );
+
+      // Mounted with nothing to attach to yet — an idle pristine slot.
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(result.current.state.status).toBe("idle");
+      expect(mockSockets).toHaveLength(0);
+
+      // The dock reuses THIS SAME slot for a reattach — attachExisting flips
+      // null → populated on a later render of the SAME hook instance.
+      rerender({ attachExisting: { sessionId: "sid-late", browserToken: "late-browser-token" } });
+      await act(async () => {
+        await Promise.resolve();
+      });
+
+      expect(result.current.state.status).toBe("connecting");
+      expect(result.current.pair).toEqual({ sessionId: "sid-late", browserToken: "late-browser-token" });
+      expect(mockSockets).toHaveLength(1);
+      expect(latestSocket().url).toBe(
+        "ws://127.0.0.1:8787/?session=sid-late&role=browser&token=late-browser-token",
+      );
+
+      act(() => latestSocket().simulateOpen());
+      expect(result.current.state.status).toBe("waiting-to-pair");
+
+      // The watchdog must still arm for this transition, exactly like the
+      // already-mounted-populated case (see the "pairing watchdog" describe
+      // below) — a bridge that never shows up still surfaces pairingTimedOut.
+      await act(async () => {
+        vi.advanceTimersByTime(RECONNECT_GRACE_MS + 1000);
+      });
+      expect(result.current.pairingTimedOut).toBe(true);
+    });
+
+    // Reconnect-relaunch fix (the bug this file's suite name references): a
+    // reattach whose pair carries a bridgeToken (the reattach route now
+    // mints one — /api/terminal/session/reattach) means a real Reconnect,
+    // not a popped-out window's hand-off. attachToExisting must fire the
+    // SAME vibecodes:// deep link connect({autoLaunch:true}) fires for a
+    // fresh mint, or the local helper (which auto-quits when idle) never
+    // gets told to come back and the session waits forever.
+    it("fires the vibecodes:// deep link when the attach pair carries a bridgeToken (Reconnect actually relaunches the helper)", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: {
+            sessionId: "sid-reconnect",
+            browserToken: "reconnect-browser-token",
+            bridgeToken: "reconnect-bridge-token",
+            helperToken: "reconnect-helper-token",
+          },
+        }),
+      );
+      await flushEffects();
+
+      // openLaunchLinkAndArmTimeout only sets "opening" once a link actually
+      // fired — this is the observable proof fireLaunchDeepLink ran.
+      expect(result.current.launchPhase).toBe("opening");
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src.startsWith("vibecodes://launch?")).toBe(true);
+      expect(src).toContain("session=sid-reconnect");
+      expect(src).toContain(`token=${encodeURIComponent("reconnect-bridge-token")}`);
+      expect(src).toContain(`helperToken=${encodeURIComponent("reconnect-helper-token")}`);
+      // The browser leg still opens normally alongside the deep link.
+      expect(mockSockets).toHaveLength(1);
+    });
+
+    it("never fires a deep link when the attach pair carries no bridgeToken (popped-out hand-off — unchanged behaviour)", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: { sessionId: "sid-popped", browserToken: "popped-browser-token" },
+        }),
+      );
+      await flushEffects();
+
+      expect(result.current.launchPhase).toBe("idle");
+      expect(document.querySelectorAll("iframe")).toHaveLength(0);
     });
 
     it("never trips the paired auto-connect effect, even on a browser that WOULD otherwise ambient-connect (would double-mint)", async () => {

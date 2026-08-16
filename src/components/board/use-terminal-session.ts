@@ -285,6 +285,28 @@ export interface AttachExistingPair {
    */
   cwd?: string | null;
   claudeSessionId?: string | null;
+  /**
+   * Reconnect-relaunch fix: the reattach route (`/api/terminal/session/
+   * reattach`) now mints a fresh BRIDGE token alongside the browser token it
+   * always minted — the credential `fireLaunchDeepLink` needs to relaunch the
+   * local helper. Without this, Reconnect opened a browser leg and then
+   * waited passively forever: the local helper auto-quits when idle, and
+   * nothing ever told it to come back. `attachToExisting` fires the deep
+   * link when this is present, exactly like `connect({autoLaunch:true})`
+   * does for a fresh mint. Absent for a popped-out window's hand-off
+   * (terminal-popout-view.tsx never carries it — the bridge is already
+   * attached elsewhere, nothing to relaunch) or a pre-this-fix reattach
+   * response — attachToExisting simply doesn't fire a deep link then, same
+   * as today's behaviour.
+   */
+  bridgeToken?: string;
+  /**
+   * The matching HELPER-role token (card cc74a067) — rides the SAME deep
+   * link as `bridgeToken` so the same click also (re)establishes the
+   * helper's standing control connection. See `bridgeToken`'s doc; optional
+   * for the same reasons.
+   */
+  helperToken?: string;
 }
 
 export interface PairInfo {
@@ -1558,9 +1580,20 @@ export function useTerminalSession(
       // abort before opening a socket that a newer attempt would immediately
       // have to tear down again.
       if (isConnectSuperseded(gen, connectGenRef.current)) return;
+      // Reconnect-relaunch fix: a bridgeToken riding the attach pair means
+      // this came through the reattach route (My sessions / chooser /
+      // ?reconnect=<sid> Reconnect), not a popped-out window's hand-off —
+      // fire the SAME deep link connect({autoLaunch:true}) fires for a fresh
+      // mint, so the local helper actually relaunches instead of the browser
+      // leg waiting passively forever. Mirrors connect()'s own
+      // `if (autoLaunch) fireLaunchDeepLink(...)` call exactly, just gated on
+      // the token being present instead of an autoLaunch flag.
+      if (p.bridgeToken) {
+        fireLaunchDeepLink(p.sessionId, p.bridgeToken, p.helperToken);
+      }
       openBrowserLeg(p.sessionId, p.browserToken);
     },
-    [teardownSocket, clearHelperTimer, removeLaunchIframe, openBrowserLeg],
+    [teardownSocket, clearHelperTimer, removeLaunchIframe, fireLaunchDeepLink, openBrowserLeg],
   );
 
   // Fire attachToExisting once per distinct transferred session id — the
