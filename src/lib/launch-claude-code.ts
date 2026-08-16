@@ -619,7 +619,7 @@ export function buildBoardBootstrapPrompt({
   const work = `Then, pick up my work on the VibeCodes board for this idea:
   • Idea: "${ideaTitle}"  (idea_id: ${ideaId})
   • Call get_board with idea_id ${ideaId} to see the columns and tasks. Do NOT use get_my_tasks here — it only returns tasks already ASSIGNED to you, and a freshly created board has none, so it would look (wrongly) like there's no work.
-  • Pick the top unstarted task (e.g. the first item in To Do, then Backlog), read it with get_task, assign it to yourself, and move it to In Progress.
+  • Pick the top unstarted task (e.g. the first item in To Do, then Backlog), read it with get_task, assign it to yourself, and move it to In Progress. Only ever pick a task from To Do or Backlog — NEVER touch a task already in In Progress, Blocked, or Verify, even if it looks interrupted or interesting. Another live session may be actively working it right now.
   • If that task has a workflow attached, use claim_next_step to claim its next step and follow the orchestration loop instead.
 
 Use the MCP tools (get_board / get_task / claim_next_step / move_task / add_task_comment / …) to do the work. Move the task to In Progress and comment as you go.`;
@@ -778,7 +778,7 @@ function buildCompactStepPieces({
 
   const work = taskId
     ? `Work this task: get_task (task_id ${taskId}, idea_id ${ideaId}), move it to In Progress, then start. Comment as you go.`
-    : `Find work: call get_board (idea_id ${ideaId}) — NOT get_my_tasks, which only returns tasks already assigned to you (a new board has none). Take the top task in To Do (then Backlog), get_task it, assign it to yourself, move it to In Progress, then start. Comment as you go.`;
+    : `Find work: call get_board (idea_id ${ideaId}) — NOT get_my_tasks, which only returns tasks already assigned to you (a new board has none). Only To Do/Backlog, never In Progress/Blocked/Verify (may be live). get_task it, assign it to yourself, move it to In Progress, then start. Comment as you go.`;
 
   const header = taskId
     ? `Set up VibeCodes and work a board task for "${title}".`

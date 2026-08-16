@@ -316,6 +316,31 @@ describe("buildBoardBootstrapPrompt", () => {
     expect(p).not.toContain("mkdir -p");
   });
 
+  // Card 4cdcb33a: a fresh session's "find work" instruction must never pick up
+  // a task another live session is already driving. To Do/Backlog were only a
+  // *preference* before this fix — never an explicit exclusion — so a session
+  // could "helpfully" grab an In Progress/Blocked/Verify task that looked
+  // interrupted. Assert the actual exclusion wording, not just "To Do"/"Backlog"
+  // presence (those pass before AND after the fix and prove nothing).
+  it("explicitly excludes In Progress/Blocked/Verify tasks from the find-work step", () => {
+    // mode "existing" + repoUrl (repo-backed dir block) rather than the
+    // no-repo "existing" fixture used above — that one triggers the full
+    // worktree-isolation protocol text, which alone can consume the whole
+    // 5000-char budget and truncate the trimmable work tail before this
+    // sentence, unrelated to this fix (pre-existing budget behavior, not
+    // something this test is about).
+    const p = buildBoardBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: "https://github.com/acme/widget",
+    });
+    expect(p).toContain("Only ever pick a task from To Do or Backlog");
+    expect(p).toMatch(/NEVER touch a task already in In Progress, Blocked, or Verify/);
+    expect(p).toMatch(/Another live session may be actively working it right now/);
+  });
+
   it("create-new mode injects mkdir and git clone when repo present", () => {
     const p = buildBoardBootstrapPrompt({
       appUrl: APP_URL,
@@ -943,6 +968,24 @@ describe("buildCompactBootstrapPrompt (deep-link prompt)", () => {
     expect(p).toContain("In Progress");
     // dir step comes before the MCP step
     expect(p.indexOf("mkdir -p")).toBeLessThan(p.indexOf("claude mcp add"));
+  });
+
+  // Card 4cdcb33a: same hard exclusion as the full board bootstrap prompt, but
+  // in the compact/terse phrasing this deep-link builder is budget-constrained
+  // to. Assert the actual exclusion substring, not just "To Do"/"Backlog"
+  // presence (those pass before AND after the fix and prove nothing) — and
+  // confirm the fix didn't blow the deep link's hard URL ceiling.
+  it("board-level (no taskId) work step explicitly excludes In Progress/Blocked/Verify tasks", () => {
+    const p = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: null,
+    });
+    expect(p).toContain("Only To Do/Backlog, never In Progress/Blocked/Verify");
+    expect(p).toMatch(/may be live/);
+    expect(buildClaudeDeepLink({ prompt: p }).length).toBeLessThanOrEqual(MAX_DEEP_LINK_URL_LENGTH);
   });
 
   it("existing-no-repo skips the directory step (the deep link cwd handles it)", () => {
