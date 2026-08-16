@@ -1265,6 +1265,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onRegisterActions={registerActions}
             onAnnounce={announce}
             onCapExceeded={openMySessions}
+            onOpenMySessions={openMySessions}
             poppedOut={poppedOutKeys.has(entry.key)}
             onPopOut={() => handlePopOut(entry.key)}
             onBringBack={() => bringBackToDock(entry.key)}

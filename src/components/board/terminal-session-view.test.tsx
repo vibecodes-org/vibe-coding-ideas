@@ -251,7 +251,10 @@ function renderErrorView(onReconnectTakenOver: (sid: string) => void = vi.fn()) 
   );
 }
 
-function renderEndedView(onResumeEndedSession: (payload: unknown) => void = vi.fn()) {
+function renderEndedView(
+  onResumeEndedSession: (payload: unknown) => void = vi.fn(),
+  onOpenMySessions?: () => void,
+) {
   return render(
     <TerminalSessionView
       entry={baseEntry()}
@@ -265,6 +268,7 @@ function renderEndedView(onResumeEndedSession: (payload: unknown) => void = vi.f
       onRegisterActions={vi.fn()}
       onAnnounce={vi.fn()}
       onResumeEndedSession={onResumeEndedSession}
+      onOpenMySessions={onOpenMySessions}
     />,
   );
 }
@@ -488,6 +492,43 @@ describe("TerminalSessionView — session-ended resume (Bug A)", () => {
 
     expect(screen.queryByRole("button", { name: /Resume this conversation/ })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: /^Launch again$/ })).toBeInTheDocument();
+  });
+
+  // Bug cbe60db5-followup-2 (low-medium): the ended panel had no path to a
+  // user's other live/recent sessions in either button configuration
+  // (Resume+Start-fresh, or Launch-again-alone) — this reuses the same
+  // openMySessions trigger onCapExceeded already wires (E1, design §7b).
+  it("renders a 'View my other sessions' link that calls onOpenMySessions, alongside the Resume+Start-fresh buttons", () => {
+    const onOpenMySessions = vi.fn();
+    installMockEndedSession({
+      endedReason: "idle",
+      cwd: "/Users/nick/projects/vibe-coding-ideas",
+      claudeSessionId: "claude-conv-abc",
+    });
+    renderEndedView(vi.fn(), onOpenMySessions);
+
+    const link = screen.getByRole("button", { name: /View my other sessions/ });
+    fireEvent.click(link);
+    expect(onOpenMySessions).toHaveBeenCalledTimes(1);
+  });
+
+  it("also renders the link alongside the plain 'Launch again' button (no cwd known)", () => {
+    const onOpenMySessions = vi.fn();
+    installMockEndedSession({ endedReason: "idle", cwd: null, claudeSessionId: null });
+    renderEndedView(vi.fn(), onOpenMySessions);
+
+    expect(screen.getByRole("button", { name: /View my other sessions/ })).toBeInTheDocument();
+  });
+
+  it("omits the link entirely when onOpenMySessions isn't wired (matches the optional-callback-gated-UI pattern used elsewhere in this file)", () => {
+    installMockEndedSession({
+      endedReason: "idle",
+      cwd: "/Users/nick/projects/vibe-coding-ideas",
+      claudeSessionId: "claude-conv-abc",
+    });
+    renderEndedView();
+
+    expect(screen.queryByRole("button", { name: /View my other sessions/ })).not.toBeInTheDocument();
   });
 });
 
