@@ -1653,7 +1653,18 @@ describe("worktree isolation protocol — wired into existing-mode/no-repo launc
   // silently refused to launch. The REWORK fix keeps the essentials (MCP
   // connect + record_project_path) path-length-independent and folds the
   // worktree protocol in only when it fits (fitCompactWorktreeProtocol).
-  it("BUG1: worst-realistic case (80-char title + ~85-char real path + real UUID) fits under the cap, with the essentials/protocol surviving the clamp intact", () => {
+  //
+  // BUG C fix (6th rework cycle) rewrite: at this exact realistic size,
+  // head (824) + protocol (639) + directory-echo (320) + work (444) together
+  // (2227) exceed the ~1777-char remaining budget even though head+protocol
+  // ALONE would fit — pre-fix, that meant the protocol rode the head and the
+  // TAIL (directory-echo + the "find work" step carrying idea_id/task_id) was
+  // char-trimmed to whatever was left, sometimes shredding the work step
+  // mid-sentence. This test previously asserted the protocol survives here;
+  // that was actually observing the bug, not the fix. Correctly prioritised,
+  // the protocol is what degrades at this size — the essentials AND the work
+  // step (the one thing with no MCP-side recovery path) must survive whole.
+  it("BUG1/BUG C: worst-realistic case (80-char title + ~85-char real path + real UUID) fits under the cap, with essentials AND the work step surviving intact", () => {
     const cwd = "/Users/nicholasmarcusball/Library/CloudStorage/Dropbox/projects/horse-race-predictor";
     expect(cwd.length).toBeGreaterThanOrEqual(80);
     expect(cwd.length).toBeLessThanOrEqual(90);
@@ -1683,25 +1694,30 @@ describe("worktree isolation protocol — wired into existing-mode/no-repo launc
     const link = buildClampedDeepLink(args, { cwd });
     expect(link.length).toBeLessThanOrEqual(MAX_DEEP_LINK_URL_LENGTH);
 
-    // At this (realistic) length the protocol comfortably fits alongside the
-    // essentials, so every load-bearing token — the worktree-isolation
-    // protocol (BUG2's restored clauses included) AND the MCP-connect step —
-    // must survive verbatim inside the final URL.
     const decoded = decodeURIComponent(link.split("q=")[1]);
-    for (const token of [
-      "kill -0", // PID liveness (not a heartbeat)
-      ".vibe/wt-N", // sibling worktree home
-      "-b vibe/wt-N", // branch naming
-      "never push primary", // never-push-primary directive
-      "Not a git repo", // BUG2(a): not-a-git-repo degrade branch
-      "path==$PWD", // BUG2(b): lock path-match tiebreak
-      "lowest free N", // BUG2(c): lowest-free-N collision avoidance
-      "git log @{u}", // BUG3: unpushed-detection command
-      "git status --porcelain", // BUG5: explicit dirty gate
-      "claude mcp add", // MCP-connect step (also head, also load-bearing)
-    ]) {
-      expect(decoded, `token "${token}" must survive the clamp`).toContain(token);
+
+    // The essentials (MCP-connect, record_project_path) always survive whole.
+    for (const step of essentials.headSteps ?? []) {
+      expect(decoded, `head step must survive whole: "${step.slice(0, 40)}..."`).toContain(step);
     }
+
+    // The work step — the ONE thing carrying idea_id/task_id with no MCP-side
+    // recovery path — must survive WHOLE, at this size that used to sacrifice
+    // it for the protocol.
+    expect(essentials.work).toBeTruthy();
+    expect(decoded, "the find-work step must survive whole, never a fragment").toContain(
+      essentials.work!
+    );
+
+    // The worktree-isolation protocol is best-effort and, correctly
+    // prioritised below the work step, does NOT fit at this size — but it
+    // must be an all-or-nothing omission, never a fragment.
+    const protocolTokens = ["kill -0", ".vibe/wt-N", "-b vibe/wt-N", "never push primary"];
+    const presentCount = protocolTokens.filter((t) => decoded.includes(t)).length;
+    expect(
+      [0, protocolTokens.length],
+      `protocol must be all-or-nothing, found ${presentCount}/${protocolTokens.length}`
+    ).toContain(presentCount);
   });
 
   // BUG1 REWORK — path-length SWEEP (replaces the single ~85-char boundary
@@ -1732,7 +1748,7 @@ describe("worktree isolation protocol — wired into existing-mode/no-repo launc
 
     for (const cwdLen of CWD_LENGTHS) {
       for (const titleLen of TITLE_LENGTHS) {
-        it(`cwd=${cwdLen} chars, title=${titleLen} chars: URL <= cap, essentials present, protocol all-or-nothing`, () => {
+        it(`cwd=${cwdLen} chars, title=${titleLen} chars: URL <= cap, essentials + work step present whole, protocol all-or-nothing`, () => {
           const cwd = realisticCwd(cwdLen);
           const title = "T".repeat(titleLen);
           const args: CompactBootstrapArgs = {
@@ -1744,6 +1760,7 @@ describe("worktree isolation protocol — wired into existing-mode/no-repo launc
             existingPath: cwd,
           };
 
+          const essentials = buildCompactPromptEssentials(args);
           const link = buildClampedDeepLink(args, { cwd });
           // (a) NEVER overflow — the core BUG1 REWORK invariant.
           expect(link.length, `cwd=${cwdLen} title=${titleLen}`).toBeLessThanOrEqual(
@@ -1755,11 +1772,23 @@ describe("worktree isolation protocol — wired into existing-mode/no-repo launc
           expect(decoded, `cwd=${cwdLen} title=${titleLen}`).toContain("claude mcp add");
           expect(decoded, `cwd=${cwdLen} title=${titleLen}`).toContain("record_project_path");
 
+          // (b2) BUG C fix: the work step (the "find work" instruction
+          // carrying idea_id/task_id) ALWAYS survives WHOLE too, regardless
+          // of length — it gets the same atomic protection as the essentials
+          // above, never a character-level fragment.
+          expect(essentials.work, `cwd=${cwdLen} title=${titleLen}`).toBeTruthy();
+          expect(decoded, `cwd=${cwdLen} title=${titleLen}: work step must survive whole`).toContain(
+            essentials.work!
+          );
+
           // (c) the protocol is ALL-OR-NOTHING: either every load-bearing
           // token from it is present, or NONE of them are (a clean omission,
-          // never a fragment split mid-protocol by the tail's truncation
-          // ellipsis — the ellipsis MAY legitimately appear elsewhere, e.g.
-          // trimming the confirm-echo/work tail, which is fine).
+          // never a fragment split mid-protocol). BUG C fix: the protocol is
+          // now correctly the LOWEST-priority piece behind the essentials and
+          // the work step, so it may legitimately be omitted well within this
+          // "realistic" range whenever a long path leaves no room for both —
+          // that is the fix, not a regression (see the worst-realistic-case
+          // test above).
           const presentCount = PROTOCOL_TOKENS.filter((t) => decoded.includes(t)).length;
           expect(
             [0, PROTOCOL_TOKENS.length],
@@ -1773,7 +1802,13 @@ describe("worktree isolation protocol — wired into existing-mode/no-repo launc
     // run first / shared mutable state) — recomputes the same matrix and
     // prints it as the path-length -> URL-length -> protocol-present table
     // for the write-up, doubling as a belt-and-braces summary assertion.
-    it("table: every sweep length keeps the URL under the cap with the protocol present (path-length-independent essentials never NEED to degrade in this realistic range)", () => {
+    //
+    // BUG C fix rewrite: previously asserted `protocolPresent` unconditionally
+    // true across this whole range — that was actually the bug (the protocol
+    // was crowding out the work step's budget, silently truncating it). The
+    // invariant that must hold universally is the WORK STEP surviving whole;
+    // the protocol is correctly best-effort and may legitimately drop out.
+    it("table: every sweep length keeps the URL under the cap with the work step always intact (protocol is best-effort and may legitimately degrade)", () => {
       const rows = CWD_LENGTHS.flatMap((cwdLen) =>
         TITLE_LENGTHS.map((titleLen) => {
           const cwd = realisticCwd(cwdLen);
@@ -1785,10 +1820,12 @@ describe("worktree isolation protocol — wired into existing-mode/no-repo launc
             repoUrl: null,
             existingPath: cwd,
           };
+          const essentials = buildCompactPromptEssentials(args);
           const link = buildClampedDeepLink(args, { cwd });
           const decoded = decodeURIComponent(link.split("q=")[1]);
           const protocolPresent = PROTOCOL_TOKENS.every((t) => decoded.includes(t));
-          return { cwdLen, titleLen, urlLen: link.length, protocolPresent };
+          const workPresent = !!essentials.work && decoded.includes(essentials.work);
+          return { cwdLen, titleLen, urlLen: link.length, protocolPresent, workPresent };
         })
       );
       // Intentional: surfaces the sweep table in test output for the write-up.
@@ -1796,7 +1833,7 @@ describe("worktree isolation protocol — wired into existing-mode/no-repo launc
       expect(rows).toHaveLength(CWD_LENGTHS.length * TITLE_LENGTHS.length);
       for (const r of rows) {
         expect(r.urlLen, JSON.stringify(r)).toBeLessThanOrEqual(MAX_DEEP_LINK_URL_LENGTH);
-        expect(r.protocolPresent, JSON.stringify(r)).toBe(true);
+        expect(r.workPresent, JSON.stringify(r)).toBe(true);
       }
     });
   });
@@ -2008,6 +2045,7 @@ describe("worktree isolation protocol — wired into existing-mode/no-repo launc
 
     const essentials = buildCompactPromptEssentials(args);
     expect(essentials.protocol).toBeTruthy();
+    expect(essentials.work).toBeTruthy();
 
     const link = buildClampedDeepLink(args, { cwd });
     expect(link.length).toBeLessThanOrEqual(MAX_DEEP_LINK_URL_LENGTH);
@@ -2015,10 +2053,12 @@ describe("worktree isolation protocol — wired into existing-mode/no-repo launc
     const decoded = decodeURIComponent(link.split("q=")[1]);
     expect(decoded).toContain("claude mcp add");
     expect(decoded).toContain("record_project_path");
+    // BUG C fix: the work step is NEVER character-truncated — it must survive
+    // byte-for-byte here too, even though the protocol had to give way.
+    expect(decoded, "the find-work step must survive whole, never a fragment").toContain(
+      essentials.work!
+    );
     // The protocol was requested but must be CLEANLY absent — not a fragment.
-    // (A trailing "…(truncated)" marker MAY legitimately appear if the tail —
-    // the confirm-echo/work step — also had to shrink; that's unrelated to
-    // protocol integrity, which is what this test is about.)
     for (const token of ["kill -0", ".vibe/wt-N", "-b vibe/wt-N", "never push primary"]) {
       expect(decoded, `token "${token}" must NOT be a stray fragment`).not.toContain(token);
     }
@@ -2095,6 +2135,95 @@ describe("worktree isolation protocol — wired into existing-mode/no-repo launc
       const out = fitCompactWorktreeProtocol(real, MAX_DEEP_LINK_PROMPT_LENGTH);
       expect(out).toContain("kill -0");
       expect(out).toContain(real.protocol!);
+    });
+
+    // BUG C fix (6th rework cycle) — direct unit tests of the atomic-tail
+    // degrade ladder (assembleAtomicTail) via synthetic essentials WITH a
+    // step breakdown (headSteps + work + directoryEcho), which is what every
+    // real caller (buildCompactPromptEssentials) supplies. Proves the exact
+    // priority order from the fix: protocol drops first, then directoryEcho,
+    // and the work step — the "find work" instruction carrying idea_id/
+    // task_id — is NEVER character-fragmented; it's either whole or cleanly
+    // absent.
+    describe("atomic work-step protection — never fragments the work step", () => {
+      const header = "HEADER";
+      const headSteps = ["STEP_ONE", "STEP_TWO"];
+      const protocol = "PROTOCOL_BLOCK";
+      const directoryEcho = "ECHO_LINE";
+      const work = "WORK_STEP_WITH_IDEA_ID";
+
+      const atomicEssentials: CompactPromptEssentials = {
+        header,
+        headSteps,
+        head: `${header}\n\n1. ${headSteps[0]}\n2. ${headSteps[1]}\n`,
+        tail: `3. ${directoryEcho}\n4. ${work}`,
+        protocol,
+        directoryEcho,
+        work,
+      };
+
+      function enc(s: string): number {
+        return encodeURIComponent(s).length;
+      }
+
+      it("includes protocol + directoryEcho + work all whole when the budget comfortably fits everything", () => {
+        const out = fitCompactWorktreeProtocol(atomicEssentials, 1000);
+        expect(out).toContain(protocol);
+        expect(out).toContain(directoryEcho);
+        expect(out).toContain(work);
+        expect(out).toContain(headSteps[0]);
+        expect(out).toContain(headSteps[1]);
+      });
+
+      it("drops the protocol first (not the work step) once the budget can't fit everything", () => {
+        // A budget that fits head+directoryEcho+work but NOT
+        // protocol+head+directoryEcho+work — the exact crossover the fix
+        // targets (this is precisely the shape of the real-content bug: the
+        // protocol alone is often the single biggest chunk).
+        const full = fitCompactWorktreeProtocol(atomicEssentials, 1000);
+        const withoutProtocol = full.replace(`${protocol}\n\n`, "");
+        const budget = enc(withoutProtocol);
+
+        const out = fitCompactWorktreeProtocol(atomicEssentials, budget);
+        expect(out).not.toContain(protocol);
+        expect(out).not.toContain("PROTOCOL"); // clean omission, not a fragment
+        expect(out).toContain(directoryEcho);
+        expect(out).toContain(work); // work step still survives whole
+      });
+
+      it("drops directoryEcho next (still never the work step) when only head+work fits", () => {
+        const withoutProtocol = fitCompactWorktreeProtocol(atomicEssentials, 1000).replace(
+          `${protocol}\n\n`,
+          ""
+        );
+        const workOnly = withoutProtocol.replace(`3. ${directoryEcho}\n`, "").replace("4.", "3.");
+        const budget = enc(workOnly);
+
+        const out = fitCompactWorktreeProtocol(atomicEssentials, budget);
+        expect(out).not.toContain(protocol);
+        expect(out).not.toContain(directoryEcho);
+        expect(out).toContain(work); // still whole, still the last thing dropped
+      });
+
+      it("never fragments the work step at the character level — omits it whole rather than truncating mid-string when even head+work can't fit", () => {
+        // Reserve mirrors fitEssentialHead's own headroom for enforcePromptLength's
+        // trailing marker, so a budget of headLen + reserve + slack is exactly
+        // enough for the full (both-step) head, but not for the head plus even
+        // the bare work step on top.
+        const reserve = enc("\n…(truncated)");
+        const budget = enc(atomicEssentials.head) + reserve + 2;
+        // Sanity: this budget really is too small for head + work together.
+        expect(budget).toBeLessThan(enc(atomicEssentials.head) + enc(`3. ${work}`));
+
+        const out = fitCompactWorktreeProtocol(atomicEssentials, budget);
+        expect(out).toContain(headSteps[0]); // head still survives whole...
+        expect(out).toContain(headSteps[1]);
+        expect(out).not.toContain(protocol);
+        expect(out).not.toContain(directoryEcho);
+        expect(out).not.toContain(work); // ...work omitted whole...
+        expect(out).not.toContain(work.slice(0, 10)); // ...never a fragment of it
+        expect(encodeURIComponent(out).length).toBeLessThanOrEqual(budget);
+      });
     });
   });
 
@@ -2208,10 +2337,12 @@ describe("FIX A: buildBoundedDeepLink (cwd param unclamped, QA BUG A)", () => {
               //
               // Fragment detection is scoped to the `cd '<opening>` MARKER
               // specifically, NOT a bare cwd-prefix substring — the
-              // (deliberately trimmable, per the KEEP list) directory-echo
-              // TAIL step ("You should already be in <path>...") also
-              // legitimately echoes the raw cwd and CAN be truncated by
-              // enforcePromptLength's ordinary tail-trim; that is expected,
+              // (deliberately LOWEST-priority, per the degrade ladder)
+              // directory-echo TAIL step ("You should already be in
+              // <path>...") also legitimately echoes the raw cwd and, like
+              // the protocol, may be omitted WHOLE by fitCompactWorktreeProtocol
+              // when the budget is tight (BUG C fix: never a character-level
+              // fragment, unlike pre-fix behaviour); that is expected,
               // unrelated behaviour, not a cd-line fragment.
               expect(result.url).not.toContain("cwd=");
               const decoded = decodeQ(result.url);
