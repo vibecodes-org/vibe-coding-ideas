@@ -63,7 +63,7 @@ import { logger } from "@/lib/logger";
 import { isTerminalEnabled, relayBaseUrl, type TerminalStatus } from "@/lib/terminal/connection";
 import { subscribeBrowserLaunch, type BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import { resolveDockView } from "@/lib/terminal/first-run-flow";
-import { slugifyIdeaTitle } from "@/lib/launch-claude-code";
+import { slugifyIdeaTitle, type RecordedProjectPath } from "@/lib/launch-claude-code";
 import { newSessionTooltip } from "@/lib/terminal/session-cap";
 import {
   generatePopoutNonce,
@@ -119,6 +119,16 @@ interface TerminalDockProps {
    * build the SAME board-level compact bootstrap prompt the button would.
    */
   ideaGithubUrl: string | null;
+  /**
+   * Bug cbe60db5-followup-2: absolute paths the agent recorded for this user
+   * + idea (idea_project_paths, one row per machine) — the board page already
+   * fetches these for KanbanBoard/LaunchClaudeCodeButton's own resolution
+   * (resolveEffectiveLaunchTarget); forwarded here so every session's
+   * `useTerminalSession` descriptor can resolve the SAME recorded folder for
+   * its fallback (no-bus-payload) launches. Undefined/empty → unchanged
+   * "new project" fallback.
+   */
+  recordedProjectPaths?: RecordedProjectPath[];
 }
 
 let sessionKeySeq = 0;
@@ -155,7 +165,7 @@ function dotClass(status: TerminalStatus): string {
   }
 }
 
-export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockProps) {
+export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths }: TerminalDockProps) {
   // Defence-in-depth: also gated at the page mount. When off, render nothing —
   // no dock, no entry point, board unchanged (B9).
   const enabled = isTerminalEnabled();
@@ -370,8 +380,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
   }, []);
 
   const descriptor: TerminalSessionDescriptor = useMemo(
-    () => ({ ideaId, ideaTitle, ideaGithubUrl }),
-    [ideaId, ideaTitle, ideaGithubUrl],
+    () => ({ ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths }),
+    [ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths],
   );
   const ideaSlug = useMemo(() => slugifyIdeaTitle(ideaTitle), [ideaTitle]);
 

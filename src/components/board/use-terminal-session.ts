@@ -86,9 +86,12 @@ import { type BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import {
   buildBoundedDeepLink,
   buildCompactPromptEssentials,
+  readLaunchPath,
   resolveAppUrl,
   resolveDefaultLaunchState,
+  resolveEffectiveLaunchTarget,
   resolveLaunchCwd,
+  type RecordedProjectPath,
 } from "@/lib/launch-claude-code";
 import {
   type TerminalPlatform,
@@ -181,6 +184,21 @@ export interface TerminalSessionDescriptor {
    * (shared resolveDefaultLaunchState + buildCompactPromptEssentials).
    */
   ideaGithubUrl: string | null;
+  /**
+   * Bug cbe60db5-followup-2 (fallback connect() never resolves a recorded
+   * folder): absolute paths the agent recorded for this user + idea, one per
+   * machine (idea_project_paths, RLS-scoped to the human) — the SAME data the
+   * launch button already threads through resolveEffectiveLaunchTarget
+   * (launch-claude-code-button.tsx). Hook-initiated launches (paired
+   * auto-connect on open, Retry) never go through the button, so without
+   * this `resolveLaunchPromptParts` always passed `undefined` for the
+   * recorded-path slot — a session started this way recorded `cwd=null` even
+   * when a real folder was on file, so the ended-session overlay's Resume
+   * button (which requires a known `cwd` — see terminal-session-view.tsx's
+   * `canResume`) never showed. Optional; undefined/empty behaves exactly like
+   * before (falls through to "new project" — see resolveDefaultLaunchState).
+   */
+  recordedProjectPaths?: RecordedProjectPath[];
 }
 
 export interface UseTerminalSessionOptions {
@@ -440,7 +458,7 @@ export function useTerminalSession(
   descriptor: TerminalSessionDescriptor,
   options: UseTerminalSessionOptions,
 ): UseTerminalSessionResult {
-  const { ideaId, ideaTitle, ideaGithubUrl } = descriptor;
+  const { ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths } = descriptor;
   const {
     enabled,
     expanded,
@@ -847,15 +865,21 @@ export function useTerminalSession(
   // not the unconditional buildCompactBootstrapPromptParts this used to call —
   // that builder bakes the worktree-isolation protocol into a never-trimmed
   // head, so fireLaunchDeepLink's own budget clamp had no clean way to drop it
-  // on overflow. The fallback's cwd uses the same shared rule (resolveLaunchCwd);
-  // the hook has no recordedProjectPaths, so it passes no effective cwd — a
-  // pinned existing-mode folder still resolves (rule 1), while the
-  // recorded-path injection only flows through the button payload, exactly as
-  // the terminal-window default path would behave.
+  // on overflow. Bug cbe60db5-followup-2: `effectiveTarget` mirrors the launch
+  // button's own resolveEffectiveLaunchTarget call — the hook now DOES have
+  // recordedProjectPaths (threaded via the descriptor), so a hook-initiated
+  // launch picks up a recorded DB folder exactly like the button does, instead
+  // of always falling to "new project" (the bug: cwd=null recorded even when a
+  // real folder was on file, hiding the ended-session overlay's Resume button).
   const resolveLaunchPromptParts = useCallback((): BrowserLaunchPayload => {
     const carried = promptPartsRef.current;
     if (carried) return carried;
-    const s = resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl);
+    const effectiveTarget = resolveEffectiveLaunchTarget({
+      hasRepo: !!ideaGithubUrl,
+      saved: readLaunchPath(ideaId),
+      recordedPaths: recordedProjectPaths,
+    });
+    const s = resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl, effectiveTarget);
     const essentials = buildCompactPromptEssentials({
       appUrl: resolveAppUrl(),
       ideaId,
@@ -863,14 +887,13 @@ export function useTerminalSession(
       mode: s.mode,
       repoUrl: ideaGithubUrl,
       newProject: s.mode === "new" ? { newProjectPath: s.path } : undefined,
-      // Parity with the launch button: a pinned existing folder emits the same
-      // verify-folder step. The hook has no recorded DB paths, so this only fires
-      // for a user-pinned localStorage path (resolveDefaultLaunchState → existing).
+      // Parity with the launch button: a pinned existing folder (localStorage
+      // or, now, a recorded DB path) emits the same verify-folder step.
       existingPath:
         s.mode === "existing" && s.path.trim() ? s.path.trim() : undefined,
     });
-    return { essentials, cwd: resolveLaunchCwd(s, undefined) };
-  }, [ideaId, ideaTitle, ideaGithubUrl]);
+    return { essentials, cwd: resolveLaunchCwd(s, effectiveTarget.cwd) };
+  }, [ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths]);
 
   // Fire the signed vibecodes:// deep link so a same-machine helper attaches as the
   // bridge leg with no copied command. The bridge token is a secret — it travels in
