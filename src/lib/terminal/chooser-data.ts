@@ -239,3 +239,36 @@ export function findLiveSessionForTask(
     null
   );
 }
+
+/**
+ * Task-launch-skip-chooser (Nick's explicit product decision, 2026-08-16):
+ * clicking the per-task "Launch Claude Code" is unambiguous intent — it
+ * should start a new session immediately, with NO chooser/interstitial,
+ * UNLESS this EXACT task already has a live-or-recent (≤48h) session, in
+ * which case a small task-scoped choice (reconnect/resume vs. start fresh)
+ * replaces the full cross-board chooser. This is the single predicate that
+ * decision keys on — it never looks at any OTHER task or board, unlike
+ * `entryDecision`'s global "is there anything worth choosing between at
+ * all" question that still governs board-level (no-taskId) launches.
+ *
+ * Priority mirrors `findLiveSessionForTask`: a live row here beats a live
+ * row elsewhere beats a recent (ended, ≤48h) row — the most actionable
+ * match for THIS task wins.
+ */
+export type TaskSessionMatch =
+  | { kind: "live-here" | "live-elsewhere"; row: ChooserLiveRow }
+  | { kind: "recent"; row: ChooserRecentRow };
+
+export function findTaskSessionMatch(
+  sections: ChooserSections,
+  taskId: string | null | undefined,
+): TaskSessionMatch | null {
+  if (!taskId) return null;
+  const here = sections.liveHere.find((r) => r.taskId === taskId);
+  if (here) return { kind: "live-here", row: here };
+  const elsewhere = sections.liveElsewhere.find((r) => r.taskId === taskId);
+  if (elsewhere) return { kind: "live-elsewhere", row: elsewhere };
+  const recent = sections.recent.find((r) => r.taskId === taskId);
+  if (recent) return { kind: "recent", row: recent };
+  return null;
+}

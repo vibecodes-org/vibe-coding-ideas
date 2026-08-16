@@ -5,6 +5,7 @@ import {
   deriveChooserSections,
   chooserHeaderCounts,
   findLiveSessionForTask,
+  findTaskSessionMatch,
   type ChooserRegistryRow,
 } from "./chooser-data";
 
@@ -420,5 +421,89 @@ describe("findLiveSessionForTask", () => {
     const rows = [row({ sid: "other-task", ideaId: IDEA_A, status: "active", taskId: "task-2" })];
     const sections = deriveChooserSections(rows, IDEA_A, NOW);
     expect(findLiveSessionForTask(sections, "task-1")).toBeNull();
+  });
+});
+
+// Task-launch-skip-chooser (Nick's explicit product decision, 2026-08-16):
+// `findTaskSessionMatch` is the ONE predicate the per-task launch keys on —
+// unlike `findLiveSessionForTask` (live rows only, used for the full
+// chooser's "already running for this task" badge), this also considers the
+// Recent (ended, ≤48h) section, since a task launch must dedupe against a
+// recently-ended session for that exact task too, never just a live one.
+describe("findTaskSessionMatch", () => {
+  function endedRow(overrides: Partial<ChooserRegistryRow> & { sid: string }): ChooserRegistryRow {
+    return row({
+      status: "ended",
+      cwd: `~/projects/${overrides.sid}`,
+      endedAt: new Date(NOW - 60_000).toISOString(),
+      ...overrides,
+    });
+  }
+
+  it("returns null for a board-level launch (no taskId)", () => {
+    const sections = deriveChooserSections([], IDEA_A, NOW);
+    expect(findTaskSessionMatch(sections, undefined)).toBeNull();
+    expect(findTaskSessionMatch(sections, null)).toBeNull();
+  });
+
+  it("returns null when nothing anywhere matches the task — the auto-start case", () => {
+    const rows = [
+      row({ sid: "unrelated-live", ideaId: IDEA_B, status: "active", taskId: "task-OTHER" }),
+      endedRow({ sid: "unrelated-recent", taskId: "task-OTHER" }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    expect(findTaskSessionMatch(sections, "task-1")).toBeNull();
+  });
+
+  it("matches a live 'here' row for the exact task, over an 'elsewhere' or recent one", () => {
+    const rows = [
+      row({ sid: "here", ideaId: IDEA_A, status: "active", taskId: "task-1" }),
+      row({ sid: "elsewhere", ideaId: IDEA_B, status: "active", taskId: "task-1" }),
+      endedRow({ sid: "recent", taskId: "task-1" }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    const match = findTaskSessionMatch(sections, "task-1");
+    expect(match?.kind).toBe("live-here");
+    expect(match?.row.sid).toBe("here");
+  });
+
+  it("falls back to a live 'elsewhere' row for the exact task when there is no 'here' match", () => {
+    const rows = [
+      row({ sid: "elsewhere", ideaId: IDEA_B, status: "active", taskId: "task-1" }),
+      endedRow({ sid: "recent", taskId: "task-1" }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    const match = findTaskSessionMatch(sections, "task-1");
+    expect(match?.kind).toBe("live-elsewhere");
+    expect(match?.row.sid).toBe("elsewhere");
+  });
+
+  it("falls back to a Recent (ended, ≤48h) row for the exact task when nothing is live", () => {
+    const rows = [endedRow({ sid: "recent", taskId: "task-1" })];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    const match = findTaskSessionMatch(sections, "task-1");
+    expect(match?.kind).toBe("recent");
+    expect(match?.row.sid).toBe("recent");
+  });
+
+  it("never matches a DIFFERENT task's live or recent row (no false-positive dedupe)", () => {
+    const rows = [
+      row({ sid: "other-live", ideaId: IDEA_A, status: "active", taskId: "task-OTHER" }),
+      endedRow({ sid: "other-recent", taskId: "task-OTHER" }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    expect(findTaskSessionMatch(sections, "task-1")).toBeNull();
+  });
+
+  it("ignores a Recent row past the 48h window for the exact task (deriveChooserSections already dropped it)", () => {
+    const rows = [
+      endedRow({
+        sid: "stale",
+        taskId: "task-1",
+        endedAt: new Date(NOW - RECENT_WINDOW_MS - 60_000).toISOString(),
+      }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    expect(findTaskSessionMatch(sections, "task-1")).toBeNull();
   });
 });
