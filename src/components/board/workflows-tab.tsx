@@ -235,7 +235,7 @@ function StepEditor({ steps, onChange, ideaId, poolRoles, userRoles }: StepEdito
                   updateStep(idx, {
                     deliverables: e.target.value
                       .split(",")
-                      .map((d, i, arr) => (i < arr.length - 1 ? d.trim() : d))
+                      .map((d, i, arr) => (i < arr.length - 1 ? d.trim() : d.trimStart()))
                       .filter((d, i, arr) => i === arr.length - 1 || d.length > 0),
                   })
                 }
