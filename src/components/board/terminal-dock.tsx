@@ -758,10 +758,25 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
         void refreshRegistry(); // the row may have just ended/expired — let the chooser reflect that
         return;
       }
-      const data = (await res.json()) as { sessionId: string; browserToken: string };
+      const data = (await res.json()) as {
+        sessionId: string;
+        browserToken: string;
+        cwd?: string | null;
+        claudeSessionId?: string | null;
+      };
       const snapshot = loadSessionSnapshot(sid);
       const initialBuffer = snapshot ? toReconnectBuffer(snapshot) : null;
-      const attach: AttachExistingPair = { sessionId: data.sessionId, browserToken: data.browserToken, initialBuffer };
+      // Bug cbe60db5-followup: forward the registry's cwd/claudeSessionId
+      // (now included in the reattach response) into the attach pair, so
+      // attachToExisting can seed them — otherwise a reattached session that
+      // later ends never offers "Resume this conversation".
+      const attach: AttachExistingPair = {
+        sessionId: data.sessionId,
+        browserToken: data.browserToken,
+        initialBuffer,
+        cwd: data.cwd,
+        claudeSessionId: data.claudeSessionId,
+      };
 
       const currentSessions = sessionsRef.current;
       const pristineKey = findPristineSlot(

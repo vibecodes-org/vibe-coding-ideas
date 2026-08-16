@@ -63,7 +63,7 @@ export async function POST(req: Request) {
     // the explicit filter keeps the query honest regardless of client).
     const { data: row, error: rowErr } = await supabase
       .from("terminal_sessions")
-      .select("sid, idea_id, status, expires_at")
+      .select("sid, idea_id, status, expires_at, cwd, claude_session_id")
       .eq("sid", sid)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -96,6 +96,16 @@ export async function POST(req: Request) {
       ideaId: tokens.idea,
       expiresAt: tokens.exp,
       browserToken: tokens.browser,
+      // Bug cbe60db5-followup: the registry row already knows the folder/
+      // conversation this session was running — forward it so the reattached
+      // browser leg can seed its own cwd/claudeSessionId (attachToExisting),
+      // exactly like a fresh connect() seeds them from the launch prompt.
+      // Without this, a session that ends AFTER a reload-reattach / instant-
+      // continue / chooser-Reconnect / pop-out bring-back never offers
+      // "Resume this conversation" (canResume requires sessionCwd), even
+      // though the server has known the folder the whole time.
+      cwd: row.cwd,
+      claudeSessionId: row.claude_session_id,
     });
   } catch (err) {
     logger.error("Terminal session reattach error", {
