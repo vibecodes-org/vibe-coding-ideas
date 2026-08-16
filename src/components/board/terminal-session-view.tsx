@@ -177,6 +177,16 @@ interface TerminalSessionViewProps {
    * `session.cwd` being known before ever calling this).
    */
   onResumeEndedSession?: (payload: BrowserLaunchPayload) => void;
+  /**
+   * Opens the dock's "My sessions" panel — the SAME trigger `onCapExceeded`
+   * already uses (E1, design §7b). Rendered as a small tertiary link under
+   * the ended-panel's button row: a user staring at one ended session had no
+   * way to see their other live/recent ones without hunting for the
+   * collapsed-bar trigger. Omitted hides the link entirely (defensive, the
+   * same optional-callback-gated-UI pattern `onPopOut`/`onResumeEndedSession`
+   * already use in this file).
+   */
+  onOpenMySessions?: () => void;
 }
 
 export function TerminalSessionView({
@@ -197,6 +207,7 @@ export function TerminalSessionView({
   onReconnectTakenOver,
   onRetryReconnect,
   onResumeEndedSession,
+  onOpenMySessions,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -546,6 +557,7 @@ export function TerminalSessionView({
               onReconnectTakenOver={() => {
                 if (pair) onReconnectTakenOver?.(pair.sessionId);
               }}
+              onOpenMySessions={onOpenMySessions}
             />
           )}
           {state.status === "disconnected" && (
@@ -658,6 +670,7 @@ function StateOverlay({
   onResume,
   onCopyBridge,
   onReconnectTakenOver,
+  onOpenMySessions,
 }: {
   view: DockView;
   state: TerminalConnectionState;
@@ -685,6 +698,8 @@ function StateOverlay({
   onResume: () => void;
   onCopyBridge: () => void;
   onReconnectTakenOver: () => void;
+  /** See TerminalSessionViewProps' same-named prop. */
+  onOpenMySessions?: () => void;
 }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
@@ -769,6 +784,21 @@ function StateOverlay({
             <Button className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400" onClick={onLaunchAgain}>
               <TerminalIcon className="h-4 w-4" /> Launch again
             </Button>
+          )}
+          {/* Bug cbe60db5-followup-2 (low-medium): the ended panel used to be
+              a dead end for anyone who forgot where the collapsed bar's "My
+              sessions" trigger lives — this reuses the exact same
+              openMySessions callback onCapExceeded already wires (E1, design
+              §7b), just from a second entry point. Tertiary, so it never
+              competes with the primary Resume/Launch-again action above. */}
+          {onOpenMySessions && (
+            <button
+              type="button"
+              className="text-[11px] text-zinc-500 underline hover:text-zinc-300"
+              onClick={onOpenMySessions}
+            >
+              View my other sessions
+            </button>
           )}
         </>
       )}

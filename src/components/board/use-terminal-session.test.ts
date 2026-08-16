@@ -1030,6 +1030,52 @@ describe("useTerminalSession", () => {
       expect(result.current.claudeSessionId).toBeNull();
     });
 
+    // Bug cbe60db5-followup-2 (QA, high severity): a fallback connect() —
+    // paired auto-connect on panel open, or Retry — never had access to
+    // recordedProjectPaths, so it always passed `undefined` into
+    // resolveDefaultLaunchState even when the agent HAD recorded a real
+    // folder for this idea+machine (idea_project_paths). That silently
+    // dropped `cwd`, which meant a later session-ended overlay's Resume
+    // button (requires a known cwd) never showed even though the folder was
+    // fully known server-side. Fixed by threading recordedProjectPaths
+    // through the descriptor into resolveLaunchPromptParts, mirroring the
+    // launch button's own resolveEffectiveLaunchTarget resolution.
+    it("resolves a recorded folder for a fallback (no-bus-payload) launch, when one is recorded for this idea", async () => {
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          { ...descriptor, recordedProjectPaths: [{ absolute_path: "/Users/nick/projects/recipe-saver", hostname: "nicks-mac" }] },
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      expect(result.current.cwd).toBe("/Users/nick/projects/recipe-saver");
+    });
+
+    // The don't-break-it-for-the-common-case half of the same fix: >1
+    // recorded machines is ambiguous (chooseLaunchCwd's own contract), so it
+    // must still fall through to the "new project" flow exactly like having
+    // none recorded at all — never guess a machine.
+    it("still falls back to 'new project' (no cwd) when the recorded paths are ambiguous (more than one machine)", async () => {
+      const { result } = renderHook(() =>
+        useTerminalSession(
+          {
+            ...descriptor,
+            recordedProjectPaths: [
+              { absolute_path: "/Users/nick/projects/recipe-saver", hostname: "nicks-mac" },
+              { absolute_path: "/home/nick/recipe-saver", hostname: "nicks-linux-box" },
+            ],
+          },
+          { enabled: true, expanded: true, requestExpand: vi.fn() },
+        ),
+      );
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: false });
+      });
+      expect(result.current.cwd).toBeNull();
+    });
+
     it("seeds claudeSessionId from a carried resumeId and exposes the carried cwd immediately after mint", async () => {
       window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
       vi.stubGlobal("navigator", {
