@@ -151,6 +151,19 @@ interface TerminalSessionViewProps {
    */
   onReconnectTakenOver?: (sid: string) => void;
   /**
+   * Reconnect-relaunch fix: Retry on the ~8s helper-open timeout panel (a
+   * deep link fired but the helper never attached) AND on the stuck-pairing
+   * watchdog's TimeoutPanel (`pairingTimedOut`) both used to call
+   * `actions.connect({ autoLaunch: true })` — minting an entirely unrelated
+   * NEW session instead of re-attempting the one the user is actually
+   * looking at. Wired to THIS sid's reattach flow instead (the SAME
+   * `performReattach` `onReconnectTakenOver` uses), so Retry fires a fresh
+   * deep link for the ORIGINAL session. Falls back to a fresh
+   * `connect({autoLaunch:true})` when omitted (defensive — mirrors the
+   * pre-fix behaviour for any caller that doesn't wire this).
+   */
+  onRetryReconnect?: (sid: string) => void;
+  /**
    * Card cbe60db5 rework 9 (Bug A — Nick's field test, 2026-08-14): the
    * session-ended overlay's "Resume this conversation" action for a
    * NON-user ending (idle / max-duration / a dropped-and-exhausted
@@ -182,6 +195,7 @@ export function TerminalSessionView({
   onPopOut,
   onBringBack,
   onReconnectTakenOver,
+  onRetryReconnect,
   onResumeEndedSession,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
@@ -514,7 +528,18 @@ export function TerminalSessionView({
               canResume={canResume}
               pairingTimedOut={pairingTimedOut}
               onConnect={() => void actions.connect({ autoLaunch: true })}
-              onRetry={() => void actions.connect({ autoLaunch: true })}
+              onRetry={() => {
+                // Reconnect-relaunch fix: re-attempt THIS session (a fresh
+                // reattach → fresh deep link) instead of minting an unrelated
+                // new one — see onRetryReconnect's doc. `pair` is always known
+                // by the time a Retry button can render (every view that
+                // shows one — timeout-new/returning, or the watchdog's
+                // pairingTimedOut — only reaches that state via a status the
+                // reducer sets alongside session-created).
+                const sid = pair?.sessionId;
+                if (sid && onRetryReconnect) onRetryReconnect(sid);
+                else void actions.connect({ autoLaunch: true });
+              }}
               onLaunchAgain={actions.beginBrowserLaunch}
               onResume={handleResume}
               onCopyBridge={actions.copyBridgeCommand}

@@ -761,6 +761,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       const data = (await res.json()) as {
         sessionId: string;
         browserToken: string;
+        bridgeToken?: string;
+        helperToken?: string;
         cwd?: string | null;
         claudeSessionId?: string | null;
       };
@@ -770,9 +772,17 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
       // (now included in the reattach response) into the attach pair, so
       // attachToExisting can seed them — otherwise a reattached session that
       // later ends never offers "Resume this conversation".
+      //
+      // Reconnect-relaunch fix: forward bridgeToken/helperToken too (now also
+      // included in the reattach response) — attachToExisting fires the
+      // vibecodes:// deep link when these are present, which is what
+      // actually relaunches the local helper instead of leaving the browser
+      // leg waiting passively forever.
       const attach: AttachExistingPair = {
         sessionId: data.sessionId,
         browserToken: data.browserToken,
+        bridgeToken: data.bridgeToken,
+        helperToken: data.helperToken,
         initialBuffer,
         cwd: data.cwd,
         claudeSessionId: data.claudeSessionId,
@@ -1249,6 +1259,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl }: TerminalDockP
             onPopOut={() => handlePopOut(entry.key)}
             onBringBack={() => bringBackToDock(entry.key)}
             onReconnectTakenOver={(sid) => void performReattach(sid, { focus: true })}
+            onRetryReconnect={(sid) => void performReattach(sid, { focus: true })}
             onResumeEndedSession={(payload) => mintAndDeliver(payload)}
           />
         ))}
