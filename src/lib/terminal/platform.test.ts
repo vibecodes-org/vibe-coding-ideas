@@ -38,6 +38,18 @@ describe("resolveTerminalPlatform — Apple Silicon Mac (supported)", () => {
     expect(p.supported).toBe(true);
     expect(p.isAppleSilicon).toBe(true);
   });
+
+  it("stays Apple Silicon when the arch signal is the literal 'arm64' real UA-CH data sends", () => {
+    const p = resolveTerminalPlatform({ ...APPLE_SILICON_MAC, architecture: "arm64" });
+    expect(p.supported).toBe(true);
+    expect(p.isAppleSilicon).toBe(true);
+  });
+
+  it("a maxTouchPoints of 1 is still a plain (non-touch) Mac, not an iPad", () => {
+    const p = resolveTerminalPlatform({ ...APPLE_SILICON_MAC, maxTouchPoints: 1 });
+    expect(p.os).toBe("mac");
+    expect(p.supported).toBe(true);
+  });
 });
 
 describe("resolveTerminalPlatform — Intel Mac (supported, arm64 default download)", () => {
@@ -94,6 +106,23 @@ describe("resolveTerminalPlatform — non-Mac (coming soon, no deep link)", () =
         "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 Version/17.0 Safari/605.1.15",
       platform: "MacIntel",
       uaDataPlatform: "macOS",
+      maxTouchPoints: 5,
+    });
+    expect(p.os).toBe("other");
+    expect(p.supported).toBe(false);
+  });
+
+  it("a maxTouchPoints of 2 flips a 'Macintosh' UA to iPad/other", () => {
+    const p = resolveTerminalPlatform({ ...APPLE_SILICON_MAC, maxTouchPoints: 2 });
+    expect(p.os).toBe("other");
+    expect(p.supported).toBe(false);
+  });
+
+  it("a real iPadOS Safari UA (literal 'iPad' string) is unsupported", () => {
+    const p = resolveTerminalPlatform({
+      userAgent:
+        "Mozilla/5.0 (iPad; CPU OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+      platform: "iPad",
       maxTouchPoints: 5,
     });
     expect(p.os).toBe("other");
