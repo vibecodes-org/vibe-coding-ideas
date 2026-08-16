@@ -330,7 +330,11 @@ export function encodeResizeMessage(cols: number, rows: number): string | null {
   return JSON.stringify({ type: "resize", cols, rows });
 }
 
-function isValidDim(n: number): boolean {
+/** A terminal dimension must be a positive, finite, sane integer. Exported so
+ * callers building a resize-shaped payload elsewhere (e.g. the launch
+ * deep-link's cols/rows, card cbe60db5 Bug B) validate with the SAME rule
+ * rather than a hand-rolled duplicate. */
+export function isValidDim(n: number): boolean {
   return Number.isInteger(n) && n > 0 && n <= 1000;
 }
 

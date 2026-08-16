@@ -1208,6 +1208,107 @@ describe("useTerminalSession", () => {
     });
   });
 
+  // Bug B (card cbe60db5, Nick's field test 2026-08-15): a promptless
+  // (Resume) launch's PTY used to spawn at a hardcoded 80x24 because the
+  // browser's own resize can't reach a not-yet-existent process in time.
+  // Fixed by carrying the browser's real, already-fitted cols/rows on the
+  // SAME launch deep link — see currentLaunchDims's doc comment above
+  // sendResize(). These tests mount a real containerRef (mountContainer,
+  // matching the scrollback-transfer tests' own rationale above) so the
+  // mocked xterm Terminal actually exists, then mutate its cols/rows the way
+  // a real fit-addon would have computed them from the panel's real size.
+  describe("PTY spawn dims on the launch deep link (Bug B, card cbe60db5)", () => {
+    function mountContainer(result: { current: { containerRef: { current: HTMLDivElement | null } } }) {
+      result.current.containerRef.current = document.createElement("div");
+    }
+
+    it("carries the real fitted cols/rows on a resume launch once xterm has mounted", async () => {
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+      vi.stubGlobal("navigator", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        maxTouchPoints: 0,
+      });
+      const { result } = setup();
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      const term = mockTerminals[mockTerminals.length - 1] as unknown as { cols: number; rows: number };
+      term.cols = 137;
+      term.rows = 42;
+
+      act(() => {
+        result.current.actions.launchFromBus({
+          resumeId: "claude-conv-carried",
+          cwd: "/Users/nick/projects/vibe-coding-ideas",
+        });
+      });
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await flushEffects();
+
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src).toContain("cols=137");
+      expect(src).toContain("rows=42");
+      // cols/rows ride AFTER resume_id (rides before prompt either way) per
+      // the shared builder's param ordering (drift-tested in deep-link.test.ts).
+      expect(src.indexOf("resume_id=")).toBeLessThan(src.indexOf("cols="));
+    });
+
+    it("omits cols/rows entirely when xterm hasn't mounted yet (fast-click race) — falls back to the bridge's own default, never worse than before this fix", async () => {
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+      vi.stubGlobal("navigator", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        maxTouchPoints: 0,
+      });
+      const { result } = setup();
+      // No mountContainer() — termRef/fitRef stay null, exactly the race a
+      // brand-new tab (no pristine slot to reuse) can hit.
+      act(() => {
+        result.current.actions.launchFromBus({
+          resumeId: "claude-conv-carried",
+          cwd: "/Users/nick/projects/vibe-coding-ideas",
+        });
+      });
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await flushEffects();
+
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src).not.toContain("cols=");
+      expect(src).not.toContain("rows=");
+    });
+
+    it("carries the real fitted cols/rows on a normal (prompt-carrying) launch too", async () => {
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+      vi.stubGlobal("navigator", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        maxTouchPoints: 0,
+      });
+      const { result } = setup();
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      const term = mockTerminals[mockTerminals.length - 1] as unknown as { cols: number; rows: number };
+      term.cols = 220;
+      term.rows = 55;
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src).toContain("cols=220");
+      expect(src).toContain("rows=55");
+      expect(src).toContain("prompt=");
+      expect(src.indexOf("cols=")).toBeLessThan(src.indexOf("prompt="));
+    });
+  });
+
   // Card cbe60db5 rework 10 (stuck-pairing watchdog, 2026-08-14 incident): QA
   // root-caused a session stuck forever on "Waiting for your machine to
   // attach" — attachToExisting (reload-reattach/instant-continue, the

@@ -140,6 +140,43 @@ test("a malformed resume_id is rejected outright — never forwarded to the call
   assert.ok(!("resumeId" in parsed));
 });
 
+// ── real panel size at spawn (Bug B, card cbe60db5) ────────────────────────────
+
+test("build ⇄ parse round-trips cols/rows, positioned before prompt", () => {
+  const withDims = { ...SAMPLE, cols: 137, rows: 42, prompt: "hello" };
+  const url = buildLaunchDeepLink(withDims);
+  assert.ok(url.includes("cols=137"));
+  assert.ok(url.includes("rows=42"));
+  assert.ok(url.indexOf("cols=") < url.indexOf("prompt="), "cols precedes the LAST param, prompt");
+  assert.deepEqual(parseLaunchDeepLink(url), withDims);
+});
+
+test("omits cols/rows entirely when absent", () => {
+  const url = buildLaunchDeepLink(SAMPLE);
+  assert.ok(!url.includes("cols="));
+  assert.ok(!url.includes("rows="));
+  const parsed = parseLaunchDeepLink(url);
+  assert.ok(!("cols" in parsed) && !("rows" in parsed));
+});
+
+test("a lone dimension (missing pair) is dropped entirely — never a half pair", () => {
+  const url = buildLaunchDeepLink({ ...SAMPLE, cols: 120 }); // rows omitted
+  assert.ok(!url.includes("cols="));
+  const parsedHalf = parseLaunchDeepLink(
+    `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=r&session=s&token=t&cols=120`,
+  );
+  assert.ok(!("cols" in parsedHalf) && !("rows" in parsedHalf));
+});
+
+test("non-sane cols/rows (zero, negative, non-integer, absurdly large) are rejected outright", () => {
+  for (const bad of ["0", "-5", "12.5", "abc", "100000"]) {
+    const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=r&session=s&token=t&cols=${bad}&rows=40`;
+    const parsed = parseLaunchDeepLink(url);
+    assert.ok(parsed !== null);
+    assert.ok(!("cols" in parsed) && !("rows" in parsed), `cols=${bad} must not survive parsing`);
+  }
+});
+
 test("redactDeepLinkToken elides the prompt (user content) as well as the token", () => {
   const url = buildLaunchDeepLink({ ...SAMPLE, prompt: HOSTILE_PROMPT });
   const redacted = redactDeepLinkToken(url);

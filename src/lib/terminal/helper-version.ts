@@ -22,8 +22,13 @@
  *  helper ready" opt-in. 0.3.2 (card cbe60db5, sign-off change 2) adds the
  *  bridge's machine-identity (hostname) announcement. 0.3.3 (rework 5,
  *  exact-conversation Resume) adds the bridge's own conversation-id minting
- *  (`--session-id`/`--resume`) and its announcement alongside version/host. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.3";
+ *  (`--session-id`/`--resume`) and its announcement alongside version/host.
+ *  0.3.4 (Bug B, Nick's field test 2026-08-15) fixes a promptless/Resume
+ *  launch's PTY spawning at a hardcoded 80x24 — it now spawns at the
+ *  browser's real panel size, carried on the SAME launch deep link (see
+ *  terminal/bridge/src/spawn-dims.js). NOT yet built/notarized/published —
+ *  bumped here so the recommended-version gate is ready the moment it is. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.4";
 
 export type HelperVersionParts = readonly [number, number, number];
 

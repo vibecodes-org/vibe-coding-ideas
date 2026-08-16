@@ -59,6 +59,7 @@ import {
   decideReconnectNow,
   decideResize,
   isConnectSuperseded,
+  isValidDim,
   encodeHeartbeatFrame,
   encodeResizeMessage,
   initialConnectionState,
@@ -752,6 +753,31 @@ export function useTerminalSession(
     ws?.send(msg);
   }, []);
 
+  // Real panel size for the NEXT launch's PTY spawn (Bug B, card cbe60db5 —
+  // Nick's field test 2026-08-15): a promptless (Resume) launch's PTY used to
+  // spawn at a hardcoded 80x24 because `sendResize()` above can't reach it
+  // until status flips to "connected" — which can't happen before something
+  // spawns and streams a byte (see its own doc comment). Reading dims via the
+  // SAME fit-addon call, right before firing the launch deep link, sidesteps
+  // that entirely: the bridge gets the real size in the SAME request that
+  // tells it what to spawn (terminal/bridge/src/spawn-dims.js), no wire
+  // round-trip or connection-state race involved. `null` when xterm hasn't
+  // mounted yet (an unlikely fast-click race, or a brand-new tab whose xterm
+  // dynamic import is still in flight) — the caller then omits cols/rows and
+  // the bridge falls back to its pre-existing hardcoded default, exactly like
+  // before this fix (never worse than today).
+  const currentLaunchDims = useCallback((): { cols: number; rows: number } | null => {
+    const term = termRef.current;
+    const fit = fitRef.current;
+    if (!term || !fit) return null;
+    try {
+      fit.fit();
+    } catch {
+      return null;
+    }
+    return isValidDim(term.cols) && isValidDim(term.rows) ? { cols: term.cols, rows: term.rows } : null;
+  }, []);
+
   // Refit on container resize and whenever the dock expands.
   useEffect(() => {
     if (!xtermReady || !containerRef.current) return;
@@ -958,6 +984,11 @@ export function useTerminalSession(
       // instead of building a prompt (see terminal/bridge/src/index.js).
       // Checked FIRST so the normal essentials/budgeting path below never
       // runs for a resume.
+      // Bug B (card cbe60db5): computed ONCE per fire, used on whichever
+      // buildLaunchDeepLink call below actually runs — see
+      // `currentLaunchDims`'s own doc comment for why this is read here
+      // rather than left to a post-spawn resize.
+      const dims = currentLaunchDims();
       const carriedForResume = promptPartsRef.current;
       if (carriedForResume?.resume || carriedForResume?.resumeId) {
         const cwd = carriedForResume.cwd;
@@ -980,6 +1011,8 @@ export function useTerminalSession(
             cwd,
             resume: carriedForResume.resumeId ? undefined : true,
             resumeId: carriedForResume.resumeId,
+            cols: dims?.cols,
+            rows: dims?.rows,
           });
         } catch (err) {
           logger.error("Terminal resume deep-link build failed", {
@@ -1038,6 +1071,8 @@ export function useTerminalSession(
               helperToken,
               cwd: linkCwd,
               prompt,
+              cols: dims?.cols,
+              rows: dims?.rows,
             }),
         });
         if (!result.ok) {
@@ -1070,7 +1105,7 @@ export function useTerminalSession(
       });
       if (!openLaunchLinkAndArmTimeout(link)) setLaunchPhase("helper-timeout");
     },
-    [resolveLaunchPromptParts, openLaunchLinkAndArmTimeout],
+    [resolveLaunchPromptParts, openLaunchLinkAndArmTimeout, currentLaunchDims],
   );
 
   const teardownSocket = useCallback(() => {

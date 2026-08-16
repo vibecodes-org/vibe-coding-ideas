@@ -139,6 +139,38 @@ describe("buildLaunchDeepLink with resumeId (rework 5, exact-conversation resume
   });
 });
 
+describe("buildLaunchDeepLink with cols/rows (Bug B, card cbe60db5 — real PTY spawn size)", () => {
+  it("includes cols/rows, positioned before prompt, and round-trips", () => {
+    const withDims = { ...SAMPLE, cols: 137, rows: 42, prompt: "hello" };
+    const url = buildLaunchDeepLink(withDims);
+    expect(url).toContain("cols=137");
+    expect(url).toContain("rows=42");
+    expect(url.indexOf("cols=")).toBeLessThan(url.indexOf("prompt="));
+    expect(parseLaunchDeepLink(url)).toEqual(withDims);
+  });
+
+  it("omits cols/rows entirely when absent — no version-skew risk for an old bridge", () => {
+    const url = buildLaunchDeepLink(SAMPLE);
+    expect(url).not.toContain("cols=");
+    expect(url).not.toContain("rows=");
+    expect(parseLaunchDeepLink(url)).toEqual(SAMPLE);
+  });
+
+  it("drops a lone dimension rather than firing a half pair", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, cols: 120 }); // rows omitted
+    expect(url).not.toContain("cols=");
+    expect(url).not.toContain("rows=");
+  });
+
+  it("a non-sane dimension on the wire is rejected by the shared parser, never forwarded", () => {
+    const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=${encodeURIComponent(SAMPLE.relay)}&session=${SAMPLE.session}&token=${encodeURIComponent(SAMPLE.token)}&cols=0&rows=24`;
+    const parsed = parseLaunchDeepLink(url);
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty("cols");
+    expect(parsed).not.toHaveProperty("rows");
+  });
+});
+
 describe("redactDeepLinkToken", () => {
   it("replaces the token value with *** and never leaks the secret", () => {
     const url = buildLaunchDeepLink(SAMPLE);

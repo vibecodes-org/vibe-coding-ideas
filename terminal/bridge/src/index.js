@@ -42,6 +42,7 @@ import WebSocket from "ws";
 import { parseControlMessage } from "./framing.js";
 import { createOutputBatcher } from "./output-batcher.js";
 import { resolveClaudeLaunch } from "./resume-cmd.js";
+import { resolveSpawnDims } from "./spawn-dims.js";
 import {
   sanitizeHelperVersion,
   sanitizeMachineLabel,
@@ -174,6 +175,12 @@ const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd()
 // caller somehow sent both, so the resumed command is never followed by a
 // stray argv element.
 const PROMPT = RESUME || RESUME_ID ? "" : launched?.prompt || "";
+// Real PTY spawn size (Bug B, card cbe60db5) — see spawn-dims.js's header
+// comment for why this can't just be a post-spawn resize for a promptless
+// launch. Falls back to the historical 80x24 default when the link didn't
+// carry a validated pair (an old app build, a bare CLI run, or a launch that
+// raced the browser's own xterm mount).
+const { cols: SPAWN_COLS, rows: SPAWN_ROWS } = resolveSpawnDims(launched);
 // ── helper-version announcement (release-gate rework 2a) ─────────────────────
 // Read the RUNNING helper's own version so the relay/dock can nudge stale
 // installs to update. Priority: BRIDGE_HELPER_VERSION (set by the packaged
@@ -468,13 +475,20 @@ async function main() {
    */
   function spawnPty() {
     if (term || shuttingDown) return;
-    log("info", "spawning PTY", { file, args: cmdArgs, cwd: CWD, promptChars: PROMPT.length });
+    log("info", "spawning PTY", {
+      file,
+      args: cmdArgs,
+      cwd: CWD,
+      promptChars: PROMPT.length,
+      cols: SPAWN_COLS,
+      rows: SPAWN_ROWS,
+    });
     let spawned;
     try {
       spawned = pty.spawn(file, spawnArgs, {
         name: "xterm-color",
-        cols: 80,
-        rows: 24,
+        cols: SPAWN_COLS,
+        rows: SPAWN_ROWS,
         cwd: CWD,
         env: resolveSpawnEnv(),
       });
