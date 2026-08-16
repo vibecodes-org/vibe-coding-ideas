@@ -838,8 +838,12 @@ export interface CompactPromptEssentials {
    */
   head: string;
   /**
-   * Trimmable: the existing-folder confirm echo (duplicates the deep link's
-   * `cwd` param — safe to truncate, unlike the protocol) + the work step.
+   * Back-compat, UNCONDITIONAL join of `directoryEcho` (if any) + `work` —
+   * kept for callers with no atomic step breakdown (see `work`/`directoryEcho`
+   * below), which `fitCompactWorktreeProtocol` still char-trims via
+   * enforcePromptLength exactly as before. Real callers (via
+   * `buildCompactPromptEssentials`, which always also supplies `work`) are no
+   * longer read through this field for assembly — see `work` for why.
    */
   tail: string;
   /**
@@ -849,6 +853,29 @@ export interface CompactPromptEssentials {
    * fitCompactWorktreeProtocol, which decides whether it rides the head.
    */
   protocol?: string;
+  /**
+   * BUG C fix (6th rework cycle, QA-confirmed): the "find work" / "work this
+   * task" step, carrying the `idea_id`/`task_id` the agent needs to actually
+   * pick up work — the ONE thing in the whole compact prompt with no recovery
+   * path if it's lost (unlike the head steps, which the agent can self-heal
+   * via the board once connected). ALWAYS present (`buildCompactPromptEssentials`
+   * always supplies it). Given the SAME atomic, whole-step-or-omit protection
+   * as `headSteps`: `fitCompactWorktreeProtocol` never character-truncates it
+   * — it either rides intact or (only when even `head` + this alone can't fit
+   * the budget) is cleanly omitted, never a mid-sentence/mid-UUID fragment.
+   * Optional only for back-compat with a caller that supplies no step
+   * breakdown at all, in which case `tail`'s old char-trim behaviour applies.
+   */
+  work?: string;
+  /**
+   * The existing-folder confirm-echo tail step (duplicates the deep link's
+   * `cwd` param, so it's genuinely disposable — unlike `work`). LOWEST
+   * priority of everything in the trimmable tail: `fitCompactWorktreeProtocol`
+   * drops the protocol before this, and drops this before ever touching
+   * `work`. Whole-or-omitted, same as the other atomic pieces — never a
+   * character fragment.
+   */
+  directoryEcho?: string;
   /**
    * BUG B fix (5th rework cycle): the title-header line, ALONE (no steps).
    * Optional — omitted (with `headSteps`) by any caller that doesn't have a
@@ -909,6 +936,8 @@ export function buildCompactPromptEssentials(args: CompactBootstrapArgs): Compac
     head: `${header}\n\n${numbered}\n`,
     tail: numberedTail,
     protocol,
+    work,
+    directoryEcho,
   };
 }
 
@@ -972,25 +1001,101 @@ export function buildCompactPromptEssentials(args: CompactBootstrapArgs): Compac
  * before (KEPT, unmodified) as the tail's trim mechanism, and as the
  * back-compat fallback for a caller with no step breakdown (see
  * resolveEssentialHead).
+ *
+ * BUG C fix (6th rework cycle, QA-confirmed): once the protocol is (or isn't)
+ * folded in, the ORIGINAL implementation handed the entire trimmable tail —
+ * `essentials.tail`, the directory-confirm echo bundled TOGETHER WITH the
+ * "find work" step that carries `idea_id`/`task_id` — to enforcePromptLength,
+ * which char-trims it like any other disposable text. On a real (no-repo,
+ * previously-recorded-path) launch that combination routinely blew the URL
+ * budget, so the work step got shredded mid-sentence (sometimes mid-UUID)
+ * right alongside the genuinely disposable echo, with no special protection —
+ * even though it's the one piece of the tail an agent can't self-heal (it has
+ * no idea_id/task_id to resume from without it). Whenever a caller supplies
+ * `work` (every real caller, via buildCompactPromptEssentials), that step now
+ * gets the SAME atomic, whole-step-or-omit treatment headSteps already have —
+ * see assembleAtomicTail's degrade ladder. A caller with no step breakdown at
+ * all (`work` undefined — synthetic test fixtures only) keeps the pre-fix
+ * char-trim behaviour unchanged.
  */
 export function fitCompactWorktreeProtocol(
   essentials: CompactPromptEssentials,
   budget: number
 ): string {
-  const { tail, protocol } = essentials;
   const head = resolveEssentialHead(essentials, budget);
-  const withoutProtocol = enforcePromptLength(head, tail, budget);
-  const safeWithoutProtocol = encodedLength(withoutProtocol) <= budget ? withoutProtocol : "";
-  if (!protocol) return safeWithoutProtocol;
 
-  const headWithProtocol = `${protocol}\n\n${head}`;
-  // Pre-check (see BUG 1 priority-inversion note above): only attempt the
-  // protocol-inclusive candidate when the COMBINED head already fits budget
-  // intact — never let enforcePromptLength's head-trim decide this for us.
-  if (encodedLength(headWithProtocol) > budget) return safeWithoutProtocol;
+  if (essentials.work === undefined) {
+    // Back-compat path — no atomic work-step breakdown supplied. Preserve the
+    // exact pre-fix behaviour: the whole tail is one char-trimmable blob.
+    const { tail, protocol } = essentials;
+    const withoutProtocol = enforcePromptLength(head, tail, budget);
+    const safeWithoutProtocol = encodedLength(withoutProtocol) <= budget ? withoutProtocol : "";
+    if (!protocol) return safeWithoutProtocol;
 
-  const withProtocol = enforcePromptLength(headWithProtocol, tail, budget);
-  return encodedLength(withProtocol) <= budget ? withProtocol : safeWithoutProtocol;
+    const headWithProtocol = `${protocol}\n\n${head}`;
+    // Pre-check (see BUG 1 priority-inversion note above): only attempt the
+    // protocol-inclusive candidate when the COMBINED head already fits budget
+    // intact — never let enforcePromptLength's head-trim decide this for us.
+    if (encodedLength(headWithProtocol) > budget) return safeWithoutProtocol;
+
+    const withProtocol = enforcePromptLength(headWithProtocol, tail, budget);
+    return encodedLength(withProtocol) <= budget ? withProtocol : safeWithoutProtocol;
+  }
+
+  return assembleAtomicTail(essentials, head, budget);
+}
+
+/**
+ * BUG C fix (6th rework cycle) — assembles the tail (protocol + directory-echo
+ * + work) atomically against `budget`, in a fixed priority DEGRADE LADDER,
+ * never fragmenting the "find work" step (`work`) at the character level:
+ *
+ *  1. protocol + directoryEcho + work, all whole.
+ *  2. directoryEcho + work, whole (protocol dropped — it's the single
+ *     biggest chunk, so dropping it alone is tried first).
+ *  3. work alone, whole (directoryEcho ALSO dropped — lowest priority of
+ *     everything here, since it only duplicates the URL's own `cwd=` param).
+ *  4. Absolute floor: even `head` + `work` alone doesn't fit. `work` is still
+ *     never fragmented — it's dropped entirely, and `head` runs through
+ *     enforcePromptLength as the final, already-battle-tested safety net
+ *     (guaranteed <= budget in every case, per its own BUG 6 fix).
+ *
+ * Each rung is tried in FULL before falling back to the next — this is what
+ * guarantees `work` either rides byte-for-byte intact or is cleanly absent,
+ * exactly like the `headSteps` atomic degrade (fitEssentialHead) above it.
+ */
+function assembleAtomicTail(
+  essentials: CompactPromptEssentials,
+  head: string,
+  budget: number
+): string {
+  const { protocol, directoryEcho, work, headSteps } = essentials;
+  const stepOffset = headSteps?.length ?? 0;
+
+  const buildTail = (includeDirectoryEcho: boolean): string => {
+    const steps: string[] = [];
+    if (includeDirectoryEcho && directoryEcho) steps.push(directoryEcho);
+    steps.push(work as string);
+    return steps.map((s, i) => `${stepOffset + i + 1}. ${s}`).join("\n");
+  };
+
+  if (protocol) {
+    const withProtocol = `${protocol}\n\n${head}${buildTail(true)}`;
+    if (encodedLength(withProtocol) <= budget) return withProtocol;
+  }
+
+  const withoutProtocol = `${head}${buildTail(true)}`;
+  if (encodedLength(withoutProtocol) <= budget) return withoutProtocol;
+
+  const workOnly = `${head}${buildTail(false)}`;
+  if (encodedLength(workOnly) <= budget) return workOnly;
+
+  // Even the work step alone doesn't fit alongside the head — omit it rather
+  // than fragment it. `head` itself already fits `budget` (resolveEssentialHead
+  // guarantees this), so this is a genuine no-op in practice; the
+  // enforcePromptLength pass is defensive belt-and-suspenders only.
+  const headOnly = enforcePromptLength(head, "", budget);
+  return encodedLength(headOnly) <= budget ? headOnly : "";
 }
 
 /**
@@ -1168,11 +1273,18 @@ export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLink
     // Tier 2 — fold `cd '<path>'` in as an atomic prefix. Only accept this
     // candidate when the FULL raw cwd string survives verbatim in the
     // assembled prompt — i.e. the cd line rode whole, never bisected by
-    // enforcePromptLength's tail/head trims.
+    // enforcePromptLength's tail/head trims — AND (BUG C fix) the essentials
+    // + work step also survive whole. Pre-BUG-C this only checked the cd
+    // line, so a cwd long enough to squeeze the work step out at tier 1 could
+    // squeeze it out here too (the cd line eats into the SAME head+tail
+    // budget) and still be accepted as "ok" — landing the agent in the right
+    // folder with no idea what to do next. Reject that and fall through to
+    // tier 3, which drops the path entirely and gives the work step its full,
+    // path-length-independent budget back.
     const cdLine = buildCdLine(cwd);
     const withCd = foldCdIntoEssentials(essentials, cdLine);
     const prompt = fitCompactWorktreeProtocol(withCd, budgetNoCwd);
-    if (prompt.includes(cwd)) {
+    if (prompt.includes(cwd) && essentialsSurviveWhole(essentials, prompt)) {
       const url = buildLink({ prompt });
       if (url.length <= cap) return { ok: true, url, droppedCwd: true };
     }
@@ -1187,15 +1299,26 @@ export function buildBoundedDeepLink(args: BoundedDeepLinkArgs): BoundedDeepLink
 }
 
 /**
- * Whether every essential step (essentials.headSteps) is present, WHOLE, in
- * `prompt`. A caller with no step breakdown (back-compat — see
- * CompactPromptEssentials.headSteps) can't be checked this way, so this
- * degrades to `true` for it — tier 1's gate then reduces to its pre-FIX-A
- * `budgetWithCwd > 0` check alone, unchanged for that caller.
+ * Whether every essential step (essentials.headSteps) AND the work step
+ * (essentials.work) are present, WHOLE, in `prompt`. A caller with no step
+ * breakdown (back-compat — see CompactPromptEssentials.headSteps) can't be
+ * checked this way, so each half degrades to `true` for it — tier 1's gate
+ * then reduces to its pre-FIX-A `budgetWithCwd > 0` check alone, unchanged
+ * for that caller.
+ *
+ * BUG C fix (6th rework cycle): previously this only checked `headSteps`, so
+ * a tier-1 build that squeezed the cwd param in at the cost of silently
+ * dropping (or, pre-fix, fragmenting) the work step still passed as "ok" —
+ * the agent would land in the right folder with no idea what to do next.
+ * Requiring `work` to survive whole here forces the ladder to fall through to
+ * tier 2/3 (drop the cwd param, retry against the full, path-length-
+ * independent budget) whenever a long cwd would otherwise cost the work step.
  */
 function essentialsSurviveWhole(essentials: CompactPromptEssentials, prompt: string): boolean {
-  if (!essentials.headSteps) return true;
-  return essentials.headSteps.every((step) => prompt.includes(step));
+  const headStepsOk =
+    !essentials.headSteps || essentials.headSteps.every((step) => prompt.includes(step));
+  const workOk = essentials.work === undefined || prompt.includes(essentials.work);
+  return headStepsOk && workOk;
 }
 
 /**
