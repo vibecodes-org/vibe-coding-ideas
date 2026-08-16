@@ -107,6 +107,7 @@
       "Bash(taskkill:*)",
       "mcp__vibecodes__set_agent_identity",
       "mcp__vibecodes__list_agents",
+      "mcp__vibecodes__approve_step",
       "Bash(strings /c/Users/nicho/Projects/vibe-coding-ideas/.next/server/edge/chunks/*e1605b4e*.js 2>/dev/null | grep -o \"supabase.co\" | head -3 || echo \"Not found in edge bundle\")",
       "mcp__vibecodes-remote__set_agent_identity",
       "mcp__vibecodes__update_discussion",
