@@ -1242,7 +1242,7 @@ export function registerTools(
 
   server.tool(
     "fail_step",
-    "Mark a workflow step as failed. Pass the `claim_token` from claim_next_step (not needed when rejecting an awaiting_approval step — human gate). Pass the failure reason in the `output` parameter (NOT `reason`). Use `reset_to_step_id` for cascade rejection — resets that step and all subsequent steps back to pending (and invalidates their claim tokens) so the workflow can be reworked from that point (the run stays 'running'). Without `reset_to_step_id`, the entire workflow run is marked as failed and stops. The `output` text is saved as a 'failure' comment on the step and becomes rework context when the step is later re-claimed via `claim_next_step`. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it).",
+    "Mark an in_progress workflow step as failed. Pass the `claim_token` from claim_next_step. Pass the failure reason in the `output` parameter (NOT `reason`). Use `reset_to_step_id` for cascade rejection — resets that step and all subsequent steps back to pending (and invalidates their claim tokens) so the workflow can be reworked from that point (the run stays 'running'). Without `reset_to_step_id`, the entire workflow run is marked as failed and stops. The `output` text is saved as a 'failure' comment on the step and becomes rework context when the step is later re-claimed via `claim_next_step`. Pass `model_used` = the Task-tool model alias the step's subagent actually ran on (self-reported — VibeCodes records it but does not verify it). CANNOT reject an awaiting_approval step — that's a human gate, same as approve_step; rejecting it is only possible from the task's workflow panel in the web UI.",
     failStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
@@ -1289,7 +1289,7 @@ export function registerTools(
 
   server.tool(
     "approve_step",
-    "Approve a workflow step that is awaiting human approval. HUMAN-ONLY: Only call when a human user has explicitly instructed you to approve — never self-approve. Bot identities are rejected — approve from a connection authenticated as the human account, or from the task's workflow panel in the web UI. Moves the step to completed. The step's existing output is preserved. Optionally adds an approval comment.",
+    "RETIRED — always errors. approve_step can no longer approve anything, from any MCP connection (stdio or remote, even one authenticated as the human's own account) — there is no reliable way to tell 'a human clicked Approve' apart from 'an agent called this tool' over MCP, so the human-approval gate can now ONLY be satisfied from the task's workflow panel in the VibeCodes web UI. Kept registered so a stale client gets this instructive error instead of an unknown-tool failure. If a step is awaiting_approval, STOP and tell the human to review and approve it in the web UI — do not call this tool expecting it to work.",
     approveStepSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {

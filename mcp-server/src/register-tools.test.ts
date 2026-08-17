@@ -373,6 +373,67 @@ describe("registerTools", () => {
     );
   });
 
+  // Board task d572c4d1-bb45-468d-94b0-f3ac01855601: the old approve_step
+  // description promised working, identity-gated approval ("HUMAN-ONLY...
+  // approve from a connection authenticated as the human account") — that
+  // promise was the bug (ctx.userId IS the human's own id on the remote
+  // transport). The description must no longer make it, mirroring how
+  // set_agent_identity's retirement description reads.
+  it("approve_step's description no longer promises identity-based approval", () => {
+    const server = createMockServer();
+    registerTools(server, vi.fn());
+
+    const approveCall = server.tool.mock.calls.find(
+      (call: unknown[]) => call[0] === "approve_step"
+    );
+    const description = approveCall![1] as string;
+
+    expect(description).toMatch(/RETIRED|no longer approve/i);
+    expect(description).not.toMatch(/bot identities are rejected/i);
+    expect(description).not.toMatch(/connection authenticated as the human account/i);
+  });
+
+  it("approve_step's callback always errors and never resolves", async () => {
+    const server = createMockServer();
+    const mockFrom = vi.fn(() => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      maybeSingle: vi.fn().mockResolvedValue({ data: null, error: null }),
+    }));
+    const mockContext: McpContext = {
+      supabase: { from: mockFrom } as unknown as McpContext["supabase"],
+      userId: "test-user",
+    };
+    const getContext = vi.fn(() => mockContext);
+
+    registerTools(server, getContext);
+
+    const approveCall = server.tool.mock.calls.find(
+      (call: unknown[]) => call[0] === "approve_step"
+    );
+    const callback = approveCall![3];
+    const result = await callback(
+      { step_id: "00000000-0000-4000-a000-000000000020" },
+      {}
+    );
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain("approve_step no longer approves anything");
+  });
+
+  it("fail_step's description no longer promises a token-free awaiting_approval rejection", () => {
+    const server = createMockServer();
+    registerTools(server, vi.fn());
+
+    const failCall = server.tool.mock.calls.find(
+      (call: unknown[]) => call[0] === "fail_step"
+    );
+    const description = failCall![1] as string;
+
+    expect(description).toMatch(/CANNOT reject an awaiting_approval step/i);
+    expect(description).not.toMatch(/not needed when rejecting an awaiting_approval step/i);
+  });
+
   it("get_idea_enhancement_prompt is registered with an attachment-context provider passed through", async () => {
     const server = createMockServer();
     const IDEA_ID = "00000000-0000-4000-a000-00000000abcd";

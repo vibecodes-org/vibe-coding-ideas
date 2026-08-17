@@ -1155,7 +1155,7 @@ describe("completeStep", () => {
     expect(result.status).toBe("awaiting_approval");
     expect(result).toHaveProperty("message");
     expect((result as { message: string }).message).toContain("STOP");
-    expect((result as { message: string }).message).toContain("do NOT call approve_step");
+    expect((result as { message: string }).message).toContain("approve_step no longer works");
   });
 
   it("does not return stop message for normal completion", async () => {
@@ -2234,148 +2234,83 @@ describe("claimNextStep — approval_notes", () => {
 });
 
 // ---------------------------------------------------------------------------
-// approveStep — bot rejection test
+// approveStep — hard-error stub (board task d572c4d1-bb45-468d-94b0-f3ac01855601)
 // ---------------------------------------------------------------------------
+// The old version only blocked callers where users.is_bot was true — but
+// ctx.userId on the remote OAuth transport is always the HUMAN's own id, so
+// an autonomous agent orchestrating under that connection sailed straight
+// through (that's the bug this task fixes). approve_step now rejects EVERY
+// caller, unconditionally, and never issues a DB update — the only surviving
+// approval path is approveWorkflowStep (src/actions/workflow.ts), covered in
+// src/actions/workflow.test.ts.
 
 describe("approveStep", () => {
-  it("rejects bot callers", async () => {
+  it("rejects a bot-flagged caller and never touches task_workflow_steps.update", async () => {
+    let updateCalled = false;
     const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain({ idea_id: IDEA_ID, task_id: TASK_ID });
+        chain.chain.update = vi.fn(() => {
+          updateCalled = true;
+          return chain.chain;
+        });
+        return chain.chain;
+      }
+      // A stray users-table lookup would indicate the retired is_bot check
+      // is back — fail loudly rather than silently answering it.
       if (table === "users") {
-        const chain = createChain({ is_bot: true });
+        throw new Error("approveStep must not query users — the is_bot check is retired");
+      }
+      return createChain(null).chain;
+    }) as unknown as McpContext["supabase"]["from"]);
+
+    await expect(approveStep(ctx, { step_id: STEP_ID })).rejects.toThrow(
+      /approve_step no longer approves anything/i
+    );
+    expect(updateCalled).toBe(false);
+  });
+
+  it("rejects a human-authenticated caller identically — approval is web-UI-only", async () => {
+    let updateCalled = false;
+    const ctx = makeContext(((table: string) => {
+      if (table === "task_workflow_steps") {
+        const chain = createChain({ idea_id: IDEA_ID, task_id: TASK_ID });
+        chain.chain.update = vi.fn(() => {
+          updateCalled = true;
+          return chain.chain;
+        });
         return chain.chain;
       }
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
     await expect(
-      approveStep(ctx, { step_id: STEP_ID })
-    ).rejects.toThrow("Only humans can approve");
+      approveStep(ctx, { step_id: STEP_ID, comment: "looks good" })
+    ).rejects.toThrow(/task's workflow panel in the VibeCodes web UI/i);
+    expect(updateCalled).toBe(false);
   });
 
-  it("allows human callers", async () => {
-    const stepData = {
-      claim_token_hash: TCT.hash,
-      id: STEP_ID,
-      run_id: RUN_ID,
-      idea_id: IDEA_ID,
-      status: "awaiting_approval",
-    };
-    const updatedStep = {
-      id: STEP_ID,
-      task_id: TASK_ID,
-      run_id: RUN_ID,
-      title: "Test Step",
-      agent_role: "developer",
-      status: "completed",
-      output: "output",
-      completed_at: "2026-01-01T00:00:00Z",
-    };
-
-    const tableCounts: Record<string, number> = {};
+  it("includes a deep link to the task's board when the step lookup succeeds", async () => {
     const ctx = makeContext(((table: string) => {
-      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
-
-      if (table === "users") {
-        return createChain({ is_bot: false }).chain;
-      }
-
       if (table === "task_workflow_steps") {
-        const callNum = tableCounts[table];
-        if (callNum === 1) {
-          // Fetch step
-          return createChain(stepData).chain;
-        }
-        // Update step
-        const chain = createChain(null);
-        chain.chain.maybeSingle = vi.fn(() =>
-          Promise.resolve({ data: updatedStep, error: null })
-        );
-        return chain.chain;
+        return createChain({ idea_id: IDEA_ID, task_id: TASK_ID }).chain;
       }
-
-      if (table === "workflow_runs") {
-        const chain = createChain(null);
-        chain.chain.then = (resolve: (val: unknown) => void) =>
-          Promise.resolve({ data: [], error: null }).then(resolve);
-        chain.chain.maybeSingle = vi.fn(() =>
-          Promise.resolve({ data: null, error: null })
-        );
-        return chain.chain;
-      }
-
       return createChain(null).chain;
     }) as unknown as McpContext["supabase"]["from"]);
 
-    const result = await approveStep(ctx, { step_id: STEP_ID });
-    expect(result.step).toMatchObject({ status: "completed" });
+    await expect(approveStep(ctx, { step_id: STEP_ID })).rejects.toThrow(
+      new RegExp(`/ideas/${IDEA_ID}/board\\?taskId=${TASK_ID}`)
+    );
   });
 
-  // Design Review condition 2 (agent-voice-comments-design.html §1.2, §7):
-  // approve_step is belt-and-braces — the hashes are normally already gone
-  // by awaiting_approval — but the design's own traceability table (§6,
-  // AC-14) names it as one of the five sites the unit tests should cover,
-  // and it had no assertion at all before this.
-  it("clears work_token_hash alongside claim_token_hash on approval (belt-and-braces)", async () => {
-    const stepData = {
-      claim_token_hash: TCT.hash,
-      id: STEP_ID,
-      run_id: RUN_ID,
-      idea_id: IDEA_ID,
-      status: "awaiting_approval",
-    };
-    const updatedStep = {
-      id: STEP_ID,
-      task_id: TASK_ID,
-      run_id: RUN_ID,
-      title: "Test Step",
-      agent_role: "developer",
-      status: "completed",
-      output: "output",
-      completed_at: "2026-01-01T00:00:00Z",
-    };
-
-    const tableCounts: Record<string, number> = {};
-    let stepUpdateData: Record<string, unknown> | null = null;
-    const ctx = makeContext(((table: string) => {
-      tableCounts[table] = (tableCounts[table] ?? 0) + 1;
-
-      if (table === "users") {
-        return createChain({ is_bot: false }).chain;
-      }
-
-      if (table === "task_workflow_steps") {
-        const callNum = tableCounts[table];
-        if (callNum === 1) {
-          return createChain(stepData).chain;
-        }
-        const chain = createChain(null);
-        chain.chain.update = vi.fn((data: unknown) => {
-          stepUpdateData = data as Record<string, unknown>;
-          return chain.chain;
-        });
-        chain.chain.maybeSingle = vi.fn(() =>
-          Promise.resolve({ data: updatedStep, error: null })
-        );
-        return chain.chain;
-      }
-
-      if (table === "workflow_runs") {
-        const chain = createChain(null);
-        chain.chain.then = (resolve: (val: unknown) => void) =>
-          Promise.resolve({ data: [], error: null }).then(resolve);
-        chain.chain.maybeSingle = vi.fn(() =>
-          Promise.resolve({ data: null, error: null })
-        );
-        return chain.chain;
-      }
-
-      return createChain(null).chain;
+  it("still rejects with the instructive error (no deep link) when the step lookup throws", async () => {
+    const ctx = makeContext((() => {
+      throw new Error("supabase unavailable");
     }) as unknown as McpContext["supabase"]["from"]);
 
-    await approveStep(ctx, { step_id: STEP_ID });
-
-    expect(stepUpdateData!.claim_token_hash).toBeNull();
-    expect(stepUpdateData!.work_token_hash).toBeNull();
+    await expect(approveStep(ctx, { step_id: STEP_ID })).rejects.toThrow(
+      /approve_step no longer approves anything/i
+    );
   });
 });
 
@@ -3990,20 +3925,53 @@ describe("claim-token protocol", () => {
     expect(updateData!.claim_token_hash).toBeNull();
   });
 
-  it("failStep on an awaiting_approval step needs no token (human gate)", async () => {
+  // Board task d572c4d1-bb45-468d-94b0-f3ac01855601: rejecting an
+  // awaiting_approval step used to skip the claim-token check with NO
+  // replacement identity gate at all — any MCP caller could reject (or,
+  // via approve_step, approve) a human gate. fail_step can no longer touch
+  // an awaiting_approval step at all; rejecting one is web-UI-only, same
+  // as approving one.
+  it("rejects fail_step on an awaiting_approval step — human gate, no DB update issued", async () => {
     const { hash } = mintClaimToken();
+    let updateCalled = false;
+    const ctx = makeCompleteCtx(
+      {
+        id: STEP_ID,
+        task_id: TASK_ID,
+        run_id: RUN_ID,
+        step_order: 3,
+        idea_id: IDEA_ID,
+        bot_id: BOT_ID,
+        agent_role: "developer",
+        status: "awaiting_approval",
+        claim_token_hash: hash,
+      },
+      () => { updateCalled = true; }
+    );
+
+    await expect(
+      failStep(ctx, { step_id: STEP_ID, output: "Rejected by human" })
+    ).rejects.toThrow(/can't reject an awaiting_approval step/i);
+    expect(updateCalled).toBe(false);
+  });
+
+  // Regression guard: the in_progress claim-token path must be completely
+  // unaffected by the awaiting_approval lockdown above.
+  it("still fails an in_progress step with a valid claim_token", async () => {
+    const { token, hash } = mintClaimToken();
     const ctx = makeCompleteCtx({
       id: STEP_ID,
+      task_id: TASK_ID,
       run_id: RUN_ID,
       step_order: 3,
       idea_id: IDEA_ID,
       bot_id: BOT_ID,
       agent_role: "developer",
-      status: "awaiting_approval",
+      status: "in_progress",
       claim_token_hash: hash,
     });
 
-    const result = await failStep(ctx, { step_id: STEP_ID, output: "Rejected by human" });
+    const result = await failStep(ctx, { step_id: STEP_ID, claim_token: token, output: "bad output" });
     expect(result.step).toBeTruthy();
   });
 });
@@ -4101,48 +4069,8 @@ describe("workflow step mutations touch board_tasks for realtime", () => {
     expect(boardTaskTouched).toBe(true);
   });
 
-  it("approveStep touches board_tasks.updated_at", async () => {
-    let boardTaskTouched = false;
-
-    const ctx = makeContext(((table: string) => {
-      if (table === "users") {
-        const chain = createChain(null);
-        chain.chain.single = vi.fn(() =>
-          Promise.resolve({ data: { is_bot: false }, error: null })
-        );
-        return chain.chain;
-      }
-
-      if (table === "task_workflow_steps") {
-        const chain = createChain(null);
-        chain.chain.single = vi.fn(() =>
-          Promise.resolve({
-            data: { id: STEP_ID, run_id: RUN_ID, idea_id: IDEA_ID, status: "awaiting_approval" },
-            error: null,
-          })
-        );
-        chain.chain.maybeSingle = vi.fn(() =>
-          Promise.resolve({
-            data: { id: STEP_ID, task_id: TASK_ID, run_id: RUN_ID, title: "Step", agent_role: "dev", status: "completed", output: null, completed_at: "2026-01-01" },
-            error: null,
-          })
-        );
-        chain.chain.then = (resolve: (val: unknown) => void) =>
-          Promise.resolve({ data: [], error: null }).then(resolve);
-        return chain.chain;
-      }
-
-      if (table === "board_tasks") {
-        boardTaskTouched = true;
-        return createChain(null).chain;
-      }
-
-      return createChain(null).chain;
-    }) as unknown as McpContext["supabase"]["from"]);
-
-    await approveStep(ctx, { step_id: STEP_ID });
-    expect(boardTaskTouched).toBe(true);
-  });
+  // approveStep no longer touches board_tasks (or any table) — it's a
+  // hard-error stub, covered under describe("approveStep") above.
 
   it("failStep touches board_tasks.updated_at", async () => {
     let boardTaskTouched = false;

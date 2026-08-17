@@ -29,6 +29,13 @@ import { notifyMentions } from "../lib/mention-notify";
 import { notifyComplianceViolation } from "../lib/compliance-notify";
 import { stepTaskUnresolvedMentions } from "../lib/mentions";
 import { mentionedUserIdsSchema } from "./comments";
+import { buildNotificationUrl } from "../../../src/lib/notification-url";
+
+// Mirrors notifications.ts's own APP_BASE_URL — kept local (not shared) since
+// it's a one-line derivation and this file already has no dependency on
+// notifications.ts. Strip keeps buildNotificationUrl's `{appUrl}/ideas/…`
+// concatenation clean.
+const APP_BASE_URL = (process.env.NEXT_PUBLIC_APP_URL ?? "https://vibecodes.co.uk").replace(/\/+$/, "");
 
 // Column names that indicate "in progress", checked in priority order (case-insensitive)
 const IN_PROGRESS_COLUMN_NAMES = [
@@ -1332,7 +1339,7 @@ export async function completeStep(
     run_complete: runComplete,
     status: newStatus,
     ...(newStatus === "awaiting_approval" && {
-      message: "This step is now awaiting human approval. STOP here — do NOT call approve_step yourself. Present your output to the user and wait for them to explicitly instruct you to approve it.",
+      message: "This step is now awaiting human approval. STOP here — approve_step no longer works from any MCP connection, even with human instruction. Present your output to the user and ask them to approve it from the task's workflow panel in the VibeCodes web UI.",
     }),
   };
 }
@@ -1345,7 +1352,7 @@ export const failStepSchema = z.object({
     .string()
     .optional()
     .describe(
-      "The one-time claim token returned by claim_next_step for this step. Not needed when rejecting an awaiting_approval step (human gate)."
+      "The one-time claim token returned by claim_next_step for this step. Required — fail_step cannot reject an awaiting_approval step (human gate); reject those from the web UI instead."
     ),
   output: z.string().max(10000).optional().describe(
     "Failure reason or error details (use `output`, not `reason`). Stored on the step's `output` column and auto-posted as a 'failure' comment. When cascade rejection is used and this step is re-claimed, this text is returned as `rework_instructions` to give the next agent context for retry."
@@ -1383,53 +1390,72 @@ export async function failStep(
   params: z.infer<typeof failStepSchema>
 ) {
   // Fetch current step (include claim_token_hash + bot_id for the two-layer check;
-  // model_tier for P2c tier-adherence computation below)
+  // model_tier for P2c tier-adherence computation below; task_id only to build
+  // the awaiting_approval rejection's deep link)
   const { data: step, error: fetchError } = await ctx.supabase
     .from("task_workflow_steps")
-    .select("id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier")
+    .select("id, task_id, run_id, step_order, idea_id, bot_id, agent_role, status, claim_token_hash, model_tier")
     .eq("id", params.step_id)
     .single();
 
   if (fetchError || !step) throw new Error(`Step not found: ${params.step_id}`);
 
-  // Capability check, mirroring complete_step. Skipped for awaiting_approval
-  // steps — humans reject those regardless of bot_id/token, and they hold no
-  // claim token (design §3d boundary). Never mutates state on failure. The
-  // former persona-consistency warning was deleted alongside complete_step's
-  // (docs/agent-voice-comments-design.html §4.2) — see that function's
-  // comment for why.
-  if (step.status !== "awaiting_approval") {
-    // err-6: a work_token (wt_…) was presented here instead of a claim_token.
-    if (params.claim_token?.startsWith("wt_")) {
-      logger.warn("claim token rejected", {
-        tool: "fail_step",
-        reason: "work_token_in_completion_tool",
-        stepId: params.step_id,
-        callerUserId: ctx.userId,
-        ownerUserId: ctx.ownerUserId,
-      });
-      throw new Error(WORK_TOKEN_IN_COMPLETION_TOOL_MESSAGE);
-    }
-
-    if (!verifyClaimToken(step.claim_token_hash, params.claim_token)) {
-      logger.warn("claim token rejected", {
-        tool: "fail_step",
-        reason: "invalid_or_missing_claim_token",
-        stepId: params.step_id,
-        callerUserId: ctx.userId,
-        ownerUserId: ctx.ownerUserId,
-      });
-      throw new Error(
-        "This step isn't claimed by you. Call claim_next_step to (re)claim it — " +
-        "you'll receive a claim_token to pass to fail_step."
-      );
-    }
+  // Human-gate lockdown (board task d572c4d1-bb45-468d-94b0-f3ac01855601):
+  // rejecting an awaiting_approval step is a human decision, exactly like
+  // approving one — it used to skip the claim-token check with NO
+  // replacement identity gate, so any MCP caller could reject a human gate.
+  // Route it through the same web-UI-only story as approve_step. The
+  // in_progress claim-token path below is completely unchanged.
+  if (step.status === "awaiting_approval") {
+    const url = buildNotificationUrl({
+      type: "task_mention",
+      ideaId: step.idea_id,
+      taskId: step.task_id,
+      commentId: null,
+      discussionId: null,
+      replyId: null,
+      appUrl: APP_BASE_URL,
+    });
+    throw new Error(
+      "fail_step can't reject an awaiting_approval step — rejecting a human gate is a human action, same as " +
+      "approving one. Reject or request changes from the task's workflow panel in the VibeCodes web UI. " +
+      `Task: ${url}`
+    );
   }
 
-  // Attribute this failure to the persona the claim token was minted for
-  // (falls back to the caller for awaiting_approval rejections, where bot_id
-  // may still be set but the human gate owns the decision).
-  const attributedTo = step.status !== "awaiting_approval" && step.bot_id ? step.bot_id : ctx.userId;
+  // Capability check, mirroring complete_step. Never mutates state on
+  // failure. The former persona-consistency warning was deleted alongside
+  // complete_step's (docs/agent-voice-comments-design.html §4.2) — see that
+  // function's comment for why.
+  // err-6: a work_token (wt_…) was presented here instead of a claim_token.
+  if (params.claim_token?.startsWith("wt_")) {
+    logger.warn("claim token rejected", {
+      tool: "fail_step",
+      reason: "work_token_in_completion_tool",
+      stepId: params.step_id,
+      callerUserId: ctx.userId,
+      ownerUserId: ctx.ownerUserId,
+    });
+    throw new Error(WORK_TOKEN_IN_COMPLETION_TOOL_MESSAGE);
+  }
+
+  if (!verifyClaimToken(step.claim_token_hash, params.claim_token)) {
+    logger.warn("claim token rejected", {
+      tool: "fail_step",
+      reason: "invalid_or_missing_claim_token",
+      stepId: params.step_id,
+      callerUserId: ctx.userId,
+      ownerUserId: ctx.ownerUserId,
+    });
+    throw new Error(
+      "This step isn't claimed by you. Call claim_next_step to (re)claim it — " +
+      "you'll receive a claim_token to pass to fail_step."
+    );
+  }
+
+  // Attribute this failure to the persona the claim token was minted for.
+  // (awaiting_approval never reaches here — it throws above.)
+  const attributedTo = step.bot_id ? step.bot_id : ctx.userId;
 
   // P2c: resolve executed_model/tier_honored from the self-reported model_used
   // (same rules as complete_step — see resolveTierAdherence). Only run the
@@ -1472,12 +1498,18 @@ export async function failStep(
     .from("task_workflow_steps")
     .update(updateFields)
     .eq("id", params.step_id)
-    .in("status", ["in_progress", "awaiting_approval"])
+    // Narrowed to in_progress only (was ["in_progress", "awaiting_approval"]):
+    // the awaiting_approval case now throws above, before this query runs, but
+    // the concurrency guard here still has to match — otherwise a step that
+    // races into awaiting_approval between the fetch above and this UPDATE
+    // (e.g. a concurrent complete_step) would slip through this filter and
+    // get failed anyway, reopening the exact bypass this change closes.
+    .eq("status", "in_progress")
     .select("id, task_id, run_id, title, agent_role, status, output, model_tier, executed_model, tier_honored, persona_used, persona_honored, skills_used")
     .maybeSingle();
 
   if (updateError) throw new Error(`Failed to fail step: ${updateError.message}`);
-  if (!updated) throw new Error("Step is not in a state that can be failed (must be in_progress or awaiting_approval)");
+  if (!updated) throw new Error("Step is not in a state that can be failed (must be in_progress)");
 
   // Touch board_tasks so Realtime fires before denormalized counts arrive
   await touchBoardTask(ctx, updated.task_id);
@@ -1698,92 +1730,66 @@ export async function updateStep(
 
 // --- Approve Step ---
 
+// Schema kept unchanged (including the now-unused `comment` field) so a
+// stale client's existing call shape still parses and reaches the
+// instructive stub error below, instead of failing validation first.
 export const approveStepSchema = z.object({
-  step_id: z.string().uuid().describe("The workflow step ID (must be in awaiting_approval status)"),
-  comment: z.string().max(5000).optional().describe("Optional approval comment"),
+  step_id: z.string().uuid().describe("The workflow step ID"),
+  comment: z.string().max(5000).optional().describe("Unused — approve_step no longer approves anything. See the tool description."),
 });
 
+// approve_step is a hard-error stub (board task d572c4d1-bb45-468d-94b0-f3ac01855601,
+// modelled on set_agent_identity's retirement — register-tools.ts's
+// setBotIdentity). The prior version only checked users.is_bot on ctx.userId,
+// which is the HUMAN's own id on the remote OAuth transport — any agent
+// running under a connection authenticated as the human (the normal case for
+// an autonomous orchestrator) sailed straight through, defeating the gate
+// entirely. There is no reliable signal that distinguishes "a human clicked
+// Approve" from "an agent called approve_step" over MCP, so this tool no
+// longer approves anything, from any transport, ever. The ONLY path to
+// approval is approveWorkflowStep in src/actions/workflow.ts, which runs
+// inside the human's authenticated browser session and stamps approved_by/
+// approved_at/approval_method. A BEFORE UPDATE trigger (migration 00159)
+// enforces this in the database as defence in depth. Kept registered (never
+// unregistered) so a stale/confused client gets this instructive error
+// instead of an unknown-tool failure.
 export async function approveStep(
   ctx: McpContext,
   params: z.infer<typeof approveStepSchema>
-) {
-  // Block bot callers — only humans can approve human-gated steps
-  const { data: caller } = await ctx.supabase
-    .from("users")
-    .select("is_bot")
-    .eq("id", ctx.userId)
-    .single();
-
-  if (caller?.is_bot) {
-    // set_agent_identity is retired — this connection's agent identity is now
-    // either a stdio install's static VIBECODES_BOT_ID or (remotely) can no
-    // longer happen at all, since ctx.userId is always the real human there.
-    // The guard stays (docs/agent-voice-comments-design.html §4.1, Q7 §5):
-    // it still protects a bot-configured stdio install, and it keeps
-    // "approval is a human act" enforced rather than assumed.
-    throw new Error(
-      "Only humans can approve workflow steps. This connection is authenticated as an agent " +
-      "(a stdio install configured with VIBECODES_BOT_ID). Ask the human to approve from the " +
-      "task's workflow panel in the web UI, or run approval from a connection authenticated as " +
-      "the human account. Do NOT approve without explicit human instruction."
-    );
-  }
-
-  // Fetch step — must be awaiting_approval
-  const { data: step, error: fetchError } = await ctx.supabase
-    .from("task_workflow_steps")
-    .select("id, run_id, idea_id, status")
-    .eq("id", params.step_id)
-    .single();
-
-  if (fetchError || !step) throw new Error(`Step not found: ${params.step_id}`);
-  if (step.status !== "awaiting_approval") {
-    throw new Error(`Step is not awaiting approval (current status: ${step.status})`);
-  }
-
-  const { data: updated, error: updateError } = await ctx.supabase
-    .from("task_workflow_steps")
-    .update({
-      status: "completed",
-      completed_at: new Date().toISOString(),
-      claim_token_hash: null, // token lifecycle ends with the step
-      work_token_hash: null, // belt-and-braces — normally already null by this point
-    })
-    .eq("id", params.step_id)
-    .eq("status", "awaiting_approval")
-    .select("id, task_id, run_id, title, agent_role, status, output, completed_at")
-    .maybeSingle();
-
-  if (updateError) throw new Error(`Failed to approve step: ${updateError.message}`);
-  if (!updated) throw new Error("Step is no longer awaiting approval — it may have been modified concurrently");
-
-  // Touch board_tasks so Realtime fires before denormalized counts arrive
-  await touchBoardTask(ctx, updated.task_id);
-
-  // Insert approval comment if provided
-  if (params.comment && step.idea_id) {
-    const { error: commentError } = await ctx.supabase
-      .from("workflow_step_comments")
-      .insert({
-        step_id: params.step_id,
-        idea_id: step.idea_id,
-        author_id: ctx.userId,
-        type: "approval",
-        content: params.comment,
+): Promise<never> {
+  // Best-effort deep link to the task's workflow panel — never mutates
+  // anything and never blocks the error on failure (e.g. the step doesn't
+  // exist, or a test context's mock doesn't implement this table).
+  let deepLinkSuffix = "";
+  try {
+    const { data: step } = await ctx.supabase
+      .from("task_workflow_steps")
+      .select("idea_id, task_id")
+      .eq("id", params.step_id)
+      .maybeSingle();
+    if (step?.idea_id && step?.task_id) {
+      const url = buildNotificationUrl({
+        type: "task_mention",
+        ideaId: step.idea_id,
+        taskId: step.task_id,
+        commentId: null,
+        discussionId: null,
+        replyId: null,
+        appUrl: APP_BASE_URL,
       });
-    if (commentError) {
-      // Non-fatal: step is already approved, just log
-      logger.warn("Failed to insert approval comment", { error: commentError.message, stepId: params.step_id });
+      deepLinkSuffix = ` Task: ${url}`;
     }
+  } catch {
+    // Deep link is a nicety, not a requirement — the error text below still
+    // tells the caller where to go.
   }
 
-  // Check if all steps in the run are done
-  let runComplete = false;
-  if (step.run_id) {
-    runComplete = await checkAndCompleteRun(ctx.supabase, step.run_id);
-  }
-
-  return { step: updated, run_complete: runComplete };
+  throw new Error(
+    "approve_step no longer approves anything — human-approval gates can only be approved from the task's " +
+    "workflow panel in the VibeCodes web UI, by a human clicking Approve. No MCP connection (stdio or remote, " +
+    "even one authenticated as the human's own account) can complete this action anymore. Stop here: show the " +
+    "human the deliverable and wait for them to approve it in the UI." + deepLinkSuffix
+  );
 }
 
 
