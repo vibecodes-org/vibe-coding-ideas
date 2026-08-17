@@ -816,6 +816,14 @@ describe("useTerminalSession", () => {
           },
         }),
       );
+      // Squashed-reattach fix (task 6ac2cd44): the deep link is now deferred
+      // until xterm has actually mounted (see the "squashed-reattach fix"
+      // describe block below for the fresh-mount-race coverage) — mount a
+      // real container so the mocked xterm import resolves and the fire
+      // actually happens, matching production (the container is ALWAYS
+      // present; only xterm's async import is what's racing).
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
       await flushEffects();
 
       // openLaunchLinkAndArmTimeout only sets "opening" once a link actually
@@ -860,6 +868,11 @@ describe("useTerminalSession", () => {
           },
         }),
       );
+      // Squashed-reattach fix (task 6ac2cd44): see the comment on the first
+      // test in this describe block — mount a real container so xterm
+      // actually mounts and the now-deferred fire happens.
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
       await flushEffects();
 
       expect(result.current.launchPhase).toBe("opening");
@@ -902,6 +915,11 @@ describe("useTerminalSession", () => {
           },
         }),
       );
+      // Squashed-reattach fix (task 6ac2cd44): see the comment on the first
+      // test in this describe block — mount a real container so xterm
+      // actually mounts and the now-deferred fire happens.
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
       await flushEffects();
 
       expect(result.current.launchPhase).toBe("opening");
@@ -935,6 +953,11 @@ describe("useTerminalSession", () => {
           },
         }),
       );
+      // Squashed-reattach fix (task 6ac2cd44): see the comment on the first
+      // test in this describe block — mount a real container so xterm
+      // actually mounts and the now-deferred fire happens.
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
       await flushEffects();
 
       expect(result.current.launchPhase).toBe("opening");
@@ -944,6 +967,189 @@ describe("useTerminalSession", () => {
       expect(src).not.toContain("resume_id=");
       expect(src).not.toContain("resume=1");
       expect(src).toContain("prompt=");
+    });
+
+    // Squashed-reattach fix (task 6ac2cd44, 2026-08-17 follow-up to 27d19c68):
+    // Nick's report — a reattach reconnects, flickers, and the terminal
+    // renders squashed into part of the screen. QA traced this to
+    // attachToExisting firing the reattach relaunch deep link SYNCHRONOUSLY,
+    // in the same effect-flush pass as a fresh mount's still-in-flight async
+    // xterm import — currentLaunchDims() (which reads termRef/fitRef) is
+    // therefore GUARANTEED null then, so the remote PTY spawns at the
+    // bridge's narrow 80x24 fallback instead of the real panel size. The fix
+    // mirrors the existing pendingInitialBufferRef pattern: queue the fire
+    // and flush it from the xterm-init effect once termRef/fitRef are
+    // actually populated, instead of firing immediately with no dims.
+    describe("squashed-reattach fix — deferred deep link until xterm is ready (task 6ac2cd44)", () => {
+      it("defers the reattach relaunch deep link on a fresh mount where xterm hasn't loaded yet, then fires it with real dims once it has", async () => {
+        const requestExpand = vi.fn();
+        const { result } = renderHook(() =>
+          useTerminalSession(descriptor, {
+            enabled: true,
+            expanded: true,
+            requestExpand,
+            autoConnectWhenExpanded: false,
+            attachExisting: {
+              sessionId: "sid-fresh-mount",
+              browserToken: "fresh-browser-token",
+              bridgeToken: "fresh-bridge-token",
+              helperToken: "fresh-helper-token",
+              cwd: "/Users/nick/projects/vibe-coding-ideas",
+              claudeSessionId: "fresh-conv-id",
+            },
+          }),
+        );
+        // Mirrors the real fresh-mount race: the container is present (as it
+        // always is in production — terminal-session-view.tsx keeps the
+        // xterm host div permanently mounted regardless of status) but
+        // xterm's own async import() hasn't resolved yet at this exact
+        // synchronous point, since the attach-trigger effect (declared far
+        // below the xterm-init effect) runs in the SAME synchronous
+        // effect-flush pass as that still-in-flight import.
+        mountContainer(result);
+
+        // Not fired yet — this is the actual behaviour change. Before this
+        // fix, this would already be "opening" here, having fired with null
+        // dims (the squash's root cause).
+        expect(result.current.launchPhase).toBe("idle");
+        expect(document.querySelectorAll("iframe")).toHaveLength(0);
+
+        // Let the mocked xterm dynamic import resolve and mount.
+        await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+        await flushEffects();
+
+        // Now it has fired — with REAL dims (never omitted), and the exact
+        // same forceResumeCwd/forceResumeId this reattach carried, so the
+        // deferral doesn't lose the resume-shaped behaviour PR #174 added.
+        expect(result.current.launchPhase).toBe("opening");
+        const iframes = document.querySelectorAll("iframe");
+        expect(iframes).toHaveLength(1);
+        const src = iframes[0].getAttribute("src") ?? "";
+        expect(src).toContain("session=sid-fresh-mount");
+        expect(src).toContain(`resume_id=${encodeURIComponent("fresh-conv-id")}`);
+        expect(src).toContain(`cwd=${encodeURIComponent("/Users/nick/projects/vibe-coding-ideas")}`);
+        // The pre-fix bug: cols/rows OMITTED entirely because
+        // currentLaunchDims() returned null at fire time. The whole point of
+        // this fix is that a reattach's deep link now always carries them.
+        expect(src).toContain("cols=");
+        expect(src).toContain("rows=");
+      });
+
+      it("fires the deep link immediately, unchanged, when xterm is ALREADY mounted (fast path — e.g. a same-tab Reconnect reusing an already-live pristine slot)", async () => {
+        const requestExpand = vi.fn();
+        const { result, rerender } = renderHook(
+          (props: { attachExisting: AttachExistingPair | null }) =>
+            useTerminalSession(descriptor, {
+              enabled: true,
+              expanded: true,
+              requestExpand,
+              autoConnectWhenExpanded: false,
+              attachExisting: props.attachExisting,
+            }),
+          { initialProps: { attachExisting: null as AttachExistingPair | null } },
+        );
+        // xterm mounts on this idle pristine slot BEFORE any reattach is
+        // requested — mirrors reusing a tab whose terminal was already
+        // showing something (findPristineSlot in terminal-dock.tsx).
+        mountContainer(result);
+        await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+        expect(document.querySelectorAll("iframe")).toHaveLength(0);
+
+        // The dock reuses this SAME slot for a reattach — attachExisting
+        // flips null -> populated on a later render, exactly like the
+        // pristine-slot-reuse test above, but this time xterm is already up.
+        rerender({
+          attachExisting: {
+            sessionId: "sid-fast-path",
+            browserToken: "fast-browser-token",
+            bridgeToken: "fast-bridge-token",
+            helperToken: "fast-helper-token",
+            cwd: "/Users/nick/projects/vibe-coding-ideas",
+            claudeSessionId: "fast-conv-id",
+          },
+        });
+
+        // No extra wait/flush beyond rerender's own (synchronous) act() —
+        // proving the fire happens in the SAME pass, unchanged from before
+        // this fix, because termRef/fitRef were already populated.
+        expect(result.current.launchPhase).toBe("opening");
+        const iframes = document.querySelectorAll("iframe");
+        expect(iframes).toHaveLength(1);
+        const src = iframes[0].getAttribute("src") ?? "";
+        expect(src).toContain("session=sid-fast-path");
+        expect(src).toContain(`resume_id=${encodeURIComponent("fast-conv-id")}`);
+      });
+
+      it("drops a queued reattach deep link if a NEWER attachToExisting (a distinct sessionId) superseded it before xterm became ready (no duplicate fire)", async () => {
+        // Deliberately does NOT drive the race through connect()'s own
+        // await — the mocked xterm import resolves on its own microtask
+        // schedule, so yielding via ANY await (including connect()'s mint
+        // fetch) risks it resolving before or after the gen bump
+        // nondeterministically. Two SYNCHRONOUS attachToExisting calls (via
+        // rerender, which testing-library flushes synchronously) avoid that
+        // race entirely: both queue attempts happen before xterm's import
+        // has any chance to run, so mounting the container afterwards
+        // deterministically exercises "two queued attempts, only the
+        // latest should fire."
+        const requestExpand = vi.fn();
+        const { result, rerender } = renderHook(
+          (props: { attachExisting: AttachExistingPair | null }) =>
+            useTerminalSession(descriptor, {
+              enabled: true,
+              expanded: true,
+              requestExpand,
+              autoConnectWhenExpanded: false,
+              attachExisting: props.attachExisting,
+            }),
+          {
+            initialProps: {
+              attachExisting: {
+                sessionId: "sid-stale",
+                browserToken: "stale-browser-token",
+                bridgeToken: "stale-bridge-token",
+                helperToken: "stale-helper-token",
+                cwd: "/Users/nick/projects/vibe-coding-ideas",
+                claudeSessionId: "stale-conv-id",
+              } as AttachExistingPair | null,
+            },
+          },
+        );
+        // No mountContainer() yet — xterm never mounts, so the sid-stale
+        // fire queues instead of firing (same setup as the fresh-mount test
+        // above).
+        expect(result.current.launchPhase).toBe("idle");
+        expect(document.querySelectorAll("iframe")).toHaveLength(0);
+
+        // A NEWER reattach for a DIFFERENT session (the dock reusing this
+        // same pristine slot again before the first ever settled) claims a
+        // later connect generation and overwrites the queued entry.
+        rerender({
+          attachExisting: {
+            sessionId: "sid-fresh",
+            browserToken: "fresh-browser-token",
+            bridgeToken: "fresh-bridge-token",
+            helperToken: "fresh-helper-token",
+            cwd: "/Users/nick/projects/vibe-coding-ideas",
+            claudeSessionId: "fresh-conv-id",
+          },
+        });
+        expect(document.querySelectorAll("iframe")).toHaveLength(0); // still queued, not fired yet
+
+        // NOW let xterm mount — only the LATEST (sid-fresh) fire must land;
+        // the stale sid-stale queue entry must never be replayed alongside
+        // (or instead of) it. If two iframes appear, or the stale session
+        // id shows up, that's the duplicate-fire bug the task explicitly
+        // warned against.
+        mountContainer(result);
+        await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+        await flushEffects();
+
+        const iframes = document.querySelectorAll("iframe");
+        expect(iframes).toHaveLength(1);
+        const src = iframes[0].getAttribute("src") ?? "";
+        expect(src).toContain("session=sid-fresh");
+        expect(src).not.toContain("session=sid-stale");
+      });
     });
 
     it("never fires a deep link when the attach pair carries no bridgeToken (popped-out hand-off — unchanged behaviour)", async () => {
