@@ -763,6 +763,15 @@ export function StepDetailDialog({
                     {new Date(step.completed_at).toLocaleString()}
                   </span>
                 )}
+                {/* Approval provenance (board task d572c4d1) — only a web UI
+                    approval can ever set these three columns together. */}
+                {step.approved_by && step.approval_method && (
+                  <span>
+                    Approved by {step.approver?.full_name ?? "a team member"} via{" "}
+                    {step.approval_method === "web_ui" ? "web UI" : step.approval_method}
+                    {step.approved_at && ` · ${new Date(step.approved_at).toLocaleString()}`}
+                  </span>
+                )}
               </div>
             </>
           )}

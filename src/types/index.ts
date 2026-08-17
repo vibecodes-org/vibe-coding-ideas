@@ -51,7 +51,11 @@ export type BoardTask = Database["public"]["Tables"]["board_tasks"]["Row"];
 export type BoardLabel = Database["public"]["Tables"]["board_labels"]["Row"];
 export type BoardTaskLabel = Database["public"]["Tables"]["board_task_labels"]["Row"];
 export type AiPromptTemplate = Database["public"]["Tables"]["ai_prompt_templates"]["Row"];
-export type TaskWorkflowStep = Database["public"]["Tables"]["task_workflow_steps"]["Row"];
+export type TaskWorkflowStep = Database["public"]["Tables"]["task_workflow_steps"]["Row"] & {
+  // Populated only when the fetching query joins users!task_workflow_steps_approved_by_fkey
+  // (task-workflow-section.tsx) — mirrors WorkflowRun's optional template_name pattern below.
+  approver?: { full_name: string | null } | null;
+};
 export type WorkflowStepComment = Database["public"]["Tables"]["workflow_step_comments"]["Row"];
 export type WorkflowTemplate = Database["public"]["Tables"]["workflow_templates"]["Row"];
 export type WorkflowAutoRule = Database["public"]["Tables"]["workflow_auto_rules"]["Row"];

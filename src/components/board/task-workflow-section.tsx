@@ -180,7 +180,10 @@ export function TaskWorkflowSection({ taskId, ideaId, isReadOnly = false }: Task
     const [stepsRes, runRes] = await Promise.all([
       supabase
         .from("task_workflow_steps")
-        .select("*")
+        // approver: joined for the approval-provenance line in
+        // step-detail-dialog.tsx ("Approved by X via web UI · date") —
+        // null on every step except one approved via the web UI.
+        .select("*, approver:users!task_workflow_steps_approved_by_fkey(full_name)")
         .eq("task_id", taskId)
         .order("step_order", { ascending: true }),
       supabase
