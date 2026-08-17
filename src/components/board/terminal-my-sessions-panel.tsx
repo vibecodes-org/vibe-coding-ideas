@@ -30,7 +30,6 @@ import {
   MINIMUM_RECOMMENDED_HELPER_VERSION,
   shouldShowHelperUpdateNudge,
 } from "@/lib/terminal/helper-version";
-import { TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
 import { recordHelperIdleQuitObserved } from "@/lib/terminal/helper-relaunch-signal";
 import {
   ALWAYS_ON_CONSENT_BODY,
@@ -50,17 +49,14 @@ import {
   type HelperStatus,
 } from "@/lib/terminal/helper-row";
 import {
-  INITIAL_UPDATE_FLOW_STATE,
-  QUIESCE_TIMEOUT_MS,
   UPDATE_CONFIRM_ACCEPT_LABEL,
   UPDATE_CONFIRM_CANCEL_LABEL,
   UPDATE_CONFIRM_HEADING,
   UPDATE_QUIESCE_TIMEOUT_COPY,
   UPDATE_READY_COPY,
   updateConfirmBody,
-  updateFlowReducer,
-  type UpdateFlowState,
 } from "@/lib/terminal/helper-update-flow";
+import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
 
 interface ListedSession {
   sid: string;
@@ -136,7 +132,6 @@ export function TerminalMySessionsPanel({
   const [confirmingStopHelper, setConfirmingStopHelper] = useState(false);
   const [stoppingHelper, setStoppingHelper] = useState(false);
   const [dismissedHelperNudge, setDismissedHelperNudge] = useState(false);
-  const [updateFlow, setUpdateFlow] = useState<UpdateFlowState>(INITIAL_UPDATE_FLOW_STATE);
   const [alwaysOnConsentOpen, setAlwaysOnConsentOpen] = useState(false);
   const [togglingAlwaysOn, setTogglingAlwaysOn] = useState(false);
   // Last chip kind we observed, so `load()` can notice a winding-down ->
@@ -187,14 +182,31 @@ export function TerminalMySessionsPanel({
     if (open) void load();
   }, [open, load]);
 
+  // Shared quiesce-then-download flow (src/lib/terminal/use-helper-update-flow.ts)
+  // — the session chooser's "Update now" drives the exact same hook.
+  const {
+    phase: updateFlowPhase,
+    confirmSessionCount,
+    start: startHelperUpdate,
+    confirm: confirmHelperUpdate,
+    cancel: cancelHelperUpdate,
+    resetIfSettled: resetHelperUpdateIfSettled,
+  } = useHelperUpdateFlow({
+    sessionCount: running.length,
+    onQuiesceStart: () => {
+      suppressIdleQuitSignalRef.current = true; // an update-triggered quiesce is not an idle-quit
+    },
+    onSettled: () => void load(),
+  });
+
   // A stale "Ready to update" / timeout notice must not linger forever once
   // the popover is closed and reopened later — the update flow's own state is
   // otherwise held in this always-mounted component (PopoverContent unmounts
   // on close, this doesn't), same as confirmingEndAll already does.
   useEffect(() => {
     if (!open) return;
-    setUpdateFlow((s) => (s.phase === "ready" || s.phase === "quiesce-timeout" ? INITIAL_UPDATE_FLOW_STATE : s));
-  }, [open]);
+    resetHelperUpdateIfSettled();
+  }, [open, resetHelperUpdateIfSettled]);
 
   const endOne = useCallback(
     async (sid: string) => {
@@ -290,84 +302,9 @@ export function TerminalMySessionsPanel({
     void setAlwaysOnRemote(true);
   }, [setAlwaysOnRemote]);
 
-  const startHelperUpdate = useCallback(() => {
-    setUpdateFlow(updateFlowReducer(INITIAL_UPDATE_FLOW_STATE, { type: "update-clicked", sessionCount: running.length }));
-  }, [running.length]);
-
-  // Drive the "quiescing" phase: end any live sessions first (only reached via
-  // "confirming" when sessions existed), send the quiesce command, then poll
-  // helper status until it reports not-connected or QUIESCE_TIMEOUT_MS elapses
-  // (design §3 flow A's fallback notice) — the download starts regardless
-  // (§3 flow A caption), just with a different notice.
-  useEffect(() => {
-    if (updateFlow.phase !== "quiescing") return;
-    let cancelled = false;
-    suppressIdleQuitSignalRef.current = true; // an update-triggered quiesce is not an idle-quit
-    const hadSessions = running.length > 0;
-    (async () => {
-      if (hadSessions) {
-        try {
-          await fetch("/api/terminal/session/end", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ all: true }),
-          });
-        } catch {
-          /* best effort — the quiesce command below still proceeds */
-        }
-      }
-      try {
-        await fetch("/api/terminal/helper/command", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ cmd: "quiesce" }),
-        });
-      } catch {
-        /* best effort — the poll below still resolves via timeout */
-      }
-
-      const deadline = Date.now() + QUIESCE_TIMEOUT_MS;
-      while (!cancelled) {
-        let settled = false;
-        try {
-          const res = await fetch("/api/terminal/helper/status");
-          if (res.ok) {
-            const status = (await res.json()) as HelperStatus;
-            settled = status.connected === false;
-          }
-        } catch {
-          /* transient — keep polling until the deadline */
-        }
-        if (cancelled) return;
-        if (settled) {
-          setUpdateFlow((s) => updateFlowReducer(s, { type: "quiesce-settled" }));
-          return;
-        }
-        if (Date.now() >= deadline) {
-          setUpdateFlow((s) => updateFlowReducer(s, { type: "quiesce-timed-out" }));
-          return;
-        }
-        await new Promise((r) => setTimeout(r, 500));
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [updateFlow.phase, running.length]);
-
-  // Either outcome of quiescing starts the download (design: the whole point
-  // is drag-to-Applications always succeeds because nothing is running by
-  // now) and refreshes the row so it reflects the now-quiesced helper.
-  useEffect(() => {
-    if (updateFlow.phase !== "ready" && updateFlow.phase !== "quiesce-timeout") return;
-    window.location.assign(TERMINAL_HELPER_DOWNLOAD_URL);
-    void load();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [updateFlow.phase]);
-
   const helperChip: HelperChip | null = deriveHelperChip(helperStatus, running.length);
   const showHelperNudge =
-    updateFlow.phase === "idle" &&
+    updateFlowPhase === "idle" &&
     !dismissedHelperNudge &&
     shouldShowHelperUpdateNudge(helperStatus?.version ?? null);
 
@@ -590,18 +527,18 @@ export function TerminalMySessionsPanel({
           </div>
         )}
 
-        {updateFlow.phase === "confirming" && (
+        {updateFlowPhase === "confirming" && (
           <div className="border-t border-l-2 border-l-sky-500 bg-sky-500/5 px-3.5 py-2.5">
             <div className="text-[12.5px] font-bold text-sky-300">{UPDATE_CONFIRM_HEADING}</div>
-            <div className="text-[11px] text-zinc-500">{updateConfirmBody(updateFlow.sessionCount)}</div>
+            <div className="text-[11px] text-zinc-500">{updateConfirmBody(confirmSessionCount)}</div>
             <div className="mt-2 flex items-center justify-end gap-2">
-              <Button variant="ghost" size="xs" onClick={() => setUpdateFlow((s) => updateFlowReducer(s, { type: "cancelled" }))}>
+              <Button variant="ghost" size="xs" onClick={cancelHelperUpdate}>
                 {UPDATE_CONFIRM_CANCEL_LABEL}
               </Button>
               <Button
                 size="xs"
                 className="bg-sky-500 text-sky-950 hover:bg-sky-400"
-                onClick={() => setUpdateFlow((s) => updateFlowReducer(s, { type: "confirmed" }))}
+                onClick={confirmHelperUpdate}
               >
                 {UPDATE_CONFIRM_ACCEPT_LABEL}
               </Button>
@@ -609,22 +546,22 @@ export function TerminalMySessionsPanel({
           </div>
         )}
 
-        {updateFlow.phase === "quiescing" && (
+        {updateFlowPhase === "quiescing" && (
           <div className="flex items-center gap-2 border-t border-sky-500/30 bg-sky-500/5 px-3.5 py-1.5 text-[11.5px] text-sky-300">
             <Loader2 className="h-3 w-3 flex-none animate-spin" /> Closing the helper…
           </div>
         )}
 
-        {(updateFlow.phase === "ready" || updateFlow.phase === "quiesce-timeout") && (
+        {(updateFlowPhase === "ready" || updateFlowPhase === "quiesce-timeout") && (
           <div
             className={cn(
               "border-t px-3.5 py-2 text-[11.5px]",
-              updateFlow.phase === "ready"
+              updateFlowPhase === "ready"
                 ? "border-sky-500/30 bg-sky-500/5 text-sky-300"
                 : "border-amber-500/30 bg-amber-500/5 text-amber-300",
             )}
           >
-            {updateFlow.phase === "ready" ? UPDATE_READY_COPY : UPDATE_QUIESCE_TIMEOUT_COPY}
+            {updateFlowPhase === "ready" ? UPDATE_READY_COPY : UPDATE_QUIESCE_TIMEOUT_COPY}
           </div>
         )}
 

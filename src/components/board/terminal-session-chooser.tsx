@@ -14,7 +14,7 @@
 // clicks to the callbacks the dock supplies.
 
 import { useEffect, useRef, useState } from "react";
-import { Info, RefreshCw, Terminal as TerminalIcon, X } from "lucide-react";
+import { Info, Loader2, RefreshCw, Terminal as TerminalIcon, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { formatSessionAge } from "@/lib/terminal/session-registry";
@@ -27,7 +27,15 @@ import {
 } from "@/lib/terminal/chooser-data";
 import { updateNudgeCopy, type HelperStatus } from "@/lib/terminal/helper-row";
 import { MINIMUM_RECOMMENDED_HELPER_VERSION, shouldShowChooserHelperNudge } from "@/lib/terminal/helper-version";
-import { TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
+import {
+  UPDATE_CONFIRM_ACCEPT_LABEL,
+  UPDATE_CONFIRM_CANCEL_LABEL,
+  UPDATE_CONFIRM_HEADING,
+  UPDATE_QUIESCE_TIMEOUT_COPY,
+  UPDATE_READY_COPY,
+  updateConfirmBody,
+} from "@/lib/terminal/helper-update-flow";
+import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
 import { HelperUpdateButton } from "./terminal-helper-update-button";
 
 // F3 (common foundations): the SAME generic warning, visible before every
@@ -61,6 +69,14 @@ export interface TerminalSessionChooserProps {
    * renders no nudge, never an error state.
    */
   helperStatus?: HelperStatus | null;
+  /**
+   * Fires once the shared quiesce-then-download flow (below) has settled or
+   * timed out, right before the download starts — mirrors the My sessions
+   * panel's own post-quiesce `load()`. The dock owns the underlying
+   * registry/status fetches, so it's the one that supplies this; omitted
+   * (e.g. in tests) simply skips the refresh.
+   */
+  onHelperUpdateSettled?: () => void;
 }
 
 export function TerminalSessionChooser({
@@ -73,6 +89,7 @@ export function TerminalSessionChooser({
   onStartNew,
   cap,
   helperStatus = null,
+  onHelperUpdateSettled,
 }: TerminalSessionChooserProps) {
   const [confirmingResumeSid, setConfirmingResumeSid] = useState<string | null>(null);
   const firstFocusRef = useRef<HTMLButtonElement | null>(null);
@@ -81,7 +98,28 @@ export function TerminalSessionChooser({
   // the browser session only — component-local state, not persisted, same
   // mechanism as `dismissedHelperNudge` in terminal-session-view.tsx.
   const [dismissedHelperNudge, setDismissedHelperNudge] = useState(false);
-  const showHelperNudge = !dismissedHelperNudge && shouldShowChooserHelperNudge(helperStatus?.version);
+
+  // Every session this browser already knows about across BOTH live sections
+  // (the cap is per-user, not per-board) — also the universe the shared
+  // quiesce flow below needs to end before it can safely download, mirroring
+  // the My sessions panel's own `running` list.
+  const liveCount = sections.liveHere.length + sections.liveElsewhere.length;
+
+  // Shared quiesce-then-download flow (src/lib/terminal/use-helper-update-flow.ts,
+  // same hook the My sessions panel drives) — Nick's binding instruction:
+  // "both buttons need to stop the old version first".
+  const {
+    phase: updateFlowPhase,
+    confirmSessionCount,
+    start: startHelperUpdate,
+    confirm: confirmHelperUpdate,
+    cancel: cancelHelperUpdate,
+  } = useHelperUpdateFlow({
+    sessionCount: liveCount,
+    onSettled: onHelperUpdateSettled,
+  });
+  const showHelperNudge =
+    updateFlowPhase === "idle" && !dismissedHelperNudge && shouldShowChooserHelperNudge(helperStatus?.version);
 
   // Focus the first row's primary action when the chooser opens (design:
   // "focus lands on the first live session's primary action when the choice
@@ -100,11 +138,8 @@ export function TerminalSessionChooser({
     null;
 
   // Resume confirm's honesty limit line (Nick's sign-off change 1): shown only
-  // when the user is close enough to the cap that resuming matters — the live
-  // count is every session this browser already knows about across BOTH live
-  // sections (the cap itself is per-user, not per-board).
+  // when the user is close enough to the cap that resuming matters.
   const resolvedCap = cap ?? getTerminalSessionCap();
-  const liveCount = sections.liveHere.length + sections.liveElsewhere.length;
   const limitLine = isNearSessionCap(liveCount, resolvedCap) ? terminalLimitLine(liveCount, resolvedCap) : null;
 
   const startNewLabel = pendingTask
@@ -117,7 +152,7 @@ export function TerminalSessionChooser({
         <div className="flex items-center gap-2 border-b border-sky-500/30 bg-sky-500/5 px-3.5 py-1.5 text-[11px] text-sky-300">
           <Info className="h-3 w-3 shrink-0" />
           <span className="flex-1">{updateNudgeCopy(MINIMUM_RECOMMENDED_HELPER_VERSION)}</span>
-          <HelperUpdateButton href={TERMINAL_HELPER_DOWNLOAD_URL} />
+          <HelperUpdateButton onClick={startHelperUpdate} />
           <button
             type="button"
             className="shrink-0 text-sky-400 hover:text-sky-200"
@@ -126,6 +161,48 @@ export function TerminalSessionChooser({
           >
             <X className="h-3 w-3" />
           </button>
+        </div>
+      )}
+
+      {/* Shared quiesce-then-download flow (same states/copy as the My
+          sessions panel's Helper row — helper-update-flow.ts): the old
+          helper is always stood down before the new DMG downloads, whether
+          "Update now" was clicked here or from that panel. */}
+      {updateFlowPhase === "confirming" && (
+        <div className="border-b border-l-2 border-l-sky-500 bg-sky-500/5 px-3.5 py-2.5">
+          <div className="text-[12.5px] font-bold text-sky-300">{UPDATE_CONFIRM_HEADING}</div>
+          <div className="text-[11px] text-zinc-500">{updateConfirmBody(confirmSessionCount)}</div>
+          <div className="mt-2 flex items-center justify-end gap-2">
+            <Button variant="ghost" size="xs" onClick={cancelHelperUpdate}>
+              {UPDATE_CONFIRM_CANCEL_LABEL}
+            </Button>
+            <Button
+              size="xs"
+              className="bg-sky-500 text-sky-950 hover:bg-sky-400"
+              onClick={confirmHelperUpdate}
+            >
+              {UPDATE_CONFIRM_ACCEPT_LABEL}
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {updateFlowPhase === "quiescing" && (
+        <div className="flex items-center gap-2 border-b border-sky-500/30 bg-sky-500/5 px-3.5 py-1.5 text-[11px] text-sky-300">
+          <Loader2 className="h-3 w-3 flex-none animate-spin" /> Closing the helper…
+        </div>
+      )}
+
+      {(updateFlowPhase === "ready" || updateFlowPhase === "quiesce-timeout") && (
+        <div
+          className={cn(
+            "border-b px-3.5 py-2 text-[11px]",
+            updateFlowPhase === "ready"
+              ? "border-sky-500/30 bg-sky-500/5 text-sky-300"
+              : "border-amber-500/30 bg-amber-500/5 text-amber-300",
+          )}
+        >
+          {updateFlowPhase === "ready" ? UPDATE_READY_COPY : UPDATE_QUIESCE_TIMEOUT_COPY}
         </div>
       )}
 

@@ -365,6 +365,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     void fetchHelperStatus().then(setHelperStatus);
   }, [enabled]);
 
+  // The chooser's own "Update now" shares the My sessions panel's
+  // quiesce-then-download flow (use-helper-update-flow.ts) but has no fetch
+  // loop of its own to notice the helper has quiesced — reuse the SAME
+  // registry + status fetches the dock already owns to refresh it once the
+  // flow settles, mirroring the panel's own post-quiesce `load()`.
+  const refreshAfterHelperUpdate = useCallback(() => {
+    void refreshRegistry();
+    void fetchHelperStatus().then(setHelperStatus);
+  }, [refreshRegistry]);
+
   // This tab's own snapshot info (session-snapshot.ts) — read once; a tab
   // doesn't gain a NEW "last sid" mid-session except by attaching another
   // session itself, at which point the chooser is long since resolved.
@@ -1274,6 +1284,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onResume={handleChooserResume}
             onStartNew={handleChooserStartNew}
             helperStatus={helperStatus}
+            onHelperUpdateSettled={refreshAfterHelperUpdate}
           />
         )}
 
@@ -1437,6 +1448,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onResume={handleChooserResume}
             onStartNew={handleChooserStartNew}
             helperStatus={helperStatus}
+            onHelperUpdateSettled={refreshAfterHelperUpdate}
           />
         </DialogContent>
       </Dialog>
