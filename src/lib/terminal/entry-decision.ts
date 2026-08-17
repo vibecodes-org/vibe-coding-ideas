@@ -7,12 +7,22 @@
 // Exactly one of three outcomes, in this priority order:
 //   1. instant-continue — a fresh (<60s) snapshot for a sid that IS a live,
 //      owned session in the registry → reattach it immediately, no click.
-//   2. chooser           — any other live session, or any recent (≤48h,
-//      recorded-folder) ended session exists → render the chooser, mint
-//      nothing until a click.
+//   2. chooser           — any other live session, or any recent (≤48h)
+//      ended session exists → render the chooser, mint nothing until a
+//      click.
 //   3. empty-launch      — nothing live or recent anywhere → today's
 //      unchanged open→launch behaviour (F1: "there is nothing to choose
 //      between, and this is explicitly fine").
+//
+// Bug 9fb9fced (2026-08-17): `isRecentEnded` used to also require a recorded
+// `cwd`, mirroring chooser-data.ts's old F4 filter. A session whose cwd was
+// never recorded (the PATCH that saves it only fires when the launch already
+// had a known project path) then read as neither live nor recent — this
+// function returned `empty-launch`, and the dock silently minted a brand-new
+// session instead of showing the chooser/ended screen for a session that had
+// in fact just ended. `cwd` is no longer part of this predicate; a recently-
+// ended row with no recorded folder still routes to `chooser` (it just can't
+// offer Resume there — see chooser-data.ts's matching fix).
 
 import { RECENT_WINDOW_MS } from "./chooser-data";
 import { isSnapshotFresh } from "./session-snapshot";
@@ -37,7 +47,6 @@ export type EntryDecision =
 
 function isRecentEnded(row: EntryRegistryRow, nowMs: number): boolean {
   if (row.status !== "ended") return false;
-  if (!row.cwd || !row.cwd.trim()) return false;
   if (!row.endedAt) return false;
   const t = Date.parse(row.endedAt);
   if (Number.isNaN(t)) return false;

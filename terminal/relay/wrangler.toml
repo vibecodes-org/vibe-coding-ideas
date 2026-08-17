@@ -43,9 +43,17 @@ new_sqlite_classes = ["TerminalRelay"]
 TERMINAL_IDLE_MS = "1800000"   # 30 minutes
 TERMINAL_MAX_MS  = "14400000"  # 4 hours
 
+# Card 9fb9fced, Fix 2 — session-closed callback: the base URL the relay POSTs
+# `{ sid, reason }` to (via `/api/terminal/session/closed`) the instant a DO
+# alarm force-closes a session, so the app's registry learns in real time
+# instead of lazily reconciling a guessed expiry (see index.js's header
+# comment). No trailing slash. Not a secret — the call itself is authorized by
+# a short-lived token signed with TERMINAL_SESSION_SECRET below.
+VIBECODES_APP_URL = "https://vibecodes.co.uk"
+
 # ── Secret (NOT set here — never commit it) ───────────────────────────────────
 # TERMINAL_SESSION_SECRET is the HMAC key the relay verifies app-minted session
-# tokens with. It MUST match the VibeCodes app's TERMINAL_SESSION_SECRET. Provide
-# it OUT OF BAND:
+# tokens with (and now also signs the session-closed callback above with). It
+# MUST match the VibeCodes app's TERMINAL_SESSION_SECRET. Provide it OUT OF BAND:
 #   - local dev:  terminal/relay/.dev.vars  (gitignored; loaded by `wrangler dev`)
 #   - production: `wrangler secret put TERMINAL_SESSION_SECRET`

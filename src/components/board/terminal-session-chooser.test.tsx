@@ -189,6 +189,38 @@ describe("TerminalSessionChooser", () => {
     expect(screen.queryByText(/Starts a new terminal/)).not.toBeInTheDocument();
   });
 
+  // Bug 9fb9fced (2026-08-17): a null-cwd Recent row used to never reach this
+  // component at all (chooser-data.ts hid it from `sections.recent`
+  // entirely). Now that it does, this proves the UI half of the fix: the row
+  // (sid, ended time) still renders, but Resume is omitted — not shown
+  // disabled — since there's no folder for it to reopen.
+  it("Recent row with no recorded cwd: renders the row but omits the Resume button", () => {
+    const onResume = vi.fn();
+    const row = {
+      sid: "sid-recent-no-cwd",
+      ideaId: "idea-1",
+      ideaTitle: "VibeCodes",
+      taskId: null,
+      taskTitle: null,
+      cwd: null,
+      machineLabel: "Nick's MacBook",
+      claudeSessionId: null,
+      endedAt: new Date().toISOString(),
+    };
+    render(
+      <TerminalSessionChooser
+        sections={sections({ recent: [row] })}
+        onReconnectHere={vi.fn()}
+        onOpenBoardAndReconnect={vi.fn()}
+        onResume={onResume}
+        onStartNew={vi.fn()}
+      />,
+    );
+    expect(screen.getByText(/no recorded folder/)).toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+    expect(screen.getByText(/Can.t resume/)).toBeInTheDocument();
+  });
+
   it("Recent row with a tracked claudeSessionId: the confirm copy promises the EXACT conversation (rework 5)", () => {
     const onResume = vi.fn();
     const row = {

@@ -78,9 +78,19 @@ export async function reapExpiredSessions(
         error: failed[0]?.error?.message,
       });
     } else {
+      // Fix 3 (card 9fb9fced): per-sid ids (not just a count) and an explicit
+      // "estimated" flag — this reap flips a row to "ended" from a MIRRORED
+      // expires_at guess, never a confirmed relay event (that confirmation is
+      // Fix 2's session-closed callback, when it fires in time). Without this
+      // distinction a log reader can't tell "the app was told this died" from
+      // "the app is guessing this died" for the exact same-looking line — the
+      // ambiguity that made the original race hard to diagnose from logs
+      // alone. `logLabel` already names the trigger (mint/reattach/list).
       logger.info(`${logLabel}: reaped expired terminal session rows`, {
         userId,
         count: updates.length,
+        ids: updates.map((update) => update.id),
+        endedAtEstimated: true,
       });
     }
   }

@@ -47,6 +47,10 @@ export function TerminalTaskLaunchChoice({
     match.kind === "recent"
       ? `Ended ${formatSessionAge(match.row.endedAt)} ago`
       : `Started ${formatSessionAge(match.row.createdAt)} ago`;
+  // Null-cwd fix (bug 9fb9fced): a "recent" match with no recorded folder
+  // still surfaces here (chooser-data.ts no longer hides it), but Resume has
+  // no folder to reopen — same rule as the cross-board chooser's RecentRow.
+  const canReconnect = match.kind !== "recent" || !!match.row.cwd;
 
   return (
     <Dialog open={open} onOpenChange={() => {}}>
@@ -64,21 +68,24 @@ export function TerminalTaskLaunchChoice({
           <DialogDescription className="mt-1 text-[11.5px] text-zinc-500">
             <span className="block truncate">{taskTitle}</span>
             <span className="font-mono">{ageLabel}</span>
+            {!canReconnect && <span className="block text-zinc-600">No folder was recorded for it — can&apos;t resume.</span>}
           </DialogDescription>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-zinc-800 px-4 py-3">
           <Button variant="ghost" size="xs" disabled={busy} onClick={onStartFresh}>
             <TerminalIcon className="h-3 w-3" /> Start fresh anyway
           </Button>
-          <Button
-            size="xs"
-            className="bg-sky-500 text-sky-950 hover:bg-sky-400"
-            disabled={busy}
-            onClick={onReconnect}
-            autoFocus
-          >
-            <RefreshCw className="h-3 w-3" /> {reconnectLabel}
-          </Button>
+          {canReconnect && (
+            <Button
+              size="xs"
+              className="bg-sky-500 text-sky-950 hover:bg-sky-400"
+              disabled={busy}
+              onClick={onReconnect}
+              autoFocus
+            >
+              <RefreshCw className="h-3 w-3" /> {reconnectLabel}
+            </Button>
+          )}
         </div>
       </DialogContent>
     </Dialog>

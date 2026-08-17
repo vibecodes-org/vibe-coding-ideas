@@ -55,12 +55,35 @@ describe("deriveChooserSections", () => {
     expect(sections.recent[0].cwd).toBe("~/projects/recipe-saver");
   });
 
-  it("hides an ended row with no recorded folder — no ghost Resume (F4)", () => {
+  // Bug 9fb9fced (2026-08-17): this used to assert the row was hidden from
+  // Recent entirely (the old F4 rule). Confirmed against live production
+  // data — a session whose cwd never got recorded (the client's post-connect
+  // PATCH only fires when the launch already had a known project path)
+  // vanished from Recent COMPLETELY once it ended, not just its Resume
+  // button, so a refresh right after found nothing live/recent anywhere and
+  // silently launched a brand-new session. The row must now still appear —
+  // with `cwd: null` — so the CALLER (the chooser UI) can render everything
+  // it knows (sid, ended time, machine) and omit only the Resume action.
+  it("keeps an ended row with no recorded folder in Recent, with cwd: null", () => {
     const rows = [
       row({ sid: "no-cwd", status: "ended", cwd: null, endedAt: new Date(NOW - 60_000).toISOString() }),
-      row({ sid: "blank-cwd", status: "ended", cwd: "   ", endedAt: new Date(NOW - 60_000).toISOString() }),
+      row({ sid: "blank-cwd", status: "ended", cwd: "   ", endedAt: new Date(NOW - 30_000).toISOString() }),
     ];
-    expect(deriveChooserSections(rows, IDEA_A, NOW).recent).toEqual([]);
+    const recent = deriveChooserSections(rows, IDEA_A, NOW).recent;
+    expect(recent.map((r) => r.sid)).toEqual(["blank-cwd", "no-cwd"]); // newest-ended first
+    expect(recent.every((r) => r.cwd === null)).toBe(true);
+  });
+
+  it("never dedupes null-cwd rows against each other — there's no folder to collapse on", () => {
+    const rows = [
+      row({ sid: "no-cwd-a", status: "ended", cwd: null, endedAt: new Date(NOW - 3 * 60_000).toISOString() }),
+      row({ sid: "no-cwd-b", status: "ended", cwd: null, endedAt: new Date(NOW - 2 * 60_000).toISOString() }),
+      row({ sid: "no-cwd-c", status: "ended", cwd: null, endedAt: new Date(NOW - 1 * 60_000).toISOString() }),
+    ];
+    const recent = deriveChooserSections(rows, IDEA_A, NOW).recent.map((r) => r.sid);
+    // All three kept (newest-ended first) — contrast with the recorded-cwd
+    // dedupe test below, where two rows sharing a folder collapse to one.
+    expect(recent).toEqual(["no-cwd-c", "no-cwd-b", "no-cwd-a"]);
   });
 
   it("excludes an ended row past the 48h window, includes one just inside it", () => {

@@ -29,6 +29,20 @@
 // The pairing / single-attach / lifecycle decision logic lives in ./pairing.js and
 // is shared with the Node stand-in relay used by the automated tests, so both
 // enforce identical rules.
+//
+// SESSION-CLOSED CALLBACK (card 9fb9fced, Fix 2): when a DO alarm force-closes
+// a session (idle-timeout or max-duration — see alarm()/endSession() below),
+// the relay now POSTs `{ sid, reason }` back to the app's
+// `/api/terminal/session/closed` webhook (auth: a short-lived "notify" token,
+// signed with the SAME TERMINAL_SESSION_SECRET both sides already hold — see
+// terminal/shared/session-token.mjs). Previously the relay never told the app
+// anything about this closure at all; the app's Supabase registry only found
+// out by separately guessing an expiry at mint time and lazily reconciling it
+// on whichever request happened to run next — a multi-minute window in which
+// a client could read a stale "still active" row for a session that had
+// already died. Requires env var VIBECODES_APP_URL (see wrangler.toml); the
+// callback is skipped (logged, never thrown) when that or the secret is
+// unconfigured, matching this file's existing best-effort conventions.
 
 import {
   decideAttach,
@@ -44,7 +58,12 @@ import {
 } from "./pairing.js";
 import { shouldPersistActivity, DEFAULT_ACTIVITY_PERSIST_THROTTLE_MS } from "./activity-throttle.js";
 import { computeHelperStatus } from "./helper-status.js";
-import { authorizeAttach, authorizeControl, HELPER_MAX_BOUND_MS } from "../../shared/session-token.mjs";
+import {
+  authorizeAttach,
+  authorizeControl,
+  mintNotifyToken,
+  HELPER_MAX_BOUND_MS,
+} from "../../shared/session-token.mjs";
 import {
   encodeAttachedFrame,
   encodePeerDegradedFrame,
@@ -545,6 +564,12 @@ export class TerminalRelay {
     if (sessionStartedAt == null) {
       sessionStartedAt = now;
       await this.state.storage.put("sessionStartedAt", now);
+      // The DO has no other durable memory of its own sid — it's addressed
+      // externally via idFromName(session), never told to itself. Stored
+      // once here (write-once, mirrors sessionStartedAt) so alarm() can log
+      // it and hand it to the session-closed app callback below (card
+      // 9fb9fced, Fix 2 + Fix 3).
+      await this.state.storage.put("sid", session);
     }
     // MITIGATION 1: sessionStartedAt is write-once for the session's life — cache
     // it now so armAlarm() below (and every later call, until clearSessionState())
@@ -895,8 +920,16 @@ export class TerminalRelay {
     const grace = await this.state.storage.get("graceDeadline");
 
     if (started != null && now - started >= this.maxMs()) {
-      this.log("session ended", { why: "max-duration", ageMs: now - started });
-      return this.endSession(maxCloseReason(this.maxMs()));
+      // Card 9fb9fced, Fix 3: sid + which timeout + total duration, on the
+      // SAME log line the old version omitted the sid from entirely — a
+      // session ending here was previously undiagnosable from logs alone.
+      const sid = await this.state.storage.get("sid");
+      const ageMs = now - started;
+      this.log("session ended", { why: "max-duration", sid, ageMs });
+      // Fix 2: tell the app in real time (instead of it lazily reconciling a
+      // mirrored expires_at guess on some later, unrelated request) — see
+      // notifyAppSessionClosed's doc.
+      return this.endSession(maxCloseReason(this.maxMs()), { notifyApp: true, sid, reasonCode: "time_limit" });
     }
 
     // Reconnect grace expiry: the held-open session never became whole again inside
@@ -916,8 +949,10 @@ export class TerminalRelay {
     // Idle only governs a WHOLE session; a held (degraded) session has stale activity
     // by definition and is governed by the grace deadline above instead.
     if (grace == null && last != null && now - last >= this.idleMs()) {
-      this.log("session ended", { why: "idle-timeout", idleMs: now - last });
-      return this.endSession(idleCloseReason(this.idleMs()));
+      const sid = await this.state.storage.get("sid");
+      const idleMs = now - last;
+      this.log("session ended", { why: "idle-timeout", sid, idleMs });
+      return this.endSession(idleCloseReason(this.idleMs()), { notifyApp: true, sid, reasonCode: "idle_timeout" });
     }
 
     // Nothing due yet → re-arm to the next earliest deadline.
@@ -926,14 +961,69 @@ export class TerminalRelay {
     }
   }
 
-  /** Close BOTH legs with the normal code 1000 + lifecycle reason, then clear state. */
-  async endSession(reason) {
+  /**
+   * Close BOTH legs with the normal code 1000 + lifecycle reason, then clear
+   * state. `opts.notifyApp` (card 9fb9fced, Fix 2) fires the session-closed
+   * callback to the app BEFORE clearing state — only for the two alarm-
+   * triggered paths above (idle-timeout, max-duration); the app-initiated
+   * `/end` route (handleEnd, below) calls this with no opts, since the app
+   * already knows it just ended this session and is about to write that
+   * itself — a callback there would be redundant.
+   * @param {string} reason @param {{ notifyApp?: boolean, sid?: string, reasonCode?: "idle_timeout"|"time_limit" }} [opts]
+   */
+  async endSession(reason, opts = {}) {
     for (const ws of this.state.getWebSockets()) {
       try {
         ws.close(NORMAL_CLOSURE, reason);
       } catch { /* already closing */ }
     }
+    if (opts.notifyApp) {
+      await this.notifyAppSessionClosed(opts.sid, opts.reasonCode);
+    }
     await this.clearSessionState();
+  }
+
+  /**
+   * Card 9fb9fced, Fix 2: tell the app IMMEDIATELY when a DO alarm force-
+   * closes a session, instead of leaving its Supabase registry to guess via
+   * its own mirrored `expires_at` and reconcile lazily on the next unrelated
+   * request (mint/reattach/list) — the multi-minute race that let a client's
+   * page refresh observe a stale "still active" row for a session that had,
+   * in fact, already died (bug 9fb9fced's root cause). Best-effort and never
+   * blocks the caller: `endSession` still tears the session down locally
+   * either way, exactly as it always has — the registry is documented
+   * elsewhere as a best-effort mirror (design doc §9, R2), so a failed
+   * callback here just leaves it exactly as stale as it always could be
+   * before this fix, self-correcting on the next lazy reap.
+   * @param {string|undefined} sid @param {"idle_timeout"|"time_limit"|undefined} reasonCode
+   */
+  async notifyAppSessionClosed(sid, reasonCode) {
+    const appUrl = this.env.VIBECODES_APP_URL;
+    const secret = this.env.TERMINAL_SESSION_SECRET;
+    if (!sid || !appUrl || !secret) {
+      this.log("session-closed callback skipped (not configured)", {
+        sid: sid ?? null,
+        reasonCode,
+        hasAppUrl: !!appUrl,
+        hasSecret: !!secret,
+      });
+      return;
+    }
+    try {
+      const token = await mintNotifyToken({ sid, secret });
+      const res = await fetch(`${appUrl.replace(/\/+$/, "")}/api/terminal/session/closed`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ sid, reason: reasonCode }),
+      });
+      if (!res.ok) {
+        this.log("session-closed callback rejected by app", { sid, reasonCode, status: res.status });
+        return;
+      }
+      this.log("session-closed callback delivered", { sid, reasonCode });
+    } catch (e) {
+      this.log("session-closed callback failed", { sid, reasonCode, err: String(e) });
+    }
   }
 
   /** Grace window elapsed without a full reattach → the original teardown: any
@@ -957,6 +1047,7 @@ export class TerminalRelay {
       "bridgeHelperVersion",
       "bridgeHost",
       "bridgeConv",
+      "sid",
     ]);
     await this.state.storage.deleteAlarm();
     // MITIGATION 1: invalidate the per-wake soft caches so a LATER attach to

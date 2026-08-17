@@ -9,13 +9,24 @@
 // boards", and "Recent · ended in the last 48h", applying the design's rules
 // (docs/design-terminal-session-entry-options.html §3), AS SUPERSEDED for
 // Recent by Nick's rework 8b instruction below:
-//   - Recent = ended ≤48h ago, max 10, rows with a null `cwd` hidden entirely
-//     (F4: "Resume is hidden entirely when the project folder wasn't
-//     recorded — no disabled ghost button"). Dedupe is per-conversation, not
+//   - Recent = ended ≤48h ago, max 10. Dedupe is per-conversation, not
 //     strictly per-folder any more — see the EVERY RESUMABLE CONVERSATION
 //     section below.
 //   - Live sessions split by whether they belong to the board currently open
 //     (`currentIdeaId`) or another one.
+//
+// NULL-CWD ROWS (bug 9fb9fced, 2026-08-17 — SUPERSEDES the old F4 rule below):
+// `cwd` is only recorded once the client's post-connect PATCH lands, which
+// never fires at all when the launch had no known project path to begin
+// with. F4 used to hide those rows from Recent COMPLETELY, not just their
+// Resume button — so a session that force-closed before its cwd ever landed
+// vanished from history outright, and a refresh landing in that gap read as
+// "nothing to reconnect to" and silently launched a brand-new session (see
+// entry-decision.ts's matching fix). A null-cwd row is now KEPT in Recent —
+// it still has a sid, an ended time, and often a machine label worth
+// showing — with only its Resume affordance suppressed by the chooser UI
+// (terminal-session-chooser.tsx), since Resume genuinely has no folder to
+// reopen. `ChooserRecentRow.cwd` is `string | null` accordingly.
 //
 // MACHINE IDENTITY (Nick's sign-off change 2 — "hide conversations that
 // aren't on the machine that you're running vibecodes on"): Recent rows also
@@ -24,8 +35,9 @@
 // are known and disagree (`row.machineLabel` set AND differs from the stored
 // one) — a row with no recorded machine label stays visible (honest
 // omission, not assumed foreign), and when this browser has never recorded
-// an identity at all, nothing is filtered (F4-style: never a silently empty
-// section over data we simply don't have an opinion on yet). "Running now"
+// an identity at all, nothing is filtered (same honest-omission spirit as
+// the null-cwd fix above: never a silently empty section over data we simply
+// don't have an opinion on yet). "Running now"
 // sections are NEVER filtered — a live session is unambiguously reachable
 // regardless of which machine it's on.
 //
@@ -43,22 +55,27 @@
 // duplicate. Nick's instruction above supersedes the one-per-folder spec for
 // those rows; see this module's row-selection rules just below.
 //
-// Selection rules, applied AFTER the existing 48h/machine/null-cwd filtering
-// above (unchanged) and the existing newest-ended-first sort:
+// Selection rules, applied AFTER the existing 48h/machine filtering above
+// (unchanged) and the existing newest-ended-first sort:
 //   1. Every row that carries a `claudeSessionId` is kept, no matter how many
 //      other rows share its `cwd` — each one resumes its own exact
 //      conversation, so none of them is a duplicate of another.
-//   2. Rows WITHOUT a `claudeSessionId` still can't be told apart from one
-//      another by Resume (it falls back to "most recent in this folder", the
-//      pre-rework-5 behaviour) — so they keep the old one-per-folder collapse,
-//      keeping only the newest such row per `cwd`.
+//   2. Rows WITHOUT a `claudeSessionId` but WITH a recorded `cwd` still can't
+//      be told apart from one another by Resume (it falls back to "most
+//      recent in this folder", the pre-rework-5 behaviour) — so they keep the
+//      old one-per-folder collapse, keeping only the newest such row per
+//      `cwd`.
 //   3. A folder that already has an ID-bearing row shown ALSO gets its single
 //      newest ID-less row shown (not suppressed) — that ID-less row is a
 //      distinct, older-era conversation pointer (from before the bridge
 //      announced ids, or a bridge too old to ever announce one) that the
 //      ID-bearing rows cannot stand in for. This is the simplest honest rule:
 //      "one ID-less pointer per folder, plus every distinct ID we have."
-//   4. The combined result is capped at RECENT_MAX (raised 5 → 10 for this
+//   4. A row with NEITHER a `claudeSessionId` NOR a recorded `cwd` (null-cwd
+//      fix above) has no folder to collapse it against another row by — it
+//      is never deduped away, only ever capped by RECENT_MAX like everything
+//      else.
+//   5. The combined result is capped at RECENT_MAX (raised 5 → 10 for this
 //      rework — more rows are now legitimately distinct, so the old cap would
 //      truncate real history), newest-ended first.
 
@@ -106,8 +123,8 @@ export interface ChooserRecentRow {
   ideaTitle: string | null;
   taskId: string | null;
   taskTitle: string | null;
-  /** Never null/empty — rows without a recorded folder never reach this list (F4). */
-  cwd: string;
+  /** Null when the folder was never recorded (null-cwd fix above) — the row still appears, but the chooser UI must not offer Resume for it. */
+  cwd: string | null;
   machineLabel: string | null;
   /** Exact-conversation Resume (rework 5) — see ChooserRegistryRow's doc. Null → the chooser falls back to the legacy `--continue` resume. */
   claudeSessionId: string | null;
@@ -162,9 +179,11 @@ export function deriveChooserSections(
   const liveElsewhere = live.filter((r) => r.ideaId !== currentIdeaId).map(toLiveRow);
 
   const recentCandidates = rows
-    .filter((r): r is ChooserRegistryRow & { cwd: string; endedAt: string } => {
+    .filter((r): r is ChooserRegistryRow & { endedAt: string } => {
       if (r.status !== "ended") return false;
-      if (!r.cwd || !r.cwd.trim()) return false; // F4: no recorded folder → never shown
+      // Null-cwd fix (bug 9fb9fced): no cwd check here any more — a row with
+      // no recorded folder still belongs in Recent, just without Resume. See
+      // this module's header comment.
       if (!r.endedAt) return false;
       if (!withinRecentWindow(r.endedAt, nowMs)) return false;
       // Machine identity: hide only when BOTH sides are known and disagree —
@@ -176,16 +195,22 @@ export function deriveChooserSections(
 
   // Rework 8b (see header comment): rows WITH a claudeSessionId are never
   // deduped against each other — each resumes its own exact conversation.
-  // Rows WITHOUT one still collapse to the single newest per folder, since
-  // Resume can't tell them apart. `recentCandidates` is already sorted
-  // newest-ended-first, so "first row seen per folder" is "newest per
-  // folder" for the id-less collapse.
+  // Rows WITHOUT one but WITH a recorded cwd still collapse to the single
+  // newest per folder, since Resume can't tell them apart. A row with
+  // NEITHER (null-cwd fix) has no folder to key a collapse on, so it's never
+  // deduped away. `recentCandidates` is already sorted newest-ended-first, so
+  // "first row seen per folder" is "newest per folder" for the id-less
+  // collapse.
   const seenIdlessCwd = new Set<string>();
-  const selected: (ChooserRegistryRow & { cwd: string; endedAt: string })[] = [];
+  const selected: (ChooserRegistryRow & { endedAt: string })[] = [];
   for (const r of recentCandidates) {
-    const cwd = r.cwd.trim();
     if (r.claudeSessionId) {
       selected.push(r);
+      continue;
+    }
+    const cwd = r.cwd ? r.cwd.trim() : null;
+    if (!cwd) {
+      selected.push(r); // no folder to dedupe against — always kept
       continue;
     }
     if (seenIdlessCwd.has(cwd)) continue; // one id-less row per project folder
@@ -199,7 +224,7 @@ export function deriveChooserSections(
     ideaTitle: r.ideaTitle,
     taskId: r.taskId,
     taskTitle: r.taskTitle,
-    cwd: r.cwd.trim(),
+    cwd: r.cwd && r.cwd.trim() ? r.cwd.trim() : null, // blank/whitespace-only normalizes to null, same as the dedupe loop above
     machineLabel: r.machineLabel,
     claudeSessionId: r.claudeSessionId,
     endedAt: r.endedAt,
