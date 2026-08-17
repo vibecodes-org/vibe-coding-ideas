@@ -7,7 +7,9 @@ import {
   findLiveSessionForTask,
   findTaskSessionMatch,
   liveSessionsElsewhereOnThisBoard,
+  visibleRecentRows,
   type ChooserRegistryRow,
+  type ChooserRecentRow,
 } from "./chooser-data";
 
 const NOW = Date.parse("2026-07-20T12:00:00.000Z");
@@ -529,6 +531,70 @@ describe("findTaskSessionMatch", () => {
     ];
     const sections = deriveChooserSections(rows, IDEA_A, NOW);
     expect(findTaskSessionMatch(sections, "task-1")).toBeNull();
+  });
+
+  // Card cbe60db5 follow-up (Nick, 2026-08-17): the general chooser's Recent
+  // list now hides no-folder rows via `visibleRecentRows` (a display-only
+  // filter applied by terminal-session-chooser.tsx). `findTaskSessionMatch`
+  // must NOT pick up that filter — a task-scoped launch still has to dedupe
+  // against its own no-folder recent session (routing to
+  // terminal-task-launch-choice.tsx's "already have a session" dialog
+  // instead of silently minting a second one for the same task).
+  it("still matches a Recent row with no recorded cwd — unaffected by the chooser's display-only filter", () => {
+    const rows = [row({ sid: "no-cwd-recent", status: "ended", cwd: null, taskId: "task-1", endedAt: new Date(NOW - 60_000).toISOString() })];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    const match = findTaskSessionMatch(sections, "task-1");
+    expect(match?.kind).toBe("recent");
+    expect(match?.row.sid).toBe("no-cwd-recent");
+  });
+});
+
+// Card cbe60db5 follow-up (Nick's field report, 2026-08-17 — "Can't resume —
+// no folder recorded" rows are dead entries with nothing to click, they
+// shouldn't be in the human-visible list). `visibleRecentRows` is the
+// display-only filter `terminal-session-chooser.tsx` applies to
+// `ChooserSections.recent` for its row list AND its section show/hide check
+// — it must NEVER be baked into `deriveChooserSections` itself, since
+// `entry-decision.ts` (reads raw registry rows directly, see
+// entry-decision.test.ts) and `findTaskSessionMatch` (above) both still need
+// every recent row, folder or not.
+describe("visibleRecentRows", () => {
+  function recentRow(overrides: Partial<ChooserRecentRow> & { sid: string }): ChooserRecentRow {
+    return {
+      ideaId: IDEA_A,
+      ideaTitle: "VibeCodes",
+      taskId: null,
+      taskTitle: null,
+      cwd: null,
+      machineLabel: null,
+      claudeSessionId: null,
+      endedAt: new Date(NOW - 60_000).toISOString(),
+      ...overrides,
+    };
+  }
+
+  it("excludes rows with no recorded cwd", () => {
+    const recent = [recentRow({ sid: "no-cwd", cwd: null })];
+    expect(visibleRecentRows(recent)).toEqual([]);
+  });
+
+  it("keeps rows that DO have a recorded cwd", () => {
+    const recent = [recentRow({ sid: "with-cwd", cwd: "~/projects/a" })];
+    expect(visibleRecentRows(recent)).toEqual(recent);
+  });
+
+  it("keeps only the cwd-bearing rows out of a mixed set, preserving order", () => {
+    const recent = [
+      recentRow({ sid: "a", cwd: "~/projects/a" }),
+      recentRow({ sid: "no-cwd", cwd: null }),
+      recentRow({ sid: "b", cwd: "~/projects/b" }),
+    ];
+    expect(visibleRecentRows(recent).map((r) => r.sid)).toEqual(["a", "b"]);
+  });
+
+  it("returns an empty array when every row is no-cwd", () => {
+    const recent = [recentRow({ sid: "a", cwd: null }), recentRow({ sid: "b", cwd: null })];
+    expect(visibleRecentRows(recent)).toEqual([]);
   });
 });
 
