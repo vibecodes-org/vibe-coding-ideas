@@ -526,6 +526,45 @@ export function useTerminalSession(
   // it's stashed here and applied the moment the xterm-init effect sets
   // `termRef.current`, instead of being silently dropped.
   const pendingInitialBufferRef = useRef<TransferredBuffer | null>(null);
+  // Squashed-reattach fix (task 6ac2cd44, 2026-08-17 follow-up to 27d19c68):
+  // mirrors `pendingInitialBufferRef` immediately above — `attachToExisting`
+  // can ALSO run before xterm has mounted (it fires synchronously, no await,
+  // in the same effect-flush pass as the dispatches that trigger this tab's
+  // fresh mount), and firing the reattach relaunch deep link then means
+  // `currentLaunchDims()` (which reads `termRef`/`fitRef` — see its own doc
+  // comment) is GUARANTEED to return null on a fresh mount, not just
+  // "unlikely to". The bridge then spawns the remote PTY at its hardcoded
+  // 80x24 fallback inside a much wider panel — the "squashed" symptom — and
+  // the later resize correction (the connected-transition effect around
+  // `sendResize`) can't retroactively re-wrap text already printed at the
+  // narrow width. Stashed here instead of fired with null dims, and flushed
+  // from the SAME xterm-init effect below that already flushes
+  // `pendingInitialBufferRef`, right after `termRef`/`fitRef` are populated —
+  // so `currentLaunchDims()` reads real values by the time it actually
+  // fires. `gen` is the `connectGenRef` snapshot at queue time, so a newer
+  // `connect()`/`attachToExisting` superseding this one drops the stale fire
+  // at flush time instead of duplicate-firing alongside the newer one.
+  const pendingDeepLinkRef = useRef<{
+    gen: number;
+    sessionId: string;
+    bridgeToken: string;
+    helperToken?: string;
+    opts: { trigger: "attach-existing"; forceResumeCwd?: string | null; forceResumeId?: string | null };
+  } | null>(null);
+  // Ref-mirror of `fireLaunchDeepLink` (same idiom as `scheduleReconnectRef`
+  // below) so the xterm-init effect above can call the LATEST callback
+  // without needing it in that effect's dependency array — `fireLaunchDeepLink`
+  // is declared much later in this hook, and adding it as a dependency would
+  // re-run (and re-mount) the whole xterm terminal every time ITS OWN deps
+  // change, which is never what we want for a mount-once effect.
+  const fireLaunchDeepLinkRef = useRef<
+    (
+      sessionId: string,
+      bridgeToken: string,
+      helperToken: string | undefined,
+      opts: { trigger: "attach-existing"; forceResumeCwd?: string | null; forceResumeId?: string | null },
+    ) => void
+  >(() => {});
   const containerRef = useRef<HTMLDivElement | null>(null);
   const connectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const helperTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -698,6 +737,19 @@ export function useTerminalSession(
       if (pendingInitialBufferRef.current) {
         restoreScrollback(term, pendingInitialBufferRef.current);
         pendingInitialBufferRef.current = null;
+      }
+      // Squashed-reattach fix: a reattach relaunch deep link queued by
+      // attachToExisting above because xterm wasn't mounted yet — flush it
+      // now that termRef/fitRef (just above) are populated, so
+      // currentLaunchDims() reads real values instead of null. Drop it
+      // instead of firing if a newer connect()/attachToExisting has since
+      // superseded this attempt (see pendingDeepLinkRef's own doc).
+      if (pendingDeepLinkRef.current) {
+        const pending = pendingDeepLinkRef.current;
+        pendingDeepLinkRef.current = null;
+        if (!isConnectSuperseded(pending.gen, connectGenRef.current)) {
+          fireLaunchDeepLinkRef.current(pending.sessionId, pending.bridgeToken, pending.helperToken, pending.opts);
+        }
       }
       setXtermReady(true);
     })().catch((err) => {
@@ -1174,6 +1226,7 @@ export function useTerminalSession(
     },
     [resolveLaunchPromptParts, openLaunchLinkAndArmTimeout, currentLaunchDims],
   );
+  fireLaunchDeepLinkRef.current = fireLaunchDeepLink;
 
   const teardownSocket = useCallback(() => {
     clearConnectTimer();
@@ -1728,17 +1781,44 @@ export function useTerminalSession(
       // for a genuinely live session, instead of depending on a ref that's
       // reliably empty in exactly this path.
       if (p.bridgeToken) {
-        logger.info("Terminal reattach firing relaunch deep link", {
-          sessionId: p.sessionId,
-          hasResumeCwd: !!(p.cwd && p.cwd.trim()),
-          hasClaudeSessionId: !!p.claudeSessionId,
-          promptPartsPopulated: !!promptPartsRef.current,
-        });
-        fireLaunchDeepLink(p.sessionId, p.bridgeToken, p.helperToken, {
-          trigger: "attach-existing",
+        const deepLinkOpts = {
+          trigger: "attach-existing" as const,
           forceResumeCwd: p.cwd,
           forceResumeId: p.claudeSessionId,
-        });
+        };
+        // Squashed-reattach fix (task 6ac2cd44, 2026-08-17 follow-up): on a
+        // FRESH mount (hard refresh, or a brand-new tab with no pristine
+        // slot to reuse) xterm is still loading via the async import() above
+        // — termRef/fitRef are guaranteed null at this exact point, so
+        // firing straight through would make currentLaunchDims() return
+        // null every time, spawning the remote PTY at the bridge's narrow
+        // 80x24 fallback (the squash). Mirrors pendingInitialBufferRef's own
+        // pattern a few lines above for the identical not-yet-mounted
+        // problem: fire immediately if xterm is already up (the fast path —
+        // e.g. a same-tab Reconnect reusing a pristine slot whose xterm was
+        // already showing something), otherwise queue and let the
+        // xterm-init effect's flush (see pendingDeepLinkRef's doc) fire it
+        // once real dims are actually readable.
+        if (termRef.current && fitRef.current) {
+          logger.info("Terminal reattach firing relaunch deep link", {
+            sessionId: p.sessionId,
+            hasResumeCwd: !!(p.cwd && p.cwd.trim()),
+            hasClaudeSessionId: !!p.claudeSessionId,
+            promptPartsPopulated: !!promptPartsRef.current,
+          });
+          fireLaunchDeepLink(p.sessionId, p.bridgeToken, p.helperToken, deepLinkOpts);
+        } else {
+          logger.info("Terminal reattach relaunch deferred — xterm not mounted yet", {
+            sessionId: p.sessionId,
+          });
+          pendingDeepLinkRef.current = {
+            gen,
+            sessionId: p.sessionId,
+            bridgeToken: p.bridgeToken,
+            helperToken: p.helperToken,
+            opts: deepLinkOpts,
+          };
+        }
       }
       openBrowserLeg(p.sessionId, p.browserToken);
     },
