@@ -1838,7 +1838,11 @@ describe("claimNextStep — human approval directive", () => {
 
     const r = result as { instruction: string };
     expect(r.instruction).toContain("HUMAN APPROVAL REQUIRED");
-    expect(r.instruction).toContain("Do NOT call approve_step");
+    // Board task d572c4d1: approve_step no longer works at all, even with
+    // human instruction — the directive must say so, not just "don't call it
+    // yourself" (which implied a human-instructed call would still work).
+    expect(r.instruction).toContain("approve_step no longer works from any MCP connection, even with human instruction");
+    expect(r.instruction).toContain("workflow panel in the VibeCodes web UI");
   });
 
   it("omits human approval directive when step does not require human check", async () => {

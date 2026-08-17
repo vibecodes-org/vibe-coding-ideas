@@ -1040,7 +1040,7 @@ export async function claimNextStep(
 
   if (updated.human_check_required) {
     contextParts.push(
-      `HUMAN APPROVAL REQUIRED: This step requires human approval. After producing your deliverable and calling complete_step, you MUST STOP. Do NOT call approve_step yourself. Present your deliverable to the user and wait for them to explicitly instruct you to approve it.`
+      `HUMAN APPROVAL REQUIRED: This step requires human approval. After producing your deliverable and calling complete_step, you MUST STOP. approve_step no longer works from any MCP connection, even with human instruction — present your deliverable to the user and ask them to approve or reject it from the task's workflow panel in the VibeCodes web UI.`
     );
   }
 
