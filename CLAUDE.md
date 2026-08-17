@@ -51,7 +51,7 @@ Move to "Blocked/Requires User Input" with a comment explaining why.
 ### Identity Enforcement
 - MCP `complete_step`/`fail_step` verify the step's `claim_token`; completion is attributed to `step.bot_id` regardless of the caller's connection identity
 - Agent-voiced comments require the step's live `work_token`; rejected tokens log a structured warn (the attribution-anomaly signal)
-- `approve_step`/rejection of `awaiting_approval` steps are human-gated (no claim token needed; bot identities blocked)
+- `approve_step` MCP tool and `fail_step` on an `awaiting_approval` step are hard-error stubs — the human-approval gate can ONLY be satisfied from the web UI's workflow panel (`approveWorkflowStep`/`failWorkflowStep` in `src/actions/workflow.ts`), never over any MCP connection, even one authenticated as the human's own account. A `BEFORE UPDATE` trigger on `task_workflow_steps` enforces this in the DB: `awaiting_approval` → `completed` requires `approved_by`/`approval_method` to be set.
 - Steps with `bot_id = null` are not affected
 
 ### AI Access Resolution

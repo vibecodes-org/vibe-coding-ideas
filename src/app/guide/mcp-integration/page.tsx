@@ -348,7 +348,7 @@ export default function McpIntegrationPage() {
                   { name: "complete_step", description: "Mark a step as complete with optional output" },
                   { name: "fail_step", description: "Fail a step with optional cascade rejection to an earlier step" },
                   { name: "skip_step", description: "Skip a pending step that isn't applicable" },
-                  { name: "approve_step", description: "Approve a step awaiting human review (humans only)" },
+                  { name: "approve_step", description: "Retired — always errors. Approve a step awaiting human review from the task's workflow panel in the web UI instead" },
                   { name: "add_step_comment", description: "Add a comment to a workflow step" },
                   { name: "rematch_workflow_agents", description: "Re-match unmatched pending steps against the agent team" },
                   { name: "reset_workflow", description: "Reset all steps to pending and restart the workflow" },
