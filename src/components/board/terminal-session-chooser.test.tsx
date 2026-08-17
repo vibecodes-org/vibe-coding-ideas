@@ -3,13 +3,14 @@
 // itself is covered by chooser-data.test.ts) and prove the click contract:
 // Start new / Reconnect / Open board & reconnect / Resume's inline confirm.
 
-import { afterEach } from "vitest";
+import { afterEach, beforeEach } from "vitest";
 import { describe, it, expect, vi } from "vitest";
-import { render, screen, cleanup, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, fireEvent, act } from "@testing-library/react";
 import { TerminalSessionChooser } from "./terminal-session-chooser";
 import type { ChooserSections } from "@/lib/terminal/chooser-data";
 import { MINIMUM_RECOMMENDED_HELPER_VERSION } from "@/lib/terminal/helper-version";
 import type { HelperStatus } from "@/lib/terminal/helper-row";
+import { TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
 
 afterEach(cleanup);
 
@@ -363,8 +364,13 @@ describe("TerminalSessionChooser", () => {
     it("shows the nudge, above the sections, when the last-known helper is older than the minimum", () => {
       renderChooser(helperStatus({ version: "0.3.0" }));
       expect(screen.getByText(/A newer terminal helper is available/)).toBeInTheDocument();
-      const link = screen.getByRole("link", { name: "Update now" });
-      expect(link).toHaveAttribute("href", "/download/terminal-helper");
+      // Regression (Nick's binding decision — "both buttons need to stop the
+      // old version first"): this used to be a bare `<a href>` straight to
+      // the download, no quiesce. It's now the same clickable button as the
+      // My sessions panel's, driving the shared quiesce flow — see the
+      // "helper update flow" describe block below.
+      expect(screen.getByRole("button", { name: "Update now" })).toBeInTheDocument();
+      expect(screen.queryByRole("link", { name: "Update now" })).not.toBeInTheDocument();
     });
 
     it("hides the nudge when the last-known helper is already current", () => {
@@ -394,6 +400,148 @@ describe("TerminalSessionChooser", () => {
       expect(screen.getByText(/A newer terminal helper is available/)).toBeInTheDocument();
       fireEvent.click(screen.getByRole("button", { name: "Dismiss helper update notice" }));
       expect(screen.queryByText(/A newer terminal helper is available/)).not.toBeInTheDocument();
+    });
+  });
+
+  describe("helper update flow — 'Update now' quiesces before downloading (Nick's binding decision)", () => {
+    // QA found the session chooser's "Update now" was a bare `<a href>`
+    // straight to the download — no quiesce — while the My sessions panel's
+    // version safely ended live sessions, sent `quiesce`, and waited for the
+    // old helper to disconnect first. These prove the chooser now drives
+    // the SAME shared flow (src/lib/terminal/use-helper-update-flow.ts),
+    // including the "quiesce times out but the download still proceeds"
+    // edge case.
+    function helperStatus(overrides: Partial<HelperStatus> = {}): HelperStatus {
+      return {
+        connected: true,
+        version: "0.1.0", // old enough that the nudge (and its button) render
+        machineLabel: null,
+        alwaysOn: false,
+        stoppedUnexpectedly: false,
+        lastEventAt: null,
+        ...overrides,
+      };
+    }
+
+    let assignSpy: ReturnType<typeof vi.fn>;
+    let originalLocation: Location;
+    let fetchMock: ReturnType<typeof vi.fn>;
+    let statusQueue: Array<{ connected: boolean }>;
+
+    beforeEach(() => {
+      vi.useFakeTimers();
+      originalLocation = window.location;
+      assignSpy = vi.fn();
+      // jsdom's `window.location.assign` isn't spy-able directly — swap in a
+      // plain object carrying the real Location's properties plus a
+      // spy-able `assign` (same idiom as launch-claude-code-button.test.tsx).
+      Object.defineProperty(window, "location", {
+        value: Object.assign(Object.create(Object.getPrototypeOf(originalLocation) as object), originalLocation, {
+          assign: assignSpy,
+        }),
+        configurable: true,
+        writable: true,
+      });
+      statusQueue = [];
+      fetchMock = vi.fn((url: string) => {
+        if (url === "/api/terminal/helper/status") {
+          const next = statusQueue.shift() ?? { connected: true };
+          return Promise.resolve({ ok: true, json: async () => next } as Response);
+        }
+        return Promise.resolve({ ok: true, json: async () => ({}) } as Response);
+      });
+      vi.stubGlobal("fetch", fetchMock);
+    });
+
+    afterEach(() => {
+      Object.defineProperty(window, "location", { value: originalLocation, configurable: true, writable: true });
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it("no live sessions: Update now skips the confirm, quiesces straight away (no end-all call), then downloads", async () => {
+      statusQueue = [{ connected: false }];
+      render(
+        <TerminalSessionChooser
+          sections={EMPTY}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+          helperStatus={helperStatus()}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Update now" }));
+      expect(screen.queryByText("Update the helper?")).not.toBeInTheDocument(); // no sessions -> no confirm
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/terminal/helper/command",
+        expect.objectContaining({ body: JSON.stringify({ cmd: "quiesce" }) }),
+      );
+      expect(fetchMock).not.toHaveBeenCalledWith("/api/terminal/session/end", expect.anything());
+      expect(assignSpy).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
+    });
+
+    it("live sessions: Update now confirms first, ends every session, then quiesces and downloads", async () => {
+      statusQueue = [{ connected: false }];
+      render(
+        <TerminalSessionChooser
+          sections={sections({ liveHere: [liveRow("live-1")], liveElsewhere: [liveRow("live-2")] })}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+          helperStatus={helperStatus()}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Update now" }));
+      expect(screen.getByText("Update the helper?")).toBeInTheDocument();
+      expect(screen.getByText(/Your 2 running sessions will end first/)).toBeInTheDocument();
+      expect(fetchMock).not.toHaveBeenCalled(); // nothing happens until confirmed
+
+      await act(async () => {
+        fireEvent.click(screen.getByRole("button", { name: "End sessions & update" }));
+        await vi.advanceTimersByTimeAsync(0);
+      });
+
+      expect(fetchMock).toHaveBeenCalledWith(
+        "/api/terminal/session/end",
+        expect.objectContaining({ body: JSON.stringify({ all: true }) }),
+      );
+      expect(assignSpy).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
+    });
+
+    it("quiesce-timeout: the poll never settles, but the chooser still downloads regardless — identical to the My sessions panel", async () => {
+      // statusQueue stays empty -> every poll reports still-connected.
+      const onHelperUpdateSettled = vi.fn();
+      render(
+        <TerminalSessionChooser
+          sections={EMPTY}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+          helperStatus={helperStatus()}
+          onHelperUpdateSettled={onHelperUpdateSettled}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole("button", { name: "Update now" }));
+      for (let i = 0; i < 25 && assignSpy.mock.calls.length === 0; i++) {
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(500);
+        });
+      }
+
+      expect(assignSpy).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
+      expect(screen.getByText(/The helper is taking a moment to close/)).toBeInTheDocument();
+      expect(onHelperUpdateSettled).toHaveBeenCalledOnce();
     });
   });
 });
