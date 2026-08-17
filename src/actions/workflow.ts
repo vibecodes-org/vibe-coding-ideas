@@ -378,9 +378,19 @@ export async function approveWorkflowStep(stepId: string, output?: string) {
 
   if (!user) throw new Error("Not authenticated");
 
+  // Approval provenance (board task d572c4d1): this Server Action, running
+  // inside the human's own authenticated browser session, is the ONLY path
+  // that can move a step out of awaiting_approval into completed — the MCP
+  // `approve_step` tool is a hard-error stub. Stamping who/how/when here is
+  // what a DB trigger (migration 00159) now requires on every such
+  // transition, and what the step card displays as approval provenance.
+  const now = new Date().toISOString();
   const updateFields: Record<string, unknown> = {
     status: "completed",
-    completed_at: new Date().toISOString(),
+    completed_at: now,
+    approved_by: user.id,
+    approved_at: now,
+    approval_method: "web_ui",
   };
   // Only overwrite output if the approver explicitly provides one;
   // otherwise preserve the agent's original deliverable.

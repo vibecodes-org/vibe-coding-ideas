@@ -39,7 +39,7 @@ vi.mock("@/lib/workflow-helpers", () => ({
   checkAndCompleteRun: vi.fn().mockResolvedValue(false),
 }));
 
-import { completeWorkflowStep, failWorkflowStep } from "./workflow";
+import { completeWorkflowStep, failWorkflowStep, approveWorkflowStep } from "./workflow";
 
 describe("completeWorkflowStep — manual UI submission", () => {
   beforeEach(() => {
@@ -133,6 +133,41 @@ describe("failWorkflowStep — manual UI rejection", () => {
 
     await expect(failWorkflowStep("step-1")).rejects.toThrow(
       /not in a state that can be failed/i
+    );
+  });
+});
+
+// Board task d572c4d1-bb45-468d-94b0-f3ac01855601: this Server Action is the
+// ONLY remaining path that can move a step out of awaiting_approval — the
+// MCP approve_step tool is a hard-error stub. It must stamp who/how/when on
+// every such UPDATE, both for the UI's own provenance display and because a
+// DB trigger (migration 00159) now rejects an awaiting_approval -> completed
+// UPDATE that omits approved_by/approval_method.
+describe("approveWorkflowStep — manual UI approval", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("stamps approved_by, approved_at, and approval_method: 'web_ui' on the update payload", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({
+      data: { id: "step-1", run_id: null, status: "completed" },
+      error: null,
+    });
+
+    await approveWorkflowStep("step-1");
+
+    const updateArgs = mockUpdate.mock.calls[0]?.[0];
+    expect(updateArgs?.status).toBe("completed");
+    expect(updateArgs?.approved_by).toBe(HUMAN_USER_ID);
+    expect(updateArgs?.approval_method).toBe("web_ui");
+    expect(updateArgs?.approved_at).toBeTypeOf("string");
+  });
+
+  it("throws when the row is no longer awaiting approval", async () => {
+    mockMaybeSingle.mockResolvedValueOnce({ data: null, error: null });
+
+    await expect(approveWorkflowStep("step-1")).rejects.toThrow(
+      /no longer awaiting approval/i
     );
   });
 });
