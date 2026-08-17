@@ -83,10 +83,26 @@ export const DEFAULT_TTL_SECONDS = 300;
  */
 export const DEFAULT_MAX_SESSION_MS = 4 * 60 * 60 * 1000;
 
-const ROLES = Object.freeze(["bridge", "browser", "control", "helper"]);
+const ROLES = Object.freeze(["bridge", "browser", "control", "helper", "notify"]);
 
 /** Control-token lifetime (multi-session stage 3): short-lived, one-shot. */
 export const CONTROL_TTL_SECONDS = 60;
+
+/**
+ * Notify-token lifetime (card 9fb9fced, Fix 2 — real-time relay→app closure
+ * callback): short-lived, one-shot, mirrors CONTROL_TTL_SECONDS. "notify" is
+ * the FIFTH kind of leg/call this module authorizes, and the mirror image of
+ * "control": where a control token authorizes the APP calling the RELAY's
+ * `/end`, a notify token authorizes the RELAY calling the APP's
+ * `POST /api/terminal/session/closed` the instant a DO alarm force-closes a
+ * session (hard 4h max-duration, or 30min idle) — telling the Supabase
+ * registry the session died in REAL TIME instead of leaving it to guess via
+ * its own mirrored `expires_at` and reconcile lazily on the next unrelated
+ * request. That lazy-guess window was the exact race behind bug 9fb9fced: a
+ * client's page refresh could land inside it and observe a stale "still
+ * active" row for a session that had, in fact, already ended.
+ */
+export const NOTIFY_TTL_SECONDS = 60;
 
 /**
  * Belt-and-braces cap on the HELPER reattach waiver (mirrors
@@ -353,6 +369,52 @@ export async function authorizeControl({ token, secret, session, now }) {
   if (c.role !== "control") return { ok: false, reason: "role mismatch" };
   if (c.sid !== session) return { ok: false, reason: "sid mismatch" };
   return { ok: true, sub: c.sub, claims: c };
+}
+
+/**
+ * Mint a short-lived "notify" token authorizing ONE HTTP call FROM the relay
+ * TO the app's `POST /api/terminal/session/closed` webhook (card 9fb9fced,
+ * Fix 2 — see NOTIFY_TTL_SECONDS's doc above). Minted by the relay itself,
+ * immediately before that outbound fetch, using the SAME shared
+ * TERMINAL_SESSION_SECRET both sides already hold — no new secret to
+ * provision. `sub` carries no meaning for this direction (the relay's alarm
+ * path has no reason to read the durable owner binding just for this call);
+ * the app authorizes the callback on the SIGNATURE + role + sid alone, then
+ * looks the row up by sid itself — see `authorizeNotify`'s doc.
+ * @param {{ sid: string, secret: string, ttlSeconds?: number, now?: number }} args
+ * @returns {Promise<string>}
+ */
+export async function mintNotifyToken({
+  sid,
+  secret,
+  ttlSeconds = NOTIFY_TTL_SECONDS,
+  now = Math.floor(Date.now() / 1000),
+}) {
+  const exp = now + ttlSeconds;
+  return signToken({ sub: "relay", sid, idea: "", role: "notify", iat: now, exp }, secret);
+}
+
+/**
+ * Verify a notify token for the app's `/api/terminal/session/closed` webhook.
+ * Deliberately STRICT, mirroring `authorizeControl`: no reattach waiver, an
+ * expired token always fails — this is a one-shot server-to-server call, not
+ * a leg of a live session. Checks signature, shape, `role === "notify"`, and
+ * `sid` match; does NOT check `sub` against anything (see mintNotifyToken's
+ * doc) — the SIGNATURE itself is what proves the call came from a relay
+ * instance holding TERMINAL_SESSION_SECRET, not an arbitrary caller guessing
+ * a sid. The webhook route still re-scopes its own DB write to the row
+ * matching this sid, so a forged-but-somehow-valid sid can only ever affect
+ * that one row.
+ * @param {{ token: unknown, secret: string, session: unknown, now?: number }} args
+ * @returns {Promise<{ ok: true, claims: SessionClaims } | { ok: false, reason: string }>}
+ */
+export async function authorizeNotify({ token, secret, session, now }) {
+  const res = await verifyToken(token, secret, { now });
+  if (!res.ok) return res;
+  const c = res.claims;
+  if (c.role !== "notify") return { ok: false, reason: "role mismatch" };
+  if (c.sid !== session) return { ok: false, reason: "sid mismatch" };
+  return { ok: true, claims: c };
 }
 
 /**

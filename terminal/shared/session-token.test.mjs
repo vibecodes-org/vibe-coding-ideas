@@ -9,9 +9,12 @@ import {
   mintSessionTokens,
   mintControlToken,
   authorizeControl,
+  mintNotifyToken,
+  authorizeNotify,
   newSessionId,
   DEFAULT_TTL_SECONDS,
   CONTROL_TTL_SECONDS,
+  NOTIFY_TTL_SECONDS,
   helperSessionId,
   mintHelperToken,
   decodeTokenClaims,
@@ -247,6 +250,58 @@ test("authorizeControl: expiry is ALWAYS strict — no reattach waiver exists fo
   const expired = await authorizeControl({ token, secret: SECRET, session: "sess-1", now: NOW + CONTROL_TTL_SECONDS + 1 });
   assert.equal(expired.ok, false);
   assert.equal(expired.reason, "expired");
+});
+
+// ── notify tokens (card 9fb9fced, Fix 2 — relay→app session-closed callback) ─
+
+test("mintNotifyToken → authorizeNotify happy path", async () => {
+  assert.equal(NOTIFY_TTL_SECONDS, 60);
+  const token = await mintNotifyToken({ sid: "sess-1", secret: SECRET, now: NOW });
+  const res = await authorizeNotify({ token, secret: SECRET, session: "sess-1", now: NOW });
+  assert.equal(res.ok, true);
+  assert.equal(res.claims.role, "notify");
+  assert.equal(res.claims.sid, "sess-1");
+});
+
+test("authorizeNotify: sid mismatch is rejected", async () => {
+  const token = await mintNotifyToken({ sid: "sess-1", secret: SECRET, now: NOW });
+  const res = await authorizeNotify({ token, secret: SECRET, session: "sess-OTHER", now: NOW });
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, "sid mismatch");
+});
+
+test("authorizeNotify: a control/bridge/browser token is rejected with role mismatch", async () => {
+  const control = await mintControlToken({ sub: "user-A", sid: "sess-1", secret: SECRET, now: NOW });
+  const controlRes = await authorizeNotify({ token: control, secret: SECRET, session: "sess-1", now: NOW });
+  assert.equal(controlRes.ok, false);
+  assert.equal(controlRes.reason, "role mismatch");
+
+  const { browser } = await mintSessionTokens({ sub: "user-A", idea: "idea-1", sid: "sess-1", secret: SECRET, now: NOW });
+  const browserRes = await authorizeNotify({ token: browser, secret: SECRET, session: "sess-1", now: NOW });
+  assert.equal(browserRes.ok, false);
+  assert.equal(browserRes.reason, "role mismatch");
+});
+
+test("authorizeNotify: expiry is ALWAYS strict — no reattach waiver exists for notify tokens", async () => {
+  const token = await mintNotifyToken({ sid: "sess-1", secret: SECRET, now: NOW });
+  const stillGood = await authorizeNotify({ token, secret: SECRET, session: "sess-1", now: NOW + NOTIFY_TTL_SECONDS - 1 });
+  assert.equal(stillGood.ok, true);
+  const expired = await authorizeNotify({ token, secret: SECRET, session: "sess-1", now: NOW + NOTIFY_TTL_SECONDS + 1 });
+  assert.equal(expired.ok, false);
+  assert.equal(expired.reason, "expired");
+});
+
+test("authorizeNotify: a tampered notify token is rejected (bad signature)", async () => {
+  const token = await mintNotifyToken({ sid: "sess-1", secret: SECRET, now: NOW });
+  // Forge the sid (trying to redirect the callback at ANOTHER session's row)
+  // while keeping the original signature — the HMAC check must catch this.
+  const [payloadB64, sig] = token.split(".");
+  const forged = JSON.parse(Buffer.from(payloadB64, "base64url").toString("utf8"));
+  forged.sid = "sess-EVIL";
+  const forgedPayload = Buffer.from(JSON.stringify(forged)).toString("base64url");
+  const res = await authorizeNotify({ token: `${forgedPayload}.${sig}`, secret: SECRET, session: "sess-EVIL", now: NOW });
+  assert.equal(res.ok, false);
+  assert.equal(res.reason, "bad signature");
 });
 
 // ── helper tokens (card cc74a067, helper lifecycle) ────────────────────────

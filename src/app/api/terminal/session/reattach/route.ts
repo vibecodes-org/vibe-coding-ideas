@@ -80,6 +80,14 @@ export async function POST(req: Request) {
     if (!decision.ok || !row) {
       const status = !decision.ok && decision.reason !== "not-found" ? 409 : 404;
       const reason = !decision.ok ? decision.reason : "not-found";
+      // Fix 3 (card 9fb9fced): the specific failure path a reconnect/reattach
+      // hits when the target session turns out to already be closed — the
+      // suspected root cause of the original bug, and previously silent
+      // server-side (the client only ever saw a toast). `reason` distinguishes
+      // a genuinely unknown sid ("not-found") from a session this registry
+      // already knows died ("ended"/"expired") — the latter two are exactly
+      // the race this card's Fix 2 (relay session-closed callback) targets.
+      logger.warn("Terminal session reattach: target already unreachable", { sid, reason });
       const error =
         reason === "not-found"
           ? "Session not found"

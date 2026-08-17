@@ -391,7 +391,23 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   }, [registryRows, entrySnapshotInfo]);
   useEffect(() => {
     entryDecisionRef.current = entryDecision;
-  }, [entryDecision]);
+    // Fix 3 (card 9fb9fced): the client's own page-load/refresh liveness
+    // check — what the registry read found for this browser's sessions, and
+    // which of the three branches it took as a result. `entryDecision.kind`
+    // IS that branch (instant-continue → quiet reattach, chooser → render
+    // the picker/session-ended surface, empty-launch → mint fresh) — this is
+    // the exact decision point where the original bug's silent new-session
+    // launch happened with no trace at all. Fires once per resolved decision,
+    // not per render (this effect only re-runs when `entryDecision` itself
+    // changes).
+    if (entryDecision) {
+      logger.info("Terminal entry decision resolved", {
+        kind: entryDecision.kind,
+        liveCount: registryRows?.filter((r) => r.status === "active").length ?? 0,
+        recentEndedCount: registryRows?.filter((r) => r.status === "ended").length ?? 0,
+      });
+    }
+  }, [entryDecision, registryRows]);
 
   const chooserSections: ChooserSections = useMemo(
     () =>
