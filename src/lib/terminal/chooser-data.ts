@@ -297,3 +297,33 @@ export function findTaskSessionMatch(
   if (recent) return { kind: "recent", row: recent };
   return null;
 }
+
+/**
+ * Card eaa55290 (Nick's field report, 2026-08-17 — two terminal tabs open on
+ * the same board with no indication either existed): `liveHere` is every
+ * ACTIVE session this user has on the CURRENT idea, which — because
+ * `terminal_sessions` RLS is strictly owner-only (see the investigation step
+ * on this card) — always means "this same person's tabs/windows", never a
+ * collaborator. This is the "is another one of MY tabs already open here"
+ * signal, i.e. `liveHere` minus whichever row(s) belong to the caller.
+ *
+ * A row counts as "ours" when either:
+ *   - `wasOpenInThisTab` is set (this browser TAB's own `sessionStorage`-backed
+ *     memory of the last session it attached — see session-snapshot.ts's
+ *     `rememberLastTabSid`, genuinely per-tab, unlike `localStorage`), or
+ *   - its `sid` is in `ownSessionIds` (the sessionIds this `TerminalDock`
+ *     instance currently has mounted, via its own `summaries` state) — this
+ *     second check covers a 2nd own tab inside the SAME dock (multi-session,
+ *     where only the most-recently-connected sid wins the single
+ *     `wasOpenInThisTab` slot) and the brief window right after a fresh mint,
+ *     before that sessionStorage write has landed.
+ *
+ * Returns the remaining rows — an empty array means nothing to warn about
+ * (0 or 1 live session here, and that one is ours).
+ */
+export function liveSessionsElsewhereOnThisBoard(
+  sections: ChooserSections,
+  ownSessionIds: ReadonlySet<string> = new Set(),
+): ChooserLiveRow[] {
+  return sections.liveHere.filter((r) => !r.wasOpenInThisTab && !ownSessionIds.has(r.sid));
+}

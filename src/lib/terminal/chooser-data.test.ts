@@ -6,6 +6,7 @@ import {
   chooserHeaderCounts,
   findLiveSessionForTask,
   findTaskSessionMatch,
+  liveSessionsElsewhereOnThisBoard,
   type ChooserRegistryRow,
 } from "./chooser-data";
 
@@ -528,5 +529,66 @@ describe("findTaskSessionMatch", () => {
     ];
     const sections = deriveChooserSections(rows, IDEA_A, NOW);
     expect(findTaskSessionMatch(sections, "task-1")).toBeNull();
+  });
+});
+
+// Card eaa55290 (Nick's field report, 2026-08-17): "no way to tell another
+// session is already active on this board" — two browser tabs on the same
+// idea, discovered only by reading one tab's own narration text.
+describe("liveSessionsElsewhereOnThisBoard", () => {
+  it("returns nothing when no session is live here", () => {
+    const sections = deriveChooserSections([], IDEA_A, NOW);
+    expect(liveSessionsElsewhereOnThisBoard(sections)).toEqual([]);
+  });
+
+  it("returns nothing when the only live-here session is this tab's own (wasOpenInThisTab)", () => {
+    const rows = [row({ sid: "own-sid", ideaId: IDEA_A, status: "active" })];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW, "own-sid");
+    expect(sections.liveHere[0].wasOpenInThisTab).toBe(true);
+    expect(liveSessionsElsewhereOnThisBoard(sections)).toEqual([]);
+  });
+
+  it("surfaces a single other live-here session once excluding this tab's own", () => {
+    const rows = [
+      row({ sid: "own-sid", ideaId: IDEA_A, status: "active" }),
+      row({ sid: "other-sid", ideaId: IDEA_A, status: "active" }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW, "own-sid");
+    const others = liveSessionsElsewhereOnThisBoard(sections);
+    expect(others.map((r) => r.sid)).toEqual(["other-sid"]);
+  });
+
+  it("surfaces every other live-here session (2+) once excluding this tab's own", () => {
+    const rows = [
+      row({ sid: "own-sid", ideaId: IDEA_A, status: "active" }),
+      row({ sid: "other-1", ideaId: IDEA_A, status: "active" }),
+      row({ sid: "other-2", ideaId: IDEA_A, status: "active" }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW, "own-sid");
+    const others = liveSessionsElsewhereOnThisBoard(sections);
+    expect(others.map((r) => r.sid).sort()).toEqual(["other-1", "other-2"]);
+  });
+
+  it("never counts a live session on ANOTHER board — only liveHere is considered", () => {
+    const rows = [
+      row({ sid: "own-sid", ideaId: IDEA_A, status: "active" }),
+      row({ sid: "other-board", ideaId: IDEA_B, status: "active" }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW, "own-sid");
+    expect(liveSessionsElsewhereOnThisBoard(sections)).toEqual([]);
+  });
+
+  it("also excludes a row by ownSessionIds — covers a 2nd own tab within the SAME dock, where wasOpenInThisTab can only mark one row", () => {
+    const rows = [
+      row({ sid: "own-sid-1", ideaId: IDEA_A, status: "active" }),
+      row({ sid: "own-sid-2", ideaId: IDEA_A, status: "active" }),
+      row({ sid: "other-sid", ideaId: IDEA_A, status: "active" }),
+    ];
+    // Only one sid can ever be `wasOpenInThisTab` (sessionStorage holds a
+    // single last-sid) — the dock passes its OWN tracked sessionIds to cover
+    // the rest.
+    const sections = deriveChooserSections(rows, IDEA_A, NOW, "own-sid-1");
+    const others = liveSessionsElsewhereOnThisBoard(sections, new Set(["own-sid-1", "own-sid-2"]));
+    expect(others.map((r) => r.sid)).toEqual(["other-sid"]);
   });
 });
