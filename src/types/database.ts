@@ -888,6 +888,9 @@ export type Database = {
           persona_honored: boolean | null;
           skills_used: string[] | null;
           updated_at: string;
+          approved_by: string | null;
+          approved_at: string | null;
+          approval_method: string | null;
         };
         Insert: {
           id?: string;
@@ -919,6 +922,9 @@ export type Database = {
           completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          approved_by?: string | null;
+          approved_at?: string | null;
+          approval_method?: string | null;
         };
         Update: {
           id?: string;
@@ -950,6 +956,9 @@ export type Database = {
           completed_at?: string | null;
           created_at?: string;
           updated_at?: string;
+          approved_by?: string | null;
+          approved_at?: string | null;
+          approval_method?: string | null;
         };
         Relationships: [
           {
@@ -983,6 +992,13 @@ export type Database = {
           {
             foreignKeyName: "task_workflow_steps_claimed_by_fkey";
             columns: ["claimed_by"];
+            isOneToOne: false;
+            referencedRelation: "users";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "task_workflow_steps_approved_by_fkey";
+            columns: ["approved_by"];
             isOneToOne: false;
             referencedRelation: "users";
             referencedColumns: ["id"];
