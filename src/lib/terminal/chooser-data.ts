@@ -242,29 +242,16 @@ export function deriveChooserSections(
   return { liveHere, liveElsewhere, recent };
 }
 
-/** Header pill counts ("2 running here · 1 on another board · 2 recent") — a thin, testable view over the sections. */
-export function chooserHeaderCounts(sections: ChooserSections): {
-  here: number;
-  elsewhere: number;
-  recent: number;
-} {
-  return {
-    here: sections.liveHere.length,
-    elsewhere: sections.liveElsewhere.length,
-    recent: sections.recent.length,
-  };
-}
-
 /**
  * Display-only filter for the session chooser's Recent list (Nick, field
  * report 2026-08-17: "Can't resume — no folder recorded" rows have nothing a
  * human can click and shouldn't be in the list at all).
  *
  * IMPORTANT — this must NEVER be applied to `ChooserSections.recent` itself,
- * only to what a display consumer maps over. `sections.recent` stays exactly
- * as `deriveChooserSections` produces it (including null-cwd rows, per the
- * NULL-CWD ROWS fix above) because two other things read it directly and
- * must keep seeing the full set:
+ * only to what a display consumer maps over (or counts). `sections.recent`
+ * stays exactly as `deriveChooserSections` produces it (including null-cwd
+ * rows, per the NULL-CWD ROWS fix above) because two other things read it
+ * directly and must keep seeing the full set:
  *   - `entry-decision.ts`'s `decideEntryBehaviour` — takes raw registry rows,
  *     not `ChooserSections`, so it's untouched by this helper either way, but
  *     the underlying data it depends on (a null-cwd row counting as "recent")
@@ -275,11 +262,32 @@ export function chooserHeaderCounts(sections: ChooserSections): {
  *     instead of silently minting a second one), even though that session
  *     wouldn't be worth a row in the general chooser's list.
  *
- * `terminal-session-chooser.tsx` is the one place that calls this — for its
- * row list AND its section show/hide check — so those two can't drift apart.
+ * Two callers apply this: `terminal-session-chooser.tsx` for its row list AND
+ * its section show/hide check, and `chooserHeaderCounts` below for the header
+ * pill's "N recent" count — so none of those three can drift out of sync.
  */
 export function visibleRecentRows(recent: ChooserRecentRow[]): ChooserRecentRow[] {
   return recent.filter((r) => r.cwd !== null);
+}
+
+/**
+ * Header pill counts ("2 running here · 1 on another board · 2 recent") — a
+ * thin, testable view over the sections, consumed by terminal-dock.tsx's
+ * header bar. `recent` reports the FILTERED count (via `visibleRecentRows`,
+ * same as terminal-session-chooser.tsx's own list/header), not
+ * `sections.recent.length` — a no-folder row isn't worth counting in a pill
+ * any more than it's worth a row in the list underneath it.
+ */
+export function chooserHeaderCounts(sections: ChooserSections): {
+  here: number;
+  elsewhere: number;
+  recent: number;
+} {
+  return {
+    here: sections.liveHere.length,
+    elsewhere: sections.liveElsewhere.length,
+    recent: visibleRecentRows(sections.recent).length,
+  };
 }
 
 /**

@@ -419,6 +419,32 @@ describe("chooserHeaderCounts", () => {
     );
     expect(chooserHeaderCounts(sections)).toEqual({ here: 1, elsewhere: 1, recent: 1 });
   });
+
+  // Card cbe60db5 follow-up: the "N recent" header pill (terminal-dock.tsx)
+  // must agree with the chooser's own filtered Recent list — a no-folder row
+  // isn't worth counting here any more than it's worth a row in the list.
+  it("does not count a no-cwd Recent row — the pill matches the filtered (visible) list, not the raw one", () => {
+    const sections = deriveChooserSections(
+      [row({ sid: "no-cwd", status: "ended", cwd: null, endedAt: new Date(NOW - 60_000).toISOString() })],
+      IDEA_A,
+      NOW,
+    );
+    expect(sections.recent).toHaveLength(1); // raw data layer still has it (bug 9fb9fced's fix)
+    expect(chooserHeaderCounts(sections).recent).toBe(0); // the pill does not
+  });
+
+  it("counts a mix of no-cwd and cwd-bearing Recent rows correctly (only the latter)", () => {
+    const sections = deriveChooserSections(
+      [
+        row({ sid: "no-cwd", status: "ended", cwd: null, endedAt: new Date(NOW - 60_000).toISOString() }),
+        row({ sid: "with-cwd", status: "ended", cwd: "~/projects/a", endedAt: new Date(NOW - 30_000).toISOString() }),
+      ],
+      IDEA_A,
+      NOW,
+    );
+    expect(sections.recent).toHaveLength(2);
+    expect(chooserHeaderCounts(sections).recent).toBe(1);
+  });
 });
 
 describe("findLiveSessionForTask", () => {
