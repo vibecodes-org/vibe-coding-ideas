@@ -156,6 +156,7 @@ vi.mock("./terminal-task-launch-choice", () => ({
 
 import { TerminalDock } from "./terminal-dock";
 import { requestBrowserLaunch } from "@/lib/terminal/launch-mode";
+import { rememberLastTabSid } from "@/lib/terminal/session-snapshot";
 import { toast } from "sonner";
 
 function deferredRegistryResponse() {
@@ -635,5 +636,115 @@ describe("TerminalDock — task-launch-skip-chooser (Nick's explicit product dec
     await waitFor(() => expect(screen.getByTestId("task-choice")).toBeInTheDocument());
     expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
     expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+  });
+});
+
+// Card eaa55290 (Nick's field report, 2026-08-17): "no way to tell another
+// session is already active on this board" — Nick ran two terminal tabs on
+// the same board at once with no indication either existed, only noticing
+// via one tab's own internal narration text. The persistent badge below is
+// driven by `liveSessionsElsewhereOnThisBoard` (chooser-data.ts, unit-tested
+// there); this suite covers it wired into the actual dock bar, which is
+// ALWAYS rendered (collapsed and expanded both show the same top bar — only
+// the body below it toggles).
+describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
+  /** A registry fetch stub whose `/api/terminal/session/list` response
+   * changes across calls (`sequence[n]`, clamped to the last entry) and
+   * whose `/api/terminal/session/reattach` always fails — the same
+   * `void refreshRegistry()`-on-failure fallback the "Bug A" retry tests
+   * above exercise, reused here as the trigger for a live registry update. */
+  function stubRegistrySequenceWithFailingReattach(sequence: ChooserRegistryRow[][]) {
+    let call = 0;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string) => {
+        if (url === "/api/terminal/session/list") {
+          const rows = sequence[Math.min(call, sequence.length - 1)];
+          call += 1;
+          return Promise.resolve({ ok: true, json: async () => ({ sessions: rows }) });
+        }
+        if (url === "/api/terminal/session/reattach") {
+          return Promise.resolve({ ok: false, json: async () => ({ error: "Session ended" }) });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+  }
+
+  it("stays hidden when no session is live on this board", async () => {
+    stubFetch(Promise.resolve([]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+  });
+
+  it("stays hidden when the only live session here is this tab's own", async () => {
+    rememberLastTabSid("own-sid");
+    stubFetch(Promise.resolve([{ ...liveHereRow(), sid: "own-sid" }]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+  });
+
+  it("shows singular copy for exactly one other live session on this board", async () => {
+    rememberLastTabSid("own-sid");
+    stubFetch(
+      Promise.resolve([
+        { ...liveHereRow(), sid: "own-sid" },
+        { ...liveHereRow(), sid: "other-sid" },
+      ]),
+    );
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByText("Another tab is open here")).toBeInTheDocument());
+    // Never worded as a stranger's session — Phase 1 is same-user-only (the
+    // investigation step confirmed terminal_sessions RLS is owner-only).
+    expect(screen.queryByText(/someone else/i)).not.toBeInTheDocument();
+  });
+
+  it("shows a count for 2+ other live sessions on this board", async () => {
+    rememberLastTabSid("own-sid");
+    stubFetch(
+      Promise.resolve([
+        { ...liveHereRow(), sid: "own-sid" },
+        { ...liveHereRow(), sid: "other-sid-1" },
+        { ...liveHereRow(), sid: "other-sid-2" },
+      ]),
+    );
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByText("2 other tabs are open here")).toBeInTheDocument());
+  });
+
+  it("never counts a live session on a DIFFERENT board", async () => {
+    rememberLastTabSid("own-sid");
+    stubFetch(Promise.resolve([{ ...liveHereRow(), sid: "own-sid" }, liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+  });
+
+  it("updates reactively — appears once a registry refresh reveals a 2nd live session here", async () => {
+    rememberLastTabSid("own-sid");
+    const ownRow = { ...liveHereRow(), sid: "own-sid" };
+    const otherRow = { ...liveHereRow(), sid: "other-sid" };
+    stubRegistrySequenceWithFailingReattach([[ownRow], [ownRow, otherRow]]);
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+
+    // Force a registry refresh via the same fallback `performReattach`'s
+    // failure path already triggers (see the Bug A retry tests above) —
+    // clicking "Reconnect here" on the sole (own) live-here row, whose
+    // reattach is stubbed to fail, so the dock's own `refreshRegistry()`
+    // runs and picks up the 2nd row.
+    fireEvent.click(screen.getByTestId("chooser-reconnect-here-own-sid"));
+
+    await waitFor(() => expect(screen.getByText("Another tab is open here")).toBeInTheDocument());
   });
 });

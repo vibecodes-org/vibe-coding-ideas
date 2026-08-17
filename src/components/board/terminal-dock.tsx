@@ -80,6 +80,7 @@ import {
   deriveChooserSections,
   chooserHeaderCounts,
   findTaskSessionMatch,
+  liveSessionsElsewhereOnThisBoard,
   type ChooserSections,
   type ChooserRegistryRow,
   type ChooserLiveRow,
@@ -421,6 +422,22 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     [registryRows, ideaId, entrySnapshotInfo],
   );
   const chooserCounts = useMemo(() => chooserHeaderCounts(chooserSections), [chooserSections]);
+  // Card eaa55290 (Nick's field report, 2026-08-17): "no way to tell another
+  // session is already active on this board" — two browser tabs on the same
+  // idea, discovered only by reading one tab's own narration text. Every
+  // sessionId this DOCK currently has mounted (covers a 2nd own tab within
+  // this same dock, and the gap before session-snapshot's `wasOpenInThisTab`
+  // catches up right after a fresh mint) — see liveSessionsElsewhereOnThisBoard's
+  // doc for why this is combined with that per-tab sessionStorage signal
+  // rather than used alone.
+  const ownSessionIds = useMemo(
+    () => new Set(sessions.map((s) => summaries[s.key]?.sessionId).filter((id): id is string => !!id)),
+    [sessions, summaries],
+  );
+  const otherLiveHere = useMemo(
+    () => liveSessionsElsewhereOnThisBoard(chooserSections, ownSessionIds),
+    [chooserSections, ownSessionIds],
+  );
   // Task-launch-skip-chooser: `deliverLaunch` needs a synchronous,
   // always-current read of `chooserSections` (to check whether THIS exact
   // task already has a match) without becoming a dependency that would force
@@ -1192,6 +1209,25 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           )}
         </span>
         <span className="ml-auto inline-flex items-center gap-1.5">
+          {/* Card eaa55290: persistent, glanceable warning — visible in BOTH
+              collapsed and expanded states (this whole bar is, unlike the
+              body below it) — the moment more than one of this user's own
+              sessions is live on THIS board. Phase 1 only (see the
+              investigation step): `terminal_sessions` RLS is owner-only, so
+              every `liveHere` row is guaranteed to be this same person's,
+              never a collaborator's — the copy says "tab", never "someone
+              else". */}
+          {otherLiveHere.length > 0 && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/50 bg-amber-500/10 px-2 py-0.5 text-[11px] font-semibold text-amber-300"
+              title={`Also open here: ${otherLiveHere.map((r) => r.taskTitle ?? r.cwd ?? "another folder").join(", ")}`}
+            >
+              <span aria-hidden="true">⚠</span>
+              {otherLiveHere.length === 1
+                ? "Another tab is open here"
+                : `${otherLiveHere.length} other tabs are open here`}
+            </span>
+          )}
           {/* Mockup A1: header count pills, only while the chooser is the
               resting state — real text, never badge-only (a11y, design §2). */}
           {showingChooser && registryRows === null && (
