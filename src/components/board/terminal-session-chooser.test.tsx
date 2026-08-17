@@ -189,12 +189,17 @@ describe("TerminalSessionChooser", () => {
     expect(screen.queryByText(/Starts a new terminal/)).not.toBeInTheDocument();
   });
 
-  // Bug 9fb9fced (2026-08-17): a null-cwd Recent row used to never reach this
-  // component at all (chooser-data.ts hid it from `sections.recent`
-  // entirely). Now that it does, this proves the UI half of the fix: the row
-  // (sid, ended time) still renders, but Resume is omitted — not shown
-  // disabled — since there's no folder for it to reopen.
-  it("Recent row with no recorded cwd: renders the row but omits the Resume button", () => {
+  // Card cbe60db5 follow-up (Nick's field report, 2026-08-17): a null-cwd
+  // Recent row used to render here with Resume omitted and a "Can't resume —
+  // no folder recorded" note (bug 9fb9fced's fix, still true of the
+  // underlying ChooserSections — see chooser-data.test.ts). Nick's explicit
+  // ask this time: those rows are dead entries with nothing to click and
+  // shouldn't appear in the human-visible list AT ALL — only the Resume
+  // affordance was ever the problem, and now the whole row is gone from what
+  // renders. The data itself is untouched (proven separately in
+  // chooser-data.test.ts and entry-decision.test.ts) — this is purely about
+  // what this component puts on screen.
+  it("Recent row with no recorded cwd: the row itself is not rendered at all", () => {
     const onResume = vi.fn();
     const row = {
       sid: "sid-recent-no-cwd",
@@ -216,9 +221,79 @@ describe("TerminalSessionChooser", () => {
         onStartNew={vi.fn()}
       />,
     );
-    expect(screen.getByText(/no recorded folder/)).toBeInTheDocument();
+    expect(screen.queryByText(/no recorded folder/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/Can.t resume/)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
-    expect(screen.getByText(/Can.t resume/)).toBeInTheDocument();
+    // No cwd-having rows either → the whole section is gone, header included.
+    expect(screen.queryByText("Recent — ended in the last 48h")).not.toBeInTheDocument();
+  });
+
+  it("Recent list: excludes a no-cwd row while still including one that DOES have a folder", () => {
+    const noCwdRow = {
+      sid: "sid-no-cwd",
+      ideaId: "idea-1",
+      ideaTitle: "VibeCodes",
+      taskId: null,
+      taskTitle: null,
+      cwd: null,
+      machineLabel: null,
+      claudeSessionId: null,
+      endedAt: new Date().toISOString(),
+    };
+    const withCwdRow = {
+      sid: "sid-with-cwd",
+      ideaId: "idea-1",
+      ideaTitle: "VibeCodes",
+      taskId: null,
+      taskTitle: null,
+      cwd: "~/projects/vibecodes",
+      machineLabel: null,
+      claudeSessionId: null,
+      endedAt: new Date().toISOString(),
+    };
+    render(
+      <TerminalSessionChooser
+        sections={sections({ recent: [noCwdRow, withCwdRow] })}
+        onReconnectHere={vi.fn()}
+        onOpenBoardAndReconnect={vi.fn()}
+        onResume={vi.fn()}
+        onStartNew={vi.fn()}
+      />,
+    );
+    // Section renders (at least one visible row) and shows only the
+    // cwd-having one.
+    expect(screen.getByText("Recent — ended in the last 48h")).toBeInTheDocument();
+    expect(screen.getByText(/~\/projects\/vibecodes/)).toBeInTheDocument();
+    expect(screen.queryByText(/no recorded folder/)).not.toBeInTheDocument();
+    expect(screen.getAllByRole("button", { name: "Resume" })).toHaveLength(1);
+  });
+
+  // The section header's show/hide must key off the FILTERED count, not the
+  // raw `sections.recent.length` — a Recent section made up entirely of
+  // no-folder rows has nothing left to show, so the header disappears too,
+  // not just the (already-empty) row list beneath it.
+  it("Recent section header is hidden when every recent row is no-cwd, even though sections.recent is non-empty", () => {
+    const row = {
+      sid: "sid-no-cwd",
+      ideaId: "idea-1",
+      ideaTitle: "VibeCodes",
+      taskId: null,
+      taskTitle: null,
+      cwd: null,
+      machineLabel: null,
+      claudeSessionId: null,
+      endedAt: new Date().toISOString(),
+    };
+    render(
+      <TerminalSessionChooser
+        sections={sections({ recent: [row] })}
+        onReconnectHere={vi.fn()}
+        onOpenBoardAndReconnect={vi.fn()}
+        onResume={vi.fn()}
+        onStartNew={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText("Recent — ended in the last 48h")).not.toBeInTheDocument();
   });
 
   it("Recent row with a tracked claudeSessionId: the confirm copy promises the EXACT conversation (rework 5)", () => {

@@ -31,6 +31,16 @@ describe("decideEntryBehaviour", () => {
   // `cwd` is no longer part of `isRecentEnded`'s predicate; see
   // chooser-data.ts's matching fix for how the row renders once "chooser" is
   // reached (visible, but with Resume unavailable).
+  //
+  // Card cbe60db5 follow-up (2026-08-17): terminal-session-chooser.tsx now
+  // additionally hides no-folder rows from its human-visible Recent list
+  // (via chooser-data.ts's `visibleRecentRows` — a display-only filter, see
+  // its doc comment). This function is intentionally untouched by that
+  // change — it never imports `visibleRecentRows` or `ChooserSections`, only
+  // raw registry rows — so this test doubles as the regression guard that
+  // the 9fb9fced fix above still holds: a no-folder-only recent set must
+  // still route to "chooser", never silently fall through to
+  // "empty-launch" and mint a brand-new session.
   it("chooser (not empty-launch) when the only ended row has no recorded folder", () => {
     const rows = [row({ sid: "ended-1", status: "ended", cwd: null, endedAt: new Date(NOW - 60_000).toISOString() })];
     expect(decideEntryBehaviour(rows, null, NOW)).toEqual({ kind: "chooser" });

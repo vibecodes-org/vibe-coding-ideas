@@ -22,11 +22,20 @@
 // Resume button — so a session that force-closed before its cwd ever landed
 // vanished from history outright, and a refresh landing in that gap read as
 // "nothing to reconnect to" and silently launched a brand-new session (see
-// entry-decision.ts's matching fix). A null-cwd row is now KEPT in Recent —
-// it still has a sid, an ended time, and often a machine label worth
-// showing — with only its Resume affordance suppressed by the chooser UI
-// (terminal-session-chooser.tsx), since Resume genuinely has no folder to
-// reopen. `ChooserRecentRow.cwd` is `string | null` accordingly.
+// entry-decision.ts's matching fix). A null-cwd row is now KEPT in
+// `ChooserSections.recent` at THIS (data) layer — it still has a sid, an
+// ended time, and often a machine label, and `entry-decision.ts` /
+// `findTaskSessionMatch` below both need to see it to route correctly.
+// `ChooserRecentRow.cwd` is `string | null` accordingly.
+//
+// DISPLAY-ONLY FILTERING, card cbe60db5 follow-up (2026-08-17 — Nick's field
+// report: "Can't resume — no folder recorded" rows are dead entries with
+// nothing to click and shouldn't be in the human-visible list at all): the
+// general session chooser (terminal-session-chooser.tsx) now drops null-cwd
+// rows from what it actually renders, via `visibleRecentRows` below — but
+// that filter is applied AT THE COMPONENT, never here. This module's
+// `recent` output is intentionally still the full, unfiltered set described
+// in the paragraph above; see `visibleRecentRows`'s own doc comment for why.
 //
 // MACHINE IDENTITY (Nick's sign-off change 2 — "hide conversations that
 // aren't on the machine that you're running vibecodes on"): Recent rows also
@@ -233,7 +242,42 @@ export function deriveChooserSections(
   return { liveHere, liveElsewhere, recent };
 }
 
-/** Header pill counts ("2 running here · 1 on another board · 2 recent") — a thin, testable view over the sections. */
+/**
+ * Display-only filter for the session chooser's Recent list (Nick, field
+ * report 2026-08-17: "Can't resume — no folder recorded" rows have nothing a
+ * human can click and shouldn't be in the list at all).
+ *
+ * IMPORTANT — this must NEVER be applied to `ChooserSections.recent` itself,
+ * only to what a display consumer maps over (or counts). `sections.recent`
+ * stays exactly as `deriveChooserSections` produces it (including null-cwd
+ * rows, per the NULL-CWD ROWS fix above) because two other things read it
+ * directly and must keep seeing the full set:
+ *   - `entry-decision.ts`'s `decideEntryBehaviour` — takes raw registry rows,
+ *     not `ChooserSections`, so it's untouched by this helper either way, but
+ *     the underlying data it depends on (a null-cwd row counting as "recent")
+ *     is the same invariant this filter must not undermine at the source.
+ *   - `findTaskSessionMatch` below — a task-scoped launch must still dedupe
+ *     against its own no-folder recent session (routing to
+ *     terminal-task-launch-choice.tsx's "already have a session" dialog
+ *     instead of silently minting a second one), even though that session
+ *     wouldn't be worth a row in the general chooser's list.
+ *
+ * Two callers apply this: `terminal-session-chooser.tsx` for its row list AND
+ * its section show/hide check, and `chooserHeaderCounts` below for the header
+ * pill's "N recent" count — so none of those three can drift out of sync.
+ */
+export function visibleRecentRows(recent: ChooserRecentRow[]): ChooserRecentRow[] {
+  return recent.filter((r) => r.cwd !== null);
+}
+
+/**
+ * Header pill counts ("2 running here · 1 on another board · 2 recent") — a
+ * thin, testable view over the sections, consumed by terminal-dock.tsx's
+ * header bar. `recent` reports the FILTERED count (via `visibleRecentRows`,
+ * same as terminal-session-chooser.tsx's own list/header), not
+ * `sections.recent.length` — a no-folder row isn't worth counting in a pill
+ * any more than it's worth a row in the list underneath it.
+ */
 export function chooserHeaderCounts(sections: ChooserSections): {
   here: number;
   elsewhere: number;
@@ -242,7 +286,7 @@ export function chooserHeaderCounts(sections: ChooserSections): {
   return {
     here: sections.liveHere.length,
     elsewhere: sections.liveElsewhere.length,
-    recent: sections.recent.length,
+    recent: visibleRecentRows(sections.recent).length,
   };
 }
 

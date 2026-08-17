@@ -21,6 +21,7 @@ import { formatSessionAge } from "@/lib/terminal/session-registry";
 import { newSessionTooltip, getTerminalSessionCap, isNearSessionCap, terminalLimitLine } from "@/lib/terminal/session-cap";
 import {
   findLiveSessionForTask,
+  visibleRecentRows,
   type ChooserSections,
   type ChooserLiveRow,
   type ChooserRecentRow,
@@ -130,6 +131,14 @@ export function TerminalSessionChooser({
     // Only on mount — re-focusing on every prop change would steal focus
     // back from whatever the user is doing (e.g. mid-confirm on Resume).
   }, []);
+
+  // Display-only filter (Nick's field report, 2026-08-17): rows with no
+  // recorded folder ("Can't resume — no folder recorded") have nothing to
+  // click, so they're dropped from what's actually shown here — but
+  // `sections.recent` itself stays unfiltered (see visibleRecentRows's doc
+  // comment in chooser-data.ts): `findTaskSessionMatch` above this component
+  // and `entry-decision.ts`'s registry read both still need the full set.
+  const visibleRecent = visibleRecentRows(sections.recent);
 
   const taskMatch = pendingTask ? findLiveSessionForTask(sections, pendingTask.taskId) : null;
   const wasOpenSid =
@@ -272,9 +281,9 @@ export function TerminalSessionChooser({
         </ChooserSection>
       )}
 
-      {sections.recent.length > 0 && (
+      {visibleRecent.length > 0 && (
         <ChooserSection label="Recent — ended in the last 48h">
-          {sections.recent.map((row) => (
+          {visibleRecent.map((row) => (
             <RecentRow
               key={row.sid}
               row={row}
@@ -372,12 +381,13 @@ function RecentRow({
   onConfirm: () => void;
 }) {
   const label = row.taskTitle?.trim() || row.ideaTitle || row.sid.slice(0, 8);
-  // Null-cwd fix (bug 9fb9fced): the row itself is always shown (see
-  // chooser-data.ts's header comment) — Resume is the only thing that's
-  // unavailable when there's no recorded folder to reopen, since the launch
-  // flow Resume calls into (handleChooserResume) requires one. No disabled
-  // ghost button (original F4 intent) — the action is omitted entirely, with
-  // an honest inline note instead of silently doing nothing.
+  // Null-cwd handling: kept defensive even though the caller (this file's
+  // `visibleRecent`, via `visibleRecentRows`) now filters null-cwd rows out
+  // before they ever reach this component — see chooser-data.ts's
+  // `visibleRecentRows` doc comment for why the underlying `ChooserSections`
+  // itself is never filtered at the source. If `row.cwd` is ever null here,
+  // Resume is simply omitted (never a disabled ghost button) with an honest
+  // inline note instead of silently doing nothing.
   return (
     <div className={cn("border-t border-zinc-800 px-3.5 py-2.5", confirming && "bg-emerald-500/5")}>
       <div className="flex items-start gap-2.5">
