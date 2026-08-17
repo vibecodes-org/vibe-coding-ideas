@@ -88,6 +88,33 @@ describe("TerminalTaskLaunchChoice", () => {
     expect(onReconnect).toHaveBeenCalledOnce();
   });
 
+  // Bug 9fb9fced (2026-08-17): a "recent" match with no recorded cwd used to
+  // never reach this dialog at all — chooser-data.ts's old F4 rule excluded
+  // it from `sections.recent` entirely, so `findTaskSessionMatch` could never
+  // find it. It can now, but Resume has no folder to reopen — mirrors the
+  // cross-board chooser's RecentRow fix: the dialog still opens (so
+  // "start fresh anyway" is reachable) but hides Reconnect/Resume instead of
+  // offering an action that can't work.
+  it("a recent match with no recorded cwd hides Resume, keeps Start fresh anyway", () => {
+    const onReconnect = vi.fn();
+    const noCwdMatch: TaskSessionMatch = {
+      kind: "recent",
+      row: { ...RECENT_MATCH.row, cwd: null },
+    };
+    render(
+      <TerminalTaskLaunchChoice
+        open
+        taskTitle="Fix login bug"
+        match={noCwdMatch}
+        onReconnect={onReconnect}
+        onStartFresh={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
+    expect(screen.getByText(/no folder was recorded/i)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /start fresh anyway/i })).toBeInTheDocument();
+  });
+
   it("fires onStartFresh from the escape hatch, independent of match kind", () => {
     const onStartFresh = vi.fn();
     render(

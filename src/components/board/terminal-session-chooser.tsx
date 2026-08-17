@@ -372,6 +372,12 @@ function RecentRow({
   onConfirm: () => void;
 }) {
   const label = row.taskTitle?.trim() || row.ideaTitle || row.sid.slice(0, 8);
+  // Null-cwd fix (bug 9fb9fced): the row itself is always shown (see
+  // chooser-data.ts's header comment) — Resume is the only thing that's
+  // unavailable when there's no recorded folder to reopen, since the launch
+  // flow Resume calls into (handleChooserResume) requires one. No disabled
+  // ghost button (original F4 intent) — the action is omitted entirely, with
+  // an honest inline note instead of silently doing nothing.
   return (
     <div className={cn("border-t border-zinc-800 px-3.5 py-2.5", confirming && "bg-emerald-500/5")}>
       <div className="flex items-start gap-2.5">
@@ -381,10 +387,10 @@ function RecentRow({
             {row.ideaTitle && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
           </div>
           <div className="truncate font-mono text-[11px] text-zinc-500">
-            {row.cwd} · ended {formatSessionAge(row.endedAt)} ago
+            {row.cwd ?? "no recorded folder"} · ended {formatSessionAge(row.endedAt)} ago
           </div>
         </div>
-        {!confirming && (
+        {!confirming && row.cwd && (
           <Button
             size="xs"
             className="flex-none bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
@@ -394,8 +400,11 @@ function RecentRow({
             Resume
           </Button>
         )}
+        {!confirming && !row.cwd && (
+          <span className="flex-none text-[11px] text-zinc-600">Can&apos;t resume — no folder recorded</span>
+        )}
       </div>
-      {confirming && (
+      {confirming && row.cwd && (
         <div className="mt-2 border-l-2 border-emerald-500 pl-2.5 text-[11.5px] text-zinc-400">
           <p>
             {row.claudeSessionId ? (

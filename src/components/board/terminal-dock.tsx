@@ -1026,7 +1026,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       mintAndDeliver({
         resume: row.claudeSessionId ? undefined : true,
         resumeId: row.claudeSessionId ?? undefined,
-        cwd: row.cwd,
+        cwd: row.cwd ?? undefined,
         taskId: row.taskId ?? undefined,
         taskTitle: row.taskTitle ?? undefined,
       });
@@ -1050,7 +1050,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       mintAndDeliver({
         resume: row.claudeSessionId ? undefined : true,
         resumeId: row.claudeSessionId ?? undefined,
-        cwd: row.cwd,
+        cwd: row.cwd ?? undefined,
         taskId: row.taskId ?? undefined,
         taskTitle: row.taskTitle ?? undefined,
       });

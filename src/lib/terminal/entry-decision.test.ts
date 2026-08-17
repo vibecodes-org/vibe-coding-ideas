@@ -24,8 +24,27 @@ describe("decideEntryBehaviour", () => {
     expect(decideEntryBehaviour(rows, null, NOW)).toEqual({ kind: "chooser" });
   });
 
-  it("empty-launch when the only ended row has no recorded folder", () => {
+  // Bug 9fb9fced (2026-08-17): this used to assert "empty-launch" — a
+  // null-cwd ended row was treated as neither live nor recent, so the dock
+  // silently minted a brand-new session instead of showing the chooser (or
+  // the session-ended screen) for a session that had, in fact, just ended.
+  // `cwd` is no longer part of `isRecentEnded`'s predicate; see
+  // chooser-data.ts's matching fix for how the row renders once "chooser" is
+  // reached (visible, but with Resume unavailable).
+  it("chooser (not empty-launch) when the only ended row has no recorded folder", () => {
     const rows = [row({ sid: "ended-1", status: "ended", cwd: null, endedAt: new Date(NOW - 60_000).toISOString() })];
+    expect(decideEntryBehaviour(rows, null, NOW)).toEqual({ kind: "chooser" });
+  });
+
+  it("empty-launch when a null-cwd ended row is past the 48h window (the 48h rule itself is untouched by the null-cwd fix)", () => {
+    const rows = [
+      row({
+        sid: "ended-1",
+        status: "ended",
+        cwd: null,
+        endedAt: new Date(NOW - RECENT_WINDOW_MS - 1000).toISOString(),
+      }),
+    ];
     expect(decideEntryBehaviour(rows, null, NOW)).toEqual({ kind: "empty-launch" });
   });
 
