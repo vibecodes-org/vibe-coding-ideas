@@ -393,7 +393,7 @@ export function TerminalSessionView({
           this is purely this component's PRESENTATION. The tab strip above
           this component is unaffected (owned by terminal-dock.tsx). */}
       <div className={cn(!poppedOut && "hidden")} aria-hidden={!poppedOut}>
-        <div className="flex h-[38vh] min-h-[220px] flex-col items-center justify-center gap-3 bg-[#0c0c0e] px-6 py-6 text-center">
+        <div className="flex h-[var(--vc-term-dock-h,38vh)] min-h-[160px] flex-col items-center justify-center gap-3 bg-[#0c0c0e] px-6 py-6 text-center">
           <span className="text-2xl text-violet-400" aria-hidden="true">
             ⧉
           </span>
@@ -522,8 +522,13 @@ export function TerminalSessionView({
         )}
 
         {/* Terminal body — the xterm host plus a state overlay. The host stays
-            mounted under every state so scrollback is frozen + readable on end. */}
-        <div className="relative h-[38vh] min-h-[220px]">
+            mounted under every state so scrollback is frozen + readable on end.
+            HEIGHT (card b885ebfd): read from the `--vc-term-dock-h` CSS
+            variable the dock sets on its root (user-resizable via the drag
+            handle — terminal-dock-resize.tsx); `38vh` is the SSR/first-paint
+            fallback and the popped-out placeholder above uses the same value
+            so the two faces never differ in size. */}
+        <div className="relative h-[var(--vc-term-dock-h,38vh)] min-h-[160px]">
           <div
             ref={containerRef}
             className={cn("h-full w-full px-3 py-2", state.status === "disconnected" && "opacity-45")}
