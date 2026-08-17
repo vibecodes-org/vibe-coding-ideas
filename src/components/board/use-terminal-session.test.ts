@@ -832,6 +832,120 @@ describe("useTerminalSession", () => {
       expect(mockSockets).toHaveLength(1);
     });
 
+    // URGENT reattach fix (task 27d19c68, 2026-08-17 incident): Nick hit this
+    // TWICE live — a hard refresh, then a cross-tab Reconnect, both reattached
+    // successfully and then <1s later replaced the live conversation with an
+    // empty boot screen. Root cause: fireLaunchDeepLink used to decide
+    // resume-vs-fresh from promptPartsRef, which is null on BOTH triggers
+    // (wiped by reload; never populated by a brand-new tab) — exactly the
+    // state every test in this describe block is already in, since none of
+    // them ever call launchFromBus/connect on this hook instance. The fix
+    // forces the relaunch to be resume-shaped from the reattach payload's own
+    // cwd/claudeSessionId instead, whenever those are present.
+    it("forces an EXACT resume-shaped deep link on reattach when the pair carries cwd + claudeSessionId — even though promptPartsRef is null (regression, task 27d19c68)", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: {
+            sessionId: "sid-reattach-live",
+            browserToken: "reattach-browser-token",
+            bridgeToken: "reattach-bridge-token",
+            helperToken: "reattach-helper-token",
+            cwd: "/Users/nick/projects/vibe-coding-ideas",
+            claudeSessionId: "live-conv-id",
+          },
+        }),
+      );
+      await flushEffects();
+
+      expect(result.current.launchPhase).toBe("opening");
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src.startsWith("vibecodes://launch?")).toBe(true);
+      expect(src).toContain("session=sid-reattach-live");
+      expect(src).toContain(`resume_id=${encodeURIComponent("live-conv-id")}`);
+      expect(src).toContain(`cwd=${encodeURIComponent("/Users/nick/projects/vibe-coding-ideas")}`);
+      // Never a fresh-boot prompt for a live reattach — that's the whole bug:
+      // a duplicate process still gets spawned (unchanged, lower-risk
+      // plumbing), but it must resume the SAME conversation, not boot empty.
+      expect(src).not.toContain("prompt=");
+      // Exact resume_id wins over the legacy resume=1 flag (buildLaunchDeepLink's
+      // own precedence — drift-tested in deep-link.test.ts).
+      expect(src).not.toContain("resume=1");
+      // The browser leg still opens normally alongside the forced relaunch.
+      expect(mockSockets).toHaveLength(1);
+    });
+
+    it("forces a legacy resume (--continue style) on reattach when the pair carries cwd but no claudeSessionId yet", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: {
+            sessionId: "sid-reattach-no-conv-id",
+            browserToken: "reattach-browser-token",
+            bridgeToken: "reattach-bridge-token",
+            helperToken: "reattach-helper-token",
+            cwd: "/Users/nick/projects/vibe-coding-ideas",
+            // claudeSessionId intentionally omitted — e.g. a pre-2a bridge
+            // that never announced one, or a session still mid-first-turn.
+            // The registry's own two columns are independent/uncoordinated,
+            // so this combination is real, not hypothetical.
+          },
+        }),
+      );
+      await flushEffects();
+
+      expect(result.current.launchPhase).toBe("opening");
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src).toContain(`cwd=${encodeURIComponent("/Users/nick/projects/vibe-coding-ideas")}`);
+      expect(src).toContain("resume=1");
+      expect(src).not.toContain("resume_id=");
+      expect(src).not.toContain("prompt=");
+    });
+
+    it("falls back to the fresh-launch deep link when the reattach pair has no recorded cwd at all (edge case — never worse than the pre-fix behaviour)", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, {
+          enabled: true,
+          expanded: true,
+          requestExpand,
+          autoConnectWhenExpanded: false,
+          attachExisting: {
+            sessionId: "sid-reattach-no-cwd",
+            browserToken: "reattach-browser-token",
+            bridgeToken: "reattach-bridge-token",
+            helperToken: "reattach-helper-token",
+            // No cwd, no claudeSessionId — the registry row itself never
+            // resolved a folder (e.g. a "new project" launch). Nothing to
+            // resume into, so this intentionally falls through to the
+            // pre-existing fresh-launch branch (logged as a warning in
+            // fireLaunchDeepLink so the gap stays visible).
+          },
+        }),
+      );
+      await flushEffects();
+
+      expect(result.current.launchPhase).toBe("opening");
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src).not.toContain("resume_id=");
+      expect(src).not.toContain("resume=1");
+      expect(src).toContain("prompt=");
+    });
+
     it("never fires a deep link when the attach pair carries no bridgeToken (popped-out hand-off — unchanged behaviour)", async () => {
       const requestExpand = vi.fn();
       const { result } = renderHook(() =>
