@@ -172,7 +172,8 @@ export const updateTaskSchema = z.object({
 });
 
 export async function updateTask(ctx: McpContext, params: z.infer<typeof updateTaskSchema>) {
-  // Fetch current task for activity diffs
+  // Fetch current task for activity diffs (and, when assignee_id is part of
+  // this update, as the optimistic-concurrency precondition below).
   const { data: current } = await ctx.supabase
     .from("board_tasks")
     .select("title, description, assignee_id, due_date, archived")
@@ -192,15 +193,38 @@ export async function updateTask(ctx: McpContext, params: z.infer<typeof updateT
     return { success: true, message: "No changes to apply" };
   }
 
-  const { data: task, error } = await ctx.supabase
+  // Assignment is racy across concurrent callers: two self-assign calls can
+  // both read the same pre-update assignee_id and both proceed to write, so
+  // the last writer silently wins. Gate the write on the assignee_id we just
+  // read above, mirroring claim_next_step's read-then-conditionally-write
+  // pattern (see claimNextStep in workflows.ts) — the precondition travels
+  // in the SAME round trip as the write itself, so nothing can slip in
+  // between a separate read and write.
+  const guardingAssignee = params.assignee_id !== undefined;
+  let write = ctx.supabase
     .from("board_tasks")
     .update(updates)
     .eq("id", params.task_id)
-    .eq("idea_id", params.idea_id)
-    .select("id, title")
-    .single();
+    .eq("idea_id", params.idea_id);
+
+  if (guardingAssignee) {
+    write =
+      current.assignee_id === null
+        ? write.is("assignee_id", null)
+        : write.eq("assignee_id", current.assignee_id);
+  }
+
+  const { data: task, error } = await write.select("id, title").maybeSingle();
 
   if (error) throw new Error(`Failed to update task: ${error.message}`);
+  if (!task) {
+    if (guardingAssignee) {
+      throw new Error(
+        "This task was already assigned by someone else — refresh and try again."
+      );
+    }
+    throw new Error(`Task not found: ${params.task_id}`);
+  }
 
   // Log activity for each change
   if (params.title !== undefined && params.title !== current.title) {
@@ -235,21 +259,29 @@ export async function updateTask(ctx: McpContext, params: z.infer<typeof updateT
           .eq("task_id", params.task_id)
           .not("status", "in", '("completed","failed")');
         if ((count ?? 0) === 0) {
+          // Guard against a concurrent reassignment/unassignment racing in
+          // between the guarded assignment write above and this secondary
+          // write — only touch working_started_at if the assignee we just
+          // set is still in place.
           await ctx.supabase
             .from("board_tasks")
             .update({ working_started_at: new Date().toISOString() })
-            .eq("id", params.task_id);
+            .eq("id", params.task_id)
+            .eq("assignee_id", params.assignee_id);
         }
       }
     } else {
       await logActivity(ctx, params.task_id, params.idea_id, "unassigned", {
         assignee_id: current.assignee_id!,
       });
-      // Clear working_started_at when unassigned
+      // Clear working_started_at when unassigned — guarded the same way, so
+      // a concurrent reassignment that raced in doesn't get its
+      // working_started_at wiped out from under it.
       await ctx.supabase
         .from("board_tasks")
         .update({ working_started_at: null })
-        .eq("id", params.task_id);
+        .eq("id", params.task_id)
+        .is("assignee_id", null);
     }
   }
   if (params.due_date !== undefined && params.due_date !== current.due_date) {
@@ -287,6 +319,19 @@ export async function moveTask(ctx: McpContext, params: z.infer<typeof moveTaskS
   const position =
     params.position ?? (await getNextPosition(ctx, params.column_id, params.idea_id));
 
+  // Read the task's CURRENT column (not just the target one, which is fetched
+  // below purely for the activity log / done-column check) so the write can
+  // be gated on it — mirrors claim_next_step's read-then-conditionally-write
+  // pattern, protecting against two concurrent moves of the same task.
+  const { data: currentTask } = await ctx.supabase
+    .from("board_tasks")
+    .select("column_id")
+    .eq("id", params.task_id)
+    .eq("idea_id", params.idea_id)
+    .single();
+
+  if (!currentTask) throw new Error(`Task not found: ${params.task_id}`);
+
   // Get column details for activity log + done column check
   const { data: column } = await ctx.supabase
     .from("board_columns")
@@ -300,13 +345,21 @@ export async function moveTask(ctx: McpContext, params: z.infer<typeof moveTaskS
     taskUpdate.working_started_at = null;
   }
 
-  const { error } = await ctx.supabase
+  const { data: moved, error } = await ctx.supabase
     .from("board_tasks")
     .update(taskUpdate)
     .eq("id", params.task_id)
-    .eq("idea_id", params.idea_id);
+    .eq("idea_id", params.idea_id)
+    .eq("column_id", currentTask.column_id)
+    .select("id")
+    .maybeSingle();
 
   if (error) throw new Error(`Failed to move task: ${error.message}`);
+  if (!moved) {
+    throw new Error(
+      "This task was already moved by someone else — refresh and try again."
+    );
+  }
 
   await logActivity(ctx, params.task_id, params.idea_id, "moved", {
     to_column: column?.title ?? params.column_id,
