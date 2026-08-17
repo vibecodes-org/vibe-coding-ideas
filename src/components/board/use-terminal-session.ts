@@ -975,7 +975,48 @@ export function useTerminalSession(
   );
 
   const fireLaunchDeepLink = useCallback(
-    (sessionId: string, bridgeToken: string, helperToken?: string) => {
+    (
+      sessionId: string,
+      bridgeToken: string,
+      helperToken?: string,
+      opts?: {
+        /**
+         * Reattach-vs-connect visibility (Reproduce & Investigate step's
+         * logging-gap note): which call site fired this link, so the
+         * structured logs below can tell a fresh mint's autoLaunch apart
+         * from a reattach's relaunch without cross-referencing timestamps.
+         * Defaults to "connect" so connect()'s existing call site (which
+         * predates this option) doesn't need updating just for the log field.
+         */
+        trigger?: "connect" | "attach-existing";
+        /**
+         * URGENT reattach fix (task 27d19c68, 2026-08-17 incident — a hard
+         * refresh AND a cross-tab Reconnect both killed a live conversation
+         * and replaced it with an empty boot screen): when set, this fire is
+         * FORCED resume-shaped, bypassing the promptPartsRef-based branch
+         * below entirely. `attachToExisting` passes the reattach API's own
+         * `cwd`/`claudeSessionId` here — the terminal_sessions registry
+         * row's ground truth for the session actually being reattached to —
+         * instead of relying on `promptPartsRef`, which is reliably null in
+         * exactly the cases that broke this: wiped by a hard refresh
+         * (in-memory ref, not persisted), and never populated at all by a
+         * brand-new tab reconnecting to someone else's already-live
+         * session. With `promptPartsRef` null, this branch used to fall
+         * through to the fresh-launch path below — spawning a brand-new
+         * `claude` process that the relay's preempt logic then let win,
+         * killing the original. A genuinely active/live session's reattach
+         * payload carries a `cwd` (confirmed via production evidence in the
+         * task), so this covers the real incident; a row with no recorded
+         * `cwd` at all (edge case — e.g. a "new project" launch that never
+         * resolved one) falls through to the pre-existing fresh-launch
+         * branch, logged below so that gap stays visible instead of
+         * silently regressing.
+         */
+        forceResumeCwd?: string | null;
+        forceResumeId?: string | null;
+      },
+    ) => {
+      const trigger = opts?.trigger ?? "connect";
       // Session entry chooser — Resume (card cbe60db5, design item 7/F4): a
       // resume launch carries no bootstrap prompt at all — a minimal link
       // with `resumeId` (exact-conversation, rework 5) or the legacy
@@ -983,15 +1024,25 @@ export function useTerminalSession(
       // bridge runs `claude --resume <id>` or `claude --continue` there
       // instead of building a prompt (see terminal/bridge/src/index.js).
       // Checked FIRST so the normal essentials/budgeting path below never
-      // runs for a resume.
+      // runs for a resume. The resume source is EITHER a forced reattach
+      // override (opts.forceResumeCwd — see its doc; checked first so a
+      // stale/unrelated promptPartsRef can never veto a real reattach) OR
+      // the legacy promptPartsRef-carried intent (a chooser Resume click
+      // via launchFromBus/connect).
       // Bug B (card cbe60db5): computed ONCE per fire, used on whichever
       // buildLaunchDeepLink call below actually runs — see
       // `currentLaunchDims`'s own doc comment for why this is read here
       // rather than left to a post-spawn resize.
       const dims = currentLaunchDims();
       const carriedForResume = promptPartsRef.current;
-      if (carriedForResume?.resume || carriedForResume?.resumeId) {
-        const cwd = carriedForResume.cwd;
+      const forcedCwd = opts?.forceResumeCwd?.trim() || null;
+      const resumeSource = forcedCwd
+        ? { cwd: forcedCwd, resumeId: opts?.forceResumeId ?? undefined, forced: true }
+        : carriedForResume?.resume || carriedForResume?.resumeId
+          ? { cwd: carriedForResume.cwd, resumeId: carriedForResume.resumeId, forced: false }
+          : null;
+      if (resumeSource) {
+        const { cwd, resumeId, forced } = resumeSource;
         if (!cwd) {
           // Should never happen — the chooser only offers Resume for a row
           // with a recorded folder (F4) — but stay honest rather than fire a
@@ -1009,8 +1060,8 @@ export function useTerminalSession(
             token: bridgeToken,
             helperToken,
             cwd,
-            resume: carriedForResume.resumeId ? undefined : true,
-            resumeId: carriedForResume.resumeId,
+            resume: resumeId ? undefined : true,
+            resumeId,
             cols: dims?.cols,
             rows: dims?.rows,
           });
@@ -1023,12 +1074,27 @@ export function useTerminalSession(
         }
         logger.info("Terminal firing resume deep link", {
           sessionId,
-          exact: !!carriedForResume.resumeId,
+          trigger,
+          forced,
+          exact: !!resumeId,
           url: redactDeepLinkToken(link).replace(/([?&]cwd=)[^&]*/g, "$1***"),
           urlChars: link.length,
         });
         if (!openLaunchLinkAndArmTimeout(link)) setLaunchPhase("helper-timeout");
         return;
+      }
+
+      // Reattach relaunch with nowhere to resume into (the registry row
+      // itself never recorded a cwd) — falls through to the fresh-launch
+      // branch below same as before this fix, but say so loudly: this is
+      // the ONE gap the reattach fix (task 27d19c68) doesn't close, and it
+      // must stay visible rather than silently look identical to a normal
+      // fresh mint in the logs.
+      if (trigger === "attach-existing") {
+        logger.warn(
+          "Terminal reattach relaunch has no recorded cwd — falling back to fresh-launch deep link (will not resume)",
+          { sessionId },
+        );
       }
 
       let link: string;
@@ -1098,6 +1164,7 @@ export function useTerminalSession(
       // its PRESENCE and the prompt's length are logged.
       logger.info("Terminal firing launch deep link", {
         sessionId,
+        trigger,
         url: redactDeepLinkToken(link).replace(/([?&]cwd=)[^&]*/g, "$1***"),
         urlChars,
         hasCwd,
@@ -1558,7 +1625,7 @@ export function useTerminalSession(
     }
 
     // Same-machine: hand the bridge token to the local helper via the deep link.
-    if (autoLaunch) fireLaunchDeepLink(data.sessionId, data.bridgeToken, data.helperToken);
+    if (autoLaunch) fireLaunchDeepLink(data.sessionId, data.bridgeToken, data.helperToken, { trigger: "connect" });
 
     openBrowserLeg(data.sessionId, data.browserToken);
   }, [
@@ -1646,8 +1713,32 @@ export function useTerminalSession(
       // leg waiting passively forever. Mirrors connect()'s own
       // `if (autoLaunch) fireLaunchDeepLink(...)` call exactly, just gated on
       // the token being present instead of an autoLaunch flag.
+      //
+      // URGENT reattach fix (task 27d19c68, 2026-08-17): that relaunch used
+      // to be UNCONDITIONALLY fresh-boot-shaped (decided by promptPartsRef,
+      // which is null on both a hard refresh and a brand-new tab's
+      // Reconnect — see fireLaunchDeepLink's forceResumeCwd doc). The local
+      // helper always forks a brand-new bridge with no liveness check, and
+      // the relay always lets it preempt the still-live original — so that
+      // fresh-boot deep link was what killed the running conversation and
+      // replaced it with an empty boot screen, even though the server-side
+      // session record never changed. `p.cwd`/`p.claudeSessionId` are the
+      // reattach route's OWN read of the registry row being reattached to —
+      // passing them here forces this relaunch to always be resume-shaped
+      // for a genuinely live session, instead of depending on a ref that's
+      // reliably empty in exactly this path.
       if (p.bridgeToken) {
-        fireLaunchDeepLink(p.sessionId, p.bridgeToken, p.helperToken);
+        logger.info("Terminal reattach firing relaunch deep link", {
+          sessionId: p.sessionId,
+          hasResumeCwd: !!(p.cwd && p.cwd.trim()),
+          hasClaudeSessionId: !!p.claudeSessionId,
+          promptPartsPopulated: !!promptPartsRef.current,
+        });
+        fireLaunchDeepLink(p.sessionId, p.bridgeToken, p.helperToken, {
+          trigger: "attach-existing",
+          forceResumeCwd: p.cwd,
+          forceResumeId: p.claudeSessionId,
+        });
       }
       openBrowserLeg(p.sessionId, p.browserToken);
     },
