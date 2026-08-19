@@ -53,7 +53,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { ChevronUp, ChevronDown, Circle, ListTree, Loader2, Plus, Terminal as TerminalIcon, X } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronLeft, Circle, ListTree, Loader2, Plus, Terminal as TerminalIcon, X } from "lucide-react";
 import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -1200,6 +1200,30 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // that's actually allowed to show; the full chooser must never render
   // underneath/alongside it.
   const showingChooser = sessions.length === 0 && entryDecision?.kind === "chooser" && !taskChoiceOpen;
+  // Is ANY open tab still a running session? Drives whether a browse opens
+  // in the panel or as an overlay (below). Mirrors `requestClose`'s liveness
+  // test exactly, including its popped-out caveat: a popped tab's own
+  // reported status is usually mid-preemption ("error"/duplicate) while the
+  // session is very much alive in the other window, so it must never be read
+  // as finished here either. "idle"/"connecting" count as live — a tab
+  // mid-launch is about to be a real session, and swapping the panel out
+  // from under it would be exactly the disruption this is avoiding.
+  const anyTabLive = sessions.some(
+    (s) => poppedOutKeys.has(s.key) || isLiveTabStatus(summaries[s.key]?.status ?? "idle"),
+  );
+  // Nick's follow-up, 2026-08-19: "why a popup rather than just showing this
+  // in the terminal panel?" The overlay exists to protect a LIVE terminal
+  // underneath — swapping the panel's body would tear down its xterm
+  // instance, socket and scrollback. That reason evaporates when every open
+  // tab has ended: there's nothing running to disturb, so the list belongs
+  // in the panel like it already does when there are no tabs at all
+  // (`showingChooser`), rather than floating over a dimmed board for no gain.
+  //
+  // Browsing only — a launch keeps the overlay whatever the tab states are,
+  // because it also has to sit ON TOP of the forced-choice guarantee (and
+  // with no live tab it would be showing over a body that's about to be
+  // replaced anyway).
+  const inlineBrowse = chooserMode === "browse" && sessions.length > 0 && !anyTabLive;
   const pendingTask = pendingLaunch?.taskId
     ? { taskId: pendingLaunch.taskId, taskTitle: pendingLaunch.taskTitle ?? "" }
     : null;
@@ -1374,7 +1398,26 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           </div>
         )}
 
-        {showingChooser && (
+        {/* Inline browse needs a way back that `showingChooser` never did:
+            with no tabs there's nothing behind the chooser to return to, but
+            here an ended tab is sitting underneath with its scrollback
+            intact ("The scrollback above is kept" — the ended panel's own
+            promise), so backing out has to be possible without acting. */}
+        {inlineBrowse && (
+          <div className="flex items-center justify-between border-b border-zinc-800 bg-[#141417] px-3.5 py-1.5">
+            <span className="text-[11.5px] font-semibold text-zinc-400">Your sessions</span>
+            <Button
+              variant="ghost"
+              size="xs"
+              className="text-zinc-400 hover:text-zinc-100"
+              onClick={() => setChooserMode(null)}
+            >
+              <ChevronLeft className="h-3 w-3" /> Back to terminal
+            </Button>
+          </div>
+        )}
+
+        {(showingChooser || inlineBrowse) && (
           <TerminalSessionChooser
             sections={chooserSections}
             pendingTask={pendingTask}
@@ -1388,7 +1431,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           />
         )}
 
-        {multi && (
+        {multi && !inlineBrowse && (
           <div role="tablist" aria-label="Terminal sessions" className="flex items-stretch border-b border-zinc-800 bg-[#141417]">
             {/* Tabs shrink then scroll; "+" (below) stays pinned OUTSIDE this
                 scroll region so launch + oversight are never scrolled away
@@ -1488,6 +1531,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           </div>
         )}
 
+        {/* CSS-hidden, never unmounted, while an inline browse takes the
+            panel — the same rule the tab strip and the popped-out
+            placeholder already follow in this file and in
+            TerminalSessionView's own root. Unmounting would throw away the
+            ended tab's scrollback, so "Back to terminal" above would return
+            to an empty terminal instead of the conversation it promised. */}
+        <div className={cn(inlineBrowse && "hidden")}>
         {sessions.map((entry) => (
           <TerminalSessionView
             key={entry.key}
@@ -1515,6 +1565,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onResumeEndedSession={(payload) => mintAndDeliver(payload)}
           />
         ))}
+        </div>
       </div>
 
       {/* Chooser OVERLAY (card cbe60db5, rework 11): the same
@@ -1535,7 +1586,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           someone who only wanted a look would be worse than the dead end that
           link exists to fix. */}
       <Dialog
-        open={chooserOpen && sessions.length > 0}
+        open={chooserOpen && sessions.length > 0 && !inlineBrowse}
         onOpenChange={(next) => {
           if (!next && chooserMode === "browse") setChooserMode(null);
         }}
