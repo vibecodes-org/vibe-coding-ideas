@@ -256,11 +256,10 @@ export function deriveChooserSections(
  *     not `ChooserSections`, so it's untouched by this helper either way, but
  *     the underlying data it depends on (a null-cwd row counting as "recent")
  *     is the same invariant this filter must not undermine at the source.
- *   - `findTaskSessionMatch` below — a task-scoped launch must still dedupe
- *     against its own no-folder recent session (routing to
- *     terminal-task-launch-choice.tsx's "already have a session" dialog
- *     instead of silently minting a second one), even though that session
- *     wouldn't be worth a row in the general chooser's list.
+ *   - `findTaskSessionMatch` below — it reads `sections.recent` directly and
+ *     applies its own equivalent no-folder skip inline (see the comment on
+ *     that function), which must stay a decision made THERE, on the full set,
+ *     rather than something it inherits from a display filter.
  *
  * Two callers apply this: `terminal-session-chooser.tsx` for its row list AND
  * its section show/hide check, and `chooserHeaderCounts` below for the header
@@ -337,7 +336,16 @@ export function findTaskSessionMatch(
   if (here) return { kind: "live-here", row: here };
   const elsewhere = sections.liveElsewhere.find((r) => r.taskId === taskId);
   if (elsewhere) return { kind: "live-elsewhere", row: elsewhere };
-  const recent = sections.recent.find((r) => r.taskId === taskId);
+  // Card 79a0046c (Nick's field report, 2026-08-19): an ENDED session with no
+  // recorded folder is not a match worth stopping for. Resume needs a folder
+  // to reopen, so the dialog it would route to can only offer "start fresh
+  // anyway" — a one-button interstitial in front of the exact thing that
+  // happens without it. Card d6ebd6e8 kept these rows matchable to avoid
+  // "silently minting a second session", but the matched session has already
+  // ended: there is no parallel session to avoid, only a click to waste.
+  // Live rows above are deliberately unaffected — reattaching to a running
+  // session needs no folder, so those still route to the choice dialog.
+  const recent = sections.recent.find((r) => r.taskId === taskId && r.cwd !== null);
   if (recent) return { kind: "recent", row: recent };
   return null;
 }

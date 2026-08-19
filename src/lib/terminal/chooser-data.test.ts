@@ -559,19 +559,36 @@ describe("findTaskSessionMatch", () => {
     expect(findTaskSessionMatch(sections, "task-1")).toBeNull();
   });
 
-  // Card cbe60db5 follow-up (Nick, 2026-08-17): the general chooser's Recent
-  // list now hides no-folder rows via `visibleRecentRows` (a display-only
-  // filter applied by terminal-session-chooser.tsx). `findTaskSessionMatch`
-  // must NOT pick up that filter — a task-scoped launch still has to dedupe
-  // against its own no-folder recent session (routing to
-  // terminal-task-launch-choice.tsx's "already have a session" dialog
-  // instead of silently minting a second one for the same task).
-  it("still matches a Recent row with no recorded cwd — unaffected by the chooser's display-only filter", () => {
+  // Card 79a0046c (Nick's field report, 2026-08-19), reversing card d6ebd6e8's
+  // call: an ended no-folder session isn't resumable, so matching it only
+  // produced a one-button "start fresh anyway" dialog in front of the mint
+  // that would have happened anyway. No match → the launch mints immediately.
+  it("does not match an ended Recent row with no recorded cwd — nothing there to resume", () => {
     const rows = [row({ sid: "no-cwd-recent", status: "ended", cwd: null, taskId: "task-1", endedAt: new Date(NOW - 60_000).toISOString() })];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    expect(sections.recent.map((r) => r.sid)).toContain("no-cwd-recent"); // still IN the sections...
+    expect(findTaskSessionMatch(sections, "task-1")).toBeNull(); // ...just not a reason to interrupt a launch
+  });
+
+  // The skip above is scoped to unresumable ENDED rows only — a running
+  // session for this task still stops the launch, folder or no folder,
+  // because reattaching to it never needed one.
+  it("still matches a LIVE row for the task even with no recorded cwd", () => {
+    const rows = [row({ sid: "no-cwd-live", status: "active", cwd: null, taskId: "task-1" })];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW);
+    const match = findTaskSessionMatch(sections, "task-1");
+    expect(match?.kind).toBe("live-here");
+    expect(match?.row.sid).toBe("no-cwd-live");
+  });
+
+  // A resumable ended row is untouched by the skip — the dialog still earns
+  // its place there, because Resume is a real second option.
+  it("still matches an ended Recent row that has a recorded cwd", () => {
+    const rows = [row({ sid: "cwd-recent", status: "ended", cwd: "/repo", taskId: "task-1", endedAt: new Date(NOW - 60_000).toISOString() })];
     const sections = deriveChooserSections(rows, IDEA_A, NOW);
     const match = findTaskSessionMatch(sections, "task-1");
     expect(match?.kind).toBe("recent");
-    expect(match?.row.sid).toBe("no-cwd-recent");
+    expect(match?.row.sid).toBe("cwd-recent");
   });
 });
 
