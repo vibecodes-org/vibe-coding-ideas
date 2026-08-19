@@ -1,5 +1,21 @@
 # VibeCodes Release Process — Git Flow Lite (Option B)
 
+> ## ⚠️ STALE ON BRANCHING — `develop` IS DEAD
+>
+> The two-branch flow below (`feature → develop → master`) is **no longer how
+> this project ships**, and following it wastes time and targets a dead branch.
+>
+> **Current reality: branch from `master`, PR straight to `master`.**
+>
+> `develop`'s last commit was 18 March 2026. It is 751 commits behind `master`,
+> with 4 orphaned commits of its own. Every PR since March has gone directly to
+> `master`. Staging (`staging.vibecodes.co.uk`) is not in the flow either, and
+> its database is known-broken.
+>
+> Everything else here (local setup, migrations, Docker, env vars) is still
+> useful — it is specifically the branching strategy that is out of date.
+> `CLAUDE.md`'s Deployment section is the authority.
+
 This document explains the branching strategy, release workflow, and local development setup for VibeCodes. It's written for someone who uses Claude Code for all coding work and wants to understand how code gets from an idea to production.
 
 ---

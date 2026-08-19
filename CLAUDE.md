@@ -152,12 +152,25 @@ See `docs/release-process.md` for full details.
 | Environment | URL | Branch | Database |
 |---|---|---|---|
 | Local | http://localhost:3000 | any | Docker Supabase |
-| Staging | https://staging.vibecodes.co.uk | `develop` | Staging Supabase project |
 | Production | https://vibecodes.co.uk | `master` | Production Supabase project |
 
-- Feature branches → PR to `develop` → PR to `master`
-- Hotfixes branch directly from `master`
-- Migrations: auto-apply staging on merge, manual production trigger with approval gate
+**Branch from `master`, PR to `master`. There is no intermediate branch.**
+
+`develop` IS DEAD — do not target it, do not merge to it, do not "promote" through
+it. Its last commit was 18 March 2026; it now sits 751 commits behind `master`
+with 4 orphaned commits of its own. Every PR since March has gone feature branch
+→ `master` directly. `docs/release-process.md` still documents the old two-branch
+flow and is stale on this point (it half-admits it: "features are tested via PRs
+to master instead"). CI workflow files still *list* `develop` as a trigger — that
+is vestigial, not a signal that it's live.
+
+Staging (`staging.vibecodes.co.uk`) is not part of the flow either; its database
+is known-broken — see the board card "Recreate staging database properly (via
+Supabase Branching off prod)".
+
+- Migrations: manual production trigger with approval gate (the develop→staging
+  auto-apply path in `migrations.yml` no longer fires, since nothing lands on
+  `develop`)
 - Migrations cannot be rolled back — only corrective forward migrations
 - Monitoring: Sentry (source maps), Vercel Analytics + Speed Insights, PostHog (reverse-proxied via `/ingest`)
 
