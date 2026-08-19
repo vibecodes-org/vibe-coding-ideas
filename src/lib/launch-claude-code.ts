@@ -287,30 +287,47 @@ export interface RecordedProjectPath {
 
 /**
  * Choose the cwd to inject into a no-repo launch deep link from the paths
- * recorded for (this user, this idea) — Design Review hostname rule, option (a):
+ * recorded for (this user, this idea) — Design Review hostname rule, option (a),
+ * deduped by absolute path:
  *
- *  - 0 records  → undefined (first-launch / home flow; the agent creates + records)
- *  - exactly 1  → that record's absolute_path
- *  - >1 records → undefined (ambiguous across machines; the browser can't know
- *                 which host it's on, so never inject a path we can't attribute
- *                 to THIS machine — fall back to the safe first-launch flow)
+ *  - 0 records          → undefined (first-launch / home flow; the agent creates + records)
+ *  - 1 distinct path    → that path, whether it came from one record or several
+ *                         (the common multi-machine case: the same idea launched
+ *                         from two hosts whose project folder happens to live at
+ *                         the same absolute path — e.g. two Macs both checking
+ *                         out under /Users/nick/projects/<slug>). There is no
+ *                         ambiguity to protect against here: whichever machine
+ *                         the browser is actually on, the folder is at this path.
+ *  - >1 distinct paths  → undefined (genuinely ambiguous across machines; the
+ *                         browser can't know which host it's on, so never inject
+ *                         a path we can't attribute to THIS machine — fall back
+ *                         to the safe first-launch flow)
  *
  * A record is only usable if its absolute_path passes strict validation; bad
  * rows are ignored so a single corrupt record can't poison the choice.
+ *
+ * Deliberately does NOT match on hostname to narrow the record set before
+ * deduping — the browser-side machine-identity plumbing for that
+ * (`getMachineIdentity()` in `src/lib/terminal/machine-identity.ts`) exists but
+ * wiring it in here is out of scope for this fix; same-path-across-machines is
+ * the safe, hostname-independent case that doesn't need it.
  */
 export function chooseLaunchCwd(
   records: ReadonlyArray<RecordedProjectPath> | null | undefined
 ): string | undefined {
   const usable = (records ?? []).filter((r) => isValidAbsolutePath(r.absolute_path));
-  if (usable.length === 1) return usable[0].absolute_path.trim();
+  const distinctPaths = new Set(usable.map((r) => r.absolute_path.trim()));
+  if (distinctPaths.size === 1) return usable[0].absolute_path.trim();
   return undefined;
 }
 
 /**
- * The single source of truth for "where will a no-repo launch open, and what do
- * we show the user?". DISPLAY and LAUNCH must derive from this same result so
+ * The single source of truth for "where will a launch open (if a folder is
+ * already known), and what do we show the user?" — applies to repo-backed and
+ * no-repo ideas alike. DISPLAY and LAUNCH must derive from this same result so
  * they can never diverge (the bug: the dialog saved to localStorage but the
- * dropdown read only the DB).
+ * dropdown read only the DB; and separately, a repo-backed idea's known folder
+ * used to be discarded here entirely — see `resolveEffectiveLaunchTarget`).
  *
  * `cwd` is what gets injected into the deep link / copy command; `displayPath`
  * + `displayLabel` + `host` drive the dropdown's "This machine" line.
@@ -329,7 +346,15 @@ export interface EffectiveLaunchTarget {
 }
 
 export interface ResolveEffectiveLaunchTargetArgs {
-  /** Whether the idea has a GitHub repo (repo-backed ideas never inject a cwd). */
+  /**
+   * Whether the idea has a GitHub repo. Kept for callers (they already track
+   * it for the prompt builders) but no longer gates anything HERE: a
+   * repo-backed idea with a known folder (pinned or recorded for this
+   * machine) resolves that folder exactly like a no-repo idea does — see the
+   * precedence note below. `resolveDefaultLaunchState` is what still treats
+   * repo-backed differently when NO folder is known (empty-path existing
+   * mode instead of a fresh ~/projects/<slug>).
+   */
   hasRepo: boolean;
   /** The user's saved localStorage launch config for this idea (or null). */
   saved: LaunchPathState | null;
@@ -343,28 +368,28 @@ export interface ResolveEffectiveLaunchTargetArgs {
  * writes) over the agent-recorded DB path. This makes the dropdown reflect a
  * just-saved path immediately AND guarantees launch uses that same value.
  *
- * Precedence:
- *  1. Repo-backed idea → never inject a cwd (the `repo` slug resolves the folder).
- *  2. Saved `existing`-mode path that passes strict validation → use it
+ * Precedence (applies identically whether or not the idea has a repo — a
+ * pinned or recorded folder is just as real a "known folder" for a
+ * repo-backed idea as for a no-repo one, and pin-beats-recorded must hold
+ * consistently in both cases):
+ *  1. Saved `existing`-mode path that passes strict validation → use it
  *     (labelled "This machine — set manually" — localStorage has no hostname).
- *  3. Otherwise the DB recorded path via `chooseLaunchCwd` (0/1/>1 contract),
+ *  2. Otherwise the DB recorded path via `chooseLaunchCwd` (0 / 1-distinct-path
+ *     / >1-distinct-paths contract — records that agree on the path dedupe to
+ *     that one path, even from different hostnames),
  *     labelled "This machine — <host>". Both share the "This machine — <detail>"
  *     shape so they read as one box with two path sources, not two concepts.
- *  4. Nothing usable → source "none" (first-launch flow; no path line).
+ *  3. Nothing usable → source "none" (first-launch / repo-slug-resolves-it
+ *     flow; no path line).
  *
  * `new`-mode saved state is intentionally ignored here: its composed
  * `~/projects/<slug>` path is not a validated absolute pwd and must not surface
  * as a recorded/launch path (it's created + recorded by the agent on launch).
  */
 export function resolveEffectiveLaunchTarget({
-  hasRepo,
   saved,
   recordedPaths,
 }: ResolveEffectiveLaunchTargetArgs): EffectiveLaunchTarget {
-  if (hasRepo) {
-    return { cwd: undefined, displayPath: undefined, displayLabel: undefined, host: null, source: "none" };
-  }
-
   // Saved existing-mode absolute path wins — it's the user's explicit choice and
   // it's what the launch cwd resolution already used, so display now matches.
   if (saved && saved.mode === "existing") {
@@ -453,9 +478,17 @@ Do NOT debug or reconfigure other MCP servers, and do NOT improvise the OAuth fl
  *    hooks; a worktree session must never push to or merge the primary
  *    branch — only `vibe/wt-N`.
  *
- * Only used for existing-mode/no-repo launches (see directoryBlock and
- * buildCompactBootstrapPromptParts) — a repo-backed idea resolves its working
- * copy via the deep link's `repo` slug and is out of scope for this protocol.
+ * Used for existing-mode launches that already have a known folder (a
+ * recorded/pinned cwd) — repo-backed or not (see directoryBlock and
+ * buildCompactStepPieces). It used to be scoped to no-repo launches only, on
+ * the theory that a repo-backed idea's `repo` slug deterministically resolves
+ * the working copy so there is no concurrent-terminal ambiguity — but a
+ * repo-backed idea with a known folder ALSO opens a real local shell in that
+ * (possibly-shared) folder via the deep link's cwd, same as no-repo, so the
+ * ambiguity is identical and the fix widened this to cover it. Only a
+ * repo-backed idea with NO known folder yet (fresh clone) is genuinely out of
+ * scope, since that path is a brand-new/just-cloned folder, not a possibly-
+ * shared existing one.
  *
  * `variant: "compact"` returns a terse, budget-conscious rewrite of the same
  * steps for the URL-capped deep-link / in-browser-terminal prompt (see
@@ -667,12 +700,15 @@ export interface CompactBootstrapArgs extends CommonPromptArgs {
   /** Per-task launch: targets this task instead of the top of the queue. */
   taskId?: string;
   /**
-   * Existing-mode, no-repo launches: the absolute folder the deep-link cwd will
-   * open in (a recorded DB path for this machine, or a user-pinned localStorage
-   * path). When set, the compact prompt emits a "you're already here, just
-   * confirm" verify-folder step INSTEAD of the create-folder/mkdir block — the
-   * session already lands here via the deep link's cwd. Omitted → no directory
-   * step at all (repo-backed or first-launch flows resolve the folder elsewhere).
+   * Existing-mode launches with a known folder — no-repo OR repo-backed: the
+   * absolute folder the deep-link cwd will open in (a recorded DB path for
+   * this machine, or a user-pinned localStorage path). When set, the compact
+   * prompt emits a "you're already here, just confirm" verify-folder step
+   * INSTEAD of the create-folder/mkdir (no-repo) or clone (repo-backed) block
+   * — the session already lands here via the deep link's cwd; for a
+   * repo-backed idea the verify step also confirms it's the right clone
+   * rather than re-cloning. Omitted → no directory step (no-repo first-launch)
+   * or the clone/cd step (repo-backed with no known folder yet).
    */
   existingPath?: string;
 }
@@ -708,17 +744,18 @@ interface CompactStepPieces {
    * — out of BUG1's scope. Empty for existingPath / first-launch (no step). */
   leadingSteps: string[];
   /**
-   * Existing-mode/no-repo only: echoes the raw cwd. This DUPLICATES the deep
-   * link's `cwd` URL param, so a long recorded/pinned path grows both the
-   * fixed URL overhead AND (if this sat in the protected head) the head
-   * itself — the mechanism behind BUG1's overflow. Kept out of any
-   * `head`/essentials text; callers place it in the trimmable tail.
+   * Existing mode with a known folder ONLY (repo-backed or not): echoes the
+   * raw cwd. This DUPLICATES the deep link's `cwd` URL param, so a long
+   * recorded/pinned path grows both the fixed URL overhead AND (if this sat
+   * in the protected head) the head itself — the mechanism behind BUG1's
+   * overflow. Kept out of any `head`/essentials text; callers place it in the
+   * trimmable tail.
    */
   directoryEcho?: string;
   /**
-   * Compact worktree-isolation protocol candidate — same existing-mode/no-repo
-   * scope as directoryEcho, same reason it's kept separate: it must be
-   * included or omitted as one atomic block (BUG1 — see
+   * Compact worktree-isolation protocol candidate — same existing-mode/
+   * known-folder scope as directoryEcho, same reason it's kept separate: it
+   * must be included or omitted as one atomic block (BUG1 — see
    * fitCompactWorktreeProtocol), never embedded where a length guard could
    * half-truncate it.
    */
@@ -743,10 +780,13 @@ function buildCompactStepPieces({
   let directoryEcho: string | undefined;
   let protocol: string | undefined;
 
-  // Directory step. In create-new mode → mkdir/init the folder. Repo-backed →
-  // clone/cd. Existing-no-repo WITH a known folder (recorded/pinned path the deep
-  // link's cwd already opens in) → a "confirm you're already here" step, NOT a
-  // create step. Existing-no-repo with NO known folder → nothing (first-launch).
+  // Directory step. In create-new mode → mkdir/init the folder. Existing WITH a
+  // known folder (recorded/pinned path the deep link's cwd already opens in) →
+  // a "confirm you're already here" step, NOT a create/clone step — checked
+  // BEFORE the bare `repo` branch below so a repo-backed idea with a known
+  // folder gets verify-and-reuse wording (don't re-clone) instead of the
+  // fresh-machine clone instructions. Repo-backed with NO known folder → clone/
+  // cd. Existing-no-repo with NO known folder → nothing (first-launch).
   if (newProject) {
     const p = newProject.newProjectPath;
     const git = repo
@@ -755,20 +795,26 @@ function buildCompactStepPieces({
     leadingSteps.push(
       `Project folder FIRST, before anything else (even planning/research): if ${p} exists, cd in and reuse it as-is; else \`mkdir -p ${p} && cd ${p}\`. Never work in your home directory (${git}).`
     );
+  } else if (existingPath) {
+    // Repo-backed + known folder: verify it's the right clone, don't re-clone.
+    // No-repo + known folder: plain reuse-the-folder wording (unchanged).
+    const repoNote = repo
+      ? ` It should already be a clone of ${repo} — confirm with \`git remote -v\`; don't re-clone.`
+      : "";
+    directoryEcho = `You should already be in ${existingPath} (recorded from a previous session).${repoNote} Confirm with \`pwd\`; \`cd\` there if not. Don't re-init or re-clone — reuse the folder as-is.`;
+    // Concurrent-terminal isolation — the deep link's cwd is what puts this
+    // session in a possibly-shared folder, whether or not the idea is
+    // repo-backed (a repo-backed idea with NO known folder resolves via the
+    // `repo` slug in the branch below instead and never reaches here). The
+    // "compact" variant is a budget-conscious rewrite of the same steps
+    // buildWorktreeIsolationProtocol("full") gives the copy-command prompt —
+    // this one keeps every load-bearing invariant but drops the prose so the
+    // URL-capped deep link / in-browser terminal stay under their ceiling.
+    protocol = buildWorktreeIsolationProtocol("compact");
   } else if (repo) {
     leadingSteps.push(
       `Get into the repo ${repo} first: cd your local clone, or \`git clone https://github.com/${repo}.git ${DEFAULT_NEW_PROJECT_PARENT}/${repo.split("/")[1]}\` and cd in. Never work in your home directory.`
     );
-  } else if (existingPath) {
-    directoryEcho = `You should already be in ${existingPath} (recorded from a previous session). Confirm with \`pwd\`; \`cd\` there if not. Don't re-init or re-clone — reuse the folder as-is.`;
-    // Concurrent-terminal isolation (existing-mode/no-repo — the deep link's cwd
-    // is what puts this session in a possibly-shared folder; a repo-backed
-    // launch resolves via the `repo` slug instead and never reaches this
-    // branch). The "compact" variant is a budget-conscious rewrite of the same
-    // steps buildWorktreeIsolationProtocol("full") gives the copy-command
-    // prompt — this one keeps every load-bearing invariant but drops the prose
-    // so the URL-capped deep link / in-browser terminal stay under their ceiling.
-    protocol = buildWorktreeIsolationProtocol("compact");
   }
 
   const essentialSteps = [
@@ -847,9 +893,10 @@ export interface CompactPromptEssentials {
    */
   tail: string;
   /**
-   * Compact worktree-isolation protocol candidate (existing-mode/no-repo with
-   * a known cwd only); undefined when out of scope (repo-backed / new-project
-   * / first-launch). Best-effort on the URL-capped path — see
+   * Compact worktree-isolation protocol candidate (existing-mode with a known
+   * cwd only — repo-backed or not); undefined when out of scope (no known
+   * folder yet: new-project / first-launch, or repo-backed with nothing
+   * recorded). Best-effort on the URL-capped path — see
    * fitCompactWorktreeProtocol, which decides whether it rides the head.
    */
   protocol?: string;
@@ -1429,19 +1476,23 @@ export function resolveAppUrl(): string {
  * state and can never diverge (bootstrap-prompt parity, AC1/AC3):
  *
  *  - saved localStorage config for this idea → use it verbatim.
- *  - idea has a GitHub repo → existing mode, empty path; the repo slug resolves
- *    the working copy locally.
- *  - no repo BUT a real existing folder is known (a recorded DB path for THIS
- *    machine, surfaced via `effectiveTarget`) → existing mode at that absolute
- *    path, so the bootstrap prompt SKIPS the create-folder/mkdir/git-init block
- *    (the deep link's cwd already lands the session there — this is the fix for
- *    the "already-recorded idea still gets the first-run script" bug).
- *  - no repo, no known folder → a brand-new project under ~/projects/<slug>; the
- *    agent mkdir's it.
+ *  - a known folder is on file (pinned localStorage path, or a recorded DB
+ *    path for THIS machine — surfaced via `effectiveTarget`) → existing mode
+ *    at that absolute path, so the bootstrap prompt SKIPS the create-folder/
+ *    mkdir/git-init block (the deep link's cwd already lands the session
+ *    there). This applies WHETHER OR NOT the idea has a repo — a repo-backed
+ *    idea with a recorded/pinned folder gets the same treatment as a no-repo
+ *    one (this is the fix for the "repo-backed idea's recorded folder never
+ *    surfaces" bug: `effectiveTarget` must be checked before the repo check
+ *    below, or the repo branch always wins and the recorded path is dead code).
+ *  - idea has a GitHub repo, no known folder → existing mode, empty path; the
+ *    repo slug resolves the working copy locally (the fresh-machine flow).
+ *  - no repo, no known folder → a brand-new project under ~/projects/<slug>;
+ *    the agent mkdir's it.
  *
  * `effectiveTarget` is optional so callers without recorded paths (the terminal
  * dock's payload-less fallback) keep working unchanged — they pass nothing and
- * fall through to the create-new default exactly as before.
+ * fall through to the create-new/repo-empty-path default exactly as before.
  *
  * SSR-safe (readLaunchPath returns null on the server).
  */
@@ -1453,12 +1504,14 @@ export function resolveDefaultLaunchState(
 ): LaunchPathState {
   const saved = readLaunchPath(ideaId);
   if (saved) return saved;
-  if (ideaGithubUrl) return { mode: "existing", path: "" };
-  // A no-repo idea with a known folder (recorded/pinned via resolveEffective-
-  // LaunchTarget) opens THERE as existing mode so the prompt matches the cwd.
+  // A known folder (recorded/pinned via resolveEffectiveLaunchTarget) opens
+  // THERE as existing mode so the prompt matches the cwd — checked BEFORE the
+  // repo fallback below so a repo-backed idea's recorded/pinned folder isn't
+  // shadowed by the empty-path repo default.
   if (effectiveTarget && effectiveTarget.source !== "none" && effectiveTarget.cwd) {
     return { mode: "existing", path: effectiveTarget.cwd };
   }
+  if (ideaGithubUrl) return { mode: "existing", path: "" };
   const name = slugifyIdeaTitle(ideaTitle);
   return {
     mode: "new",
@@ -1473,14 +1526,18 @@ export function resolveDefaultLaunchState(
  * claude-cli:// deep link (launch button) and the in-browser vibecodes:// launch
  * (bus payload + terminal dock), so both destinations open in the same folder:
  *
- *  - existing mode with a user-pinned absolute path → use it.
+ *  - existing mode with a non-empty absolute path → use it. This covers a
+ *    user-pinned path AND a recorded/pinned folder that
+ *    `resolveDefaultLaunchState` promoted into existing mode for a
+ *    repo-backed idea (state carries no repo flag of its own — the path being
+ *    non-empty is what makes this branch fire either way).
  *  - new (no-repo) mode → the caller's effective cwd (the saved path or the
  *    agent-recorded path for THIS machine — resolveEffectiveLaunchTarget.cwd).
  *    Callers without the recorded paths (the dock's payload-less fallback) pass
  *    undefined, and the bootstrap prompt's directory step creates
  *    ~/projects/<slug> instead. (`~`-paths don't expand in the cwd param.)
- *  - repo-backed (existing mode, empty path) → no cwd; the repo slug / prompt
- *    directory step resolves the working copy.
+ *  - repo-backed, no known folder (existing mode, empty path) → no cwd; the
+ *    repo slug / prompt directory step resolves the working copy.
  */
 export function resolveLaunchCwd(
   state: LaunchPathState,

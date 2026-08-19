@@ -701,6 +701,38 @@ describe("chooseLaunchCwd (hostname rule — Design Review option (a))", () => {
       chooseLaunchCwd([{ absolute_path: "relative/path", hostname: "bad" }])
     ).toBeUndefined();
   });
+
+  // Regression: production data shows a user launching the same idea from two
+  // machines whose project folder happens to live at the identical absolute
+  // path (e.g. two Macs both under /Users/nick/projects/<slug>) — that's 2
+  // records but 0 ambiguity, since either machine opens the same place.
+  it("2 records, same absolute path, different hostnames → dedupes to that one path", () => {
+    expect(
+      chooseLaunchCwd([
+        { absolute_path: "/Users/nickball/projects/balla-bot", hostname: "Nicks-MacBook-Pro.local" },
+        { absolute_path: "/Users/nickball/projects/balla-bot", hostname: "Nicks-MBP.home.local" },
+      ])
+    ).toBe("/Users/nickball/projects/balla-bot");
+  });
+
+  it("2 records, same path after trimming whitespace → still dedupes", () => {
+    expect(
+      chooseLaunchCwd([
+        { absolute_path: "/Users/nick/x", hostname: "mac-a" },
+        { absolute_path: "  /Users/nick/x  ", hostname: "mac-b" },
+      ])
+    ).toBe("/Users/nick/x");
+  });
+
+  it("3 records, 2 sharing a path + 1 different → still >1 DISTINCT paths, undefined", () => {
+    expect(
+      chooseLaunchCwd([
+        { absolute_path: "/Users/nick/x", hostname: "mac-a" },
+        { absolute_path: "/Users/nick/x", hostname: "mac-b" },
+        { absolute_path: "/home/nick/x", hostname: "linux" },
+      ])
+    ).toBeUndefined();
+  });
 });
 
 describe("resolveEffectiveLaunchTarget (single source for DISPLAY + LAUNCH)", () => {
@@ -792,12 +824,52 @@ describe("resolveEffectiveLaunchTarget (single source for DISPLAY + LAUNCH)", ()
     expect(t.source).toBe("recorded");
   });
 
-  it("repo-backed ideas never inject a cwd or show a path line, even with a saved path", () => {
+  // ── Repo-backed ideas: a known folder wins here too (regression) ──────────
+  // Previously `hasRepo` short-circuited to source "none" BEFORE the saved-pin
+  // check ran at all, so a repo-backed idea's explicit pin was silently
+  // dropped — the second defect QA found alongside the main resolver bug.
+  // Pin-beats-recorded precedence must hold the same way for repo-backed
+  // ideas as it does for no-repo ones.
+  it("repo-backed idea: a saved (pinned) path still wins, same as no-repo", () => {
     const t = resolveEffectiveLaunchTarget({
       hasRepo: true,
       saved: { mode: "existing", path: "/Users/nick/projects/from-dialog" },
       recordedPaths: recorded,
     });
+    expect(t.cwd).toBe("/Users/nick/projects/from-dialog");
+    expect(t.displayPath).toBe("/Users/nick/projects/from-dialog");
+    expect(t.source).toBe("saved");
+  });
+
+  it("repo-backed idea: a pinned path wins even with NO recorded path on file", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: true,
+      saved: { mode: "existing", path: "/Users/nick/projects/from-dialog" },
+      recordedPaths: [],
+    });
+    expect(t.cwd).toBe("/Users/nick/projects/from-dialog");
+    expect(t.source).toBe("saved");
+  });
+
+  // The main bug this card fixes: resolveEffectiveLaunchTarget used to return
+  // "none" unconditionally for hasRepo:true, so a recorded DB path (agent
+  // self-heal via record_project_path) was dead code for every repo-backed idea.
+  it("repo-backed idea: falls back to a recorded DB path when there's no pin", () => {
+    const t = resolveEffectiveLaunchTarget({
+      hasRepo: true,
+      saved: null,
+      recordedPaths: recorded,
+    });
+    expect(t.cwd).toBe("/Users/nick/projects/from-db");
+    expect(t.source).toBe("recorded");
+    expect(t.displayLabel).toBe("This machine — Nicks-MacBook");
+  });
+
+  // Unchanged: repo-backed with nothing known at all → "none", so
+  // resolveDefaultLaunchState still falls through to the empty-path
+  // fresh-machine flow (repo slug / clone resolves the folder).
+  it("repo-backed idea: no pin and no recorded path → 'none' (fresh-machine flow, unchanged)", () => {
+    const t = resolveEffectiveLaunchTarget({ hasRepo: true, saved: null, recordedPaths: [] });
     expect(t.cwd).toBeUndefined();
     expect(t.displayPath).toBeUndefined();
     expect(t.source).toBe("none");
@@ -1173,6 +1245,73 @@ describe("resolveDefaultLaunchState (shared by launch button + terminal dock)", 
       name: "my-first-app",
     });
   });
+
+  // ── Repo-backed idea + a known folder (effectiveTarget) ────────────────────
+  // Second defect QA found: `resolveDefaultLaunchState`'s `if (ideaGithubUrl)`
+  // branch used to fire BEFORE the effectiveTarget check, making a repo-backed
+  // idea's recorded/pinned folder dead code — the two resolvers disagreed.
+  it("repo-backed idea + a recorded DB path, no pin → existing mode at the recorded path", () => {
+    const effectiveTarget = resolveEffectiveLaunchTarget({
+      hasRepo: true,
+      saved: null,
+      recordedPaths: [{ absolute_path: "/Users/nick/projects/widget", hostname: "Nicks-MacBook" }],
+    });
+    expect(
+      resolveDefaultLaunchState("idea-1", "My Idea", "https://github.com/acme/widget", effectiveTarget)
+    ).toEqual({ mode: "existing", path: "/Users/nick/projects/widget" });
+  });
+
+  it("repo-backed idea + a pinned path (with a recorded path too) → the pin wins", () => {
+    const effectiveTarget = resolveEffectiveLaunchTarget({
+      hasRepo: true,
+      saved: { mode: "existing", path: "/Users/nick/projects/pinned-widget" },
+      recordedPaths: [{ absolute_path: "/Users/nick/projects/widget", hostname: "Nicks-MacBook" }],
+    });
+    expect(
+      resolveDefaultLaunchState("idea-1", "My Idea", "https://github.com/acme/widget", effectiveTarget)
+    ).toEqual({ mode: "existing", path: "/Users/nick/projects/pinned-widget" });
+  });
+
+  it("repo-backed idea + a pinned path, NO recorded path → the pin still wins", () => {
+    const effectiveTarget = resolveEffectiveLaunchTarget({
+      hasRepo: true,
+      saved: { mode: "existing", path: "/Users/nick/projects/pinned-widget" },
+      recordedPaths: [],
+    });
+    expect(
+      resolveDefaultLaunchState("idea-1", "My Idea", "https://github.com/acme/widget", effectiveTarget)
+    ).toEqual({ mode: "existing", path: "/Users/nick/projects/pinned-widget" });
+  });
+
+  // UNCHANGED / the fresh-machine flow that must not regress: repo-backed with
+  // NEITHER a pin NOR a recorded path still opens empty-path existing mode so
+  // the bootstrap prompt emits its clone/directory step.
+  it("repo-backed idea + effectiveTarget but NO known folder → still the empty-path fresh-machine flow", () => {
+    const effectiveTarget = resolveEffectiveLaunchTarget({
+      hasRepo: true,
+      saved: null,
+      recordedPaths: [],
+    });
+    expect(
+      resolveDefaultLaunchState("idea-1", "My Idea", "https://github.com/acme/widget", effectiveTarget)
+    ).toEqual({ mode: "existing", path: "" });
+  });
+
+  // Ambiguous (>1 distinct recorded paths) must not promote a repo-backed idea
+  // either — same "don't guess which machine" contract as the no-repo case.
+  it("repo-backed idea + >1 distinct recorded paths (ambiguous) → still the empty-path flow", () => {
+    const effectiveTarget = resolveEffectiveLaunchTarget({
+      hasRepo: true,
+      saved: null,
+      recordedPaths: [
+        { absolute_path: "/Users/nick/widget", hostname: "mac" },
+        { absolute_path: "/home/nick/widget", hostname: "linux" },
+      ],
+    });
+    expect(
+      resolveDefaultLaunchState("idea-1", "My Idea", "https://github.com/acme/widget", effectiveTarget)
+    ).toEqual({ mode: "existing", path: "" });
+  });
 });
 
 // ── Recorded-path idea: prompt mode must MATCH the resolved cwd (the bug) ──────
@@ -1300,6 +1439,57 @@ describe("recorded-path idea promotes to existing mode (prompt/cwd parity)", () 
       parent: undefined,
       name: undefined,
     });
+  });
+});
+
+// ── Risk 2 (QA): repo-backed idea + a known folder must get verify-the-folder
+// wording, NOT the bare "cd your local clone, or git clone" fresh-machine
+// instruction — the compact prompt's directory branch is reachable for
+// repo-backed ideas for the first time once resolveDefaultLaunchState promotes
+// them to existing-mode-with-a-path (see the "recorded-path idea promotes"
+// block above). This exercises buildCompactBootstrapPrompt directly with
+// repoUrl + existingPath both set, mirroring what resolveDefaultLaunchState +
+// the callers in use-terminal-session.ts / launch-claude-code-button.tsx now
+// produce for that case.
+describe("repo-backed compact prompt with a known folder (Risk 2 — verify, don't re-clone)", () => {
+  const APP_URL = "https://vibecodes.co.uk";
+  const IDEA_ID = "idea-repo-recorded";
+  const REPO_URL = "https://github.com/acme/widget";
+  const KNOWN_PATH = "/Users/nick/projects/widget";
+
+  it("repo-backed + known folder → verify-the-folder wording, confirms the clone, no fresh clone instruction", () => {
+    const p = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: IDEA_ID,
+      ideaTitle: "Widget",
+      mode: "existing",
+      repoUrl: REPO_URL,
+      existingPath: KNOWN_PATH,
+    });
+    expect(p).toContain(`already be in ${KNOWN_PATH}`);
+    expect(p).toMatch(/recorded from a previous session/i);
+    expect(p).toContain("clone of acme/widget");
+    expect(p).toContain("git remote -v");
+    expect(p).toMatch(/don't re-clone/i);
+    // The fresh-machine "get into the repo" clone instruction must NOT appear —
+    // we already know the folder, so don't tell the agent to (re-)clone it.
+    expect(p).not.toContain("Get into the repo");
+    expect(p).not.toContain("git clone https://github.com/acme/widget.git");
+  });
+
+  it("repo-backed + NO known folder → unchanged clone/cd instruction (fresh-machine flow)", () => {
+    const p = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: IDEA_ID,
+      ideaTitle: "Widget",
+      mode: "existing",
+      repoUrl: REPO_URL,
+      // no existingPath — nothing recorded/pinned yet.
+    });
+    expect(p).toContain("Get into the repo acme/widget first");
+    expect(p).toContain(`git clone https://github.com/acme/widget.git ${DEFAULT_NEW_PROJECT_PARENT}/widget`);
+    expect(p).not.toContain("already be in");
+    expect(p).not.toContain("git remote -v");
   });
 });
 

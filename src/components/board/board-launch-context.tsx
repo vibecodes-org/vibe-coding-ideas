@@ -17,7 +17,8 @@ export interface BoardLaunchContextValue {
    * Absolute paths recorded by the agent for THIS user + idea, one per machine
    * (hostname). Read server-side from idea_project_paths (RLS-scoped to the
    * human). The launch button runs chooseLaunchCwd over these to decide whether
-   * to inject a cwd for no-repo launches. Undefined when none recorded.
+   * to inject a cwd — for repo-backed ideas as well as no-repo ones, whenever a
+   * single distinct path is known. Undefined when none recorded.
    */
   recordedProjectPaths?: RecordedProjectPath[];
 }
