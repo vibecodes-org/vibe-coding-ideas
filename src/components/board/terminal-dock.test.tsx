@@ -89,10 +89,12 @@ vi.mock("./terminal-session-view", () => ({
     entry,
     onResumeEndedSession,
     onBrowseSessions,
+    onReportSummary,
   }: {
     entry: { key: string; taskId?: string; ideaId?: string };
     onResumeEndedSession?: (payload: { cwd?: string; taskId?: string; ideaId?: string }, sid: string | null) => void;
     onBrowseSessions?: () => void;
+    onReportSummary: (key: string, summary: Record<string, unknown>) => void;
   }) => {
     useEffect(() => {
       sessionViewMountSpy(entry.key);
@@ -121,6 +123,27 @@ vi.mock("./terminal-session-view", () => ({
             View my other sessions
           </button>
         )}
+        {/* Lets a test drive this tab to a real ENDED status. Without it every
+            stubbed tab reports nothing and the dock defaults it to "idle" —
+            which counts as live, so the panel-vs-overlay branch would never
+            be exercised. */}
+        <button
+          data-testid={`report-ended-${entry.key}`}
+          onClick={() =>
+            onReportSummary(entry.key, {
+              status: "session-ended",
+              sessionId: `sid-for-${entry.key}`,
+              errorKind: null,
+              launchPhase: "idle",
+              platformSupported: true,
+              paired: true,
+              browserToken: null,
+              readOnly: false,
+            })
+          }
+        >
+          report ended
+        </button>
       </div>
     );
   },
@@ -1105,5 +1128,117 @@ describe("TerminalDock — ended panel's 'View my other sessions' opens the choo
     // piece of work — not a blank session in the same folder.
     const taskIds = screen.getAllByTestId("session-view").map((el) => el.dataset.taskId);
     expect(taskIds).toContain("task-9");
+  });
+});
+
+// Nick's follow-up, 2026-08-19: "why do we have this brand new popup, rather
+// than it just switching to show all this in the terminal panel?" The
+// chooser already renders IN the panel — but the rule was `sessions.length
+// === 0`, i.e. "no tabs at all", so an ended tab was enough to force the
+// overlay. The overlay's actual purpose is protecting a LIVE terminal
+// underneath (swapping the body would tear down its xterm instance, socket
+// and scrollback); an ended tab has none of that to protect. The rule is now
+// liveness, not tab count.
+describe("TerminalDock — browsing renders IN the panel when nothing is running, overlay only when a live tab needs protecting (Nick's follow-up 2026-08-19)", () => {
+  async function openFirstTabViaChooser() {
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    return screen.getByTestId("session-view").dataset.key as string;
+  }
+
+  /** Drives the (stubbed) tab to a genuine "session-ended" status, the state
+   * Nick was actually in when he followed the link. Synchronous — fireEvent
+   * flushes the resulting setState — and it needs no assertion of its own:
+   * every caller then asserts on the panel-vs-overlay branch, which only
+   * takes the panel route if this actually landed. */
+  function endTab(key: string) {
+    fireEvent.click(screen.getByTestId(`report-ended-${key}`));
+  }
+
+  it("browsing from an ENDED tab renders the chooser in the panel — no dialog at all", async () => {
+    stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    const key = await openFirstTabViaChooser();
+    endTab(key);
+
+    fireEvent.click(screen.getByTestId("view-my-other-sessions"));
+
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    // Same list, same actions — it's the panel that changed, not the content.
+    expect(screen.getByTestId("chooser-resume-sid-recent-task-9")).toBeInTheDocument();
+  });
+
+  it("keeps the ended tab MOUNTED underneath so 'Back to terminal' returns to its scrollback, not an empty terminal", async () => {
+    stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    const key = await openFirstTabViaChooser();
+    endTab(key);
+    fireEvent.click(screen.getByTestId("view-my-other-sessions"));
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+
+    // Hidden by CSS, never torn down — the ended panel promises "The
+    // scrollback above is kept", and unmounting would break that promise the
+    // moment someone glanced at their session list.
+    expect(sessionViewUnmountSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("session-view")).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("button", { name: /Back to terminal/ }));
+
+    await waitFor(() => expect(screen.queryByTestId("chooser")).not.toBeInTheDocument());
+    expect(sessionViewUnmountSpy).not.toHaveBeenCalled();
+    expect(screen.getByTestId("session-view").dataset.key).toBe(key);
+  });
+
+  it("still uses the OVERLAY while a tab is live — the panel must not be swapped out from under a running terminal", async () => {
+    stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    // Tab left at its default (never reported ended) — the dock reads that as
+    // live, exactly like a connected or still-connecting session.
+    await openFirstTabViaChooser();
+
+    fireEvent.click(screen.getByTestId("view-my-other-sessions"));
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    expect(screen.queryByRole("button", { name: /Back to terminal/ })).not.toBeInTheDocument();
+  });
+
+  it("a LAUNCH still overlays even with every tab ended — the forced choice outranks the panel swap", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    const key = await openFirstTabViaChooser();
+    endTab(key);
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    // And it stays a forced choice — Escape must not swallow a fired launch.
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape", code: "Escape" });
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("resuming from the in-panel list works the same as from the overlay", async () => {
+    stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    const key = await openFirstTabViaChooser();
+    endTab(key);
+    fireEvent.click(screen.getByTestId("view-my-other-sessions"));
+    await waitFor(() => expect(screen.getByTestId("chooser-resume-sid-recent-task-9")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("chooser-resume-sid-recent-task-9"));
+
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+    const taskIds = screen.getAllByTestId("session-view").map((el) => el.dataset.taskId);
+    expect(taskIds).toContain("task-9");
+    // The list gave way to the terminal again once acted on.
+    expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
   });
 });
