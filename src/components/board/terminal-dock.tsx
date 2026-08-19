@@ -1035,11 +1035,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // ── chooser action handlers ─────────────────────────────────────────────────
   // Shared by BOTH the sessions.length === 0 body-swap chooser and the
   // sessions.length > 0 overlay (rework 11) — the `setChooserMode(null)` in
-  // each is a no-op when it was never opened (the body-swap case), and the
-  // one thing that's allowed to close the overlay per the design's
-  // non-disruption guarantee: only an explicit action in here, never an
-  // outside click/Escape (see the Dialog's `onInteractOutside`/
-  // `onEscapeKeyDown` below).
+  // each is a no-op when it was never opened (the body-swap case). These are
+  // the ways to close the overlay by ACTING; `handleChooserDismiss` below is
+  // the way to close it by walking away, and both are always available.
   const handleChooserStartNew = useCallback(() => {
     const payload = pendingLaunch;
     setPendingLaunch(null);
