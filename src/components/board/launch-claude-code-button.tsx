@@ -46,8 +46,11 @@ interface BaseProps {
   ideaGithubUrl: string | null;
   /**
    * Absolute paths the agent recorded for this user + idea (one per machine).
-   * No-repo launches inject one as cwd via chooseLaunchCwd (option (a): only
-   * when exactly one is recorded). Empty/omitted → first-launch flow.
+   * Injected as cwd via chooseLaunchCwd — for repo-backed ideas too, not just
+   * no-repo — whenever the records dedupe to exactly one DISTINCT path (any
+   * number of records is fine as long as they all agree on that one path;
+   * more than one distinct path is genuinely ambiguous and falls back to no
+   * cwd). Empty/omitted, or ambiguous, → first-launch/clone flow.
    */
   recordedProjectPaths?: RecordedProjectPath[];
 }
@@ -225,12 +228,18 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
       });
 
       // cwd resolution — the SHARED rule (resolveLaunchCwd): pinned existing path
-      // → that path; new (no-repo) mode → the effective target's cwd (the saved
-      // path or the agent-recorded path for THIS machine — the SAME value the
-      // dropdown displays, so display and launch can't diverge); repo-backed →
-      // none (the `repo` slug resolves the working copy; effectiveTarget.cwd is
-      // undefined for repo ideas). The in-browser launch payload uses the same
-      // rule, so both destinations open in the same folder.
+      // → that path; new mode → the effective target's cwd (the saved path or
+      // the agent-recorded path for THIS machine — the SAME value the dropdown
+      // displays, so display and launch can't diverge). This now applies to
+      // repo-backed ideas too: a repo-backed idea with a known folder (pinned
+      // or recorded) injects that cwd exactly like a no-repo idea — the `repo`
+      // slug only resolves the working copy when NO folder is known yet
+      // (effectiveTarget.cwd is undefined in that case). Previously cwd was
+      // unconditionally dropped for any repo-backed idea, which reopened a
+      // fresh/wrong clone on every relaunch even when the real working copy's
+      // path was already known — that's the bug this fix corrects. The
+      // in-browser launch payload uses the same rule, so both destinations
+      // open in the same folder.
       const cwd = resolveLaunchCwd(state, effectiveTarget.cwd);
       const repo = ideaGithubUrl ?? undefined;
 

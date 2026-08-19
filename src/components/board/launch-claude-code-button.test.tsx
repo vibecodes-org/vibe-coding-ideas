@@ -147,3 +147,46 @@ describe("LaunchClaudeCodeButton — task-menu-item variant (browser launch item
     location.restore();
   });
 });
+
+/** Renders the "board" variant, which owns its own split-button + dropdown
+ * (unlike task-menu-item, it isn't hosted inside an external DropdownMenu). */
+function renderBoardButton(overrides: {
+  ideaGithubUrl?: string | null;
+  recordedProjectPaths?: import("@/lib/launch-claude-code").RecordedProjectPath[];
+} = {}) {
+  render(
+    <LaunchClaudeCodeButton
+      variant="board"
+      ideaId="idea-1"
+      ideaTitle="Idea One"
+      ideaGithubUrl={overrides.ideaGithubUrl ?? null}
+      recordedProjectPaths={overrides.recordedProjectPaths}
+    />
+  );
+}
+
+describe("LaunchClaudeCodeButton — board variant dropdown path line", () => {
+  it("shows the recorded path for a repo-backed idea (fix: cwd is no longer dropped just because a repo is attached)", () => {
+    renderBoardButton({
+      ideaGithubUrl: "https://github.com/acme/widgets",
+      recordedProjectPaths: [{ hostname: "nick-mbp", absolute_path: "/Users/nick/projects/widgets" }],
+    });
+
+    const trigger = screen.getByRole("button", { name: "Launch options" });
+    fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 });
+    fireEvent.click(trigger);
+
+    expect(screen.getByText("This machine — nick-mbp")).toBeInTheDocument();
+    expect(screen.getByText("/Users/nick/projects/widgets")).toBeInTheDocument();
+  });
+
+  it("shows no path line for a repo-backed idea with no recorded path (first-launch/clone flow)", () => {
+    renderBoardButton({ ideaGithubUrl: "https://github.com/acme/widgets" });
+
+    const trigger = screen.getByRole("button", { name: "Launch options" });
+    fireEvent.pointerDown(trigger, { button: 0, pointerId: 1 });
+    fireEvent.click(trigger);
+
+    expect(screen.queryByText(/This machine/)).toBeNull();
+  });
+});
