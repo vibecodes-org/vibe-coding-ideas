@@ -12,6 +12,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { createClient } from "@/lib/supabase/server";
+import { isAuthCheckUnavailable } from "@/lib/supabase/auth-error";
 import { logger } from "@/lib/logger";
 // One shared implementation of the token scheme — also imported by the relay.
 import { mintSessionTokens, mintHelperToken } from "../../../../../terminal/shared/session-token.mjs";
@@ -70,10 +71,48 @@ export async function POST(req: Request) {
     }
 
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { data: { user }, error: authError } = await supabase.auth.getUser();
+    // Card 42453a7d: a FAILED auth check is not the same as "no session".
+    // getUser() returns a null user for both, and answering 401 for the former
+    // tells a perfectly logged-in user they're logged out (and, client-side,
+    // surfaces "Couldn't start a terminal session — Not authenticated"). 503
+    // says "ask again", which is the truth. See auth-error.ts for the evidence.
+    if (!user && isAuthCheckUnavailable(authError)) {
+      logger.error("Terminal session mint: auth check unavailable", {
+        name: authError?.name,
+        status: authError?.status,
+        error: authError?.message,
+      });
+      return NextResponse.json(
+        { error: "Couldn't verify your login just now — please try again" },
+        { status: 503 },
+      );
+    }
     if (!user) {
+      // Card 42453a7d (2026-08-19): this refusal used to be completely silent,
+      // so when SOMETHING retried a mint every ~30 minutes all night (15
+      // unauthenticated attempts, 18-19 Aug, each one an isolated request with
+      // no page load or list poll around it) there was nothing in the logs to
+      // attribute it to. Log just enough to identify the caller next time —
+      // never cookie values or token material, and only the idea id from the
+      // body, which is the one field that tells us WHICH board's page is doing
+      // it. `hasAuthCookie` separates the two very different causes: absent =
+      // a client with no session at all, present = a session that expired or
+      // was rotated away under a long-lived page.
+      const probe = (await req.json().catch(() => null)) as { ideaId?: unknown } | null;
+      logger.warn("Terminal session mint refused: not authenticated", {
+        userAgent: req.headers.get("user-agent"),
+        referer: req.headers.get("referer"),
+        origin: req.headers.get("origin"),
+        hasAuthCookie: /(?:^|;\s*)sb-[^=;]*auth-token/.test(req.headers.get("cookie") ?? ""),
+        ideaId: typeof probe?.ideaId === "string" ? probe.ideaId : null,
+        // Answered-but-no: WHICH no. "Auth session missing" (no cookie at all)
+        // and "Invalid Refresh Token: Already Used" (a rotation race between
+        // this user's several open tabs) are different bugs with the same
+        // 401, and only this field tells them apart.
+        authError: authError?.message ?? null,
+        authErrorName: authError?.name ?? null,
+      });
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
