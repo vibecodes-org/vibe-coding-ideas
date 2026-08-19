@@ -592,6 +592,42 @@ describe("TerminalDock — task-launch-skip-chooser (Nick's explicit product dec
     expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
   });
 
+  // Card 79a0046c (Nick's field report, 2026-08-19): the ended session for
+  // this task had no recorded folder, so the choice dialog opened with Resume
+  // hidden and "Start fresh anyway" as its ONLY button — an interstitial in
+  // front of the exact mint it was gating. Nothing to choose between → don't
+  // ask; just start, same as if no session existed.
+  it("auto-starts when this task's only RECENT session has no recorded folder — no dead-end one-button dialog", async () => {
+    stubFetch(Promise.resolve([{ ...recentRowForTask("task-9"), cwd: null }]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+    });
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    expect(screen.getByTestId("session-view").dataset.taskId).toBe("task-9");
+    expect(screen.queryByTestId("task-choice")).not.toBeInTheDocument();
+    expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+
+  // The skip is scoped to unresumable ENDED sessions. A RUNNING one still
+  // stops the launch even with no folder recorded — reattaching to a live
+  // session never needed one, so Reconnect is a genuine second option.
+  it("still shows the task choice when this task's LIVE session has no recorded folder", async () => {
+    stubFetch(Promise.resolve([{ ...liveHereRowForTask("task-9"), cwd: null }]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+    });
+
+    await waitFor(() => expect(screen.getByTestId("task-choice")).toBeInTheDocument());
+    expect(screen.getByTestId("task-choice").dataset.matchKind).toBe("live-here");
+    expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+  });
+
   it("auto-starts (no false-positive dedupe) when the only existing session belongs to a DIFFERENT task", async () => {
     stubFetch(Promise.resolve([liveHereRowForTask("task-OTHER")]));
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);

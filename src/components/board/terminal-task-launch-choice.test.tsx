@@ -88,13 +88,12 @@ describe("TerminalTaskLaunchChoice", () => {
     expect(onReconnect).toHaveBeenCalledOnce();
   });
 
-  // Bug 9fb9fced (2026-08-17): a "recent" match with no recorded cwd used to
-  // never reach this dialog at all — chooser-data.ts's old F4 rule excluded
-  // it from `sections.recent` entirely, so `findTaskSessionMatch` could never
-  // find it. It can now, but Resume has no folder to reopen — mirrors the
-  // cross-board chooser's RecentRow fix: the dialog still opens (so
-  // "start fresh anyway" is reachable) but hides Reconnect/Resume instead of
-  // offering an action that can't work.
+  // Defence in depth only. As of card 79a0046c (2026-08-19)
+  // `findTaskSessionMatch` no longer returns an unresumable ended row at all,
+  // so the dock can't route one here — a task launch in that state mints
+  // straight away instead of showing a dialog whose only button is the mint.
+  // The guard stays because this component takes a `match` prop from anyone:
+  // given one, hiding an action that cannot work still beats offering it.
   it("a recent match with no recorded cwd hides Resume, keeps Start fresh anyway", () => {
     const onReconnect = vi.fn();
     const noCwdMatch: TaskSessionMatch = {
