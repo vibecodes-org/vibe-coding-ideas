@@ -27,6 +27,8 @@ export interface TerminalTaskLaunchChoiceProps {
   onReconnect: () => void;
   /** The "start fresh anyway" escape hatch — mints a brand-new session for this task, ignoring the match entirely. */
   onStartFresh: () => void;
+  /** Back out entirely — launches nothing. Close button, Escape and outside-click all route here. */
+  onCancel: () => void;
 }
 
 export function TerminalTaskLaunchChoice({
@@ -36,6 +38,7 @@ export function TerminalTaskLaunchChoice({
   busy = false,
   onReconnect,
   onStartFresh,
+  onCancel,
 }: TerminalTaskLaunchChoiceProps) {
   // Narrow on `match.kind` directly at each use (rather than a derived
   // boolean) — `ChooserLiveRow`/`ChooserRecentRow` don't share a `createdAt`/
@@ -53,12 +56,19 @@ export function TerminalTaskLaunchChoice({
   const canReconnect = match.kind !== "recent" || !!match.row.cwd;
 
   return (
-    <Dialog open={open} onOpenChange={() => {}}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next) onCancel();
+      }}
+    >
+      {/* Nick, 2026-08-19: this used to be undismissable (no close button,
+          Escape and outside-click both suppressed) so the launch had to
+          resolve to reconnect-or-fresh. But no session is minted until one
+          of those buttons is clicked, so backing out costs nothing and
+          leaves nothing behind — and a dialog you can't close is a trap. */}
       <DialogContent
-        showCloseButton={false}
         className="max-w-sm gap-0 border-zinc-700 bg-[#141417] p-0 text-zinc-200"
-        onInteractOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
         data-testid="terminal-task-launch-choice"
       >
         <div className="px-4 pt-4 pb-3">
@@ -72,6 +82,9 @@ export function TerminalTaskLaunchChoice({
           </DialogDescription>
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-zinc-800 px-4 py-3">
+          <Button variant="ghost" size="xs" className="text-zinc-400 hover:text-zinc-100" disabled={busy} onClick={onCancel}>
+            Cancel
+          </Button>
           <Button variant="ghost" size="xs" disabled={busy} onClick={onStartFresh}>
             <TerminalIcon className="h-3 w-3" /> Start fresh anyway
           </Button>

@@ -1124,6 +1124,19 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     mintAndDeliver(payload);
   }, [pendingLaunch, mintAndDeliver]);
 
+  // Nick, 2026-08-19: "HOW THE HELL AM I GOING TO CLOSE THIS?" — the
+  // launch-mode overlay was a dead end by design (forced choice: no close
+  // button, Escape and outside-click both suppressed). That was wrong. A
+  // fired launch has minted NOTHING yet — the chooser's whole point is that
+  // no session exists until a click — so abandoning it costs nothing and
+  // leaves no orphan: dropping `pendingLaunch` returns the dock to exactly
+  // the state it was in before the launch event arrived. Every modal needs a
+  // way out.
+  const handleChooserDismiss = useCallback(() => {
+    setPendingLaunch(null);
+    setChooserMode(null);
+  }, []);
+
   const handleChooserReconnectHere = useCallback(
     (row: ChooserLiveRow) => {
       setPendingLaunch(null);
@@ -1245,6 +1258,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     },
     [ideaId, mintAndDeliver, router],
   );
+
+  // Back out of the task-scoped choice without launching anything — see the
+  // note in terminal-task-launch-choice.tsx. Drops the pending launch so the
+  // dialog can't reopen against a payload nobody asked for any more.
+  const handleTaskChoiceCancel = useCallback(() => {
+    setPendingLaunch(null);
+    setTaskChoiceOpen(false);
+  }, []);
 
   // My sessions panel Reconnect (design item 9) — the SAME reattach flow;
   // "this board" attaches in place, any other board navigates + reconnects.
@@ -1681,30 +1702,21 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           one, so opening this Dialog neither unmounts nor re-renders them —
           it's a Portal-rendered overlay layered on top, nothing more.
 
-          Dismissal depends on WHY it opened (`chooserMode`). "launch" is a
-          forced choice (matches onboarding-dialog.tsx's pattern): no close
-          button, outside-click and Escape both suppressed — only an action
-          inside the chooser (wired to also call `setChooserMode(null)`)
-          closes it, because a fired launch must resolve to exactly one
-          outcome. "browse" — the ended panel's "View my other sessions" link
-          — has no pending launch to resolve, so it closes normally; trapping
-          someone who only wanted a look would be worse than the dead end that
-          link exists to fix. */}
+          Dismissal is the SAME in both modes (`chooserMode`), and always
+          available: close button, Escape and outside-click all work. Launch
+          mode used to be a forced choice with all three suppressed, on the
+          theory that a fired launch must resolve to exactly one outcome —
+          but nothing is minted until a click inside here, so "no outcome" is
+          a perfectly valid one that costs nothing and leaves nothing behind.
+          A modal with no exit is a trap, not a guarantee. */}
       <Dialog
         open={chooserOpen && sessions.length > 0 && !inlineBrowse}
         onOpenChange={(next) => {
-          if (!next && chooserMode === "browse") setChooserMode(null);
+          if (!next) handleChooserDismiss();
         }}
       >
         <DialogContent
-          showCloseButton={chooserMode === "browse"}
           className="max-w-lg gap-0 border-zinc-700 bg-[#141417] p-0 text-zinc-200 sm:max-w-xl"
-          onInteractOutside={(e) => {
-            if (chooserMode !== "browse") e.preventDefault();
-          }}
-          onEscapeKeyDown={(e) => {
-            if (chooserMode !== "browse") e.preventDefault();
-          }}
         >
           <DialogTitle className="sr-only">Choose a terminal session</DialogTitle>
           <DialogDescription className="sr-only">
@@ -1720,6 +1732,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onStartNew={handleChooserStartNew}
             helperStatus={helperStatus}
             onHelperUpdateSettled={refreshAfterHelperUpdate}
+            onDismiss={handleChooserDismiss}
           />
         </DialogContent>
       </Dialog>
@@ -1740,6 +1753,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           busy={chooserBusy}
           onReconnect={handleTaskChoiceReconnect}
           onStartFresh={handleTaskChoiceStartFresh}
+          onCancel={handleTaskChoiceCancel}
         />
       )}
     </div>
