@@ -78,6 +78,14 @@ export interface TerminalSessionChooserProps {
    * (e.g. in tests) simply skips the refresh.
    */
   onHelperUpdateSettled?: () => void;
+  /**
+   * Back out without doing anything (Nick, 2026-08-19). When supplied, a
+   * plain "Close" sits at the FOOT of the list as well as in the dialog's
+   * corner — the corner X is easy to miss on a tall list you have to scroll,
+   * and the bottom is where you end up once you've read every row and
+   * decided none of them is what you wanted.
+   */
+  onDismiss?: () => void;
 }
 
 export function TerminalSessionChooser({
@@ -91,6 +99,7 @@ export function TerminalSessionChooser({
   cap,
   helperStatus = null,
   onHelperUpdateSettled,
+  onDismiss,
 }: TerminalSessionChooserProps) {
   const [confirmingResumeSid, setConfirmingResumeSid] = useState<string | null>(null);
   const firstFocusRef = useRef<HTMLButtonElement | null>(null);
@@ -299,6 +308,19 @@ export function TerminalSessionChooser({
             />
           ))}
         </ChooserSection>
+      )}
+
+      {onDismiss && (
+        <div className="flex justify-end border-t border-zinc-800 bg-[#111114] px-3.5 py-2">
+          <Button
+            variant="ghost"
+            size="xs"
+            className="text-zinc-400 hover:text-zinc-100"
+            onClick={onDismiss}
+          >
+            <X className="h-3 w-3" /> Close
+          </Button>
+        </div>
       )}
     </div>
   );

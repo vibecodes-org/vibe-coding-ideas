@@ -887,7 +887,7 @@ describe("TerminalDock — ended panel's 'View my other sessions' opens the choo
     expect(sessionViewUnmountSpy).not.toHaveBeenCalled();
   });
 
-  it("still traps a LAUNCH-opened overlay (forced choice, unchanged) — the dismissal relaxation is scoped to browsing", async () => {
+  it("a LAUNCH-opened overlay can be escaped too (Nick, 2026-08-19) — and abandoning it launches nothing", async () => {
     stubFetch(Promise.resolve([liveElsewhereRow()]));
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
@@ -899,9 +899,28 @@ describe("TerminalDock — ended panel's 'View my other sessions' opens the choo
 
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape", code: "Escape" });
 
-    // A fired launch must resolve to exactly one outcome — Escape must not
-    // silently swallow it.
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    // Nothing is minted until a click inside the chooser, so backing out of a
+    // fired launch is free — and a dialog with no exit is a trap, whatever
+    // the launch was supposed to resolve to.
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // Backed out, not acted on: no new tab, and the open one is untouched.
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
+  });
+
+  it("the launch overlay also offers an explicit Close, not just the corner X", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await openFirstTabViaChooser();
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByRole("button", { name: /^Close$/ }));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
   });
 
   it("resuming an ended session from the browse overlay closes it and launches with that row's own folder and conversation", async () => {
@@ -1000,7 +1019,7 @@ describe("TerminalDock — browsing renders IN the panel when nothing is running
     expect(screen.queryByRole("button", { name: /Back to terminal/ })).not.toBeInTheDocument();
   });
 
-  it("a LAUNCH still overlays even with every tab ended — the forced choice outranks the panel swap", async () => {
+  it("a LAUNCH still overlays even with every tab ended — but it can be escaped", async () => {
     stubFetch(Promise.resolve([liveElsewhereRow()]));
     render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
 
@@ -1011,10 +1030,11 @@ describe("TerminalDock — browsing renders IN the panel when nothing is running
       requestBrowserLaunch();
     });
 
+    // A launch still gets the overlay (it sits on top of a body that is about
+    // to be replaced anyway) — but it is no longer a dead end.
     await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
-    // And it stays a forced choice — Escape must not swallow a fired launch.
     fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape", code: "Escape" });
-    expect(screen.getByRole("dialog")).toBeInTheDocument();
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
   });
 
   it("resuming from the in-panel list works the same as from the overlay", async () => {
