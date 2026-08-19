@@ -42,10 +42,18 @@ import type {
   TaskSessionMatch,
 } from "@/lib/terminal/chooser-data";
 
+// Shared spy (not a fresh vi.fn() per call) so cross-board resume/reconnect
+// tests can assert on WHERE the dock navigated, not just that it did.
+// `mockSearchParams` is mutable so a `?resume=<sid>` landing test can seed it
+// before render — defaults to empty (today's every-other-test behaviour).
+const { mockRouterPush, mockSearchParams } = vi.hoisted(() => ({
+  mockRouterPush: vi.fn(),
+  mockSearchParams: { current: new URLSearchParams() },
+}));
 vi.mock("next/navigation", () => ({
-  useRouter: () => ({ push: vi.fn() }),
+  useRouter: () => ({ push: mockRouterPush }),
   usePathname: () => "/ideas/idea-1/board",
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => mockSearchParams.current,
 }));
 
 vi.mock("posthog-js/react", () => ({
@@ -68,15 +76,42 @@ const { sessionViewMountSpy, sessionViewUnmountSpy } = vi.hoisted(() => ({
 
 // Renders just enough of a real TerminalSessionView for the test to see HOW
 // MANY tabs actually got minted, and with what payload — the real component
-// (and the hook underneath it) is exercised elsewhere.
+// (and the hook underneath it) is exercised elsewhere. The `resume-ended-*`
+// button stands in for the real component's ended-session "Resume this
+// conversation" action (terminal-session-view.tsx's `handleResume`) —
+// mirrors its exact payload shape (`ideaId: entry.ideaId`, see SessionEntry's
+// doc) so a click here exercises the DOCK's real `handleResumeEndedSession`
+// routing decision, not just the payload-building terminal-session-view.test.tsx
+// already covers (mutation-tested rework round 2: gutting that routing
+// decision must FAIL this file, not just terminal-session-view's own tests).
 vi.mock("./terminal-session-view", () => ({
-  TerminalSessionView: ({ entry }: { entry: { key: string; taskId?: string } }) => {
+  TerminalSessionView: ({
+    entry,
+    onResumeEndedSession,
+  }: {
+    entry: { key: string; taskId?: string; ideaId?: string };
+    onResumeEndedSession?: (payload: { cwd?: string; taskId?: string; ideaId?: string }, sid: string | null) => void;
+  }) => {
     useEffect(() => {
       sessionViewMountSpy(entry.key);
       return () => sessionViewUnmountSpy(entry.key);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-    return <div data-testid="session-view" data-key={entry.key} data-task-id={entry.taskId ?? ""} />;
+    return (
+      <div data-testid="session-view" data-key={entry.key} data-task-id={entry.taskId ?? ""} data-idea-id={entry.ideaId ?? ""}>
+        <button
+          data-testid={`resume-ended-${entry.key}`}
+          onClick={() =>
+            onResumeEndedSession?.(
+              { cwd: "/Users/nick/projects/here", taskId: entry.taskId, ideaId: entry.ideaId },
+              "sid-ended-own-tab",
+            )
+          }
+        >
+          Resume this conversation
+        </button>
+      </div>
+    );
   },
   dockStatusMeta: () => ({ label: "Terminal", Icon: () => null, className: "" }),
 }));
@@ -274,6 +309,37 @@ function recentRowForTask(taskId: string): ChooserRegistryRow {
   };
 }
 
+/** Same as `recentRowForTask`, but on a DIFFERENT board (`idea-OTHER`) —
+ * cross-board resume fix coverage: chooser-data.ts's Recent is never
+ * idea-scoped, so this row is still offered on `idea-1`'s dock even though
+ * it belongs elsewhere. */
+function recentRowForTaskElsewhere(taskId: string): ChooserRegistryRow {
+  return { ...recentRowForTask(taskId), sid: `sid-recent-elsewhere-${taskId}`, ideaId: "idea-OTHER" };
+}
+
+/** An ENDED, board-level (no taskId) session on THIS board — exercises the
+ * general chooser's Resume action (not the task-scoped choice). */
+function recentRowHere(): ChooserRegistryRow {
+  return {
+    sid: "sid-recent-here",
+    ideaId: "idea-1",
+    ideaTitle: "My Idea",
+    taskId: null,
+    taskTitle: null,
+    machineLabel: null,
+    cwd: "/Users/nick/projects/here",
+    claudeSessionId: null,
+    createdAt: new Date(Date.now() - 3 * 60 * 60 * 1000).toISOString(),
+    status: "ended",
+    endedAt: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
+  };
+}
+
+/** Same as `recentRowHere`, but on a DIFFERENT board. */
+function recentRowElsewhere(): ChooserRegistryRow {
+  return { ...recentRowHere(), sid: "sid-recent-elsewhere", ideaId: "idea-OTHER" };
+}
+
 beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_TERMINAL_ENABLED", "true");
 });
@@ -283,6 +349,7 @@ afterEach(() => {
   vi.unstubAllEnvs();
   vi.unstubAllGlobals();
   vi.clearAllMocks();
+  mockSearchParams.current = new URLSearchParams();
 });
 
 describe("TerminalDock — launch-bus race with the still-loading registry (Bug B)", () => {
@@ -746,5 +813,152 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     fireEvent.click(screen.getByTestId("chooser-reconnect-here-own-sid"));
 
     await waitFor(() => expect(screen.getByText("Another tab is open here")).toBeInTheDocument());
+  });
+});
+
+// Cross-board resume fix (bug 62e57071, Sentinel's investigation): resuming
+// a Recent row belonging to a DIFFERENT board used to mint a session under
+// WHICHEVER board's dock happened to be open, carrying the foreign row's
+// task/cwd along with it. These pin the fix at both origination points
+// (the general chooser's Resume, and the task-launch-skip-chooser's recent
+// arm) — same-board resumes must mint exactly as before (no navigation, no
+// extra click) — plus the `?resume=<sid>` pickup a cross-board navigation
+// lands on.
+describe("TerminalDock — cross-board resume (bug 62e57071)", () => {
+  it("chooser Resume on a SAME-board Recent row mints locally, unchanged — no navigation", async () => {
+    stubFetch(Promise.resolve([recentRowHere()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId(`chooser-resume-${recentRowHere().sid}`));
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    expect(mockRouterPush).not.toHaveBeenCalled();
+  });
+
+  it("chooser Resume on a CROSS-board Recent row navigates to that row's own board instead of minting here", async () => {
+    stubFetch(Promise.resolve([recentRowElsewhere()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId(`chooser-resume-${recentRowElsewhere().sid}`));
+
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      `/ideas/idea-OTHER/board?resume=${encodeURIComponent(recentRowElsewhere().sid)}`,
+    );
+    // Nothing minted locally under this (wrong) board.
+    expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+  });
+
+  it("the task-choice recent arm mints locally for a SAME-board task match, unchanged", async () => {
+    stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+    });
+    await waitFor(() => expect(screen.getByTestId("task-choice")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("task-choice-reconnect"));
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    expect(mockRouterPush).not.toHaveBeenCalled();
+  });
+
+  it("the task-choice recent arm ALSO navigates for a cross-board task match, instead of minting here (propagation: closes the 2nd origination point)", async () => {
+    stubFetch(Promise.resolve([recentRowForTaskElsewhere("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    act(() => {
+      requestBrowserLaunch({ taskId: "task-9", taskTitle: "Do the thing" });
+    });
+    await waitFor(() => expect(screen.getByTestId("task-choice")).toBeInTheDocument());
+    expect(screen.getByTestId("task-choice").dataset.matchKind).toBe("recent");
+
+    fireEvent.click(screen.getByTestId("task-choice-reconnect"));
+
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      `/ideas/idea-OTHER/board?resume=${encodeURIComponent(recentRowForTaskElsewhere("task-9").sid)}`,
+    );
+    expect(screen.queryByTestId("session-view")).not.toBeInTheDocument();
+  });
+
+  it("landing with ?resume=<sid> mints the matching Recent row from THIS board's own (idea-unscoped) registry fetch, with no chooser shown", async () => {
+    mockSearchParams.current = new URLSearchParams({ resume: recentRowHere().sid });
+    stubFetch(Promise.resolve([recentRowHere()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
+  });
+
+  it("landing with ?resume=<sid> for a row that's no longer in the registry surfaces a toast instead of silently doing nothing", async () => {
+    mockSearchParams.current = new URLSearchParams({ resume: "sid-long-gone" });
+    stubFetch(Promise.resolve([]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/expired/)));
+    // An empty registry is also "empty-launch" (F1's unchanged idle P1 slot)
+    // — that pristine tab is expected here (never a resume-mint carrying the
+    // vanished row's data), so only its shape is asserted, not its absence.
+    expect(screen.getByTestId("session-view").dataset.taskId).toBe("");
+  });
+
+  // Perpetuation fix (Sentinel's finding — "perpetuates a mis-file forever"):
+  // an already-mounted tab's OWN "Resume this conversation" button must
+  // obey the same board-correctness the chooser/task-choice Resume actions
+  // above do, or a session that was ever mis-filed onto the wrong board
+  // keeps re-minting under that same wrong board every time someone clicks
+  // Resume on it — this is the PERPETUATION point, not just the origination
+  // point the tests above cover. QA mutation-tested `handleResumeEndedSession`
+  // by gutting its routing decision to an unconditional mint; that mutation
+  // survived every other test in this suite untouched, so this test exists
+  // specifically to kill it.
+  it("an already-mounted tab's own Resume navigates to the entry's own board when it differs from the current one — never an in-place mint", async () => {
+    stubFetch(Promise.resolve([]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    // The dock auto-seeds one pristine tab for an empty registry (F1) — its
+    // `entry.ideaId` starts unset (createPristineEntry never sets it). A
+    // board-level launch carrying a FOREIGN `ideaId` reuses that pristine
+    // slot (mintAndDeliver's pristine-reuse path), giving this tab a
+    // recorded board that differs from the one currently open — exactly the
+    // "already mis-filed" precondition this fix exists for.
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    act(() => {
+      requestBrowserLaunch({ ideaId: "idea-OTHER" });
+    });
+    await waitFor(() => expect(screen.getByTestId("session-view").dataset.ideaId).toBe("idea-OTHER"));
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1); // reused the pristine slot, no 2nd tab
+
+    const key = screen.getByTestId("session-view").dataset.key;
+    fireEvent.click(screen.getByTestId(`resume-ended-${key}`));
+
+    expect(mockRouterPush).toHaveBeenCalledWith(
+      `/ideas/idea-OTHER/board?resume=${encodeURIComponent("sid-ended-own-tab")}`,
+    );
+    // Never minted a 2nd tab in place under the wrong (currently open) board.
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
+  });
+
+  it("an already-mounted tab's own Resume mints in place (no navigation) when its recorded board matches the current one", async () => {
+    stubFetch(Promise.resolve([]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    // Same setup as the cross-board test above, but the launch's `ideaId`
+    // matches the currently-open board this time.
+    act(() => {
+      requestBrowserLaunch({ ideaId: "idea-1" });
+    });
+    await waitFor(() => expect(screen.getByTestId("session-view").dataset.ideaId).toBe("idea-1"));
+
+    const key = screen.getByTestId("session-view").dataset.key;
+    fireEvent.click(screen.getByTestId(`resume-ended-${key}`));
+
+    expect(mockRouterPush).not.toHaveBeenCalled();
+    // A genuine local mint happened (never a silent no-op) — this board's
+    // own dock delivered the resume itself instead of navigating away.
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
   });
 });

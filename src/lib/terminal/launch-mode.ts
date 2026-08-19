@@ -111,6 +111,19 @@ export interface BrowserLaunchPayload {
   taskId?: string;
   /** The task's title, for the tab label (B3) when `taskId` is present. */
   taskTitle?: string;
+  /**
+   * Cross-board resume fix (bug 62e57071): the idea this launch's underlying
+   * conversation actually belongs to — set ONLY by a resume payload built
+   * from a `ChooserRecentRow`/ended-session record whose own `ideaId` is
+   * known (chooser Resume, task-choice Resume, the ended-panel's "Resume
+   * this conversation"). Undefined for every other payload (toolbar/"+"/
+   * task-launch), which never carries board ambiguity — those always target
+   * whichever board is currently open. terminal-dock.tsx's resume handlers
+   * compare this against the dock's own `ideaId` prop and navigate to the
+   * row's own board FIRST when they differ, rather than minting here under
+   * the wrong one — see handleChooserResume/handleResumeEndedSession.
+   */
+  ideaId?: string;
 }
 
 /** Ask the board's terminal dock to open + auto-launch in the browser. */
