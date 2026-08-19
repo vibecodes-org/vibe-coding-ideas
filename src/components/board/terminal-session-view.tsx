@@ -175,8 +175,16 @@ interface TerminalSessionViewProps {
    * `onReconnectTakenOver` prop pattern above. Omitted hides the Resume
    * button entirely (defensive — the overlay itself already gates on
    * `session.cwd` being known before ever calling this).
+   *
+   * Cross-board resume fix (bug 62e57071): the payload now carries `ideaId:
+   * entry.ideaId` (this tab's own recorded board — see SessionEntry.ideaId's
+   * doc) and `sid` is passed alongside so the dock's handler
+   * (`handleResumeEndedSession`) can apply the SAME board-correctness the
+   * chooser's Resume does — a tab that was ever mis-filed onto the wrong
+   * board must not re-mint under that same wrong board forever just because
+   * the user clicked Resume from inside it.
    */
-  onResumeEndedSession?: (payload: BrowserLaunchPayload) => void;
+  onResumeEndedSession?: (payload: BrowserLaunchPayload, sid: string | null) => void;
   /**
    * Opens the dock's full session CHOOSER — live sessions AND the "Recent —
    * ended in the last 48h" rows you can resume. Rendered as a small tertiary
@@ -375,13 +383,19 @@ export function TerminalSessionView({
     view === "session-ended" && state.endedReason !== "user" && !!sessionCwd && !!onResumeEndedSession;
   const handleResume = () => {
     if (!sessionCwd) return;
-    onResumeEndedSession?.({
-      resume: claudeSessionId ? undefined : true,
-      resumeId: claudeSessionId ?? undefined,
-      cwd: sessionCwd,
-      taskId: entry.taskId,
-      taskTitle: entry.taskTitle,
-    });
+    onResumeEndedSession?.(
+      {
+        resume: claudeSessionId ? undefined : true,
+        resumeId: claudeSessionId ?? undefined,
+        cwd: sessionCwd,
+        taskId: entry.taskId,
+        taskTitle: entry.taskTitle,
+        // Cross-board resume fix: this tab's own recorded board, not
+        // necessarily the board currently open (see SessionEntry.ideaId).
+        ideaId: entry.ideaId,
+      },
+      pair?.sessionId ?? null,
+    );
   };
 
   return (

@@ -768,6 +768,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 origin: payload?.resume || payload?.resumeId ? "resume" : payload?.taskId ? "task" : "toolbar",
                 taskId: payload?.taskId,
                 taskTitle: payload?.taskTitle,
+                // Cross-board resume fix: resolves to a concrete idea even
+                // when the payload doesn't specify one (board/task launches
+                // always mean "here") — see SessionEntry.ideaId's doc.
+                ideaId: payload?.ideaId ?? ideaId,
                 launchSeq: s.launchSeq + 1,
                 launchPayload: payload ?? null,
               }
@@ -783,6 +787,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       origin: payload?.resume || payload?.resumeId ? "resume" : payload?.taskId ? "task" : "toolbar",
       taskId: payload?.taskId,
       taskTitle: payload?.taskTitle,
+      ideaId: payload?.ideaId ?? ideaId,
       createdAt: Date.now(),
       launchSeq: 1,
       launchPayload: payload ?? null,
@@ -793,7 +798,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     // 2nd+ tab (the pristine-slot reuse above is still the board's first tab,
     // same as P1, and isn't a "multi-session" event).
     posthogRef.current?.capture("terminal_tab_opened", { origin: entry.origin });
-  }, []);
+  }, [ideaId]);
 
   // Session entry chooser (card cbe60db5, F1; rework 11 fixes the gate below).
   // The actual entry point every launch source (toolbar bus event,
@@ -934,6 +939,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         origin: "reconnect",
         taskId: undefined,
         taskTitle: undefined,
+        // A reattach always runs already ON the row's own board — a
+        // cross-board live row goes through handleChooserOpenBoardAndReconnect
+        // (navigate first, `?reconnect=` picks it up here), never straight
+        // to performReattach — so the current board IS the correct one.
+        ideaId,
         createdAt: Date.now(),
         launchSeq: 0,
         launchPayload: null,
@@ -950,7 +960,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     } finally {
       setChooserBusy(false);
     }
-  }, [refreshRegistry]);
+  }, [refreshRegistry, ideaId]);
 
   // F1's empty-launch state ("today's open→launch behaviour remains") and
   // the instant-continue variant (design's veto note, Nick: yes) are both
@@ -1014,6 +1024,43 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     // "chooser": nothing to seed — the chooser renders in the body below.
   }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver, chooserSections]);
 
+  // Cross-board resume fix (bug 62e57071, Sentinel's investigation): a
+  // Recent row can belong to ANY board — chooser-data.ts's Recent section is
+  // deliberately never idea-scoped, so the user can reach it from any board
+  // they're currently viewing (see deriveChooserSections' header comment and
+  // its own test coverage for "still offered"). Minting straight into
+  // `mintAndDeliver` from a click on such a row used to mint under
+  // WHICHEVER board's dock was mounted, carrying the row's foreign
+  // taskId/cwd along for the ride — the origination point of the bug.
+  // `handleChooserResume`/`handleTaskChoiceReconnect`'s recent arm below
+  // mirror `handleChooserOpenBoardAndReconnect`'s live-row pattern (defined
+  // further below): navigate to the row's OWN board first (`?resume=<sid>`,
+  // this file's sibling to
+  // `?reconnect=<sid>`, handled by the effect just below) and let THAT
+  // board's dock fire the mint once mounted there — never mint in place
+  // under the wrong one. Declared up here (ahead of the `?resume=` effect
+  // that also uses it) so both that effect and the click handlers below
+  // share one payload-building rule.
+  const buildResumePayload = useCallback(
+    (row: ChooserRecentRow): BrowserLaunchPayload => ({
+      // F4's Resume: the EXISTING (capped) launch flow, carrying the ended
+      // row's own recorded folder instead of a bootstrap prompt — see
+      // BrowserLaunchPayload's doc and use-terminal-session.ts's
+      // fireLaunchDeepLink. A row with a tracked `claudeSessionId` (rework 5,
+      // exact-conversation Resume) fires `claude --resume <id>` — the exact
+      // conversation the row described, never whatever else has run in that
+      // folder since; a row without one falls back to the legacy
+      // `claude --continue`.
+      resume: row.claudeSessionId ? undefined : true,
+      resumeId: row.claudeSessionId ?? undefined,
+      cwd: row.cwd ?? undefined,
+      taskId: row.taskId ?? undefined,
+      taskTitle: row.taskTitle ?? undefined,
+      ideaId: row.ideaId,
+    }),
+    [],
+  );
+
   // ── other-board Reconnect (`?reconnect=<sid>`, design item 2) ──────────────
   // "Open board & reconnect" navigates here with the target sid on the URL;
   // once the registry confirms it, reattach immediately (no second chooser —
@@ -1031,6 +1078,36 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     window.history.replaceState(null, "", `${pathname}${qs ? `?${qs}` : ""}`);
     void performReattach(reconnectParam, { focus: true });
   }, [reconnectParam, registryRows, pathname, performReattach]);
+
+  // ── cross-board Resume (`?resume=<sid>`, cross-board resume fix 62e57071) ──
+  // Sibling to the `?reconnect=<sid>` effect just above, for a Recent (ended)
+  // row instead of a live one: handleChooserResume /
+  // handleTaskChoiceReconnect's recent arm navigate here with the target
+  // row's sid rather than minting under whichever board was open when the
+  // user clicked. chooser-data.ts's Recent section is deliberately NOT
+  // idea-scoped (see its header comment + tests), so this board's own
+  // `chooserSections.recent` — built from the SAME idea-unscoped registry
+  // fetch every board's dock makes — already carries the identical row; look
+  // it up by sid and fire the exact mint `handleChooserResume` would have,
+  // now that we're actually on the row's own board. A row that's vanished
+  // by the time this runs (expired past 48h, machine-identity filtered,
+  // etc.) surfaces as a toast rather than silently doing nothing.
+  const resumeParam = searchParams.get("resume");
+  const resumeHandledRef = useRef(false);
+  useEffect(() => {
+    if (!resumeParam || resumeHandledRef.current || registryRows === null) return;
+    resumeHandledRef.current = true;
+    const params = new URLSearchParams(window.location.search);
+    params.delete("resume");
+    const qs = params.toString();
+    window.history.replaceState(null, "", `${pathname}${qs ? `?${qs}` : ""}`);
+    const row = chooserSectionsRef.current.recent.find((r) => r.sid === resumeParam);
+    if (!row) {
+      toast.error("Couldn't find that session to resume — it may have expired.");
+      return;
+    }
+    mintAndDeliver(buildResumePayload(row));
+  }, [resumeParam, registryRows, pathname, mintAndDeliver, buildResumePayload]);
 
   // ── chooser action handlers ─────────────────────────────────────────────────
   // Shared by BOTH the sessions.length === 0 body-swap chooser and the
@@ -1068,6 +1145,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     (row: ChooserRecentRow) => {
       setPendingLaunch(null);
       setChooserMode(null);
+      if (row.ideaId !== ideaId) {
+        router.push(`/ideas/${row.ideaId}/board?resume=${encodeURIComponent(row.sid)}`);
+        return;
+      }
       // F4's Resume: the EXISTING (capped) launch flow, carrying the ended
       // row's own recorded folder instead of a bootstrap prompt — see
       // BrowserLaunchPayload's doc and use-terminal-session.ts's
@@ -1075,16 +1156,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       // exact-conversation Resume) fires `claude --resume <id>` — the exact
       // conversation the row described, never whatever else has run in that
       // folder since; a row without one falls back to the legacy
-      // `claude --continue`.
-      mintAndDeliver({
-        resume: row.claudeSessionId ? undefined : true,
-        resumeId: row.claudeSessionId ?? undefined,
-        cwd: row.cwd ?? undefined,
-        taskId: row.taskId ?? undefined,
-        taskTitle: row.taskTitle ?? undefined,
-      });
+      // `claude --continue`. Now built by `buildResumePayload` above, which
+      // this exact payload shape moved into (cross-board resume fix) so the
+      // `?resume=` landing effect can build the identical payload.
+      mintAndDeliver(buildResumePayload(row));
     },
-    [mintAndDeliver],
+    [mintAndDeliver, buildResumePayload, ideaId, router],
   );
 
   // The ended panel's "View my other sessions" link (Nick's field report
@@ -1117,14 +1194,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     setTaskChoiceOpen(false);
     if (!match) return; // the match expired between render and click — nothing safe to reconnect to
     if (match.kind === "recent") {
+      // Same cross-board fix as handleChooserResume just above — a task's
+      // matched Recent row can belong to a different board than the one the
+      // task-launch button was clicked from (chooser-data.ts's Recent isn't
+      // idea-scoped), so this arm must navigate-then-mint too, not mint here.
       const row = match.row;
-      mintAndDeliver({
-        resume: row.claudeSessionId ? undefined : true,
-        resumeId: row.claudeSessionId ?? undefined,
-        cwd: row.cwd ?? undefined,
-        taskId: row.taskId ?? undefined,
-        taskTitle: row.taskTitle ?? undefined,
-      });
+      if (row.ideaId !== ideaId) {
+        router.push(`/ideas/${row.ideaId}/board?resume=${encodeURIComponent(row.sid)}`);
+        return;
+      }
+      mintAndDeliver(buildResumePayload(row));
       return;
     }
     if (match.kind === "live-here") {
@@ -1132,7 +1211,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     } else {
       router.push(`/ideas/${match.row.ideaId}/board?reconnect=${encodeURIComponent(match.row.sid)}`);
     }
-  }, [pendingLaunch, mintAndDeliver, performReattach, router]);
+  }, [pendingLaunch, mintAndDeliver, buildResumePayload, ideaId, performReattach, router]);
 
   const handleTaskChoiceStartFresh = useCallback(() => {
     const payload = pendingLaunch;
@@ -1140,6 +1219,32 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     setTaskChoiceOpen(false);
     mintAndDeliver(payload);
   }, [pendingLaunch, mintAndDeliver]);
+
+  // Propagation fix (Sentinel's finding — "perpetuates a mis-file forever"):
+  // an already-mounted tab's OWN "Resume this conversation" button
+  // (terminal-session-view.tsx's `handleResume`) must obey the same
+  // board-correctness the chooser/task-choice Resume actions above do, or a
+  // session that was ever mis-filed onto the wrong board keeps re-minting
+  // under that same wrong board every time someone clicks Resume on it —
+  // patching only the chooser closes the ORIGINATION point but leaves this
+  // one still capable of perpetuating an existing mis-file forever.
+  // `payload.ideaId` comes from `entry.ideaId` (see SessionEntry's doc) —
+  // undefined for a `reconnect`-origin entry or anything that predates this
+  // fix. Unknown honestly stays on the current board rather than guessing
+  // (same "only act on a disagreement we can actually see" spirit as
+  // chooser-data.ts's machine-identity filter) — there is no way to recover
+  // the TRUE board for a session that was mis-filed before this field
+  // existed; see this card's return value for that limitation.
+  const handleResumeEndedSession = useCallback(
+    (payload: BrowserLaunchPayload, sid: string | null) => {
+      if (payload.ideaId && payload.ideaId !== ideaId && sid) {
+        router.push(`/ideas/${payload.ideaId}/board?resume=${encodeURIComponent(sid)}`);
+        return;
+      }
+      mintAndDeliver(payload);
+    },
+    [ideaId, mintAndDeliver, router],
+  );
 
   // My sessions panel Reconnect (design item 9) — the SAME reattach flow;
   // "this board" attaches in place, any other board navigates + reconnects.
@@ -1512,7 +1617,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onBringBack={() => bringBackToDock(entry.key)}
             onReconnectTakenOver={(sid) => void performReattach(sid, { focus: true })}
             onRetryReconnect={(sid) => void performReattach(sid, { focus: true })}
-            onResumeEndedSession={(payload) => mintAndDeliver(payload)}
+            onResumeEndedSession={handleResumeEndedSession}
           />
         ))}
       </div>

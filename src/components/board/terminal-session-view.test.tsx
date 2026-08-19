@@ -27,6 +27,7 @@ import type {
   TerminalSessionActions,
 } from "./use-terminal-session";
 import { RELAY_CLOSE, PREEMPTED_CLOSE_REASON, type TerminalConnectionState } from "@/lib/terminal/connection";
+import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 
 vi.mock("./use-terminal-session", () => ({
   useTerminalSession: vi.fn(),
@@ -209,8 +210,15 @@ function installMockEndedSession(
   });
 }
 
-function baseEntry(): SessionEntry {
-  return { key: "tab-1", origin: "toolbar", createdAt: Date.now(), launchSeq: 0, launchPayload: null };
+function baseEntry(overrides: Partial<SessionEntry> = {}): SessionEntry {
+  return {
+    key: "tab-1",
+    origin: "toolbar",
+    createdAt: Date.now(),
+    launchSeq: 0,
+    launchPayload: null,
+    ...overrides,
+  };
 }
 
 function renderView(poppedOut: boolean, onRetryReconnect?: (sid: string) => void) {
@@ -252,12 +260,13 @@ function renderErrorView(onReconnectTakenOver: (sid: string) => void = vi.fn()) 
 }
 
 function renderEndedView(
-  onResumeEndedSession: (payload: unknown) => void = vi.fn(),
+  onResumeEndedSession: (payload: BrowserLaunchPayload, sid: string | null) => void = vi.fn(),
   onBrowseSessions?: () => void,
+  entryOverrides: Partial<SessionEntry> = {},
 ) {
   return render(
     <TerminalSessionView
-      entry={baseEntry()}
+      entry={baseEntry(entryOverrides)}
       descriptor={{ ideaId: "idea-1", ideaTitle: "My Idea", ideaGithubUrl: null }}
       label="Session 1"
       isActive
@@ -440,13 +449,17 @@ describe("TerminalSessionView — session-ended resume (Bug A)", () => {
 
     const resumeButton = screen.getByRole("button", { name: /Resume this conversation/ });
     fireEvent.click(resumeButton);
-    expect(onResumeEndedSession).toHaveBeenCalledWith({
-      resume: undefined,
-      resumeId: "claude-conv-abc",
-      cwd: "/Users/nick/projects/vibe-coding-ideas",
-      taskId: undefined,
-      taskTitle: undefined,
-    });
+    expect(onResumeEndedSession).toHaveBeenCalledWith(
+      {
+        resume: undefined,
+        resumeId: "claude-conv-abc",
+        cwd: "/Users/nick/projects/vibe-coding-ideas",
+        taskId: undefined,
+        taskTitle: undefined,
+        ideaId: undefined,
+      },
+      "sess-1",
+    );
 
     // The blind mint stays available too, but relabelled so it's never
     // confused with Resume.
@@ -464,13 +477,33 @@ describe("TerminalSessionView — session-ended resume (Bug A)", () => {
     renderEndedView(onResumeEndedSession);
 
     fireEvent.click(screen.getByRole("button", { name: /Resume this conversation/ }));
-    expect(onResumeEndedSession).toHaveBeenCalledWith({
-      resume: true,
-      resumeId: undefined,
+    expect(onResumeEndedSession).toHaveBeenCalledWith(
+      {
+        resume: true,
+        resumeId: undefined,
+        cwd: "/Users/nick/projects/vibe-coding-ideas",
+        taskId: undefined,
+        taskTitle: undefined,
+        ideaId: undefined,
+      },
+      "sess-1",
+    );
+  });
+
+  it("carries this tab's own recorded board (entry.ideaId) so the dock can route a resume of an already-mis-filed session back to its true board (propagation fix, bug 62e57071)", () => {
+    const onResumeEndedSession = vi.fn();
+    installMockEndedSession({
+      endedReason: "idle",
       cwd: "/Users/nick/projects/vibe-coding-ideas",
-      taskId: undefined,
-      taskTitle: undefined,
+      claudeSessionId: "claude-conv-abc",
     });
+    renderEndedView(onResumeEndedSession, undefined, { ideaId: "idea-other-board" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Resume this conversation/ }));
+    expect(onResumeEndedSession).toHaveBeenCalledWith(
+      expect.objectContaining({ ideaId: "idea-other-board" }),
+      "sess-1",
+    );
   });
 
   it("hides Resume entirely and keeps the plain 'Launch again' button when no cwd is known (legacy pre-0.3.3 session)", () => {

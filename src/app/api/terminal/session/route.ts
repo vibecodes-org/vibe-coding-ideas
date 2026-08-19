@@ -146,6 +146,44 @@ export async function POST(req: Request) {
       }
     }
 
+    // ── task/idea correctness guard (cross-board resume bug 62e57071) ───────
+    // `terminal_sessions.task_id` carries no FK to `idea_id` (see the
+    // 00141_terminal_sessions migration), so nothing at the DB layer stops a
+    // client from minting a session that claims a task from one board while
+    // registering it under a DIFFERENT idea_id — exactly the shape a
+    // mis-filed Recent-row resume produces client-side (see chooser-data.ts
+    // / terminal-dock.tsx for the client-side fix). This is the server-side
+    // backstop: reject only a task_id we can SEE and KNOW belongs to another
+    // idea. A task_id that resolves to no row at all is let through
+    // deliberately — with no FK, a task deleted between page load and this
+    // click is a benign race, not a boundary this guard exists to police;
+    // only a CONFIRMED cross-idea mismatch is rejected.
+    if (taskId) {
+      const { data: task, error: taskLookupErr } = await supabase
+        .from("board_tasks")
+        .select("id, idea_id")
+        .eq("id", taskId)
+        .maybeSingle();
+      if (taskLookupErr) {
+        // Best-effort, same fail-open posture as the budget/reap reads below
+        // — a transient read error must never itself block a legitimate
+        // mint.
+        logger.error("Terminal session mint: task lookup failed", {
+          error: taskLookupErr.message,
+          taskId,
+          ideaId,
+        });
+      } else if (task && task.idea_id !== ideaId) {
+        logger.warn("Terminal session mint refused: task belongs to a different board", {
+          userId: user.id,
+          ideaId,
+          taskId,
+          taskIdeaId: task.idea_id,
+        });
+        return NextResponse.json({ error: "That task doesn't belong to this board" }, { status: 400 });
+      }
+    }
+
     const nowMs = Date.now();
 
     // ── (a-1) MITIGATION 3 — ACCOUNT-WIDE daily relay budget breaker. Gated

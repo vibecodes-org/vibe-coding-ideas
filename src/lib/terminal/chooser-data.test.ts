@@ -43,6 +43,30 @@ describe("deriveChooserSections", () => {
     expect(sections.liveElsewhere.map((r) => r.sid)).toEqual(["live-elsewhere"]);
   });
 
+  // Cross-board resume fix (bug 62e57071): unlike liveHere/liveElsewhere just
+  // above, Recent is DELIBERATELY never filtered by `currentIdeaId` — a row
+  // from another board must still be OFFERED here so the user can reach it
+  // at all (terminal-dock.tsx's handleChooserResume/handleTaskChoiceReconnect
+  // are what enforce board-correctness, by navigating to the row's own board
+  // before minting, rather than this module silently hiding the row). Pinned
+  // explicitly so a future "tidy up Recent to match the live sections"
+  // change doesn't quietly reintroduce that filter without an actual
+  // decision to do so.
+  it("still offers a Recent row from a DIFFERENT board — Recent is deliberately never idea-scoped", () => {
+    const rows = [
+      row({
+        sid: "ended-elsewhere",
+        ideaId: IDEA_B,
+        status: "ended",
+        cwd: "~/projects/other-board",
+        endedAt: new Date(NOW - 60_000).toISOString(),
+      }),
+    ];
+    const recent = deriveChooserSections(rows, IDEA_A, NOW).recent;
+    expect(recent.map((r) => r.sid)).toEqual(["ended-elsewhere"]);
+    expect(recent[0].ideaId).toBe(IDEA_B);
+  });
+
   it("includes a recently-ended row (with a recorded cwd) in Recent", () => {
     const rows = [
       row({

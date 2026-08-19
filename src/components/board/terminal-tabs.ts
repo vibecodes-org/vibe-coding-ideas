@@ -39,6 +39,20 @@ export interface SessionEntry {
   origin: "toolbar" | "task" | "reconnect" | "resume";
   taskId?: string;
   taskTitle?: string;
+  /**
+   * Cross-board resume fix (bug 62e57071): the idea this entry's conversation
+   * actually belongs to, resolved once at creation (`payload?.ideaId ??
+   * <the dock's own ideaId prop>` — see terminal-dock.tsx's `mintAndDeliver`).
+   * Always resolves to a concrete value for anything minted after this fix
+   * shipped, so it's the one place terminal-session-view.tsx's ended-panel
+   * Resume can read "which board does clicking Resume on THIS tab actually
+   * belong to" without re-deriving it — see that file's `handleResume` and
+   * terminal-dock.tsx's `handleResumeEndedSession`. Undefined only for a
+   * `reconnect`-origin entry (reattach always happens already on the row's
+   * own board — see `performReattach` — so there's nothing to disambiguate)
+   * or an entry that predates this field.
+   */
+  ideaId?: string;
   createdAt: number;
   launchSeq: number;
   launchPayload: BrowserLaunchPayload | null;
