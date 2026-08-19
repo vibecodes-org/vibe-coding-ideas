@@ -50,9 +50,45 @@ describe("TerminalTaskLaunchChoice", () => {
         match={LIVE_HERE_MATCH}
         onReconnect={vi.fn()}
         onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
       />,
     );
     expect(screen.queryByTestId("terminal-task-launch-choice")).not.toBeInTheDocument();
+  });
+
+  it("can be cancelled — Cancel and Escape both back out without launching (Nick, 2026-08-19)", () => {
+    const onCancel = vi.fn();
+    const onStartFresh = vi.fn();
+    const onReconnect = vi.fn();
+    const { rerender } = render(
+      <TerminalTaskLaunchChoice
+        open
+        taskTitle="Fix login bug"
+        match={LIVE_HERE_MATCH}
+        onReconnect={onReconnect}
+        onStartFresh={onStartFresh}
+        onCancel={onCancel}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: /^Cancel$/ }));
+    expect(onCancel).toHaveBeenCalledTimes(1);
+    // Backing out must never be mistaken for either real action.
+    expect(onStartFresh).not.toHaveBeenCalled();
+    expect(onReconnect).not.toHaveBeenCalled();
+
+    rerender(
+      <TerminalTaskLaunchChoice
+        open
+        taskTitle="Fix login bug"
+        match={LIVE_HERE_MATCH}
+        onReconnect={onReconnect}
+        onStartFresh={onStartFresh}
+        onCancel={onCancel}
+      />,
+    );
+    fireEvent.keyDown(screen.getByTestId("terminal-task-launch-choice"), { key: "Escape", code: "Escape" });
+    expect(onCancel).toHaveBeenCalledTimes(2);
   });
 
   it("labels a live match 'Reconnect' and fires onReconnect", () => {
@@ -64,6 +100,7 @@ describe("TerminalTaskLaunchChoice", () => {
         match={LIVE_HERE_MATCH}
         onReconnect={onReconnect}
         onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
       />,
     );
     expect(screen.getByText(/already has a terminal running/i)).toBeInTheDocument();
@@ -81,6 +118,7 @@ describe("TerminalTaskLaunchChoice", () => {
         match={RECENT_MATCH}
         onReconnect={onReconnect}
         onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
       />,
     );
     expect(screen.getByText(/recent session/i)).toBeInTheDocument();
@@ -107,6 +145,7 @@ describe("TerminalTaskLaunchChoice", () => {
         match={noCwdMatch}
         onReconnect={onReconnect}
         onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
       />,
     );
     expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
@@ -123,6 +162,7 @@ describe("TerminalTaskLaunchChoice", () => {
         match={LIVE_HERE_MATCH}
         onReconnect={vi.fn()}
         onStartFresh={onStartFresh}
+        onCancel={vi.fn()}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /start fresh anyway/i }));
@@ -138,6 +178,7 @@ describe("TerminalTaskLaunchChoice", () => {
         match={LIVE_HERE_MATCH}
         onReconnect={vi.fn()}
         onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
       />,
     );
     expect(screen.getByRole("button", { name: "Reconnect" })).toBeDisabled();
