@@ -178,15 +178,23 @@ interface TerminalSessionViewProps {
    */
   onResumeEndedSession?: (payload: BrowserLaunchPayload) => void;
   /**
-   * Opens the dock's "My sessions" panel — the SAME trigger `onCapExceeded`
-   * already uses (E1, design §7b). Rendered as a small tertiary link under
-   * the ended-panel's button row: a user staring at one ended session had no
-   * way to see their other live/recent ones without hunting for the
-   * collapsed-bar trigger. Omitted hides the link entirely (defensive, the
-   * same optional-callback-gated-UI pattern `onPopOut`/`onResumeEndedSession`
+   * Opens the dock's full session CHOOSER — live sessions AND the "Recent —
+   * ended in the last 48h" rows you can resume. Rendered as a small tertiary
+   * link under the ended-panel's button row: a user staring at one ended
+   * session had no way to see their other live/recent ones.
+   *
+   * Deliberately NOT `onCapExceeded`'s "My sessions" panel, which this link
+   * originally shared (Nick's field report 2026-08-19): that panel filters to
+   * `status === "active"` by construction, so from an ended session it could
+   * never show the one thing the link's own wording promises — the ended
+   * sessions you might want to resume. Cap-exceeded still uses it correctly,
+   * because a cap is about what's *running*.
+   *
+   * Omitted hides the link entirely (defensive, the same
+   * optional-callback-gated-UI pattern `onPopOut`/`onResumeEndedSession`
    * already use in this file).
    */
-  onOpenMySessions?: () => void;
+  onBrowseSessions?: () => void;
 }
 
 export function TerminalSessionView({
@@ -207,7 +215,7 @@ export function TerminalSessionView({
   onReconnectTakenOver,
   onRetryReconnect,
   onResumeEndedSession,
-  onOpenMySessions,
+  onBrowseSessions,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -562,7 +570,7 @@ export function TerminalSessionView({
               onReconnectTakenOver={() => {
                 if (pair) onReconnectTakenOver?.(pair.sessionId);
               }}
-              onOpenMySessions={onOpenMySessions}
+              onBrowseSessions={onBrowseSessions}
             />
           )}
           {state.status === "disconnected" && (
@@ -675,7 +683,7 @@ function StateOverlay({
   onResume,
   onCopyBridge,
   onReconnectTakenOver,
-  onOpenMySessions,
+  onBrowseSessions,
 }: {
   view: DockView;
   state: TerminalConnectionState;
@@ -704,7 +712,7 @@ function StateOverlay({
   onCopyBridge: () => void;
   onReconnectTakenOver: () => void;
   /** See TerminalSessionViewProps' same-named prop. */
-  onOpenMySessions?: () => void;
+  onBrowseSessions?: () => void;
 }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
@@ -791,16 +799,16 @@ function StateOverlay({
             </Button>
           )}
           {/* Bug cbe60db5-followup-2 (low-medium): the ended panel used to be
-              a dead end for anyone who forgot where the collapsed bar's "My
-              sessions" trigger lives — this reuses the exact same
-              openMySessions callback onCapExceeded already wires (E1, design
-              §7b), just from a second entry point. Tertiary, so it never
-              competes with the primary Resume/Launch-again action above. */}
-          {onOpenMySessions && (
+              a dead end for anyone wanting their other sessions. Tertiary, so
+              it never competes with the primary Resume/Launch-again action
+              above. Opens the CHOOSER (live + resumable recent), not the
+              running-only "My sessions" panel it originally shared with
+              onCapExceeded — see onBrowseSessions' doc. */}
+          {onBrowseSessions && (
             <button
               type="button"
               className="text-[11px] text-zinc-500 underline hover:text-zinc-300"
-              onClick={onOpenMySessions}
+              onClick={onBrowseSessions}
             >
               View my other sessions
             </button>

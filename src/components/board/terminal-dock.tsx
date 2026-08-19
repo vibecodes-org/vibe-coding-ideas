@@ -223,7 +223,20 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // a tab is already open (possibly actively connected) — the tab strip and
   // that tab's live `TerminalSessionView` stay mounted, connected, and
   // visible underneath; only clicking an action inside the overlay closes it.
-  const [chooserOpen, setChooserOpen] = useState(false);
+  //
+  // `chooserMode` records WHY it opened, because the two reasons want
+  // different dismissal rules (Nick's field report 2026-08-19):
+  //  - "launch": a launch fired and must resolve to exactly one outcome, so
+  //    the overlay is a forced choice — no close button, Escape and
+  //    outside-click both suppressed. Unchanged behaviour.
+  //  - "browse": the user followed the ended panel's "View my other sessions"
+  //    link purely to LOOK. Nothing is pending, so trapping them until they
+  //    start or reconnect something would be worse than the dead end the link
+  //    was added to fix — this mode is freely dismissible.
+  // Kept as one state rather than a second boolean so "open" and "why" can
+  // never drift out of sync; `chooserOpen` stays derived for every read site.
+  const [chooserMode, setChooserMode] = useState<"launch" | "browse" | null>(null);
+  const chooserOpen = chooserMode !== null;
   // Task-launch-skip-chooser (Nick's explicit product decision, 2026-08-16):
   // a per-task launch (payload carries `taskId`) never opens the full
   // chooser above — it either mints immediately (no existing session for
@@ -832,7 +845,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // visible underneath.
         setExpanded(true);
         setPendingLaunch(payload);
-        if (sessionsRef.current.length > 0) setChooserOpen(true);
+        if (sessionsRef.current.length > 0) setChooserMode("launch");
         return;
       }
       mintAndDeliver(payload);
@@ -981,7 +994,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // open, `deliverLaunch` couldn't know the resolved kind yet at queue
         // time, so the overlay hasn't been shown — open it now,
         // non-destructively.
-        if (sessions.length > 0) setChooserOpen(true);
+        if (sessions.length > 0) setChooserMode("launch");
         return;
       }
       const payload = pendingLaunch;
@@ -1021,7 +1034,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   // ── chooser action handlers ─────────────────────────────────────────────────
   // Shared by BOTH the sessions.length === 0 body-swap chooser and the
-  // sessions.length > 0 overlay (rework 11) — the `setChooserOpen(false)` in
+  // sessions.length > 0 overlay (rework 11) — the `setChooserMode(null)` in
   // each is a no-op when it was never opened (the body-swap case), and the
   // one thing that's allowed to close the overlay per the design's
   // non-disruption guarantee: only an explicit action in here, never an
@@ -1030,14 +1043,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   const handleChooserStartNew = useCallback(() => {
     const payload = pendingLaunch;
     setPendingLaunch(null);
-    setChooserOpen(false);
+    setChooserMode(null);
     mintAndDeliver(payload);
   }, [pendingLaunch, mintAndDeliver]);
 
   const handleChooserReconnectHere = useCallback(
     (row: ChooserLiveRow) => {
       setPendingLaunch(null);
-      setChooserOpen(false);
+      setChooserMode(null);
       void performReattach(row.sid, { focus: true });
     },
     [performReattach],
@@ -1045,7 +1058,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   const handleChooserOpenBoardAndReconnect = useCallback(
     (row: ChooserLiveRow) => {
-      setChooserOpen(false);
+      setChooserMode(null);
       router.push(`/ideas/${row.ideaId}/board?reconnect=${encodeURIComponent(row.sid)}`);
     },
     [router],
@@ -1054,7 +1067,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   const handleChooserResume = useCallback(
     (row: ChooserRecentRow) => {
       setPendingLaunch(null);
-      setChooserOpen(false);
+      setChooserMode(null);
       // F4's Resume: the EXISTING (capped) launch flow, carrying the ended
       // row's own recorded folder instead of a bootstrap prompt — see
       // BrowserLaunchPayload's doc and use-terminal-session.ts's
@@ -1073,6 +1086,24 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     },
     [mintAndDeliver],
   );
+
+  // The ended panel's "View my other sessions" link (Nick's field report
+  // 2026-08-19). It used to call `openMySessions`, which opens a panel that
+  // filters to `status === "active"` by construction — so from an ended
+  // session it showed a list that could never contain the ended/resumable
+  // rows the wording promises. This opens the chooser instead: the same
+  // component the launch flow uses, which has the "Recent — ended in the last
+  // 48h" section with its per-row Resume.
+  //
+  // Refreshes first because the session the user just ended is very likely
+  // NOT in `registryRows` as ended yet — without this the chooser would open
+  // missing the very row they came looking for. `refreshRegistry` swallows
+  // and toasts its own failures, so a stale-but-present list still opens
+  // rather than the link doing nothing.
+  const openChooserToBrowse = useCallback(() => {
+    setChooserMode("browse");
+    void refreshRegistry();
+  }, [refreshRegistry]);
 
   // Task-launch-skip-chooser: the minimal task-scoped choice's two actions.
   // Re-derives the match from the CURRENT `chooserSections` (rather than
@@ -1475,7 +1506,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onRegisterActions={registerActions}
             onAnnounce={announce}
             onCapExceeded={openMySessions}
-            onOpenMySessions={openMySessions}
+            onBrowseSessions={openChooserToBrowse}
             poppedOut={poppedOutKeys.has(entry.key)}
             onPopOut={() => handlePopOut(entry.key)}
             onBringBack={() => bringBackToDock(entry.key)}
@@ -1492,17 +1523,32 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           open (possibly actively connected). The tab strip and every
           `TerminalSessionView` render in the (untouched) block above this
           one, so opening this Dialog neither unmounts nor re-renders them —
-          it's a Portal-rendered overlay layered on top, nothing more. Forced
-          choice (matches onboarding-dialog.tsx's pattern): no close button,
-          outside-click and Escape are both suppressed — only an action
-          inside the chooser (wired to also call `setChooserOpen(false)`)
-          closes it. */}
-      <Dialog open={chooserOpen && sessions.length > 0} onOpenChange={() => {}}>
+          it's a Portal-rendered overlay layered on top, nothing more.
+
+          Dismissal depends on WHY it opened (`chooserMode`). "launch" is a
+          forced choice (matches onboarding-dialog.tsx's pattern): no close
+          button, outside-click and Escape both suppressed — only an action
+          inside the chooser (wired to also call `setChooserMode(null)`)
+          closes it, because a fired launch must resolve to exactly one
+          outcome. "browse" — the ended panel's "View my other sessions" link
+          — has no pending launch to resolve, so it closes normally; trapping
+          someone who only wanted a look would be worse than the dead end that
+          link exists to fix. */}
+      <Dialog
+        open={chooserOpen && sessions.length > 0}
+        onOpenChange={(next) => {
+          if (!next && chooserMode === "browse") setChooserMode(null);
+        }}
+      >
         <DialogContent
-          showCloseButton={false}
+          showCloseButton={chooserMode === "browse"}
           className="max-w-lg gap-0 border-zinc-700 bg-[#141417] p-0 text-zinc-200 sm:max-w-xl"
-          onInteractOutside={(e) => e.preventDefault()}
-          onEscapeKeyDown={(e) => e.preventDefault()}
+          onInteractOutside={(e) => {
+            if (chooserMode !== "browse") e.preventDefault();
+          }}
+          onEscapeKeyDown={(e) => {
+            if (chooserMode !== "browse") e.preventDefault();
+          }}
         >
           <DialogTitle className="sr-only">Choose a terminal session</DialogTitle>
           <DialogDescription className="sr-only">

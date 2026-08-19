@@ -70,13 +70,31 @@ const { sessionViewMountSpy, sessionViewUnmountSpy } = vi.hoisted(() => ({
 // MANY tabs actually got minted, and with what payload — the real component
 // (and the hook underneath it) is exercised elsewhere.
 vi.mock("./terminal-session-view", () => ({
-  TerminalSessionView: ({ entry }: { entry: { key: string; taskId?: string } }) => {
+  TerminalSessionView: ({
+    entry,
+    onBrowseSessions,
+  }: {
+    entry: { key: string; taskId?: string };
+    onBrowseSessions?: () => void;
+  }) => {
     useEffect(() => {
       sessionViewMountSpy(entry.key);
       return () => sessionViewUnmountSpy(entry.key);
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
-    return <div data-testid="session-view" data-key={entry.key} data-task-id={entry.taskId ?? ""} />;
+    return (
+      <div data-testid="session-view" data-key={entry.key} data-task-id={entry.taskId ?? ""}>
+        {/* Stands in for the ended panel's "View my other sessions" link —
+            the real panel only renders it on the session-ended view, which
+            needs the whole xterm/socket machinery this stub deliberately
+            omits. What matters here is WHERE the dock points the callback. */}
+        {onBrowseSessions && (
+          <button data-testid="view-my-other-sessions" onClick={onBrowseSessions}>
+            View my other sessions
+          </button>
+        )}
+      </div>
+    );
   },
   dockStatusMeta: () => ({ label: "Terminal", Icon: () => null, className: "" }),
 }));
@@ -746,5 +764,103 @@ describe("TerminalDock — another-session-here badge (card eaa55290)", () => {
     fireEvent.click(screen.getByTestId("chooser-reconnect-here-own-sid"));
 
     await waitFor(() => expect(screen.getByText("Another tab is open here")).toBeInTheDocument());
+  });
+});
+
+// Nick's field report, 2026-08-19. From an ENDED session he clicked "View my
+// other sessions" and got the "My sessions" popup — which filters to
+// `status === "active"` by construction (terminal-my-sessions-panel.tsx's
+// `running` memo), so it can never contain the ended/resumable rows the
+// link's own wording promises. The list he wanted — "Recent — ended in the
+// last 48h", with a per-row Resume — lives in the CHOOSER, and until now the
+// only way to reach it was the toolbar's Launch Claude Code.
+//
+// `onCapExceeded` keeps pointing at the My sessions panel on purpose: a cap
+// refusal genuinely IS about what's running, so that list is the right one
+// there. Only the ended panel's browse link moved.
+describe("TerminalDock — ended panel's 'View my other sessions' opens the chooser, not the running-only panel (Nick's field report 2026-08-19)", () => {
+  async function openFirstTabViaChooser() {
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+  }
+
+  it("opens the chooser overlay — the list that actually has resumable ended sessions in it", async () => {
+    // A recent ENDED row is exactly what the old wiring could never show.
+    stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await openFirstTabViaChooser();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+
+    fireEvent.click(screen.getByTestId("view-my-other-sessions"));
+
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    // The whole point: the ended row is present and offers Resume.
+    expect(screen.getByTestId("chooser-resume-sid-recent-task-9")).toBeInTheDocument();
+  });
+
+  it("never mints a session just for looking", async () => {
+    stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await openFirstTabViaChooser();
+    fireEvent.click(screen.getByTestId("view-my-other-sessions"));
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
+    expect(sessionViewUnmountSpy).not.toHaveBeenCalled();
+  });
+
+  it("is dismissible — browsing has no pending launch to resolve, so Escape closes it", async () => {
+    stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await openFirstTabViaChooser();
+    fireEvent.click(screen.getByTestId("view-my-other-sessions"));
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape", code: "Escape" });
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    // Backed out of, not acted on — no new tab, and the open one is intact.
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
+    expect(sessionViewUnmountSpy).not.toHaveBeenCalled();
+  });
+
+  it("still traps a LAUNCH-opened overlay (forced choice, unchanged) — the dismissal relaxation is scoped to browsing", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await openFirstTabViaChooser();
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+
+    fireEvent.keyDown(screen.getByRole("dialog"), { key: "Escape", code: "Escape" });
+
+    // A fired launch must resolve to exactly one outcome — Escape must not
+    // silently swallow it.
+    expect(screen.getByRole("dialog")).toBeInTheDocument();
+  });
+
+  it("resuming an ended session from the browse overlay closes it and launches with that row's own folder and conversation", async () => {
+    const ended = { ...recentRowForTask("task-9"), claudeSessionId: "claude-conv-xyz" };
+    stubFetch(Promise.resolve([ended]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await openFirstTabViaChooser();
+    fireEvent.click(screen.getByTestId("view-my-other-sessions"));
+    await waitFor(() => expect(screen.getByTestId("chooser-resume-sid-recent-task-9")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("chooser-resume-sid-recent-task-9"));
+
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+    // Carries the ended row's task through, so the resumed tab is the same
+    // piece of work — not a blank session in the same folder.
+    const taskIds = screen.getAllByTestId("session-view").map((el) => el.dataset.taskId);
+    expect(taskIds).toContain("task-9");
   });
 });
