@@ -90,11 +90,13 @@ vi.mock("./terminal-session-view", () => ({
     onResumeEndedSession,
     onBrowseSessions,
     onReportSummary,
+    onPopOut,
   }: {
     entry: { key: string; taskId?: string; ideaId?: string };
     onResumeEndedSession?: (payload: { cwd?: string; taskId?: string; ideaId?: string }, sid: string | null) => void;
     onBrowseSessions?: () => void;
     onReportSummary: (key: string, summary: Record<string, unknown>) => void;
+    onPopOut?: () => void;
   }) => {
     useEffect(() => {
       sessionViewMountSpy(entry.key);
@@ -144,6 +146,33 @@ vi.mock("./terminal-session-view", () => ({
         >
           report ended
         </button>
+        {/* Lets a test drive this tab to a real MINTED-and-connected status —
+            `handlePopOut` (terminal-dock.tsx) bails out silently unless the
+            summary carries both a sessionId and a browserToken, so the
+            resize-handle-hides-on-popout test needs this to reach the pop-out
+            call at all. */}
+        <button
+          data-testid={`report-connected-${entry.key}`}
+          onClick={() =>
+            onReportSummary(entry.key, {
+              status: "connected",
+              sessionId: `sid-for-${entry.key}`,
+              errorKind: null,
+              launchPhase: "idle",
+              platformSupported: true,
+              paired: true,
+              browserToken: `token-for-${entry.key}`,
+              readOnly: false,
+            })
+          }
+        >
+          report connected
+        </button>
+        {onPopOut && (
+          <button data-testid={`pop-out-${entry.key}`} onClick={onPopOut}>
+            Pop out
+          </button>
+        )}
       </div>
     );
   },
@@ -1260,5 +1289,37 @@ describe("TerminalDock — browsing renders IN the panel when nothing is running
     expect(taskIds).toContain("task-9");
     // The list gave way to the terminal again once acted on.
     expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
+  });
+});
+
+describe("TerminalDock — resize handle hidden while the active tab is popped out (card 534d2049, AC3 rework)", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("shows the drag handle for an expanded, docked session, then hides it the moment that session pops out", async () => {
+    stubFetch(Promise.resolve([]));
+    // jsdom has no real window.open — stand in a bare object `openPopoutWindow`
+    // (popout-channel.ts) can set `.opener = null` on without throwing, so
+    // `handlePopOut` proceeds past its popup-blocked guard exactly like a real
+    // successful pop-out.
+    vi.spyOn(window, "open").mockReturnValue({ opener: {} } as unknown as Window);
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const key = screen.getByTestId("session-view").dataset.key as string;
+
+    fireEvent.click(screen.getByRole("button", { name: "Expand terminal panel" }));
+    expect(screen.getByTestId("terminal-dock-resize-handle")).toBeInTheDocument();
+
+    // `handlePopOut` bails out silently unless the tab already carries a
+    // minted sessionId + browserToken — give it one before popping out.
+    fireEvent.click(screen.getByTestId(`report-connected-${key}`));
+    fireEvent.click(screen.getByTestId(`pop-out-${key}`));
+
+    // There is nothing to resize once the active face is the compact
+    // placeholder (terminal-session-view.tsx) — a live handle over it would
+    // invite a drag with no terminal body underneath.
+    expect(screen.queryByTestId("terminal-dock-resize-handle")).not.toBeInTheDocument();
   });
 });

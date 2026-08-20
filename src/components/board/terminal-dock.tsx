@@ -90,6 +90,7 @@ import {
 import { decideEntryBehaviour, type EntryDecision } from "@/lib/terminal/entry-decision";
 import { loadSessionSnapshot, readLastTabSid, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
 import { readDockOpen, writeDockOpen } from "@/lib/terminal/dock-open-persistence";
+import { useDockInset } from "./terminal-dock-inset";
 import { useDockHeight, TerminalDockResizeHandle } from "./terminal-dock-resize";
 import { getMachineIdentity } from "@/lib/terminal/machine-identity";
 import { fetchHelperStatus, type HelperStatus } from "@/lib/terminal/helper-row";
@@ -328,6 +329,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // exposed to the per-session bodies as a CSS variable on the root below.
   // See terminal-dock-resize.tsx for the full contract.
   const dockHeight = useDockHeight();
+  // Reserve the dock's footprint at the bottom of the page, so board
+  // columns can scroll past it instead of ending underneath it (card 534d2049).
+  const dockInsetRef = useDockInset();
 
   // ── session entry chooser (card cbe60db5) — registry fetch + entry decision ──
   //
@@ -1373,6 +1377,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   return (
     <div
+      // `dockInsetRef` measures this element and publishes its height as
+      // `--vc-term-dock-inset`, which the board page reserves as bottom
+      // padding. Without it this fixed overlay covers the last cards of every
+      // column with no way to scroll to them (card 534d2049).
+      ref={dockInsetRef}
       className="fixed inset-x-0 bottom-0 z-40 border-t border-zinc-700 bg-[#141417] text-zinc-200 shadow-[0_-8px_30px_rgba(0,0,0,0.4)]"
       style={dockHeight.rootStyle}
     >
@@ -1380,8 +1389,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           expanded AND at least one session body is rendered — collapsed there
           is nothing to size, and the chooser/loading faces size themselves.
           The remembered height still applies the moment the dock re-expands
-          (the CSS variable on the root above is always set). */}
-      {expanded && sessions.length > 0 && <TerminalDockResizeHandle controller={dockHeight} />}
+          (the CSS variable on the root above is always set). Also hidden
+          while the active tab is popped out (card 534d2049 rework): its face
+          is the compact placeholder, which sizes itself to its content, not
+          `--vc-term-dock-h` — there is nothing to resize, and a live handle
+          sitting over a collapsed placeholder invites a confusing drag. */}
+      {expanded && sessions.length > 0 && !activeIsPoppedOut && <TerminalDockResizeHandle controller={dockHeight} />}
 
       {/* Shared aria-live region — background-tab attention only (a11y §14). */}
       <div aria-live="polite" role="status" className="sr-only">

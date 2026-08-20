@@ -344,7 +344,7 @@ describe("TerminalSessionView — pop-out host mounting", () => {
 
     expect(screen.getByText("Popped out")).toBeInTheDocument();
     expect(
-      screen.getByText(/This session is open in another window/),
+      screen.getByText(/Running in another window/),
     ).toBeInTheDocument();
 
     const host = lastContainerRef?.current ?? null;
@@ -371,6 +371,20 @@ describe("TerminalSessionView — pop-out host mounting", () => {
     // aria-hidden wrapper.
     const placeholder = screen.getByText("Popped out");
     expect(placeholder.closest('[aria-hidden="true"]')).not.toBeNull();
+  });
+
+  it("does not size the popped-out placeholder to the dock's `--vc-term-dock-h` — it must size to its own content so the dock (and the board's reserved padding) shrinks when popped out (card 534d2049 AC3)", () => {
+    installMockSession();
+    renderView(true);
+
+    const placeholder = screen.getByTestId("popped-out-placeholder");
+    // The live face's terminal body (h-[var(--vc-term-dock-h,38vh)]) is what
+    // used to be mirrored here — reusing it was the exact reason popping out
+    // never gave the board any height back. The placeholder must have no
+    // fixed/dock-linked height at all, only natural content sizing.
+    expect(placeholder.className).not.toContain("--vc-term-dock-h");
+    expect(placeholder.className).not.toMatch(/\bh-\[/);
+    expect(placeholder.className).not.toMatch(/\bmin-h-\[/);
   });
 });
 

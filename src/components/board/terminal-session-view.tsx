@@ -415,21 +415,29 @@ export function TerminalSessionView({
           this is purely this component's PRESENTATION. The tab strip above
           this component is unaffected (owned by terminal-dock.tsx). */}
       <div className={cn(!poppedOut && "hidden")} aria-hidden={!poppedOut}>
-        <div className="flex h-[var(--vc-term-dock-h,38vh)] min-h-[160px] flex-col items-center justify-center gap-3 bg-[#0c0c0e] px-6 py-6 text-center">
-          <span className="text-2xl text-violet-400" aria-hidden="true">
+        {/* Sized to its own content, not `--vc-term-dock-h` (card 534d2049
+            AC3: "popping it out ... gives the board its full height back").
+            The dock ROOT's height is now MEASURED (terminal-dock-inset.ts's
+            ResizeObserver), not asserted, so shrinking this placeholder is
+            the entire fix — the dock (and the board padding reserved for it)
+            shrinks with it, with no further wiring. */}
+        <div data-testid="popped-out-placeholder" className="flex items-center gap-3 bg-[#0c0c0e] px-4 py-3">
+          <span className="text-lg text-violet-400" aria-hidden="true">
             ⧉
           </span>
-          <div className="text-base font-semibold text-violet-400">Popped out</div>
-          <p className="max-w-md text-[13px] text-zinc-400">
-            This session is open in another window. It keeps running there — close that window and it
-            returns here automatically.
-          </p>
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-semibold text-violet-400">Popped out</div>
+            <p className="truncate text-[11.5px] text-zinc-400">
+              Running in another window — close it to bring this back.
+            </p>
+          </div>
           <Button
-            className="bg-sky-500 text-sky-950 hover:bg-sky-400"
+            size="xs"
+            className="flex-none bg-sky-500 text-sky-950 hover:bg-sky-400"
             onClick={onBringBack}
             aria-label={`Bring back to dock: ${label}`}
           >
-            <Undo2 className="h-4 w-4" /> Bring back to dock
+            <Undo2 className="h-3.5 w-3.5" /> Bring back to dock
           </Button>
         </div>
       </div>
@@ -548,8 +556,9 @@ export function TerminalSessionView({
             HEIGHT (card b885ebfd): read from the `--vc-term-dock-h` CSS
             variable the dock sets on its root (user-resizable via the drag
             handle — terminal-dock-resize.tsx); `38vh` is the SSR/first-paint
-            fallback and the popped-out placeholder above uses the same value
-            so the two faces never differ in size. */}
+            fallback. The popped-out placeholder above no longer matches this
+            height — it sizes to its own (much shorter) content instead, so
+            popping out hands the board back its full height (card 534d2049). */}
         <div className="relative h-[var(--vc-term-dock-h,38vh)] min-h-[160px]">
           <div
             ref={containerRef}
