@@ -444,7 +444,9 @@ export function TerminalMySessionsPanel({
                   {!renaming && (
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-zinc-100">
-                        <span className="truncate">{label}</span>
+                        <span className="truncate" title={label}>
+                          {label}
+                        </span>
                         {showIdeaChip && (
                           <span className="flex-none truncate text-[11.5px] font-normal text-zinc-500">
                             {s.ideaTitle}

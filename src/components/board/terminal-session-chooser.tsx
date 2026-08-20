@@ -467,7 +467,9 @@ function LiveRow({
       {!renaming && (
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-zinc-100">
-            <span className="truncate">{label}</span>
+            <span className="truncate" title={label}>
+              {label}
+            </span>
             {showIdeaChip && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
             {badge && (
               <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-300">
@@ -552,7 +554,9 @@ function RecentRow({
         {!renaming && (
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-zinc-100">
-              <span className="truncate">{label}</span>
+              <span className="truncate" title={label}>
+                {label}
+              </span>
               {showIdeaChip && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
             </div>
             <div className="truncate font-mono text-[11px] text-zinc-500">
