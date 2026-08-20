@@ -836,11 +836,12 @@ export function buildBoardBootstrapPrompt({
 }: BoardBootstrapArgs): string {
   const dir = directoryBlock({ ideaId, mode, repoUrl, newProject });
   const mcp = mcpSetupHead(appUrl);
-  const work = `Then, pick up my work on the VibeCodes board for this idea:
+  const work = `Then, pick up my work on the VibeCodes board for this idea — but ASK me first, don't just start:
   • Idea: "${ideaTitle}"  (idea_id: ${ideaId})
   • Call get_board with idea_id ${ideaId} to see the columns and tasks. Do NOT use get_my_tasks here — it only returns tasks already ASSIGNED to you, and a freshly created board has none, so it would look (wrongly) like there's no work.
-  • Pick the top unstarted task (e.g. the first item in To Do, then Backlog), read it with get_task, assign it to yourself, and move it to In Progress. Only ever pick a task from To Do or Backlog — NEVER touch a task already in In Progress, Blocked, or Verify, even if it looks interrupted or interesting. Another live session may be actively working it right now.
-  • If that task has a workflow attached, use claim_next_step to claim its next step and follow the orchestration loop instead.
+  • Identify the top unstarted task (e.g. the first item in To Do, then Backlog). Only ever pick a task from To Do or Backlog — NEVER touch a task already in In Progress, Blocked, or Verify, even if it looks interrupted or interesting. Another live session may be actively working it right now.
+  • Then STOP and ask me: tell me which task is next up and ask whether you should pick it up, or whether I want something else (report a new bug, continue work in flight, a question, …). Wait for my reply. Do NOT call get_task, assign, move or start anything before I answer.
+  • If I say yes: read it with get_task, assign it to yourself, and move it to In Progress. If that task has a workflow attached, use claim_next_step to claim its next step and follow the orchestration loop instead.
 
 Use the MCP tools (get_board / get_task / claim_next_step / move_task / add_task_comment / …) to do the work. Move the task to In Progress and comment as you go.`;
 
@@ -1011,7 +1012,7 @@ function buildCompactStepPieces({
 
   const work = taskId
     ? `Work this task: get_task (task_id ${taskId}, idea_id ${ideaId}), move it to In Progress, then start. Comment as you go.`
-    : `Find work: call get_board (idea_id ${ideaId}) — NOT get_my_tasks, which only returns tasks already assigned to you (a new board has none). Only To Do/Backlog, never In Progress/Blocked/Verify (may be live). get_task it, assign it to yourself, move it to In Progress, then start. Comment as you go.`;
+    : `Find work, but ASK first: call get_board (idea_id ${ideaId}), NOT get_my_tasks. Only To Do/Backlog, never In Progress/Blocked/Verify (may be live). Name the top one, ask before starting it, and wait for my reply. Then get_task, assign to yourself, move to In Progress, start. Comment as you go.`;
 
   const header = taskId
     ? `Set up VibeCodes and work a board task for "${title}".`

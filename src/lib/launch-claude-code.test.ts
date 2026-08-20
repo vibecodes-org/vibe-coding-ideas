@@ -345,6 +345,23 @@ describe("buildBoardBootstrapPrompt", () => {
     expect(p).toMatch(/Another live session may be actively working it right now/);
   });
 
+  // Card bd018a86: the verbose (copy-command) board prompt gets the same
+  // ask-first gate as the compact deep-link one — a fresh session must offer
+  // the next task and wait, not assign and start it unprompted.
+  it("board prompt asks before starting, and blocks any board write until answered", () => {
+    const p = buildBoardBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: "https://github.com/acme/widget",
+    });
+    expect(p).toMatch(/ASK me first, don't just start/);
+    expect(p).toMatch(/STOP and ask me/);
+    expect(p).toMatch(/Wait for my reply/);
+    expect(p).toMatch(/Do NOT call get_task, assign, move or start anything before I answer/);
+  });
+
   it("create-new mode injects mkdir and git clone when repo present", () => {
     const p = buildBoardBootstrapPrompt({
       appUrl: APP_URL,
@@ -1266,6 +1283,36 @@ describe("buildCompactBootstrapPrompt (deep-link prompt)", () => {
     expect(p).toContain("In Progress");
     // dir step comes before the MCP step
     expect(p.indexOf("mkdir -p")).toBeLessThan(p.indexOf("claude mcp add"));
+  });
+
+  // Card bd018a86: a board-level launch (no task chosen) must NOT silently
+  // start on the top of the queue — the session exists for whatever the user
+  // opened it for, and grabbing a task without asking forces them to interrupt
+  // it. It must name the next task, ask, and WAIT. A per-task launch is the
+  // opposite: the task was already chosen, so it goes straight in with no ask.
+  it("board-level launch asks before starting; per-task launch does not", () => {
+    const boardLevel = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: null,
+    });
+    expect(boardLevel).toMatch(/ASK first/);
+    expect(boardLevel).toMatch(/ask before starting it/);
+    expect(boardLevel).toMatch(/wait for my reply/);
+
+    const perTask = buildCompactBootstrapPrompt({
+      appUrl: APP_URL,
+      ideaId: "idea-1",
+      ideaTitle: "My Idea",
+      mode: "existing",
+      repoUrl: null,
+      taskId: "task-1",
+    });
+    expect(perTask).toContain("Work this task");
+    expect(perTask).not.toMatch(/ASK first/);
+    expect(perTask).not.toMatch(/wait for my reply/);
   });
 
   // Card 4cdcb33a: same hard exclusion as the full board bootstrap prompt, but
