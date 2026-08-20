@@ -445,6 +445,30 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   const [splitAssignment, setSplitAssignment] = useState<PaneAssignment>({ left: null, right: null });
   // Exactly ONE pane owns the keyboard at all times (the hard requirement).
   const [focusedSide, setFocusedSide] = useState<PaneSide>("left");
+  // Split-view focus-sync defect fix (task df7a0134, QA rework): `focusedSide`
+  // above is the APP's declared intent — which pane a click/chord/forced move
+  // targeted. It says nothing about whether the keyboard is ACTUALLY there
+  // right now. `keyboardLive` is that ground truth: true only while real DOM
+  // focus genuinely sits inside one of the two panes' xterm inputs — false
+  // the instant it leaves both (click elsewhere on the page, window blur), so
+  // neither pane's "Typing here" chip can ever be shown while nothing
+  // actually holds the keyboard. Fed into `paneFocused` below alongside
+  // `focusedSide`; kept true by every explicit "grab the keyboard" call site
+  // (`movePaneFocus`, entering split, drag-to-dock) via `markPaneFocusLive`,
+  // and corrected by real focus/blur events via `handlePaneFocusChange` —
+  // see both below.
+  const [keyboardLive, setKeyboardLive] = useState(false);
+  // Which pane's textarea most recently reported real focus — read by the
+  // deferred blur check in `handlePaneFocusChange` so a focus move BETWEEN
+  // the two panes (blur old, focus new — both synchronous, same tick) never
+  // flickers `keyboardLive` false in between.
+  const liveFocusKeyRef = useRef<string | null>(null);
+  const blurCheckTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  useEffect(() => {
+    return () => {
+      if (blurCheckTimeoutRef.current) clearTimeout(blurCheckTimeoutRef.current);
+    };
+  }, []);
   // Width-floor hysteresis state (design §7 Q3 / §5.8) — measured off the
   // same element the two panes actually share (see `splitBodyRef` below).
   const [belowWidthFloor, setBelowWidthFloor] = useState(false);
@@ -798,6 +822,27 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     return () => ro.disconnect();
   }, [announce]);
 
+  // Split-view focus-sync defect fix: the one place `keyboardLive` is set
+  // TRUE — every call site below that deliberately grabs the keyboard
+  // (entering split, the chord/click move, a drag-drop dock) calls this
+  // alongside its existing `refreshView({ focus: true })`, rather than
+  // relying solely on the resulting native focus event. That event can be a
+  // no-op when the target already genuinely had DOM focus before the
+  // transition (the exact "belt and braces" gap the toggle's own comment
+  // below already called out for `grabFocus`/`expanded`) — `.focus()` on an
+  // already-focused element fires no new focus event, so nothing would
+  // otherwise update `keyboardLive`. `handlePaneFocusChange` (below) is the
+  // complementary correction for focus arriving somewhere the app DIDN'T
+  // ask it to.
+  const markPaneFocusLive = useCallback((key: string) => {
+    liveFocusKeyRef.current = key;
+    if (blurCheckTimeoutRef.current) {
+      clearTimeout(blurCheckTimeoutRef.current);
+      blurCheckTimeoutRef.current = null;
+    }
+    setKeyboardLive(true);
+  }, []);
+
   // Toggle (design §5.1): the deliberate, keyboard/touch-accessible entry
   // route — drag-to-dock (below) is a shortcut, never the only way in.
   const toggleSplitView = useCallback(() => {
@@ -817,6 +862,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         // keyboard there explicitly rather than trust it was already real
         // DOM focus (it might have been on the toggle button itself).
         actionsMapRef.current.get(assignment.left)?.refreshView({ focus: true });
+        markPaneFocusLive(assignment.left);
       }
     } else {
       const remaining = splitAssignment[focusedSide] ?? activeKey;
@@ -828,7 +874,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     }
     setSplitPreferred(turningOn);
     writeSplitViewPreference(turningOn);
-  }, [splitPreferred, activeKey, eligible, splitAssignment, focusedSide, announce, labelFor]);
+  }, [splitPreferred, activeKey, eligible, splitAssignment, focusedSide, announce, labelFor, markPaneFocusLive]);
 
   // Moving focus between panes (design §5.3/§5.4): click-into-a-pane and the
   // Ctrl+Shift+←/→ chord both land here — one source of truth for "which
@@ -841,9 +887,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       setFocusedSide(side);
       setActiveKey(key);
       actionsMapRef.current.get(key)?.refreshView({ focus: true });
+      markPaneFocusLive(key);
       announce(formatFocusMoveAnnouncement(labelFor(key)));
     },
-    [splitAssignment, focusedSide, announce, labelFor],
+    [splitAssignment, focusedSide, announce, labelFor, markPaneFocusLive],
   );
   const focusPaneByKey = useCallback(
     (key: string) => {
@@ -851,6 +898,41 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       if (side) movePaneFocus(side);
     },
     [splitAssignment, movePaneFocus],
+  );
+
+  // Split-view focus-sync defect fix: the other half of the invariant —
+  // real focus ARRIVING somewhere the app didn't send it (native Tab order
+  // in particular, since xterm's hidden input defaults to `tabIndex=0`; also
+  // covers a stray click that lands on the terminal viewport itself rather
+  // than the pane wrapper `onFocusPane` is bound to). Wired to each pane's
+  // `onPaneFocusChange` (terminal-session-view.tsx → use-terminal-session.ts's
+  // real textarea focus/blur listener — see its doc). A `focused: true`
+  // routes through the SAME `focusPaneByKey` a click already uses, so
+  // `focusedSide` can never point at a pane the keyboard isn't really in. A
+  // `focused: false` is deferred one tick before declaring the keyboard has
+  // left BOTH panes: a focus move FROM one pane TO the other fires blur(old)
+  // then focus(new) synchronously in the same tick, so `liveFocusKeyRef`
+  // already reflects the new pane by the time this timeout runs — only a
+  // blur with no followup focus (click elsewhere on the page, window blur)
+  // survives to flip `keyboardLive` false.
+  const handlePaneFocusChange = useCallback(
+    (key: string, focused: boolean) => {
+      if (focused) {
+        focusPaneByKey(key);
+        markPaneFocusLive(key);
+        return;
+      }
+      if (liveFocusKeyRef.current !== key) return;
+      if (blurCheckTimeoutRef.current) clearTimeout(blurCheckTimeoutRef.current);
+      blurCheckTimeoutRef.current = setTimeout(() => {
+        blurCheckTimeoutRef.current = null;
+        if (liveFocusKeyRef.current === key) {
+          liveFocusKeyRef.current = null;
+          setKeyboardLive(false);
+        }
+      }, 0);
+    },
+    [focusPaneByKey, markPaneFocusLive],
   );
 
   useEffect(() => {
@@ -961,8 +1043,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       // dropped pane must genuinely hold real DOM focus, not just the props
       // that would eventually produce it.
       actionsMapRef.current.get(draggedKey)?.refreshView({ focus: true });
+      markPaneFocusLive(draggedKey);
     },
-    [dropZone, splitAssignment, eligible, announce, labelFor],
+    [dropZone, splitAssignment, eligible, announce, labelFor, markPaneFocusLive],
   );
 
   const handleDragCancel = useCallback(() => {
@@ -2428,8 +2511,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             isActive={isEntryVisible}
             expanded={expanded && isEntryVisible}
             grabFocus={splitActive ? paneSide === focusedSide : true}
-            paneFocused={paneSide !== null ? paneSide === focusedSide : undefined}
+            paneFocused={paneSide !== null ? paneSide === focusedSide && keyboardLive : undefined}
             onFocusPane={paneSide !== null ? () => focusPaneByKey(entry.key) : undefined}
+            onPaneFocusChange={paneSide !== null ? (focused: boolean) => handlePaneFocusChange(entry.key, focused) : undefined}
             dragActiveRef={dragActiveRef}
             onRequestExpand={requestExpand}
             autoConnectWhenExpanded={entry.launchSeq === 0 && !entry.attach}

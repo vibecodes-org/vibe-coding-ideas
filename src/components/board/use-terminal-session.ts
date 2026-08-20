@@ -301,6 +301,21 @@ export interface UseTerminalSessionOptions {
    * prop this hook would need to re-subscribe effects on.
    */
   dragActiveRef?: { current: boolean };
+  /**
+   * Split-view focus-sync defect fix (task df7a0134, QA rework): fires
+   * `true`/`false` whenever xterm's own hidden input textarea — the actual
+   * keystroke target — genuinely gains or loses DOM focus, via a native
+   * focus/blur listener attached directly to it (see the xterm-init effect
+   * below). `grabFocus` above only covers focus THIS hook explicitly grabs
+   * (a click, the chord, a forced toggle/dock); it says nothing about focus
+   * arriving some OTHER way — native Tab order in particular, since xterm
+   * unconditionally sets `textarea.tabIndex = 0`. The caller (terminal-dock.tsx,
+   * via TerminalSessionView) routes this through the SAME movePaneFocus path
+   * a click already uses, so the split "Typing here"/"Watching" indicator can
+   * never diverge from where the keyboard actually is, no matter how focus
+   * got there. Omitted outside split view (paneFocused undefined) — no-op.
+   */
+  onKeyboardFocusChange?: (focused: boolean) => void;
 }
 
 /** The minimum a popped-out window needs to attach to an existing session — see `attachExisting` above. */
@@ -505,12 +520,19 @@ export function useTerminalSession(
     attachExisting = null,
     grabFocus = true,
     dragActiveRef,
+    onKeyboardFocusChange,
   } = options;
   const posthog = usePostHog();
   const posthogRef = useRef(posthog);
   const onCapExceededRef = useRef(onCapExceeded);
   posthogRef.current = posthog;
   onCapExceededRef.current = onCapExceeded;
+  // Split-view focus-sync defect fix: read fresh inside the stable
+  // focus/blur listeners the xterm-init effect attaches below, so a new
+  // `onKeyboardFocusChange` identity every render never forces that
+  // mount-once effect to re-run (same idiom as `posthogRef` above).
+  const onKeyboardFocusChangeRef = useRef(onKeyboardFocusChange);
+  onKeyboardFocusChangeRef.current = onKeyboardFocusChange;
 
   const [state, dispatch] = useReducer(terminalReducer, initialConnectionState);
   const [readOnly, setReadOnly] = useState(false);
@@ -730,6 +752,13 @@ export function useTerminalSession(
     if (!enabled) return;
     let disposed = false;
     let term: XTerm | null = null;
+    // Split-view focus-sync defect fix: the textarea + listener pair get
+    // captured here (not just declared inside the async IIFE below) so the
+    // effect's cleanup can remove them — see the attachment site further
+    // down for why this is the one thing that can never lie about focus.
+    let focusedTextarea: HTMLTextAreaElement | null = null;
+    const handleTextareaFocus = () => onKeyboardFocusChangeRef.current?.(true);
+    const handleTextareaBlur = () => onKeyboardFocusChangeRef.current?.(false);
 
     (async () => {
       const [{ Terminal }, { FitAddon }] = await Promise.all([
@@ -785,6 +814,18 @@ export function useTerminalSession(
 
       termRef.current = term;
       fitRef.current = fit;
+      // Split view keyboard-focus ground truth (defect fix, task df7a0134 QA
+      // rework): xterm's hidden input textarea is the ACTUAL keystroke
+      // target — a native focus/blur listener on it is the one source of
+      // truth that can never lie about which pane really holds the
+      // keyboard, regardless of how focus got there (a click, native Tab
+      // order, assistive tech, or anything else `grabFocus`'s own explicit
+      // `.focus()` calls don't cover). See `onKeyboardFocusChange`'s doc.
+      if (term.textarea) {
+        focusedTextarea = term.textarea;
+        term.textarea.addEventListener("focus", handleTextareaFocus);
+        term.textarea.addEventListener("blur", handleTextareaBlur);
+      }
       // A buffer arrived (attachToExisting ran) before the terminal itself
       // was ready to receive it — apply it now that it is (see
       // pendingInitialBufferRef's doc).
@@ -812,6 +853,8 @@ export function useTerminalSession(
 
     return () => {
       disposed = true;
+      focusedTextarea?.removeEventListener("focus", handleTextareaFocus);
+      focusedTextarea?.removeEventListener("blur", handleTextareaBlur);
       term?.dispose();
       termRef.current = null;
       fitRef.current = null;
@@ -917,6 +960,24 @@ export function useTerminalSession(
   useEffect(() => {
     if (state.status === "connected") sendResize();
   }, [state.status, sendResize]);
+
+  // Split view keyboard-focus ground truth, part 2 (defect fix): xterm
+  // unconditionally sets its hidden input's `tabIndex` to 0, so with both
+  // panes visible and non-hidden, native Tab traversal walks straight into
+  // the "Watching" pane's real input — the exact QA repro. `grabFocus`
+  // already means "this instance owns the keyboard" everywhere else in this
+  // hook (see the focus effects below), so reusing it here keeps tabIndex
+  // and the rest of the focus story from ever disagreeing: only the pane
+  // that owns the keyboard is reachable by sequential Tab; the other stays
+  // reachable by click and by the documented Ctrl+Shift+←/→ chord (both
+  // still work on a `tabIndex=-1` element — that only removes it from
+  // SEQUENTIAL navigation, not from programmatic `.focus()`). No-op outside
+  // split view — every other caller passes the default `true`, so this only
+  // ever (re)asserts 0, the native default.
+  useEffect(() => {
+    const ta = termRef.current?.textarea;
+    if (ta) ta.tabIndex = grabFocus ? 0 : -1;
+  }, [grabFocus, xtermReady]);
 
   // ── launch focus (fix/terminal-dock-launch-defects, Defect 2) ──────────────
   // Nothing previously called termRef.current.focus() — a freshly connected

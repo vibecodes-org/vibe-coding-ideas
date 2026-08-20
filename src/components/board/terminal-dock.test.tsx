@@ -91,12 +91,24 @@ vi.mock("./terminal-session-view", () => ({
     onBrowseSessions,
     onReportSummary,
     onPopOut,
+    paneFocused,
+    grabFocus,
+    onPaneFocusChange,
   }: {
     entry: { key: string; taskId?: string; ideaId?: string };
     onResumeEndedSession?: (payload: { cwd?: string; taskId?: string; ideaId?: string }, sid: string | null) => void;
     onBrowseSessions?: () => void;
     onReportSummary: (key: string, summary: Record<string, unknown>) => void;
     onPopOut?: () => void;
+    // Split-view focus-sync defect fix (task df7a0134, QA rework): a real
+    // focusable element stands in for xterm's own hidden input, so a test
+    // can drive the SAME real focus/blur events the fix listens for (not
+    // just clicks) and assert `grabFocus`'s tabIndex consequence — the
+    // dock's own logic is what's under test here, the real xterm/hook
+    // wiring is covered by use-terminal-session.test.ts.
+    paneFocused?: boolean;
+    grabFocus?: boolean;
+    onPaneFocusChange?: (focused: boolean) => void;
   }) => {
     useEffect(() => {
       sessionViewMountSpy(entry.key);
@@ -172,6 +184,28 @@ vi.mock("./terminal-session-view", () => ({
           <button data-testid={`pop-out-${entry.key}`} onClick={onPopOut}>
             Pop out
           </button>
+        )}
+        {/* Split-view focus-sync defect fix (task df7a0134, QA rework):
+            `paneFocused` only renders (true or false) while this stub is one
+            of the split's two panes — mirrors the real component's `inPane`
+            gate. The indicator text is the SAME words a real user reads
+            (paneFocusWord); the input is a real focusable element wired to
+            `onPaneFocusChange` exactly like the real xterm textarea is
+            wired via use-terminal-session.ts, with `grabFocus` driving its
+            tabIndex the same way the real fix does — so a test here can
+            assert BOTH "the indicator never lies" and "Tab can't reach the
+            watching pane" without needing the real xterm/hook machinery. */}
+        {paneFocused !== undefined && (
+          <>
+            <span data-testid={`pane-indicator-${entry.key}`}>{paneFocused ? "Typing here" : "Watching"}</span>
+            <input
+              data-testid={`pane-input-${entry.key}`}
+              tabIndex={grabFocus ? 0 : -1}
+              onFocus={() => onPaneFocusChange?.(true)}
+              onBlur={() => onPaneFocusChange?.(false)}
+              readOnly
+            />
+          </>
         )}
       </div>
     );
@@ -1325,5 +1359,138 @@ describe("TerminalDock — resize handle hidden while the active tab is popped o
     // placeholder (terminal-session-view.tsx) — a live handle over it would
     // invite a drag with no terminal body underneath.
     expect(screen.queryByTestId("terminal-dock-resize-handle")).not.toBeInTheDocument();
+  });
+});
+
+// Split-view focus-sync defect fix (task df7a0134, QA rework — category-1,
+// blocks-release). QA's finding: real DOM keyboard focus could diverge from
+// the "Typing here"/"Watching" indicator — nothing in the previous
+// implementation listened for focus arriving anywhere OTHER than a click,
+// and native Tab order could walk straight into the "Watching" pane's real
+// input, since nothing constrained its tabIndex either. These tests render
+// BOTH panes (via the mock TerminalSessionView's `paneFocused`/`grabFocus`/
+// `onPaneFocusChange` stand-ins above — real xterm/focus wiring is covered
+// directly in use-terminal-session.test.ts) and assert the DOCK's own
+// state — `focusedSide` + the new `keyboardLive` ground truth — follows
+// SIMULATED real focus/blur events, not just clicks, including the exact
+// Tab-into-the-watching-pane path from QA's repro.
+describe("TerminalDock — split view keyboard-focus sync (defect fix, task df7a0134)", () => {
+  /** Mints a 2nd local tab via the chooser's "Start new" (mirrors
+   * `openFirstTabViaChooser` above, generalised to N tabs) — the only way to
+   * reach 2+ eligible sessions without relying on the bug that describe
+   * block covers. Returns every session's key, in mint order. */
+  async function mintTwoSessions(): Promise<[string, string]> {
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const firstKey = screen.getByTestId("session-view").dataset.key as string;
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+
+    const keys = screen.getAllByTestId("session-view").map((el) => el.dataset.key as string);
+    const secondKey = keys.find((k) => k !== firstKey) as string;
+    return [firstKey, secondKey];
+  }
+
+  function enterSplitView() {
+    fireEvent.click(screen.getByRole("button", { name: "Split view: show two sessions side by side" }));
+  }
+
+  function indicatorTextFor(key: string): string {
+    return screen.getByTestId(`pane-indicator-${key}`).textContent ?? "";
+  }
+
+  function findFocused(keys: [string, string]): string {
+    const [a, b] = keys;
+    if (indicatorTextFor(a) === "Typing here") return a;
+    if (indicatorTextFor(b) === "Typing here") return b;
+    throw new Error("neither pane reports 'Typing here'");
+  }
+
+  it("entering split view marks exactly one pane 'Typing here' and removes the OTHER pane's input from native Tab order (tabIndex -1) — the fix for QA's exact repro", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [keyA, keyB] = await mintTwoSessions();
+
+    enterSplitView();
+    await waitFor(() => expect(screen.getByTestId(`pane-indicator-${keyA}`)).toBeInTheDocument());
+
+    const focused = findFocused([keyA, keyB]);
+    const watching = focused === keyA ? keyB : keyA;
+    expect(indicatorTextFor(watching)).toBe("Watching");
+
+    // The invariant the defect broke: the pane the indicator calls "Typing
+    // here" must be the ONLY one a native Tab press can reach. `tabIndex=-1`
+    // excludes an element from sequential navigation entirely (it stays
+    // reachable by click/chord, which use `.focus()` directly).
+    expect((screen.getByTestId(`pane-input-${focused}`) as HTMLInputElement).tabIndex).toBe(0);
+    expect((screen.getByTestId(`pane-input-${watching}`) as HTMLInputElement).tabIndex).toBe(-1);
+  });
+
+  it("real focus landing on the 'Watching' pane's input — exactly what native Tab does now that it CAN reach it, or anything else that moves DOM focus there — flips the indicator instead of leaving it lying", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [keyA, keyB] = await mintTwoSessions();
+
+    enterSplitView();
+    await waitFor(() => expect(screen.getByTestId(`pane-indicator-${keyA}`)).toBeInTheDocument());
+    const focused = findFocused([keyA, keyB]);
+    const watching = focused === keyA ? keyB : keyA;
+
+    // Simulates real DOM focus arriving on the watching pane's input with NO
+    // click involved — before this fix, nothing was listening for this at
+    // all, so `focusedSide` (and the indicator) would have kept claiming the
+    // OTHER pane was "Typing here" while this one genuinely held the
+    // keyboard. This is the class of bug QA reproduced with a real Tab press.
+    fireEvent.focus(screen.getByTestId(`pane-input-${watching}`));
+
+    await waitFor(() => expect(indicatorTextFor(watching)).toBe("Typing here"));
+    expect(indicatorTextFor(focused)).toBe("Watching");
+  });
+
+  it("focus leaving BOTH panes (a blur with no followup focus — click elsewhere on the page, window blur) clears 'Typing here' from both, never leaving a stale claim", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [keyA, keyB] = await mintTwoSessions();
+
+    enterSplitView();
+    await waitFor(() => expect(screen.getByTestId(`pane-indicator-${keyA}`)).toBeInTheDocument());
+    const focused = findFocused([keyA, keyB]);
+
+    // No pane refocuses afterwards — mirrors clicking outside the dock
+    // entirely, or the browser window itself losing focus.
+    fireEvent.blur(screen.getByTestId(`pane-input-${focused}`));
+
+    await waitFor(() => {
+      expect(indicatorTextFor(keyA)).toBe("Watching");
+      expect(indicatorTextFor(keyB)).toBe("Watching");
+    });
+  });
+
+  it("a focus move BETWEEN the two panes (blur old, focus new — the same tick, exactly like the browser does it) never dips through a false 'neither focused' state", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [keyA, keyB] = await mintTwoSessions();
+
+    enterSplitView();
+    await waitFor(() => expect(screen.getByTestId(`pane-indicator-${keyA}`)).toBeInTheDocument());
+    const focused = findFocused([keyA, keyB]);
+    const other = focused === keyA ? keyB : keyA;
+
+    // Native focus changes fire blur(old) then focus(new) synchronously in
+    // the same tick — mirrored here in one `act`, the same way the real
+    // browser (and jsdom's own focus() implementation) would deliver them.
+    act(() => {
+      fireEvent.blur(screen.getByTestId(`pane-input-${focused}`));
+      fireEvent.focus(screen.getByTestId(`pane-input-${other}`));
+    });
+
+    expect(indicatorTextFor(other)).toBe("Typing here");
+    expect(indicatorTextFor(focused)).toBe("Watching");
   });
 });

@@ -228,6 +228,15 @@ interface TerminalSessionViewProps {
    */
   grabFocus?: boolean;
   /**
+   * Split-view focus-sync defect fix (task df7a0134, QA rework): forwarded
+   * straight to `useTerminalSession`'s `onKeyboardFocusChange` option — see
+   * its doc there. Fires whenever xterm's real hidden input genuinely
+   * gains/loses DOM focus, so the dock can keep `paneFocused` truthful no
+   * matter how focus got there (not just `onFocusPane`'s click route).
+   * Omitted whenever `paneFocused` is undefined, same as `onFocusPane`.
+   */
+  onPaneFocusChange?: (focused: boolean) => void;
+  /**
    * Split view drag-to-dock (design §6.1, Design Review required change 2):
    * true for the whole lifetime of ANY tab being dragged toward a dock
    * zone — Escape must be consumed by the terminal (never sent to the PTY)
@@ -262,6 +271,7 @@ export function TerminalSessionView({
   onFocusPane,
   grabFocus = true,
   dragActiveRef,
+  onPaneFocusChange,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -279,6 +289,7 @@ export function TerminalSessionView({
     attachExisting: entry.attach ?? null,
     grabFocus,
     dragActiveRef,
+    onKeyboardFocusChange: onPaneFocusChange,
   });
   const {
     state,
