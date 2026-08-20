@@ -51,11 +51,23 @@
 // exactly "true" (checked here AND at the board page mount) — B9: flag off means
 // zero new UI anywhere, including the tab strip and "+".
 
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import { ChevronUp, ChevronDown, ChevronLeft, Circle, ListTree, Loader2, Pencil, Plus, Terminal as TerminalIcon, X } from "lucide-react";
 import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
+import {
+  DndContext,
+  DragOverlay,
+  MouseSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  useDraggable,
+  type DragStartEvent,
+  type DragMoveEvent,
+  type DragEndEvent,
+} from "@dnd-kit/core";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { cn } from "@/lib/utils";
@@ -90,6 +102,31 @@ import {
 import { decideEntryBehaviour, type EntryDecision } from "@/lib/terminal/entry-decision";
 import { loadSessionSnapshot, readLastTabSid, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
 import { readDockOpen, writeDockOpen } from "@/lib/terminal/dock-open-persistence";
+import {
+  type PaneAssignment,
+  type PaneSide,
+  type DropZone,
+  eligiblePaneKeys,
+  enterSplitAssignment,
+  reconcileSplitAssignment,
+  applyTabClickToSplit,
+  applyDropToSplit,
+  resolveWidthFloor,
+  isMobileViewport,
+  isSplitRenderable,
+  readSplitViewPreference,
+  writeSplitViewPreference,
+  matchFocusMoveChord,
+  classifyDropZone,
+  resolveDragOutcome,
+  formatFocusMoveAnnouncement,
+  formatSplitOnAnnouncement,
+  formatSplitOffAnnouncement,
+  formatWidthFloorAnnouncement,
+  formatDockAnnouncement,
+  formatLeaveSplitAnnouncement,
+  DRAG_ACTIVATION_DISTANCE_PX,
+} from "@/lib/terminal/split-view";
 import { useDockInset } from "./terminal-dock-inset";
 import { useDockHeight, TerminalDockResizeHandle } from "./terminal-dock-resize";
 import { getMachineIdentity } from "@/lib/terminal/machine-identity";
@@ -180,6 +217,45 @@ function dotClass(status: TerminalStatus): string {
 // Bug A retry schedule (card cbe60db5) — immediate attempt, then two backoff
 // retries, before `refreshRegistry` gives up and surfaces the failure.
 const REGISTRY_RETRY_DELAYS_MS = [0, 400, 1200];
+
+// Drag-to-dock (design §6): the pointer position at drag START — dnd-kit's
+// DragMoveEvent gives a DELTA from that point, not an absolute pointer
+// position, so the raw geometry `classifyDropZone` needs is
+// `startPoint + delta`. Reads whichever event shape actually fired
+// (Pointer/Mouse/Touch — MouseSensor/TouchSensor each dispatch their own).
+function getEventPoint(evt: Event | null | undefined): { x: number; y: number } | null {
+  if (!evt) return null;
+  if (typeof PointerEvent !== "undefined" && evt instanceof PointerEvent) return { x: evt.clientX, y: evt.clientY };
+  if (typeof MouseEvent !== "undefined" && evt instanceof MouseEvent) return { x: evt.clientX, y: evt.clientY };
+  if (typeof TouchEvent !== "undefined" && evt instanceof TouchEvent) {
+    const touch = evt.touches[0] ?? evt.changedTouches[0];
+    return touch ? { x: touch.clientX, y: touch.clientY } : null;
+  }
+  return null;
+}
+
+/**
+ * Split view drag-to-dock (design §6.4: "reuse @dnd-kit, don't hand-roll
+ * pointer events"). A tiny render-prop wrapper so `useDraggable` — a HOOK —
+ * can be called once per tab from inside the tab strip's `.map()` (Rules of
+ * Hooks forbid calling it directly inside the callback). Deliberately spreads
+ * only `listeners` (the pointer/touch handlers), never dnd-kit's own
+ * `attributes` — those carry a `role`/`tabIndex` meant for its OWN keyboard
+ * sensor, which this feature deliberately doesn't wire up (design §6.4); the
+ * tab keeps its existing `role="tab"`/tablist semantics untouched.
+ */
+function DraggableTab({
+  id,
+  disabled,
+  children,
+}: {
+  id: string;
+  disabled: boolean;
+  children: (args: { setNodeRef: (el: HTMLElement | null) => void; listeners: ReturnType<typeof useDraggable>["listeners"] }) => ReactNode;
+}) {
+  const { setNodeRef, listeners } = useDraggable({ id, disabled });
+  return children({ setNodeRef, listeners });
+}
 
 export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths }: TerminalDockProps) {
   // Defence-in-depth: also gated at the page mount. When off, render nothing —
@@ -348,6 +424,63 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // Reserve the dock's footprint at the bottom of the page, so board
   // columns can scroll past it instead of ending underneath it (card 534d2049).
   const dockInsetRef = useDockInset();
+
+  // ── split view (task df7a0134) ──────────────────────────────────────────────
+  // A view-mode toggle: two sessions side by side in the SAME dock body,
+  // instead of one-at-a-time tabs. Tabs stay the default (Requirements
+  // §"default recommendation") — `splitPreferred` is `null` until the
+  // localStorage preference hydrates on mount (SSR/first-paint stays tabs,
+  // same install-first correction pattern as `readDockOpen` above), then
+  // tracks the user's OWN choice; entering/leaving the width floor or losing
+  // a pane to pop-out never touches it (design §5.5/§5.8 — the preference is
+  // "kept" through a suspension, not cleared).
+  const [splitPreferred, setSplitPreferred] = useState<boolean | null>(null);
+  useEffect(() => {
+    setSplitPreferred(readSplitViewPreference());
+  }, []);
+  // Which session occupies which half. Reconciled below whenever the
+  // eligible set changes (a pane's session popped out/closed, or a 3rd
+  // eligible session appears to backfill an empty half — design §5.5/§5.6,
+  // AC16 "resumes automatically").
+  const [splitAssignment, setSplitAssignment] = useState<PaneAssignment>({ left: null, right: null });
+  // Exactly ONE pane owns the keyboard at all times (the hard requirement).
+  const [focusedSide, setFocusedSide] = useState<PaneSide>("left");
+  // Width-floor hysteresis state (design §7 Q3 / §5.8) — measured off the
+  // same element the two panes actually share (see `splitBodyRef` below).
+  const [belowWidthFloor, setBelowWidthFloor] = useState(false);
+  const [floorNoticeDismissed, setFloorNoticeDismissed] = useState(false);
+  // Mobile always renders tabs regardless of stored preference (Design
+  // Review required change 3 / AC14) — tracked as an explicit gate, not left
+  // as an accident of the width floor.
+  const [viewportWidth, setViewportWidth] = useState(0);
+  const splitBodyRef = useRef<HTMLDivElement | null>(null);
+  // Most-recently-active session keys, most-recent-first — the recency
+  // signal `enterSplitAssignment`/`reconcileSplitAssignment` need for
+  // "the most-recently-active OTHER eligible session" (design §7 Q1),
+  // without threading a bump through every existing `setActiveKey` call
+  // site. Purely additive bookkeeping — never itself drives a render.
+  const activeHistoryRef = useRef<string[]>([]);
+  useEffect(() => {
+    if (!activeKey) return;
+    activeHistoryRef.current = [activeKey, ...activeHistoryRef.current.filter((k) => k !== activeKey)];
+  }, [activeKey]);
+  // Drag-to-dock (design §6, Design Review required change 2): true for the
+  // whole lifetime of any tab drag — forwarded to EVERY mounted session's
+  // xterm instance so Escape is consumed regardless of which pane had DOM
+  // focus when the drag began (see use-terminal-session.ts's doc). A ref, not
+  // state, so it never forces a render on its own.
+  const dragActiveRef = useRef(false);
+  const [draggingKey, setDraggingKey] = useState<string | null>(null);
+  const [dropZone, setDropZone] = useState<DropZone | null>(null);
+  const dragStartPointRef = useRef<{ x: number; y: number } | null>(null);
+  const tabStripRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    onResize();
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
 
   // ── session entry chooser (card cbe60db5) — registry fetch + entry decision ──
   //
@@ -576,6 +709,253 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   }, []);
 
   const announce = useCallback((text: string) => setAnnouncement(text), []);
+
+  // ── split view (task df7a0134) — pane assignment, width floor, focus ───────
+  // A session's own resolved name — the SAME string the tab shows
+  // (`deriveTabLabel`, which delegates to `resolveSessionName`) — for
+  // announcements and the pane header (design's binding note: never
+  // re-derive it). Reads the refs (not `sessions`/`summaries` state) so it's
+  // callable from event handlers without becoming a dependency that forces
+  // them to rebind on every session/summary change.
+  const labelFor = useCallback(
+    (key: string | null): string => {
+      if (!key) return "";
+      const entry = sessionsRef.current.find((s) => s.key === key);
+      return deriveTabLabel({
+        displayName: entry?.displayName,
+        taskTitle: entry?.taskTitle,
+        ideaTitle,
+        sessionId: summariesRef.current[key]?.sessionId ?? null,
+      });
+    },
+    [ideaTitle],
+  );
+
+  // Popped-out sessions never claim a pane (shipped invariant); ended
+  // sessions stay eligible — only pop-out excludes.
+  const eligible = useMemo(
+    () => eligiblePaneKeys(sessions.map((s) => ({ key: s.key, poppedOut: poppedOutKeys.has(s.key) }))),
+    [sessions, poppedOutKeys],
+  );
+  const mobileViewport = isMobileViewport(viewportWidth);
+  const splitActive =
+    isSplitRenderable({
+      preferred: splitPreferred === true,
+      eligibleCount: eligible.length,
+      belowWidthFloor,
+      mobileViewport,
+    }) && !!splitAssignment.left && !!splitAssignment.right;
+
+  // Keep the assignment valid as sessions/pop-out state changes — a pane's
+  // session popping out or closing gets backfilled from the most-recently-
+  // active other eligible session; split resumes automatically the moment a
+  // 2nd eligible session is available again (design §5.5/§5.6, AC16), with
+  // no user action. Gated on the PREFERENCE (not `splitActive`) so it also
+  // keeps the assignment fresh while merely suspended by the width floor —
+  // the gate lifting must restore split immediately, not with stale panes.
+  useEffect(() => {
+    if (splitPreferred !== true) return;
+    setSplitAssignment((prev) => reconcileSplitAssignment(prev, eligible, activeHistoryRef.current));
+  }, [eligible, splitPreferred]);
+
+  // Keep `activeKey` (and so `aria-selected`) pointed at the right session
+  // while split is the standing preference: the focused pane's session when
+  // the assignment is complete (even if not currently RENDERED as split —
+  // width floor / mobile, §5.8), or whichever single session survived when
+  // a pane genuinely has nothing left to backfill it with (§5.5/§5.6).
+  useEffect(() => {
+    if (splitPreferred !== true) return;
+    const bothFilled = !!splitAssignment.left && !!splitAssignment.right;
+    const target = bothFilled ? splitAssignment[focusedSide] : (splitAssignment.left ?? splitAssignment.right);
+    if (target && target !== activeKey) setActiveKey(target);
+  }, [splitPreferred, splitAssignment, focusedSide, activeKey]);
+
+  // Width floor (design §7 Q3 / §5.8): measured off `splitBodyRef`, the SAME
+  // element the two panes actually share — not the whole dock — so the
+  // 480px/pane arithmetic means what it says. `splitPreferredRef` avoids
+  // re-subscribing the ResizeObserver on every toggle.
+  const splitPreferredRef = useRef(splitPreferred);
+  useEffect(() => {
+    splitPreferredRef.current = splitPreferred;
+  }, [splitPreferred]);
+  useEffect(() => {
+    const el = splitBodyRef.current;
+    if (!el) return;
+    const ro = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? el.getBoundingClientRect().width;
+      setBelowWidthFloor((prev) => {
+        const next = resolveWidthFloor(width, prev);
+        if (next !== prev && splitPreferredRef.current) {
+          announce(formatWidthFloorAnnouncement(next ? "fallback" : "restored"));
+          if (next) setFloorNoticeDismissed(false);
+        }
+        return next;
+      });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [announce]);
+
+  // Toggle (design §5.1): the deliberate, keyboard/touch-accessible entry
+  // route — drag-to-dock (below) is a shortcut, never the only way in.
+  const toggleSplitView = useCallback(() => {
+    const turningOn = splitPreferred !== true;
+    if (turningOn) {
+      const recency = activeHistoryRef.current.filter((k) => k !== activeKey);
+      const assignment = enterSplitAssignment(activeKey, eligible, recency);
+      setSplitAssignment(assignment);
+      setFocusedSide("left");
+      setFloorNoticeDismissed(false);
+      if (assignment.left && assignment.right) {
+        announce(formatSplitOnAnnouncement(labelFor(assignment.left), labelFor(assignment.right), labelFor(assignment.left)));
+      }
+    } else {
+      const remaining = splitAssignment[focusedSide] ?? activeKey;
+      if (remaining) {
+        setActiveKey(remaining);
+        announce(formatSplitOffAnnouncement(labelFor(remaining)));
+      }
+      setSplitAssignment({ left: null, right: null });
+    }
+    setSplitPreferred(turningOn);
+    writeSplitViewPreference(turningOn);
+  }, [splitPreferred, activeKey, eligible, splitAssignment, focusedSide, announce, labelFor]);
+
+  // Moving focus between panes (design §5.3/§5.4): click-into-a-pane and the
+  // Ctrl+Shift+←/→ chord both land here — one source of truth for "which
+  // pane owns the keyboard", so visual state (border/glow/words/cursor) and
+  // real DOM focus can never split-brain.
+  const movePaneFocus = useCallback(
+    (side: PaneSide) => {
+      const key = splitAssignment[side];
+      if (!key || side === focusedSide) return;
+      setFocusedSide(side);
+      setActiveKey(key);
+      actionsMapRef.current.get(key)?.refreshView({ focus: true });
+      announce(formatFocusMoveAnnouncement(labelFor(key)));
+    },
+    [splitAssignment, focusedSide, announce, labelFor],
+  );
+  const focusPaneByKey = useCallback(
+    (key: string) => {
+      const side: PaneSide | null = splitAssignment.left === key ? "left" : splitAssignment.right === key ? "right" : null;
+      if (side) movePaneFocus(side);
+    },
+    [splitAssignment, movePaneFocus],
+  );
+
+  useEffect(() => {
+    if (!splitActive) return;
+    const handler = (e: KeyboardEvent) => {
+      const dir = matchFocusMoveChord(e);
+      if (!dir) return;
+      e.preventDefault();
+      movePaneFocus(dir);
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, [splitActive, movePaneFocus]);
+
+  // A tab click while split (design §5.2): the focused pane's own tab is a
+  // no-op, the unfocused pane's tab just moves focus, a 3rd session's tab
+  // replaces the UNFOCUSED pane and takes focus there.
+  const handleSplitTabClick = useCallback(
+    (key: string) => {
+      const result = applyTabClickToSplit(splitAssignment, focusedSide, key);
+      const changed = result.assignment !== splitAssignment;
+      setSplitAssignment(result.assignment);
+      const focusChanged = result.focusedSide !== focusedSide;
+      setFocusedSide(result.focusedSide);
+      const targetKey = result.assignment[result.focusedSide];
+      if (targetKey) {
+        setActiveKey(targetKey);
+        if (changed || focusChanged) announce(formatFocusMoveAnnouncement(labelFor(targetKey)));
+      }
+    },
+    [splitAssignment, focusedSide, announce, labelFor],
+  );
+
+  // ── drag-to-dock (design §6, Design Review required changes 1 + 2) ─────────
+  // 8px activation distance + the touch delay/tolerance the design specifies
+  // — @dnd-kit's MouseSensor/TouchSensor supply both for free (no bespoke
+  // pointer-event layer to drift from the board's own drag behaviour).
+  // Deliberately NO KeyboardSensor (design §6.4): the toggle above is the
+  // full keyboard-equivalent route, and a keyboard drag mode would fight
+  // both the tablist's own arrow-key navigation and the terminal's key
+  // handling.
+  const dragMouseSensor = useSensor(MouseSensor, { activationConstraint: { distance: DRAG_ACTIVATION_DISTANCE_PX } });
+  const dragTouchSensor = useSensor(TouchSensor, { activationConstraint: { delay: 250, tolerance: 5 } });
+  const dragSensors = useSensors(dragMouseSensor, dragTouchSensor);
+
+  const handleDragStart = useCallback((event: DragStartEvent) => {
+    dragStartPointRef.current = getEventPoint(event.activatorEvent);
+    dragActiveRef.current = true;
+    setDraggingKey(String(event.active.id));
+    setDropZone(null);
+  }, []);
+
+  const handleDragMove = useCallback((event: DragMoveEvent) => {
+    const start = dragStartPointRef.current;
+    const stripEl = tabStripRef.current;
+    const bodyEl = splitBodyRef.current;
+    if (!start || !stripEl || !bodyEl) return;
+    const stripRect = stripEl.getBoundingClientRect();
+    const bodyRect = bodyEl.getBoundingClientRect();
+    setDropZone(
+      classifyDropZone({
+        pointerX: start.x + event.delta.x,
+        pointerY: start.y + event.delta.y,
+        stripBottom: stripRect.bottom,
+        bodyLeft: bodyRect.left,
+        bodyWidth: bodyRect.width,
+      }),
+    );
+  }, []);
+
+  // Design Review required change 1: NO tab reordering — a drag that begins
+  // and ends within the strip cancels, changing nothing, UNLESS the dragged
+  // tab was already paned, which keeps its designed "leave split" meaning
+  // (`resolveDragOutcome` owns this decision, pure/tested).
+  const handleDragEnd = useCallback(
+    (event: DragEndEvent) => {
+      dragActiveRef.current = false;
+      const draggedKey = String(event.active.id);
+      const zone = dropZone ?? "none";
+      setDraggingKey(null);
+      setDropZone(null);
+      const isPaned = splitAssignment.left === draggedKey || splitAssignment.right === draggedKey;
+      const outcome = resolveDragOutcome(zone, isPaned);
+      if (outcome.kind === "cancel") return;
+      if (outcome.kind === "leave-split") {
+        setActiveKey(draggedKey);
+        setSplitAssignment({ left: null, right: null });
+        setSplitPreferred(false);
+        writeSplitViewPreference(false);
+        announce(formatLeaveSplitAnnouncement(labelFor(draggedKey)));
+        return;
+      }
+      // outcome.kind === "dock" — the user chose the side explicitly, so this
+      // may replace EITHER pane, including the focused one (design §6.3).
+      const recency = activeHistoryRef.current.filter((k) => k !== draggedKey);
+      const fallbackOther = recency.find((k) => k !== draggedKey) ?? eligible.find((k) => k !== draggedKey) ?? null;
+      const result = applyDropToSplit(splitAssignment, outcome.side, draggedKey, fallbackOther);
+      setSplitAssignment(result.assignment);
+      setFocusedSide(result.focusedSide);
+      setActiveKey(draggedKey);
+      setFloorNoticeDismissed(false);
+      setSplitPreferred(true);
+      writeSplitViewPreference(true);
+      setExpanded(true);
+      announce(formatDockAnnouncement(labelFor(draggedKey), outcome.side));
+    },
+    [dropZone, splitAssignment, eligible, announce, labelFor],
+  );
+
+  const handleDragCancel = useCallback(() => {
+    dragActiveRef.current = false;
+    setDraggingKey(null);
+    setDropZone(null);
+  }, []);
 
   // ── pop-out (D1-D7, design §10 + §13 Flow 3) ────────────────────────────────
   // Tears down THIS tab's pop-out bookkeeping — the BroadcastChannel and the
@@ -1401,7 +1781,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   );
 
   const handleTabKeyDown = useCallback(
-    (e: KeyboardEvent<HTMLDivElement>, index: number, key: string) => {
+    (e: ReactKeyboardEvent<HTMLDivElement>, index: number, key: string) => {
       if (e.key === "ArrowRight" || e.key === "ArrowLeft") {
         e.preventDefault();
         const dir = e.key === "ArrowRight" ? 1 : -1;
@@ -1693,12 +2073,59 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           />
         )}
 
-        {multi && !inlineBrowse && (
-          <div role="tablist" aria-label="Terminal sessions" className="flex items-stretch border-b border-zinc-800 bg-[#141417]">
-            {/* Tabs shrink then scroll; "+" (below) stays pinned OUTSIDE this
-                scroll region so launch + oversight are never scrolled away
-                (design §4a: "never wrap, never hide the '+'"). */}
-            <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
+        {/* Split view (design §6.4): both the tab strip (drag SOURCE) and the
+            session body (drop TARGET, further below) live inside ONE
+            DndContext so a drag can travel from one into the other —
+            unconditional (not gated on `multi`/`inlineBrowse`) so the
+            always-mounted session body underneath is never pulled in/out of
+            it; nothing inside is actually draggable without 2+ tabs anyway. */}
+        <DndContext
+          sensors={dragSensors}
+          onDragStart={handleDragStart}
+          onDragMove={handleDragMove}
+          onDragEnd={handleDragEnd}
+          onDragCancel={handleDragCancel}
+        >
+          {multi && !inlineBrowse && (
+            <>
+            {/* Below-floor notice (design §5.8, mockup D) — only while split
+                is the standing preference but the window's too narrow to
+                render it; dismissible, never blocks the toggle from being
+                pressed again. */}
+            {splitPreferred === true && belowWidthFloor && !mobileViewport && !floorNoticeDismissed && (
+              <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11.5px] text-amber-300">
+                <span aria-hidden="true">ⓘ</span>
+                <span className="flex-1">
+                  Split view needs a wider window — it will come back automatically when there&apos;s room.
+                </span>
+                <button
+                  type="button"
+                  aria-label="Dismiss"
+                  className="text-amber-400 hover:text-amber-200"
+                  onClick={() => setFloorNoticeDismissed(true)}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+            <div
+              ref={tabStripRef}
+              role="tablist"
+              aria-label="Terminal sessions"
+              className={cn(
+                "flex items-stretch border-b bg-[#141417]",
+                // Drag-to-dock (design §6.3 "Back to tabs" indicator): a
+                // PANED tab dragged back up over the strip highlights it as
+                // the un-split target, distinct from the ordinary border.
+                dropZone === "strip" && draggingKey && (splitAssignment.left === draggingKey || splitAssignment.right === draggingKey)
+                  ? "border-sky-500/60"
+                  : "border-zinc-800",
+              )}
+            >
+              {/* Tabs shrink then scroll; "+"/toggle (below) stay pinned
+                  OUTSIDE this scroll region so launch + oversight are never
+                  scrolled away (design §4a: "never wrap, never hide the '+'"). */}
+              <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
               {sessions.map((entry, index) => {
                 const summary = summaries[entry.key];
                 const status = summary?.status ?? "idle";
@@ -1715,9 +2142,23 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 const confirming = confirmingKey === entry.key;
                 const renaming = renamingKey === entry.key;
                 const renameLength = codePointLength(renameDraft);
+                // Split view: which half (if any) this tab currently
+                // occupies — an "L"/"R" badge (words, not colour alone —
+                // aria-label carries the same fact for screen readers).
+                const paneSide: PaneSide | null = !splitActive
+                  ? null
+                  : splitAssignment.left === entry.key
+                    ? "left"
+                    : splitAssignment.right === entry.key
+                      ? "right"
+                      : null;
+                const paneSideFocused = paneSide !== null && paneSide === focusedSide;
                 return (
+                  <DraggableTab key={entry.key} id={entry.key} disabled={poppedOut || renaming || confirming}>
+                    {({ setNodeRef, listeners }) => (
                   <div
-                    key={entry.key}
+                    ref={setNodeRef}
+                    {...listeners}
                     id={`terminal-tab-${entry.key}`}
                     role="tab"
                     aria-selected={isActive}
@@ -1725,8 +2166,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                     title={label}
                     onKeyDown={(e) => handleTabKeyDown(e, index, entry.key)}
                     onClick={() => {
-                      setActiveKey(entry.key);
                       setExpanded(true);
+                      if (splitActive) handleSplitTabClick(entry.key);
+                      else setActiveKey(entry.key);
                     }}
                     className={cn(
                       "flex min-w-[110px] max-w-[190px] flex-none cursor-pointer items-center gap-1.5 border-r border-t-2 border-zinc-800 border-t-transparent px-2.5 py-0 text-[12.5px] text-zinc-400",
@@ -1738,6 +2180,17 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                       (renaming || confirming) && "max-w-none flex-1",
                     )}
                   >
+                    {paneSide && (
+                      <span
+                        aria-label={`in ${paneSide} pane`}
+                        className={cn(
+                          "flex-none rounded border px-1 text-[9px] font-bold leading-[14px]",
+                          paneSideFocused ? "border-sky-500/50 bg-sky-500/10 text-sky-300" : "border-zinc-700 text-zinc-500",
+                        )}
+                      >
+                        {paneSide === "left" ? "L" : "R"}
+                      </span>
+                    )}
                     {renaming ? (
                       // Contents-swap (design §3a mid-edit) — same shape as
                       // the "End session?" confirm below, reusing the tab's
@@ -1880,29 +2333,69 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                       </>
                     )}
                   </div>
+                    )}
+                  </DraggableTab>
                 );
               })}
+              </div>
+              {/* Split view toggle (design §1 "immediately left of the
+                  existing '+'"): visible whenever tabs themselves are —
+                  never a disabled dead button (no trapping dialogs — the
+                  toggle always does something, even below the width floor,
+                  where pressing it stores the preference and shows the
+                  amber notice instead of silently failing). */}
+              <button
+                type="button"
+                aria-pressed={splitPreferred === true}
+                aria-label={splitPreferred === true ? "Split view — back to tabs" : "Split view: show two sessions side by side"}
+                title={
+                  mobileViewport
+                    ? "Split view (needs a wider window)"
+                    : "Split view · Ctrl+Shift+←/→ moves typing"
+                }
+                onClick={toggleSplitView}
+                className={cn(
+                  "flex h-[38px] w-[38px] flex-none items-center justify-center border-l border-zinc-800 text-base text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100",
+                  splitPreferred === true && "bg-sky-500/10 text-sky-300",
+                )}
+              >
+                <span aria-hidden="true">◫</span>
+              </button>
+              <button
+                type="button"
+                aria-label="New terminal session"
+                title={newSessionTooltip()}
+                onClick={handlePlus}
+                className="flex h-[38px] w-[38px] flex-none items-center justify-center border-l border-zinc-800 text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100"
+              >
+                <Plus className="h-4 w-4" />
+              </button>
             </div>
-            <button
-              type="button"
-              aria-label="New terminal session"
-              title={newSessionTooltip()}
-              onClick={handlePlus}
-              className="flex h-[38px] w-[38px] flex-none items-center justify-center border-l border-zinc-800 text-zinc-400 hover:bg-zinc-800/60 hover:text-zinc-100"
-            >
-              <Plus className="h-4 w-4" />
-            </button>
-          </div>
-        )}
+            </>
+          )}
 
-        {/* CSS-hidden, never unmounted, while an inline browse takes the
-            panel — the same rule the tab strip and the popped-out
-            placeholder already follow in this file and in
-            TerminalSessionView's own root. Unmounting would throw away the
-            ended tab's scrollback, so "Back to terminal" above would return
-            to an empty terminal instead of the conversation it promised. */}
-        <div className={cn(inlineBrowse && "hidden")}>
-        {sessions.map((entry) => (
+          {/* CSS-hidden, never unmounted, while an inline browse takes the
+              panel — the same rule the tab strip and the popped-out
+              placeholder already follow in this file and in
+              TerminalSessionView's own root. Unmounting would throw away the
+              ended tab's scrollback, so "Back to terminal" above would return
+              to an empty terminal instead of the conversation it promised.
+              Split view (design §2 "splitbody"): `flex items-stretch` only
+              while actually rendering the split — `splitBodyRef` measures
+              THIS element for the width floor either way, since it's the
+              space the two panes would share. `relative` hosts the drop-zone
+              overlay below. */}
+          <div ref={splitBodyRef} className={cn("relative", inlineBrowse && "hidden", splitActive && "flex items-stretch")}>
+        {sessions.map((entry) => {
+          const paneSide: PaneSide | null = !splitActive
+            ? null
+            : splitAssignment.left === entry.key
+              ? "left"
+              : splitAssignment.right === entry.key
+                ? "right"
+                : null;
+          const isEntryVisible = splitActive ? paneSide !== null : entry.key === activeKey;
+          return (
           <TerminalSessionView
             key={entry.key}
             entry={entry}
@@ -1913,8 +2406,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
               ideaTitle,
               sessionId: summaries[entry.key]?.sessionId ?? null,
             })}
-            isActive={entry.key === activeKey}
-            expanded={expanded && entry.key === activeKey}
+            isActive={isEntryVisible}
+            expanded={expanded && isEntryVisible}
+            grabFocus={splitActive ? paneSide === focusedSide : true}
+            paneFocused={paneSide !== null ? paneSide === focusedSide : undefined}
+            onFocusPane={paneSide !== null ? () => focusPaneByKey(entry.key) : undefined}
+            dragActiveRef={dragActiveRef}
             onRequestExpand={requestExpand}
             autoConnectWhenExpanded={entry.launchSeq === 0 && !entry.attach}
             onReportSummary={reportSummary}
@@ -1929,8 +2426,69 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onRetryReconnect={(sid) => void performReattach(sid, { focus: true })}
             onResumeEndedSession={handleResumeEndedSession}
           />
-        ))}
+          );
+        })}
+          {/* Drag-to-dock drop zones (design §6.2) — a pure geometry read
+              (`pointer-events: none`; the drag layer hit-tests from raw
+              coordinates, never DOM hover, so the xterm canvas underneath
+              never sees these). Only rendered for a drag that's actually
+              capable of docking somewhere: a popped-out session was never
+              made draggable in the first place (DraggableTab above), so
+              nothing further to exclude here. */}
+          {draggingKey && (
+            <div className="pointer-events-none absolute inset-0 z-30 flex gap-0">
+              <div
+                className={cn(
+                  "m-1.5 ml-1.5 mr-[3px] flex flex-1 items-center justify-center rounded-lg border text-[12px] font-semibold",
+                  dropZone === "left"
+                    ? "border-sky-500/50 bg-sky-500/15 text-sky-300 font-bold"
+                    : "border-dashed border-zinc-600 bg-zinc-700/15 text-zinc-400",
+                )}
+              >
+                Dock left
+              </div>
+              <div
+                className={cn(
+                  "m-1.5 ml-[3px] mr-1.5 flex flex-1 items-center justify-center rounded-lg border text-[12px] font-semibold",
+                  dropZone === "right"
+                    ? "border-sky-500/50 bg-sky-500/15 text-sky-300 font-bold"
+                    : "border-dashed border-zinc-600 bg-zinc-700/15 text-zinc-400",
+                )}
+              >
+                Dock right
+              </div>
+            </div>
+          )}
         </div>
+          {/* Drag ghost (design §6.2) — a portal overlay, so it renders above
+              everything (including the drop zones) without the source tab
+              ever leaving the strip (DraggableTab's `disabled` aside, dnd-kit
+              itself never removes/moves the source node). */}
+          <DragOverlay dropAnimation={null}>
+            {draggingKey
+              ? (() => {
+                  const entry = sessionsRef.current.find((s) => s.key === draggingKey);
+                  const summary = summariesRef.current[draggingKey];
+                  const dragLabel = deriveTabLabel({
+                    displayName: entry?.displayName,
+                    taskTitle: entry?.taskTitle,
+                    ideaTitle,
+                    sessionId: summary?.sessionId ?? null,
+                  });
+                  const dragMeta = tabStatusMeta(displayStatusFor(draggingKey));
+                  return (
+                    <div className="flex max-w-[220px] items-center gap-1.5 rounded-md border border-zinc-700 bg-[#141417] px-3 py-1.5 text-[12.5px] font-semibold text-zinc-100 opacity-90 shadow-[0_4px_16px_rgba(0,0,0,0.5)]">
+                      <span aria-hidden="true" style={toneStyle(dragMeta.tone)}>
+                        {dragMeta.glyph}
+                      </span>
+                      <span className="truncate">{dragLabel}</span>
+                      <span className="flex-none text-[11px] font-normal text-zinc-500">in hand</span>
+                    </div>
+                  );
+                })()
+              : null}
+          </DragOverlay>
+        </DndContext>
       </div>
 
       {/* Chooser OVERLAY (card cbe60db5, rework 11): the same

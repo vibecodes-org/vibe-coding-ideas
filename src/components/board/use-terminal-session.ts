@@ -114,6 +114,7 @@ import {
   rememberLastTabSid,
   SNAPSHOT_SAVE_INTERVAL_MS,
 } from "@/lib/terminal/session-snapshot";
+import { matchFocusMoveChord } from "@/lib/terminal/split-view";
 
 // How long we wait for the helper to attach after firing the deep link before
 // dropping to the calm fallback (~8s, per the approved UX). This is the safety net
@@ -279,6 +280,27 @@ export interface UseTerminalSessionOptions {
    * don't need to memoize beyond keeping the sessionId stable).
    */
   attachExisting?: AttachExistingPair | null;
+  /**
+   * Split view (task df7a0134, design §9 "one keyboard owner, enforced not
+   * implied"): with two panes visible at once, `expanded` alone can no
+   * longer mean "this is the one instance that should grab the keyboard" —
+   * BOTH panes are visible (and so both need the resize/refit effects below,
+   * which stay keyed on `expanded`), but only ONE may steal focus. Defaults
+   * to `true` — every existing single-pane caller (tabbed mode, the
+   * pop-out window) is unaffected, since there `expanded` already implied
+   * "the one visible instance". The dock passes `false` for the pane that
+   * ISN'T the split's `focusedPaneKey`; that pane still refits on every
+   * geometry change, it just never calls `termRef.current?.focus()`.
+   */
+  grabFocus?: boolean;
+  /**
+   * Split view drag-to-dock (design §6.1, Design Review required change 2):
+   * while `.current` is true, Escape is swallowed from reaching the PTY —
+   * see `dragActiveRef`'s doc on TerminalSessionViewProps for why this is a
+   * ref (read fresh inside the xterm custom-key handler below) rather than a
+   * prop this hook would need to re-subscribe effects on.
+   */
+  dragActiveRef?: { current: boolean };
 }
 
 /** The minimum a popped-out window needs to attach to an existing session — see `attachExisting` above. */
@@ -383,8 +405,12 @@ export interface TerminalSessionActions {
    * was hidden that way, so the `expanded`-keyed resize/focus effects above
    * never re-fire for it; this is the same recovery those effects already do
    * on a dock re-expand, just triggered on demand instead of by `expanded`.
+   * Split view: pass `{ focus: false }` for a pane the caller does NOT want
+   * to steal the keyboard for (the unfocused pane in a 2-up layout) — the
+   * refit still happens either way. Omitted/`{}` keeps the original
+   * always-focus behaviour every pre-existing caller relies on.
    */
-  refreshView: () => void;
+  refreshView: (opts?: { focus?: boolean }) => void;
   /**
    * Scrollback transfer (card 35cffc10, design §7): serialize THIS
    * session's live terminal right now, capped at 1 MiB — the dock calls this
@@ -477,6 +503,8 @@ export function useTerminalSession(
     displayName,
     onCapExceeded,
     attachExisting = null,
+    grabFocus = true,
+    dragActiveRef,
   } = options;
   const posthog = usePostHog();
   const posthogRef = useRef(posthog);
@@ -727,6 +755,24 @@ export function useTerminalSession(
         /* container may be 0-size while collapsed — refit on expand */
       }
 
+      // Split view (task df7a0134, design §5.4 + §6.1, Design Review required
+      // change 2): intercept BEFORE xterm processes the keydown, so neither
+      // the pane-focus chord nor a drag-cancelling Escape ever reaches the
+      // PTY as input — `false` stops xterm's own handling (no data sent,
+      // cursor untouched) but does NOT call preventDefault/stopPropagation on
+      // the native event, so it still bubbles normally to the dock's own
+      // window-level listener, which performs the actual pane-focus move (or
+      // lets dnd-kit's own Escape-cancel run — see terminal-dock.tsx).
+      // Unconditional on the chord (harmless outside split view — nothing
+      // else claims Ctrl+Shift+←/→); Escape is gated on `dragActiveRef` so a
+      // NON-drag Escape keeps its ordinary terminal meaning.
+      term.attachCustomKeyEventHandler((event) => {
+        if (event.type !== "keydown") return true;
+        if (matchFocusMoveChord(event)) return false;
+        if (event.key === "Escape" && dragActiveRef?.current) return false;
+        return true;
+      });
+
       // Keystrokes → relay (binary). Guarded by the pure input-enabled predicate so
       // read-only / non-connected states never reach the PTY.
       term.onData((data) => {
@@ -770,6 +816,12 @@ export function useTerminalSession(
       termRef.current = null;
       fitRef.current = null;
     };
+    // `dragActiveRef` is a ref (stable identity, read fresh via `.current`
+    // inside the customKeyEventHandler at call time, not captured by value)
+    // — including it here would only force a pointless re-init of xterm
+    // itself whenever the dock passes a differently-identified ref object,
+    // which it never does (one ref, created once, shared by every session).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [enabled]);
 
   // Correct the install-first gate inputs on mount (navigator is only reliable
@@ -876,35 +928,41 @@ export function useTerminalSession(
   // the first time" transition (prior status connecting/waiting-to-pair), never on
   // a grace-window reattach (prior status disconnected) — a user typing mid-drop
   // must not have their cursor/scroll position hijacked by an automatic reattach.
+  // Split view: also gated on `grabFocus` — the pane that ISN'T the split's
+  // focused one refits (see the resize effects above, keyed on `expanded`
+  // alone) but must never steal the keyboard out from under the pane the
+  // user is actually typing in (design §9).
   useEffect(() => {
     const prev = prevStatusRef.current;
     if (
       state.status === "connected" &&
       (prev === "connecting" || prev === "waiting-to-pair") &&
-      expanded
+      expanded &&
+      grabFocus
     ) {
       termRef.current?.focus();
     }
     prevStatusRef.current = state.status;
-  }, [state.status, expanded]);
+  }, [state.status, expanded, grabFocus]);
 
   // Expand focus: a user-initiated expand of an already-live session (e.g.
   // collapse then re-expand while connected) should also land focus in the
   // terminal. Keyed ONLY on `expanded` (not state.status) so a background status
   // change — e.g. a reattach completing while the dock is already expanded —
   // never re-triggers this and steals focus; it reads the current status from
-  // closure at the moment `expanded` itself transitions.
+  // closure at the moment `expanded` itself transitions. Also gated on
+  // `grabFocus` — see the first-connect effect above for why.
   useEffect(() => {
-    if (!expanded || state.status !== "connected") return;
+    if (!expanded || !grabFocus || state.status !== "connected") return;
     // Next paint, mirroring the expand-rAF resize above — the container must be
     // un-hidden before focus() can land.
     const id = window.requestAnimationFrame(() => termRef.current?.focus());
     return () => window.cancelAnimationFrame(id);
     // Deliberately excludes state.status: see comment above (must only re-run on
-    // `expanded` transitions, not on every status change, or a background
-    // reattach while already expanded would steal focus).
+    // `expanded`/`grabFocus` transitions, not on every status change, or a
+    // background reattach while already expanded would steal focus).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [expanded]);
+  }, [expanded, grabFocus]);
 
   const clearConnectTimer = useCallback(() => {
     if (connectTimerRef.current) {
@@ -2031,13 +2089,22 @@ export function useTerminalSession(
   // See `refreshView`'s doc on TerminalSessionActions. Mirrors the expand-rAF
   // resize + expand-focus effects above (next paint, so the container has
   // already been un-hidden before fit()/focus() land) — just callable
-  // directly rather than gated on `expanded`.
-  const refreshView = useCallback(() => {
-    window.requestAnimationFrame(() => {
-      sendResize();
-      termRef.current?.focus();
-    });
-  }, [sendResize]);
+  // directly rather than gated on `expanded`. Split view (task df7a0134,
+  // design §9): a pane transitioning hidden→visible needs the SAME forced
+  // refit bring-back already uses, but only the split's focused pane should
+  // also grab the keyboard — `focus` defaults to `true` so every pre-existing
+  // caller (pop-out bring-back) is unchanged; the dock passes `focus: false`
+  // when forcing a refit on the UNFOCUSED pane.
+  const refreshView = useCallback(
+    (opts?: { focus?: boolean }) => {
+      const focus = opts?.focus ?? true;
+      window.requestAnimationFrame(() => {
+        sendResize();
+        if (focus) termRef.current?.focus();
+      });
+    },
+    [sendResize],
+  );
 
   // Scrollback transfer (card 35cffc10, design §7). See TerminalSessionActions'
   // doc on both for the full contract — these are thin, stable-identity
