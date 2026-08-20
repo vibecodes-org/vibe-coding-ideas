@@ -124,6 +124,15 @@ export interface BrowserLaunchPayload {
    * the wrong one — see handleChooserResume/handleResumeEndedSession.
    */
   ideaId?: string;
+  /**
+   * Terminal sessions need names that stick (card 3bf262ac): a previously
+   * user-renamed session's own name, forwarded so a fresh mint (resume) or a
+   * pristine-slot delivery carries it forward exactly like `taskId`/
+   * `taskTitle` already do. Undefined for every launch that isn't reviving a
+   * renamed row (toolbar/task/"+" launches never carry one — there's no
+   * rename UI before a session exists to rename).
+   */
+  displayName?: string;
 }
 
 /** Ask the board's terminal dock to open + auto-launch in the browser. */

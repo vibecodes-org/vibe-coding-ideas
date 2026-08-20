@@ -21,10 +21,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
-import { slugifyIdeaTitle } from "@/lib/launch-claude-code";
 import { formatSessionAge, formatSessionIdentity } from "@/lib/terminal/session-registry";
+import { isFallbackSessionName } from "@/lib/terminal/resolve-session-name";
 import { deriveTabLabel } from "./terminal-tabs";
+import { SessionRenameField } from "./terminal-session-rename";
 import { HelperUpdateButton } from "./terminal-helper-update-button";
 import {
   MINIMUM_RECOMMENDED_HELPER_VERSION,
@@ -72,6 +74,8 @@ interface ListedSession {
    *  "Running", so it filters on this field client-side (see `running` below). */
   status: "active" | "ended";
   endedAt: string | null;
+  /** The user's own name for this session (card 3bf262ac) — highest-precedence input to `deriveTabLabel`. */
+  displayName: string | null;
 }
 
 type LoadState = "idle" | "loading" | "ready" | "error";
@@ -106,6 +110,15 @@ interface TerminalMySessionsPanelProps {
    * e.g. in tests).
    */
   onReconnect?: (sid: string, ideaId: string) => void;
+  /**
+   * Persist a rename (card 3bf262ac) — PATCHes the session and, on success,
+   * keeps the dock's own tab entries (label, pop-out title, announcer) in
+   * sync so a live tab shows the same new name without waiting for its own
+   * next fetch. This panel owns ITS OWN optimistic apply/revert of the row
+   * it's rendering; this callback is pure persistence. Omitted → no pencil
+   * (keeps the panel usable standalone, e.g. in tests).
+   */
+  onRenameSession?: (sid: string, next: string | null) => Promise<{ ok: boolean; displayName?: string | null }>;
   children: ReactNode;
 }
 
@@ -114,11 +127,13 @@ export function TerminalMySessionsPanel({
   open,
   onOpenChange,
   onReconnect,
+  onRenameSession,
   children,
 }: TerminalMySessionsPanelProps) {
   const [loadState, setLoadState] = useState<LoadState>("idle");
   const [sessions, setSessions] = useState<ListedSession[]>([]);
   const [endingSid, setEndingSid] = useState<string | null>(null);
+  const [renamingSid, setRenamingSid] = useState<string | null>(null);
   const [confirmingEndAll, setConfirmingEndAll] = useState(false);
   const [endingAll, setEndingAll] = useState(false);
   const posthog = usePostHog();
@@ -207,6 +222,41 @@ export function TerminalMySessionsPanel({
     if (!open) return;
     resetHelperUpdateIfSettled();
   }, [open, resetHelperUpdateIfSettled]);
+
+  // Rename (card 3bf262ac) — optimistic apply to THIS panel's own row list,
+  // then persist via the dock-owned `onRenameSession` (which also keeps any
+  // live tab's entry in sync). Reverts + toasts with a Retry that resubmits
+  // the SAME attempted value on failure (design §4 Failure spec — the
+  // editor has already closed by the time this runs, so "typed text held in
+  // state" means this closure's `next`, not a reopened input).
+  const renameOne = useCallback(
+    (sid: string, next: string | null) => {
+      const previous = sessions.find((s) => s.sid === sid)?.displayName ?? null;
+      setSessions((prev) => prev.map((s) => (s.sid === sid ? { ...s, displayName: next } : s)));
+      void (async () => {
+        try {
+          const result = await onRenameSession?.(sid, next);
+          if (!result?.ok) throw new Error("rename failed");
+        } catch (err) {
+          logger.error("Terminal session rename failed (panel)", {
+            sid,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          setSessions((prev) => prev.map((s) => (s.sid === sid ? { ...s, displayName: previous } : s)));
+          const stillCalled = deriveTabLabel({
+            displayName: previous,
+            taskTitle: sessions.find((s) => s.sid === sid)?.taskTitle ?? null,
+            ideaTitle: sessions.find((s) => s.sid === sid)?.ideaTitle ?? null,
+            sessionId: sid,
+          });
+          toast.error(`Couldn't rename the session — it's still called "${stillCalled}".`, {
+            action: { label: "Retry", onClick: () => renameOne(sid, next) },
+          });
+        }
+      })();
+    },
+    [sessions, onRenameSession],
+  );
 
   const endOne = useCallback(
     async (sid: string) => {
@@ -311,7 +361,21 @@ export function TerminalMySessionsPanel({
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverTrigger asChild>{children}</PopoverTrigger>
-      <PopoverContent align="end" className="w-96 p-0" aria-label="My terminal sessions">
+      <PopoverContent
+        align="end"
+        className="w-96 p-0"
+        aria-label="My terminal sessions"
+        onEscapeKeyDown={(e) => {
+          // Card 3bf262ac: Radix's Escape-to-dismiss runs in the CAPTURE
+          // phase on `document`, ahead of the rename input's own keydown
+          // handler — a plain stopPropagation inside that input can't stop
+          // this popover from ALSO closing underneath the edit. Suppress
+          // the dismiss here while a row is mid-rename; the input's own
+          // handler still independently cancels ITS edit on the same
+          // keypress (design: "Escape cancels the edit only").
+          if (renamingSid !== null) e.preventDefault();
+        }}
+      >
         <div className="flex items-center gap-2 border-b border-zinc-800 px-3.5 py-2.5 text-[13px] font-bold text-zinc-200">
           My sessions
           <span className="ml-auto text-[11.5px] font-normal text-zinc-500">runs on your machines</span>
@@ -351,33 +415,59 @@ export function TerminalMySessionsPanel({
         {loadState === "ready" && running.length > 0 && (
           <ul className="max-h-80 overflow-y-auto">
             {running.map((s) => {
-              const ideaSlug = slugifyIdeaTitle(s.ideaTitle ?? "");
               const label = deriveTabLabel({
+                displayName: s.displayName,
                 taskTitle: s.taskTitle,
-                ideaSlug,
+                ideaTitle: s.ideaTitle,
                 sessionId: s.sid,
               });
+              // Suppress the secondary idea chip when the label is already
+              // the fallback ("<idea title> · <sid4>") — otherwise a
+              // never-renamed toolbar session shows the idea title twice
+              // (design §1, "De-duplication rule for rows").
+              const showIdeaChip =
+                Boolean(s.ideaTitle) && !isFallbackSessionName({ displayName: s.displayName, taskTitle: s.taskTitle });
               const identity = formatSessionIdentity({
                 machineLabel: s.machineLabel,
                 cwd: s.cwd,
                 sid: s.sid,
               });
               const ending = endingSid === s.sid;
+              const renaming = renamingSid === s.sid;
               return (
                 <li key={s.sid} className="flex items-center gap-2.5 border-t border-zinc-800 px-3.5 py-2.5 first:border-t-0">
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-zinc-100">
-                      <span className="truncate">{label}</span>
-                      {s.ideaTitle && (
-                        <span className="flex-none truncate text-[11.5px] font-normal text-zinc-500">
-                          {s.ideaTitle}
+                  {/* Name/identity/age/Reconnect/End hide while editing THIS row
+                      (design: "one job at a time") — the rename field below is a
+                      SINGLE stable instance across both states (not swapped
+                      between two separately-mounted elements), so its own
+                      internal edit-mode state survives the transition. */}
+                  {!renaming && (
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-zinc-100">
+                        <span className="truncate" title={label}>
+                          {label}
                         </span>
-                      )}
+                        {showIdeaChip && (
+                          <span className="flex-none truncate text-[11.5px] font-normal text-zinc-500">
+                            {s.ideaTitle}
+                          </span>
+                        )}
+                      </div>
+                      <div className="truncate font-mono text-[11px] text-zinc-500">{identity}</div>
                     </div>
-                    <div className="truncate font-mono text-[11px] text-zinc-500">{identity}</div>
-                  </div>
-                  <span className="flex-none text-[11.5px] text-zinc-500">{formatSessionAge(s.createdAt)}</span>
-                  {onReconnect && (
+                  )}
+                  {!renaming && (
+                    <span className="flex-none text-[11.5px] text-zinc-500">{formatSessionAge(s.createdAt)}</span>
+                  )}
+                  {onRenameSession && (
+                    <SessionRenameField
+                      resolvedName={label}
+                      userName={s.displayName}
+                      onSave={(next) => renameOne(s.sid, next)}
+                      onEditingChange={(editing) => setRenamingSid(editing ? s.sid : null)}
+                    />
+                  )}
+                  {!renaming && onReconnect && (
                     <Button
                       variant="outline"
                       size="xs"
@@ -389,16 +479,18 @@ export function TerminalMySessionsPanel({
                       <RefreshCw className="h-3 w-3" /> Reconnect
                     </Button>
                   )}
-                  <Button
-                    variant="outline"
-                    size="xs"
-                    className="flex-none border-rose-500/45 bg-transparent text-rose-400 hover:bg-rose-500/10"
-                    disabled={ending}
-                    onClick={() => void endOne(s.sid)}
-                    aria-label={`End session: ${label}`}
-                  >
-                    {ending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Power className="h-3 w-3" />} End
-                  </Button>
+                  {!renaming && (
+                    <Button
+                      variant="outline"
+                      size="xs"
+                      className="flex-none border-rose-500/45 bg-transparent text-rose-400 hover:bg-rose-500/10"
+                      disabled={ending}
+                      onClick={() => void endOne(s.sid)}
+                      aria-label={`End session: ${label}`}
+                    >
+                      {ending ? <Loader2 className="h-3 w-3 animate-spin" /> : <Power className="h-3 w-3" />} End
+                    </Button>
+                  )}
                 </li>
               );
             })}

@@ -21,6 +21,7 @@
 import type { TerminalStatus } from "@/lib/terminal/connection";
 import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import type { AttachExistingPair } from "./use-terminal-session";
+import { resolveSessionName } from "@/lib/terminal/resolve-session-name";
 
 /**
  * One tab = one `useTerminalSession` instance, mounted by a dedicated
@@ -39,6 +40,17 @@ export interface SessionEntry {
   origin: "toolbar" | "task" | "reconnect" | "resume";
   taskId?: string;
   taskTitle?: string;
+  /**
+   * The user's own name for this session (card 3bf262ac, "terminal sessions
+   * need names that stick") — mirrors `taskId`/`taskTitle` in every way that
+   * matters: set at entry-creation time from the launch/resume/reattach
+   * payload, updated OPTIMISTICALLY the instant a rename is saved (see
+   * terminal-dock.tsx's `renameSession`), and read by every label call site
+   * (`deriveTabLabel`) ahead of the task title. Undefined, not null, to
+   * match the sibling optional fields above — `resolveSessionName` treats
+   * both the same way.
+   */
+  displayName?: string;
   /**
    * Cross-board resume fix (bug 62e57071): the idea this entry's conversation
    * actually belongs to, resolved once at creation (`payload?.ideaId ??
@@ -144,29 +156,44 @@ export function isLiveTabStatus(status: TerminalStatus): boolean {
 }
 
 // ── B3: tab label ────────────────────────────────────────────────────────────
+//
+// Naming rule unification (card 3bf262ac, docs/design-terminal-session-naming.html
+// §1): this used to derive its own fallback (`<idea SLUG> · <sid4>`), a
+// DIFFERENT shape from the session chooser's own inline derivation
+// (`taskTitle → ideaTitle → sid.slice(0, 8)`) — same session, two different
+// labels depending on where you looked. `deriveTabLabel` now delegates
+// entirely to `resolveSessionName` (the one naming rule, in
+// src/lib/terminal/resolve-session-name.ts), and every surface — this tab
+// strip, the chooser's rows, and the My Sessions panel — calls it. The
+// fallback shape changed too: the FULL idea title, never the slug (design
+// §1's fallback-shape decision) — `ideaSlug` is gone from this interface;
+// callers now pass `ideaTitle` directly.
 
 export interface TabLabelInput {
+  /** The user's own name for this session, if set — highest precedence (card 3bf262ac). */
+  displayName?: string | null;
   /** Set only for a task-scoped launch (LaunchClaudeCodeButton task variants). */
   taskTitle?: string | null;
-  /** Slugified idea title (see slugifyIdeaTitle) — used when NOT task-scoped. */
-  ideaSlug: string;
+  /** The idea/board's title — used only to build the fallback shape when there's no user name or task title. */
+  ideaTitle?: string | null;
   /** The minted session id, once known (null before mint completes). */
   sessionId: string | null;
 }
 
-const SID_SHORT_LEN = 4;
-
 /**
- * Task title when the launch was task-scoped, else `<idea slug> · <sid-short>`
- * (B3, design §2 callout 2 / §4). Callers truncate the rendered label with CSS
- * ellipsis and use the full title (or this same string, for board-level tabs)
- * as the tooltip/title attribute.
+ * Resolves a tab's label via the one shared naming rule (B3, design §1):
+ * user name → task title → `<idea title> · <sid4>` (or `Session · <sid4>`
+ * with no idea title). Callers truncate the rendered label with CSS
+ * ellipsis and use the full string (or this same string, for board-level
+ * tabs) as the tooltip/title attribute.
  */
 export function deriveTabLabel(input: TabLabelInput): string {
-  const title = input.taskTitle?.trim();
-  if (title) return title;
-  const sid = input.sessionId ? input.sessionId.slice(0, SID_SHORT_LEN) : "…";
-  return `${input.ideaSlug} · ${sid}`;
+  return resolveSessionName({
+    displayName: input.displayName,
+    taskTitle: input.taskTitle,
+    ideaTitle: input.ideaTitle,
+    sessionId: input.sessionId,
+  });
 }
 
 // ── first-launch reuse: the pristine slot ───────────────────────────────────

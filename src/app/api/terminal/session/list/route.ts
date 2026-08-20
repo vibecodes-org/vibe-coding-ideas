@@ -71,7 +71,9 @@ export async function GET() {
     const recentSince = new Date(nowMs - RECENT_WINDOW_MS).toISOString();
     const { data: rows, error } = await supabase
       .from("terminal_sessions")
-      .select("sid, idea_id, task_id, task_title, machine_label, cwd, claude_session_id, created_at, status, ended_at")
+      .select(
+        "sid, idea_id, task_id, task_title, machine_label, cwd, claude_session_id, display_name, created_at, status, ended_at",
+      )
       .eq("user_id", user.id)
       .or(`status.eq.active,ended_at.gte.${recentSince}`)
       .order("created_at", { ascending: false });
@@ -96,6 +98,7 @@ export async function GET() {
       machineLabel: row.machine_label,
       cwd: row.cwd,
       claudeSessionId: row.claude_session_id,
+      displayName: row.display_name,
       createdAt: row.created_at,
       status: row.status,
       endedAt: row.ended_at,

@@ -111,6 +111,8 @@ export interface ChooserRegistryRow {
   createdAt: string;
   status: "active" | "ended";
   endedAt: string | null;
+  /** The user's own name for this session (card 3bf262ac) — highest-precedence input to `resolveSessionName`/`deriveTabLabel`. */
+  displayName: string | null;
 }
 
 export interface ChooserLiveRow {
@@ -124,6 +126,8 @@ export interface ChooserLiveRow {
   createdAt: string;
   /** Design badge: this row is the sid this browser TAB last attached, even past the instant-continue freshness window. */
   wasOpenInThisTab: boolean;
+  /** The user's own name for this session (card 3bf262ac). */
+  displayName: string | null;
 }
 
 export interface ChooserRecentRow {
@@ -138,6 +142,8 @@ export interface ChooserRecentRow {
   /** Exact-conversation Resume (rework 5) — see ChooserRegistryRow's doc. Null → the chooser falls back to the legacy `--continue` resume. */
   claudeSessionId: string | null;
   endedAt: string;
+  /** The user's own name for this session (card 3bf262ac) — renaming an ended row is exactly where Nick needs this most (the Recent/resume list). */
+  displayName: string | null;
 }
 
 export interface ChooserSections {
@@ -181,6 +187,7 @@ export function deriveChooserSections(
     cwd: r.cwd,
     createdAt: r.createdAt,
     wasOpenInThisTab: !!lastTabSid && r.sid === lastTabSid,
+    displayName: r.displayName,
   });
 
   const live = rows.filter((r) => r.status === "active");
@@ -237,6 +244,7 @@ export function deriveChooserSections(
     machineLabel: r.machineLabel,
     claudeSessionId: r.claudeSessionId,
     endedAt: r.endedAt,
+    displayName: r.displayName,
   }));
 
   return { liveHere, liveElsewhere, recent };

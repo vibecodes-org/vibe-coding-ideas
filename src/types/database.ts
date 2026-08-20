@@ -2778,6 +2778,10 @@ export type Database = {
         machine_label: string | null;
         cwd: string | null;
         claude_session_id: string | null;
+        // User-set name that sticks (migration 00159, card 3bf262ac) —
+        // settable/clearable on active AND ended rows, unlike the
+        // bridge-fed fields above. See resolveSessionName's precedence.
+        display_name: string | null;
         status: "active" | "ended";
         created_at: string;
         ended_at: string | null;
@@ -2793,6 +2797,7 @@ export type Database = {
         machine_label?: string | null;
         cwd?: string | null;
         claude_session_id?: string | null;
+        display_name?: string | null;
         status?: "active" | "ended";
         created_at?: string;
         ended_at?: string | null;
@@ -2808,6 +2813,7 @@ export type Database = {
         machine_label?: string | null;
         cwd?: string | null;
         claude_session_id?: string | null;
+        display_name?: string | null;
         status?: "active" | "ended";
         created_at?: string;
         ended_at?: string | null;

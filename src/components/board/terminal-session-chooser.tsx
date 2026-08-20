@@ -13,12 +13,17 @@
 // chooser-data.ts — this component only renders `ChooserSections` and wires
 // clicks to the callbacks the dock supplies.
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Info, Loader2, RefreshCw, Terminal as TerminalIcon, X } from "lucide-react";
+import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { logger } from "@/lib/logger";
 import { formatSessionAge } from "@/lib/terminal/session-registry";
 import { newSessionTooltip, getTerminalSessionCap, isNearSessionCap, terminalLimitLine } from "@/lib/terminal/session-cap";
+import { isFallbackSessionName } from "@/lib/terminal/resolve-session-name";
+import { deriveTabLabel } from "./terminal-tabs";
+import { SessionRenameField } from "./terminal-session-rename";
 import {
   findLiveSessionForTask,
   visibleRecentRows,
@@ -58,6 +63,15 @@ export interface TerminalSessionChooserProps {
   onResume: (row: ChooserRecentRow) => void;
   /** "Start new session" — the only action that mints (capped, rate-limited, exactly today's mint path). */
   onStartNew: () => void;
+  /**
+   * Persist a rename (card 3bf262ac) — the dock's shared `renameSession`:
+   * PATCHes the session and, on success, keeps the dock's own registry rows
+   * and any live tab entry in sync. This component owns its OWN optimistic
+   * override per row (see `renameOverrides` below) so a row updates
+   * INSTANTLY, ahead of the dock's next re-derive of `sections`. Omitted →
+   * no pencil on any row (keeps the chooser usable standalone, e.g. tests).
+   */
+  onRenameSession?: (sid: string, next: string | null) => Promise<{ ok: boolean; displayName?: string | null }>;
   cap?: number;
   /**
    * The caller's own last-known helper status (card cbe60db5, rework 3 —
@@ -86,6 +100,22 @@ export interface TerminalSessionChooserProps {
    * decided none of them is what you wanted.
    */
   onDismiss?: () => void;
+  /**
+   * Fires whenever ANY row's rename editor opens/closes (card 3bf262ac).
+   * When this chooser renders inside the dock's overlay `Dialog` (as
+   * opposed to the body-swap `showingChooser` case, which has no Dialog to
+   * fight with), Radix's Escape-to-dismiss listener runs in the CAPTURE
+   * phase on `document` — BEFORE this component's own rename-input keydown
+   * handler ever sees the event — so stopping propagation inside the input
+   * cannot, by itself, stop the Dialog from also closing. The dock wires
+   * this to `DialogContent`'s own `onEscapeKeyDown`, calling
+   * `event.preventDefault()` while a rename is active so the FIRST Escape
+   * cancels only the edit (design: "Escape cancels the edit only; the
+   * chooser stays dismissable" — a second Escape, with no edit open, still
+   * closes the chooser normally). Omitted is safe — it only degrades to
+   * "Escape while renaming also closes the chooser", never a trap.
+   */
+  onRenamingActiveChange?: (active: boolean) => void;
 }
 
 export function TerminalSessionChooser({
@@ -96,13 +126,61 @@ export function TerminalSessionChooser({
   onOpenBoardAndReconnect,
   onResume,
   onStartNew,
+  onRenameSession,
   cap,
   helperStatus = null,
   onHelperUpdateSettled,
   onDismiss,
+  onRenamingActiveChange,
 }: TerminalSessionChooserProps) {
   const [confirmingResumeSid, setConfirmingResumeSid] = useState<string | null>(null);
   const firstFocusRef = useRef<HTMLButtonElement | null>(null);
+
+  // Rename (card 3bf262ac) — `renamingSid` hides a row's OTHER actions while
+  // its editor is open (design: "one job at a time"); `renameOverrides` is
+  // this component's OWN optimistic layer so a row updates the INSTANT save
+  // is requested, ahead of the dock re-deriving `sections` from its next
+  // registry state (see `onRenameSession`'s doc). Cleared once the async
+  // persist settles either way — on success `sections` has (or will
+  // imminently) caught up; on failure the row must revert to its prior name.
+  const [renamingSid, setRenamingSid] = useState<string | null>(null);
+  const [renameOverrides, setRenameOverrides] = useState<Record<string, string | null>>({});
+
+  // See `onRenamingActiveChange`'s doc — lets the dock suppress the overlay
+  // Dialog's Escape-to-dismiss (a capture-phase, document-level listener
+  // that fires before any row's own input can stop it) while a row is mid-edit.
+  useEffect(() => {
+    onRenamingActiveChange?.(renamingSid !== null);
+  }, [renamingSid, onRenamingActiveChange]);
+
+  const commitRename = useCallback(
+    (sid: string, next: string | null, resolvedName: string) => {
+      setRenameOverrides((prev) => ({ ...prev, [sid]: next }));
+      void (async () => {
+        try {
+          const result = await onRenameSession?.(sid, next);
+          if (!result?.ok) throw new Error("rename failed");
+        } catch (err) {
+          logger.error("Terminal session rename failed (chooser)", {
+            sid,
+            error: err instanceof Error ? err.message : String(err),
+          });
+          // Clearing the override below reverts the row to `resolvedName`
+          // (whatever `sections` still says, since the PATCH never landed).
+          toast.error(`Couldn't rename the session — it's still called "${resolvedName}".`, {
+            action: { label: "Retry", onClick: () => commitRename(sid, next, resolvedName) },
+          });
+        } finally {
+          setRenameOverrides((prev) => {
+            if (!(sid in prev)) return prev;
+            const { [sid]: _discard, ...rest } = prev;
+            return rest;
+          });
+        }
+      })();
+    },
+    [onRenameSession],
+  );
 
   // Helper-update nudge (card cbe60db5, rework 3): dismissed for the rest of
   // the browser session only — component-local state, not persisted, same
@@ -269,6 +347,10 @@ export function TerminalSessionChooser({
               buttonLabel="Reconnect"
               autoFocusRef={!taskMatch && row.sid === wasOpenSid ? firstFocusRef : undefined}
               onClick={() => onReconnectHere(row)}
+              renameOverride={renameOverrides[row.sid]}
+              renaming={renamingSid === row.sid}
+              onEditingChange={(editing) => setRenamingSid(editing ? row.sid : null)}
+              onRenameSession={onRenameSession && commitRename}
             />
           ))}
         </ChooserSection>
@@ -285,6 +367,10 @@ export function TerminalSessionChooser({
               buttonLabel="Open board & reconnect"
               autoFocusRef={!taskMatch && sections.liveHere.length === 0 && row.sid === wasOpenSid ? firstFocusRef : undefined}
               onClick={() => onOpenBoardAndReconnect(row)}
+              renameOverride={renameOverrides[row.sid]}
+              renaming={renamingSid === row.sid}
+              onEditingChange={(editing) => setRenamingSid(editing ? row.sid : null)}
+              onRenameSession={onRenameSession && commitRename}
             />
           ))}
         </ChooserSection>
@@ -305,6 +391,10 @@ export function TerminalSessionChooser({
                 setConfirmingResumeSid(null);
                 onResume(row);
               }}
+              renameOverride={renameOverrides[row.sid]}
+              renaming={renamingSid === row.sid}
+              onEditingChange={(editing) => setRenamingSid(editing ? row.sid : null)}
+              onRenameSession={onRenameSession && commitRename}
             />
           ))}
         </ChooserSection>
@@ -344,6 +434,10 @@ function LiveRow({
   buttonLabel,
   autoFocusRef,
   onClick,
+  renameOverride,
+  renaming = false,
+  onEditingChange,
+  onRenameSession,
 }: {
   row: ChooserLiveRow;
   busy: boolean;
@@ -351,35 +445,63 @@ function LiveRow({
   buttonLabel: string;
   autoFocusRef?: React.RefObject<HTMLButtonElement | null>;
   onClick: () => void;
+  /** This component's own optimistic rename layer — see the chooser's `renameOverrides` doc. Undefined → fall back to `row.displayName`. */
+  renameOverride?: string | null;
+  renaming?: boolean;
+  onEditingChange?: (editing: boolean) => void;
+  onRenameSession?: (sid: string, next: string | null, resolvedName: string) => void;
 }) {
-  const label = row.taskTitle?.trim() || row.ideaTitle || row.sid.slice(0, 8);
+  const userName = renameOverride !== undefined ? renameOverride : row.displayName;
+  // Naming rule unification (card 3bf262ac): was `row.taskTitle?.trim() ||
+  // row.ideaTitle || row.sid.slice(0, 8)` — a DIFFERENT shape from the tab/
+  // panel's `deriveTabLabel`. Now the same helper, same precedence, same
+  // fallback everywhere.
+  const label = deriveTabLabel({ displayName: userName, taskTitle: row.taskTitle, ideaTitle: row.ideaTitle, sessionId: row.sid });
+  // Suppress the secondary idea chip when the label is already the fallback
+  // ("<idea title> · <sid4>") — otherwise a never-renamed toolbar session
+  // shows the idea title twice (design §1, "De-duplication rule for rows").
+  const showIdeaChip = Boolean(row.ideaTitle) && !isFallbackSessionName({ displayName: userName, taskTitle: row.taskTitle });
   const identity = [row.machineLabel, row.cwd].filter(Boolean).join(" · ") || `session ${row.sid.slice(0, 8)}`;
   return (
     <div className="flex items-start gap-2.5 border-t border-zinc-800 px-3.5 py-2.5">
-      <div className="min-w-0 flex-1">
-        <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-zinc-100">
-          <span className="truncate">{label}</span>
-          {row.ideaTitle && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
-          {badge && (
-            <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-300">
-              {badge}
+      {!renaming && (
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-zinc-100">
+            <span className="truncate" title={label}>
+              {label}
             </span>
-          )}
+            {showIdeaChip && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
+            {badge && (
+              <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-300">
+                {badge}
+              </span>
+            )}
+          </div>
+          <div className="truncate font-mono text-[11px] text-zinc-500">
+            {identity} · started {formatSessionAge(row.createdAt)} ago
+          </div>
+          <div className="mt-1 text-[11px] text-zinc-500">{TAKEOVER_LINE}</div>
         </div>
-        <div className="truncate font-mono text-[11px] text-zinc-500">
-          {identity} · started {formatSessionAge(row.createdAt)} ago
-        </div>
-        <div className="mt-1 text-[11px] text-zinc-500">{TAKEOVER_LINE}</div>
-      </div>
-      <Button
-        ref={autoFocusRef}
-        size="xs"
-        className="flex-none bg-sky-500 text-sky-950 hover:bg-sky-400"
-        disabled={busy}
-        onClick={onClick}
-      >
-        <RefreshCw className="h-3 w-3" /> {buttonLabel}
-      </Button>
+      )}
+      {onRenameSession && (
+        <SessionRenameField
+          resolvedName={label}
+          userName={userName}
+          onSave={(next) => onRenameSession(row.sid, next, label)}
+          onEditingChange={onEditingChange}
+        />
+      )}
+      {!renaming && (
+        <Button
+          ref={autoFocusRef}
+          size="xs"
+          className="flex-none bg-sky-500 text-sky-950 hover:bg-sky-400"
+          disabled={busy}
+          onClick={onClick}
+        >
+          <RefreshCw className="h-3 w-3" /> {buttonLabel}
+        </Button>
+      )}
     </div>
   );
 }
@@ -392,6 +514,10 @@ function RecentRow({
   onRequestConfirm,
   onCancelConfirm,
   onConfirm,
+  renameOverride,
+  renaming = false,
+  onEditingChange,
+  onRenameSession,
 }: {
   row: ChooserRecentRow;
   busy: boolean;
@@ -401,8 +527,20 @@ function RecentRow({
   onRequestConfirm: () => void;
   onCancelConfirm: () => void;
   onConfirm: () => void;
+  /** This component's own optimistic rename layer — see the chooser's `renameOverrides` doc. Undefined → fall back to `row.displayName`. */
+  renameOverride?: string | null;
+  renaming?: boolean;
+  onEditingChange?: (editing: boolean) => void;
+  onRenameSession?: (sid: string, next: string | null, resolvedName: string) => void;
 }) {
-  const label = row.taskTitle?.trim() || row.ideaTitle || row.sid.slice(0, 8);
+  const userName = renameOverride !== undefined ? renameOverride : row.displayName;
+  // Naming rule unification (card 3bf262ac) — see LiveRow's identical note.
+  // Renaming an ENDED row is exactly the case Nick needs most (Requirements
+  // §2's PATCH-route gap, fixed in the API layer this UI now relies on).
+  const label = deriveTabLabel({ displayName: userName, taskTitle: row.taskTitle, ideaTitle: row.ideaTitle, sessionId: row.sid });
+  // Suppress the secondary idea chip when the label is already the fallback
+  // — see LiveRow's identical note (design §1, "De-duplication rule for rows").
+  const showIdeaChip = Boolean(row.ideaTitle) && !isFallbackSessionName({ displayName: userName, taskTitle: row.taskTitle });
   // Null-cwd handling: kept defensive even though the caller (this file's
   // `visibleRecent`, via `visibleRecentRows`) now filters null-cwd rows out
   // before they ever reach this component — see chooser-data.ts's
@@ -413,16 +551,28 @@ function RecentRow({
   return (
     <div className={cn("border-t border-zinc-800 px-3.5 py-2.5", confirming && "bg-emerald-500/5")}>
       <div className="flex items-start gap-2.5">
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-zinc-100">
-            <span className="truncate">{label}</span>
-            {row.ideaTitle && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
+        {!renaming && (
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-zinc-100">
+              <span className="truncate" title={label}>
+                {label}
+              </span>
+              {showIdeaChip && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
+            </div>
+            <div className="truncate font-mono text-[11px] text-zinc-500">
+              {row.cwd ?? "no recorded folder"} · ended {formatSessionAge(row.endedAt)} ago
+            </div>
           </div>
-          <div className="truncate font-mono text-[11px] text-zinc-500">
-            {row.cwd ?? "no recorded folder"} · ended {formatSessionAge(row.endedAt)} ago
-          </div>
-        </div>
-        {!confirming && row.cwd && (
+        )}
+        {onRenameSession && (
+          <SessionRenameField
+            resolvedName={label}
+            userName={userName}
+            onSave={(next) => onRenameSession(row.sid, next, label)}
+            onEditingChange={onEditingChange}
+          />
+        )}
+        {!renaming && !confirming && row.cwd && (
           <Button
             size="xs"
             className="flex-none bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
@@ -432,7 +582,7 @@ function RecentRow({
             Resume
           </Button>
         )}
-        {!confirming && !row.cwd && (
+        {!renaming && !confirming && !row.cwd && (
           <span className="flex-none text-[11px] text-zinc-600">Can&apos;t resume — no folder recorded</span>
         )}
       </div>

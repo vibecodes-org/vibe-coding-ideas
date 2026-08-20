@@ -23,6 +23,7 @@ const LIVE_HERE_MATCH: TaskSessionMatch = {
     cwd: "~/projects/vibecodes",
     createdAt: new Date().toISOString(),
     wasOpenInThisTab: false,
+    displayName: null,
   },
 };
 
@@ -38,6 +39,7 @@ const RECENT_MATCH: TaskSessionMatch = {
     machineLabel: null,
     claudeSessionId: null,
     endedAt: new Date().toISOString(),
+    displayName: null,
   },
 };
 
