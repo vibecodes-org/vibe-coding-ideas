@@ -33,6 +33,7 @@ import {
   rateLimitWindowStart,
 } from "@/lib/terminal/session-registry";
 import { reapExpiredSessions } from "@/lib/terminal/session-reap";
+import { normalizeDisplayNameInput } from "@/lib/terminal/display-name";
 import {
   getTerminalDailyBudget,
   getTerminalBudgetSoftPct,
@@ -60,6 +61,15 @@ const BodySchema = z.object({
   // — a board-level launch (toolbar "In the browser") carries neither.
   taskId: z.string().uuid().optional(),
   taskTitle: z.string().trim().min(1).max(500).optional(),
+  // Rename that survives resume (card 3bf262ac): only ever set by the resume
+  // flow — buildResumePayload/mintAndDeliver forward a previously-renamed
+  // ended row's name into its fresh mint, the same way taskId/taskTitle
+  // already ride resume. There is no rename UI before a session exists, so
+  // this is never user-typed at mint time itself. Bounded generously above
+  // the real 100-code-point limit (surrogate-pair emoji can double a
+  // string's UTF-16 length without doubling its code-point count) —
+  // `normalizeDisplayNameInput` enforces the actual limit below.
+  displayName: z.string().max(1000).optional(),
 });
 
 export async function POST(req: Request) {
@@ -120,7 +130,7 @@ export async function POST(req: Request) {
     if (!parsed.success) {
       return NextResponse.json({ error: "Invalid request body" }, { status: 400 });
     }
-    const { ideaId, taskId, taskTitle } = parsed.data;
+    const { ideaId, taskId, taskTitle, displayName } = parsed.data;
 
     // Only a member of the idea (author or collaborator) may open a terminal on it.
     const { data: idea } = await supabase
@@ -296,6 +306,7 @@ export async function POST(req: Request) {
       idea_id: ideaId,
       task_id: taskId ?? null,
       task_title: taskTitle ?? null,
+      display_name: displayName !== undefined ? normalizeDisplayNameInput(displayName) : null,
       status: "active",
       expires_at: computeSessionExpiresAt(nowMs),
     });

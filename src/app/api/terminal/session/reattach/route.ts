@@ -67,7 +67,7 @@ export async function POST(req: Request) {
     // the explicit filter keeps the query honest regardless of client).
     const { data: row, error: rowErr } = await supabase
       .from("terminal_sessions")
-      .select("sid, idea_id, status, expires_at, cwd, claude_session_id")
+      .select("sid, idea_id, status, expires_at, cwd, claude_session_id, display_name")
       .eq("sid", sid)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -131,6 +131,11 @@ export async function POST(req: Request) {
       // though the server has known the folder the whole time.
       cwd: row.cwd,
       claudeSessionId: row.claude_session_id,
+      // Card 3bf262ac (AC 3 — "reloading the page after renaming a live
+      // session shows the custom name on the reattached tab"): forward the
+      // registry's own display_name so performReattach can seed the fresh
+      // entry's `displayName` exactly like it already seeds cwd/claudeSessionId.
+      displayName: row.display_name,
     });
   } catch (err) {
     logger.error("Terminal session reattach error", {
