@@ -1,0 +1,476 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design — Terminal split view (two panes, one keyboard)</title>
+<style>
+:root{
+  --bg:#09090b; --panel:#0c0c0e; --panel2:#111114; --panel3:#141417; --panel-dim:#101012;
+  --border:#27272a; --border2:#3f3f46;
+  --txt:#e4e4e7; --bright:#f4f4f5; --dim:#a1a1aa; --faint:#71717a;
+  --emerald:#34d399; --emerald-bg:rgba(52,211,153,.09); --emerald-bd:rgba(52,211,153,.4);
+  --sky:#38bdf8; --sky3:#7dd3fc; --sky-bg:rgba(56,189,248,.09); --sky-bd:rgba(56,189,248,.4);
+  --amber:#fbbf24; --amber-bg:rgba(251,191,36,.09); --amber-bd:rgba(251,191,36,.4);
+  --rose:#fb7185; --rose-bg:rgba(251,113,133,.09); --rose-bd:rgba(251,113,133,.45);
+  --violet:#a78bfa;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.6 -apple-system,'Segoe UI',Roboto,sans-serif;padding:40px 20px 80px}
+.wrap{max-width:1020px;margin:0 auto}
+h1{font-size:24px;margin-bottom:4px}
+h2{font-size:18px;margin:48px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h3{font-size:14.5px;margin:24px 0 8px}
+h4{font-size:12.5px;margin:18px 0 6px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
+p{margin:8px 0;color:var(--dim)}
+strong{color:var(--txt)}
+ul{margin:8px 0 8px 22px;color:var(--dim)} li{margin:4px 0}
+.sub{color:var(--faint);font-size:13px;margin-bottom:20px}
+.meta{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
+.chip{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--border2);color:var(--dim)}
+.chip.em{border-color:var(--emerald-bd);color:var(--emerald);background:var(--emerald-bg)}
+.chip.sky{border-color:var(--sky-bd);color:var(--sky);background:var(--sky-bg)}
+code{font-family:var(--mono);font-size:12px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--txt)}
+kbd{font-family:var(--mono);font-size:11.5px;background:var(--panel2);border:1px solid var(--border2);border-bottom-width:2px;border-radius:4px;padding:1px 6px;color:var(--txt)}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin:12px 0}
+.found{border-left:3px solid var(--emerald)}
+.found .ftitle{font-size:14px;font-weight:700;color:var(--emerald);margin-bottom:6px}
+.reject{border-left:3px solid var(--rose)}
+.reject .rtitle{font-size:14px;font-weight:700;color:var(--rose);margin-bottom:6px}
+.veto{border:1px dashed var(--amber-bd);background:var(--amber-bg);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12.5px;color:var(--amber)}
+.veto b{color:var(--amber)}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px}
+th{text-align:left;padding:7px 10px;color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border2);vertical-align:bottom}
+td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--dim);vertical-align:top}
+td:first-child{color:var(--txt);font-weight:600}
+.tblwrap{overflow-x:auto}
+td.mono, .mono{font-family:var(--mono);font-size:11.5px;color:var(--txt)}
+.pass{color:var(--emerald);font-weight:700}
+.pick{color:var(--emerald);font-weight:700}
+.no{color:var(--rose);font-weight:700}
+/* flows */
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0;padding:4px 0}
+.step{background:var(--panel2);border:1px solid var(--border2);border-radius:7px;padding:6px 11px;font-size:12px;color:var(--txt)}
+.step small{display:block;color:var(--faint);font-size:10.5px;max-width:230px}
+.step.sys{border-style:dashed;color:var(--dim)}
+.step.good{border-color:var(--emerald-bd);background:var(--emerald-bg)}
+.step.warn{border-color:var(--amber-bd);background:var(--amber-bg)}
+.step.act{border-color:var(--sky-bd);background:var(--sky-bg)}
+.arr{color:var(--faint);font-size:13px;flex:none}
+/* mockups */
+.mock{background:var(--panel);border:1px solid var(--border2);border-radius:10px;margin:14px 0;overflow:hidden;font-size:13px}
+.mock-cap{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin:20px 0 -6px}
+.caption{font-size:11.5px;color:var(--faint)}
+.tabstrip{display:flex;align-items:stretch;background:var(--panel3);border-bottom:1px solid var(--border)}
+.tabscroll{display:flex;align-items:stretch;min-width:0;flex:1;overflow-x:auto}
+.ttab{display:flex;align-items:center;gap:7px;padding:8px 12px;border-right:1px solid var(--border);border-top:2px solid transparent;font-size:12.5px;color:var(--dim);white-space:nowrap;min-width:0}
+.ttab.on{border-top-color:var(--sky);background:var(--panel);color:var(--txt);font-weight:600}
+.ttab .lbl{overflow:hidden;text-overflow:ellipsis;max-width:150px}
+.ttab .x{color:var(--faint);font-size:11px;margin-left:2px}
+.glyph{font-size:11px;flex:none}
+.g-ok{color:var(--emerald)} .g-mut{color:var(--faint)} .g-warn{color:var(--amber)} .g-err{color:var(--rose)} .g-popped{color:var(--violet)} .g-info{color:var(--sky)}
+.badge{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:4px;padding:0 5px;flex:none}
+.badge.pane{background:var(--sky-bg);border:1px solid var(--sky-bd);color:var(--sky)}
+.badge.pane.dim{background:transparent;border-color:var(--border2);color:var(--dim)}
+.pinned{display:flex;align-items:stretch;margin-left:auto;flex:none}
+.iconbtn{display:flex;align-items:center;justify-content:center;width:38px;border-left:1px solid var(--border);color:var(--dim);font-size:15px}
+.iconbtn.on{color:var(--sky);background:var(--sky-bg)}
+/* panes */
+.splitbody{display:flex;align-items:stretch;background:var(--panel);gap:0}
+.pane{flex:1 1 0;min-width:0;border:1px solid var(--border);margin:3px;border-radius:6px;overflow:hidden}
+.pane.focus{border-color:var(--sky);box-shadow:0 0 0 1px rgba(56,189,248,.35),0 0 14px rgba(56,189,248,.12)}
+.phead{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);background:var(--panel3);min-width:0}
+.pane:not(.focus) .phead{background:var(--panel-dim)}
+.fword{display:inline-flex;align-items:center;gap:5px;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;flex:none}
+.fword.typing{color:var(--sky3);border:1px solid var(--sky-bd);background:var(--sky-bg)}
+.fword.watch{color:var(--dim);border:1px solid var(--border2);background:transparent;font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border2);border-radius:6px;padding:1px 8px;font-size:11px;font-weight:600;color:var(--dim);flex:none}
+.pill.em{border-color:var(--emerald-bd);color:var(--emerald);background:var(--emerald-bg)}
+.pname{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;color:var(--bright)}
+.pane:not(.focus) .pname{color:var(--dim);font-weight:400}
+.pbtns{display:inline-flex;gap:4px;flex:none}
+.pbtn{display:inline-flex;align-items:center;justify-content:center;width:22px;height:20px;border:1px solid var(--border2);border-radius:5px;font-size:10.5px;color:var(--txt);background:rgba(63,63,70,.35)}
+.pane:not(.focus) .pbtn{color:var(--dim)}
+.pbtn.rose{border-color:var(--rose-bd);color:var(--rose);background:transparent}
+.pterm{background:var(--panel);padding:10px 12px;font-family:var(--mono);font-size:11.5px;line-height:1.55;color:var(--dim);min-height:120px}
+.pterm .cl{color:var(--txt)}
+.pterm .ac{color:var(--emerald)}
+.cur-solid{display:inline-block;width:7px;height:13px;background:var(--txt);vertical-align:-2px;animation:blink 1.1s steps(1) infinite}
+.cur-hollow{display:inline-block;width:7px;height:13px;border:1px solid var(--dim);vertical-align:-2px}
+@keyframes blink{50%{opacity:0}}
+.swatch{display:inline-block;width:11px;height:11px;border-radius:3px;border:1px solid var(--border2);vertical-align:-1px;margin-right:5px}
+@media (prefers-reduced-motion: reduce){.cur-solid{animation:none}}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Terminal split view — two panes, one keyboard</h1>
+<div class="sub">UX design for task <code>df7a0134</code> · workflow step 2 of 6 · builds directly on the approved <strong>Requirements</strong> step (ProdOwner, 2026-08-20)</div>
+<div class="meta">
+  <span class="chip sky">2-pane split · 50/50 · opt-in toggle</span>
+  <span class="chip em">Exactly one pane owns the keyboard</span>
+  <span class="chip">Tabs stay the default</span>
+  <span class="chip">Never unmount an xterm</span>
+</div>
+
+<p>The Requirements step already locked the shape of v1: an <strong>opt-in toggle</strong> (tabs stay the default), <strong>two panes only</strong>, a <strong>50/50 split</strong>, <strong>exactly one pane owning keyboard input</strong>, focus signalled by <strong>border + words + dimmed chrome + cursor shape</strong> (never colour alone), <strong>popped-out sessions never claim a pane</strong>, <strong>never unmount an xterm</strong>, and a <strong>width floor that falls back to tabs</strong>. This document does not relitigate any of that — it turns each decision into concrete pixels, tokens and flows, and answers the three questions Requirements left open (§7): pane assignment with 3+ sessions, whether a per-pane swap control is needed, and the exact px floor.</p>
+<p><strong>One genuine late addition from Nick (2026-08-20), received during this design step:</strong> split view must also be reachable by <em>direct manipulation</em> — drag a tab and dock it to the left or right half, the way panels dock in an IDE. That is designed in §6 as a second entry route; the toggle remains the primary, keyboard- and touch-accessible path. It supersedes any earlier assumption that the toggle is the only way in.</p>
+
+<h2>1 · Decisions at a glance</h2>
+<div class="tblwrap"><table>
+<tr><th>Decision</th><th>What this design specifies</th><th>Why</th></tr>
+<tr><td>Split toggle placement</td><td>An icon toggle pinned in the tab strip's non-scrolling right region, immediately left of the existing “+” button. <code>aria-pressed</code>, visible only when ≥2 eligible tabs exist.</td><td>Fitts: session management already lives at that pinned edge; the toggle can never be scrolled away, same rule as “+”.</td></tr>
+<tr><td>Second entry route: drag-to-dock</td><td>Drag a tab into the dock body and drop it on the left or right half — translucent sky drop zones, drag ghost, Escape cancels. Toggle stays the accessible equivalent.</td><td>Nick's late addition (§6); IDE panel-docking convention — Jakob's law.</td></tr>
+<tr><td>Focused-pane treatment</td><td>Sky perimeter border + soft glow, bright header, <strong>“⌨ Typing here”</strong> chip, solid blinking block cursor.</td><td>Requirements §4 verbatim, made concrete in §3 below.</td></tr>
+<tr><td>Unfocused-pane treatment</td><td>Zinc border, header background steps down one shade, <strong>“◇ Watching”</strong> chip, hollow cursor. <strong>Terminal output is never dimmed.</strong></td><td>Watching the second session run is the entire point (Requirements §4: “do not scrim content”).</td></tr>
+<tr><td>Dimming mechanism</td><td>Explicit colour tokens, <strong>never CSS opacity on text</strong>.</td><td>Opacity silently breaks contrast guarantees; tokens keep every state provably AA (§3 table).</td></tr>
+<tr><td>Focus-move shortcut</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>→</kbd> — absolute (names the destination pane), intercepted before the PTY.</td><td>Collision audit in §5.4 — every closer chord is taken by the browser, Claude Code, readline or tmux.</td></tr>
+<tr><td>Pane assignment (3+ sessions)</td><td>Active tab + most-recently-active other eligible session; a tab click while split replaces the <em>unfocused</em> pane and takes focus.</td><td>§7 Q1 — never yank the session the user is typing into.</td></tr>
+<tr><td>Per-pane swap control</td><td><strong>None in v1.</strong> The tab strip is the single swap affordance.</td><td>§7 Q2 — Hick's law, and there is no room at the 480px floor anyway.</td></tr>
+<tr><td>Width floor</td><td><code>MIN_PANE_WIDTH_PX = 480</code>; split needs a dock body ≥ <code>961px</code>, restore with a 20px hysteresis band at ≥ <code>981px</code>.</td><td>§7 Q3 — derived from the shipped 12.5px mono metrics, not guessed.</td></tr>
+<tr><td>Tabs of paned sessions</td><td>Carry a small “L” / “R” badge; <code>aria-selected</code> follows the <em>focused</em> pane.</td><td>Keeps the tablist's “exactly one selected” invariant coherent with two visible panels (§8).</td></tr>
+</table></div>
+
+<h2>2 · Wireframes</h2>
+<p class="caption">Rendered at the real palette (zinc <code>#09090b/#0c0c0e/#141417</code>, sky accent <code>#38bdf8</code>, glyph vocabulary from <code>terminal-tabs.ts</code>). Three sessions are open throughout — one of them with a deliberately long task title — so truncation and the 3-session pane story are visible, not hypothetical.</p>
+
+<div class="mock-cap">A — Tabbed mode (today's default), with the new split toggle in the pinned region</div>
+<div class="mock">
+  <div class="tabstrip">
+    <div class="tabscroll">
+      <div class="ttab on"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="x">✕</span></div>
+      <div class="ttab"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open sessions side by side, not just as tabs</span><span class="x">✕</span></div>
+      <div class="ttab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="x">✕</span></div>
+    </div>
+    <div class="pinned">
+      <div class="iconbtn" title="Split view: show two sessions side by side" aria-label="demo">◫</div>
+      <div class="iconbtn">＋</div>
+    </div>
+  </div>
+  <div class="pane focus" style="margin:3px;border-color:var(--border);box-shadow:none">
+    <div class="phead">
+      <span class="pill em">● Connected</span>
+      <span class="pname">Fix login redirect loop</span>
+      <span class="mono" style="color:var(--faint)">nicks-mbp · session 9f21ac04</span>
+      <span class="pbtns"><span class="pbtn" title="Pop out">⧉</span><span class="pbtn" title="Read-only">🔓</span><span class="pbtn rose" title="End">⏻</span></span>
+    </div>
+    <div class="pterm">
+      <span class="ac">⏺</span> I'll trace the redirect. Reading <span class="cl">middleware.ts</span>…<br>
+      <span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span>
+    </div>
+  </div>
+</div>
+<p class="caption">The toggle only renders with 2+ eligible tabs; with 0–1 tabs the strip is byte-identical to today. Everything else in this frame is the shipped UI.</p>
+
+<div class="mock-cap">B — Split mode, LEFT pane focused</div>
+<div class="mock">
+  <div class="tabstrip">
+    <div class="tabscroll">
+      <div class="ttab on"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="badge pane">L</span><span class="x">✕</span></div>
+      <div class="ttab"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open sessions side by…</span><span class="badge pane dim">R</span><span class="x">✕</span></div>
+      <div class="ttab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="x">✕</span></div>
+    </div>
+    <div class="pinned">
+      <div class="iconbtn on" title="Back to tabs">◫</div>
+      <div class="iconbtn">＋</div>
+    </div>
+  </div>
+  <div class="splitbody">
+    <div class="pane focus">
+      <div class="phead">
+        <span class="fword typing">⌨ Typing here</span>
+        <span class="pill em">●</span>
+        <span class="pname">Fix login redirect loop</span>
+        <span class="pbtns"><span class="pbtn" title="Pop out">⧉</span><span class="pbtn" title="Read-only">🔓</span><span class="pbtn rose" title="End">⏻</span></span>
+      </div>
+      <div class="pterm">
+        <span class="ac">⏺</span> Found it — <span class="cl">callback</span> is on the protected list.<br>
+        <span class="ac">⏺</span> Editing <span class="cl">src/lib/supabase/middleware.ts</span>…<br>
+        <span class="cl">&gt; approve the plan when ready </span><span class="cur-solid" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="phead">
+        <span class="fword watch">◇ Watching</span>
+        <span class="pill em">●</span>
+        <span class="pname" title="Terminal: view multiple open sessions side by side, not just as tabs">Terminal: view multiple open sessions side by side, not just…</span>
+        <span class="pbtns"><span class="pbtn" title="Pop out">⧉</span><span class="pbtn" title="Read-only">🔓</span><span class="pbtn rose" title="End">⏻</span></span>
+      </div>
+      <div class="pterm">
+        <span class="ac">⏺</span> Running <span class="cl">npm run test</span> — 176 files…<br>
+        <span class="cl">✓</span> 2,910 passed (9.8s)<br>
+        <span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="mock-cap">C — Split mode, RIGHT pane focused (compare with B directly above)</div>
+<div class="mock">
+  <div class="tabstrip">
+    <div class="tabscroll">
+      <div class="ttab"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="badge pane dim">L</span><span class="x">✕</span></div>
+      <div class="ttab on"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open sessions side by…</span><span class="badge pane">R</span><span class="x">✕</span></div>
+      <div class="ttab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="x">✕</span></div>
+    </div>
+    <div class="pinned">
+      <div class="iconbtn on" title="Back to tabs">◫</div>
+      <div class="iconbtn">＋</div>
+    </div>
+  </div>
+  <div class="splitbody">
+    <div class="pane">
+      <div class="phead">
+        <span class="fword watch">◇ Watching</span>
+        <span class="pill em">●</span>
+        <span class="pname">Fix login redirect loop</span>
+        <span class="pbtns"><span class="pbtn" title="Pop out">⧉</span><span class="pbtn" title="Read-only">🔓</span><span class="pbtn rose" title="End">⏻</span></span>
+      </div>
+      <div class="pterm">
+        <span class="ac">⏺</span> Found it — <span class="cl">callback</span> is on the protected list.<br>
+        <span class="ac">⏺</span> Editing <span class="cl">src/lib/supabase/middleware.ts</span>…<br>
+        <span class="cl">&gt; approve the plan when ready </span><span class="cur-hollow" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div class="pane focus">
+      <div class="phead">
+        <span class="fword typing">⌨ Typing here</span>
+        <span class="pill em">●</span>
+        <span class="pname" title="Terminal: view multiple open sessions side by side, not just as tabs">Terminal: view multiple open sessions side by side, not just…</span>
+        <span class="pbtns"><span class="pbtn" title="Pop out">⧉</span><span class="pbtn" title="Read-only">🔓</span><span class="pbtn rose" title="End">⏻</span></span>
+      </div>
+      <div class="pterm">
+        <span class="ac">⏺</span> Running <span class="cl">npm run test</span> — 176 files…<br>
+        <span class="cl">✓</span> 2,910 passed (9.8s)<br>
+        <span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="caption">Four independent signals flip together between B and C: the sky border + glow, the header words (“⌨ Typing here” ⇄ “◇ Watching”), the header brightness (name <code>#f4f4f5</code> semibold ⇄ <code>#a1a1aa</code>), and the cursor (solid blinking block ⇄ hollow outline). The terminal output itself is identical in both panes — never dimmed. The “Typing here” prompt line in the Watching pane of frame C is exactly the wrong-pane accident this feature must prevent: the user can see at a glance their keystrokes will NOT approve that plan.</p>
+
+<div class="mock-cap">D — Below the width floor: tabs render, the preference is kept</div>
+<div class="mock" style="max-width:560px">
+  <div class="tabstrip">
+    <div class="tabscroll">
+      <div class="ttab on"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="x">✕</span></div>
+      <div class="ttab"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view mult…</span><span class="x">✕</span></div>
+    </div>
+    <div class="pinned">
+      <div class="iconbtn" title="Split view (needs a wider window)">◫</div>
+      <div class="iconbtn">＋</div>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--amber-bd);background:var(--amber-bg);padding:5px 12px;font-size:11.5px;color:var(--amber)">
+    ⓘ Split view needs a wider window — it will come back automatically when there's room. <span style="margin-left:auto;color:var(--amber)">✕</span>
+  </div>
+  <div class="pterm" style="border-top:1px solid var(--border)"><span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span></div>
+</div>
+<p class="caption">The amber notice (existing dismissible-notice pattern from the session view) appears only on the <em>transition</em> into the floor, and when the user presses the toggle while too narrow. The toggle is never disabled — pressing it below the floor stores the preference, shows this notice, and announces it (§5.8). No hover-only explanation, no dead button.</p>
+
+<h2>3 · Focused vs unfocused pane — exact tokens</h2>
+<div class="tblwrap"><table>
+<tr><th>Element</th><th>Focused pane</th><th>Unfocused pane</th></tr>
+<tr><td>Pane border</td><td class="mono"><span class="swatch" style="background:#38bdf8"></span>1px solid #38bdf8 (sky-400) + box-shadow 0 0 0 1px rgba(56,189,248,.35), 0 0 14px rgba(56,189,248,.12)</td><td class="mono"><span class="swatch" style="background:#27272a"></span>1px solid #27272a (zinc-800), no shadow</td></tr>
+<tr><td>Header background</td><td class="mono"><span class="swatch" style="background:#141417"></span>#141417 (the shipped header bg)</td><td class="mono"><span class="swatch" style="background:#101012"></span>#101012 (one shade darker)</td></tr>
+<tr><td>Focus words</td><td class="mono">“⌨ Typing here” — #7dd3fc (sky-300) on sky chip (border rgba(56,189,248,.4), bg rgba(56,189,248,.09))</td><td class="mono">“◇ Watching” — #a1a1aa (zinc-400), border #3f3f46, transparent bg</td></tr>
+<tr><td>Session name</td><td class="mono">#f4f4f5 (zinc-100), font-weight 600, truncate + full name in <code>title</code></td><td class="mono">#a1a1aa (zinc-400), font-weight 400, same truncation</td></tr>
+<tr><td>Header icon buttons</td><td class="mono">#e4e4e7 (zinc-200)</td><td class="mono">#a1a1aa (zinc-400); hover/focus-visible restores #e4e4e7</td></tr>
+<tr><td>Status pill</td><td colspan="2"><strong>Identical in both panes</strong> — it is information, not chrome; its colour vocabulary must keep one meaning everywhere (same rule as the tab glyphs).</td></tr>
+<tr><td>Terminal output area</td><td colspan="2"><strong>Identical in both panes</strong> — <code>#0c0c0e</code> bg, full-brightness text, keeps streaming. The shipped <code>opacity-45</code> treatment stays reserved for <code>disconnected</code> only.</td></tr>
+<tr><td>Cursor</td><td class="mono">Solid blinking block (xterm with real DOM focus)</td><td class="mono">Hollow outline block (xterm's built-in blurred rendering — route real focus, don't fake this)</td></tr>
+<tr><td>Text opacity</td><td colspan="2"><strong>Never used.</strong> All dimming is explicit colour tokens so every state below is provably AA.</td></tr>
+</table></div>
+
+<h3>Contrast (WCAG 2.1 AA)</h3>
+<div class="tblwrap"><table>
+<tr><th>Text / component</th><th>Foreground</th><th>Background</th><th>Ratio</th><th>AA requirement</th></tr>
+<tr><td>“⌨ Typing here”</td><td class="mono">#7dd3fc</td><td class="mono">#141417</td><td class="mono">11.0 : 1</td><td class="pass">≥ 4.5 ✓</td></tr>
+<tr><td>“◇ Watching”</td><td class="mono">#a1a1aa</td><td class="mono">#101012</td><td class="mono">7.4 : 1</td><td class="pass">≥ 4.5 ✓</td></tr>
+<tr><td>Focused session name</td><td class="mono">#f4f4f5</td><td class="mono">#141417</td><td class="mono">16.7 : 1</td><td class="pass">≥ 4.5 ✓</td></tr>
+<tr><td>Unfocused session name</td><td class="mono">#a1a1aa</td><td class="mono">#101012</td><td class="mono">7.4 : 1</td><td class="pass">≥ 4.5 ✓</td></tr>
+<tr><td>Unfocused icon buttons</td><td class="mono">#a1a1aa</td><td class="mono">#101012</td><td class="mono">7.4 : 1</td><td class="pass">≥ 3 (component) ✓</td></tr>
+<tr><td>Focused pane border (indicator)</td><td class="mono">#38bdf8</td><td class="mono">#0c0c0e / #141417</td><td class="mono">9.1 / 8.6 : 1</td><td class="pass">≥ 3 (non-text) ✓</td></tr>
+</table></div>
+<p class="caption">The zinc-800 border on the unfocused pane is below 3:1 against the panel by design — it is <em>not</em> an indicator. The indicator is the <em>presence</em> of the sky border + glow on exactly one pane, backed by words and cursor shape; absence never has to pass a contrast gate.</p>
+
+<h2>4 · Pane header anatomy</h2>
+<p>Left→right, mirroring the shipped session header so nothing has to be relearned: <strong>focus-state chip</strong> (new, always first — it is the answer to “where will my keys go?”, so it sits where scanning starts) · <strong>status pill</strong> (existing component, compact glyph-only under 560px pane width) · <strong>session name</strong> (new in the header — with two panes visible each needs its own name; <code>deriveTabLabel()</code> output, CSS-truncated, full text in <code>title</code>) · <strong>controls</strong>: Pop out, Read-only, End (the existing three, icon-only below 560px pane width with their existing <code>aria-label</code>s; every target keeps ≥ 24×24px hit area with padding). The host / session-id mono text is dropped from pane headers entirely — it is already hidden below <code>sm</code> today and is the lowest-value item at 480px.</p>
+<p>The header is a click target for focus like everything else in the pane (§5.3) — with one carve-out: clicks on the three control buttons act <em>without</em> first moving focus (ending or popping out the Watching pane must not first steal the keyboard from the pane you're typing in).</p>
+<p>The <strong>3-session case</strong> is visible in wireframes B/C: the third session stays a plain tab, fully live, reachable by one click; the two paned tabs carry “L”/“R” badges so the strip answers “which two am I seeing?” without looking down.</p>
+
+<h2>5 · Interaction flows</h2>
+
+<h3>5.1 Entering split</h3>
+<p>Two routes reach the same state: the toggle (below — the deliberate, keyboard/touch-accessible route) and drag-to-dock (§6 — direct manipulation). Both end in identical pane state, refit, focus and persistence; only the announcement wording differs.</p>
+<div class="flow">
+  <span class="step act">Click ◫ toggle<small>or keyboard-activate it in the strip</small></span><span class="arr">→</span>
+  <span class="step sys">Panes assigned: active tab → left, most-recently-active other eligible → right</span><span class="arr">→</span>
+  <span class="step sys">Both xterms refit + PTY resize<small>same forced refit bring-back already uses</small></span><span class="arr">→</span>
+  <span class="step good">Focus stays with the previously active session<small>no surprise keyboard move</small></span><span class="arr">→</span>
+  <span class="step">Announce: “Split view on. Fix login redirect loop left, Terminal: view multiple… right. Typing goes to Fix login redirect loop.”</span>
+</div>
+<p>Leaving split (toggle again): the <em>focused</em> pane's session becomes the single active tab; one refit; announce “Split view off. Showing Fix login redirect loop.” Preference persists via localStorage using the dock-height contract (never-throw, validate on read).</p>
+
+<h3>5.2 Clicking a tab while split</h3>
+<ul>
+<li><strong>Tab of the focused pane</strong> — no-op (already selected); no announcement.</li>
+<li><strong>Tab of the unfocused pane</strong> — focus moves to that pane. Identical to clicking into it (§5.3).</li>
+<li><strong>Tab of a third session</strong> — its session replaces the <em>unfocused</em> pane's content and <strong>takes focus</strong> (a tab click has always meant “attend to this one”). The replaced session stays mounted and live as a plain tab. The pane you were typing in stays visible and demotes to “◇ Watching”. Both panes refit only if geometry changed (it didn't — 50/50 is stable), so this is a pure re-parent of already-mounted views, never a remount.</li>
+</ul>
+
+<h3>5.3 Clicking into the unfocused pane</h3>
+<div class="flow">
+  <span class="step act">Click anywhere in the pane<small>output, header, padding — control buttons excepted</small></span><span class="arr">→</span>
+  <span class="step sys">Real DOM focus routed to that pane's xterm</span><span class="arr">→</span>
+  <span class="step good">All four signals flip atomically<small>border+glow, words, brightness, cursor</small></span><span class="arr">→</span>
+  <span class="step sys">aria-selected moves to its tab</span><span class="arr">→</span>
+  <span class="step">Announce: “Typing now goes to Terminal: view multiple open sessions…”</span>
+</div>
+<p>The click that focuses a pane is swallowed — it must not also select text or reach the PTY as a stray event. Focus and visual state share one source of truth (the pure module's <code>focusedPaneKey</code>), verified against real <code>document.activeElement</code> — no split-brain.</p>
+
+<h3>5.4 Keyboard: moving focus between panes</h3>
+<p><strong>Chord: <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd> focuses the left pane, <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>→</kbd> the right.</strong> Absolute, not cyclic — it names the destination, so it is idempotent (pressing “left” while left is a silent no-op; no announcement spam) and spatially honest. It is intercepted in <em>both</em> panes via xterm's <code>attachCustomKeyEventHandler</code> (returning <code>false</code> so it <strong>never reaches the PTY</strong>) and by a dock-level keydown for when DOM focus is on pane chrome. Works only while split; in tabbed mode the keys pass through untouched.</p>
+<div class="tblwrap"><table>
+<tr><th>Candidate</th><th>Already taken by</th><th>Verdict</th></tr>
+<tr><td class="mono">Alt+← / Alt+→</td><td>readline word-move (Alt+b/f equivalents many shells map arrows to); Windows Terminal pane focus — but it forwards to the shell here</td><td class="no">collides with shell editing</td></tr>
+<tr><td class="mono">Cmd/Ctrl+Alt+← / →</td><td>Chrome & Safari macOS: switch <em>browser</em> tabs</td><td class="no">browser steals it</td></tr>
+<tr><td class="mono">Ctrl+Tab, Ctrl+PgUp/PgDn</td><td>Browser tab switching; not reliably interceptable</td><td class="no">browser steals it</td></tr>
+<tr><td class="mono">Ctrl+← / → (bare)</td><td>macOS Mission Control space switching (OS level); readline word-move on Linux</td><td class="no">OS/shell steal it</td></tr>
+<tr><td class="mono">Ctrl+B–based prefix</td><td>tmux prefix; Claude Code “run in background”</td><td class="no">collides in-PTY</td></tr>
+<tr><td class="mono">Shift+Tab / Esc / Ctrl+O/R/T/V/_ </td><td>Claude Code's own UI keys (mode cycle, transcript, verbose, paste, undo…)</td><td class="no">collides with Claude Code</td></tr>
+<tr><td class="mono pick">Ctrl+Shift+← / →</td><td>Nothing in Chrome/Safari/Firefox/Edge, macOS or Windows defaults, bash/zsh readline defaults, tmux defaults, or Claude Code's documented keys. (Text-field word-selection exists only in editable fields the chord never fires from.)</td><td class="pick">chosen</td></tr>
+</table></div>
+<p class="caption">Belt and braces: even if some TUI did bind <code>CSI 1;6 D/C</code>, the handler intercepts the chord <em>before</em> encoding, so it never reaches the PTY at all. Discoverability: the toggle's tooltip reads “Split view · Ctrl+Shift+←/→ moves typing”, each focus chip's <code>title</code> names the chord, and the launching-claude-code guide page documents it — never announced repeatedly through the live region.</p>
+
+<h3>5.5 Pop-out while split</h3>
+<p>Pop out the <strong>unfocused</strong> pane: it leaves the dock (existing pop-out flow); if a third eligible session exists, the most-recently-active one fills the vacated pane (still unfocused); otherwise split suspends and the surviving session renders full-width — <em>the mode preference is kept</em>, and split resumes automatically when a second eligible session appears (launch, reconnect, or bring-back). Pop out the <strong>focused</strong> pane: same, plus focus moves to the surviving pane and is announced. A popped-out session never occupies a pane (shipped invariant): its tab shows the existing ⧉ violet treatment and is excluded from pane eligibility.</p>
+
+<h3>5.6 A session ends while split</h3>
+<p>The pane <strong>keeps its slot</strong> and renders the existing ended panel in place — scrollback intact, Resume available, ■ glyph in tab and status pill. Nothing collapses under the user mid-read. If the ended pane was focused, focus moves to the live pane (announced: “Session ended: vibecodes · a3f2. Typing now goes to Fix login redirect loop.”). Closing it via the tab ✕ follows the existing confirm flow; on close, a third eligible session back-fills the pane, else the survivor goes full-width as in §5.5.</p>
+
+<h3>5.7 Resize while split</h3>
+<p>Dock-height drag and window resize refit <strong>both</strong> panes (each pane's existing ResizeObserver sees its own container change — verify a PTY resize is sent per pane, per Requirements AC11–12).</p>
+
+<h3>5.8 Narrowing below the width floor</h3>
+<div class="flow">
+  <span class="step warn">Dock body &lt; 961px</span><span class="arr">→</span>
+  <span class="step sys">Tabs render; both sessions stay mounted; preference untouched</span><span class="arr">→</span>
+  <span class="step">Amber notice (once, dismissible) + announce: “Window too narrow for split view — showing tabs. Split returns when wider.”</span><span class="arr">→</span>
+  <span class="step good">Body ≥ 981px → split restores itself, refit, announce “Split view restored.”</span>
+</div>
+<p>The 20px hysteresis band (fall back &lt;961, restore ≥981) prevents mode-flapping while dragging a window edge across the boundary. Pressing the toggle while below the floor stores the preference and shows the same notice — the button is never disabled (mockup D).</p>
+
+<h2>6 · Second entry route: drag a tab to dock it</h2>
+<p>Nick's request, verbatim: <em>“can we have a drag and drop version as well, where i can drag a tab and it can latch onto the right or left — just like a panel behaves in something like an IDE.”</em> This is the VS Code / JetBrains panel-docking convention, so the design copies that grammar rather than inventing one (Jakob's law): a drag ghost of the tab, translucent drop zones over the halves of the dock body, the hovered half lights up, release docks, <kbd>Esc</kbd> or releasing anywhere else cancels.</p>
+
+<h3>6.1 Gesture grammar — how docking, reordering and clicking stay distinct</h3>
+<div class="tblwrap"><table>
+<tr><th>Gesture</th><th>Recognised as</th><th>How it's distinguished</th></tr>
+<tr><td>Press + release, movement &lt; 8px</td><td>Ordinary tab click (select / focus pane)</td><td>8px pointer-distance activation constraint — no drag state exists until the pointer has moved 8px, so a twitchy click can never start a drag, let alone a split.</td></tr>
+<tr><td>Drag that stays within the tab strip's band</td><td>Tab <strong>reorder</strong> — a drop indicator line between tabs, selection unchanged until release</td><td>Geometry, not modifiers: while the pointer's Y remains inside the strip (plus an 8px grace margin), only reorder targets are active and no dock zones render.</td></tr>
+<tr><td>Drag that crosses down into the dock body</td><td><strong>Docking drag</strong> — left/right drop zones appear (§6.2)</td><td>Crossing the strip's bottom edge swaps the target set: reorder indicators vanish, zones fade in (120ms). Dragging back up restores reorder mode — the gesture is undecided until release.</td></tr>
+<tr><td>Release over a zone</td><td>Dock the session to that half</td><td>—</td></tr>
+<tr><td>Release anywhere else · <kbd>Esc</kbd> mid-drag</td><td><strong>Cancel</strong> — ghost animates back to the strip, nothing changes, no announcement beyond dnd-kit's cancel</td><td>—</td></tr>
+<tr><td>Touch</td><td>Same drags via long-press (250ms + 5px tolerance)</td><td>Prevents scroll hijacking; but touch users are pointed at the toggle — the drag is a shortcut, never the only way in.</td></tr>
+</table></div>
+
+<div class="mock-cap">E — Mid-drag from tabbed mode: tab in hand, right drop zone active</div>
+<div class="mock">
+  <div class="tabstrip">
+    <div class="tabscroll">
+      <div class="ttab on"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="x">✕</span></div>
+      <div class="ttab" style="opacity:.35;border-style:dashed"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open sessions side by…</span><span class="x">✕</span></div>
+      <div class="ttab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="x">✕</span></div>
+    </div>
+    <div class="pinned">
+      <div class="iconbtn" title="Split view">◫</div>
+      <div class="iconbtn">＋</div>
+    </div>
+  </div>
+  <div style="position:relative">
+    <div class="pterm" style="min-height:150px">
+      <span class="ac">⏺</span> Found it — <span class="cl">callback</span> is on the protected list.<br>
+      <span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span>
+    </div>
+    <div style="position:absolute;inset:0;display:flex;gap:0;pointer-events:none">
+      <div style="flex:1;margin:6px 3px 6px 6px;border:1px dashed var(--border2);border-radius:8px;background:rgba(63,63,70,.15);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:600;color:var(--dim)">Dock left</div>
+      <div style="flex:1;margin:6px 6px 6px 3px;border:1px solid var(--sky-bd);border-radius:8px;background:rgba(56,189,248,.14);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:700;color:var(--sky3)">Dock right</div>
+    </div>
+    <div style="position:absolute;right:14%;top:38%;display:flex;align-items:center;gap:7px;background:var(--panel3);border:1px solid var(--border2);border-radius:7px;padding:7px 12px;font-size:12.5px;color:var(--txt);opacity:.9;box-shadow:0 4px 16px rgba(0,0,0,.5)">
+      <span class="glyph g-ok">●</span> Terminal: view multiple open ses… <span style="color:var(--faint);font-size:11px">⤸ in hand</span>
+    </div>
+  </div>
+</div>
+<p class="caption">The dragged tab stays in the strip as a dashed 35%-opacity placeholder (it is never unmounted); the ghost is a portal-rendered clone following the pointer. The hovered zone shows its destination <em>in words</em> (“Dock right”), not colour alone.</p>
+
+<h3>6.2 Drop-zone tokens</h3>
+<div class="tblwrap"><table>
+<tr><th>Element</th><th>Spec</th></tr>
+<tr><td>Zone container</td><td class="mono">position:absolute; inset:0 over the dock body; pointer-events:none (hit-testing is done from pointer coordinates by the drag layer, never by DOM hover — the xterm canvas below must never see these elements)</td></tr>
+<tr><td>Zone, inactive</td><td class="mono">border:1px dashed #3f3f46; background:rgba(63,63,70,.15); border-radius:8px; label #a1a1aa 12px/600</td></tr>
+<tr><td>Zone, active (hovered)</td><td class="mono">border:1px solid rgba(56,189,248,.5); background:rgba(56,189,248,.14); label “Dock left/right” #7dd3fc 12px/700 (≈10.9:1 over the terminal's #0c0c0e — AA ✓)</td></tr>
+<tr><td>Z-order</td><td class="mono">zones z-index:30, drag ghost z-index:40, inside the dock's stacking context — above xterm's canvas/selection layers, below the chooser Dialog portal</td></tr>
+<tr><td>Drag ghost</td><td class="mono">clone of the tab, opacity:.9, box-shadow 0 4px 16px rgba(0,0,0,.5), cursor:grabbing; source tab: opacity:.35 + dashed border, never unmounted</td></tr>
+<tr><td>Transitions</td><td class="mono">zones fade/scale in 120ms ease-out; cancelled ghost animates back to the strip; all suppressed under prefers-reduced-motion</td></tr>
+</table></div>
+
+<h3>6.3 Drop outcomes</h3>
+<ul>
+<li><strong>From tabbed mode, drop on a half:</strong> split turns on with the dragged session in that half; the other half takes the previously active session (if the dragged one <em>was</em> active, the most-recently-active other eligible session — same MRA rule as §7 Q1). Preference stored, both panes refit + PTY resize — the toggle's exact pipeline (§5.1).</li>
+<li><strong>Already split, drop a third tab on a half:</strong> that half's session is replaced (it returns to being a plain live tab). Unlike the tab-click rule (§5.2), the user chose the side explicitly, so the drop may replace <em>either</em> pane — including the focused one.</li>
+<li><strong>Drag a paned tab back into the strip and release:</strong> split ends — the return path. The dragged session becomes the single active tab (it is the one in hand); the other pane's session returns to a plain tab; preference updates to tabs, one refit. Mid-drag the strip highlights as a drop target (“Back to tabs” indicator line) so the destination is legible before release.</li>
+<li><strong>Focus after any drag-dock lands:</strong> the just-dropped pane takes keyboard focus — direct manipulation is the strongest possible statement of attention — and every §3 signal applies to it instantly. Live region: <em>“Split view on. Terminal: view multiple… docked right. Typing goes to Terminal: view multiple…”</em> (or <em>“…docked left…”</em> / <em>“Split view off. Showing Fix login redirect loop.”</em> for the return path).</li>
+<li><strong>Popped-out tabs are not drag-docking sources:</strong> a popped-out session never claims a pane (shipped invariant), so its tab never activates a docking drag — press-and-move on it does nothing beyond the existing click behaviours. It may still be reordered along the strip.</li>
+<li><strong>Dragging a tab out of the browser window: out of scope.</strong> Pop-out already covers “this session in its own OS window”, with the relay's single-attach machinery behind it; a drag-out gesture would be a second, worse path to the same result. Explicitly not designed.</li>
+</ul>
+
+<h3>6.4 Accessibility and implementation notes</h3>
+<ul>
+<li><strong>The toggle is the accessible equivalent, stated plainly:</strong> drag-and-drop is pointer-only here. dnd-kit's keyboard sensor is deliberately <em>not</em> wired to tabs — arrow keys already navigate the tablist, and a keyboard drag mode would fight both that and the terminal's key handling. Keyboard and switch users reach the identical end state via the toggle + <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd>; touch users via the toggle (long-press drag works but is not the recommended path).</li>
+<li><strong>Reuse <code>@dnd-kit</code>, don't hand-roll pointer events:</strong> it is already a project dependency doing drag-and-drop on the board, and it supplies exactly the pieces this gesture needs for free — the 8px distance and 250ms touch activation constraints, Escape-to-cancel, portal drag overlays, and collision detection for the zone/reorder target swap. A bespoke pointer-event layer would re-implement all of that and drift from the board's behaviour.</li>
+<li><strong>Hard invariant for the engineer:</strong> the drop handler mutates only the pure module's pane-assignment state; the panes are already-mounted xterm instances that get re-laid-out by CSS, exactly as the toggle does. A drag must never cause a remount — the “placeholder tab + portal ghost” pattern above exists precisely so the real tab (and its session view) never leaves the tree — and the drop must trigger the same forced refit + PTY resize that entering split via the toggle does.</li>
+</ul>
+
+<h2>7 · The three open questions, answered</h2>
+
+<div class="panel found"><div class="ftitle">Q1 — Pane assignment with 3+ sessions</div>
+<p><strong>Adopt Requirements' recommendation, with the focus rule made explicit.</strong> Panes hold the active tab + the most-recently-active other eligible session (eligible = mounted, not popped out; ended sessions remain eligible — they hold readable scrollback). Clicking a third tab replaces the <strong>unfocused</strong> pane and <strong>takes focus</strong>. Rationale: the unfocused pane is by definition the one the user is not typing in, so it is the only slot that can change without risking a mid-keystroke context switch; and a tab click has meant “make this the one I'm attending to” since tabs shipped — split view must not quietly change what a click means (recognition over recall). MRA beats list-order because it matches “the two things I was just working with”, the same recency logic the chooser already uses.</p></div>
+
+<div class="panel found"><div class="ftitle">Q2 — Per-pane “swap session” control</div>
+<p><strong>Not in v1.</strong> The tab strip is already a complete, visible, familiar switching surface one glance above the panes, and §5.2 makes it the swap mechanism for free. A per-pane dropdown would be a second, competing way to do the same thing (Hick's law), would cost header space that does not exist at the 480px floor, and would need its own keyboard/a11y surface. Revisit only if real usage shows people popping out sessions just to rearrange panes.</p></div>
+
+<div class="panel found"><div class="ftitle">Q3 — Exact px floor for a ~60-column pane</div>
+<p><strong><code>MIN_PANE_WIDTH_PX = 480</code>; split requires a dock body ≥ 961px; restore at ≥ 981px (20px hysteresis).</strong> Derivation from shipped values, not taste: xterm runs at <code>fontSize: 12.5</code> in SF&nbsp;Mono/Menlo-class faces (<code>use-terminal-session.ts:704–708</code>), whose advance width is ≈0.602em → ≈7.53px per cell; 60 columns ≈ 452px, plus the container's <code>px-3</code> padding (24px) and the 2px focus border ≈ 478px → rounded to 480. Two panes + 1px divider = 961px. The constants live in the new pure module beside the pane-assignment logic, with a comment tying them to the font metrics so a future font-size change knows to revisit them.</p></div>
+
+<h2>8 · Accessibility</h2>
+<ul>
+<li><strong>Tablist stays coherent:</strong> the strip keeps <code>role="tablist"</code> / <code>role="tab"</code>; <code>aria-selected="true"</code> tracks the <strong>focused pane's</strong> tab — exactly one selected at all times, in both modes. The other paned tab is plain <code>aria-selected="false"</code>; its visibility is conveyed by its pane's own semantics, not by inventing a second “selected”.</li>
+<li><strong>Panes:</strong> each pane wrapper keeps <code>role="tabpanel"</code> + <code>aria-labelledby</code> its tab, and both visible panels drop <code>hidden</code>/<code>aria-hidden</code>; non-pane sessions keep today's hidden treatment. Each pane additionally exposes focus state in its accessible name via a visually-rendered, programmatically-associated chip: accessible name resolves to e.g. <em>“Fix login redirect loop — typing here”</em> / <em>“Terminal: view multiple… — watching”</em>. The a11y tree can never report two typing panes because the name derives from the single <code>focusedPaneKey</code>.</li>
+<li><strong>“L”/“R” tab badges</strong> carry <code>aria-label="in left pane"</code> / <code>"in right pane"</code> — words, not position-by-colour.</li>
+<li><strong>Live region</strong> (the existing shared polite announcer, one message per event, never per re-render): split on/off (§5.1), drag-dock landings and the drag return path (§6.3), focus moves — click or chord — (“Typing now goes to …”), width-floor fallback and restore (§5.8), session-ended focus handoff (§5.6). Background-tab attention announcements (<code>shouldAnnounceAttention</code>) continue unchanged; a <em>paned</em> session counts as “active” for that rule (its state is on screen — announcing it would double-speak).</li>
+<li><strong>Keyboard reachability:</strong> the toggle is a real button in the strip's tab order with <code>aria-pressed</code>; <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd> moves pane focus; the existing arrow-key tab navigation is untouched. Focus-visible rings on all pane controls at both dim levels (§3 contrast row).</li>
+<li><strong>Drag-to-dock is pointer-only by design</strong> (§6.4): every state it can produce is reachable via the toggle and the chord, so no keyboard drag mode is added — one that fought the tablist's arrow keys and the terminal's key handling would be worse than none.</li>
+<li><strong>Never colour alone:</strong> every focus signal has a non-colour twin — words (chip), shape (solid vs hollow cursor), weight (name), and the border is presence/absence, not hue-vs-hue.</li>
+</ul>
+
+<h2>9 · What the engineer must not break</h2>
+<ul>
+<li><strong>Never unmount an xterm.</strong> Mode switches, pane swaps, drag-docks, floor fallback and pop-out are all CSS/layout re-arrangements of the always-mounted <code>TerminalSessionView</code>s — scrollback, socket and connection state survive every transition in this document. The drag gesture in particular: source tab stays mounted as a placeholder, the ghost is a portal clone, and the drop mutates only pane-assignment state, then fires the same forced refit + PTY resize as the toggle (§6.4).</li>
+<li><strong>One keyboard owner, enforced not implied.</strong> <code>useTerminalSession</code>'s auto-focus on expand/refresh must be routed: exactly one pane gets the focus grab; the other gets refit <em>without</em> it. Visual focus state must derive from the same single source the DOM focus does.</li>
+<li><strong>Refit + PTY resize on every geometry change:</strong> enter/leave split, pane swap, back-fill, floor fallback/restore, dock-height drag, window resize.</li>
+<li><strong>Popped-out sessions never claim a pane</strong>, and their mid-preemption status is never read as ended/errored.</li>
+<li><strong>Chooser and overlay discipline untouched:</strong> inline browse still CSS-hides the whole session container (both panes); every dialog stays dismissable.</li>
+<li><strong>The chord never reaches the PTY</strong>, and no other key is newly intercepted — a terminal that eats keystrokes is broken.</li>
+<li><strong>Sessions with no recorded folder</strong> keep their existing chooser/reconnect behaviour — split view changes nothing about eligibility rules beyond pop-out exclusion.</li>
+<li><strong>Pure logic in <code>src/lib/terminal/</code></strong> (suggested: <code>split-view.ts</code> — pane assignment, eligibility, focus ownership, width floor + hysteresis, persistence read/write) with unit tests, mirroring <code>terminal-tabs.ts</code>; the dock stays event wiring. Everything behind <code>NEXT_PUBLIC_TERMINAL_ENABLED</code>.</li>
+<li><strong>Tab semantics:</strong> dedupe, per-tab close/confirm, cap refusal, task-launch choice and “+” behave identically in both modes; <code>aria-selected</code> stays singular.</li>
+</ul>
+
+<p class="caption" style="margin-top:36px">Compass · UX Design step for “Terminal: view multiple open sessions side by side, not just as tabs” · 2026-08-20. Palette, glyphs and header anatomy taken from <code>terminal-dock.tsx</code>, <code>terminal-session-view.tsx</code>, <code>terminal-tabs.ts</code>; width floor derived from <code>use-terminal-session.ts</code> font metrics; persistence contract from <code>dock-height.ts</code>.</p>
+
+</div>
+</body>
+</html>
