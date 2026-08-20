@@ -74,6 +74,7 @@ import {
   type TerminalSessionActions,
   type TerminalSessionDescriptor,
 } from "./use-terminal-session";
+import { paneAccessibleName, paneFocusWord } from "@/lib/terminal/split-view";
 
 /**
  * Everything the dock needs about ONE tab's session without lifting the whole
@@ -203,6 +204,48 @@ interface TerminalSessionViewProps {
    * already use in this file).
    */
   onBrowseSessions?: () => void;
+  /**
+   * Split view (task df7a0134, design §3/§9): set (to `true` or `false`)
+   * exactly while this view is rendered as one of the split's two panes —
+   * `undefined` (the default) means "tabbed mode", rendered exactly as
+   * before. `true` = this is the pane that owns the keyboard: every
+   * focus-clarity signal (border+glow, "⌨ Typing here", bright header,
+   * solid cursor) renders. `false` = the other pane ("◇ Watching" — its
+   * OUTPUT stays full-brightness; only chrome dims, via explicit colour
+   * tokens, never opacity — Requirements §4 / Design Review §2).
+   */
+  paneFocused?: boolean;
+  /**
+   * Split view: clicking anywhere in this pane (header included; the three
+   * control buttons opt out via their own `stopPropagation`) moves focus to
+   * it. Omitted whenever `paneFocused` is undefined.
+   */
+  onFocusPane?: () => void;
+  /**
+   * Split view (design §9, "one keyboard owner, enforced not implied"):
+   * forwarded straight to `useTerminalSession`'s same-named option — see
+   * its doc there. Defaults to `true` (unchanged single-pane behaviour).
+   */
+  grabFocus?: boolean;
+  /**
+   * Split-view focus-sync defect fix (task df7a0134, QA rework): forwarded
+   * straight to `useTerminalSession`'s `onKeyboardFocusChange` option — see
+   * its doc there. Fires whenever xterm's real hidden input genuinely
+   * gains/loses DOM focus, so the dock can keep `paneFocused` truthful no
+   * matter how focus got there (not just `onFocusPane`'s click route).
+   * Omitted whenever `paneFocused` is undefined, same as `onFocusPane`.
+   */
+  onPaneFocusChange?: (focused: boolean) => void;
+  /**
+   * Split view drag-to-dock (design §6.1, Design Review required change 2):
+   * true for the whole lifetime of ANY tab being dragged toward a dock
+   * zone — Escape must be consumed by the terminal (never sent to the PTY)
+   * for every mounted session while a drag is live, since DOM focus could
+   * still be sitting in whichever pane's xterm was focused before the drag
+   * began. A ref, not a prop, so flipping it never forces a re-render or a
+   * hook-effect re-subscription — see use-terminal-session.ts's doc.
+   */
+  dragActiveRef?: { current: boolean };
 }
 
 export function TerminalSessionView({
@@ -224,6 +267,11 @@ export function TerminalSessionView({
   onRetryReconnect,
   onResumeEndedSession,
   onBrowseSessions,
+  paneFocused,
+  onFocusPane,
+  grabFocus = true,
+  dragActiveRef,
+  onPaneFocusChange,
 }: TerminalSessionViewProps) {
   const session = useTerminalSession(descriptor, {
     enabled: true,
@@ -239,6 +287,9 @@ export function TerminalSessionView({
     // deliver — the hook's own attach-once-per-sid effect handles it below,
     // independent of `launchSeq`/`launchPayload` (see SessionEntry's doc).
     attachExisting: entry.attach ?? null,
+    grabFocus,
+    dragActiveRef,
+    onKeyboardFocusChange: onPaneFocusChange,
   });
   const {
     state,
@@ -403,8 +454,34 @@ export function TerminalSessionView({
     );
   };
 
+  // Split view (task df7a0134): `paneFocused` is only ever set (true OR
+  // false) while this view is one of the split's two panes — `undefined`
+  // means tabbed mode, unchanged from before this feature. `inPane` gates
+  // every bit of pane-only chrome below (border/glow wrapper, the header's
+  // extra focus chip, the click-to-focus handler, tabpanel labelling).
+  const inPane = paneFocused !== undefined;
+  const handlePaneClick = () => {
+    if (inPane && !paneFocused) onFocusPane?.();
+  };
+
   return (
-    <div className={cn(!isActive && "hidden")} aria-hidden={!isActive}>
+    <div
+      className={cn(
+        !isActive && "hidden",
+        // Design §2 tokens: flex-1 so two panes share the dock body 50/50 in
+        // the parent's flex row (terminal-dock.tsx); the focused pane gets a
+        // sky perimeter border + soft glow, the unfocused a plain zinc one —
+        // PRESENCE of the glow is the indicator, never a hue-vs-hue contrast
+        // (design §3's contrast table treats it that way deliberately).
+        inPane && "m-[3px] flex min-w-0 flex-1 flex-col overflow-hidden rounded-md border",
+        inPane && paneFocused && "border-sky-400 shadow-[0_0_0_1px_rgba(56,189,248,0.35),0_0_14px_rgba(56,189,248,0.12)]",
+        inPane && !paneFocused && "border-zinc-800",
+      )}
+      aria-hidden={!isActive}
+      role={inPane ? "tabpanel" : undefined}
+      aria-label={inPane ? paneAccessibleName(label, !!paneFocused) : undefined}
+      onClick={inPane ? handlePaneClick : undefined}
+    >
       {/* Multi-session stage 4 (D2/D3, design §10b): once this tab has been
           popped out, show the placeholder INSTEAD OF the normal
           header/body/input. Both faces stay mounted here — only CSS `hidden`
@@ -447,9 +524,48 @@ export function TerminalSessionView({
         </div>
       </div>
 
-      <div className={cn(poppedOut && "hidden")} aria-hidden={poppedOut}>
-        {/* Header: state · identity · controls (safest → most destructive) */}
-        <div className="flex flex-wrap items-center gap-2 border-b border-zinc-800 bg-[#141417] px-3 py-2">
+      <div
+        className={cn(poppedOut && "hidden", inPane && "flex min-h-0 flex-1 flex-col")}
+        aria-hidden={poppedOut}
+      >
+        {/* Header: state · identity · controls (safest → most destructive).
+            Split view (design §4 "pane header anatomy"): the focus-state chip
+            renders FIRST — it's the answer to "where will my keys go?", so it
+            sits where scanning starts — followed by the session's own name
+            (the SAME string `deriveTabLabel` gave the tab, via this view's
+            existing `label` prop; never re-derived, per the design's binding
+            note). Header background steps one shade darker on the unfocused
+            pane via an explicit token swap (never opacity — Requirements §4). */}
+        <div
+          className={cn(
+            "flex flex-wrap items-center gap-2 border-b border-zinc-800 px-3 py-2",
+            inPane && !paneFocused ? "bg-[#101012]" : "bg-[#141417]",
+          )}
+        >
+          {inPane && (
+            <>
+              <span
+                className={cn(
+                  "inline-flex flex-none items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-bold",
+                  paneFocused
+                    ? "border-sky-500/40 bg-sky-500/10 text-sky-300"
+                    : "border-zinc-700 bg-transparent font-semibold text-zinc-400",
+                )}
+              >
+                <span aria-hidden="true">{paneFocused ? "⌨" : "◇"}</span>
+                {paneFocusWord(!!paneFocused)}
+              </span>
+              <span
+                className={cn(
+                  "min-w-0 max-w-[180px] truncate text-[12px]",
+                  paneFocused ? "font-semibold text-zinc-100" : "font-normal text-zinc-400",
+                )}
+                title={label}
+              >
+                {label}
+              </span>
+            </>
+          )}
           <span className={cn("inline-flex items-center gap-1.5 rounded-md border px-2.5 py-1 text-xs font-semibold", meta.className)}>
             <meta.Icon className={cn("h-3 w-3", meta.spin && "animate-spin")} />
             {meta.label}
@@ -471,12 +587,20 @@ export function TerminalSessionView({
                 there's a live/reconnecting stream to move into another window;
                 `onPopOut` itself is dock-only (the popped window's own view
                 never renders this component with a handler wired). */}
+            {/* Split view (design §4): these three controls act WITHOUT
+                first moving pane focus — ending or popping out the WATCHING
+                pane must not steal the keyboard from the pane the user is
+                actually typing in. `stopPropagation` is a no-op outside a
+                pane (no `onClick` on the wrapper to reach). */}
             {showStream && onPopOut && (
               <Button
                 variant="outline"
                 size="xs"
                 className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
-                onClick={onPopOut}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onPopOut();
+                }}
                 aria-label="Pop this session out into its own window"
               >
                 <ExternalLink className="h-3 w-3" /> Pop out
@@ -487,7 +611,10 @@ export function TerminalSessionView({
                 variant="outline"
                 size="xs"
                 className="border-zinc-700 bg-zinc-800/60 text-zinc-200 hover:bg-zinc-700"
-                onClick={() => actions.setReadOnly((r) => !r)}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  actions.setReadOnly((r) => !r);
+                }}
                 aria-pressed={readOnly}
                 aria-label={readOnly ? "Read-only is on — click to allow input" : "Switch to read-only"}
               >
@@ -500,7 +627,10 @@ export function TerminalSessionView({
                 variant="outline"
                 size="xs"
                 className="border-rose-500/45 bg-transparent text-rose-400 hover:bg-rose-500/10"
-                onClick={actions.end}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  actions.end();
+                }}
                 aria-label="End session"
               >
                 <Power className="h-3 w-3" /> End

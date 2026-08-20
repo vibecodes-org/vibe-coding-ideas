@@ -47,6 +47,17 @@ vi.mock("@xterm/xterm", () => ({
     }
     focus() {}
     dispose() {}
+    // Split view (task df7a0134): the hook registers a custom key handler at
+    // init to swallow the pane-focus chord / a drag-cancelling Escape before
+    // they reach the PTY — see use-terminal-session.ts's xterm-init effect.
+    // Real xterm.js always has this method; the mock needs it too or the
+    // hook's init effect throws and never reaches `setXtermReady(true)`.
+    attachCustomKeyEventHandler() {}
+    // Split-view focus-sync defect fix (task df7a0134, QA rework): a real
+    // DOM node so the hook can attach its focus/blur listeners to it (and a
+    // test can dispatch real FocusEvents against it) exactly like real
+    // xterm.js's own `term.textarea`.
+    textarea = document.createElement("textarea");
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({
@@ -1754,6 +1765,100 @@ describe("useTerminalSession", () => {
         vi.advanceTimersByTime(RECONNECT_GRACE_MS + 1000);
       });
       expect(result.current.pairingTimedOut).toBe(true);
+    });
+  });
+
+  // Split-view focus-sync defect fix (task df7a0134, QA rework — category-1,
+  // blocks-release): the accepted repro was real DOM keyboard focus
+  // diverging from the "Typing here"/"Watching" indicator with NO listener
+  // anywhere catching it, and native Tab order walking straight into the
+  // "Watching" pane's real xterm input. These tests exercise the hook's two
+  // halves of the fix directly against xterm's own hidden input (the
+  // `textarea` the mock Terminal above now exposes, same as real xterm.js):
+  // `grabFocus` drives its `tabIndex` (so native Tab can't reach an
+  // unfocused pane's input at all), and its real focus/blur events drive
+  // `onKeyboardFocusChange` (so anything ELSE that moves DOM focus there —
+  // Tab, assistive tech, a stray click — still gets caught). The dock-level
+  // consequence (state actually following these signals, including the
+  // exact Tab-into-the-watching-pane path) is covered in terminal-dock.test.tsx.
+  describe("split-view keyboard-focus ground truth (task df7a0134, QA rework)", () => {
+    function mountContainer(result: { current: { containerRef: { current: HTMLDivElement | null } } }) {
+      result.current.containerRef.current = document.createElement("div");
+    }
+
+    it("leaves the xterm textarea's tabIndex at the native default (0) when grabFocus is true — every single-pane caller (tabs, pop-out) is unaffected", async () => {
+      const requestExpand = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand }),
+      );
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      const term = mockTerminals[mockTerminals.length - 1] as unknown as { textarea: HTMLTextAreaElement };
+      await waitFor(() => expect(term.textarea.tabIndex).toBe(0));
+    });
+
+    it("removes the unfocused split pane's terminal from native Tab order (tabIndex -1), and restores it once grabFocus returns — the exact QA repro: Tab must never be able to reach the 'Watching' pane's real input", async () => {
+      const requestExpand = vi.fn();
+      const { result, rerender } = renderHook(
+        ({ grabFocus }: { grabFocus: boolean }) =>
+          useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand, grabFocus }),
+        { initialProps: { grabFocus: true } },
+      );
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      const term = mockTerminals[mockTerminals.length - 1] as unknown as { textarea: HTMLTextAreaElement };
+      await waitFor(() => expect(term.textarea.tabIndex).toBe(0));
+
+      // The dock flips `grabFocus` false for the pane that just lost the
+      // keyboard (terminal-dock.tsx: `grabFocus={splitActive ? paneSide ===
+      // focusedSide : true}`) — this mirrors the "Watching" pane's own
+      // props transition. Sequential Tab navigation skips a tabIndex=-1
+      // element entirely; it stays reachable by click/chord (programmatic
+      // `.focus()` still works at tabIndex=-1).
+      rerender({ grabFocus: false });
+      await waitFor(() => expect(term.textarea.tabIndex).toBe(-1));
+
+      // Reversible: a later chord/click move makes this pane the focused
+      // one again — tabIndex must come back, not get stuck excluded.
+      rerender({ grabFocus: true });
+      await waitFor(() => expect(term.textarea.tabIndex).toBe(0));
+    });
+
+    it("calls onKeyboardFocusChange(true)/(false) on the xterm textarea's OWN real focus/blur — the ground truth path independent of any click handler", async () => {
+      const requestExpand = vi.fn();
+      const onKeyboardFocusChange = vi.fn();
+      const { result } = renderHook(() =>
+        useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand, onKeyboardFocusChange }),
+      );
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      const term = mockTerminals[mockTerminals.length - 1] as unknown as { textarea: HTMLTextAreaElement };
+
+      // Simulates exactly what a native Tab keypress does to a tabIndex=0
+      // element — real DOM focus landing on the terminal's input with no
+      // click involved. Before this fix nothing listened for this at all,
+      // so the app never found out and the indicator kept lying.
+      act(() => term.textarea.dispatchEvent(new FocusEvent("focus")));
+      expect(onKeyboardFocusChange).toHaveBeenLastCalledWith(true);
+
+      act(() => term.textarea.dispatchEvent(new FocusEvent("blur")));
+      expect(onKeyboardFocusChange).toHaveBeenLastCalledWith(false);
+    });
+
+    it("stops calling onKeyboardFocusChange once the hook unmounts (listener cleanup, no stale-closure leak)", async () => {
+      const requestExpand = vi.fn();
+      const onKeyboardFocusChange = vi.fn();
+      const { result, unmount } = renderHook(() =>
+        useTerminalSession(descriptor, { enabled: true, expanded: true, requestExpand, onKeyboardFocusChange }),
+      );
+      mountContainer(result);
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+      const term = mockTerminals[mockTerminals.length - 1] as unknown as { textarea: HTMLTextAreaElement };
+
+      unmount();
+      onKeyboardFocusChange.mockClear();
+      term.textarea.dispatchEvent(new FocusEvent("focus"));
+      expect(onKeyboardFocusChange).not.toHaveBeenCalled();
     });
   });
 });
