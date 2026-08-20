@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { toast } from "sonner";
 import { FolderOpen, FolderPlus, Lock, GitBranch, AlertTriangle } from "lucide-react";
 import {
   Dialog,
@@ -17,6 +18,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import {
   type LaunchMode,
   type LaunchPathState,
+  type RecordedProjectPath,
   composeNewProjectPath,
   validateFolderName,
   looksAbsolutePath,
@@ -25,6 +27,8 @@ import {
   writeLaunchPath,
   DEFAULT_NEW_PROJECT_PARENT,
 } from "@/lib/launch-claude-code";
+import { saveManualProjectPath } from "@/actions/launch-path";
+import { getMachineIdentity } from "@/lib/terminal/machine-identity";
 
 interface LaunchPathDialogProps {
   open: boolean;
@@ -37,8 +41,13 @@ interface LaunchPathDialogProps {
   initialMode?: LaunchMode;
   /** When true the primary CTA continues the launch after saving. */
   launchOnSave?: boolean;
-  /** Called with the freshly-saved state so the caller can continue the launch. */
-  onSaved: (state: LaunchPathState) => void;
+  /**
+   * Called with the freshly-saved state so the caller can continue the launch.
+   * For an existing-mode save, `recordedPath` is the server row that was just
+   * written (see `saveManualProjectPath`) so the caller can reflect it
+   * immediately without waiting on a fresh server read.
+   */
+  onSaved: (state: LaunchPathState, recordedPath?: RecordedProjectPath) => void;
 }
 
 export function LaunchPathDialog({
@@ -56,6 +65,10 @@ export function LaunchPathDialog({
   const [parent, setParent] = useState(initial?.parent ?? DEFAULT_NEW_PROJECT_PARENT);
   const [name, setName] = useState(initial?.name ?? "");
   const [error, setError] = useState<string | null>(null);
+  // Existing-mode Save now round-trips to the server (idea_project_paths) —
+  // see saveManualProjectPath. Guards a double-submit and disables the CTA
+  // while the write is in flight.
+  const [saving, setSaving] = useState(false);
 
   const pathRef = useRef<HTMLInputElement>(null);
   const parentRef = useRef<HTMLInputElement>(null);
@@ -84,7 +97,7 @@ export function LaunchPathDialog({
     setError(null);
   }
 
-  function handleSave() {
+  async function handleSave() {
     if (mode === "existing") {
       const trimmed = path.trim();
       if (!trimmed) {
@@ -101,13 +114,27 @@ export function LaunchPathDialog({
         pathRef.current?.focus();
         return;
       }
+      // Existing-mode folders are now recorded server-side (idea_project_paths)
+      // instead of localStorage — this is what makes the pin persist across
+      // browsers, and what retires the two-independent-stores bug the pin used
+      // to cause (see resolveEffectiveLaunchTarget). Pass this browser's real
+      // machine hostname (if a terminal session has ever announced one) so the
+      // row lands under it rather than the MANUAL_PIN_HOSTNAME fallback — see
+      // saveManualProjectPath's doc.
       const state: LaunchPathState = { mode: "existing", path: trimmed };
-      writeLaunchPath(ideaId, state);
-      finish(state);
+      setSaving(true);
+      const result = await saveManualProjectPath(ideaId, trimmed, getMachineIdentity());
+      setSaving(false);
+      if (!result.ok) {
+        toast.error("Couldn't save the project folder — try again");
+        return;
+      }
+      finish(state, result.recorded);
       return;
     }
 
-    // Create-new mode
+    // Create-new mode — no server-side folder exists yet to record, so this
+    // still lives in localStorage (the one job the browser store keeps).
     const parentTrimmed = parent.trim();
     if (!parentTrimmed) {
       setError("Enter where to create the project (a parent folder).");
@@ -131,8 +158,8 @@ export function LaunchPathDialog({
     finish(state);
   }
 
-  function finish(state: LaunchPathState) {
-    onSaved(state);
+  function finish(state: LaunchPathState, recordedPath?: RecordedProjectPath) {
+    onSaved(state, recordedPath);
     onOpenChange(false);
   }
 
@@ -142,8 +169,9 @@ export function LaunchPathDialog({
   const existingNotAbsolute = mode === "existing" && path.trim() !== "" && !isValidAbsolutePath(path);
   const parentNotAbsolute = mode === "new" && parent.trim() !== "" && !looksAbsolutePath(parent);
 
-  const saveLabel =
-    mode === "new"
+  const saveLabel = saving
+    ? "Saving…"
+    : mode === "new"
       ? launchOnSave
         ? "Create & launch"
         : "Create"
@@ -320,7 +348,11 @@ export function LaunchPathDialog({
             <Lock className="h-3 w-3" />
             Private to you
           </span>
-          <span>Stored on this device only — never shown to other collaborators.</span>
+          <span>
+            {mode === "existing"
+              ? "Saved to your account — follows you between browsers, never shown to other collaborators."
+              : "Stored on this device only — never shown to other collaborators."}
+          </span>
         </div>
 
         {error && (
@@ -334,7 +366,9 @@ export function LaunchPathDialog({
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Cancel
           </Button>
-          <Button onClick={handleSave}>{saveLabel}</Button>
+          <Button onClick={() => void handleSave()} disabled={saving}>
+            {saveLabel}
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

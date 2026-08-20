@@ -2,6 +2,7 @@
 
 import { createContext, useContext } from "react";
 import type { RecordedProjectPath } from "@/lib/launch-claude-code";
+import { useLaunchPathPinMigration } from "@/hooks/use-launch-path-pin-migration";
 
 /**
  * Idea-level context for the "Launch Claude Code" feature so per-task surfaces
@@ -32,6 +33,9 @@ export function BoardLaunchProvider({
   value: BoardLaunchContextValue;
   children: React.ReactNode;
 }) {
+  // Mounted once per board load (unlike LaunchClaudeCodeButton, which renders
+  // once per task) — the right place for the one-time browser-pin migration.
+  useLaunchPathPinMigration(value.ideaId);
   return <BoardLaunchContext.Provider value={value}>{children}</BoardLaunchContext.Provider>;
 }
 

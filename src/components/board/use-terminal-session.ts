@@ -87,7 +87,6 @@ import { type BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import {
   buildBoundedDeepLink,
   buildCompactPromptEssentials,
-  readLaunchPath,
   resolveAppUrl,
   resolveDefaultLaunchState,
   resolveEffectiveLaunchTarget,
@@ -100,7 +99,7 @@ import {
   resolveTerminalPlatform,
 } from "@/lib/terminal/platform";
 import { isBrowserPaired, markBrowserPaired, resolveFirstRunEntry } from "@/lib/terminal/paired-flag";
-import { setMachineIdentity } from "@/lib/terminal/machine-identity";
+import { getMachineIdentity, setMachineIdentity } from "@/lib/terminal/machine-identity";
 import { type LaunchPhase, nextLaunchPhaseOnTimeout } from "@/lib/terminal/first-run-flow";
 import { consumeRecentHelperIdleQuit } from "@/lib/terminal/helper-relaunch-signal";
 import {
@@ -954,8 +953,12 @@ export function useTerminalSession(
     if (carried) return carried;
     const effectiveTarget = resolveEffectiveLaunchTarget({
       hasRepo: !!ideaGithubUrl,
-      saved: readLaunchPath(ideaId),
       recordedPaths: recordedProjectPaths,
+      // Read fresh rather than captured: this runs at launch time, and a bridge
+      // may have announced this machine's hostname earlier in THIS session (see
+      // setMachineIdentity below) — the button's render-time snapshot can't see
+      // that, but a launch fired afterwards should.
+      realHostname: getMachineIdentity(),
     });
     const s = resolveDefaultLaunchState(ideaId, ideaTitle, ideaGithubUrl, effectiveTarget);
     const essentials = buildCompactPromptEssentials({
