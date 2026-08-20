@@ -53,7 +53,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
-import { ChevronUp, ChevronDown, ChevronLeft, Circle, ListTree, Loader2, Plus, Terminal as TerminalIcon, X } from "lucide-react";
+import { ChevronUp, ChevronDown, ChevronLeft, Circle, ListTree, Loader2, Pencil, Plus, Terminal as TerminalIcon, X } from "lucide-react";
 import { usePostHog } from "posthog-js/react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -63,7 +63,7 @@ import { logger } from "@/lib/logger";
 import { isTerminalEnabled, relayBaseUrl, type TerminalStatus } from "@/lib/terminal/connection";
 import { subscribeBrowserLaunch, type BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import { resolveDockView } from "@/lib/terminal/first-run-flow";
-import { slugifyIdeaTitle, type RecordedProjectPath } from "@/lib/launch-claude-code";
+import type { RecordedProjectPath } from "@/lib/launch-claude-code";
 import { newSessionTooltip } from "@/lib/terminal/session-cap";
 import {
   generatePopoutNonce,
@@ -94,6 +94,12 @@ import { useDockInset } from "./terminal-dock-inset";
 import { useDockHeight, TerminalDockResizeHandle } from "./terminal-dock-resize";
 import { getMachineIdentity } from "@/lib/terminal/machine-identity";
 import { fetchHelperStatus, type HelperStatus } from "@/lib/terminal/helper-row";
+import {
+  DISPLAY_NAME_COUNTER_THRESHOLD,
+  DISPLAY_NAME_MAX_CODE_POINTS,
+  clampToCodePoints,
+  codePointLength,
+} from "@/lib/terminal/display-name";
 import {
   type SessionEntry,
   type TabDisplayStatus,
@@ -252,6 +258,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // on the SAME tab's × (or a second Delete keypress) actually ends it. Ended
   // tabs close instantly, no confirm.
   const [confirmingKey, setConfirmingKey] = useState<string | null>(null);
+  // Tab rename (card 3bf262ac) — mirrors `confirmingKey`'s "one contents-swap
+  // active at a time" shape: the active tab's own inline editor, reusing the
+  // tab strip's shipped contents-swap pattern (pencil/label ↔ input/✓/✕).
+  const [renamingKey, setRenamingKey] = useState<string | null>(null);
+  const [renameDraft, setRenameDraft] = useState("");
   // Single shared aria-live announcer for background-tab attention (a11y §14) —
   // one region so simultaneous background transitions never talk over each other.
   const [announcement, setAnnouncement] = useState("");
@@ -281,6 +292,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // effect to unsubscribe/resubscribe on every tab status change.
   const sessionsRef = useRef(sessions);
   const summariesRef = useRef(summaries);
+  // Card 3bf262ac — see the overlay Dialog's `onEscapeKeyDown` and
+  // TerminalSessionChooser's `onRenamingActiveChange` doc: a ref (not
+  // state) because it's read only from inside a native-event callback that
+  // must see the CURRENT value without itself triggering a re-render.
+  const chooserRenamingActiveRef = useRef(false);
   const posthog = usePostHog();
   const posthogRef = useRef(posthog);
   // Session entry chooser (card cbe60db5): mirrors `entryDecision` (declared
@@ -384,6 +400,40 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     if (!enabled) return;
     void refreshRegistry();
   }, [enabled, refreshRegistry]);
+
+  // ── rename (card 3bf262ac) — the ONE persistence function every rename
+  // surface calls. Pure persistence + central-state sync: PATCHes the
+  // session, and on success keeps BOTH `registryRows` (the chooser's data
+  // source) and any LIVE tab entry for this sid in sync, so the tab label,
+  // pop-out title and aria announcer agree with what the initiating surface
+  // just showed (design §4 "Optimistic update"). Each CALLER (the tab's own
+  // editor below, the My Sessions panel, the chooser) owns its OWN
+  // optimistic apply/revert of whatever it's rendering — this function never
+  // does that on their behalf, since they don't share state with each other.
+  const renameSession = useCallback(
+    async (sid: string, next: string | null): Promise<{ ok: boolean; displayName: string | null }> => {
+      try {
+        const res = await fetch(`/api/terminal/session/${encodeURIComponent(sid)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          // "" is the clear signal the PATCH route expects — never send `null`.
+          body: JSON.stringify({ displayName: next ?? "" }),
+        });
+        if (!res.ok) return { ok: false, displayName: null };
+        const body = (await res.json().catch(() => null)) as { displayName?: string | null } | null;
+        const resolved = body && "displayName" in body ? (body.displayName ?? null) : next;
+        setRegistryRows((prev) => prev?.map((r) => (r.sid === sid ? { ...r, displayName: resolved } : r)) ?? prev);
+        setSessions((prev) =>
+          prev.map((s) => (summariesRef.current[s.key]?.sessionId === sid ? { ...s, displayName: resolved ?? undefined } : s)),
+        );
+        return { ok: true, displayName: resolved };
+      } catch (err) {
+        logger.error("Terminal session rename failed", { sid, error: err instanceof Error ? err.message : String(err) });
+        return { ok: false, displayName: null };
+      }
+    },
+    [],
+  );
 
   useEffect(() => {
     if (!enabled) return;
@@ -496,8 +546,6 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     () => ({ ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths }),
     [ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths],
   );
-  const ideaSlug = useMemo(() => slugifyIdeaTitle(ideaTitle), [ideaTitle]);
-
   // Dock CHROME: shared by every session. Each tab calls this at the same points
   // P1's single hook called `setExpanded(true)` directly.
   const requestExpand = useCallback(() => setExpanded(true), []);
@@ -608,8 +656,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       if (!summary?.sessionId || !summary.browserToken) return; // nothing minted yet — button shouldn't even be visible
       const entry = sessionsRef.current.find((s) => s.key === key);
       const label = deriveTabLabel({
+        displayName: entry?.displayName,
         taskTitle: entry?.taskTitle,
-        ideaSlug,
+        ideaTitle,
         sessionId: summary.sessionId,
       });
       const identity = `${ideaTitle} · session ${summary.sessionId.slice(0, 8)}`;
@@ -673,7 +722,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       posthogRef.current?.capture("terminal_popout_used", { origin: entry?.origin ?? "toolbar" });
       setPoppedOutKeys((prev) => new Set(prev).add(key));
     },
-    [ideaId, ideaTitle, ideaSlug, applyBufferAndReattach],
+    [ideaId, ideaTitle, applyBufferAndReattach],
   );
 
   // ── close / remove a tab ────────────────────────────────────────────────────
@@ -737,6 +786,60 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   const cancelClose = useCallback(() => setConfirmingKey(null), []);
 
+  // ── tab rename (card 3bf262ac) ───────────────────────────────────────────────
+  // Optimistic apply to THIS tab's own entry, persisted via the shared
+  // `renameSession`; on failure, revert + a toast whose Retry re-attempts the
+  // SAME (key, sid, next, previous) tuple — the typed text is never lost, it's
+  // just held in this closure rather than a reopened editor (design §4
+  // Failure spec; the editor itself already closed the instant save was
+  // requested — see `commitTabRename` below and SessionRenameField's doc for
+  // why rows work the same way).
+  const persistTabRename = useCallback(
+    async (key: string, sid: string, next: string | null, previous: string | null) => {
+      setSessions((prev) => prev.map((s) => (s.key === key ? { ...s, displayName: next ?? undefined } : s)));
+      const result = await renameSession(sid, next);
+      if (result.ok) return;
+      setSessions((prev) => prev.map((s) => (s.key === key ? { ...s, displayName: previous ?? undefined } : s)));
+      const entry = sessionsRef.current.find((s) => s.key === key);
+      const stillCalled = deriveTabLabel({
+        displayName: previous,
+        taskTitle: entry?.taskTitle,
+        ideaTitle,
+        sessionId: sid,
+      });
+      toast.error(`Couldn't rename the session — it's still called "${stillCalled}".`, {
+        action: { label: "Retry", onClick: () => void persistTabRename(key, sid, next, previous) },
+      });
+    },
+    [renameSession, ideaTitle],
+  );
+
+  // Prefill: the user's own name if one exists (SessionRenameField's row
+  // editors select it fully; this tab editor does the same via the input's
+  // own `autoFocus`+select in the JSX below). Empty otherwise — the
+  // CURRENT resolved label is shown as the input's placeholder, never
+  // prefilled as if it were user text (design §4 Prefill spec).
+  const openTabRename = useCallback((key: string) => {
+    const entry = sessionsRef.current.find((s) => s.key === key);
+    setRenameDraft(entry?.displayName?.trim() ?? "");
+    setRenamingKey(key);
+  }, []);
+
+  const cancelTabRename = useCallback(() => setRenamingKey(null), []);
+
+  const commitTabRename = useCallback(() => {
+    const key = renamingKey;
+    setRenamingKey(null);
+    if (!key) return;
+    const entry = sessionsRef.current.find((s) => s.key === key);
+    const sid = summariesRef.current[key]?.sessionId;
+    if (!entry || !sid) return; // nothing minted yet — the pencil isn't shown before mint anyway
+    const trimmed = renameDraft.trim();
+    const current = entry.displayName?.trim() ?? "";
+    if (trimmed === current) return; // no real change — silent close, no network call
+    void persistTabRename(key, sid, trimmed ? trimmed : null, entry.displayName ?? null);
+  }, [renamingKey, renameDraft, persistTabRename]);
+
   // ── launch routing (B7/B10) + the pristine-slot reuse for the FIRST launch ──
   // Renamed from the pre-chooser `deliverLaunch` — this is the ACTUAL mint
   // path (today's unchanged mint/dedupe/pristine-reuse behaviour), now
@@ -772,6 +875,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 origin: payload?.resume || payload?.resumeId ? "resume" : payload?.taskId ? "task" : "toolbar",
                 taskId: payload?.taskId,
                 taskTitle: payload?.taskTitle,
+                displayName: payload?.displayName,
                 // Cross-board resume fix: resolves to a concrete idea even
                 // when the payload doesn't specify one (board/task launches
                 // always mean "here") — see SessionEntry.ideaId's doc.
@@ -791,6 +895,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       origin: payload?.resume || payload?.resumeId ? "resume" : payload?.taskId ? "task" : "toolbar",
       taskId: payload?.taskId,
       taskTitle: payload?.taskTitle,
+      displayName: payload?.displayName,
       ideaId: payload?.ideaId ?? ideaId,
       createdAt: Date.now(),
       launchSeq: 1,
@@ -911,6 +1016,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         helperToken?: string;
         cwd?: string | null;
         claudeSessionId?: string | null;
+        displayName?: string | null;
       };
       const snapshot = loadSessionSnapshot(sid);
       const initialBuffer = snapshot ? toReconnectBuffer(snapshot) : null;
@@ -943,6 +1049,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         origin: "reconnect",
         taskId: undefined,
         taskTitle: undefined,
+        // Card 3bf262ac AC 3: a reload-reattached (or manually reconnected)
+        // live tab shows its custom name — the registry row's own
+        // display_name, forwarded by the reattach route. Unlike taskId/
+        // taskTitle just above (deliberately NOT carried across a reattach —
+        // see this constant's own history), a rename is exactly what AC 3
+        // requires surviving a reload.
+        displayName: data.displayName ?? undefined,
         // A reattach always runs already ON the row's own board — a
         // cross-board live row goes through handleChooserOpenBoardAndReconnect
         // (navigate first, `?reconnect=` picks it up here), never straight
@@ -1060,6 +1173,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       cwd: row.cwd ?? undefined,
       taskId: row.taskId ?? undefined,
       taskTitle: row.taskTitle ?? undefined,
+      // Terminal sessions need names that stick (card 3bf262ac, AC 4): a
+      // renamed ended row's name rides the fresh mint Resume produces,
+      // exactly like taskId/taskTitle already do.
+      displayName: row.displayName ?? undefined,
       ideaId: row.ideaId,
     }),
     [],
@@ -1306,9 +1423,15 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       } else if (e.key === "Escape" && confirmingKey === key) {
         e.preventDefault();
         cancelClose();
+      } else if (e.key === "F2" && activeKey === key) {
+        // Desktop accelerator (design §2) — additive only, the pencil stays
+        // the primary/taught path. Only fires on the ACTIVE tab, matching
+        // the pencil's own active-only visibility.
+        e.preventDefault();
+        openTabRename(key);
       }
     },
-    [sessions, requestClose, confirmingKey, cancelClose],
+    [sessions, requestClose, confirmingKey, cancelClose, activeKey, openTabRename],
   );
 
   if (!enabled) return null;
@@ -1495,6 +1618,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           onOpenChange={setMySessionsOpen}
           onCountChange={setMySessionsCount}
           onReconnect={handleMySessionsReconnect}
+          onRenameSession={renameSession}
         >
           <Button
             variant="ghost"
@@ -1563,6 +1687,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onOpenBoardAndReconnect={handleChooserOpenBoardAndReconnect}
             onResume={handleChooserResume}
             onStartNew={handleChooserStartNew}
+            onRenameSession={renameSession}
             helperStatus={helperStatus}
             onHelperUpdateSettled={refreshAfterHelperUpdate}
           />
@@ -1581,12 +1706,15 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 const meta = tabStatusMeta(displayStatusFor(entry.key));
                 const tabIsLive = poppedOut || isLiveTabStatus(status);
                 const label = deriveTabLabel({
+                  displayName: entry.displayName,
                   taskTitle: entry.taskTitle,
-                  ideaSlug,
+                  ideaTitle,
                   sessionId: summary?.sessionId ?? null,
                 });
                 const isActive = entry.key === activeKey;
                 const confirming = confirmingKey === entry.key;
+                const renaming = renamingKey === entry.key;
+                const renameLength = codePointLength(renameDraft);
                 return (
                   <div
                     key={entry.key}
@@ -1604,9 +1732,79 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                       "flex min-w-[110px] max-w-[190px] flex-none cursor-pointer items-center gap-1.5 border-r border-t-2 border-zinc-800 border-t-transparent px-2.5 py-0 text-[12.5px] text-zinc-400",
                       isActive && "border-t-sky-400 bg-[#0c0c0e] font-semibold text-zinc-100",
                       !isActive && "hover:bg-zinc-800/60 hover:text-zinc-100",
+                      // Widen while renaming/confirming — "the tab widens to
+                      // its max width while editing so there's room to type"
+                      // (design §3a).
+                      (renaming || confirming) && "max-w-none flex-1",
                     )}
                   >
-                    {confirming ? (
+                    {renaming ? (
+                      // Contents-swap (design §3a mid-edit) — same shape as
+                      // the "End session?" confirm below, reusing the tab's
+                      // shipped pattern rather than forking a new one.
+                      // Nothing here ever unmounts TerminalSessionView; the
+                      // terminal underneath keeps streaming untouched.
+                      <>
+                        <input
+                          autoFocus
+                          type="text"
+                          dir="auto"
+                          value={renameDraft}
+                          placeholder={label}
+                          aria-label="Session name"
+                          onFocus={(e) => e.currentTarget.select()}
+                          onChange={(e) =>
+                            setRenameDraft(clampToCodePoints(e.target.value, DISPLAY_NAME_MAX_CODE_POINTS))
+                          }
+                          onClick={(e) => e.stopPropagation()}
+                          onKeyDown={(e) => {
+                            // The rename input must never exchange keystrokes
+                            // with the tab strip's own key handling (arrow-key
+                            // nav, Delete-to-close) or the PTY — stop it here.
+                            e.stopPropagation();
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              commitTabRename();
+                            } else if (e.key === "Escape") {
+                              e.preventDefault();
+                              cancelTabRename();
+                            }
+                          }}
+                          onKeyUp={(e) => e.stopPropagation()}
+                          onBlur={commitTabRename}
+                          className="min-w-0 flex-1 rounded border border-sky-500 bg-zinc-900 px-1.5 py-0.5 text-[12.5px] text-zinc-100 outline-none ring-2 ring-sky-500/20"
+                        />
+                        {renameLength >= DISPLAY_NAME_COUNTER_THRESHOLD && (
+                          <span className="flex-none font-mono text-[10px] text-amber-400" aria-hidden="true">
+                            {renameLength}/{DISPLAY_NAME_MAX_CODE_POINTS}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          aria-label="Save name"
+                          className="flex h-[18px] w-[18px] flex-none items-center justify-center rounded text-emerald-400 hover:bg-emerald-500/15"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            commitTabRename();
+                          }}
+                        >
+                          ✓
+                        </button>
+                        <button
+                          type="button"
+                          aria-label="Cancel"
+                          className="flex h-[18px] w-[18px] flex-none items-center justify-center rounded text-zinc-400 hover:bg-zinc-700"
+                          onMouseDown={(e) => e.preventDefault()}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            cancelTabRename();
+                          }}
+                        >
+                          ✕
+                        </button>
+                      </>
+                    ) : confirming ? (
                       <>
                         <span className="min-w-0 flex-1 truncate text-[11.5px] text-rose-300">End session?</span>
                         <button
@@ -1638,7 +1836,36 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                           {meta.glyph}
                         </span>
                         <span className="sr-only">{meta.ariaText}</span>
-                        <span className="min-w-0 flex-1 truncate">{label}</span>
+                        <span
+                          className="min-w-0 flex-1 truncate"
+                          onDoubleClick={(e) => {
+                            // Desktop accelerator (design §2) — additive only,
+                            // the pencil (below) is the primary/taught path.
+                            if (!isActive) return;
+                            e.stopPropagation();
+                            openTabRename(entry.key);
+                          }}
+                        >
+                          {label}
+                        </span>
+                        {/* Pencil renders on the ACTIVE tab only (design §2's
+                            deliberate, human-approved trade — a permanent
+                            second icon on every background tab would crush
+                            the label below the 110px minimum width). */}
+                        {isActive && (
+                          <button
+                            type="button"
+                            aria-label={`Rename session (double-click or F2): ${label}`}
+                            title="Rename session (double-click or F2)"
+                            className="flex h-[18px] w-[18px] flex-none items-center justify-center rounded text-zinc-500 hover:bg-zinc-700 hover:text-zinc-200"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openTabRename(entry.key);
+                            }}
+                          >
+                            <Pencil className="h-3 w-3" />
+                          </button>
+                        )}
                         <button
                           type="button"
                           aria-label={`${tabIsLive ? "End session and close tab" : "Close tab"}: ${label}`}
@@ -1681,8 +1908,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             entry={entry}
             descriptor={descriptor}
             label={deriveTabLabel({
+              displayName: entry.displayName,
               taskTitle: entry.taskTitle,
-              ideaSlug,
+              ideaTitle,
               sessionId: summaries[entry.key]?.sessionId ?? null,
             })}
             isActive={entry.key === activeKey}
@@ -1728,6 +1956,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       >
         <DialogContent
           className="max-w-lg gap-0 border-zinc-700 bg-[#141417] p-0 text-zinc-200 sm:max-w-xl"
+          onEscapeKeyDown={(e) => {
+            // Card 3bf262ac: Radix's Escape-to-dismiss runs in the CAPTURE
+            // phase on `document`, ahead of any row's own rename-input
+            // keydown handler — so a plain `stopPropagation` inside that
+            // input can't stop the Dialog closing underneath it. Suppress
+            // the dismiss here instead while a rename is active; the row's
+            // own handler still independently cancels ITS edit on the same
+            // keypress. See TerminalSessionChooser's onRenamingActiveChange doc.
+            if (chooserRenamingActiveRef.current) e.preventDefault();
+          }}
         >
           <DialogTitle className="sr-only">Choose a terminal session</DialogTitle>
           <DialogDescription className="sr-only">
@@ -1741,9 +1979,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onOpenBoardAndReconnect={handleChooserOpenBoardAndReconnect}
             onResume={handleChooserResume}
             onStartNew={handleChooserStartNew}
+            onRenameSession={renameSession}
             helperStatus={helperStatus}
             onHelperUpdateSettled={refreshAfterHelperUpdate}
             onDismiss={handleChooserDismiss}
+            onRenamingActiveChange={(active) => {
+              chooserRenamingActiveRef.current = active;
+            }}
           />
         </DialogContent>
       </Dialog>

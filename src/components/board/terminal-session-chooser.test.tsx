@@ -62,6 +62,7 @@ describe("TerminalSessionChooser", () => {
       cwd: "~/projects/vibecodes",
       createdAt: new Date().toISOString(),
       wasOpenInThisTab: false,
+      displayName: null,
     };
     render(
       <TerminalSessionChooser
@@ -90,6 +91,7 @@ describe("TerminalSessionChooser", () => {
       cwd: "~/projects/helper",
       createdAt: new Date().toISOString(),
       wasOpenInThisTab: false,
+      displayName: null,
     };
     render(
       <TerminalSessionChooser
@@ -115,6 +117,7 @@ describe("TerminalSessionChooser", () => {
       cwd: "~/projects/vibecodes",
       createdAt: new Date().toISOString(),
       wasOpenInThisTab: true,
+      displayName: null,
     };
     render(
       <TerminalSessionChooser
@@ -140,6 +143,7 @@ describe("TerminalSessionChooser", () => {
       cwd: "~/projects/vibecodes",
       createdAt: new Date().toISOString(),
       wasOpenInThisTab: false,
+      displayName: null,
     };
     render(
       <TerminalSessionChooser
@@ -170,6 +174,7 @@ describe("TerminalSessionChooser", () => {
       machineLabel: "Nick's MacBook",
       claudeSessionId: null,
       endedAt: new Date().toISOString(),
+      displayName: null,
     };
     render(
       <TerminalSessionChooser
@@ -211,6 +216,7 @@ describe("TerminalSessionChooser", () => {
       machineLabel: "Nick's MacBook",
       claudeSessionId: null,
       endedAt: new Date().toISOString(),
+      displayName: null,
     };
     render(
       <TerminalSessionChooser
@@ -239,6 +245,7 @@ describe("TerminalSessionChooser", () => {
       machineLabel: null,
       claudeSessionId: null,
       endedAt: new Date().toISOString(),
+      displayName: null,
     };
     const withCwdRow = {
       sid: "sid-with-cwd",
@@ -250,6 +257,7 @@ describe("TerminalSessionChooser", () => {
       machineLabel: null,
       claudeSessionId: null,
       endedAt: new Date().toISOString(),
+      displayName: null,
     };
     render(
       <TerminalSessionChooser
@@ -283,6 +291,7 @@ describe("TerminalSessionChooser", () => {
       machineLabel: null,
       claudeSessionId: null,
       endedAt: new Date().toISOString(),
+      displayName: null,
     };
     render(
       <TerminalSessionChooser
@@ -308,6 +317,7 @@ describe("TerminalSessionChooser", () => {
       machineLabel: null,
       claudeSessionId: "99999999-8888-7777-6666-555555555555",
       endedAt: new Date().toISOString(),
+      displayName: null,
     };
     render(
       <TerminalSessionChooser
@@ -335,6 +345,7 @@ describe("TerminalSessionChooser", () => {
       machineLabel: null,
       claudeSessionId: null,
       endedAt: new Date().toISOString(),
+      displayName: null,
     };
     render(
       <TerminalSessionChooser
@@ -363,6 +374,7 @@ describe("TerminalSessionChooser", () => {
       cwd: "~/projects/vibecodes",
       createdAt: new Date().toISOString(),
       wasOpenInThisTab: false,
+      displayName: null,
     };
   }
 
@@ -376,6 +388,7 @@ describe("TerminalSessionChooser", () => {
     machineLabel: null,
     claudeSessionId: null,
     endedAt: new Date().toISOString(),
+    displayName: null,
   };
 
   it("Recent row: hides the limit line when comfortably under the session cap", () => {
@@ -423,6 +436,7 @@ describe("TerminalSessionChooser", () => {
       cwd: "~/projects/vibecodes",
       createdAt: new Date().toISOString(),
       wasOpenInThisTab: false,
+      displayName: null,
     };
     render(
       <TerminalSessionChooser
@@ -649,6 +663,118 @@ describe("TerminalSessionChooser", () => {
       expect(assignSpy).toHaveBeenCalledWith(TERMINAL_HELPER_DOWNLOAD_URL);
       expect(screen.getByText(/The helper is taking a moment to close/)).toBeInTheDocument();
       expect(onHelperUpdateSettled).toHaveBeenCalledOnce();
+    });
+  });
+
+  describe("rename (card 3bf262ac)", () => {
+    it("hides the pencil on every row when no onRenameSession is supplied", () => {
+      render(
+        <TerminalSessionChooser
+          sections={sections({ liveHere: [liveRow("live-1")], recent: [recentRow] })}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+        />,
+      );
+      expect(screen.queryByRole("button", { name: /rename session/i })).not.toBeInTheDocument();
+    });
+
+    it("a LIVE row: renaming calls onRenameSession(sid, next) and shows the new name instantly (this component's own optimistic layer)", async () => {
+      const onRenameSession = vi.fn().mockResolvedValue({ ok: true, displayName: "Auth spike" });
+      render(
+        <TerminalSessionChooser
+          sections={sections({ liveHere: [liveRow("live-1")] })}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+          onRenameSession={onRenameSession}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /rename session/i }));
+      const input = screen.getByRole("textbox", { name: "Session name" });
+      fireEvent.change(input, { target: { value: "Auth spike" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(screen.getByText("Auth spike")).toBeInTheDocument();
+      expect(onRenameSession).toHaveBeenCalledWith("live-1", "Auth spike");
+      await act(async () => {
+        await Promise.resolve();
+      });
+    });
+
+    // The headline case (Requirements §2's PATCH-gap fix, AC 2): renaming
+    // matters MOST on an ended/Recent row — this is the exact row Nick
+    // couldn't identify, and the old PATCH route would have silently
+    // no-op'd this write.
+    it("a RECENT (ended) row: renaming works exactly the same way as a live row", async () => {
+      const onRenameSession = vi.fn().mockResolvedValue({ ok: true, displayName: "Stripe webhook spike" });
+      render(
+        <TerminalSessionChooser
+          sections={sections({ recent: [recentRow] })}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+          onRenameSession={onRenameSession}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /rename session/i }));
+      const input = screen.getByRole("textbox", { name: "Session name" });
+      fireEvent.change(input, { target: { value: "Stripe webhook spike" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+
+      expect(screen.getByText("Stripe webhook spike")).toBeInTheDocument();
+      expect(onRenameSession).toHaveBeenCalledWith(recentRow.sid, "Stripe webhook spike");
+      await act(async () => {
+        await Promise.resolve();
+      });
+    });
+
+    it("reverts the optimistic name when the persist call fails", async () => {
+      const onRenameSession = vi.fn().mockResolvedValue({ ok: false });
+      render(
+        <TerminalSessionChooser
+          sections={sections({ recent: [recentRow] })}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+          onRenameSession={onRenameSession}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /rename session/i }));
+      const input = screen.getByRole("textbox", { name: "Session name" });
+      fireEvent.change(input, { target: { value: "Stripe webhook spike" } });
+      fireEvent.keyDown(input, { key: "Enter" });
+      // Optimistic apply is synchronous — visible before the (failing) persist settles.
+      expect(screen.getByText("Stripe webhook spike")).toBeInTheDocument();
+
+      await act(async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+      });
+
+      expect(screen.queryByText("Stripe webhook spike")).not.toBeInTheDocument();
+      // Reverted to the fallback (recentRow has no displayName/taskTitle):
+      // "<idea title> · <sid4>" — same shape `resolveSessionName` produces.
+      expect(screen.getByText("VibeCodes · sid-")).toBeInTheDocument();
+    });
+
+    it("Resume hides on a Recent row while it is being renamed", () => {
+      render(
+        <TerminalSessionChooser
+          sections={sections({ recent: [recentRow] })}
+          onReconnectHere={vi.fn()}
+          onOpenBoardAndReconnect={vi.fn()}
+          onResume={vi.fn()}
+          onStartNew={vi.fn()}
+          onRenameSession={vi.fn()}
+        />,
+      );
+      fireEvent.click(screen.getByRole("button", { name: /rename session/i }));
+      expect(screen.queryByRole("button", { name: "Resume" })).not.toBeInTheDocument();
     });
   });
 });

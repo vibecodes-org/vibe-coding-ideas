@@ -246,6 +246,14 @@ export interface UseTerminalSessionOptions {
   taskId?: string;
   taskTitle?: string;
   /**
+   * Terminal sessions need names that stick (card 3bf262ac): this tab's own
+   * user-set name, if it has one — forwarded on mint the same way
+   * `taskId`/`taskTitle` are, so a renamed row's name rides a fresh mint
+   * (resume) instead of being lost. Undefined for every launch that isn't
+   * reviving a renamed row.
+   */
+  displayName?: string;
+  /**
    * Called when a mint is refused for having hit the cap (E1) — the caller
    * (the dock) opens/points at the "My sessions" panel, the ONE place a
    * blocked user can see and end what's counting against them (design §7b).
@@ -466,6 +474,7 @@ export function useTerminalSession(
     autoConnectWhenExpanded = true,
     taskId,
     taskTitle,
+    displayName,
     onCapExceeded,
     attachExisting = null,
   } = options;
@@ -1603,6 +1612,7 @@ export function useTerminalSession(
           ideaId,
           ...(taskId ? { taskId } : {}),
           ...(taskTitle ? { taskTitle } : {}),
+          ...(displayName ? { displayName } : {}),
         }),
       });
       if (!res.ok) {
@@ -1688,6 +1698,7 @@ export function useTerminalSession(
     ideaId,
     taskId,
     taskTitle,
+    displayName,
     teardownSocket,
     clearHelperTimer,
     removeLaunchIframe,

@@ -232,6 +232,7 @@ export function TerminalSessionView({
     autoConnectWhenExpanded,
     taskId: entry.taskId,
     taskTitle: entry.taskTitle,
+    displayName: entry.displayName,
     onCapExceeded,
     // Session entry chooser (card cbe60db5): a Reconnect/instant-continue
     // entry carries a ready-minted `attach` pair instead of a launch to
@@ -390,6 +391,10 @@ export function TerminalSessionView({
         cwd: sessionCwd,
         taskId: entry.taskId,
         taskTitle: entry.taskTitle,
+        // Terminal sessions need names that stick (card 3bf262ac): carry a
+        // renamed session's name into the fresh mint this resume produces,
+        // the same way taskId/taskTitle already ride it.
+        displayName: entry.displayName,
         // Cross-board resume fix: this tab's own recorded board, not
         // necessarily the board currently open (see SessionEntry.ideaId).
         ideaId: entry.ideaId,

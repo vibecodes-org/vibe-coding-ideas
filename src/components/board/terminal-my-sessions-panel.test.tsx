@@ -42,6 +42,7 @@ interface MockSession {
   createdAt: string;
   status: "active" | "ended";
   endedAt: string | null;
+  displayName: string | null;
 }
 
 function mockSession(sid: string, overrides: Partial<MockSession> = {}): MockSession {
@@ -56,6 +57,7 @@ function mockSession(sid: string, overrides: Partial<MockSession> = {}): MockSes
     createdAt: new Date().toISOString(),
     status: "active",
     endedAt: null,
+    displayName: null,
     ...overrides,
   };
 }
@@ -256,5 +258,86 @@ describe("TerminalMySessionsPanel — Update now (shared quiesce-then-download f
     await flush();
 
     expect(screen.queryByText(/Ready to update/)).not.toBeInTheDocument();
+  });
+});
+
+describe("TerminalMySessionsPanel — rename (card 3bf262ac)", () => {
+  it("hides the pencil entirely when no onRenameSession is supplied", async () => {
+    sessionsResponse = [mockSession("sid-1", { taskTitle: "Fix login redirect loop" })];
+    renderPanel();
+    await flush();
+    expect(screen.queryByRole("button", { name: /rename session/i })).not.toBeInTheDocument();
+  });
+
+  it("renaming calls onRenameSession(sid, next) and shows the new name immediately (optimistic)", async () => {
+    sessionsResponse = [mockSession("sid-1", { taskTitle: "Fix login redirect loop", displayName: null })];
+    const onRenameSession = vi.fn().mockResolvedValue({ ok: true, displayName: "Auth spike" });
+    render(
+      <TerminalMySessionsPanel open onOpenChange={vi.fn()} onRenameSession={onRenameSession}>
+        <button>My sessions</button>
+      </TerminalMySessionsPanel>,
+    );
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename session: Fix login redirect loop" }));
+    const input = screen.getByRole("textbox", { name: "Session name" });
+    fireEvent.change(input, { target: { value: "Auth spike" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+
+    expect(screen.getByText("Auth spike")).toBeInTheDocument();
+    expect(onRenameSession).toHaveBeenCalledWith("sid-1", "Auth spike");
+  });
+
+  it("reverts to the previous name when the persist call fails — typed intent isn't silently kept as truth", async () => {
+    sessionsResponse = [mockSession("sid-1", { taskTitle: "Fix login redirect loop" })];
+    const onRenameSession = vi.fn().mockResolvedValue({ ok: false });
+    render(
+      <TerminalMySessionsPanel open onOpenChange={vi.fn()} onRenameSession={onRenameSession}>
+        <button>My sessions</button>
+      </TerminalMySessionsPanel>,
+    );
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename session: Fix login redirect loop" }));
+    const input = screen.getByRole("textbox", { name: "Session name" });
+    fireEvent.change(input, { target: { value: "Auth spike" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    await flush();
+
+    expect(screen.getByText("Fix login redirect loop")).toBeInTheDocument();
+    expect(screen.queryByText("Auth spike")).not.toBeInTheDocument();
+  });
+
+  it("hides Reconnect/End on the row being renamed — one job at a time (design §3b)", async () => {
+    sessionsResponse = [mockSession("sid-1", { taskTitle: "Fix login redirect loop" })];
+    render(
+      <TerminalMySessionsPanel open onOpenChange={vi.fn()} onRenameSession={vi.fn()} onReconnect={vi.fn()}>
+        <button>My sessions</button>
+      </TerminalMySessionsPanel>,
+    );
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename session: Fix login redirect loop" }));
+    expect(screen.queryByRole("button", { name: /^End session/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: /^Reconnect/ })).not.toBeInTheDocument();
+  });
+
+  it("Escape cancels without calling onRenameSession", async () => {
+    sessionsResponse = [mockSession("sid-1", { taskTitle: "Fix login redirect loop" })];
+    const onRenameSession = vi.fn();
+    render(
+      <TerminalMySessionsPanel open onOpenChange={vi.fn()} onRenameSession={onRenameSession}>
+        <button>My sessions</button>
+      </TerminalMySessionsPanel>,
+    );
+    await flush();
+
+    fireEvent.click(screen.getByRole("button", { name: "Rename session: Fix login redirect loop" }));
+    const input = screen.getByRole("textbox", { name: "Session name" });
+    fireEvent.change(input, { target: { value: "discard me" } });
+    fireEvent.keyDown(input, { key: "Escape" });
+
+    expect(onRenameSession).not.toHaveBeenCalled();
+    expect(screen.getByText("Fix login redirect loop")).toBeInTheDocument();
   });
 });
