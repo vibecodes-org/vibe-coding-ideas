@@ -1809,8 +1809,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         document.getElementById(`terminal-tab-${sessions[sessions.length - 1].key}`)?.focus();
       } else if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
-        setActiveKey(key);
         setExpanded(true);
+        // Split view: keyboard activation must reach the SAME pane-aware
+        // decision the click handler does (§8 "keyboard reachability") — a
+        // blind setActiveKey here would desync `activeKey` from whichever
+        // pane is actually focused, and skip the focus-move announcement.
+        if (splitActive) handleSplitTabClick(key);
+        else setActiveKey(key);
       } else if (e.key === "Delete") {
         e.preventDefault();
         requestClose(key);
@@ -1825,7 +1830,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         openTabRename(key);
       }
     },
-    [sessions, requestClose, confirmingKey, cancelClose, activeKey, openTabRename],
+    [sessions, requestClose, confirmingKey, cancelClose, activeKey, openTabRename, splitActive, handleSplitTabClick],
   );
 
   if (!enabled) return null;
