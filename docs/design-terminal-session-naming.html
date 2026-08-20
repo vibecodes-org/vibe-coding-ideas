@@ -1,0 +1,478 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Design — Terminal session names that stick (rename + one naming rule)</title>
+<style>
+:root{
+  --bg:#09090b; --panel:#0c0c0e; --panel2:#111114; --panel3:#141417;
+  --border:#27272a; --border2:#3f3f46;
+  --txt:#e4e4e7; --dim:#a1a1aa; --faint:#71717a;
+  --emerald:#34d399; --emerald-bg:rgba(52,211,153,.09); --emerald-bd:rgba(52,211,153,.4);
+  --sky:#38bdf8; --sky-bg:rgba(56,189,248,.09); --sky-bd:rgba(56,189,248,.4);
+  --amber:#fbbf24; --amber-bg:rgba(251,191,36,.09); --amber-bd:rgba(251,191,36,.4);
+  --rose:#fb7185; --rose-bg:rgba(251,113,133,.09); --rose-bd:rgba(251,113,133,.45);
+  --violet:#a78bfa;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.6 -apple-system,'Segoe UI',Roboto,sans-serif;padding:40px 20px 80px}
+.wrap{max-width:1020px;margin:0 auto}
+h1{font-size:24px;margin-bottom:4px}
+h2{font-size:18px;margin:48px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+h3{font-size:14.5px;margin:24px 0 8px}
+h4{font-size:12.5px;margin:18px 0 6px;color:var(--dim);text-transform:uppercase;letter-spacing:.05em}
+p{margin:8px 0;color:var(--dim)}
+strong{color:var(--txt)}
+.sub{color:var(--faint);font-size:13px;margin-bottom:20px}
+.meta{display:flex;gap:8px;flex-wrap:wrap;margin:14px 0 6px}
+.chip{font-size:11px;padding:2px 9px;border-radius:999px;border:1px solid var(--border2);color:var(--dim)}
+.chip.em{border-color:var(--emerald-bd);color:var(--emerald);background:var(--emerald-bg)}
+.chip.sky{border-color:var(--sky-bd);color:var(--sky);background:var(--sky-bg)}
+code{font-family:var(--mono);font-size:12px;background:var(--panel2);border:1px solid var(--border);border-radius:4px;padding:1px 5px;color:var(--txt)}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 18px;margin:12px 0}
+.found{border-left:3px solid var(--emerald)}
+.decide{border-left:3px solid var(--sky)}
+.veto{border:1px dashed var(--amber-bd);background:var(--amber-bg);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12.5px;color:var(--amber)}
+.veto b{color:var(--amber)}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px}
+th{text-align:left;padding:7px 10px;color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border2);vertical-align:bottom}
+td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--dim);vertical-align:top}
+td:first-child{color:var(--txt);font-weight:600}
+.tblwrap{overflow-x:auto}
+.mono-td{font-family:var(--mono);font-size:11.5px;color:var(--txt)}
+.rec td{background:var(--emerald-bg)}
+.pick{color:var(--emerald);font-weight:700}
+.flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:10px 0;padding:4px 0}
+.step{background:var(--panel2);border:1px solid var(--border2);border-radius:7px;padding:6px 11px;font-size:12px;color:var(--txt)}
+.step small{display:block;color:var(--faint);font-size:10.5px;max-width:230px}
+.step.sys{border-style:dashed;color:var(--dim)}
+.step.good{border-color:var(--emerald-bd);background:var(--emerald-bg)}
+.step.warn{border-color:var(--amber-bd);background:var(--amber-bg)}
+.step.bad{border-color:var(--rose-bd);background:var(--rose-bg)}
+.step.act{border-color:var(--sky-bd);background:var(--sky-bg)}
+.arr{color:var(--faint);font-size:13px;flex:none}
+.mock{background:var(--panel);border:1px solid var(--border2);border-radius:10px;margin:14px 0;overflow:hidden;font-size:13px}
+.mock-cap{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin:20px 0 -6px}
+.caption{font-size:11.5px;color:var(--faint)}
+.tabstrip{display:flex;align-items:stretch;background:var(--panel3);border-bottom:1px solid var(--border)}
+.ttab{display:flex;align-items:center;gap:7px;padding:8px 12px;border-right:1px solid var(--border);border-top:2px solid transparent;font-size:12.5px;color:var(--dim);white-space:nowrap;max-width:230px}
+.ttab.on{border-top-color:var(--sky);background:var(--panel);color:var(--txt);font-weight:600}
+.ttab .lbl{overflow:hidden;text-overflow:ellipsis}
+.ttab .x{color:var(--faint);font-size:11px;margin-left:2px}
+.ttab .pen{color:var(--faint);font-size:11px}
+.ttab.on .pen{color:var(--dim)}
+.glyph{flex:none;font-size:11px}
+.glyph.g{color:var(--emerald)} .glyph.w{color:var(--amber)} .glyph.m{color:var(--faint)} .glyph.p{color:var(--violet)}
+.plus{display:flex;align-items:center;padding:8px 13px;border-left:1px solid var(--border);margin-left:auto;color:var(--dim);font-weight:700}
+.term{background:#0a0a0c;padding:14px 16px;font-family:var(--mono);font-size:12px;color:var(--dim);min-height:40px}
+.ed-input{background:var(--panel2);border:1px solid var(--sky);border-radius:5px;padding:2px 7px;font-size:12px;color:var(--txt);outline:2px solid var(--sky-bg);min-width:0}
+.ed-input .caret{border-left:1px solid var(--sky);margin-left:1px}
+.ed-btn{display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;border-radius:4px;font-size:11px;flex:none}
+.ed-btn.ok{color:var(--emerald)} .ed-btn.no{color:var(--dim)}
+.counter{font-family:var(--mono);font-size:10px;color:var(--amber);flex:none}
+.row{display:flex;align-items:center;gap:10px;padding:10px 14px;border-top:1px solid var(--border)}
+.row .who{min-width:0;flex:1}
+.row .who .t{font-weight:600;color:var(--txt);font-size:13px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.row .who .t .idea{font-weight:400;color:var(--faint);font-size:11.5px}
+.row .who .m{font-family:var(--mono);font-size:11px;color:var(--faint)}
+.row .age{font-size:11.5px;color:var(--faint);flex:none}
+.btn{display:inline-flex;align-items:center;gap:6px;border-radius:6px;padding:4px 12px;font-size:12px;font-weight:600;border:1px solid var(--border2);color:var(--txt);background:transparent;white-space:nowrap}
+.btn.sky{border-color:var(--sky-bd);color:var(--sky);background:var(--sky-bg)}
+.btn.em{border-color:var(--emerald-bd);color:var(--emerald);background:var(--emerald-bg)}
+.btn.em.solid{background:var(--emerald);color:#052e22;border-color:var(--emerald)}
+.btn.rose{border-color:var(--rose-bd);color:var(--rose)}
+.btn.ghost{border-color:transparent;color:var(--dim)}
+.btn.sm{padding:2px 9px;font-size:11.5px}
+.iconbtn{display:inline-flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:5px;border:1px solid transparent;color:var(--faint);font-size:12px;flex:none}
+.iconbtn:hover{color:var(--txt)}
+.sect{padding:6px 14px;font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);background:var(--panel2);border-top:1px solid var(--border)}
+.savedflash{color:var(--emerald)}
+.toast{display:flex;align-items:center;gap:10px;background:#18181b;border:1px solid var(--rose-bd);border-radius:8px;padding:9px 14px;font-size:12.5px;color:var(--txt);max-width:420px;margin:10px 0}
+.toast .tico{color:var(--rose);flex:none}
+.kbd{font-family:var(--mono);font-size:11px;border:1px solid var(--border2);border-bottom-width:2px;border-radius:4px;padding:0 5px;color:var(--dim)}
+ul.tight{margin:6px 0 6px 20px;color:var(--dim)}
+ul.tight li{margin:4px 0}
+ol.tight{margin:6px 0 6px 20px;color:var(--dim)}
+ol.tight li{margin:4px 0}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:760px){.cols{grid-template-columns:1fr}}
+.opt-h{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap;margin-top:20px}
+.opt-h .tag{font-size:11px;font-weight:800;letter-spacing:.08em;border-radius:5px;padding:2px 8px}
+.opt-h .tag.a{background:var(--emerald-bg);border:1px solid var(--emerald-bd);color:var(--emerald)}
+.opt-h .tag.b{background:var(--sky-bg);border:1px solid var(--sky-bd);color:var(--sky)}
+.opt-h .tag.c{background:var(--amber-bg);border:1px solid var(--amber-bd);color:var(--amber)}
+.statecap{display:inline-block;font-size:10px;font-weight:800;letter-spacing:.07em;text-transform:uppercase;border-radius:4px;padding:1px 7px;margin-right:6px}
+.statecap.rest{background:var(--panel2);border:1px solid var(--border2);color:var(--dim)}
+.statecap.edit{background:var(--sky-bg);border:1px solid var(--sky-bd);color:var(--sky)}
+.statecap.saved{background:var(--emerald-bg);border:1px solid var(--emerald-bd);color:var(--emerald)}
+.statecap.err{background:var(--rose-bg);border:1px solid var(--rose-bd);color:var(--rose)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Terminal session names that stick</h1>
+<p class="sub">UX design for card <code>3bf262ac</code> — rename on tab, My Sessions and chooser rows; one naming rule everywhere. Builds directly on the <strong>Requirements</strong> step (ProdOwner, 2026-08-20): its precedence rule, its ended-session PATCH finding and its acceptance criteria are taken as given and referenced by number below, not restated.</p>
+<div class="meta">
+  <span class="chip em">Step 2 — UX Design</span>
+  <span class="chip sky">3 surfaces × 3 states, wireframed</span>
+  <span class="chip">WCAG 2.1 AA · no hover-only affordances · never colour alone</span>
+  <span class="chip">Never tear down a live xterm · never a trapping dialog</span>
+</div>
+
+<div class="panel decide">
+  <h3 style="margin-top:0">The two decisions this document makes</h3>
+  <ul class="tight">
+    <li><strong>Fallback shape (the open question Requirements §3 left to design): full idea title, not the slug.</strong> <code>Vibe Coding Ideas · a3f9</code>, never <code>vibe-coding-ideas · a3f9</code>. Rationale in §1.</li>
+    <li><strong>Discoverability: a visible pencil control on the active tab and on every row, with double-click and <span class="kbd">F2</span> as desktop accelerators.</strong> Rationale and rejected options in §2.</li>
+  </ul>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>1 · The naming rule, made visible</h2>
+
+<p>Requirements §3 fixes the precedence; every surface calls one helper:</p>
+<div class="flow">
+  <span class="step good">1 · Your name<small>user-set, trimmed, if non-empty</small></span><span class="arr">→</span>
+  <span class="step">2 · Task title<small>captured at launch from the card</small></span><span class="arr">→</span>
+  <span class="step sys">3 · Fallback<small>idea title · first 4 of session id</small></span>
+</div>
+
+<h3>Decision: the fallback shows the full idea title, not the slug</h3>
+<p><strong>Chosen: <code>Vibe Coding Ideas · a3f9</code>.</strong> Rejected: <code>vibe-coding-ideas · a3f9</code> (today's tab label). Why:</p>
+<ul class="tight">
+  <li><strong>The slug is an internal artifact leaking into UI.</strong> It exists to build folder paths for launch commands. Lowercased-and-hyphenated text reads as a machine identifier, and it sits directly above a monospace <code>~/projects/…</code> line in every row — two path-looking strings stacked is exactly the "which one is the name?" confusion this card is fixing.</li>
+  <li><strong>Names are read, not typed.</strong> Nobody ever enters this label anywhere; the only job it has is recognition (recognition over recall). The title as the user wrote it — capitals, spaces — is the version they recognise.</li>
+  <li><strong>It changes the fewest shipped strings.</strong> The chooser already shows the full idea title in its fallback (Requirements §2, label drift). Unifying on the title means the chooser's rows barely change while the tab and My Sessions get more readable; unifying on the slug would make every chooser row <em>worse</em> to fix a drift.</li>
+  <li><strong>The 4-char id suffix stays</strong> — it is what tells two toolbar sessions on the same board apart, and today's chooser fallback (idea title alone) lacks it. Same length everywhere: 4, never 8 (the chooser's current 8-char last resort goes).</li>
+</ul>
+<p><strong>Edge:</strong> if the idea title itself is missing/blank, the fallback is <code>Session · a3f9</code> — never a bare id, never an empty left half.</p>
+<p><strong>De-duplication rule for rows:</strong> chooser and My Sessions rows show the idea title as a secondary chip after the name. When the resolved name <em>is</em> the fallback (so it already contains the idea title), the secondary chip is suppressed — otherwise every toolbar session reads "Vibe Coding Ideas · a3f9&nbsp;&nbsp;Vibe Coding Ideas".</p>
+
+<h3>Worked examples — what each surface shows</h3>
+<p class="caption">All three surfaces call the same helper, so columns 3–5 are identical by construction; the table exists to prove the edge cases. Tab labels truncate with an ellipsis at the tab's max width and carry the full string as the tooltip / accessible name.</p>
+<div class="tblwrap">
+<table>
+  <tr><th>Case</th><th>Stored fields</th><th>Dock tab (truncated @ ~190px)</th><th>Chooser row</th><th>My Sessions row</th></tr>
+  <tr>
+    <td>User-named</td>
+    <td class="mono-td">display_name: "Auth spike — keep alive"</td>
+    <td>Auth spike — keep al…</td><td>Auth spike — keep alive <span class="caption">+ idea chip</span></td><td>Auth spike — keep alive <span class="caption">+ idea chip</span></td>
+  </tr>
+  <tr>
+    <td>Task-launched, no rename</td>
+    <td class="mono-td">task_title: "Fix login redirect loop"</td>
+    <td>Fix login redirect l…</td><td>Fix login redirect loop <span class="caption">+ idea chip</span></td><td>Fix login redirect loop <span class="caption">+ idea chip</span></td>
+  </tr>
+  <tr>
+    <td>Toolbar-launched, no rename</td>
+    <td class="mono-td">both null · idea "Vibe Coding Ideas" · sid a3f9…</td>
+    <td>Vibe Coding Ideas · a…</td><td>Vibe Coding Ideas · a3f9 <span class="caption">idea chip suppressed</span></td><td>Vibe Coding Ideas · a3f9 <span class="caption">idea chip suppressed</span></td>
+  </tr>
+  <tr>
+    <td>No idea title</td>
+    <td class="mono-td">all null · sid 9c2e…</td>
+    <td>Session · 9c2e</td><td>Session · 9c2e</td><td>Session · 9c2e</td>
+  </tr>
+  <tr>
+    <td>Very long task title</td>
+    <td class="mono-td">task_title: "Terminal sessions need names that stick — so resuming the right one is obvious"</td>
+    <td>Terminal sessions ne…</td><td>Full title, CSS-truncated to the row; full text in tooltip</td><td>Same as chooser</td>
+  </tr>
+  <tr>
+    <td>Emoji name</td>
+    <td class="mono-td">display_name: "🚀 Ship the launch page"</td>
+    <td>🚀 Ship the launch p…</td><td>🚀 Ship the launch page</td><td>🚀 Ship the launch page</td>
+  </tr>
+  <tr>
+    <td>RTL name</td>
+    <td class="mono-td">display_name: "إصلاح تسجيل الدخول"</td>
+    <td colspan="3">Rendered verbatim. Every label span (and the edit input) gets <code>dir="auto"</code> so an RTL name lays out right-to-left <em>inside its own span</em> without reordering the glyph · label · close-button row, and without an RTL fallback scrambling "· a3f9" to the wrong side.</td>
+  </tr>
+</table>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>2 · Discoverability — how anyone finds out renaming exists</h2>
+
+<p>The constraint set: hover-only affordances are banned (mobile has no hover), a dock tab is a small, crowded target (status glyph + label + close in ≤190px), and per the shipped invariants no rename affordance may be a dialog that traps or a body-swap that tears down the terminal. Three candidate affordances, considered honestly:</p>
+
+<div class="tblwrap">
+<table>
+  <tr><th>Affordance</th><th>Discoverable?</th><th>Mobile?</th><th>Verdict</th></tr>
+  <tr>
+    <td>Double-click the label</td>
+    <td>Invisible — a convention (iTerm2, VS Code workspaces, file managers) that power users try and nobody else finds</td>
+    <td>No — double-tap is unreliable and conflicts with tap-to-activate</td>
+    <td><strong>Keep as an accelerator only</strong>, never the sole path</td>
+  </tr>
+  <tr>
+    <td>Context / kebab menu per tab</td>
+    <td>A kebab is findable, but the dock has no per-tab menu today — inventing one to hold a single item is a heavier pattern than the feature needs (Hick's law: a menu of one is a button wearing a costume)</td>
+    <td>Long-press menus are undiscoverable</td>
+    <td><strong>Rejected</strong> — revisit only when tabs accrue 3+ actions</td>
+  </tr>
+  <tr class="rec">
+    <td>Explicit pencil control</td>
+    <td>Visible = discoverable. On rows there is room for it always; on tabs it renders on the <em>active</em> tab only</td>
+    <td>Yes — a 24px+ visible tap target (44px hit area via padding)</td>
+    <td class="pick">Recommended — the primary affordance everywhere</td>
+  </tr>
+</table>
+</div>
+
+<p><strong>Recommendation: pencil everywhere, gated by activation — never by hover.</strong></p>
+<ul class="tight">
+  <li><strong>Rows (My Sessions, chooser):</strong> a pencil icon button rendered on every row, always, between the text block and the action buttons. Rows have the horizontal room; no gating at all.</li>
+  <li><strong>Tabs:</strong> the pencil renders on the <em>active</em> tab only, next to the close button. A background tab is one tap/click from being active — the same interaction the user already performs to do anything with that session — so the affordance is activation-gated, which is allowed, not hover-gated, which is banned. This keeps background tabs at two elements (glyph + label + close) instead of four, and puts the control exactly where the cursor already is when the user is looking at the session they want to rename (Fitts).</li>
+  <li><strong>Accelerators (additive, desktop only):</strong> double-click on the active tab's label, and <span class="kbd">F2</span> while a tab has keyboard focus (the file-manager rename convention). Both open the same inline editor as the pencil. The pencil's tooltip teaches them: <em>"Rename session (double-click or F2)"</em>.</li>
+</ul>
+<div class="veto"><b>Why the tab pencil is not on every tab:</b> with the close button already permanent, a second permanent icon on every background tab shrinks the label — the thing this whole card exists to make legible — below usefulness at the 110px minimum tab width. The active-only rule trades one extra click on background tabs for label space on all of them.</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>3 · Wireframes — three surfaces × three states</h2>
+
+<h3>3a · Dock tab</h3>
+
+<p class="mock-cap"><span class="statecap rest">Resting</span> Active tab shows the pencil; background tabs don't. Glyph vocabulary unchanged from <code>terminal-tabs.ts</code>.</p>
+<div class="mock">
+  <div class="tabstrip">
+    <span class="ttab on"><span class="glyph g" aria-hidden="true">●</span><span class="lbl">Fix login redirect l…</span><span class="pen" title="Rename session (double-click or F2)">✎</span><span class="x">✕</span></span>
+    <span class="ttab"><span class="glyph g" aria-hidden="true">●</span><span class="lbl">Vibe Coding Ideas · a3f9</span><span class="x">✕</span></span>
+    <span class="ttab"><span class="glyph p" aria-hidden="true">⧉</span><span class="lbl">Auth spike — keep al…</span><span class="x">✕</span></span>
+    <span class="plus">＋</span>
+  </div>
+  <div class="term">$ claude<br>╭ Claude Code · ~/projects/vibecodes</div>
+</div>
+<p class="caption">Middle tab: the new fallback (full idea title · sid4). Right tab: a popped-out session showing a user-set name — the pop-out window's own document title uses the same resolved name.</p>
+
+<p class="mock-cap"><span class="statecap edit">Mid-edit</span> Label swaps for an input; pencil and close swap for save/cancel — the exact contents-swap pattern the tab already uses for its "End session?" confirm. The terminal below is untouched and still live.</p>
+<div class="mock">
+  <div class="tabstrip">
+    <span class="ttab on"><span class="glyph g" aria-hidden="true">●</span><span class="ed-input">auth spike<span class="caret">&nbsp;</span></span><span class="ed-btn ok" role="img" aria-label="Save name">✓</span><span class="ed-btn no" role="img" aria-label="Cancel">✕</span></span>
+    <span class="ttab"><span class="glyph g" aria-hidden="true">●</span><span class="lbl">Vibe Coding Ideas · a3f9</span><span class="x">✕</span></span>
+    <span class="plus">＋</span>
+  </div>
+  <div class="term">$ claude<br>╭ Claude Code · output keeps streaming while you type — the input never touches the terminal</div>
+</div>
+<p class="caption">Save (✓) and cancel (✕) are visible buttons, not hover reveals and not keyboard-only. The status glyph stays visible during the edit — renaming while reconnecting must not hide the reconnecting state. The tab widens to its max width while editing so there's room to type.</p>
+
+<p class="mock-cap"><span class="statecap saved">Just saved</span> New name applied instantly (optimistic); label text flashes emerald for ~600ms, then settles to normal. Screen reader hears "Session renamed to auth spike".</p>
+<div class="mock">
+  <div class="tabstrip">
+    <span class="ttab on"><span class="glyph g" aria-hidden="true">●</span><span class="lbl savedflash">auth spike</span><span class="pen">✎</span><span class="x">✕</span></span>
+    <span class="ttab"><span class="glyph g" aria-hidden="true">●</span><span class="lbl">Vibe Coding Ideas · a3f9</span><span class="x">✕</span></span>
+    <span class="plus">＋</span>
+  </div>
+  <div class="term">$ claude<br>╭ Claude Code · scrollback intact — nothing was unmounted</div>
+</div>
+
+<h3>3b · My Sessions panel row</h3>
+
+<p class="mock-cap"><span class="statecap rest">Resting</span> Pencil always rendered, before Reconnect/End. Idea chip shown because the name is not the fallback.</p>
+<div class="mock">
+  <div class="row">
+    <div class="who">
+      <div class="t"><span>Fix login redirect loop</span> <span class="idea">Vibe Coding Ideas</span></div>
+      <div class="m">Nick's MacBook · ~/projects/vibecodes · 3h</div>
+    </div>
+    <span class="iconbtn" role="img" aria-label="Rename session: Fix login redirect loop">✎</span>
+    <span class="btn sm sky">⇄ Reconnect</span>
+    <span class="btn sm rose">⏻ End</span>
+  </div>
+</div>
+
+<p class="mock-cap"><span class="statecap edit">Mid-edit</span> The text block swaps for the editor; the row's other actions hide while editing (one job at a time). Counter appears at 80 of 100 characters — before the wall, not at it.</p>
+<div class="mock">
+  <div class="row">
+    <div class="who" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span class="caption" style="color:var(--dim);font-weight:600">Name</span>
+      <span class="ed-input" style="flex:1;min-width:180px">Login loop — repro on staging, keep until Friday retro me<span class="caret">&nbsp;</span></span>
+      <span class="counter">87/100</span>
+    </div>
+    <span class="ed-btn ok" role="img" aria-label="Save name">✓</span>
+    <span class="ed-btn no" role="img" aria-label="Cancel">✕</span>
+  </div>
+</div>
+<p class="caption">Rows have room for a visible "Name" label — so they get one. The placeholder (shown when the field is emptied) is the auto-name, teaching the clear-to-reset behaviour: <em>placeholder = what you get if you leave it blank</em>.</p>
+
+<p class="mock-cap"><span class="statecap saved">Just saved</span> Row re-renders with the new name; emerald flash on the name only.</p>
+<div class="mock">
+  <div class="row">
+    <div class="who">
+      <div class="t"><span class="savedflash">Login loop — repro on staging</span> <span class="idea">Vibe Coding Ideas</span></div>
+      <div class="m">Nick's MacBook · ~/projects/vibecodes · 3h</div>
+    </div>
+    <span class="iconbtn">✎</span>
+    <span class="btn sm sky">⇄ Reconnect</span>
+    <span class="btn sm rose">⏻ End</span>
+  </div>
+</div>
+
+<h3>3c · Session chooser — Recent row (an ended session)</h3>
+<p>Renaming matters <em>most</em> here: this is the list Nick scans when resuming. Requirements §2's new finding applies — the PATCH route must accept a name for <strong>ended</strong> rows or this entire surface silently no-ops.</p>
+
+<p class="mock-cap"><span class="statecap rest">Resting</span> An ended row with today's anonymous fallback — the exact row Nick couldn't identify.</p>
+<div class="mock">
+  <div class="sect">Recent — resumable (last 48h)</div>
+  <div class="row">
+    <span class="glyph m" aria-hidden="true">■</span>
+    <div class="who">
+      <div class="t"><span>Vibe Coding Ideas · a3f9</span></div>
+      <div class="m">~/projects/vibecodes · ended 2h ago</div>
+    </div>
+    <span class="iconbtn" role="img" aria-label="Rename session: Vibe Coding Ideas · a3f9">✎</span>
+    <span class="btn sm em solid">Resume</span>
+  </div>
+</div>
+
+<p class="mock-cap"><span class="statecap edit">Mid-edit</span> Same editor; Resume hides during the edit. Escape cancels the edit only — a second Escape still dismisses the chooser (never trapped).</p>
+<div class="mock">
+  <div class="sect">Recent — resumable (last 48h)</div>
+  <div class="row">
+    <span class="glyph m" aria-hidden="true">■</span>
+    <div class="who" style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+      <span class="caption" style="color:var(--dim);font-weight:600">Name</span>
+      <span class="ed-input" style="flex:1;min-width:180px">Stripe webhook spike<span class="caret">&nbsp;</span></span>
+    </div>
+    <span class="ed-btn ok" role="img" aria-label="Save name">✓</span>
+    <span class="ed-btn no" role="img" aria-label="Cancel">✕</span>
+  </div>
+</div>
+
+<p class="mock-cap"><span class="statecap saved">Just saved</span> The renamed ended row — and because the name rides <code>buildResumePayload</code> into the mint, pressing Resume now produces a live tab already called "Stripe webhook spike".</p>
+<div class="mock">
+  <div class="sect">Recent — resumable (last 48h)</div>
+  <div class="row">
+    <span class="glyph m" aria-hidden="true">■</span>
+    <div class="who">
+      <div class="t"><span class="savedflash">Stripe webhook spike</span> <span class="idea">Vibe Coding Ideas</span></div>
+      <div class="m">~/projects/vibecodes · ended 2h ago</div>
+    </div>
+    <span class="iconbtn">✎</span>
+    <span class="btn sm em solid">Resume</span>
+  </div>
+</div>
+<p class="caption">Live chooser rows ("Running now") get the identical pencil + editor. Sessions with no recorded folder stay hidden from the chooser entirely (shipped invariant) — no rename surface needed for rows that never render.</p>
+
+<p class="mock-cap"><span class="statecap err">Save failed</span> Offline / server error — the optimistic name reverts, a toast explains and offers retry. Shown here on the tab; identical toast for rows.</p>
+<div class="mock">
+  <div class="tabstrip">
+    <span class="ttab on"><span class="glyph w" aria-hidden="true">↻</span><span class="lbl">Vibe Coding Ideas · a3f9</span><span class="pen">✎</span><span class="x">✕</span></span>
+    <span class="plus">＋</span>
+  </div>
+  <div class="term" style="display:flex;align-items:flex-start">
+    <div class="toast"><span class="tico" aria-hidden="true">▲</span><span>Couldn't rename the session — it's still called "Vibe Coding Ideas · a3f9".</span><span class="btn sm ghost" style="margin-left:auto">Retry</span></div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>4 · Edit-mode specification</h2>
+
+<div class="tblwrap">
+<table>
+  <tr><th>Aspect</th><th>Spec</th></tr>
+  <tr><td>Entry</td><td>Pencil click/tap · double-click on the active tab's label · <span class="kbd">F2</span> with a tab focused. All three open the same editor in place; nothing else about the surface changes; the terminal body is never swapped or unmounted.</td></tr>
+  <tr><td>Prefill</td><td>The <em>user-set name</em> if one exists, fully selected (one keystroke replaces, arrow keys edit — the file-rename convention). If no user name is set, the field is <strong>empty</strong> with the current auto-name as placeholder. Never prefill the task title as if it were user text — that would make "clear back to auto" require knowing what to delete.</td></tr>
+  <tr><td>Input styling</td><td>Same footprint as the label it replaces; <code>bg-zinc-900</code>-family field, 1px sky border + soft sky ring (the app's focus treatment); text at the surface's label size; <code>dir="auto"</code>.</td></tr>
+  <tr><td>Character limit</td><td>100 (server-enforced per Requirements §4, trimmed). <code>maxLength=100</code> on the input so the wall is physical, <em>plus</em> a live <code>87/100</code> counter that appears from 80 characters — the limit is communicated before it is hit, never only by keystrokes silently dying. Counter is <code>aria-live="polite"</code>-adjacent via <code>aria-describedby</code>. Length counts Unicode code points, matching the server rule, so emoji don't desync client and server.</td></tr>
+  <tr><td>Save</td><td><span class="kbd">Enter</span>, the ✓ button, or <strong>blur</strong> (clicking elsewhere saves — the Notion/Linear convention; losing typed work on blur is the worse failure). Trimmed before compare; a no-change save is a silent close, no network call.</td></tr>
+  <tr><td>Cancel</td><td><span class="kbd">Escape</span> or the ✕ button — discards, restores the previous label, no network call. Escape in the chooser cancels the <em>edit</em> only; the chooser itself stays dismissable as shipped.</td></tr>
+  <tr><td>Clear</td><td>Save with an empty/whitespace field → the name is cleared (stored as NULL, never <code>""</code>) and the auto-name returns instantly. The placeholder showed exactly what would come back, so this is never a surprise.</td></tr>
+  <tr><td>Optimistic update</td><td>On save: the resolved name updates <em>immediately</em> on the initiating surface and in the dock's local session entry (so the tab, pop-out title and aria announcements agree), then the PATCH fires. Other surfaces pick it up on their next fetch-on-open (§5, flow F7).</td></tr>
+  <tr><td>Failure</td><td>PATCH fails / offline: revert the optimistic name everywhere it was applied, then <code>toast.error</code> naming the session it still is (see mock) with a <strong>Retry</strong> action that re-submits the same attempted name — the user's typed text is held in state and never lost. No client catch block fails silently (project rule).</td></tr>
+  <tr><td>Busy state</td><td>None visible in the happy path — optimistic means no spinner on the label. The editor closes on save immediately.</td></tr>
+  <tr><td>Concurrent edits</td><td>Last write wins server-side; no locking. Two-tab staleness handled in flow F7.</td></tr>
+</table>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>5 · Interaction flows</h2>
+
+<h3>F1 — Rename a live session from its tab</h3>
+<div class="flow">
+  <span class="step act">Click ✎ on active tab<small>or double-click label / F2</small></span><span class="arr">→</span>
+  <span class="step">Inline editor opens<small>terminal keeps streaming; scrollback untouched</small></span><span class="arr">→</span>
+  <span class="step act">Type, Enter</span><span class="arr">→</span>
+  <span class="step good">Tab shows new name instantly<small>PATCH in background; pop-out title + announcements use it too</small></span>
+</div>
+
+<h3>F2 — Rename an ended session in the Recent list</h3>
+<div class="flow">
+  <span class="step act">✎ on a Recent row</span><span class="arr">→</span>
+  <span class="step">Editor opens in the row<small>Resume hidden while editing</small></span><span class="arr">→</span>
+  <span class="step act">Enter</span><span class="arr">→</span>
+  <span class="step good">Row renamed<small>PATCH allowed on ended rows — Requirements §2's fix</small></span><span class="arr">→</span>
+  <span class="step sys">Reload later<small>name persists (AC 2)</small></span>
+</div>
+
+<h3>F3 — Clear a name back to the auto-name</h3>
+<div class="flow">
+  <span class="step act">Open editor<small>field prefilled with the user name, selected</small></span><span class="arr">→</span>
+  <span class="step act">Delete all, Enter<small>placeholder was already showing the auto-name that will return</small></span><span class="arr">→</span>
+  <span class="step good">Auto-name back everywhere<small>stored NULL, never ""</small></span>
+</div>
+
+<h3>F4 — Save fails (offline / server error)</h3>
+<div class="flow">
+  <span class="step act">Enter to save</span><span class="arr">→</span>
+  <span class="step">Name applies optimistically</span><span class="arr">→</span>
+  <span class="step bad">PATCH fails</span><span class="arr">→</span>
+  <span class="step warn">Revert + toast with Retry<small>"Couldn't rename — it's still called X"; typed text kept</small></span><span class="arr">→</span>
+  <span class="step act">Retry re-submits the same name<small>or dismiss and move on — nothing is blocked</small></span>
+</div>
+
+<h3>F5 — Rename while the session is reconnecting</h3>
+<p>A rename is a database write about the session, not traffic on the session — it needs no live socket. The editor opens and saves normally while the tab shows the ↻ reconnecting glyph; the glyph stays visible beside the editor throughout (status is never hidden by an edit). If the session dies mid-edit, the save still succeeds — it's now simply a rename of an ended session (F2's path).</p>
+
+<h3>F6 — Rename, then resume</h3>
+<div class="flow">
+  <span class="step act">Rename ended session "Stripe webhook spike"</span><span class="arr">→</span>
+  <span class="step act">Resume</span><span class="arr">→</span>
+  <span class="step sys">New session minted<small>displayName rides buildResumePayload + mint body, exactly like taskId/taskTitle today</small></span><span class="arr">→</span>
+  <span class="step good">New live tab already named "Stripe webhook spike"<small>AC 4 — the name is the session's identity, not one row's label</small></span>
+</div>
+
+<h3>F7 — Two browser tabs on the same board (stale name)</h3>
+<div class="flow">
+  <span class="step act">Browser tab A renames "a3f9" → "auth spike"</span><span class="arr">→</span>
+  <span class="step warn">Browser tab B still shows the old name<small>no realtime channel exists for the registry — by design</small></span><span class="arr">→</span>
+  <span class="step sys">B's next fetch<small>chooser/panel open, registry refresh, reload</small></span><span class="arr">→</span>
+  <span class="step good">B converges<small>last write wins; a rename fired from B meanwhile simply overwrites — both tabs converge on the newest PATCH</small></span>
+</div>
+<p class="caption">Accepted staleness: the registry is already fetch-on-open everywhere (My Sessions, chooser); the design adds no realtime requirement. What the design does require: a surface must re-resolve names from fresh data every time it opens — never cache a resolved label across opens.</p>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>6 · Accessibility</h2>
+<ul class="tight">
+  <li><strong>Labels.</strong> Row editors get a visible "Name" text label (mock 3b) — there is room, so it exists. The tab editor cannot fit a visible label in ≤230px; its accessible name is <code>aria-label="Session name"</code> and its context is carried by the launching control's own name ("Rename session: Fix login redirect loop"). The placeholder shows the auto-name but is never the only label anywhere.</li>
+  <li><strong>Keyboard-only path, end to end.</strong> Arrow keys move through the tab strip (shipped roving tabindex) → <span class="kbd">F2</span> opens the editor → type → <span class="kbd">Enter</span> saves / <span class="kbd">Escape</span> cancels. On rows: <span class="kbd">Tab</span> reaches the pencil (it's a real button in the tab order) → <span class="kbd">Enter</span> opens → same keys. The ✓/✕ buttons are focusable for users who prefer buttons over keys.</li>
+  <li><strong>Focus management.</strong> Entering edit: focus moves into the input, existing text selected. Leaving edit (save or cancel): focus returns to the control that opened it — the pencil (or the tab itself for F2/double-click entry). Focus never jumps to the terminal, and never falls to <code>body</code>.</li>
+  <li><strong>Announcements</strong> via the dock's existing polite announcer: entering edit says nothing (the focused input announces itself); on save, "Session renamed to auth spike"; on clear, "Name removed — using automatic name Vibe Coding Ideas · a3f9"; on failure, the toast is the announcement (sonner is live-region-backed). Background-tab attention announcements (<code>formatAttentionAnnouncement</code>) automatically use the resolved name since they take the label as input.</li>
+  <li><strong>The PTY must never eat — or be fed by — rename keystrokes.</strong> While the editor is open, all keydown/keypress events stop at the input (<code>stopPropagation</code>): the tab strip's arrow-key navigation is suspended for keys the input consumes, xterm.js must not steal focus back (its click-to-focus only fires on terminal clicks, but guard the dock's own focus-restoring effects), and the <span class="kbd">Enter</span> that saves must never leak a newline into the shell. Conversely typing in the terminal must never trigger F2/double-click handlers — those bind to the tab strip, not the dock.</li>
+  <li><strong>Contrast & non-colour signalling.</strong> Editor border sky-on-dark ≥3:1 (UI component minimum); counter amber ≥4.5:1 at its size; the just-saved emerald flash is decorative only — the durable signal is the changed text plus the announcement, never the colour. Status glyphs remain shape-distinct per <code>terminal-tabs.ts</code>.</li>
+  <li><strong>Touch targets.</strong> Pencil buttons render ≥24px with padding extending the hit area to 44px; the tab pencil's hit area may share the tab's vertical extent (38px) — acceptable as an inline exception, with the row surfaces as the full-size path to the same action.</li>
+</ul>
+
+<!-- ══════════════════════════════════════════════════════════════════ -->
+<h2>7 · What the engineer must not break</h2>
+<ol class="tight">
+  <li><strong>Never tear down a live terminal to rename it.</strong> The editor is an in-place contents swap (like the tab's End-session confirm) — never a dock-body swap, never an unmount of <code>TerminalSessionView</code>, never an overlay over a live tab.</li>
+  <li><strong>Never a trapping dialog.</strong> There is no rename dialog at all; the inline editors always exit via Escape/✕/blur. The chooser stays closable during and after an edit.</li>
+  <li><strong>Ended rows must accept the name PATCH</strong> — display_name only. The bridge-fed fields (<code>cwd</code>, <code>machineLabel</code>, <code>claudeSessionId</code>) keep their active-only, set-never-clear semantics untouched.</li>
+  <li><strong>Renaming never affects matching or dedupe.</strong> Task-session matching and tab dedupe key on <code>taskId</code>/<code>sid</code>, never on the label (AC 10).</li>
+  <li><strong>Clear stores NULL, never an empty string</strong>; whitespace-only input is a clear.</li>
+  <li><strong>A popped-out tab's status must not be misread</strong> during rename — the ⧉ display status and its "deliberate user state, never attention" rule stand; renaming a popped-out session is allowed and updates the pop-out window title.</li>
+  <li><strong>Sessions with no recorded folder stay hidden from the chooser</strong> but remain in the internal reconnect check — the rename UI adds no new visibility for them.</li>
+  <li><strong>The name rides resume.</strong> <code>buildResumePayload</code> and the mint body carry <code>displayName</code> exactly as they carry <code>taskId</code>/<code>taskTitle</code> — skip this and the core ask ("names that stick") silently fails on the most common path.</li>
+  <li><strong>One helper, all surfaces.</strong> Tab, chooser (live + recent), My Sessions, pop-out title, aria announcements, and the future side-by-side pane headers (card <code>df7a0134</code>) all call the same <code>resolveSessionName</code> — no surface re-derives its own label ever again. The sid suffix is 4 chars everywhere; the chooser's 8-char last resort goes.</li>
+  <li><strong>The sr-only status text and glyph vocabulary in <code>terminal-tabs.ts</code> are reused, not forked.</strong></li>
+</ol>
+
+<p class="caption" style="margin-top:32px">Compass · UX Design step for card 3bf262ac · builds on the Requirements step (ProdOwner) · 2026-08-20</p>
+
+</div>
+</body>
+</html>
