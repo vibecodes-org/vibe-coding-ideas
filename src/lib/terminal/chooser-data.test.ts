@@ -28,6 +28,7 @@ function row(overrides: Partial<ChooserRegistryRow> & { sid: string }): ChooserR
     createdAt: new Date(NOW - 60_000).toISOString(),
     status: "active",
     endedAt: null,
+    displayName: null,
     ...overrides,
   };
 }
@@ -636,6 +637,7 @@ describe("visibleRecentRows", () => {
       machineLabel: null,
       claudeSessionId: null,
       endedAt: new Date(NOW - 60_000).toISOString(),
+      displayName: null,
       ...overrides,
     };
   }

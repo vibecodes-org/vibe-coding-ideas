@@ -77,32 +77,60 @@ describe("isLiveTabStatus", () => {
 describe("deriveTabLabel (B3)", () => {
   it("uses the task title when the launch was task-scoped", () => {
     expect(
-      deriveTabLabel({ taskTitle: "Add pagination to the recipe list", ideaSlug: "recipe-saver", sessionId: "a3f9c2e1" })
+      deriveTabLabel({ taskTitle: "Add pagination to the recipe list", ideaTitle: "Recipe Saver", sessionId: "a3f9c2e1" })
     ).toBe("Add pagination to the recipe list");
   });
 
   it("trims a task title that has stray whitespace", () => {
-    expect(deriveTabLabel({ taskTitle: "  Fix login  ", ideaSlug: "recipe-saver", sessionId: null })).toBe(
+    expect(deriveTabLabel({ taskTitle: "  Fix login  ", ideaTitle: "Recipe Saver", sessionId: null })).toBe(
       "Fix login"
     );
   });
 
-  it("falls back to `<idea slug> · <sid-short>` when board-scoped", () => {
-    expect(deriveTabLabel({ taskTitle: undefined, ideaSlug: "recipe-saver", sessionId: "a3f9c2e1" })).toBe(
-      "recipe-saver · a3f9"
+  it("falls back to `<idea title> · <sid-short>` when board-scoped — the FULL title, not the slug (design §1)", () => {
+    expect(deriveTabLabel({ taskTitle: undefined, ideaTitle: "Recipe Saver", sessionId: "a3f9c2e1" })).toBe(
+      "Recipe Saver · a3f9"
     );
   });
 
   it("treats an empty/whitespace-only task title as board-scoped", () => {
-    expect(deriveTabLabel({ taskTitle: "   ", ideaSlug: "recipe-saver", sessionId: "c2d8" })).toBe(
-      "recipe-saver · c2d8"
+    expect(deriveTabLabel({ taskTitle: "   ", ideaTitle: "Recipe Saver", sessionId: "c2d8" })).toBe(
+      "Recipe Saver · c2d8"
     );
   });
 
   it("uses an ellipsis placeholder before the session id is known", () => {
-    expect(deriveTabLabel({ taskTitle: undefined, ideaSlug: "recipe-saver", sessionId: null })).toBe(
-      "recipe-saver · …"
+    expect(deriveTabLabel({ taskTitle: undefined, ideaTitle: "Recipe Saver", sessionId: null })).toBe(
+      "Recipe Saver · …"
     );
+  });
+
+  it("falls back to 'Session · <sid4>' when the idea title is also blank", () => {
+    expect(deriveTabLabel({ taskTitle: null, ideaTitle: null, sessionId: "9c2e1234" })).toBe("Session · 9c2e");
+  });
+
+  // ── card 3bf262ac: the user's own name outranks everything ────────────────
+  it("uses the user's own display name over the task title", () => {
+    expect(
+      deriveTabLabel({
+        displayName: "Auth spike — keep alive",
+        taskTitle: "Fix login redirect loop",
+        ideaTitle: "Recipe Saver",
+        sessionId: "a3f9c2e1",
+      }),
+    ).toBe("Auth spike — keep alive");
+  });
+
+  it("uses the user's own display name over the fallback", () => {
+    expect(deriveTabLabel({ displayName: "Stripe webhook spike", ideaTitle: "Recipe Saver", sessionId: "a3f9c2e1" })).toBe(
+      "Stripe webhook spike",
+    );
+  });
+
+  it("treats a whitespace-only display name as unset", () => {
+    expect(
+      deriveTabLabel({ displayName: "   ", taskTitle: "Fix login redirect loop", ideaTitle: "Recipe Saver", sessionId: "a3f9c2e1" }),
+    ).toBe("Fix login redirect loop");
   });
 });
 
