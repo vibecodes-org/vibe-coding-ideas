@@ -25,6 +25,7 @@ import {
   buildBoardBootstrapPrompt,
   buildTaskBootstrapPrompt,
   buildCompactPromptEssentials,
+  mergeRecordedPath,
   readLaunchPath,
   resolveAppUrl,
   resolveDefaultLaunchState,
@@ -33,6 +34,7 @@ import {
 } from "@/lib/launch-claude-code";
 import { LaunchPathDialog } from "./launch-path-dialog";
 import { isTerminalEnabled } from "@/lib/terminal/connection";
+import { getMachineIdentity } from "@/lib/terminal/machine-identity";
 import { isBrowserLaunchAvailable, requestBrowserLaunch } from "@/lib/terminal/launch-mode";
 
 const APP_URL = resolveAppUrl();
@@ -71,31 +73,53 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   const { ideaId, ideaTitle, ideaGithubUrl, recordedProjectPaths } = props;
   const isDesktop = useMediaQuery("(min-width: 768px)");
 
-  // The user's saved localStorage config, mirrored into state so a save in the
-  // dialog (or an open from another tab) re-renders the dropdown immediately.
-  // Lazily initialised — readLaunchPath is SSR-safe (returns null on the server).
+  // The user's saved localStorage config — CREATE-NEW mode only now (an
+  // existing-mode pin is retired as a read source; see resolveDefaultLaunchState).
+  // Mirrored into state so a save in the dialog (or an open from another tab)
+  // re-renders the dropdown immediately. Lazily initialised — readLaunchPath is
+  // SSR-safe (returns null on the server).
   const [savedState, setSavedState] = useState<LaunchPathState | null>(() =>
     readLaunchPath(ideaId)
   );
 
+  // An existing-mode path just saved through the dialog (server write — see
+  // saveManualProjectPath) or migrated from a pre-existing pin, mirrored here so
+  // the dropdown/launch reflect it immediately without waiting for the next SSR
+  // load of `recordedProjectPaths`. Merged into the recorded set below.
+  const [manualPin, setManualPin] = useState<RecordedProjectPath | null>(null);
+
+  // This browser's real machine hostname, as announced by a bridge on a previous
+  // terminal session. Lets the resolver below pick the recorded folder keyed to
+  // THIS machine when several are on file with different paths — without it,
+  // that case resolves to nothing and the user is asked every launch. Lazily
+  // initialised like savedState above; getMachineIdentity is SSR-safe (null on
+  // the server) and no product flow ever clears it, so it never needs
+  // refreshing mid-session — a first-ever bridge announcement lands before the
+  // next page load, which is when a recorded path would first exist anyway.
+  const [realHostname] = useState<string | null>(() => getMachineIdentity());
+
   // Re-read localStorage (call after a dialog save or when the dropdown opens, so
-  // we never show a stale path).
+  // we never show a stale new-mode path).
   const refreshSaved = useCallback(() => {
     setSavedState(readLaunchPath(ideaId));
   }, [ideaId]);
 
-  // Single source of truth for DISPLAY + LAUNCH cwd. The saved existing-mode path
-  // (localStorage — what "Set exact folder" writes) takes precedence over the
-  // agent-recorded DB path, so the dropdown's path line and the launched cwd can
-  // never diverge. Repo-backed ideas resolve via the `repo` slug → no cwd.
+  const effectiveRecordedPaths = useMemo(
+    () => mergeRecordedPath(recordedProjectPaths, manualPin),
+    [recordedProjectPaths, manualPin]
+  );
+
+  // Single source of truth for DISPLAY + LAUNCH cwd — server-recorded paths
+  // only (idea_project_paths, including any manual pin above). Repo-backed
+  // ideas resolve via the `repo` slug when nothing is known → no cwd.
   const effectiveTarget = useMemo(
     () =>
       resolveEffectiveLaunchTarget({
         hasRepo: !!ideaGithubUrl,
-        saved: savedState,
-        recordedPaths: recordedProjectPaths,
+        recordedPaths: effectiveRecordedPaths,
+        realHostname,
       }),
-    [ideaGithubUrl, savedState, recordedProjectPaths]
+    [ideaGithubUrl, effectiveRecordedPaths, realHostname]
   );
 
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -383,10 +407,18 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
   }, []);
 
   const handleSaved = useCallback(
-    (state: LaunchPathState) => {
-      // Mirror the freshly-saved state so the dropdown's path line + launch cwd
-      // update immediately (both read from effectiveTarget ← savedState).
-      setSavedState(state);
+    (state: LaunchPathState, recordedPath?: RecordedProjectPath) => {
+      // New-mode saves still mirror into the localStorage-backed state (the
+      // browser store's one surviving job). Existing-mode saves now write to
+      // the server (see LaunchPathDialog); `recordedPath` is that write's
+      // optimistic echo, merged into `effectiveRecordedPaths` so the dropdown's
+      // path line + launch cwd update immediately, without waiting on a fresh
+      // SSR load of `recordedProjectPaths`.
+      if (state.mode === "new") {
+        setSavedState(state);
+      } else if (recordedPath) {
+        setManualPin(recordedPath);
+      }
       if (pendingLaunch) {
         setPendingLaunch(false);
         openInClaudeCode(state);
@@ -395,13 +427,26 @@ export function LaunchClaudeCodeButton(props: LaunchClaudeCodeButtonProps) {
     [pendingLaunch, openInClaudeCode]
   );
 
+  // The dialog's prefill: a create-new draft still comes from localStorage
+  // (savedState); an existing-folder prefill now comes from the server-derived
+  // effectiveTarget instead of the retired localStorage pin, so editing "Set
+  // exact folder" always starts from the CURRENT authoritative path, not a
+  // stale browser value.
+  const initialForDialog: LaunchPathState | null = useMemo(() => {
+    if (savedState && savedState.mode === "new") return savedState;
+    if (effectiveTarget.source !== "none" && effectiveTarget.displayPath) {
+      return { mode: "existing", path: effectiveTarget.displayPath };
+    }
+    return null;
+  }, [savedState, effectiveTarget]);
+
   const dialog = (
     <LaunchPathDialog
       open={dialogOpen}
       onOpenChange={setDialogOpen}
       ideaId={ideaId}
       ideaGithubUrl={ideaGithubUrl}
-      initial={savedState}
+      initial={initialForDialog}
       initialMode={dialogMode}
       launchOnSave={pendingLaunch}
       onSaved={handleSaved}

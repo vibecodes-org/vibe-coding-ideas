@@ -29,6 +29,36 @@ export const MAX_DEEP_LINK_URL_LENGTH = 1900;
 /** localStorage key namespace for the per-user-per-idea launch path. */
 export const LAUNCH_PATH_KEY_PREFIX = "vibecodes:launch-path:";
 
+/**
+ * FALLBACK `idea_project_paths.hostname` for a human-written row (the "Set
+ * exact folder" dialog's Save, and the one-time pin migration) when this
+ * browser's real machine hostname isn't known yet.
+ *
+ * CORRECTION (this rework): the investigation step that scoped this feature
+ * concluded "the browser cannot know the hostname" and this sentinel was
+ * built as the ONLY option for both writers. That premise is false —
+ * `getMachineIdentity()` (`src/lib/terminal/machine-identity.ts`) already
+ * gives the browser its real hostname, self-reported by the terminal bridge
+ * the same way an agent's `hostname`/`uname -n` self-report does (see the
+ * bridge's `bridge-version` control frame, `host` field). Both writers now
+ * prefer that real hostname and fall back to this sentinel only when
+ * `getMachineIdentity()` returns null (a browser that has never had a
+ * terminal session, so it genuinely doesn't know its own machine yet).
+ *
+ * Landing a write under this ACCOUNT-WIDE sentinel instead of a real,
+ * per-machine hostname is exactly the bug QA caught: every browser and
+ * machine on the account reads the same fake row, so one person's manual
+ * pin could become what a completely different machine resolves to. Using
+ * the real hostname whenever it's available is what fixes that — this
+ * sentinel is now the deliberately-narrow "we truly don't know" case, not
+ * the default.
+ *
+ * Still chosen to read naturally in the dropdown's "This machine — <hostname>"
+ * label when it IS used — it reproduces the exact copy ("This machine — set
+ * manually") the old localStorage-pin path used to show.
+ */
+export const MANUAL_PIN_HOSTNAME = "set manually";
+
 export type LaunchMode = "existing" | "new";
 
 /** Persisted per-idea launch config (machine-specific; localStorage only). */
@@ -286,36 +316,182 @@ export interface RecordedProjectPath {
 }
 
 /**
+ * Merge a single (optimistic) recorded row into a list, replacing any existing
+ * row with the same hostname rather than appending a duplicate. Used to fold a
+ * just-saved "Set exact folder" write (hostname `MANUAL_PIN_HOSTNAME`) into the
+ * board-loaded `recordedProjectPaths` immediately client-side — the SSR list
+ * won't see it until the next page load, but `resolveEffectiveLaunchTarget`
+ * only reads `recordedPaths`, so display + launch must be updated the same way
+ * the pin used to update instantly (this preserves that "just saved → the
+ * dropdown/launch reflect it right away" property now that the write goes to
+ * the server instead of localStorage).
+ */
+export function mergeRecordedPath(
+  records: ReadonlyArray<RecordedProjectPath> | null | undefined,
+  update: RecordedProjectPath | null | undefined
+): RecordedProjectPath[] {
+  const base = records ?? [];
+  if (!update) return [...base];
+  const withoutMatch = base.filter((r) => r.hostname !== update.hostname);
+  return [...withoutMatch, update];
+}
+
+export type PinMigrationAction = "insert" | "update" | "skip";
+
+export interface PinMigrationDecision {
+  action: PinMigrationAction;
+  /**
+   * The hostname to upsert onto. See `decidePinMigration`'s doc for the full
+   * precedence table this implements.
+   */
+  hostname?: string;
+}
+
+/**
+ * Pure decision for the one-time browser-pin → `idea_project_paths` migration
+ * (card: retire the localStorage pin for existing folders, with a migration
+ * that never regresses resolution — see `chooseLaunchCwd`'s dedupe-by-path
+ * contract). Takes the CURRENT server rows for (this idea, this user) plus
+ * `realHostname` — this browser's actual machine hostname from
+ * `getMachineIdentity()`, or null when it isn't known yet.
+ *
+ * CORRECTION (this rework): the original version of this function only ever
+ * saw row COUNT, because the investigation step it was built from concluded
+ * the browser can't know its own hostname. That conclusion was wrong —
+ * `getMachineIdentity()` already exists and gives the real answer (see
+ * `MANUAL_PIN_HOSTNAME`'s doc). Knowing the real hostname changes what
+ * "update in place" should mean: it can now target the row that is
+ * PROVABLY this machine's own, instead of guessing from "how many rows
+ * exist" — which is exactly what the old >1-rows "skip" rule was a
+ * stand-in for (it skipped not because >1 rows is inherently unfixable, but
+ * because the code had no way to tell which one, if any, was ours).
+ *
+ * Precedence, checked in this order:
+ *
+ *  1. `realHostname` is known AND a row with that exact hostname already
+ *     exists → **update** that row, regardless of how many OTHER rows exist.
+ *     This is no longer a guess: a row recorded under this exact machine's
+ *     real hostname (by a prior agent launch, or a prior real-hostname pin
+ *     save/migration) IS this machine's row, full stop. Overwriting it with
+ *     the pin's path can't corrupt anyone else's data — it never touches any
+ *     other row — and it's what makes the "pin wins over the server record"
+ *     decision (see the card) actually correct instead of a coincidence of
+ *     row count.
+ *  2. Otherwise, 0 existing rows → **insert** under `realHostname` when known,
+ *     else the `MANUAL_PIN_HOSTNAME` fallback. Nothing to collide with either
+ *     way; preferring the real hostname when we have it means a LATER agent
+ *     launch on this same machine (`record_project_path` with the same
+ *     self-reported hostname) upserts onto this same row instead of creating
+ *     a second one — the real hostname is exactly what
+ *     `idea_project_paths (idea_id, owner_user_id, hostname)` already keys
+ *     agent-recorded rows on, so using it here is just using the table's own
+ *     natural key instead of a synthetic one.
+ *  3. Otherwise, exactly 1 existing row (with a hostname that, per rule 1,
+ *     did NOT match `realHostname` — or `realHostname` is null) → **update**
+ *     THAT row's path in place, keeping its own hostname. Unchanged from the
+ *     original reasoning and deliberately NOT narrowed by hostname
+ *     awareness: the pin already won over a lone recorded row before any of
+ *     this hostname plumbing existed (the card's standing "pin wins"
+ *     decision), and overwriting the one row that exists is what keeps
+ *     `chooseLaunchCwd` resolving to exactly one distinct path afterwards —
+ *     inserting a second, differently-hostnamed row here would flip a
+ *     today-resolved idea to permanently ambiguous, strictly worse than the
+ *     bug being fixed.
+ *  4. Otherwise, >1 existing rows, none matching `realHostname`, but
+ *     `realHostname` IS known → **insert** under `realHostname`. This used to
+ *     be a skip, on the reasoning that adding a differently-hostnamed row to an
+ *     already-ambiguous set couldn't help — true only while `chooseLaunchCwd`
+ *     resolved purely by deduping paths, which made every extra row noise. It
+ *     now prefers the row keyed to this machine over any amount of ambiguity
+ *     (its rule 1), so the row we insert here is exactly the one the read will
+ *     pick: a machine we can positively identify, carrying a path this browser
+ *     was explicitly pinned to by the user. Nothing is overwritten — other
+ *     machines' rows are untouched — and the previously permanent dead end
+ *     (several machines on file, pin never lands anywhere, user re-asked every
+ *     launch forever) resolves on the next page load instead.
+ *  5. Otherwise, >1 existing rows and `realHostname` is UNKNOWN → **skip**.
+ *     Genuinely unattributable: no hostname to insert under that would mean
+ *     anything, and no basis to pick among existing rows. The SERVER rows are
+ *     left exactly as `chooseLaunchCwd` already treats them (source "none");
+ *     not reconciled here. That is only a claim about the rows this function
+ *     decides over — it says nothing about the caller's browser-local pin,
+ *     which is the one piece of state this function doesn't touch at all. A
+ *     caller that then deletes the pin on `skip` (as `ok: true` might tempt it
+ *     to, since nothing "failed") has destroyed the only surviving record of
+ *     the folder for no server-side benefit — this exact bug shipped once
+ *     already (see `useLaunchPathPinMigration`, which now keys clearing on
+ *     `action !== "skip"` specifically because of it). Treat `skip` as "wrote
+ *     nothing, pin must survive," not as "nothing happened."
+ *
+ * NOT keyed on `updated_at` — row identity (by hostname, or failing that by
+ * "does exactly one exist") is the only signal that can't be second-guessed
+ * by clock skew or an agent relaunch landing after the browser tab loads.
+ */
+export function decidePinMigration(
+  existingRows: ReadonlyArray<Pick<RecordedProjectPath, "hostname">>,
+  realHostname: string | null = null
+): PinMigrationDecision {
+  if (realHostname) {
+    const ownRow = existingRows.find((r) => r.hostname === realHostname);
+    if (ownRow) {
+      return { action: "update", hostname: realHostname };
+    }
+  }
+  if (existingRows.length === 0) {
+    return { action: "insert", hostname: realHostname ?? MANUAL_PIN_HOSTNAME };
+  }
+  if (existingRows.length === 1) {
+    return { action: "update", hostname: existingRows[0].hostname };
+  }
+  if (realHostname) {
+    return { action: "insert", hostname: realHostname };
+  }
+  return { action: "skip" };
+}
+
+/**
  * Choose the cwd to inject into a no-repo launch deep link from the paths
- * recorded for (this user, this idea) — Design Review hostname rule, option (a),
- * deduped by absolute path:
+ * recorded for (this user, this idea), given `realHostname` — this browser's
+ * actual machine hostname from `getMachineIdentity()`, or null when it isn't
+ * known yet (no bridge has ever announced one in this browser).
  *
- *  - 0 records          → undefined (first-launch / home flow; the agent creates + records)
- *  - 1 distinct path    → that path, whether it came from one record or several
- *                         (the common multi-machine case: the same idea launched
- *                         from two hosts whose project folder happens to live at
- *                         the same absolute path — e.g. two Macs both checking
- *                         out under /Users/nick/projects/<slug>). There is no
- *                         ambiguity to protect against here: whichever machine
- *                         the browser is actually on, the folder is at this path.
- *  - >1 distinct paths  → undefined (genuinely ambiguous across machines; the
- *                         browser can't know which host it's on, so never inject
- *                         a path we can't attribute to THIS machine — fall back
- *                         to the safe first-launch flow)
+ * `idea_project_paths` is keyed on (idea_id, owner_user_id, hostname), so a row
+ * carrying THIS machine's hostname is, by the table's own natural key, this
+ * machine's folder — there is nothing left to infer. Precedence:
  *
- * A record is only usable if its absolute_path passes strict validation; bad
- * rows are ignored so a single corrupt record can't poison the choice.
+ *  1. `realHostname` known AND a usable row exists under it → **that row's
+ *     path**, however many other rows exist and whatever they say. This is the
+ *     multi-machine case resolving correctly for the first time: two Macs with
+ *     the project checked out at different absolute paths each get their own
+ *     folder instead of both falling to "ask again" (rule 3). It also beats a
+ *     `MANUAL_PIN_HOSTNAME` row deliberately — that synthetic hostname only
+ *     ever exists because a save happened while the machine was unknown, so a
+ *     row we can positively attribute to this machine is strictly better
+ *     evidence than one we can't attribute at all.
+ *  2. Otherwise, 1 distinct path across all usable rows → that path, whether it
+ *     came from one row or several. The common same-path-across-machines case
+ *     (two hosts both checked out under /Users/nick/projects/<slug>): whichever
+ *     machine the browser is on, the folder is at this path. Kept BELOW rule 1
+ *     only for ordering tidiness — where both apply they agree by definition.
+ *     This is the rule that carries browsers with no known identity at all.
+ *  3. Otherwise (0 rows, or >1 distinct paths none of which we can attribute to
+ *     this machine) → undefined: the safe first-launch flow that asks. Never
+ *     inject a path we can't tie to the machine actually running the launch —
+ *     opening Claude Code in someone else's checkout is worse than asking.
  *
- * Deliberately does NOT match on hostname to narrow the record set before
- * deduping — the browser-side machine-identity plumbing for that
- * (`getMachineIdentity()` in `src/lib/terminal/machine-identity.ts`) exists but
- * wiring it in here is out of scope for this fix; same-path-across-machines is
- * the safe, hostname-independent case that doesn't need it.
+ * A row is only usable if its absolute_path passes strict validation; bad rows
+ * are ignored throughout, including under rule 1, so a single corrupt record
+ * can neither poison the choice nor block a good row from resolving.
  */
 export function chooseLaunchCwd(
-  records: ReadonlyArray<RecordedProjectPath> | null | undefined
+  records: ReadonlyArray<RecordedProjectPath> | null | undefined,
+  realHostname: string | null = null
 ): string | undefined {
   const usable = (records ?? []).filter((r) => isValidAbsolutePath(r.absolute_path));
+  if (realHostname) {
+    const own = usable.find((r) => r.hostname === realHostname);
+    if (own) return own.absolute_path.trim();
+  }
   const distinctPaths = new Set(usable.map((r) => r.absolute_path.trim()));
   if (distinctPaths.size === 1) return usable[0].absolute_path.trim();
   return undefined;
@@ -325,9 +501,21 @@ export function chooseLaunchCwd(
  * The single source of truth for "where will a launch open (if a folder is
  * already known), and what do we show the user?" — applies to repo-backed and
  * no-repo ideas alike. DISPLAY and LAUNCH must derive from this same result so
- * they can never diverge (the bug: the dialog saved to localStorage but the
- * dropdown read only the DB; and separately, a repo-backed idea's known folder
- * used to be discarded here entirely — see `resolveEffectiveLaunchTarget`).
+ * they can never diverge (the original bug: the dialog saved to localStorage
+ * but the dropdown read only the DB; a repo-backed idea's known folder used to
+ * be discarded here entirely).
+ *
+ * For an EXISTING folder, `idea_project_paths` (server, `recordedPaths`) is now
+ * the ONLY store this reads. The localStorage pin the "Set exact folder"
+ * dialog used to write is no longer consulted here — two independent,
+ * never-compared stores for the same fact (this machine's project folder) let
+ * a stale browser pin silently beat a correct, self-healing server record.
+ * The dialog now writes existing-mode saves to the server too (see
+ * `MANUAL_PIN_HOSTNAME`), and a one-time migration (`decidePinMigration`)
+ * folds any pre-existing pin in before this ships, so no launch folder changes
+ * as a result. `new`-mode pins are unaffected — see `resolveDefaultLaunchState`,
+ * the only place that still reads them (there's no server equivalent for a
+ * folder that doesn't exist yet).
  *
  * `cwd` is what gets injected into the deep link / copy command; `displayPath`
  * + `displayLabel` + `host` drive the dropdown's "This machine" line.
@@ -339,9 +527,15 @@ export interface EffectiveLaunchTarget {
   displayPath: string | undefined;
   /** Heading for the path line — names the source so it's honest. */
   displayLabel: string | undefined;
-  /** Hostname for the DB-sourced case (null for the localStorage/device case). */
+  /** Hostname for the DB-sourced case (null when nothing is usable). */
   host: string | null;
-  /** Where the path came from. "none" → show no path line. */
+  /**
+   * Where the path came from. "none" → show no path line. "saved" is kept
+   * only so callers that still pattern-match on it don't need a type change —
+   * this function no longer returns it; a resolved path is always "recorded"
+   * now (a manually-pinned row is just another `recordedPaths` entry, under
+   * `MANUAL_PIN_HOSTNAME`).
+   */
   source: "saved" | "recorded" | "none";
 }
 
@@ -349,65 +543,58 @@ export interface ResolveEffectiveLaunchTargetArgs {
   /**
    * Whether the idea has a GitHub repo. Kept for callers (they already track
    * it for the prompt builders) but no longer gates anything HERE: a
-   * repo-backed idea with a known folder (pinned or recorded for this
-   * machine) resolves that folder exactly like a no-repo idea does — see the
-   * precedence note below. `resolveDefaultLaunchState` is what still treats
-   * repo-backed differently when NO folder is known (empty-path existing
-   * mode instead of a fresh ~/projects/<slug>).
+   * repo-backed idea with a known folder (agent-recorded for this machine, or
+   * manually pinned via the dialog — both land in `recordedPaths`) resolves
+   * that folder exactly like a no-repo idea does. `resolveDefaultLaunchState`
+   * is what still treats repo-backed differently when NO folder is known
+   * (empty-path existing mode instead of a fresh ~/projects/<slug>).
    */
   hasRepo: boolean;
-  /** The user's saved localStorage launch config for this idea (or null). */
-  saved: LaunchPathState | null;
-  /** Paths the agent recorded in the DB for this user + idea. */
+  /**
+   * Paths recorded in the DB for this user + idea — both agent-self-reported
+   * rows (`record_project_path`, one per real hostname) and human-set rows
+   * (dialog Save / pin migration, hostname `MANUAL_PIN_HOSTNAME`). This is now
+   * the ONLY source an existing folder resolves from.
+   */
   recordedPaths: ReadonlyArray<RecordedProjectPath> | null | undefined;
+  /**
+   * This browser's real machine hostname (`getMachineIdentity()`), or null when
+   * no bridge has announced one yet. Lets `chooseLaunchCwd` pick the row keyed
+   * to THIS machine instead of only resolving when every machine agrees on the
+   * path — see its rule 1. Optional so non-browser callers (and tests written
+   * before this existed) keep the hostname-blind behaviour unchanged.
+   */
+  realHostname?: string | null;
 }
 
 /**
- * Resolve the effective launch target, preferring an explicitly-saved
- * existing-mode absolute path (localStorage — what the "Set exact folder" dialog
- * writes) over the agent-recorded DB path. This makes the dropdown reflect a
- * just-saved path immediately AND guarantees launch uses that same value.
+ * Resolve the effective launch target from the server-recorded paths alone, via
+ * `chooseLaunchCwd`: a row keyed to THIS machine's hostname wins outright;
+ * failing that, records agreeing on one path dedupe to it even across different
+ * hostnames (labelled "This machine — <host>"; a manually-pinned row is just
+ * another hostname, `MANUAL_PIN_HOSTNAME`, in that same set). Nothing usable →
+ * source "none" (first-launch / repo-slug-resolves-it flow; no path line).
  *
- * Precedence (applies identically whether or not the idea has a repo — a
- * pinned or recorded folder is just as real a "known folder" for a
- * repo-backed idea as for a no-repo one, and pin-beats-recorded must hold
- * consistently in both cases):
- *  1. Saved `existing`-mode path that passes strict validation → use it
- *     (labelled "This machine — set manually" — localStorage has no hostname).
- *  2. Otherwise the DB recorded path via `chooseLaunchCwd` (0 / 1-distinct-path
- *     / >1-distinct-paths contract — records that agree on the path dedupe to
- *     that one path, even from different hostnames),
- *     labelled "This machine — <host>". Both share the "This machine — <detail>"
- *     shape so they read as one box with two path sources, not two concepts.
- *  3. Nothing usable → source "none" (first-launch / repo-slug-resolves-it
- *     flow; no path line).
- *
- * `new`-mode saved state is intentionally ignored here: its composed
- * `~/projects/<slug>` path is not a validated absolute pwd and must not surface
- * as a recorded/launch path (it's created + recorded by the agent on launch).
+ * Callers in the browser MUST pass `realHostname` (`getMachineIdentity()`) —
+ * omitting it silently gives up rule 1 and reverts that caller to the old
+ * "every machine must agree" behaviour.
  */
 export function resolveEffectiveLaunchTarget({
-  saved,
   recordedPaths,
+  realHostname = null,
 }: ResolveEffectiveLaunchTargetArgs): EffectiveLaunchTarget {
-  // Saved existing-mode absolute path wins — it's the user's explicit choice and
-  // it's what the launch cwd resolution already used, so display now matches.
-  if (saved && saved.mode === "existing") {
-    const trimmed = saved.path.trim();
-    if (isValidAbsolutePath(trimmed)) {
-      return {
-        cwd: trimmed,
-        displayPath: trimmed,
-        displayLabel: "This machine — set manually",
-        host: null,
-        source: "saved",
-      };
-    }
-  }
-
-  const recordedCwd = chooseLaunchCwd(recordedPaths);
+  const recordedCwd = chooseLaunchCwd(recordedPaths, realHostname);
   if (recordedCwd) {
-    const match = (recordedPaths ?? []).find((r) => r.absolute_path.trim() === recordedCwd);
+    // Label from the row we actually resolved FROM where we can: with several
+    // rows sharing the resolved path (rule 2), the one under this machine's own
+    // hostname is the honest thing to name in "This machine — <host>". Falling
+    // back to the first path-match keeps the old label for unknown-identity
+    // browsers rather than dropping to the bare "This machine".
+    const pathMatches = (recordedPaths ?? []).filter(
+      (r) => r.absolute_path.trim() === recordedCwd
+    );
+    const match =
+      pathMatches.find((r) => r.hostname === realHostname) ?? pathMatches[0];
     return {
       cwd: recordedCwd,
       displayPath: recordedCwd,
@@ -1462,6 +1649,21 @@ export function writeLaunchPath(ideaId: string, state: LaunchPathState): void {
 }
 
 /**
+ * Remove the saved launch config for an idea. Used once a browser pin has been
+ * migrated into `idea_project_paths` (existing-mode pins only — see
+ * `decidePinMigration`) so it stops being read/re-migrated on every load. Also
+ * SSR-safe / no-op if storage is unavailable, matching `writeLaunchPath`.
+ */
+export function clearLaunchPathPin(ideaId: string): void {
+  if (typeof window === "undefined") return;
+  try {
+    window.localStorage.removeItem(launchPathKey(ideaId));
+  } catch {
+    // Storage disabled — nothing to clean up.
+  }
+}
+
+/**
  * The public app URL every bootstrap prompt points the MCP connector at.
  * NEXT_PUBLIC_APP_URL is inlined at build time; trailing-slash safe.
  */
@@ -1475,16 +1677,23 @@ export function resolveAppUrl(): string {
  * (paired auto-connect / Retry), so both build the compact prompt from the same
  * state and can never diverge (bootstrap-prompt parity, AC1/AC3):
  *
- *  - saved localStorage config for this idea → use it verbatim.
- *  - a known folder is on file (pinned localStorage path, or a recorded DB
- *    path for THIS machine — surfaced via `effectiveTarget`) → existing mode
- *    at that absolute path, so the bootstrap prompt SKIPS the create-folder/
+ *  - saved localStorage config for this idea, in CREATE-NEW mode → use it
+ *    verbatim. This is the ONLY case the browser store still drives: a
+ *    not-yet-created folder (parent + name) has no server equivalent, so
+ *    localStorage remains its home. A saved EXISTING-mode entry is no longer
+ *    read here — `idea_project_paths` (via `effectiveTarget`) is the single
+ *    source of truth for a folder that already exists (see
+ *    `resolveEffectiveLaunchTarget` for why: the pin and the server record
+ *    could silently disagree, and the pin always won, even when stale).
+ *  - a known folder is on file (recorded/manually-pinned DB path for THIS
+ *    machine — surfaced via `effectiveTarget`) → existing mode at that
+ *    absolute path, so the bootstrap prompt SKIPS the create-folder/
  *    mkdir/git-init block (the deep link's cwd already lands the session
  *    there). This applies WHETHER OR NOT the idea has a repo — a repo-backed
- *    idea with a recorded/pinned folder gets the same treatment as a no-repo
- *    one (this is the fix for the "repo-backed idea's recorded folder never
- *    surfaces" bug: `effectiveTarget` must be checked before the repo check
- *    below, or the repo branch always wins and the recorded path is dead code).
+ *    idea with a known folder gets the same treatment as a no-repo one (this
+ *    is the fix for the "repo-backed idea's recorded folder never surfaces"
+ *    bug: `effectiveTarget` must be checked before the repo check below, or
+ *    the repo branch always wins and the recorded path is dead code).
  *  - idea has a GitHub repo, no known folder → existing mode, empty path; the
  *    repo slug resolves the working copy locally (the fresh-machine flow).
  *  - no repo, no known folder → a brand-new project under ~/projects/<slug>;
@@ -1503,10 +1712,13 @@ export function resolveDefaultLaunchState(
   effectiveTarget?: EffectiveLaunchTarget
 ): LaunchPathState {
   const saved = readLaunchPath(ideaId);
-  if (saved) return saved;
-  // A known folder (recorded/pinned via resolveEffectiveLaunchTarget) opens
-  // THERE as existing mode so the prompt matches the cwd — checked BEFORE the
-  // repo fallback below so a repo-backed idea's recorded/pinned folder isn't
+  // Browser store survives ONLY for create-new-project mode — a folder that
+  // doesn't exist yet has no server-side row to be "the" record of. An
+  // existing-mode pin falls through to the server-only resolution below.
+  if (saved && saved.mode === "new") return saved;
+  // A known folder (recorded/manually-pinned via resolveEffectiveLaunchTarget)
+  // opens THERE as existing mode so the prompt matches the cwd — checked
+  // BEFORE the repo fallback below so a repo-backed idea's known folder isn't
   // shadowed by the empty-path repo default.
   if (effectiveTarget && effectiveTarget.source !== "none" && effectiveTarget.cwd) {
     return { mode: "existing", path: effectiveTarget.cwd };
