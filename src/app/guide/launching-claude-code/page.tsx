@@ -40,12 +40,12 @@ export default function LaunchingClaudeCodePage() {
               claude-cli://
             </code>{" "}
             deep link that opens Claude Code, connects the VibeCodes MCP server,
-            and starts working the board.
+            and offers you the next task on the board.
           </p>
           <p className="text-muted-foreground">
             Instead of copying commands and explaining context by hand, one
             click hands Claude Code everything it needs: which project to open,
-            how to connect, and which task to pick up first.
+            how to connect, and what&apos;s waiting on your board.
           </p>
         </section>
 
@@ -233,15 +233,18 @@ export default function LaunchingClaudeCodePage() {
             </li>
           </ul>
           <p className="text-muted-foreground">
-            A board launch reads the board, takes the top unstarted task,
-            assigns it, moves it to{" "}
+            A board launch reads the board, tells you which unstarted task is
+            next up, and asks whether you want it — so you can say yes, or point
+            the session at something else entirely (a bug you just spotted, work
+            you left half-finished). Say yes and it assigns the task to you,
+            moves it to{" "}
             <strong className="text-foreground">In Progress</strong>, and if the
             task has a workflow it uses{" "}
             <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
               claim_next_step
             </code>
-            . Launching from a specific task targets that task instead of
-            picking the top one.
+            . Launching from a specific task skips the question and goes
+            straight to that task.
           </p>
         </section>
 
