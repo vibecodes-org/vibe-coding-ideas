@@ -24,6 +24,7 @@ import {
 import { logger } from "@/lib/logger";
 import { cn } from "@/lib/utils";
 import { formatSessionAge, formatSessionIdentity } from "@/lib/terminal/session-registry";
+import { isFallbackSessionName } from "@/lib/terminal/resolve-session-name";
 import { deriveTabLabel } from "./terminal-tabs";
 import { SessionRenameField } from "./terminal-session-rename";
 import { HelperUpdateButton } from "./terminal-helper-update-button";
@@ -420,6 +421,12 @@ export function TerminalMySessionsPanel({
                 ideaTitle: s.ideaTitle,
                 sessionId: s.sid,
               });
+              // Suppress the secondary idea chip when the label is already
+              // the fallback ("<idea title> · <sid4>") — otherwise a
+              // never-renamed toolbar session shows the idea title twice
+              // (design §1, "De-duplication rule for rows").
+              const showIdeaChip =
+                Boolean(s.ideaTitle) && !isFallbackSessionName({ displayName: s.displayName, taskTitle: s.taskTitle });
               const identity = formatSessionIdentity({
                 machineLabel: s.machineLabel,
                 cwd: s.cwd,
@@ -438,7 +445,7 @@ export function TerminalMySessionsPanel({
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5 truncate text-[13px] font-semibold text-zinc-100">
                         <span className="truncate">{label}</span>
-                        {s.ideaTitle && (
+                        {showIdeaChip && (
                           <span className="flex-none truncate text-[11.5px] font-normal text-zinc-500">
                             {s.ideaTitle}
                           </span>

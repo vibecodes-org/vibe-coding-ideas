@@ -45,3 +45,24 @@ export function resolveSessionName(input: ResolveSessionNameInput): string {
   const sid = shortSessionId(input.sessionId);
   return ideaTitle ? `${ideaTitle} · ${sid}` : `Session · ${sid}`;
 }
+
+/**
+ * True when `resolveSessionName` would land on the fallback tier (precedence
+ * step 3) — i.e. there's no user name and no task title, so the resolved
+ * label is already "<idea title> · <sid4>" (or "Session · <sid4>").
+ *
+ * Row surfaces (chooser, My Sessions) show the idea title again as a
+ * secondary chip next to the name — but the fallback label already contains
+ * it, so without this check a toolbar-launched, never-renamed session reads
+ * "Vibe Coding Ideas · a3f9  Vibe Coding Ideas" (design §1, "De-duplication
+ * rule for rows"). Callers use this to suppress that chip.
+ *
+ * Deliberately checks the *inputs* that decide precedence, not a string
+ * comparison against the resolved label — a user could in principle type a
+ * name that happens to match the fallback text, and suppressing the chip in
+ * that case is still correct (the chip would duplicate what's on screen
+ * either way).
+ */
+export function isFallbackSessionName(input: Pick<ResolveSessionNameInput, "displayName" | "taskTitle">): boolean {
+  return !input.displayName?.trim() && !input.taskTitle?.trim();
+}

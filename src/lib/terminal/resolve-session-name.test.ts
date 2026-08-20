@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { resolveSessionName, shortSessionId } from "./resolve-session-name";
+import { isFallbackSessionName, resolveSessionName, shortSessionId } from "./resolve-session-name";
 
 describe("resolveSessionName — precedence (Requirements §3)", () => {
   it("uses the user's own name when set, over everything else", () => {
@@ -103,6 +103,31 @@ describe("resolveSessionName — worked-example edge cases (design §1 table)", 
 
   it("no session id yet → the fallback still resolves, using the ellipsis placeholder", () => {
     expect(resolveSessionName({ ideaTitle: "Vibe Coding Ideas", sessionId: null })).toBe("Vibe Coding Ideas · …");
+  });
+});
+
+describe("isFallbackSessionName — row chip suppression (design §1, de-duplication rule)", () => {
+  it("is true for a toolbar-launched, never-renamed session (no user name, no task title)", () => {
+    expect(isFallbackSessionName({ displayName: null, taskTitle: null })).toBe(true);
+  });
+
+  it("is true when both fields are whitespace-only — trimming matches resolveSessionName", () => {
+    expect(isFallbackSessionName({ displayName: "   ", taskTitle: "  \n " })).toBe(true);
+  });
+
+  it("is false once a user name is set, even with no task title", () => {
+    expect(isFallbackSessionName({ displayName: "Auth spike", taskTitle: null })).toBe(false);
+  });
+
+  it("is false for a task-launched session with no rename", () => {
+    expect(isFallbackSessionName({ displayName: null, taskTitle: "Fix login redirect loop" })).toBe(false);
+  });
+
+  it("is false once a user name is set, even if it happens to look like the fallback shape", () => {
+    // Coincidental match is still "not the fallback" by this function's rule
+    // (it checks precedence inputs, not the resolved string) — see the
+    // exported doc comment for why that's still the right call.
+    expect(isFallbackSessionName({ displayName: "Vibe Coding Ideas · a3f9", taskTitle: null })).toBe(false);
   });
 });
 

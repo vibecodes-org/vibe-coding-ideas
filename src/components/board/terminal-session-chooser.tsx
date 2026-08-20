@@ -21,6 +21,7 @@ import { cn } from "@/lib/utils";
 import { logger } from "@/lib/logger";
 import { formatSessionAge } from "@/lib/terminal/session-registry";
 import { newSessionTooltip, getTerminalSessionCap, isNearSessionCap, terminalLimitLine } from "@/lib/terminal/session-cap";
+import { isFallbackSessionName } from "@/lib/terminal/resolve-session-name";
 import { deriveTabLabel } from "./terminal-tabs";
 import { SessionRenameField } from "./terminal-session-rename";
 import {
@@ -456,6 +457,10 @@ function LiveRow({
   // panel's `deriveTabLabel`. Now the same helper, same precedence, same
   // fallback everywhere.
   const label = deriveTabLabel({ displayName: userName, taskTitle: row.taskTitle, ideaTitle: row.ideaTitle, sessionId: row.sid });
+  // Suppress the secondary idea chip when the label is already the fallback
+  // ("<idea title> · <sid4>") — otherwise a never-renamed toolbar session
+  // shows the idea title twice (design §1, "De-duplication rule for rows").
+  const showIdeaChip = Boolean(row.ideaTitle) && !isFallbackSessionName({ displayName: userName, taskTitle: row.taskTitle });
   const identity = [row.machineLabel, row.cwd].filter(Boolean).join(" · ") || `session ${row.sid.slice(0, 8)}`;
   return (
     <div className="flex items-start gap-2.5 border-t border-zinc-800 px-3.5 py-2.5">
@@ -463,7 +468,7 @@ function LiveRow({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-zinc-100">
             <span className="truncate">{label}</span>
-            {row.ideaTitle && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
+            {showIdeaChip && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
             {badge && (
               <span className="rounded border border-amber-500/40 bg-amber-500/10 px-1.5 py-0.5 text-[10px] font-bold uppercase text-amber-300">
                 {badge}
@@ -531,6 +536,9 @@ function RecentRow({
   // Renaming an ENDED row is exactly the case Nick needs most (Requirements
   // §2's PATCH-route gap, fixed in the API layer this UI now relies on).
   const label = deriveTabLabel({ displayName: userName, taskTitle: row.taskTitle, ideaTitle: row.ideaTitle, sessionId: row.sid });
+  // Suppress the secondary idea chip when the label is already the fallback
+  // — see LiveRow's identical note (design §1, "De-duplication rule for rows").
+  const showIdeaChip = Boolean(row.ideaTitle) && !isFallbackSessionName({ displayName: userName, taskTitle: row.taskTitle });
   // Null-cwd handling: kept defensive even though the caller (this file's
   // `visibleRecent`, via `visibleRecentRows`) now filters null-cwd rows out
   // before they ever reach this component — see chooser-data.ts's
@@ -545,7 +553,7 @@ function RecentRow({
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-1.5 text-[13px] font-semibold text-zinc-100">
               <span className="truncate">{label}</span>
-              {row.ideaTitle && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
+              {showIdeaChip && <span className="text-[11px] font-normal text-zinc-500">{row.ideaTitle}</span>}
             </div>
             <div className="truncate font-mono text-[11px] text-zinc-500">
               {row.cwd ?? "no recorded folder"} · ended {formatSessionAge(row.endedAt)} ago
