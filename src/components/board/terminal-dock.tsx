@@ -780,7 +780,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   }, [splitPreferred]);
   useEffect(() => {
     const el = splitBodyRef.current;
-    if (!el) return;
+    // Guarded for jsdom and any environment without ResizeObserver — same
+    // pattern as terminal-dock-inset.ts's own measurement effect.
+    if (!el || typeof ResizeObserver === "undefined") return;
     const ro = new ResizeObserver((entries) => {
       const width = entries[0]?.contentRect.width ?? el.getBoundingClientRect().width;
       setBelowWidthFloor((prev) => {
@@ -808,6 +810,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       setFloorNoticeDismissed(false);
       if (assignment.left && assignment.right) {
         announce(formatSplitOnAnnouncement(labelFor(assignment.left), labelFor(assignment.right), labelFor(assignment.left)));
+        // Belt and braces for the hard requirement: the LEFT pane's
+        // `grabFocus`/`expanded` props may both already have been `true`
+        // (it was the tab the user was just on), so the effect that reacts
+        // to THEIR transition wouldn't re-fire on its own — force the
+        // keyboard there explicitly rather than trust it was already real
+        // DOM focus (it might have been on the toggle button itself).
+        actionsMapRef.current.get(assignment.left)?.refreshView({ focus: true });
       }
     } else {
       const remaining = splitAssignment[focusedSide] ?? activeKey;
@@ -947,6 +956,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       writeSplitViewPreference(true);
       setExpanded(true);
       announce(formatDockAnnouncement(labelFor(draggedKey), outcome.side));
+      // Same belt-and-braces as the toggle above — direct manipulation is
+      // the strongest possible statement of attention (design §6.3), so the
+      // dropped pane must genuinely hold real DOM focus, not just the props
+      // that would eventually produce it.
+      actionsMapRef.current.get(draggedKey)?.refreshView({ focus: true });
     },
     [dropZone, splitAssignment, eligible, announce, labelFor],
   );

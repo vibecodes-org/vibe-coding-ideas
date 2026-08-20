@@ -47,6 +47,12 @@ vi.mock("@xterm/xterm", () => ({
     }
     focus() {}
     dispose() {}
+    // Split view (task df7a0134): the hook registers a custom key handler at
+    // init to swallow the pane-focus chord / a drag-cancelling Escape before
+    // they reach the PTY — see use-terminal-session.ts's xterm-init effect.
+    // Real xterm.js always has this method; the mock needs it too or the
+    // hook's init effect throws and never reaches `setXtermReady(true)`.
+    attachCustomKeyEventHandler() {}
   },
 }));
 vi.mock("@xterm/addon-fit", () => ({
