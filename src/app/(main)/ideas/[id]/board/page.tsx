@@ -253,7 +253,15 @@ export default async function BoardPage({ params, searchParams }: PageProps) {
   const columns = composeBoardColumns(rawColumns ?? [], rawTasks ?? [], taskLabelRows);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden px-4 sm:px-6 lg:px-8">
+    // `pb-[var(--vc-term-dock-inset,0px)]` keeps the page's content box clear
+    // of the terminal dock, which is `position: fixed` and so contributes no
+    // height of its own. Without it the board's flex chain sizes to the whole
+    // viewport, the dock paints over the bottom, and the last cards of every
+    // column sit outside the scroll range entirely — unreachable (card 534d2049).
+    // The dock publishes its live height into that variable (terminal-dock-inset.ts);
+    // with no dock mounted it is absent and the `0px` default restores the
+    // original layout exactly.
+    <div className="flex h-full flex-col overflow-hidden px-4 pb-[var(--vc-term-dock-inset,0px)] sm:px-6 lg:px-8">
       <BoardRealtime ideaId={id} taskIds={(rawTasks ?? []).map((t) => t.id)} />
 
       {/* Breadcrumb header */}
