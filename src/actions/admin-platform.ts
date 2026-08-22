@@ -10,6 +10,12 @@ import {
   PLATFORM_MODEL_DEFAULTS_KEY,
   type PlatformModelDefaults,
 } from "@/lib/platform-model-defaults";
+import {
+  getPlatformTerminalModelDefault,
+  isValidPlatformTerminalModelDefault,
+  TERMINAL_MODEL_DEFAULT_KEY,
+} from "@/lib/terminal/platform-terminal-model";
+import { validateTerminalModelValue } from "@/lib/terminal/model-resolution";
 
 // ── Admin-configurable platform model-tier defaults ─────────────────────
 // Super-admin-only read-for-admin / write. Any authenticated user can read
@@ -115,4 +121,89 @@ export async function updatePlatformModelDefaults(
   }
 
   return parsed;
+}
+
+// ── Admin-configurable terminal starting-model default (task c4ca2d95) ─────
+// Same super-admin-only read-for-admin / write posture as the model-tier
+// defaults above, but a SEPARATE platform_settings key (own Save/audit/
+// error boundary — design decision, docs/terminal-starting-model-design.html
+// §0) and, per Nick's binding approval-gate note, NO seed: an admin can
+// clear this back to "unset", at which point resolution omits the model
+// entirely (see resolveEffectiveTerminalModel in
+// src/lib/terminal/model-resolution.ts).
+
+export type PlatformTerminalModelAudit = {
+  /** null = no platform default set — resolution omits the model entirely. */
+  value: string | null;
+  updatedBy: { id: string; full_name: string | null } | null;
+  updatedAt: string | null;
+};
+
+/** Any authenticated user can call this (mirrors getPlatformModelDefaultsAction —
+ *  read is allowed for everyone per RLS; only the write path is super-admin gated).
+ *  Used by the session-mint route and the chooser/launch-dialog launch-surface hooks. */
+export async function getPlatformTerminalModelDefaultAction(): Promise<string | null> {
+  const supabase = await createClient();
+  return getPlatformTerminalModelDefault(supabase);
+}
+
+/** Admin "Platform" tab read — includes the audit line (who/when). Super-admin-only
+ *  surface, but (like the tier-defaults read above) the read itself doesn't need to
+ *  be gated — RLS already allows any authenticated read. */
+export async function getPlatformTerminalModelDefaultForAdmin(): Promise<PlatformTerminalModelAudit> {
+  const supabase = await createClient();
+  const { data } = await supabase
+    .from("platform_settings")
+    .select("value, updated_at, updated_by:users!platform_settings_updated_by_fkey(id, full_name)")
+    .eq("key", TERMINAL_MODEL_DEFAULT_KEY)
+    .maybeSingle();
+
+  if (!data) {
+    return { value: null, updatedBy: null, updatedAt: null };
+  }
+
+  const value = isValidPlatformTerminalModelDefault(data.value) ? data.value.model : null;
+  const updatedBy = Array.isArray(data.updated_by) ? data.updated_by[0] ?? null : data.updated_by ?? null;
+
+  return { value, updatedBy, updatedAt: data.updated_at };
+}
+
+/**
+ * Save (or clear) the platform terminal starting-model default. Super-admin-only
+ * (checked here AND by the platform_settings RLS write policy — defence in depth).
+ * `model: null` clears the platform default back to unset (DELETEs the row) — this
+ * is a legitimate, meaningful choice here (unlike the tier defaults, which always
+ * have a seed to fall back to), not an error case.
+ */
+export async function updatePlatformTerminalModelDefault(model: string | null): Promise<string | null> {
+  const { supabase, userId } = await requireSuperAdmin();
+
+  if (model === null) {
+    const { error } = await supabase.from("platform_settings").delete().eq("key", TERMINAL_MODEL_DEFAULT_KEY);
+    if (error) {
+      logger.error("Failed to clear platform terminal model default", { error: error.message, userId });
+      throw new Error("Failed to clear the terminal starting model — try again");
+    }
+    return null;
+  }
+
+  const trimmed = model.trim();
+  const validation = validateTerminalModelValue(trimmed);
+  if (!validation.ok) {
+    throw new Error(validation.reason);
+  }
+
+  const { error } = await supabase.from("platform_settings").upsert({
+    key: TERMINAL_MODEL_DEFAULT_KEY,
+    value: { model: trimmed },
+    updated_by: userId,
+    updated_at: new Date().toISOString(),
+  });
+
+  if (error) {
+    logger.error("Failed to save platform terminal model default", { error: error.message, userId });
+    throw new Error("Failed to save the terminal starting model — try again");
+  }
+
+  return trimmed;
 }

@@ -20,7 +20,8 @@ vi.mock("next/cache", () => ({
 }));
 
 // Import after mocks are set up
-import { getModelTierMap, updateModelTierMap } from "./profile";
+import { getModelTierMap, updateModelTierMap, getTerminalModel, updateTerminalModel } from "./profile";
+import { MACHINE_DEFAULT_TERMINAL_MODEL } from "@/lib/terminal/model-resolution";
 
 const FAKE_USER_ID = "00000000-0000-0000-0000-000000000001";
 
@@ -148,5 +149,127 @@ describe("updateModelTierMap", () => {
       update: () => ({ eq: () => Promise.resolve({ error: { message: "write failed" } }) }),
     }));
     await expect(updateModelTierMap({ frontier: "opus" })).rejects.toThrow("write failed");
+  });
+});
+
+describe("getTerminalModel", () => {
+  it("returns the stored override for the authenticated user", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: { terminal_model: "sonnet" }, error: null }),
+        }),
+      }),
+    }));
+
+    expect(await getTerminalModel()).toBe("sonnet");
+  });
+
+  it("returns null when the column is null (no override)", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: { terminal_model: null }, error: null }),
+        }),
+      }),
+    }));
+
+    expect(await getTerminalModel()).toBeNull();
+  });
+
+  it("throws when not authenticated", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
+    await expect(getTerminalModel()).rejects.toThrow("Not authenticated");
+  });
+
+  it("propagates DB errors", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: null, error: { message: "connection lost" } }),
+        }),
+      }),
+    }));
+    await expect(getTerminalModel()).rejects.toThrow("connection lost");
+  });
+});
+
+describe("updateTerminalModel", () => {
+  it("accepts a valid known alias and stores it scoped to the current user", async () => {
+    let updatedWith: unknown;
+    let scopedTo: unknown;
+    mockSupabase.from.mockImplementation(() => ({
+      update: (data: unknown) => ({
+        eq: (col: string, val: unknown) => {
+          updatedWith = data;
+          scopedTo = { [col]: val };
+          return Promise.resolve({ error: null });
+        },
+      }),
+    }));
+
+    const result = await updateTerminalModel("sonnet");
+
+    expect(result).toBe("sonnet");
+    expect(updatedWith).toEqual({ terminal_model: "sonnet" });
+    expect(scopedTo).toEqual({ id: FAKE_USER_ID });
+  });
+
+  it("accepts a novel/custom model id — no schema change needed (AC-12)", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+    }));
+    await expect(updateTerminalModel("claude-opus-5-20260101")).resolves.toBe("claude-opus-5-20260101");
+  });
+
+  it("accepts the machine-default sentinel verbatim, bypassing structural validation", async () => {
+    let updatedWith: unknown;
+    mockSupabase.from.mockImplementation(() => ({
+      update: (data: unknown) => {
+        updatedWith = data;
+        return { eq: () => Promise.resolve({ error: null }) };
+      },
+    }));
+
+    const result = await updateTerminalModel(MACHINE_DEFAULT_TERMINAL_MODEL);
+
+    expect(result).toBe(MACHINE_DEFAULT_TERMINAL_MODEL);
+    expect(updatedWith).toEqual({ terminal_model: MACHINE_DEFAULT_TERMINAL_MODEL });
+  });
+
+  it("stores NULL to clear the override back to the platform default (AC-6)", async () => {
+    let updatedWith: unknown;
+    mockSupabase.from.mockImplementation(() => ({
+      update: (data: unknown) => {
+        updatedWith = data;
+        return { eq: () => Promise.resolve({ error: null }) };
+      },
+    }));
+
+    const result = await updateTerminalModel(null);
+
+    expect(result).toBeNull();
+    expect(updatedWith).toEqual({ terminal_model: null });
+  });
+
+  it("rejects an empty/whitespace-only value (AC-12)", async () => {
+    await expect(updateTerminalModel("   ")).rejects.toThrow(/model name/i);
+  });
+
+  it("rejects a value containing shell metacharacters (AC-12)", async () => {
+    await expect(updateTerminalModel("opus; rm -rf")).rejects.toThrow();
+    await expect(updateTerminalModel("opus 5!")).rejects.toThrow(/space/i);
+  });
+
+  it("throws when not authenticated", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
+    await expect(updateTerminalModel("opus")).rejects.toThrow("Not authenticated");
+  });
+
+  it("propagates DB errors", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      update: () => ({ eq: () => Promise.resolve({ error: { message: "write failed" } }) }),
+    }));
+    await expect(updateTerminalModel("opus")).rejects.toThrow("write failed");
   });
 });

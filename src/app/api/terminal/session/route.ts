@@ -42,6 +42,8 @@ import {
   decideRelayBudget,
   utcDayStart,
 } from "@/lib/terminal/relay-budget";
+import { getPlatformTerminalModelDefault } from "@/lib/terminal/platform-terminal-model";
+import { resolveEffectiveTerminalModel } from "@/lib/terminal/model-resolution";
 
 // Pin the runtime: this handler mints per-request, auth-bound tokens and must never
 // be statically optimized or flipped to the Edge runtime. The pin stays as hygiene,
@@ -289,6 +291,40 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: RATE_LIMIT_MESSAGE, code: RATE_LIMIT_CODE }, { status: 429 });
     }
 
+    // ── (c.5) EFFECTIVE MODEL (task c4ca2d95, "Terminal starting model") ────
+    // Resolved here, once, right before mint — user override -> platform
+    // default -> omit (resolveEffectiveTerminalModel; no seed step, binding
+    // approval-gate note). Every read is best-effort and never blocks a
+    // launch (AC-2): a failed/errored read degrades to "no override"/"no
+    // platform default" via logger.warn, exactly like getPlatformTerminalModelDefault's
+    // own posture. The client threads the result into the FRESH-launch deep
+    // link only — a resume never carries it (see use-terminal-session.ts).
+    let userTerminalModel: string | null = null;
+    try {
+      const { data: userRow, error: userRowErr } = await supabase
+        .from("users")
+        .select("terminal_model")
+        .eq("id", user.id)
+        .maybeSingle();
+      if (userRowErr) {
+        logger.warn("Terminal session mint: failed to read terminal_model — omitting user override", {
+          error: userRowErr.message,
+          userId: user.id,
+        });
+      } else {
+        userTerminalModel = userRow?.terminal_model ?? null;
+      }
+    } catch (err) {
+      logger.warn("Terminal session mint: unexpected error reading terminal_model — omitting user override", {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    const platformTerminalModel = await getPlatformTerminalModelDefault(supabase);
+    const effectiveModel = resolveEffectiveTerminalModel({
+      userValue: userTerminalModel,
+      platformValue: platformTerminalModel,
+    });
+
     // ── (d) MINT + register. ────────────────────────────────────────────────
     // The bridge/browser pair (per-launch, random sid) and the helper's OWN
     // standing control-connection credential (card cc74a067 — reserved,
@@ -340,6 +376,12 @@ export async function POST(req: Request) {
       browserToken: tokens.browser,
       bridgeToken: tokens.bridge,
       helperToken,
+      // Task c4ca2d95: resolved starting model for a FRESH launch only — the
+      // client must never thread this into a resume/resumeId deep link (AC-8).
+      // Omitted (undefined, dropped by JSON.stringify) when nothing should be
+      // passed at all — the fresh-launch call site treats absence the same
+      // as an explicit undefined.
+      model: effectiveModel,
     });
   } catch (err) {
     logger.error("Terminal session mint error", {

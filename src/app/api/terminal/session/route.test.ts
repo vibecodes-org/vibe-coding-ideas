@@ -71,6 +71,7 @@ vi.mock("../../../../../terminal/shared/session-token.mjs", () => ({
 
 import { POST } from "./route";
 import { logger } from "@/lib/logger";
+import { MACHINE_DEFAULT_TERMINAL_MODEL } from "@/lib/terminal/model-resolution";
 
 function req(body: unknown) {
   return new Request("http://localhost/api/terminal/session", {
@@ -166,6 +167,58 @@ describe("POST /api/terminal/session — task/idea correctness guard (bug 62e570
     expect(insertSpy).toHaveBeenCalled();
     expect(logger.error).toHaveBeenCalledWith(
       "Terminal session mint: task lookup failed",
+      expect.objectContaining({ error: "connection reset" }),
+    );
+  });
+});
+
+describe("POST /api/terminal/session — effective terminal model resolution (task c4ca2d95)", () => {
+  it("omits model entirely when neither a user override nor a platform default is set", async () => {
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body).not.toHaveProperty("model");
+  });
+
+  it("resolves to the platform default when the user has no override", async () => {
+    tableResults.platform_settings = { data: { value: { model: "opus" } }, error: null };
+
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(body.model).toBe("opus");
+  });
+
+  it("resolves to the user's own override, beating the platform default", async () => {
+    tableResults.users = { data: { terminal_model: "sonnet" }, error: null };
+    tableResults.platform_settings = { data: { value: { model: "opus" } }, error: null };
+
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(body.model).toBe("sonnet");
+  });
+
+  it("omits model when the user opted into their machine's default, even with a platform default set (AC-5)", async () => {
+    tableResults.users = { data: { terminal_model: MACHINE_DEFAULT_TERMINAL_MODEL }, error: null };
+    tableResults.platform_settings = { data: { value: { model: "opus" } }, error: null };
+
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(body).not.toHaveProperty("model");
+  });
+
+  it("degrades to omitting the model (never blocks the mint) when reading the user's row errors", async () => {
+    tableResults.users = { data: null, error: { message: "connection reset" } };
+    tableResults.platform_settings = { data: { value: { model: "opus" } }, error: null };
+
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    // Falls back to "no user override" -> resolves to the platform default,
+    // rather than blocking or failing the mint.
+    expect(body.model).toBe("opus");
+    expect(logger.warn).toHaveBeenCalledWith(
+      "Terminal session mint: failed to read terminal_model — omitting user override",
       expect.objectContaining({ error: "connection reset" }),
     );
   });
