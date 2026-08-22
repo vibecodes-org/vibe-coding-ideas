@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/server";
 import { validateBio, validateAvatarUrl } from "@/lib/validation";
 import { encrypt } from "@/lib/encryption";
 import { MODEL_ALIASES, type ModelTierMap } from "@/lib/constants";
+import { MACHINE_DEFAULT_TERMINAL_MODEL, validateTerminalModelValue } from "@/lib/terminal/model-resolution";
 
 export async function updateProfile(formData: FormData) {
   const supabase = await createClient();
@@ -176,6 +177,68 @@ export async function updateModelTierMap(map: ModelTierMap): Promise<ModelTierMa
   const { error } = await supabase
     .from("users")
     .update({ model_tier_map: toStore })
+    .eq("id", user.id);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/profile/${user.id}`);
+  return toStore;
+}
+
+// ── Terminal starting model (task c4ca2d95) ─────────────────────────────
+// Per-user override of the in-app terminal's starting model (users.terminal_model).
+// Self-only: both actions operate on the authenticated user's own row. Lives
+// alongside the model-tier actions above per Nick's binding approval-gate
+// note: the setting stays inside the (unrenamed) Model Tiers dialog as a
+// "Terminal sessions" group, not a separate settings surface.
+
+export async function getTerminalModel(): Promise<string | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("terminal_model")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return data?.terminal_model ?? null;
+}
+
+/**
+ * `model: null` clears the override back to "platform default" (AC-6).
+ * `model: MACHINE_DEFAULT_TERMINAL_MODEL` is the explicit opt-out sentinel
+ * (AC-5) and is stored verbatim — it deliberately bypasses
+ * validateTerminalModelValue below since it's a fixed, code-controlled
+ * constant, never user-typed text.
+ */
+export async function updateTerminalModel(model: string | null): Promise<string | null> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  let toStore: string | null = null;
+  if (model !== null) {
+    const trimmed = model.trim();
+    if (trimmed !== MACHINE_DEFAULT_TERMINAL_MODEL) {
+      const validation = validateTerminalModelValue(trimmed);
+      if (!validation.ok) throw new Error(validation.reason);
+    }
+    toStore = trimmed;
+  }
+
+  const { error } = await supabase
+    .from("users")
+    .update({ terminal_model: toStore })
     .eq("id", user.id);
 
   if (error) throw new Error(error.message);

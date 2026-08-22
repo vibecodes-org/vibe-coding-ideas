@@ -177,6 +177,40 @@ test("non-sane cols/rows (zero, negative, non-integer, absurdly large) are rejec
   }
 });
 
+// ── terminal starting model (task c4ca2d95) ────────────────────────────────
+
+test("build ⇄ parse round-trips model, positioned before prompt", () => {
+  const withModel = { ...SAMPLE, model: "opus", prompt: "hello" };
+  const url = buildLaunchDeepLink(withModel);
+  assert.ok(url.includes("model=opus"));
+  assert.ok(url.indexOf("model=") < url.indexOf("prompt="), "model precedes the LAST param, prompt");
+  assert.deepEqual(parseLaunchDeepLink(url), withModel);
+});
+
+test("omits model entirely when absent — no version-skew risk for an old bridge/helper (AC-13)", () => {
+  const url = buildLaunchDeepLink(SAMPLE);
+  assert.ok(!url.includes("model="));
+  assert.ok(!("model" in parseLaunchDeepLink(url)));
+});
+
+test("round-trips a custom (non-alias) model id verbatim", () => {
+  const url = buildLaunchDeepLink({ ...SAMPLE, model: "claude-opus-5-20260101" });
+  assert.equal(parseLaunchDeepLink(url).model, "claude-opus-5-20260101");
+});
+
+test("a malformed model value (whitespace/shell metacharacters) is rejected outright — never forwarded", () => {
+  const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=r&session=s&token=t&model=${encodeURIComponent("opus; rm -rf")}`;
+  const parsed = parseLaunchDeepLink(url);
+  assert.ok(parsed !== null);
+  assert.ok(!("model" in parsed));
+});
+
+test("redactDeepLinkToken leaves model untouched — not a secret or free-form user content (AC-10)", () => {
+  const url = buildLaunchDeepLink({ ...SAMPLE, model: "opus" });
+  const redacted = redactDeepLinkToken(url);
+  assert.ok(redacted.includes("model=opus"));
+});
+
 test("redactDeepLinkToken elides the prompt (user content) as well as the token", () => {
   const url = buildLaunchDeepLink({ ...SAMPLE, prompt: HOSTILE_PROMPT });
   const redacted = redactDeepLinkToken(url);

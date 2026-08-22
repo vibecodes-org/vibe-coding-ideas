@@ -149,6 +149,7 @@ cd terminal/bridge && RELAY_URL=ws://127.0.0.1:8787 SESSION_ID=a3f9 \
 | `--token <jwt>` | `BRIDGE_TOKEN` | — | **required** app-minted `bridge`-role token |
 | `--cmd <command…>` | `BRIDGE_CMD` | `claude` | command to run in the PTY |
 | `--cwd <dir>` | `BRIDGE_CWD` | cwd | PTY working directory |
+| — (via `--launch-url`'s `model` param) | `BRIDGE_MODEL` | — | appended as `--model <value>` on a FRESH spawn only (task c4ca2d95); never on `--resume`/`--continue`/`--cmd` — see resume-cmd.js |
 | `--max-seconds <n>` | `BRIDGE_MAX_SECONDS` | `28800` | hard self-kill safety cap |
 | `--connect-timeout-ms <n>` | — | `30000` | fail if relay never opens |
 

@@ -1197,6 +1197,19 @@ export function useTerminalSession(
          */
         forceResumeCwd?: string | null;
         forceResumeId?: string | null;
+        /**
+         * Task c4ca2d95 ("Terminal starting model") — the mint route's
+         * resolved effective model (user override -> platform default ->
+         * omit). Only ever consumed by the FRESH-launch branch below;
+         * `connect()` is the sole caller that passes it (from the mint
+         * response), sourced fresh every mint so a changed preference takes
+         * effect on the very next launch. Deliberately absent from the
+         * reattach/reconnect call sites (`attachToExisting`) — a resumed
+         * conversation keeps its own model (AC-8), so there's nothing to
+         * thread there even when that path's rare no-cwd fallback drops
+         * into this same fresh-launch branch.
+         */
+        model?: string;
       },
     ) => {
       const trigger = opts?.trigger ?? "connect";
@@ -1322,6 +1335,9 @@ export function useTerminalSession(
               prompt,
               cols: dims?.cols,
               rows: dims?.rows,
+              // Task c4ca2d95: fresh-launch only — the resume branch above
+              // never reaches this call.
+              model: opts?.model,
             }),
         });
         if (!result.ok) {
@@ -1722,7 +1738,15 @@ export function useTerminalSession(
     setHelperVersion(null);
     dispatch({ type: "connect" });
 
-    let data: { sessionId: string; browserToken: string; bridgeToken: string; helperToken?: string; expiresAt: number };
+    let data: {
+      sessionId: string;
+      browserToken: string;
+      bridgeToken: string;
+      helperToken?: string;
+      expiresAt: number;
+      /** Task c4ca2d95 — the mint route's resolved effective terminal model, fresh-launch only. */
+      model?: string;
+    };
     try {
       const res = await fetch("/api/terminal/session", {
         method: "POST",
@@ -1810,7 +1834,11 @@ export function useTerminalSession(
     }
 
     // Same-machine: hand the bridge token to the local helper via the deep link.
-    if (autoLaunch) fireLaunchDeepLink(data.sessionId, data.bridgeToken, data.helperToken, { trigger: "connect" });
+    if (autoLaunch)
+      fireLaunchDeepLink(data.sessionId, data.bridgeToken, data.helperToken, {
+        trigger: "connect",
+        model: data.model,
+      });
 
     openBrowserLeg(data.sessionId, data.browserToken);
   }, [

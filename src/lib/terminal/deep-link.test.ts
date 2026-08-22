@@ -171,6 +171,46 @@ describe("buildLaunchDeepLink with cols/rows (Bug B, card cbe60db5 — real PTY 
   });
 });
 
+describe("buildLaunchDeepLink with model (task c4ca2d95, terminal starting model)", () => {
+  it("includes model, positioned before prompt, and round-trips", () => {
+    const withModel = { ...SAMPLE, model: "opus", prompt: "hello" };
+    const url = buildLaunchDeepLink(withModel);
+    expect(url).toContain("model=opus");
+    expect(url.indexOf("model=")).toBeLessThan(url.indexOf("prompt="));
+    expect(parseLaunchDeepLink(url)).toEqual(withModel);
+  });
+
+  it("omits model entirely when absent — no version-skew risk for an old bridge/helper (AC-13)", () => {
+    const url = buildLaunchDeepLink(SAMPLE);
+    expect(url).not.toContain("model=");
+    expect(parseLaunchDeepLink(url)).toEqual(SAMPLE);
+  });
+
+  it("model rides before prompt, mirroring cols/resume's position", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, model: "sonnet", prompt: "ignored ordering check" });
+    expect(url.indexOf("model=")).toBeLessThan(url.indexOf("prompt="));
+  });
+
+  it("carries a custom (non-alias) model id verbatim, URL-encoded", () => {
+    const withModel = { ...SAMPLE, model: "claude-opus-5-20260101" };
+    const url = buildLaunchDeepLink(withModel);
+    expect(parseLaunchDeepLink(url)?.model).toBe("claude-opus-5-20260101");
+  });
+
+  it("a malformed model value on the wire (whitespace/shell metacharacters) is rejected by the shared parser, never forwarded", () => {
+    const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=${encodeURIComponent(SAMPLE.relay)}&session=${SAMPLE.session}&token=${encodeURIComponent(SAMPLE.token)}&model=${encodeURIComponent("opus; rm -rf")}`;
+    const parsed = parseLaunchDeepLink(url);
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty("model");
+  });
+
+  it("is left untouched by redactDeepLinkToken — not a secret or free-form user content (AC-10)", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, model: "opus" });
+    const redacted = redactDeepLinkToken(url);
+    expect(redacted).toContain("model=opus");
+  });
+});
+
 describe("redactDeepLinkToken", () => {
   it("replaces the token value with *** and never leaks the secret", () => {
     const url = buildLaunchDeepLink(SAMPLE);

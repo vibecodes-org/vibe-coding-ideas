@@ -1640,6 +1640,81 @@ describe("useTerminalSession", () => {
     });
   });
 
+  // Task c4ca2d95 ("Terminal starting model") — the mint response's resolved
+  // `model` field must reach the fresh-launch deep link, positioned before
+  // `prompt`, and must NEVER reach a resume-shaped link.
+  describe("terminal starting model (task c4ca2d95)", () => {
+    it("carries the mint response's resolved model on a fresh (prompt-carrying) launch", async () => {
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => mintResponse({ model: "opus" })),
+      );
+      const { result } = setup();
+      // mountContainer stand-in (that helper is scoped to a sibling describe
+      // block) — assigns a detached container directly, same idiom.
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src).toContain("model=opus");
+      expect(src).toContain("prompt=");
+      expect(src.indexOf("model=")).toBeLessThan(src.indexOf("prompt="));
+    });
+
+    it("omits model entirely from the launch link when the mint response doesn't carry one", async () => {
+      // Default mintResponse() (no override) never sets `model` — mirrors the
+      // "both platform and user are unset" resolution case.
+      const { result } = setup();
+      // mountContainer stand-in (that helper is scoped to a sibling describe
+      // block) — assigns a detached container directly, same idiom.
+      result.current.containerRef.current = document.createElement("div");
+      await waitFor(() => expect(mockTerminals.length).toBeGreaterThan(0));
+
+      await act(async () => {
+        await result.current.actions.connect({ autoLaunch: true });
+      });
+
+      const iframes = document.querySelectorAll("iframe");
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src).not.toContain("model=");
+    });
+
+    it("NEVER carries a model on a resume-shaped launch, even if the mint response somehow carried one (AC-8)", async () => {
+      window.localStorage.setItem("vibecodes:terminal:paired-v1", "1");
+      vi.stubGlobal("navigator", {
+        userAgent:
+          "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
+        maxTouchPoints: 0,
+      });
+      vi.stubGlobal(
+        "fetch",
+        vi.fn(async () => mintResponse({ model: "opus" })),
+      );
+      const { result } = setup();
+
+      act(() => {
+        result.current.actions.launchFromBus({
+          resumeId: "claude-conv-carried",
+          cwd: "/Users/nick/projects/vibe-coding-ideas",
+        });
+      });
+      await waitFor(() => expect(global.fetch).toHaveBeenCalled());
+      await flushEffects();
+
+      const iframes = document.querySelectorAll("iframe");
+      expect(iframes).toHaveLength(1);
+      const src = iframes[0].getAttribute("src") ?? "";
+      expect(src).toContain("resume_id=claude-conv-carried");
+      expect(src).not.toContain("model=");
+    });
+  });
+
   // Card cbe60db5 rework 10 (stuck-pairing watchdog, 2026-08-14 incident): QA
   // root-caused a session stuck forever on "Waiting for your machine to
   // attach" — attachToExisting (reload-reattach/instant-continue, the

@@ -38,6 +38,11 @@ export type Database = {
           };
           default_board_columns: { title: string; is_done_column: boolean }[] | null;
           model_tier_map: { frontier?: string; standard?: string; cheap?: string } | null;
+          /** In-app terminal starting-model override. NULL = platform default;
+           *  '__machine_default__' = explicit opt-out (see MACHINE_DEFAULT_TERMINAL_MODEL
+           *  in src/lib/terminal/model-resolution.ts); any other string = passed
+           *  verbatim as `claude --model <value>` on fresh sessions only. */
+          terminal_model: string | null;
           is_admin: boolean;
           is_super_admin: boolean;
           is_bot: boolean;
@@ -80,6 +85,7 @@ export type Database = {
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
+          terminal_model?: string | null;
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;
@@ -116,6 +122,7 @@ export type Database = {
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
+          terminal_model?: string | null;
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;

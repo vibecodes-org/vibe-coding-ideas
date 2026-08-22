@@ -64,6 +64,15 @@ export interface TerminalSessionChooserProps {
   /** "Start new session" — the only action that mints (capped, rate-limited, exactly today's mint path). */
   onStartNew: () => void;
   /**
+   * Task c4ca2d95 ("Terminal starting model") — the passive launch-surface
+   * line naming the resolved model and its source (design §4.2), e.g. "New
+   * sessions start on Opus · platform default." Omitted entirely (render
+   * nothing) when null/undefined — either the resolved value hasn't loaded
+   * yet, or nothing would be passed at all (both platform and user unset).
+   * See terminalLaunchModelLine in src/lib/terminal/model-resolution.ts.
+   */
+  modelLine?: string | null;
+  /**
    * Persist a rename (card 3bf262ac) — the dock's shared `renameSession`:
    * PATCHes the session and, on success, keeps the dock's own registry rows
    * and any live tab entry in sync. This component owns its OWN optimistic
@@ -126,6 +135,7 @@ export function TerminalSessionChooser({
   onOpenBoardAndReconnect,
   onResume,
   onStartNew,
+  modelLine = null,
   onRenameSession,
   cap,
   helperStatus = null,
@@ -324,16 +334,22 @@ export function TerminalSessionChooser({
         </div>
       )}
 
-      <div className="flex items-center gap-2.5 border-b border-zinc-800 px-3.5 py-3">
-        <Button
-          ref={taskMatch ? undefined : firstFocusRef}
-          className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
-          disabled={busy}
-          onClick={onStartNew}
-        >
-          <TerminalIcon className="h-4 w-4" /> {startNewLabel}
-        </Button>
-        <span className="text-[11.5px] text-zinc-500">{newSessionTooltip(cap).replace(/^New terminal — /, "")}</span>
+      <div className="border-b border-zinc-800 px-3.5 py-3">
+        <div className="flex items-center gap-2.5">
+          <Button
+            ref={taskMatch ? undefined : firstFocusRef}
+            className="bg-emerald-500 text-emerald-950 hover:bg-emerald-400"
+            disabled={busy}
+            onClick={onStartNew}
+          >
+            <TerminalIcon className="h-4 w-4" /> {startNewLabel}
+          </Button>
+          <span className="text-[11.5px] text-zinc-500">{newSessionTooltip(cap).replace(/^New terminal — /, "")}</span>
+        </div>
+        {/* Task c4ca2d95: passive launch-surface visibility (design §4.2) —
+            no dialog, no "Change" link in v1 (kept intentionally terse; see
+            the implementation report for the scope trim). */}
+        {modelLine && <p className="mt-1.5 text-[11px] text-zinc-500">{modelLine}</p>}
       </div>
 
       {sections.liveHere.length > 0 && (

@@ -153,10 +153,18 @@ const RESUME_ID = sanitizeConversationId(launched?.resumeId);
 // convenience) — see resolveClaudeLaunch's doc for the full launch-shape
 // priority order and the empirical finding behind CONV.
 const explicitCmd = args.cmd || process.env.BRIDGE_CMD || null;
+// Task c4ca2d95 ("Terminal starting model"): the deep link's `model` param,
+// already parse-time validated by the shared module's isSafeModelValue
+// (whitespace/shell-metacharacter rejection — see deep-link.mjs). Only ever
+// applied by resolveClaudeLaunch on a genuinely fresh session (branch 4) —
+// resume/resumeId/explicitCmd never read it. `--model` on the bare CLI
+// (BRIDGE_MODEL env, dev/test convenience) mirrors --cmd's own env fallback.
+const MODEL = launched?.model || process.env.BRIDGE_MODEL || null;
 const { cmd: CMD, conv: CONV } = resolveClaudeLaunch({
   explicitCmd,
   resumeId: RESUME_ID,
   resume: RESUME,
+  model: MODEL,
   mintId: () => crypto.randomUUID(),
 });
 const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd();

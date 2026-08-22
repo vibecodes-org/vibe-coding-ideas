@@ -41,6 +41,7 @@ function makeReply(
       has_anthropic_key: false,
       ai_starter_credits: 10,
       model_tier_map: null,
+      terminal_model: null,
       notification_preferences: {
         comments: true,
         votes: true,

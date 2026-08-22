@@ -13,20 +13,26 @@ import {
   Select,
   SelectContent,
   SelectItem,
+  SelectSeparator,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
 import {
   getPlatformModelDefaultsForAdmin,
   updatePlatformModelDefaults,
+  getPlatformTerminalModelDefaultForAdmin,
+  updatePlatformTerminalModelDefault,
   type PlatformModelDefaultsAudit,
+  type PlatformTerminalModelAudit,
 } from "@/actions/admin-platform";
 import { setPlatformModelDefaultsCache } from "@/hooks/use-platform-model-defaults";
+import { setPlatformTerminalModelDefaultCache } from "@/hooks/use-platform-terminal-model-default";
 import {
   SEED_PLATFORM_MODEL_DEFAULTS,
   type PlatformModelDefaults,
 } from "@/lib/platform-model-defaults";
 import { MODEL_TIER_WHEN_TO_USE, capitalizeModelName, type ModelTierValue } from "@/lib/constants";
+import { validateTerminalModelValue, capitalizeTerminalModelName } from "@/lib/terminal/model-resolution";
 
 // The 4 aliases the per-user Models dialog already offers (model-tier-settings.tsx's
 // MODEL_OPTIONS) — "known" here means "selectable with one tap, no typo-guard needed".
@@ -282,7 +288,7 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
         <h3 className="font-semibold">Model tier defaults</h3>
         <p className="text-sm text-muted-foreground">
           The Claude model each workflow tier runs on platform-wide. Changing a value takes effect on the{" "}
-          <b>next</b> claim — no deploy. Per-user overrides in Profile → Models are unaffected.
+          <b>next</b> claim — no deploy. Per-user overrides in Profile → Model Tiers are unaffected.
         </p>
       </div>
 
@@ -383,6 +389,273 @@ export function AdminPlatformDashboard({ isSuperAdmin }: { isSuperAdmin: boolean
           onClick={handleSave}
           disabled={saveDisabled}
           aria-describedby={!isDirty ? "platform-defaults-save-why" : undefined}
+        >
+          {saving ? "Saving…" : "Save"}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+const NO_TERMINAL_DEFAULT_VALUE = "__no_default__";
+
+/**
+ * Admin "Terminal starting model" card (task c4ca2d95) — a sibling to "Model
+ * tier defaults" above, reusing its visual language (skeleton/error states,
+ * audit row, novel-value confirm-checkbox gate) but its OWN platform_settings
+ * key and Save/audit/error boundary (design decision: separate key => one
+ * setting, one save, unambiguous errors).
+ *
+ * BINDING (Nick, design-review approval gate): there is NO seed here, unlike
+ * the tier defaults above — "Clear" returns this to genuinely unset, at
+ * which point resolution omits the model entirely (today's behaviour).
+ */
+export function AdminTerminalModelCard({ isSuperAdmin }: { isSuperAdmin: boolean }) {
+  const [loadState, setLoadState] = useState<"loading" | "error" | "ready">("loading");
+  const [reloadToken, setReloadToken] = useState(0);
+  const [audit, setAudit] = useState<PlatformTerminalModelAudit | null>(null);
+  // "" represents "no platform default" throughout this component's local
+  // state — mapped to `null` only at the server-action boundary.
+  const [persisted, setPersisted] = useState<string>("");
+  const [staged, setStaged] = useState<string>("");
+  const [forceCustom, setForceCustom] = useState(false);
+  const [confirmedNovel, setConfirmedNovel] = useState(false);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    if (!isSuperAdmin) return;
+    let cancelled = false;
+    setLoadState("loading");
+    getPlatformTerminalModelDefaultForAdmin()
+      .then((result) => {
+        if (cancelled) return;
+        setAudit(result);
+        setPersisted(result.value ?? "");
+        setStaged(result.value ?? "");
+        setLoadState("ready");
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoadState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [isSuperAdmin, reloadToken]);
+
+  if (!isSuperAdmin) return <PlatformAccessDenied />;
+
+  if (loadState === "loading") {
+    return (
+      <div className="space-y-4 rounded-lg border p-6">
+        <Skeleton className="h-5 w-48" />
+        <Skeleton className="h-4 w-full max-w-md" />
+        <div className="max-w-[300px] space-y-1.5">
+          <Skeleton className="h-4 w-20" />
+          <Skeleton className="h-9 w-full" />
+        </div>
+      </div>
+    );
+  }
+
+  if (loadState === "error") {
+    return (
+      <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-6 text-center">
+        <p className="text-sm text-red-400">Failed to load the terminal starting model.</p>
+        <Button size="sm" variant="outline" className="mt-3" onClick={() => setReloadToken((t) => t + 1)}>
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  const isDirty = staged !== persisted;
+  const isCustom = forceCustom || (staged.length > 0 && !KNOWN_MODEL_VALUES.has(staged));
+  const structuralValidation = isCustom ? validateTerminalModelValue(staged) : { ok: true as const };
+  const structurallyBlocked = isCustom && !structuralValidation.ok;
+  const isNovel = isCustom && structuralValidation.ok && !KNOWN_MODEL_VALUES.has(staged.trim());
+  const saveDisabled = saving || !isDirty || structurallyBlocked || (isNovel && !confirmedNovel);
+
+  function handleSelectChange(value: string) {
+    if (value === CUSTOM_VALUE) {
+      setForceCustom(true);
+      return;
+    }
+    setForceCustom(false);
+    setConfirmedNovel(false);
+    setStaged(value === NO_TERMINAL_DEFAULT_VALUE ? "" : value);
+  }
+
+  function handleCancel() {
+    setStaged(persisted);
+    setForceCustom(false);
+    setConfirmedNovel(false);
+  }
+
+  function handleClear() {
+    // Local staging only — like the sibling card's "Reset to seed", this
+    // doesn't persist until Save. There is no seed to reset TO here, so this
+    // clears back to "no platform default" instead.
+    setStaged("");
+    setForceCustom(false);
+    setConfirmedNovel(false);
+  }
+
+  async function handleSave() {
+    setSaving(true);
+    try {
+      const toSave = staged.trim().length > 0 ? staged.trim() : null;
+      const saved = await updatePlatformTerminalModelDefault(toSave);
+      const fresh = await getPlatformTerminalModelDefaultForAdmin();
+      setAudit(fresh);
+      setPersisted(fresh.value ?? "");
+      setStaged(fresh.value ?? "");
+      setForceCustom(false);
+      setConfirmedNovel(false);
+      setPlatformTerminalModelDefaultCache(fresh.value);
+      toast.success(
+        saved
+          ? `Terminal starting model saved · fresh sessions now start on ${capitalizeTerminalModelName(saved)}`
+          : "Terminal starting model cleared · fresh sessions use each user's own machine default"
+      );
+    } catch (err) {
+      // Staged value is retained on error so the super-admin can retry
+      // without re-entering it.
+      toast.error(err instanceof Error ? err.message : "Failed to save the terminal starting model — try again");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div className="space-y-6 rounded-lg border p-6">
+      <div>
+        <h3 className="font-semibold">Terminal starting model</h3>
+        <p className="text-sm text-muted-foreground">
+          The model fresh in-browser terminal sessions start on, platform-wide. Takes effect on the{" "}
+          <b>next</b> session launched — no deploy, running sessions untouched. Users can override it in
+          Profile → Model Tiers, or keep their machine&apos;s own default.
+        </p>
+      </div>
+
+      <div className="max-w-[300px] space-y-1.5">
+        <Label htmlFor="platform-terminal-model" className="text-xs">
+          Starting model
+        </Label>
+        {isCustom ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <Input
+              id="platform-terminal-model"
+              value={staged}
+              onChange={(e) => setStaged(e.target.value)}
+              placeholder="e.g. opus-5.5"
+              disabled={saving}
+              aria-invalid={structurallyBlocked}
+              aria-describedby={
+                structurallyBlocked
+                  ? "platform-terminal-model-error"
+                  : isNovel
+                    ? "platform-terminal-model-novel-warning"
+                    : undefined
+              }
+              className={cn(
+                "min-w-[10rem] flex-1",
+                structurallyBlocked && "border-rose-500 focus-visible:ring-rose-500/30",
+                !structurallyBlocked && isNovel && "border-amber-500 focus-visible:ring-amber-500/30 dark:border-amber-500"
+              )}
+            />
+            <Button type="button" variant="ghost" size="sm" disabled={saving} onClick={() => setForceCustom(false)}>
+              Choose known…
+            </Button>
+          </div>
+        ) : (
+          <Select value={staged || NO_TERMINAL_DEFAULT_VALUE} disabled={saving} onValueChange={handleSelectChange}>
+            <SelectTrigger id="platform-terminal-model" className="w-full">
+              <SelectValue>
+                {staged
+                  ? (KNOWN_MODEL_OPTIONS.find((o) => o.value === staged)?.label ?? staged)
+                  : "No platform default (nothing passed)"}
+              </SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_TERMINAL_DEFAULT_VALUE}>No platform default (nothing passed)</SelectItem>
+              <SelectSeparator />
+              {KNOWN_MODEL_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>
+                  {o.label} <span className="text-muted-foreground">— {o.gloss}</span>
+                </SelectItem>
+              ))}
+              <SelectSeparator />
+              <SelectItem value={CUSTOM_VALUE}>Custom… (type a new family)</SelectItem>
+            </SelectContent>
+          </Select>
+        )}
+        {structurallyBlocked && !structuralValidation.ok && (
+          <p id="platform-terminal-model-error" role="alert" className="flex items-center gap-1.5 text-xs text-rose-500">
+            <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+            {structuralValidation.reason}
+          </p>
+        )}
+      </div>
+
+      {isNovel && (
+        <div
+          id="platform-terminal-model-novel-warning"
+          className="flex items-start gap-2.5 rounded-md border border-amber-500/40 bg-amber-500/10 p-3 text-sm"
+        >
+          <TriangleAlert className="mt-0.5 h-4 w-4 shrink-0 text-amber-500" />
+          <div className="space-y-2">
+            <p>
+              This isn&apos;t a known model alias. Every user&apos;s fresh terminal session will run{" "}
+              <code className="rounded bg-muted px-1 py-0.5 text-xs">claude --model {staged}</code> verbatim — if
+              Claude rejects it, <b>every launch platform-wide</b> shows an error in the terminal until this is
+              corrected.
+            </p>
+            <label className="flex cursor-pointer items-center gap-2 text-sm">
+              <Checkbox checked={confirmedNovel} onCheckedChange={(c) => setConfirmedNovel(c === true)} />
+              I&apos;ve verified this value works with the Claude CLI
+            </label>
+          </div>
+        </div>
+      )}
+
+      {audit && (
+        <div className="rounded-md border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+          {audit.value === null ? (
+            <span>Using the code default (no model) — nothing saved yet.</span>
+          ) : (
+            <span>
+              Last changed by <b className="text-foreground">{audit.updatedBy?.full_name ?? "a super-admin"}</b>
+              {audit.updatedAt ? ` · ${formatRelativeTime(audit.updatedAt)}` : ""}
+            </span>
+          )}
+        </div>
+      )}
+
+      <div className="flex flex-wrap items-center gap-2 border-t pt-4">
+        {!isDirty && (
+          <span id="platform-terminal-model-save-why" className="mr-auto text-xs text-muted-foreground">
+            Save enables when you change a value.
+          </span>
+        )}
+        {isDirty && structurallyBlocked && (
+          <span className="mr-auto text-xs text-muted-foreground">Fix the model name to enable Save.</span>
+        )}
+        {isDirty && !structurallyBlocked && isNovel && !confirmedNovel && (
+          <span className="mr-auto text-xs text-muted-foreground">Confirm the checkbox above to enable Save.</span>
+        )}
+        <Button type="button" variant="destructive" size="sm" onClick={handleClear} disabled={saving || staged === ""}>
+          Clear
+        </Button>
+        <Button type="button" variant="outline" size="sm" onClick={handleCancel} disabled={saving || !isDirty}>
+          Cancel
+        </Button>
+        <Button
+          type="button"
+          size="sm"
+          onClick={handleSave}
+          disabled={saveDisabled}
+          aria-describedby={!isDirty ? "platform-terminal-model-save-why" : undefined}
         >
           {saving ? "Saving…" : "Save"}
         </Button>
