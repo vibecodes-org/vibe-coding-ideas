@@ -38,24 +38,42 @@ export function isKnownTerminalModelAlias(value: string): boolean {
 
 export type TerminalModelValidation = { ok: true } | { ok: false; reason: string };
 
+/** Hard length cap (QA Bug 1, rework of task c4ca2d95): the previously-
+ *  unbounded value let a ~1,700+ char string overflow the deep link's own
+ *  hard 2048-char cap, which fails every fresh launch with a misleading
+ *  "Project path too long to launch" error — platform-wide if set via the
+ *  admin default. 100 leaves generous headroom over the longest realistic
+ *  model id (~40 chars, e.g. "claude-haiku-4-5-20251001") while sitting
+ *  nowhere near the deep link's actual limit; same order of magnitude as
+ *  the sibling tier-alias schema's `.max(40)` in admin-platform.ts, just
+ *  not cut as tight, since this field also accepts free-text pinned ids. */
+const MAX_TERMINAL_MODEL_VALUE_LENGTH = 100;
+
 /**
  * Config-time structural validation (AC-12), shared verbatim by the Profile
  * server action, the admin platform-default server action, and (duplicated,
  * dependency-free, same posture as the shared deep-link module's other
  * guards) the bridge/helper's own defense-in-depth re-check.
  *
- * Blocks empty/whitespace-only values and anything containing whitespace or
- * a shell metacharacter. The model rides the bridge's spawn command as a
- * single token (see terminal/bridge/src/resume-cmd.js) — it is never
- * shell-interpreted, but the rule mirrors the compact bootstrap prompt's own
- * argv-safety posture so a typo is caught here, at config time, instead of
- * surfacing later as an opaque `claude` CLI rejection in the terminal.
- * Structurally valid free text is otherwise accepted unconditionally — a
- * brand-new model family or a pinned model id needs no code change.
+ * Blocks empty/whitespace-only values, anything over the length cap, and
+ * anything containing whitespace or a shell metacharacter. The model rides
+ * the bridge's spawn command as a single token (see
+ * terminal/bridge/src/resume-cmd.js) — it is never shell-interpreted, but
+ * the rule mirrors the compact bootstrap prompt's own argv-safety posture so
+ * a typo is caught here, at config time, instead of surfacing later as an
+ * opaque `claude` CLI rejection in the terminal. Structurally valid free
+ * text is otherwise accepted unconditionally — a brand-new model family or
+ * a pinned model id needs no code change.
  */
 export function validateTerminalModelValue(value: string): TerminalModelValidation {
   if (value.trim().length === 0) {
     return { ok: false, reason: "Enter a model name, or choose one of the options above." };
+  }
+  if (value.trim().length > MAX_TERMINAL_MODEL_VALUE_LENGTH) {
+    return {
+      ok: false,
+      reason: `Model names can't be longer than ${MAX_TERMINAL_MODEL_VALUE_LENGTH} characters.`,
+    };
   }
   if (/\s/.test(value)) {
     return { ok: false, reason: "Model names can't contain spaces." };

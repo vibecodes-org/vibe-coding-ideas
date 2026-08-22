@@ -261,6 +261,18 @@ describe("updateTerminalModel", () => {
     await expect(updateTerminalModel("opus 5!")).rejects.toThrow(/space/i);
   });
 
+  it("rejects a value over the 100-char cap before ever touching the DB (QA Bug 1)", async () => {
+    await expect(updateTerminalModel("a".repeat(101))).rejects.toThrow(/100 characters/i);
+  });
+
+  it("boundary: exactly 100 chars is accepted, 101 is rejected (QA Bug 1)", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      update: () => ({ eq: () => Promise.resolve({ error: null }) }),
+    }));
+    await expect(updateTerminalModel("a".repeat(100))).resolves.toBe("a".repeat(100));
+    await expect(updateTerminalModel("a".repeat(101))).rejects.toThrow(/100 characters/i);
+  });
+
   it("throws when not authenticated", async () => {
     mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
     await expect(updateTerminalModel("opus")).rejects.toThrow("Not authenticated");

@@ -351,6 +351,30 @@ describe("updatePlatformTerminalModelDefault — super-admin gate", () => {
     await expect(updatePlatformTerminalModelDefault("opus 5!")).rejects.toThrow(/space/i);
   });
 
+  it("rejects a value over the 100-char cap before ever touching the DB (QA Bug 1 — was overflowing the deep link's 2048-char cap platform-wide)", async () => {
+    mockSupabase.auth.getUser.mockReset();
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: SUPER_ADMIN_ID } }, error: null });
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { is_super_admin: true }, error: null }) }) }),
+    }));
+
+    await expect(updatePlatformTerminalModelDefault("a".repeat(101))).rejects.toThrow(/100 characters/i);
+  });
+
+  it("boundary: exactly 100 chars is accepted, 101 is rejected (QA Bug 1)", async () => {
+    mockSupabase.auth.getUser.mockReset();
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: SUPER_ADMIN_ID } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === "users") {
+        return { select: () => ({ eq: () => ({ single: () => Promise.resolve({ data: { is_super_admin: true }, error: null }) }) }) };
+      }
+      return { upsert: () => Promise.resolve({ error: null }) };
+    });
+
+    await expect(updatePlatformTerminalModelDefault("a".repeat(100))).resolves.toBe("a".repeat(100));
+    await expect(updatePlatformTerminalModelDefault("a".repeat(101))).rejects.toThrow(/100 characters/i);
+  });
+
   it("clears the platform default back to unset when passed null (deletes the row, not an error)", async () => {
     mockSupabase.auth.getUser.mockReset();
     mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: SUPER_ADMIN_ID } }, error: null });

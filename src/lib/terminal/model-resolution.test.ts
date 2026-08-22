@@ -52,6 +52,17 @@ describe("validateTerminalModelValue (AC-12)", () => {
   it("never rejects the machine-default sentinel itself (no spaces/metacharacters)", () => {
     expect(validateTerminalModelValue(MACHINE_DEFAULT_TERMINAL_MODEL)).toEqual({ ok: true });
   });
+
+  it("rejects a value over the 100-char cap (QA Bug 1 — overflowed the deep link's 2048-char cap)", () => {
+    const result = validateTerminalModelValue("a".repeat(101));
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.reason).toMatch(/100 characters/i);
+  });
+
+  it("boundary: exactly 100 chars passes, 101 fails", () => {
+    expect(validateTerminalModelValue("a".repeat(100))).toEqual({ ok: true });
+    expect(validateTerminalModelValue("a".repeat(101)).ok).toBe(false);
+  });
 });
 
 describe("resolveEffectiveTerminalModel (AC-7 — every branch)", () => {
