@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { Cpu } from "lucide-react";
+import { Cpu, TriangleAlert } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import {
@@ -14,6 +14,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
@@ -22,9 +23,12 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { updateModelTierMap } from "@/actions/profile";
+import { cn } from "@/lib/utils";
+import { updateModelTierMap, updateTerminalModel } from "@/actions/profile";
 import { setViewerModelTierMapCache } from "@/hooks/use-viewer-model-tier-map";
+import { setViewerTerminalModelCache } from "@/hooks/use-viewer-terminal-model";
 import { usePlatformModelDefaults } from "@/hooks/use-platform-model-defaults";
+import { usePlatformTerminalModelDefault } from "@/hooks/use-platform-terminal-model-default";
 import {
   MODEL_TIER_WHEN_TO_USE,
   capitalizeModelName,
@@ -32,10 +36,21 @@ import {
   type ModelTierMap,
   type ModelTierValue,
 } from "@/lib/constants";
+import {
+  MACHINE_DEFAULT_TERMINAL_MODEL,
+  KNOWN_TERMINAL_MODEL_ALIASES,
+  isKnownTerminalModelAlias,
+  validateTerminalModelValue,
+  capitalizeTerminalModelName,
+} from "@/lib/terminal/model-resolution";
 
 // Radix Select can't use "" as an item value, so "follow the platform
 // default" uses this sentinel (unset key in the stored map).
 const PLATFORM_DEFAULT_VALUE = "__platform_default__";
+// Terminal sessions group only: swaps the Select for a free-text Input
+// (mirrors the admin platform card's TierModelField "Custom…" escape hatch —
+// design handoff note: a novel model family needs no code change here either).
+const TERMINAL_CUSTOM_VALUE = "__custom__";
 
 const MODEL_OPTIONS: { value: ModelAlias; label: string; gloss: string }[] = [
   { value: "fable", label: "Fable", gloss: "Most capable — frontier reasoning" },
@@ -43,6 +58,10 @@ const MODEL_OPTIONS: { value: ModelAlias; label: string; gloss: string }[] = [
   { value: "sonnet", label: "Sonnet", gloss: "Balanced speed & quality" },
   { value: "haiku", label: "Haiku", gloss: "Fastest & lowest cost" },
 ];
+
+const TERMINAL_MODEL_OPTIONS = MODEL_OPTIONS.filter((o) =>
+  (KNOWN_TERMINAL_MODEL_ALIASES as readonly string[]).includes(o.value)
+);
 
 const TIER_FIELDS: { tier: ModelTierValue; label: string }[] = [
   { tier: "frontier", label: "Frontier" },
@@ -53,8 +72,17 @@ const TIER_FIELDS: { tier: ModelTierValue; label: string }[] = [
 interface ModelTierSettingsProps {
   /** The signed-in user's model_tier_map, fetched server-side (like hasKey). */
   map: ModelTierMap | null;
+  /** The signed-in user's terminal_model override (task c4ca2d95), fetched server-side. */
+  terminalModel: string | null;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
+}
+
+/** True when `value` is a custom (not platform-default, not machine-default,
+ *  not a known alias) staged terminal value — i.e. the Select should be
+ *  showing the free-text Input instead. */
+function isTerminalCustomValue(value: string | null): boolean {
+  return value !== null && value !== MACHINE_DEFAULT_TERMINAL_MODEL && !isKnownTerminalModelAlias(value);
 }
 
 /**
@@ -62,9 +90,14 @@ interface ModelTierSettingsProps {
  * on api-key-settings.tsx: outline trigger → sm:max-w-md dialog. Save is the
  * only write path — Reset stages an all-cleared map locally, Cancel/Esc
  * discards staged changes (Design §02/§03).
+ *
+ * Also houses the "Terminal sessions" group (task c4ca2d95) — Nick's binding
+ * approval-gate note: the setting lives HERE, inside this (unrenamed)
+ * dialog, rather than a separate settings surface.
  */
 export function ModelTierSettings({
   map,
+  terminalModel,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
 }: ModelTierSettingsProps) {
@@ -75,18 +108,36 @@ export function ModelTierSettings({
   const [isPending, startTransition] = useTransition();
   const [staged, setStaged] = useState<ModelTierMap>(map ?? {});
   const platformDefaults = usePlatformModelDefaults();
+  const platformTerminalDefault = usePlatformTerminalModelDefault();
 
-  // Re-stage from the persisted map on every open so a prior Cancel never
+  // Terminal sessions group state — null = platform default; the sentinel
+  // string = "my machine's default"; anything else = a known alias or a
+  // custom value (raw, possibly-invalid text while the user is typing).
+  const [terminalStaged, setTerminalStaged] = useState<string | null>(terminalModel);
+  const [terminalCustomMode, setTerminalCustomMode] = useState(() => isTerminalCustomValue(terminalModel));
+
+  // Re-stage from the persisted values on every open so a prior Cancel never
   // leaks into the next open.
   function handleOpenChange(next: boolean) {
-    if (next) setStaged(map ?? {});
+    if (next) {
+      setStaged(map ?? {});
+      setTerminalStaged(terminalModel);
+      setTerminalCustomMode(isTerminalCustomValue(terminalModel));
+    }
     setOpen(next);
   }
 
-  const isDirty = TIER_FIELDS.some(
+  const isTierDirty = TIER_FIELDS.some(
     ({ tier }) => (staged[tier] ?? null) !== (map?.[tier] ?? null)
   );
-  const hasAnyOverride = TIER_FIELDS.some(({ tier }) => staged[tier] !== undefined);
+  const isTerminalDirty = terminalStaged !== terminalModel;
+  const isDirty = isTierDirty || isTerminalDirty;
+  const hasAnyOverride = TIER_FIELDS.some(({ tier }) => staged[tier] !== undefined) || terminalStaged !== null;
+
+  const terminalValidation = terminalCustomMode ? validateTerminalModelValue(terminalStaged ?? "") : { ok: true as const };
+  const terminalIsNovel =
+    terminalCustomMode && terminalValidation.ok && !isKnownTerminalModelAlias((terminalStaged ?? "").trim());
+  const terminalBlocked = terminalCustomMode && !terminalValidation.ok;
 
   function handleTierChange(tier: ModelTierValue, value: string) {
     setStaged((prev) => {
@@ -97,15 +148,32 @@ export function ModelTierSettings({
     });
   }
 
+  function handleTerminalSelectChange(value: string) {
+    if (value === TERMINAL_CUSTOM_VALUE) {
+      setTerminalCustomMode(true);
+      setTerminalStaged((prev) => (isTerminalCustomValue(prev) ? prev : ""));
+      return;
+    }
+    setTerminalCustomMode(false);
+    setTerminalStaged(value === PLATFORM_DEFAULT_VALUE ? null : value);
+  }
+
   function handleReset() {
     setStaged({});
+    setTerminalStaged(null);
+    setTerminalCustomMode(false);
   }
 
   function handleSave() {
     startTransition(async () => {
       try {
-        const saved = await updateModelTierMap(staged);
-        setViewerModelTierMapCache(saved);
+        const terminalToSave = terminalCustomMode ? (terminalStaged ?? "").trim() : terminalStaged;
+        const [savedTiers, savedTerminal] = await Promise.all([
+          updateModelTierMap(staged),
+          updateTerminalModel(terminalToSave),
+        ]);
+        setViewerModelTierMapCache(savedTiers);
+        setViewerTerminalModelCache(savedTerminal);
         toast.success("Model tiers saved");
         setOpen(false);
       } catch (err) {
@@ -182,6 +250,106 @@ export function ModelTierSettings({
             or session, the orchestrator substitutes the closest available alternative and notes it in the step
             output.
           </p>
+
+          {/* Terminal sessions group (task c4ca2d95) — the setting stays inside
+              this dialog per Nick's binding approval-gate note (no rename, no
+              separate settings surface). */}
+          <p className="pt-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+            Terminal sessions
+          </p>
+          <div className="space-y-1.5">
+            <Label htmlFor="terminal-starting-model" className="text-sm">
+              Starting model{" "}
+              <span className="font-normal text-muted-foreground">— for new in-browser terminal sessions</span>
+            </Label>
+            {terminalCustomMode ? (
+              <div className="flex flex-wrap items-center gap-2">
+                <Input
+                  id="terminal-starting-model"
+                  value={terminalStaged ?? ""}
+                  onChange={(e) => setTerminalStaged(e.target.value)}
+                  placeholder="e.g. opus-5.5"
+                  disabled={isPending}
+                  aria-invalid={terminalBlocked}
+                  aria-describedby={
+                    terminalBlocked
+                      ? "terminal-model-error"
+                      : terminalIsNovel
+                        ? "terminal-model-novel-warning"
+                        : undefined
+                  }
+                  className={cn(
+                    "min-w-[10rem] flex-1",
+                    terminalBlocked && "border-rose-500 focus-visible:ring-rose-500/30",
+                    !terminalBlocked && terminalIsNovel && "border-amber-500 focus-visible:ring-amber-500/30 dark:border-amber-500"
+                  )}
+                />
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  disabled={isPending}
+                  onClick={() => {
+                    setTerminalCustomMode(false);
+                    setTerminalStaged(null);
+                  }}
+                >
+                  Choose known…
+                </Button>
+              </div>
+            ) : (
+              <Select value={terminalStaged ?? PLATFORM_DEFAULT_VALUE} onValueChange={handleTerminalSelectChange} disabled={isPending}>
+                <SelectTrigger id="terminal-starting-model" aria-describedby="terminal-model-help" className="w-full">
+                  <SelectValue>
+                    {terminalStaged === null ? (
+                      <span className="text-muted-foreground">
+                        Platform default
+                        {platformTerminalDefault ? ` (${capitalizeTerminalModelName(platformTerminalDefault)})` : " (your machine decides)"}
+                      </span>
+                    ) : terminalStaged === MACHINE_DEFAULT_TERMINAL_MODEL ? (
+                      "My machine's default"
+                    ) : (
+                      TERMINAL_MODEL_OPTIONS.find((o) => o.value === terminalStaged)?.label ?? terminalStaged
+                    )}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={PLATFORM_DEFAULT_VALUE}>
+                    Platform default
+                    {platformTerminalDefault ? ` (${capitalizeTerminalModelName(platformTerminalDefault)})` : " (your machine decides)"}
+                  </SelectItem>
+                  <SelectItem value={MACHINE_DEFAULT_TERMINAL_MODEL}>My machine&apos;s default</SelectItem>
+                  <SelectSeparator />
+                  {TERMINAL_MODEL_OPTIONS.map((opt) => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      {opt.label} <span className="text-muted-foreground">— {opt.gloss}</span>
+                    </SelectItem>
+                  ))}
+                  <SelectSeparator />
+                  <SelectItem value={TERMINAL_CUSTOM_VALUE}>Custom… (type an alias or model id)</SelectItem>
+                </SelectContent>
+              </Select>
+            )}
+            {terminalBlocked && !terminalValidation.ok && (
+              <p id="terminal-model-error" role="alert" className="flex items-center gap-1.5 text-xs text-rose-500">
+                <TriangleAlert className="h-3.5 w-3.5 shrink-0" />
+                {terminalValidation.reason}
+              </p>
+            )}
+            {!terminalBlocked && terminalIsNovel && (
+              <p id="terminal-model-novel-warning" className="flex items-start gap-1.5 text-xs text-amber-600 dark:text-amber-500">
+                <TriangleAlert className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+                Not a known family alias — it&apos;s passed to Claude Code exactly as typed. If Claude rejects it, the
+                error appears in the terminal when the session starts; fix it here.
+              </p>
+            )}
+            {!terminalCustomMode && (
+              <p id="terminal-model-help" className="text-[11px] text-muted-foreground">
+                Applies when a fresh session starts. Resumed sessions keep the model they were on; you can switch
+                any time by typing /model in the terminal.
+              </p>
+            )}
+          </div>
         </div>
 
         <DialogFooter className="gap-2 sm:gap-0">
@@ -200,17 +368,23 @@ export function ModelTierSettings({
             <Button
               size="sm"
               onClick={handleSave}
-              disabled={isPending || !isDirty}
-              aria-describedby={!isDirty ? "model-tier-save-why" : undefined}
+              disabled={isPending || !isDirty || terminalBlocked}
+              aria-describedby={!isDirty || terminalBlocked ? "model-tier-save-why" : undefined}
             >
               {isPending ? "Saving…" : "Save"}
             </Button>
           </div>
         </DialogFooter>
-        {!isDirty && (
+        {terminalBlocked ? (
           <p id="model-tier-save-why" className="-mt-2 text-right text-[11px] text-muted-foreground">
-            Save enables when you change a tier.
+            Fix the starting model to enable Save.
           </p>
+        ) : (
+          !isDirty && (
+            <p id="model-tier-save-why" className="-mt-2 text-right text-[11px] text-muted-foreground">
+              Save enables when you change a tier.
+            </p>
+          )
         )}
       </DialogContent>
     </Dialog>

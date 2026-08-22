@@ -30,7 +30,7 @@ import type { Metadata } from "next";
  *  `ProfileSettingsMenu` below). */
 type OwnProfileSettings = Pick<
   User,
-  "notification_preferences" | "default_board_columns" | "has_anthropic_key" | "model_tier_map"
+  "notification_preferences" | "default_board_columns" | "has_anthropic_key" | "model_tier_map" | "terminal_model"
 >;
 
 /** IdeaCard's entire use of `idea.author` (see src/components/ideas/idea-card.tsx) —
@@ -109,7 +109,7 @@ export default async function ProfilePage({ params }: PageProps) {
   if (isOwnProfile) {
     const { data } = await supabase
       .from("users")
-      .select("notification_preferences, default_board_columns, has_anthropic_key, model_tier_map")
+      .select("notification_preferences, default_board_columns, has_anthropic_key, model_tier_map, terminal_model")
       .eq("id", id)
       .single();
     ownSettings = data;
@@ -256,7 +256,7 @@ export default async function ProfilePage({ params }: PageProps) {
                     <NotificationSettings preferences={ownSettings.notification_preferences} />
                     <BoardColumnSettings columns={ownSettings.default_board_columns} />
                     <ApiKeySettings hasKey={!!ownSettings.has_anthropic_key} />
-                    <ModelTierSettings map={ownSettings.model_tier_map} />
+                    <ModelTierSettings map={ownSettings.model_tier_map} terminalModel={ownSettings.terminal_model} />
                   </>
                 )}
                 <McpApiKeys />
@@ -271,6 +271,7 @@ export default async function ProfilePage({ params }: PageProps) {
                     columns={ownSettings.default_board_columns}
                     hasApiKey={!!ownSettings.has_anthropic_key}
                     modelTierMap={ownSettings.model_tier_map}
+                    terminalModel={ownSettings.terminal_model}
                   />
                 )}
               </div>
