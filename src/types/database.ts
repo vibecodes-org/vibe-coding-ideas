@@ -1668,6 +1668,7 @@ export type Database = {
           mode: string;
           idea_id: string | null;
           bot_id: string | null;
+          session_id: string | null;
           created_at: string;
         };
         Insert: {
@@ -1680,6 +1681,7 @@ export type Database = {
           mode?: string;
           idea_id?: string | null;
           bot_id?: string | null;
+          session_id?: string | null;
           created_at?: string;
         };
         Update: {
@@ -1692,6 +1694,7 @@ export type Database = {
           mode?: string;
           idea_id?: string | null;
           bot_id?: string | null;
+          session_id?: string | null;
           created_at?: string;
         };
         Relationships: [

@@ -14,6 +14,7 @@ export interface ToolLogEntry {
   mode: "stdio" | "remote";
   idea_id: string | null;
   bot_id: string | null;
+  session_id: string | null;
 }
 
 type LogFn = (entry: ToolLogEntry) => void;
@@ -118,6 +119,7 @@ export function instrumentServer(
                 mode,
                 idea_id: extractIdeaId(args),
                 bot_id: extractAgentId(args),
+                session_id: ctx.sessionId ?? null,
               });
             } catch {
               // Never let logging break tool execution
@@ -149,6 +151,7 @@ export function instrumentServer(
                 mode,
                 idea_id: extractIdeaId(args),
                 bot_id: extractAgentId(args),
+                session_id: ctx.sessionId ?? null,
               });
             } catch {
               // Never let logging break tool execution

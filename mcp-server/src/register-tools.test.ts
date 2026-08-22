@@ -1,5 +1,6 @@
 import { describe, it, expect, vi } from "vitest";
 import { registerTools } from "./register-tools";
+import { LIVE_DATA_SENTENCE } from "./steering-copy";
 import type { McpContext } from "./context";
 
 const EXPECTED_TOOL_NAMES = [
@@ -462,5 +463,42 @@ describe("registerTools", () => {
       const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === name);
       expect(call![1] as string).toContain("work_token");
     }
+  });
+
+  // AC-4.1 / design doc §3b (Surface B): the three board read tools carry the
+  // harmonised LIVE_DATA_SENTENCE — get_board's old bespoke "present this
+  // data directly... NEVER write scripts to parse it" sentence is replaced by
+  // it (the shared sentence carries both clauses), and it's appended for
+  // get_task / get_my_tasks. No other tool description should pick it up.
+  it("get_board, get_task, and get_my_tasks descriptions contain LIVE_DATA_SENTENCE, and no other tool's does", () => {
+    const server = createMockServer();
+    registerTools(server, vi.fn());
+
+    const LIVE_TOOLS = ["get_board", "get_task", "get_my_tasks"];
+
+    for (const name of LIVE_TOOLS) {
+      const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === name);
+      expect(call, `expected ${name} to be registered`).toBeDefined();
+      expect(call![1] as string).toContain(LIVE_DATA_SENTENCE);
+    }
+
+    const offenders = server.tool.mock.calls
+      .filter((call: unknown[]) => !LIVE_TOOLS.includes(call[0] as string))
+      .filter((call: unknown[]) => (call[1] as string).includes(LIVE_DATA_SENTENCE))
+      .map((call: unknown[]) => call[0]);
+
+    expect(offenders).toEqual([]);
+  });
+
+  it("get_board's description no longer carries the old bespoke never-script-parse sentence", () => {
+    const server = createMockServer();
+    registerTools(server, vi.fn());
+
+    const call = server.tool.mock.calls.find((c: unknown[]) => c[0] === "get_board");
+    const description = call![1] as string;
+
+    // Replaced by LIVE_DATA_SENTENCE, which carries both clauses — kept side
+    // by side they'd read as two slightly different rules (design doc §3b).
+    expect(description).not.toContain("NEVER write scripts to parse it");
   });
 });

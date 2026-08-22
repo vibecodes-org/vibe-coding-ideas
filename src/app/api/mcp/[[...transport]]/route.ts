@@ -3,6 +3,7 @@ import { createClient } from "@supabase/supabase-js";
 import { createHash } from "crypto";
 import { registerTools } from "../../../../../mcp-server/src/register-tools";
 import { instrumentServer } from "../../../../../mcp-server/src/instrument";
+import { SERVER_INSTRUCTIONS } from "../../../../../mcp-server/src/steering-copy";
 import { logger } from "@/lib/logger";
 import { getAttachmentContext } from "@/lib/attachment-context";
 import type { McpContext } from "../../../../../mcp-server/src/context";
@@ -176,6 +177,7 @@ const handler = createMcpHandler(
   },
   {
     serverInfo: { name: "vibecodes", version: "1.0.0" },
+    instructions: SERVER_INSTRUCTIONS,
   },
   {
     streamableHttpEndpoint: "/api/mcp",
