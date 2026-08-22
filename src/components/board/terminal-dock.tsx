@@ -111,6 +111,7 @@ import {
   reconcileSplitAssignment,
   applyTabClickToSplit,
   applyDropToSplit,
+  splitTabGroups,
   resolveWidthFloor,
   isMobileViewport,
   isSplitRenderable,
@@ -2224,11 +2225,15 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                   : "border-zinc-800",
               )}
             >
-              {/* Tabs shrink then scroll; "+"/toggle (below) stay pinned
-                  OUTSIDE this scroll region so launch + oversight are never
-                  scrolled away (design §4a: "never wrap, never hide the '+'"). */}
-              <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-              {sessions.map((entry, index) => {
+              {/* Tabs shrink then scroll; "+"/toggle (stripControls below)
+                  stay pinned OUTSIDE the scroll region(s) so launch +
+                  oversight are never scrolled away (design §4a: "never wrap,
+                  never hide the '+'"). While split actually renders, the
+                  strip lays out as TWO half-width groups so each pane's tab
+                  sits directly above its own terminal (task c108ae4a) — the
+                  grouping decision is splitTabGroups (split-view.ts). */}
+              {(() => {
+              const renderTab = (entry: SessionEntry, index: number) => {
                 const summary = summaries[entry.key];
                 const status = summary?.status ?? "idle";
                 const poppedOut = poppedOutKeys.has(entry.key);
@@ -2438,14 +2443,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                     )}
                   </DraggableTab>
                 );
-              })}
-              </div>
-              {/* Split view toggle (design §1 "immediately left of the
-                  existing '+'"): visible whenever tabs themselves are —
-                  never a disabled dead button (no trapping dialogs — the
-                  toggle always does something, even below the width floor,
-                  where pressing it stores the preference and shows the
-                  amber notice instead of silently failing). */}
+              };
+              // Split view toggle (design §1 "immediately left of the
+              // existing '+'"): visible whenever tabs themselves are — never
+              // a disabled dead button (no trapping dialogs — the toggle
+              // always does something, even below the width floor, where
+              // pressing it stores the preference and shows the amber notice
+              // instead of silently failing). The "+" rides with it; the
+              // pair pins at the strip's far right in both layouts.
+              const stripControls = (
+                <>
               <button
                 type="button"
                 aria-pressed={splitPreferred === true}
@@ -2472,6 +2479,38 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
               >
                 <Plus className="h-4 w-4" />
               </button>
+                </>
+              );
+              if (!splitActive) {
+                return (
+                  <>
+                    <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">{sessions.map(renderTab)}</div>
+                    {stripControls}
+                  </>
+                );
+              }
+              const groups = splitTabGroups(
+                sessions.map((s) => s.key),
+                splitAssignment,
+              );
+              return (
+                <>
+                  <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
+                    {sessions.map((entry, index) => (groups.left.includes(entry.key) ? renderTab(entry, index) : null))}
+                  </div>
+                  {/* The right half mirrors the pane boundary below exactly:
+                      both halves are flex-1 of the same strip, matching the
+                      two flex-1 panes — the controls live INSIDE this half so
+                      they don't shift the midpoint. */}
+                  <div className="flex min-w-0 flex-1 items-stretch border-l border-zinc-800">
+                    <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
+                      {sessions.map((entry, index) => (groups.right.includes(entry.key) ? renderTab(entry, index) : null))}
+                    </div>
+                    {stripControls}
+                  </div>
+                </>
+              );
+              })()}
             </div>
             </>
           )}

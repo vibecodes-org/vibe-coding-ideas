@@ -5,6 +5,7 @@ import {
   reconcileSplitAssignment,
   applyTabClickToSplit,
   applyDropToSplit,
+  splitTabGroups,
   resolveWidthFloor,
   isMobileViewport,
   isSplitRenderable,
@@ -134,6 +135,23 @@ describe("applyDropToSplit", () => {
     const result = applyDropToSplit({ left: "a", right: "b" }, "left", "b", null);
     expect(result.assignment.right).not.toBe("b");
     expect(result.assignment).toEqual({ left: "b", right: null });
+  });
+});
+
+describe("splitTabGroups (task c108ae4a — each pane's tab above its own terminal)", () => {
+  it("puts the right pane's tab alone in the right group, everything else left", () => {
+    expect(splitTabGroups(["a", "b"], { left: "a", right: "b" })).toEqual({ left: ["a"], right: ["b"] });
+  });
+
+  it("keeps un-paned tabs (3rd session, popped-out) in the LEFT group, in strip order", () => {
+    expect(splitTabGroups(["a", "b", "c", "d"], { left: "b", right: "d" })).toEqual({
+      left: ["a", "b", "c"],
+      right: ["d"],
+    });
+  });
+
+  it("follows a swapped assignment — strip order does not dictate the side", () => {
+    expect(splitTabGroups(["a", "b"], { left: "b", right: "a" })).toEqual({ left: ["b"], right: ["a"] });
   });
 });
 
