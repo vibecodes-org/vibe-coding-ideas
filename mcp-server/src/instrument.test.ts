@@ -339,6 +339,85 @@ describe("instrumentServer", () => {
     // No error thrown — backward compatible
   });
 
+  // MCP usage steering (docs/mcp-usage-steering-design.html §6a): session_id
+  // ties log rows into per-session sequences for the admin re-read queries.
+  // Populated from ctx.sessionId when present, null otherwise — never blocks
+  // or throws, matching the rest of this fire-and-forget log entry.
+  it("logs session_id from ctx.sessionId when present", async () => {
+    const { server, registeredTools } = createMockServer();
+    const logEntries: ToolLogEntry[] = [];
+    const ctxWithSession: McpContext = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: {} as any,
+      userId: "user-123",
+      ownerUserId: "owner-456",
+      sessionId: "remote:jwt-session-abc",
+    };
+
+    const instrumented = instrumentServer(
+      server,
+      () => ctxWithSession,
+      (entry) => logEntries.push(entry),
+      "remote"
+    );
+
+    const handler = vi.fn(async () => ({ content: [] }));
+    instrumented.tool("session_tool", "desc", {}, handler);
+
+    await registeredTools.get("session_tool")!({}, {});
+
+    expect(logEntries[0].session_id).toBe("remote:jwt-session-abc");
+  });
+
+  it("logs session_id as null when ctx.sessionId is absent", async () => {
+    const { server, registeredTools } = createMockServer();
+    const logEntries: ToolLogEntry[] = [];
+
+    const instrumented = instrumentServer(
+      server,
+      () => mockContext, // mockContext has no sessionId
+      (entry) => logEntries.push(entry),
+      "stdio"
+    );
+
+    const handler = vi.fn(async () => ({ content: [] }));
+    instrumented.tool("no_session_tool", "desc", {}, handler);
+
+    await registeredTools.get("no_session_tool")!({}, {});
+
+    expect(logEntries[0].session_id).toBeNull();
+  });
+
+  it("logs session_id on the error path too", async () => {
+    const { server, registeredTools } = createMockServer();
+    const logEntries: ToolLogEntry[] = [];
+    const ctxWithSession: McpContext = {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      supabase: {} as any,
+      userId: "user-123",
+      sessionId: "stdio:bot-user-1",
+    };
+
+    const instrumented = instrumentServer(
+      server,
+      () => ctxWithSession,
+      (entry) => logEntries.push(entry),
+      "stdio"
+    );
+
+    const handler = vi.fn(async () => {
+      throw new Error("Tool failed");
+    });
+    instrumented.tool("failing_session_tool", "desc", {}, handler);
+
+    await expect(
+      registeredTools.get("failing_session_tool")!({}, {})
+    ).rejects.toThrow("Tool failed");
+
+    expect(logEntries[0].session_id).toBe("stdio:bot-user-1");
+    expect(logEntries[0].is_error).toBe(true);
+  });
+
   it("does not break tool execution if context resolution fails", async () => {
     const { server, registeredTools } = createMockServer();
     const logEntries: ToolLogEntry[] = [];

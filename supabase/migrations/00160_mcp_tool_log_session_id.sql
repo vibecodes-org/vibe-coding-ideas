@@ -1,0 +1,72 @@
+-- MCP usage steering (docs/mcp-usage-steering-design.html §6) — the
+-- steering copy (server instructions, tool descriptions, response
+-- reminders) tells a connected agent to re-read board tools instead of a
+-- stale transcript, but per the Requirements non-goal there is no client-side
+-- enforcement. This column is the admin-facing measurement half: it ties
+-- mcp_tool_log rows into per-session sequences so re-read behaviour — and its
+-- absence — becomes queryable.
+--
+-- Additive, nullable, no backfill: existing rows simply read as
+-- "unattributed" (mirrors the claude_session_id pattern in
+-- 00157_terminal_sessions_claude_session_id.sql). Populated by
+-- mcp-server/src/instrument.ts from McpContext.sessionId, which both
+-- transports already set — remote derives it from the caller's JWT
+-- (per-connection), stdio uses a static `stdio:<bot_user_id>` for the
+-- install's whole process life (design doc §7a discrepancy 2: precise
+-- per-session granularity on remote, per-install on stdio — the `mode`
+-- column on this table disambiguates which one a row is).
+alter table public.mcp_tool_log
+  add column session_id text null;
+
+-- Two admin queries this column enables (Supabase Studio / SQL editor —
+-- deliberately no dashboard, per the Requirements non-goal):
+--
+-- Q1 · Per-session tool mix, last 7 days. Healthy sessions re-read the board
+-- throughout a session; a session whose board reads all cluster at the start
+-- then stop while other calls continue is the transcript-re-parsing
+-- signature.
+--
+--   select
+--     session_id,
+--     mode,
+--     min(created_at)  as session_start,
+--     max(created_at)  as last_call,
+--     count(*)         as total_calls,
+--     count(*) filter (where tool_name in ('get_board','get_task','get_my_tasks'))
+--                      as board_reads,
+--     max(created_at) filter (where tool_name in ('get_board','get_task','get_my_tasks'))
+--                      as last_board_read
+--   from mcp_tool_log
+--   where session_id is not null
+--     and created_at > now() - interval '7 days'
+--   group by session_id, mode
+--   order by session_start desc;
+--
+-- Q2 · Stale-acting mutations: board writes made more than 10 minutes after
+-- the session's most recent board read (or with no prior read at all). These
+-- are the moments the steering failed — the direct measure of bypass.
+--
+--   with calls as (
+--     select
+--       session_id, tool_name, created_at,
+--       max(created_at) filter (where tool_name in ('get_board','get_task','get_my_tasks'))
+--         over (partition by session_id order by created_at
+--               rows between unbounded preceding and 1 preceding) as last_board_read
+--     from mcp_tool_log
+--     where session_id is not null
+--       and created_at > now() - interval '7 days'
+--   )
+--   select session_id, tool_name, created_at,
+--          created_at - last_board_read as read_staleness
+--   from calls
+--   where tool_name in ('move_task','update_task','complete_step',
+--                       'claim_next_step','fail_step','approve_step')
+--     and (last_board_read is null
+--          or created_at - last_board_read > interval '10 minutes')
+--   order by created_at desc;
+--
+-- The 10-minute threshold in Q2 is a starting heuristic, tuned by the admin
+-- in the query text itself.
+--
+-- No RLS changes needed: mcp_tool_log's existing policies already cover
+-- every column on the row.

@@ -5,11 +5,12 @@ import { supabase, BOT_USER_ID, OWNER_USER_ID } from "./supabase";
 import { registerTools } from "./register-tools";
 import { instrumentServer } from "./instrument";
 import { getStdioAttachmentContext } from "./attachment-context-stdio";
+import { SERVER_INSTRUCTIONS } from "./steering-copy";
 import type { McpContext } from "./context";
 
 const server = new McpServer(
   { name: "vibecodes-local", version: "1.0.0" },
-  { capabilities: { tools: {} } }
+  { capabilities: { tools: {} }, instructions: SERVER_INSTRUCTIONS }
 );
 
 // Ambient identity retired (docs/agent-voice-comments-design.html §4.1):

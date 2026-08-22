@@ -220,10 +220,28 @@ import {
   getNewIdeaEnhancementPrompt,
   getNewIdeaEnhancementPromptSchema,
 } from "./tools/new-idea-enhance";
+import { LIVE_DATA_SENTENCE, RESPONSE_REMINDER } from "./steering-copy";
 
-function jsonResult(data: unknown) {
+/**
+ * `{ live: true }` stamps a freshness envelope (design doc §4, Surface C):
+ * `generated_at` first key, payload spread, `RESPONSE_REMINDER` as `_reminder`
+ * last key. Opt-in and used by exactly get_board, get_task, and get_my_tasks
+ * — not applied blanket across all 85 tools (design doc §7a discrepancy 3).
+ * Only plain-object payloads are stamped; arrays/primitives pass through
+ * untouched. Spread order lets a tool's own `generated_at` win.
+ */
+export function jsonResult(data: unknown, opts?: { live: true }) {
+  const payload =
+    opts?.live && typeof data === "object" && data !== null && !Array.isArray(data)
+      ? {
+          generated_at: new Date().toISOString(),
+          ...(data as Record<string, unknown>),
+          _reminder: RESPONSE_REMINDER,
+        }
+      : data;
+
   return {
-    content: [{ type: "text" as const, text: JSON.stringify(data, null, 2) }],
+    content: [{ type: "text" as const, text: JSON.stringify(payload, null, 2) }],
   };
 }
 
@@ -320,12 +338,12 @@ export function registerTools(
 
   server.tool(
     "get_board",
-    "Get kanban board overview: columns with compact task summaries. Present this data directly to the user — NEVER write scripts to parse it. Use get_task for full task details. Use column_ids or column_names to fetch specific columns. Excludes done columns by default.",
+    `Get kanban board overview: columns with compact task summaries. Use get_task for full task details. Use column_ids or column_names to fetch specific columns. Excludes done columns by default. ${LIVE_DATA_SENTENCE}`,
     getBoardSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
         const ctx = await getContext(extra);
-        return jsonResult(await getBoard(ctx, getBoardSchema.parse(args)));
+        return jsonResult(await getBoard(ctx, getBoardSchema.parse(args)), { live: true });
       } catch (e) {
         return errorResult(e);
       }
@@ -334,12 +352,12 @@ export function registerTools(
 
   server.tool(
     "get_task",
-    "Get single task detail including workflow steps, comments, and recent activity. If the task has a workflow with pending steps, follow the workflow_instruction in the response — use claim_next_step to execute steps sequentially rather than implementing directly. Each workflow step carries its own `comments` array — the step's latest discussion, failure reports, and approval notes (newest first, max 10; type 'output' mirrors are excluded because the step's `output` field is canonical). If a step's `comments_truncated` is true, older comments exist beyond the 10 returned; `comment_count` is a raw total that also counts hidden output-mirror rows, so never compare it to comments.length — the full thread is visible in the web UI.",
+    `Get single task detail including workflow steps, comments, and recent activity. If the task has a workflow with pending steps, follow the workflow_instruction in the response — use claim_next_step to execute steps sequentially rather than implementing directly. Each workflow step carries its own \`comments\` array — the step's latest discussion, failure reports, and approval notes (newest first, max 10; type 'output' mirrors are excluded because the step's \`output\` field is canonical). If a step's \`comments_truncated\` is true, older comments exist beyond the 10 returned; \`comment_count\` is a raw total that also counts hidden output-mirror rows, so never compare it to comments.length — the full thread is visible in the web UI. ${LIVE_DATA_SENTENCE}`,
     getTaskSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
         const ctx = await getContext(extra);
-        return jsonResult(await getTask(ctx, getTaskSchema.parse(args)));
+        return jsonResult(await getTask(ctx, getTaskSchema.parse(args)), { live: true });
       } catch (e) {
         return errorResult(e);
       }
@@ -348,12 +366,12 @@ export function registerTools(
 
   server.tool(
     "get_my_tasks",
-    "Get tasks assigned to the bot (Claude Code), grouped by idea. Excludes done/archived by default.",
+    `Get tasks assigned to the bot (Claude Code), grouped by idea. Excludes done/archived by default. ${LIVE_DATA_SENTENCE}`,
     getMyTasksSchema.shape,
     async (args: Record<string, unknown>, extra: ServerExtra) => {
       try {
         const ctx = await getContext(extra);
-        return jsonResult(await getMyTasks(ctx, getMyTasksSchema.parse(args)));
+        return jsonResult(await getMyTasks(ctx, getMyTasksSchema.parse(args)), { live: true });
       } catch (e) {
         return errorResult(e);
       }
