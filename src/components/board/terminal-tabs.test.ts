@@ -4,12 +4,14 @@ import {
   isLiveTabStatus,
   deriveTabLabel,
   findPristineSlot,
+  findReclaimableEndedSlot,
   decideTaskLaunch,
   summarizeSessionStatuses,
   shouldAnnounceAttention,
   formatAttentionAnnouncement,
   type DedupeCandidate,
   type PristineCandidate,
+  type ReclaimCandidate,
 } from "./terminal-tabs";
 import type { TerminalStatus } from "@/lib/terminal/connection";
 
@@ -160,6 +162,60 @@ describe("findPristineSlot (first-launch reuse)", () => {
   it("never reuses a chooser-attach entry, even at launchSeq 0 (card cbe60db5)", () => {
     const sessions: PristineCandidate[] = [{ key: "s1", launchSeq: 0, hasAttach: true }];
     expect(findPristineSlot(sessions)).toBeNull();
+  });
+});
+
+describe("findReclaimableEndedSlot (ended-tab reclaim, card df29b85e)", () => {
+  it("reclaims the tab whose sessionId matches the resume target, when it's ended", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "session-ended", sessionId: "sid-1", poppedOut: false },
+    ];
+    expect(findReclaimableEndedSlot(candidates, "sid-1")).toBe("s1");
+  });
+
+  it("refuses a matching tab that's still live", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "connected", sessionId: "sid-1", poppedOut: false },
+    ];
+    expect(findReclaimableEndedSlot(candidates, "sid-1")).toBeNull();
+  });
+
+  it("refuses a matching tab that's popped out, even though its last-known status reads session-ended", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "session-ended", sessionId: "sid-1", poppedOut: true },
+    ];
+    expect(findReclaimableEndedSlot(candidates, "sid-1")).toBeNull();
+  });
+
+  it("falls through to append when the target sid matches no local tab", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "session-ended", sessionId: "sid-2", poppedOut: false },
+    ];
+    expect(findReclaimableEndedSlot(candidates, "sid-1")).toBeNull();
+  });
+
+  it("never reclaims arbitrarily when no target sid is given — always append", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "session-ended", sessionId: "sid-1", poppedOut: false },
+    ];
+    expect(findReclaimableEndedSlot(candidates, undefined)).toBeNull();
+    expect(findReclaimableEndedSlot(candidates, null)).toBeNull();
+  });
+
+  it("refuses a matching tab whose status is error, not session-ended (only a genuinely-ended tab is reclaimable)", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "error", sessionId: "sid-1", poppedOut: false },
+    ];
+    expect(findReclaimableEndedSlot(candidates, "sid-1")).toBeNull();
+  });
+
+  it("picks the matching tab out of several others", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "connected", sessionId: "sid-other", poppedOut: false },
+      { key: "s2", status: "session-ended", sessionId: "sid-1", poppedOut: false },
+      { key: "s3", status: "session-ended", sessionId: "sid-3", poppedOut: false },
+    ];
+    expect(findReclaimableEndedSlot(candidates, "sid-1")).toBe("s2");
   });
 });
 

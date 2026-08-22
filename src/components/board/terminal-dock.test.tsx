@@ -158,6 +158,32 @@ vi.mock("./terminal-session-view", () => ({
         >
           report ended
         </button>
+        {/* Card df29b85e regression test (ended-tab reclaim): `report-ended`
+            above reports a per-key sid (`sid-for-${entry.key}`), which never
+            lines up with THIS tab's own "Resume this conversation" button —
+            that button always fires the fixed "sid-ended-own-tab" (mirrors
+            the real ended panel's `pair.sessionId`, a single tab's own last
+            session, not derived from its dock key). A dedicated button
+            reports the matching sid so a test can put this tab into the
+            exact state `mintAndDeliver`'s reclaim check needs before
+            clicking Resume. */}
+        <button
+          data-testid={`report-ended-own-sid-${entry.key}`}
+          onClick={() =>
+            onReportSummary(entry.key, {
+              status: "session-ended",
+              sessionId: "sid-ended-own-tab",
+              errorKind: null,
+              launchPhase: "idle",
+              platformSupported: true,
+              paired: true,
+              browserToken: null,
+              readOnly: false,
+            })
+          }
+        >
+          report ended (own sid)
+        </button>
         {/* Lets a test drive this tab to a real MINTED-and-connected status —
             `handlePopOut` (terminal-dock.tsx) bails out silently unless the
             summary carries both a sessionId and a browserToken, so the
@@ -1095,8 +1121,42 @@ describe("TerminalDock — cross-board resume (bug 62e57071)", () => {
 
     expect(mockRouterPush).not.toHaveBeenCalled();
     // A genuine local mint happened (never a silent no-op) — this board's
-    // own dock delivered the resume itself instead of navigating away.
+    // own dock delivered the resume itself instead of navigating away. This
+    // test never puts the tab into a reported "ended" state (see the
+    // dedicated reclaim test just below for that), so mintAndDeliver's
+    // reclaim check can't match and it falls through to appending — the
+    // pristine slot was already used by the `requestBrowserLaunch` above,
+    // so this is a genuine 2nd tab.
     await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+  });
+
+  // Card df29b85e (field report 22 Aug 2026): "Resuming an ended terminal
+  // session correctly mints a NEW session, but the dock always opens it in a
+  // NEW tab, leaving the dead tab behind." Same setup as the test just
+  // above — same-board resume — but this one first drives the tab into a
+  // reported "session-ended" state with the SAME sid the "Resume this
+  // conversation" button fires (`report-ended-own-sid-${key}`, see the stub's
+  // doc), so `mintAndDeliver`'s ended-tab reclaim (`findReclaimableEndedSlot`)
+  // has what it needs to take this exact tab over instead of appending a
+  // sibling next to it.
+  it("an already-mounted tab's own Resume reclaims that SAME tab in place — never leaves the dead tab behind (card df29b85e)", async () => {
+    stubFetch(Promise.resolve([]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    act(() => {
+      requestBrowserLaunch({ ideaId: "idea-1" });
+    });
+    await waitFor(() => expect(screen.getByTestId("session-view").dataset.ideaId).toBe("idea-1"));
+
+    const key = screen.getByTestId("session-view").dataset.key;
+    fireEvent.click(screen.getByTestId(`report-ended-own-sid-${key}`));
+    fireEvent.click(screen.getByTestId(`resume-ended-${key}`));
+
+    // Still exactly one tab, and it's the SAME tab (same key) — reclaimed in
+    // place, not replaced by a new one leaving the ended tab behind.
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
+    expect(screen.getByTestId("session-view").dataset.key).toBe(key);
   });
 });
 
