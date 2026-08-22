@@ -20,19 +20,27 @@ class ResizeObserverStub {
 
 const mockGetForAdmin = vi.fn();
 const mockUpdate = vi.fn();
+const mockGetTerminalForAdmin = vi.fn();
+const mockUpdateTerminal = vi.fn();
 
 vi.mock("@/actions/admin-platform", () => ({
   getPlatformModelDefaultsForAdmin: () => mockGetForAdmin(),
   updatePlatformModelDefaults: (input: unknown) => mockUpdate(input),
+  getPlatformTerminalModelDefaultForAdmin: () => mockGetTerminalForAdmin(),
+  updatePlatformTerminalModelDefault: (model: string | null) => mockUpdateTerminal(model),
 }));
 
 vi.mock("@/hooks/use-platform-model-defaults", () => ({
   setPlatformModelDefaultsCache: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-platform-terminal-model-default", () => ({
+  setPlatformTerminalModelDefaultCache: vi.fn(),
+}));
+
 vi.mock("sonner", () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
-import { AdminPlatformDashboard } from "./admin-platform-dashboard";
+import { AdminPlatformDashboard, AdminTerminalModelCard } from "./admin-platform-dashboard";
 import { SEED_PLATFORM_MODEL_DEFAULTS } from "@/lib/platform-model-defaults";
 import { toast } from "sonner";
 
@@ -174,6 +182,151 @@ describe("AdminPlatformDashboard", () => {
 
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Super admin access required"));
     // Staged (seed) values are retained — Save is still enabled for a retry.
+    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+  });
+});
+
+describe("AdminTerminalModelCard (task c4ca2d95 — binding: no seed)", () => {
+  it("renders the denied state for a non-super-admin and never fetches", () => {
+    render(<AdminTerminalModelCard isSuperAdmin={false} />);
+
+    expect(screen.getByText("Super-admin access required")).toBeInTheDocument();
+    expect(mockGetTerminalForAdmin).not.toHaveBeenCalled();
+  });
+
+  it("shows 'nothing saved yet' (no seed pill) when no platform default has ever been set", async () => {
+    mockGetTerminalForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
+
+    render(<AdminTerminalModelCard isSuperAdmin />);
+
+    await waitFor(() => expect(screen.getByText(/Using the code default \(no model\) — nothing saved yet/)).toBeInTheDocument());
+    expect(screen.getByText(/No platform default \(nothing passed\)/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    // Clear is disabled too — there is nothing to clear.
+    expect(screen.getByRole("button", { name: "Clear" })).toBeDisabled();
+  });
+
+  it("shows the fetched value and audit line when a platform default is set", async () => {
+    mockGetTerminalForAdmin.mockResolvedValue({
+      value: "opus",
+      updatedBy: { id: "u1", full_name: "Nick Ball" },
+      updatedAt: "2026-07-20T00:00:00Z",
+    });
+
+    render(<AdminTerminalModelCard isSuperAdmin />);
+
+    await waitFor(() => expect(screen.getByText(/Last changed by/)).toBeInTheDocument());
+    expect(screen.getByText("Nick Ball")).toBeInTheDocument();
+    expect(screen.getByText("Opus")).toBeInTheDocument();
+  });
+
+  it("shows an error state with a Retry button when the fetch fails", async () => {
+    mockGetTerminalForAdmin.mockRejectedValueOnce(new Error("boom"));
+
+    render(<AdminTerminalModelCard isSuperAdmin />);
+
+    await waitFor(() => expect(screen.getByText(/Failed to load the terminal starting model/)).toBeInTheDocument());
+    expect(screen.getByRole("button", { name: "Retry" })).toBeInTheDocument();
+  });
+
+  it("'Clear' stages 'no platform default' locally (dirty, Save enabled) without saving", async () => {
+    mockGetTerminalForAdmin.mockResolvedValue({
+      value: "opus",
+      updatedBy: { id: "u1", full_name: "Nick Ball" },
+      updatedAt: "2026-07-20T00:00:00Z",
+    });
+
+    render(<AdminTerminalModelCard isSuperAdmin />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeDisabled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+
+    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+    expect(mockUpdateTerminal).not.toHaveBeenCalled();
+  });
+
+  it("blocks Save with role=alert on a structurally invalid custom value (AC-12), before any novel-value gate", async () => {
+    mockGetTerminalForAdmin.mockResolvedValue({
+      value: "opus-5.5",
+      updatedBy: null,
+      updatedAt: null,
+    });
+
+    render(<AdminTerminalModelCard isSuperAdmin />);
+    const input = await screen.findByLabelText("Starting model");
+    expect(input).toHaveValue("opus-5.5");
+
+    fireEvent.change(input, { target: { value: "opus 5!" } });
+
+    expect(screen.getByRole("alert")).toHaveTextContent(/space/i);
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByText(/Fix the model name to enable Save/)).toBeInTheDocument();
+  });
+
+  it("gates Save behind the novel-value confirm checkbox, then saves once confirmed", async () => {
+    mockGetTerminalForAdmin.mockResolvedValue({ value: "opus-5.5", updatedBy: null, updatedAt: null });
+
+    render(<AdminTerminalModelCard isSuperAdmin />);
+    const input = await screen.findByLabelText("Starting model");
+    expect(input).toHaveValue("opus-5.5");
+
+    fireEvent.change(input, { target: { value: "opus-5.6" } });
+
+    expect(screen.getByText(/isn't a known model alias/)).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Save" })).toBeDisabled();
+    expect(screen.getByText(/Confirm the checkbox above to enable Save/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+
+    mockUpdateTerminal.mockResolvedValue("opus-5.6");
+    mockGetTerminalForAdmin.mockResolvedValue({
+      value: "opus-5.6",
+      updatedBy: { id: "u1", full_name: "Nick Ball" },
+      updatedAt: "2026-07-25T00:00:00Z",
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(mockUpdateTerminal).toHaveBeenCalledWith("opus-5.6"));
+    await waitFor(() => expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("Opus-5.6")));
+  });
+
+  it("saves a Clear (null) as clearing back to unset, with distinct toast copy", async () => {
+    mockGetTerminalForAdmin.mockResolvedValue({
+      value: "opus",
+      updatedBy: { id: "u1", full_name: "Nick Ball" },
+      updatedAt: "2026-07-20T00:00:00Z",
+    });
+
+    render(<AdminTerminalModelCard isSuperAdmin />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Clear" })).not.toBeDisabled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    mockUpdateTerminal.mockResolvedValue(null);
+    mockGetTerminalForAdmin.mockResolvedValue({ value: null, updatedBy: null, updatedAt: null });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(mockUpdateTerminal).toHaveBeenCalledWith(null));
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(expect.stringContaining("cleared"))
+    );
+  });
+
+  it("shows a retryable error toast and keeps staged values when the save action throws", async () => {
+    mockGetTerminalForAdmin.mockResolvedValue({ value: "opus", updatedBy: null, updatedAt: null });
+
+    render(<AdminTerminalModelCard isSuperAdmin />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Clear" })).not.toBeDisabled());
+
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
+
+    mockUpdateTerminal.mockRejectedValueOnce(new Error("Super admin access required"));
+    fireEvent.click(screen.getByRole("button", { name: "Save" }));
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith("Super admin access required"));
     expect(screen.getByRole("button", { name: "Save" })).not.toBeDisabled();
   });
 });
