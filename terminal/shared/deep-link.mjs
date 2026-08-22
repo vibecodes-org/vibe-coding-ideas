@@ -60,12 +60,29 @@
 //             or non-sane falls back to the bridge's pre-existing hardcoded
 //             default, exactly like before this field existed (no
 //             version-skew risk).
+//   model   — task c4ca2d95 ("Terminal starting model"): the resolved
+//             starting model for a FRESH session only (user override ->
+//             platform default -> omit, resolved server-side at mint time).
+//             The bridge appends `--model <value>` to the fresh-spawn CMD
+//             (terminal/bridge/src/resume-cmd.js) — NEVER on a resume/
+//             resumeId launch (AC-8: a resumed conversation keeps its own
+//             model; resolveClaudeLaunch's resume branches never read this
+//             field). Re-validated at parse time (isSafeModelValue below,
+//             mirrors src/lib/terminal/model-resolution.ts's
+//             validateTerminalModelValue) since it rides the bridge's
+//             shellSplit CMD string as a single token — a malformed value
+//             is rejected outright rather than forwarded, same posture as
+//             resume_id/cols/rows above. An old helper's bundled copy of
+//             this module simply never reads `model` off the URL (AC-13) —
+//             no version-skew risk, same as every other param here.
 //
 // `token` and `helperToken` are secrets and `prompt` is user content. NEVER log
-// a raw link — use redactDeepLinkToken first (it elides all three). `prompt` is
-// always the LAST param (the dock's URL-length budgeting relies on this — see
-// src/lib/terminal/deep-link.ts's doc comment) — `helperToken` is inserted
-// BEFORE it, alongside the other credentials, so that invariant holds.
+// a raw link — use redactDeepLinkToken first (it elides all three; `model` is
+// neither a secret nor free-form user content — a fixed alias/model id — so it
+// is deliberately left untouched by the redactor, same as relay/session). `prompt`
+// is always the LAST param (the dock's URL-length budgeting relies on this — see
+// src/lib/terminal/deep-link.ts's doc comment) — `helperToken`/`model` are
+// inserted BEFORE it, alongside the other credentials, so that invariant holds.
 //
 // Pure + dependency-free (only the global WHATWG `URL`), so it runs unchanged in
 // Node (bridge) and is trivially unit-testable.
@@ -90,8 +107,22 @@ function isValidLaunchDim(n) {
   return Number.isInteger(n) && n > 0 && n <= 1000;
 }
 
+/** Model value structural safety — mirrors src/lib/terminal/model-resolution.ts's
+ *  validateTerminalModelValue. Duplicated (not imported) to keep this module
+ *  dependency-free, same posture as UUID_RE/isValidLaunchDim above. Rejects
+ *  anything empty or containing whitespace or a shell metacharacter — the
+ *  model rides the bridge's shellSplit CMD string as a single token (see
+ *  terminal/bridge/src/resume-cmd.js), so a malformed value here would either
+ *  merge into an adjacent token or break tokenization; there is no safe
+ *  partial value, so it's rejected outright rather than forwarded.
+ *  @param {unknown} v
+ *  @returns {boolean} */
+function isSafeModelValue(v) {
+  return typeof v === "string" && v.length > 0 && !/[\s\]`$(){}<>\\'"*?~#!;&|[]/.test(v);
+}
+
 /**
- * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&prompt=…]`
+ * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&model=…][&prompt=…]`
  * deep link.
  *
  * Uses encodeURIComponent so reserved characters in the relay URL / token /
@@ -100,10 +131,10 @@ function isValidLaunchDim(n) {
  * (and therefore the app-side prompt budget) is stable. Throws when a required
  * field is missing so a malformed link is never fired.
  *
- * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number }} params
+ * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -127,6 +158,9 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   if (isValidLaunchDim(cols) && isValidLaunchDim(rows)) {
     parts.push(`cols=${cols}`, `rows=${rows}`);
   }
+  // Task c4ca2d95: inserted before `prompt` (which stays LAST — see the
+  // header comment) alongside the other optional non-secret params.
+  if (model) parts.push(`model=${encodeURIComponent(model)}`);
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
@@ -141,7 +175,7 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
  * param existed (version-skew safe both ways).
  *
  * @param {unknown} url
- * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number } | null}
+ * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string } | null}
  */
 export function parseLaunchDeepLink(url) {
   if (typeof url !== "string" || url.length === 0) return null;
@@ -178,6 +212,12 @@ export function parseLaunchDeepLink(url) {
   const parsedCols = rawCols === null ? NaN : Number(rawCols);
   const parsedRows = rawRows === null ? NaN : Number(rawRows);
   const dimsValid = isValidLaunchDim(parsedCols) && isValidLaunchDim(parsedRows);
+  // Task c4ca2d95: re-validated here exactly like resumeId/cols/rows above —
+  // it's about to ride the bridge's shellSplit CMD string as a bare token,
+  // so there is no safe partial value. An old helper's bundled copy of this
+  // parser simply never reads "model" at all (AC-13) — no version-skew risk.
+  const rawModel = parsed.searchParams.get("model");
+  const model = rawModel && isSafeModelValue(rawModel) ? rawModel : undefined;
   if (!relay || !session || !token) return null;
 
   const out = { relay, session, token };
@@ -189,6 +229,7 @@ export function parseLaunchDeepLink(url) {
     out.cols = parsedCols;
     out.rows = parsedRows;
   }
+  if (model) out.model = model;
   if (prompt) out.prompt = prompt;
   return out;
 }

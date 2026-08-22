@@ -37,15 +37,28 @@
 // terminal/shared/deep-link.mjs's build/parse precedence) — if a caller
 // somehow sets both, `resumeId` wins here too, for the same reason: it is
 // the verified-safe, exact path.
+//
+// `model` (task c4ca2d95, "Terminal starting model") is appended as
+// `--model <value>` ONLY on branch 4 (a genuinely fresh session) —
+// deliberately never read in branches 1-3. A resumed/continued conversation
+// keeps whatever model it was already running on; appending a model flag
+// there would be at best meaningless (`--continue`/`--resume` don't restart
+// the model) and at worst confusing. `model` already arrived pre-validated
+// (see index.js's LAUNCH_URL parse via the shared deep-link module's
+// isSafeModelValue, and the config-time validateTerminalModelValue upstream
+// of that) — it contains no whitespace or shell metacharacters, so it's
+// safe to embed directly in this shell-split CMD string as a single token,
+// identical in effect to appending it as a separate argv element.
 
 /**
- * @param {{ explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, mintId: () => string }} opts
+ * @param {{ explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, mintId: () => string }} opts
  * @returns {{ cmd: string, conv: string | null }}
  */
-export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, mintId }) {
+export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, mintId }) {
   if (explicitCmd) return { cmd: explicitCmd, conv: null };
   if (resumeId) return { cmd: `claude --resume ${resumeId}`, conv: resumeId };
   if (resume) return { cmd: "claude --continue", conv: null };
   const conv = mintId();
-  return { cmd: `claude --session-id ${conv}`, conv };
+  const modelFlag = model ? ` --model ${model}` : "";
+  return { cmd: `claude --session-id ${conv}${modelFlag}`, conv };
 }

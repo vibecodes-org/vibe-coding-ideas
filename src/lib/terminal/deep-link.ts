@@ -88,15 +88,29 @@ export interface LaunchDeepLinkParams {
    */
   cols?: number;
   rows?: number;
+  /**
+   * Task c4ca2d95 ("Terminal starting model") — the resolved starting model
+   * (user override -> platform default -> omit; resolved server-side at
+   * mint time, see src/app/api/terminal/session/route.ts) for a FRESH
+   * session only. Callers must never set this on a resume/resumeId launch
+   * (AC-8: a resumed conversation keeps its own model) — the fresh-launch
+   * call site in use-terminal-session.ts is the only one that threads it
+   * through. Rides as one argv element (`claude --model <value>`), never
+   * shell-split — see terminal/bridge/src/resume-cmd.js. Not a secret or
+   * user-free-text like `prompt`: redactDeepLinkToken leaves it untouched
+   * (AC-10).
+   */
+  model?: string;
 }
 
 /**
  * Build a `vibecodes://launch?relay=…&session=…&token=…[&helperToken=…]
- * [&cwd=…][&resume=1][&cols=…&rows=…][&prompt=…]` deep link. Throws when a
- * required field is missing so a malformed link is never fired. `prompt` is
- * always the LAST param so the base-link length (and therefore the prompt
- * budget) is stable — every other optional param, including `cols`/`rows`,
- * is inserted before it, alongside the other credentials.
+ * [&cwd=…][&resume=1][&cols=…&rows=…][&model=…][&prompt=…]` deep link. Throws
+ * when a required field is missing so a malformed link is never fired.
+ * `prompt` is always the LAST param so the base-link length (and therefore
+ * the prompt budget) is stable — every other optional param, including
+ * `cols`/`rows` and `model`, is inserted before it, alongside the other
+ * credentials.
  */
 export function buildLaunchDeepLink({
   relay,
@@ -109,6 +123,7 @@ export function buildLaunchDeepLink({
   resumeId,
   cols,
   rows,
+  model,
 }: LaunchDeepLinkParams): string {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
@@ -133,6 +148,9 @@ export function buildLaunchDeepLink({
   if (isValidLaunchDim(cols) && isValidLaunchDim(rows)) {
     parts.push(`cols=${cols}`, `rows=${rows}`);
   }
+  // Task c4ca2d95: inserted before `prompt` (which stays LAST — see the
+  // class doc comment) alongside the other optional non-secret params.
+  if (model) parts.push(`model=${encodeURIComponent(model)}`);
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
