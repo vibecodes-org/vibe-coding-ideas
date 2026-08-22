@@ -32,7 +32,7 @@
 // terminal-session-view.test.tsx and use-terminal-session.test.ts.
 
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { render, screen, cleanup, act, waitFor, fireEvent } from "@testing-library/react";
+import { render, screen, cleanup, act, waitFor, fireEvent, within } from "@testing-library/react";
 import { useEffect } from "react";
 import type {
   ChooserRegistryRow,
@@ -74,6 +74,32 @@ const { sessionViewMountSpy, sessionViewUnmountSpy } = vi.hoisted(() => ({
   sessionViewUnmountSpy: vi.fn(),
 }));
 
+// Task 9f30ae15 (wrong-tab-closes-on-confirm bug): the dock's real
+// `onRegisterActions` wiring is what `requestClose`'s confirmed click
+// actually calls (`actionsMapRef.current.get(key)?.end()`) — this was
+// previously never exercised by this file (the stub below dropped the prop
+// entirely), so the exact close-mapping path the bug lives in had zero
+// coverage. Registering a real per-key actions object here, keyed by the
+// same `entry.key` the dock itself uses, lets the close-mapping tests assert
+// EXACTLY which session's `end()` fired — full shape (not just `end`)
+// because other dock code paths (e.g. split-view focus's `refreshView`)
+// call other members of the SAME registered object.
+type MockTerminalSessionActions = {
+  connect: ReturnType<typeof vi.fn>;
+  beginBrowserLaunch: ReturnType<typeof vi.fn>;
+  launchFromBus: ReturnType<typeof vi.fn>;
+  reconnectNow: ReturnType<typeof vi.fn>;
+  end: ReturnType<typeof vi.fn>;
+  setReadOnly: ReturnType<typeof vi.fn>;
+  copyBridgeCommand: ReturnType<typeof vi.fn>;
+  refreshView: ReturnType<typeof vi.fn>;
+  serializeNow: ReturnType<typeof vi.fn>;
+  restoreBuffer: ReturnType<typeof vi.fn>;
+};
+const { registeredActionsByKey } = vi.hoisted(() => ({
+  registeredActionsByKey: new Map<string, MockTerminalSessionActions>(),
+}));
+
 // Renders just enough of a real TerminalSessionView for the test to see HOW
 // MANY tabs actually got minted, and with what payload — the real component
 // (and the hook underneath it) is exercised elsewhere. The `resume-ended-*`
@@ -91,6 +117,7 @@ vi.mock("./terminal-session-view", () => ({
     onBrowseSessions,
     onReportSummary,
     onPopOut,
+    onRegisterActions,
     paneFocused,
     grabFocus,
     onPaneFocusChange,
@@ -100,6 +127,11 @@ vi.mock("./terminal-session-view", () => ({
     onBrowseSessions?: () => void;
     onReportSummary: (key: string, summary: Record<string, unknown>) => void;
     onPopOut?: () => void;
+    // Task 9f30ae15: the real prop the dock always passes — wired here (not
+    // just accepted and dropped) so requestClose's `actionsMapRef.current
+    // .get(key)?.end()` has a real spy to resolve, keyed exactly like the
+    // dock keys it. See `registeredActionsByKey` above.
+    onRegisterActions: (key: string, actions: MockTerminalSessionActions | null) => void;
     // Split-view focus-sync defect fix (task df7a0134, QA rework): a real
     // focusable element stands in for xterm's own hidden input, so a test
     // can drive the SAME real focus/blur events the fix listens for (not
@@ -112,7 +144,25 @@ vi.mock("./terminal-session-view", () => ({
   }) => {
     useEffect(() => {
       sessionViewMountSpy(entry.key);
-      return () => sessionViewUnmountSpy(entry.key);
+      const actions: MockTerminalSessionActions = {
+        connect: vi.fn(),
+        beginBrowserLaunch: vi.fn(),
+        launchFromBus: vi.fn(),
+        reconnectNow: vi.fn(),
+        end: vi.fn(),
+        setReadOnly: vi.fn(),
+        copyBridgeCommand: vi.fn(),
+        refreshView: vi.fn(),
+        serializeNow: vi.fn(),
+        restoreBuffer: vi.fn(),
+      };
+      registeredActionsByKey.set(entry.key, actions);
+      onRegisterActions(entry.key, actions);
+      return () => {
+        sessionViewUnmountSpy(entry.key);
+        registeredActionsByKey.delete(entry.key);
+        onRegisterActions(entry.key, null);
+      };
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     return (
@@ -1552,5 +1602,229 @@ describe("TerminalDock — split view keyboard-focus sync (defect fix, task df7a
 
     expect(indicatorTextFor(other)).toBe("Typing here");
     expect(indicatorTextFor(focused)).toBe("Watching");
+  });
+});
+
+// Task 9f30ae15 (Nick's field report, 2026-08-22): with several tabs open,
+// confirming "End session?" on the tab he meant to close ended a DIFFERENT
+// one. The re-investigation proved the tab→session key mapping is correct —
+// `actionsMapRef.current.get(key)?.end()` (requestClose, terminal-dock.tsx)
+// always resolves the CLICKED tab's own session — and pinned the cause on
+// the confirm/rename UI's old `flex-1`/`max-w-[300px]` growth: arming
+// instantly reflowed the whole 110-190px tab strip, and since a click
+// resolves at MOUSEUP, that reflow could land the confirm click on a
+// NEIGHBOUR tab's button. The fix removes the growth entirely — arming and
+// renaming now cause zero layout shift, full stop — plus two secondary
+// hardenings (disarm on switching tabs, ~5s auto-expiry). These tests port
+// the investigation's close-mapping proof permanently and cover the new
+// zero-reflow invariant and the hardening behaviours.
+describe("TerminalDock — wrong-tab-closes-on-confirm fix (task 9f30ae15)", () => {
+  /** Mints 3 live tabs via the same chooser-overlay "Start new" flow
+   * `mintTwoSessions` (above) uses, one step further — a live-elsewhere row
+   * means the FIRST mint goes through the chooser, and every subsequent
+   * `requestBrowserLaunch()` re-opens it as an overlay over the already-open
+   * tab(s) rather than auto-minting silently, matching real multi-tab usage. */
+  async function mintThreeSessions(): Promise<[string, string, string]> {
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const firstKey = screen.getByTestId("session-view").dataset.key as string;
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(3));
+
+    const keys = screen.getAllByTestId("session-view").map((el) => el.dataset.key as string);
+    const [secondKey, thirdKey] = keys.filter((k) => k !== firstKey);
+    return [firstKey, secondKey, thirdKey];
+  }
+
+  function tabContainer(key: string): HTMLElement {
+    const el = document.getElementById(`terminal-tab-${key}`);
+    if (!el) throw new Error(`tab element not found for key ${key}`);
+    return el;
+  }
+
+  /** First × click — arms the confirm (never ends on its own). */
+  function armClose(key: string) {
+    fireEvent.click(within(tabContainer(key)).getByRole("button", { name: /^(End session and close tab|Close tab):/ }));
+  }
+
+  /** Second click, on an ALREADY-armed tab's ✓ — the actual end. */
+  function confirmClose(key: string) {
+    fireEvent.click(within(tabContainer(key)).getByRole("button", { name: /^Confirm end session:/ }));
+  }
+
+  function cancelArmedClose(key: string) {
+    fireEvent.click(within(tabContainer(key)).getByRole("button", { name: "Cancel" }));
+  }
+
+  it("closing the MIDDLE of 3 live tabs ends exactly that tab's session — arm+confirm never lands on a neighbour", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [keyA, keyB, keyC] = await mintThreeSessions();
+
+    // Captured before the close removes keyB's entry (and with it, its
+    // registry row) — the SAME spy instances requestClose's `end()` call
+    // must resolve to.
+    const endA = registeredActionsByKey.get(keyA)!.end;
+    const endB = registeredActionsByKey.get(keyB)!.end;
+    const endC = registeredActionsByKey.get(keyC)!.end;
+
+    armClose(keyB);
+    confirmClose(keyB);
+
+    expect(endB).toHaveBeenCalledTimes(1);
+    expect(endA).not.toHaveBeenCalled();
+    expect(endC).not.toHaveBeenCalled();
+
+    await waitFor(() => {
+      const remaining = screen.getAllByTestId("session-view").map((el) => el.dataset.key);
+      expect(remaining).toEqual(expect.arrayContaining([keyA, keyC]));
+      expect(remaining).not.toContain(keyB);
+    });
+  });
+
+  it("arming 'End session?' causes NO layout shift — the armed tab keeps its exact class list, siblings are untouched", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [keyA, keyB, keyC] = await mintThreeSessions();
+
+    const before = { a: tabContainer(keyA).className, b: tabContainer(keyB).className, c: tabContainer(keyC).className };
+
+    armClose(keyB);
+    expect(within(tabContainer(keyB)).getByText("End session?")).toBeInTheDocument();
+
+    // The invariant: zero layout shift for EVERY tab, including the armed
+    // one — jsdom can't measure pixels, so this asserts at the class list
+    // itself, which is what used to carry the growth (`flex-1`,
+    // `max-w-[300px]`) that reflowed the strip.
+    expect(tabContainer(keyA).className).toBe(before.a);
+    expect(tabContainer(keyB).className).toBe(before.b);
+    expect(tabContainer(keyC).className).toBe(before.c);
+    expect(tabContainer(keyB).className).not.toMatch(/flex-1|max-w-\[300px\]/);
+  });
+
+  it("opening the rename editor causes NO layout shift either — same invariant as arming close", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [keyA, keyB, keyC] = await mintThreeSessions();
+
+    // The pencil only renders on the ACTIVE tab (design §2) — whichever tab
+    // that is here, rename it and check every tab's class list.
+    const activeTab = screen.getByRole("tab", { selected: true });
+    const activeKey = activeTab.id.replace("terminal-tab-", "");
+    const before = { a: tabContainer(keyA).className, b: tabContainer(keyB).className, c: tabContainer(keyC).className };
+
+    fireEvent.click(within(activeTab).getByRole("button", { name: /^Rename session/ }));
+    expect(within(activeTab).getByLabelText("Session name")).toBeInTheDocument();
+
+    expect(tabContainer(keyA).className).toBe(before.a);
+    expect(tabContainer(keyB).className).toBe(before.b);
+    expect(tabContainer(keyC).className).toBe(before.c);
+    expect(tabContainer(activeKey).className).not.toMatch(/flex-1|max-w-\[300px\]/);
+  });
+
+  it("✕ cancels an armed confirm — the tab and its session both survive, untouched", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [, keyB] = await mintThreeSessions();
+    const endB = registeredActionsByKey.get(keyB)!.end;
+
+    armClose(keyB);
+    cancelArmedClose(keyB);
+
+    expect(endB).not.toHaveBeenCalled();
+    expect(within(tabContainer(keyB)).queryByText("End session?")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("session-view")).toHaveLength(3);
+  });
+
+  it("Escape on an armed tab cancels the confirm without ending the session", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [, keyB] = await mintThreeSessions();
+    const endB = registeredActionsByKey.get(keyB)!.end;
+
+    armClose(keyB);
+    fireEvent.keyDown(tabContainer(keyB), { key: "Escape", code: "Escape" });
+
+    expect(endB).not.toHaveBeenCalled();
+    expect(within(tabContainer(keyB)).queryByText("End session?")).not.toBeInTheDocument();
+    expect(screen.getAllByTestId("session-view")).toHaveLength(3);
+  });
+
+  it("activating a DIFFERENT tab disarms a stale confirm — the next click on the armed tab's × re-arms it, it does not end it", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [keyA, keyB] = await mintThreeSessions();
+    const endB = registeredActionsByKey.get(keyB)!.end;
+
+    armClose(keyB);
+    expect(within(tabContainer(keyB)).getByText("End session?")).toBeInTheDocument();
+
+    // Switching to a different tab — the exact secondary hazard the
+    // investigation flagged: a forgotten arm sitting behind the ×, ready to
+    // be mistaken for a fresh first click later.
+    fireEvent.click(tabContainer(keyA));
+    expect(within(tabContainer(keyB)).queryByText("End session?")).not.toBeInTheDocument();
+
+    // The next click on B's × is a FIRST click again (re-arm), not the
+    // confirming second click.
+    armClose(keyB);
+    expect(within(tabContainer(keyB)).getByText("End session?")).toBeInTheDocument();
+    expect(endB).not.toHaveBeenCalled();
+  });
+
+  it("an armed confirm auto-expires after ~5s if left untouched, disarming without ending the session", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [, keyB] = await mintThreeSessions();
+    const endB = registeredActionsByKey.get(keyB)!.end;
+
+    // Fake timers scoped to just the arm+expire step (every mint above
+    // already resolved its own real-timer waitFors) — this file has a
+    // flaky-timeout history, so real async work and fake-timer advances are
+    // kept apart rather than interleaved.
+    vi.useFakeTimers();
+    try {
+      armClose(keyB);
+      expect(within(tabContainer(keyB)).getByText("End session?")).toBeInTheDocument();
+
+      act(() => {
+        vi.advanceTimersByTime(5000);
+      });
+
+      expect(within(tabContainer(keyB)).queryByText("End session?")).not.toBeInTheDocument();
+      expect(endB).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("does not expire an armed confirm before ~5s has elapsed", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [, keyB] = await mintThreeSessions();
+
+    vi.useFakeTimers();
+    try {
+      armClose(keyB);
+      act(() => {
+        vi.advanceTimersByTime(4000);
+      });
+      expect(within(tabContainer(keyB)).getByText("End session?")).toBeInTheDocument();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

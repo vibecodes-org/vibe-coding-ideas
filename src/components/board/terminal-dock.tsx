@@ -1292,6 +1292,28 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   const cancelClose = useCallback(() => setConfirmingKey(null), []);
 
+  // Secondary hardening for the zero-reflow fix above (task 9f30ae15): an
+  // armed "End session?" is easy to leave behind — clear it the moment the
+  // user activates a DIFFERENT tab (mouse or keyboard), so a later click on
+  // that other tab's × can never land on an already-armed confirm. A no-op
+  // when `key` is the armed tab itself (arming, then re-clicking the same
+  // tab, must stay a confirm).
+  const disarmCloseIfSwitching = useCallback((key: string) => {
+    setConfirmingKey((current) => (current && current !== key ? null : current));
+  }, []);
+
+  // Belt-and-braces: an armed confirm auto-expires after ~5s so a forgotten
+  // arm can't sit live indefinitely. Re-arms/cancels reset the timer (the
+  // effect re-runs on every `confirmingKey` change, cleaning up the previous
+  // timer first); unmount clears it too. Deliberately NOT applied to
+  // `renamingKey` — an in-progress rename must never be cancelled out from
+  // under the user's typing.
+  useEffect(() => {
+    if (!confirmingKey) return;
+    const timer = setTimeout(() => setConfirmingKey(null), 5000);
+    return () => clearTimeout(timer);
+  }, [confirmingKey]);
+
   // ── tab rename (card 3bf262ac) ───────────────────────────────────────────────
   // Optimistic apply to THIS tab's own entry, persisted via the shared
   // `renameSession`; on failure, revert + a toast whose Retry re-attempts the
@@ -1968,6 +1990,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       } else if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
         setExpanded(true);
+        disarmCloseIfSwitching(key);
         // Split view: keyboard activation must reach the SAME pane-aware
         // decision the click handler does (§8 "keyboard reachability") — a
         // blind setActiveKey here would desync `activeKey` from whichever
@@ -1988,7 +2011,17 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         openTabRename(key);
       }
     },
-    [sessions, requestClose, confirmingKey, cancelClose, activeKey, openTabRename, splitActive, handleSplitTabClick],
+    [
+      sessions,
+      requestClose,
+      confirmingKey,
+      cancelClose,
+      activeKey,
+      openTabRename,
+      splitActive,
+      handleSplitTabClick,
+      disarmCloseIfSwitching,
+    ],
   );
 
   if (!enabled) return null;
@@ -2367,6 +2400,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                     onKeyDown={(e) => handleTabKeyDown(e, index, entry.key)}
                     onClick={() => {
                       setExpanded(true);
+                      disarmCloseIfSwitching(entry.key);
                       if (splitActive) handleSplitTabClick(entry.key);
                       else setActiveKey(entry.key);
                     }}
@@ -2374,18 +2408,19 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                       "flex min-w-[110px] max-w-[190px] flex-none cursor-pointer items-center gap-1.5 border-r border-t-2 border-zinc-800 border-t-transparent px-2.5 py-0 text-[12.5px] text-zinc-400",
                       isActive && "border-t-sky-400 bg-[#0c0c0e] font-semibold text-zinc-100",
                       !isActive && "hover:bg-zinc-800/60 hover:text-zinc-100",
-                      // Widen while renaming/confirming — "the tab widens to
-                      // its max width while editing so there's room to type"
-                      // (design §3a). Bounded, not unbounded: `max-w-none`
-                      // removed the cap entirely, so with few tabs open the
-                      // confirming/renaming tab grew to fill the ENTIRE
-                      // strip's leftover flex space (bug reported 2026-08-22
-                      // — "End session?" stretching across the screen with
-                      // ✓/✕ pushed to the far edge, and sibling tabs shoved
-                      // out of the visible strip). `flex-1` still lets it
-                      // grow to fit a name when there's room; the explicit
-                      // cap just stops it swallowing the whole row.
-                      (renaming || confirming) && "max-w-[300px] flex-1",
+                      // Deliberately NO width change while renaming/confirming.
+                      // This used to widen the armed tab (`max-w-[300px]
+                      // flex-1`, briefly `max-w-none`) "so there's room to
+                      // type"/read the confirm — but arming instantly reflows
+                      // the whole strip of 110-190px tabs, and a click resolves
+                      // at MOUSEUP: reflow between the arm click and the
+                      // confirm click lands the confirm on a NEIGHBOUR tab's
+                      // button (task 9f30ae15 — Nick clicked confirm on the
+                      // tab he intended and a different session died). The
+                      // fix is zero layout shift, full stop: the armed tab
+                      // keeps its exact box, and the confirm/rename controls
+                      // render inside it, truncating the label/input as
+                      // needed rather than growing the tab.
                     )}
                   >
                     {paneSide && (
