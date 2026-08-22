@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MCP Usage Steering — UX Design</title>
+<style>
+  :root {
+    --ink: #1a1d21;
+    --muted: #5b6470;
+    --line: #d9dee4;
+    --panel: #f5f7f9;
+    --accent: #0b6e4f;
+    --accent-soft: #e7f3ee;
+    --warn: #8a4b00;
+    --warn-soft: #fdf3e3;
+    --code-bg: #f0f2f5;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2.5rem 1.25rem 5rem;
+    background: #ffffff; color: var(--ink);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 62rem; margin: 0 auto; }
+  h1 { font-size: 1.75rem; line-height: 1.25; margin: 0 0 .25rem; }
+  h2 { font-size: 1.3rem; margin: 2.75rem 0 .75rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+  h3 { font-size: 1.05rem; margin: 1.75rem 0 .5rem; }
+  p, li { max-width: 58rem; }
+  .meta { color: var(--muted); font-size: .9rem; margin-bottom: 2rem; }
+  .meta code { font-size: .85em; }
+  code {
+    font-family: var(--mono); font-size: .875em;
+    background: var(--code-bg); padding: .1em .35em; border-radius: 4px;
+  }
+  pre {
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: 8px;
+    padding: 1rem; overflow-x: auto; font-size: .82rem; line-height: 1.5;
+  }
+  pre code { background: none; padding: 0; font-size: 1em; }
+  table { border-collapse: collapse; width: 100%; margin: 1rem 0; font-size: .9rem; }
+  th, td { border: 1px solid var(--line); padding: .5rem .65rem; text-align: left; vertical-align: top; }
+  th { background: var(--panel); font-weight: 600; }
+  .copyblock {
+    border: 1px solid var(--accent); border-left-width: 5px; border-radius: 8px;
+    background: var(--accent-soft); padding: 1rem 1.25rem; margin: 1rem 0;
+  }
+  .copyblock .label {
+    display: block; font-size: .75rem; font-weight: 700; letter-spacing: .05em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: .5rem;
+  }
+  .copyblock .text { font-family: var(--mono); font-size: .85rem; white-space: pre-wrap; }
+  .copyblock .note { font-size: .8rem; color: var(--muted); margin: .6rem 0 0; }
+  .callout {
+    border: 1px solid var(--warn); border-left-width: 5px; border-radius: 8px;
+    background: var(--warn-soft); padding: .85rem 1.1rem; margin: 1rem 0; font-size: .92rem;
+  }
+  .callout strong { color: var(--warn); }
+  /* flow diagram */
+  .flow { margin: 1.5rem 0; }
+  .flow-step {
+    display: grid; grid-template-columns: 9.5rem 1fr; gap: 1rem;
+    border: 1px solid var(--line); border-radius: 10px; padding: .9rem 1.1rem;
+    background: var(--panel); margin: 0;
+  }
+  .flow-step .when { font-weight: 700; font-size: .85rem; color: var(--accent); }
+  .flow-step .what { font-size: .9rem; }
+  .flow-step .what .surface { font-weight: 600; }
+  .flow-step .fail { font-size: .8rem; color: var(--warn); margin-top: .3rem; }
+  .flow-arrow { text-align: center; color: var(--muted); font-size: 1.1rem; line-height: 1.6; padding: .15rem 0; }
+  .flow-measure {
+    border: 1px dashed var(--muted); border-radius: 10px; padding: .9rem 1.1rem;
+    margin-top: 1rem; font-size: .9rem; color: var(--muted); background: #fff;
+  }
+  @media (max-width: 560px) { .flow-step { grid-template-columns: 1fr; gap: .35rem; } }
+  .kbd-count { font-size: .8rem; color: var(--muted); }
+  .toc { font-size: .9rem; columns: 2; column-gap: 2rem; }
+  @media (max-width: 560px) { .toc { columns: 1; } }
+</style>
+</head>
+<body>
+<main>
+
+<h1>MCP Usage Steering — UX Design</h1>
+<p class="meta">
+  Step 2 of 6 (UX Design) for board task <strong>MCP usage</strong> · task <code>b3b9be67</code> · idea <code>62e57071</code><br>
+  Builds on the completed Requirements step (US-1…US-4, AC-1.1–AC-4.3, five steering layers). Author: Compass (UX Designer) · 2026-08-22<br>
+  Grounded in: <code>mcp-server/src/register-tools.ts</code> (jsonResult, line 224), <code>mcp-server/src/index.ts</code>,
+  <code>src/app/api/mcp/[[...transport]]/route.ts</code>, <code>mcp-server/src/instrument.ts</code>, <code>src/lib/launch-claude-code.ts</code>
+</p>
+
+<h2 id="overview">1. Overview</h2>
+<p>
+  The "user" of this feature is almost always an AI agent, and its "screens" are strings: a server-level
+  instructions block, tool descriptions, JSON tool responses, and a launch prompt. The design problem is
+  therefore a <em>copy system</em>, not a screen system — the same rule ("board data is live; call the tool
+  again; never re-parse old output") must reach the agent at every moment it could go wrong, phrased
+  consistently enough that each encounter reinforces the last (<strong>recognition over recall</strong>),
+  and placed so that no single failure mode (truncation, context decay, a client that ignores server
+  instructions) removes every copy of the rule.
+</p>
+<p>
+  Four text surfaces carry the rule; one JSON envelope carries freshness metadata; one nullable column plus
+  two documented SQL queries make bypasses visible to the admin. Nothing here prevents bypass — per the
+  Requirements non-goal, this is layered steering plus measurement.
+</p>
+<p><strong>Design principles applied to agent-facing copy:</strong></p>
+<ul>
+  <li><strong>One vocabulary.</strong> Every surface reuses the same two clauses: <em>"call the tool again for current state"</em> and <em>"never re-read earlier output … or script-parse it"</em>. An agent that has seen any one surface recognises every other instantly (US-4).</li>
+  <li><strong>Say what to do before what not to do.</strong> Each surface leads with the positive action (call again), then the prohibition. Prohibition-only copy tells an agent what's wrong without offering the correct move.</li>
+  <li><strong>Redundancy by position, not repetition of bulk.</strong> Each layer is short; coverage comes from placement across the session timeline, not from any one layer being long.</li>
+  <li><strong>Metadata looks like metadata.</strong> <code>generated_at</code> and <code>_reminder</code> use names and positions that cannot be mistaken for board data (underscore prefix, first/last key positions), following the existing <code>workflow_instruction</code> precedent in <code>get_task</code>.</li>
+</ul>
+
+<h2 id="flow">2. How the rule reaches the agent — steering-layer flow</h2>
+<p>
+  Chronological path of one launched session, with each layer's failure mode. No layer is a single point of
+  failure; each later layer covers the decay of the one before it.
+</p>
+
+<div class="flow">
+  <div class="flow-step">
+    <div class="when">T0 · Terminal launch</div>
+    <div class="what">
+      <span class="surface">Surface D — launch-prompt directive.</span>
+      One sentence riding the <em>protected head</em> of the compact prompt (<code>essentialSteps</code>) and the
+      full prompt (<code>mcpSetupHead</code>) in <code>launch-claude-code.ts</code>.
+      <div class="fail">Failure mode: deep-link truncation → mitigated: <code>enforcePromptLength</code> trims only the tail; the head survives verbatim (US-2).</div>
+    </div>
+  </div>
+  <div class="flow-arrow">↓</div>
+  <div class="flow-step">
+    <div class="when">T1 · MCP handshake</div>
+    <div class="what">
+      <span class="surface">Surface A — server-level <code>instructions</code>.</span>
+      One shared constant sent by both transports at session init; the client injects it into the agent's system context.
+      <div class="fail">Failure modes: client ignores <code>instructions</code>; or a very long session pushes it out of effective attention → covered by C on every response.</div>
+    </div>
+  </div>
+  <div class="flow-arrow">↓</div>
+  <div class="flow-step">
+    <div class="when">T2 · Tool listing</div>
+    <div class="what">
+      <span class="surface">Surface B — harmonised description sentence</span> on <code>get_board</code>, <code>get_task</code>, <code>get_my_tasks</code>.
+      Read at the moment the agent chooses <em>whether</em> to call a tool — exactly when "just reuse the old output" is the tempting alternative.
+      <div class="fail">Failure mode: descriptions summarised/compressed by the client → key clauses are short enough to survive most summarisation; A and C still cover.</div>
+    </div>
+  </div>
+  <div class="flow-arrow">↓ (repeats on every read)</div>
+  <div class="flow-step">
+    <div class="when">T3 · Every tool response</div>
+    <div class="what">
+      <span class="surface">Surface C — <code>generated_at</code> (first key) + <code>_reminder</code> (last key)</span> stamped by the <code>jsonResult</code> choke point on the three board read tools.
+      The only layer immune to context decay: it re-arrives with every read, closest to where the agent acts next.
+      <div class="fail">Failure mode: a client caps huge outputs from the end → <code>generated_at</code> at the top still lands; A and B still cover.</div>
+    </div>
+  </div>
+  <div class="flow-measure">
+    <strong>Measurement (parallel, invisible to the agent):</strong> every call already logs to
+    <code>mcp_tool_log</code> fire-and-forget; the additive <code>session_id</code> column ties calls into
+    per-session sequences so the admin can see re-read behaviour — and its absence (US-3). See §6.
+  </div>
+</div>
+
+<h2 id="copy">3. Copy design — the four text surfaces</h2>
+<p>
+  The shared vocabulary, then each surface verbatim. Implementation note (for the next step, not this one):
+  surfaces A and B should live as exported constants in one new module
+  (suggested: <code>mcp-server/src/steering-copy.ts</code>) imported by both transports and by
+  <code>register-tools.ts</code>, so they cannot drift — the same single-source pattern
+  <code>buildCompactStepPieces</code> already uses for the launch prompt.
+</p>
+
+<table>
+  <tr><th>Canonical clause</th><th>Appears in</th><th>Job</th></tr>
+  <tr><td><em>"live and shared"</em> / <em>"changes live"</em></td><td>A, B, C, D</td><td>Frames <em>why</em> — data changes underneath the session (humans + other agents).</td></tr>
+  <tr><td><em>"call the tool again for current state"</em></td><td>A, B, C, D</td><td>The positive action, always first.</td></tr>
+  <tr><td><em>"never re-read earlier output"</em> (transcript)</td><td>A, B, C, D</td><td>Blocks the stale-transcript path.</td></tr>
+  <tr><td><em>"never … script-parse"</em></td><td>A, B, C, D</td><td>Blocks the parse-cached-JSON path (today only <code>get_board</code> says this).</td></tr>
+  <tr><td><em>"snapshot"</em> + <code>generated_at</code></td><td>A, C</td><td>Gives the agent a concrete, checkable freshness anchor.</td></tr>
+</table>
+
+<h3>3a. Surface A — server-level <code>instructions</code> (both transports)</h3>
+<div class="copyblock">
+  <span class="label">Proposed copy · constant SERVER_INSTRUCTIONS</span>
+  <div class="text">VibeCodes board data is live and shared: humans and other agents change it while your session runs. Every board tool response is a snapshot stamped with generated_at — treat it as already aging. Before acting on board state (choosing, moving, or completing anything), call the tool again for current state. Never re-read an earlier response from your transcript, never save responses to files for later, and never write scripts to parse tool output — present it directly. Tool calls are cheap; stale reads cause double-claimed tasks and lost work.</div>
+  <p class="note">5 sentences, ~560 chars. Ends on consequences ("double-claimed tasks, lost work") because agents weigh rules with stated stakes more heavily than bare imperatives. Delivery: stdio passes it in the <code>McpServer</code> options (<code>index.ts</code>); remote passes it through <code>createMcpHandler</code>'s server options (<code>route.ts</code>) — one imported constant, two call sites.</p>
+</div>
+
+<h3>3b. Surface B — harmonised tool-description sentence</h3>
+<div class="copyblock">
+  <span class="label">Proposed copy · constant LIVE_DATA_SENTENCE (appended to all three read-tool descriptions)</span>
+  <div class="text">Live shared data: call this tool again for current state before acting on it — never re-read an earlier response, save it for later, or script-parse this output; present it directly.</div>
+  <p class="note">~180 chars. Appended as the final sentence of each description so the tool-specific content stays first (information scent: the description's opening still answers "what does this tool return?").</p>
+</div>
+<p>Resulting descriptions (tool-specific text unchanged except where noted):</p>
+<table>
+  <tr><th>Tool</th><th>Change</th></tr>
+  <tr><td><code>get_board</code></td><td>Its existing sentence "Present this data directly to the user — NEVER write scripts to parse it." is <strong>replaced</strong> by <code>LIVE_DATA_SENTENCE</code> (which contains both clauses) — avoids saying the same thing twice in slightly different words, which reads as two different rules.</td></tr>
+  <tr><td><code>get_task</code></td><td><code>LIVE_DATA_SENTENCE</code> appended after the existing workflow/comments guidance.</td></tr>
+  <tr><td><code>get_my_tasks</code></td><td><code>LIVE_DATA_SENTENCE</code> appended (its current description is one line; the addition roughly doubles it, which is fine — it is the shortest of the three today).</td></tr>
+</table>
+
+<h3>3c. Surface C — the <code>_reminder</code> response field</h3>
+<div class="copyblock">
+  <span class="label">Proposed copy · constant RESPONSE_REMINDER (≤ 200 chars required)</span>
+  <div class="text">Snapshot from generated_at; the board changes live. Call the tool again for current state — never re-read this from your transcript or script-parse it.</div>
+  <p class="note kbd-count">151 characters — within the ≤200 budget with headroom for future tweaks. Names <code>generated_at</code> explicitly so the two envelope fields cross-reference each other: an agent that notices either one is pointed at the other.</p>
+</div>
+
+<h3>3d. Surface D — launch-prompt directive</h3>
+<div class="copyblock">
+  <span class="label">Proposed copy · one sentence, identical in compact and full prompts</span>
+  <div class="text">Board data is live and shared — always call the MCP tools again for current state; never re-read earlier output or script-parse it.</div>
+  <p class="note kbd-count">131 chars raw (~140 URL-encoded). Placement is the design: in the <em>compact</em> prompt it becomes a third entry in <code>essentialSteps</code> (the protected head assembled by <code>buildCompactStepPieces</code>); in the <em>full</em> prompts it becomes the closing line of <code>mcpSetupHead</code>. Both positions are preserved verbatim by <code>enforcePromptLength</code>, which only trims the tail (AC-2.x). Against the compact deep link's real budget (§7, discrepancy 1) ~140 encoded chars is a safe spend: the head is designed to sit well under the ceiling, and this is the shortest of the four surfaces precisely because it pays URL rent.</p>
+</div>
+
+<h2 id="shape">4. Response-shape design</h2>
+<p>
+  Both fields are stamped at the existing <code>jsonResult</code> choke point (register-tools.ts:224), but
+  <strong>opt-in per tool</strong>, not blanket: <code>jsonResult(data, { live: true })</code> from the three board
+  read handlers only. Rationale in §7 (discrepancy 3).
+</p>
+
+<h3>Placement rationale</h3>
+<ul>
+  <li><code>generated_at</code> is the <strong>first key</strong> — primacy. The agent reads the timestamp before the data it qualifies, so the payload arrives pre-framed as "a snapshot from <em>this</em> moment". It also survives clients that truncate long outputs from the end.</li>
+  <li><code>_reminder</code> is the <strong>last key</strong> — recency. It is the final thing in the agent's context before it acts on the response, which is exactly when the "reuse old output" shortcut would otherwise be taken. The underscore prefix visually marks it as envelope metadata, not board data, and cannot collide with any current or plausible future domain field.</li>
+  <li>Serialisation order is reliable: <code>JSON.stringify</code> preserves insertion order for string keys, so <code>{ generated_at, ...data, _reminder }</code> renders exactly as designed. If a tool's own payload ever defines <code>generated_at</code>, the spread lets the tool's value win (the tool knows its data better than the envelope); nothing today defines either key.</li>
+</ul>
+
+<h3>Before / after — <code>get_board</code> (abbreviated)</h3>
+<pre><code>// BEFORE — today's jsonResult output
+{
+  "columns": [
+    { "id": "c1", "name": "To Do", "tasks": [ /* … */ ] },
+    { "id": "c2", "name": "In Progress", "tasks": [ /* … */ ] }
+  ],
+  "excluded_done_columns": ["Done"]
+}
+
+// AFTER — jsonResult(data, { live: true })
+{
+  "generated_at": "2026-08-22T07:58:11Z",
+  "columns": [
+    { "id": "c1", "name": "To Do", "tasks": [ /* … */ ] },
+    { "id": "c2", "name": "In Progress", "tasks": [ /* … */ ] }
+  ],
+  "excluded_done_columns": ["Done"],
+  "_reminder": "Snapshot from generated_at; the board changes live. Call the tool again for current state — never re-read this from your transcript or script-parse it."
+}</code></pre>
+<p>
+  Defensive rule: the envelope is applied only when <code>data</code> is a plain (non-array) object — a tool
+  that ever returns an array or primitive through the same helper passes through untouched rather than being
+  re-wrapped into a different shape. Cost note: the envelope adds a fixed ~230 chars per response on three
+  tools; against a typical board payload of several KB this is noise, and it is why the envelope is opt-in
+  rather than applied to all 85 tools.
+</p>
+
+<h2 id="launch">5. The launch prompt — surviving truncation</h2>
+<p>
+  <code>launch-claude-code.ts</code> already has exactly the mechanism this needs: every prompt builder splits
+  into a load-bearing <em>head</em> (directory step + MCP connect + <code>record_project_path</code>) and a
+  trimmable <em>tail</em> (the work step), and <code>enforcePromptLength</code> guarantees the head survives
+  any cap. The design adds no new mechanism — it places the directive <em>inside the existing head</em>:
+</p>
+<ul>
+  <li><strong>Compact prompt</strong> (deep link / in-browser terminal, hard URL ceiling): directive appended to the <code>essentialSteps</code> array in <code>buildCompactStepPieces</code> — the array both budgeted builders already treat as untrimmable. It must <em>not</em> ride the tail or the optional <code>protocol</code>/<code>directoryEcho</code> blocks, which are exactly the parts dropped under pressure.</li>
+  <li><strong>Full prompts</strong> (copy-command, 5,000-encoded-char cap): directive as the closing line of <code>mcpSetupHead</code>, which both <code>buildBoardBootstrapPrompt</code> and <code>buildTaskBootstrapPrompt</code> place in the head.</li>
+  <li>The only case that can lose the directive is <code>enforcePromptLength</code>'s pathological head-trim branch, which its own doc notes never fires for real heads (~1k chars against ≥1,900 budgets). Accepted residual risk; surfaces A–C still cover such a session the moment it connects.</li>
+</ul>
+
+<h2 id="admin">6. The human touchpoint — admin measurement</h2>
+<p>
+  Per Requirements: no dashboard, no alerts. One additive migration, one line in the logger, two documented
+  queries the admin runs in Supabase Studio / SQL editor.
+</p>
+
+<h3>6a. Schema + logging (design sketch — implemented in a later step)</h3>
+<pre><code>-- additive, nullable, no backfill; existing rows read as "unattributed"
+alter table mcp_tool_log add column session_id text;
+-- optional, only if the §6b queries get slow at real volume:
+-- create index concurrently mcp_tool_log_session_created_idx
+--   on mcp_tool_log (session_id, created_at);</code></pre>
+<p>
+  <code>instrument.ts</code>: <code>ToolLogEntry</code> gains <code>session_id: string | null</code>, populated
+  with <code>ctx.sessionId ?? null</code> in both the success and error log paths. Fire-and-forget semantics
+  unchanged; a null never blocks an insert. Both transports already put a value on
+  <code>McpContext.sessionId</code> (remote: JWT <code>session_id</code> claim or token hash; stdio: static
+  <code>stdio:&lt;bot_user_id&gt;</code> — see §7, discrepancy 2), so no tool-side changes are needed.
+</p>
+
+<h3>6b. Documented admin queries</h3>
+<pre><code>-- Q1 · Per-session tool mix, last 7 days.
+-- Healthy sessions re-read the board throughout; a session whose board reads
+-- all cluster at the start then stop, while other calls continue, is the
+-- transcript-re-parsing signature.
+select
+  session_id,
+  mode,
+  min(created_at)  as session_start,
+  max(created_at)  as last_call,
+  count(*)         as total_calls,
+  count(*) filter (where tool_name in ('get_board','get_task','get_my_tasks'))
+                   as board_reads,
+  max(created_at) filter (where tool_name in ('get_board','get_task','get_my_tasks'))
+                   as last_board_read
+from mcp_tool_log
+where session_id is not null
+  and created_at &gt; now() - interval '7 days'
+group by session_id, mode
+order by session_start desc;</code></pre>
+<pre><code>-- Q2 · Stale-acting mutations: board writes made &gt; 10 minutes after the
+-- session's most recent board read (or with no prior read at all).
+-- These are the moments the steering failed — the direct US-3 measure.
+with calls as (
+  select
+    session_id, tool_name, created_at,
+    max(created_at) filter (where tool_name in ('get_board','get_task','get_my_tasks'))
+      over (partition by session_id order by created_at
+            rows between unbounded preceding and 1 preceding) as last_board_read
+  from mcp_tool_log
+  where session_id is not null
+    and created_at &gt; now() - interval '7 days'
+)
+select session_id, tool_name, created_at,
+       created_at - last_board_read as read_staleness
+from calls
+where tool_name in ('move_task','update_task','complete_step',
+                    'claim_next_step','fail_step','approve_step')
+  and (last_board_read is null
+       or created_at - last_board_read &gt; interval '10 minutes')
+order by created_at desc;</code></pre>
+<p>
+  The 10-minute threshold is a starting heuristic, tuned by the admin in the query text itself — deliberately
+  not a config value, since the query is the whole UI. Home for these snippets: a short
+  "Measuring MCP usage" section in the admin-facing docs alongside the existing MCP notes (exact page decided
+  at implementation; the queries above are the deliverable).
+</p>
+
+<h2 id="edge">7. Edge cases and discrepancies</h2>
+
+<h3>7a. Discrepancies with the Requirements doc (called out explicitly)</h3>
+<div class="callout">
+  <p><strong>1 · Deep-link cap is 1,900, not 2,048.</strong> Requirements cites a 2,048-char deep-link cap. The code's actual constants (<code>launch-claude-code.ts</code>): <code>MAX_DEEP_LINK_URL_LENGTH = 1900</code> — a full-URL ceiling kept under the strictest OS limit (Windows ShellExecute ≈ 2,083) — and <code>MAX_DEEP_LINK_PROMPT_LENGTH = 5000</code> (encoded prompt, copy-command path). This design budgets against the real 1,900 figure. No requirement is affected: the directive is head-protected either way.</p>
+  <p><strong>2 · stdio "sessions" are really installs.</strong> <code>index.ts</code> sets a static <code>STDIO_SESSION_ID = stdio:&lt;bot_user_id&gt;</code> for the process's whole life — and it is the same string across restarts of the same install. Per-session analysis (US-3) is therefore precise on the remote transport (per-connection JWT session claim) but degrades to per-install granularity on stdio. Q1's <code>mode</code> column makes the difference visible; fixing stdio granularity (e.g. a per-process random suffix) is a one-line option the Engineering step may take, but it is <em>not assumed</em> by this design.</p>
+  <p><strong>3 · "via the jsonResult choke point" is narrowed to opt-in.</strong> Requirements phrases layer 2 as flowing through the shared <code>jsonResult</code> helper. That helper serialises <em>all 85 tools</em>. Stamping everything would put a board-freshness reminder on unrelated responses (idea enhancement prompts, uploads, OAuth-adjacent flows) — noise that erodes the reminder's credibility and pays token rent everywhere. The design keeps the choke point (one implementation site) but gates it: <code>jsonResult(data, { live: true })</code> from exactly <code>get_board</code>, <code>get_task</code>, <code>get_my_tasks</code>. If Requirements intended blanket stamping, this is a deliberate deviation and should be settled at Design Review.</p>
+</div>
+
+<h3>7b. Edge-case table</h3>
+<table>
+  <tr><th>#</th><th>Edge case</th><th>Behaviour by design</th></tr>
+  <tr><td>1</td><td>Deep-link prompt truncated (URL ceiling hit)</td><td>Directive rides <code>essentialSteps</code> / <code>mcpSetupHead</code> — the head <code>enforcePromptLength</code> preserves verbatim; only the work tail trims. Residual: the pathological head-trim branch, which never fires at real head sizes (§5).</td></tr>
+  <tr><td>2</td><td>Client truncates a huge tool response</td><td>Truncation from the end loses <code>_reminder</code> but keeps <code>generated_at</code> (first key); surfaces A, B, D still stand. Two placements per response is deliberate redundancy.</td></tr>
+  <tr><td>3</td><td>Session with no usable session id</td><td>Remote always derives one (JWT claim, else token hash); stdio always has its static id. Column is nullable so any null path — including all pre-migration rows — degrades to "unattributed", never a failed insert; fire-and-forget logging untouched.</td></tr>
+  <tr><td>4</td><td>stdio vs remote instructions delivery</td><td>One shared constant, two delivery points: stdio via <code>McpServer</code> options, remote via <code>createMcpHandler</code> server options. A client that ignores <code>instructions</code> entirely still gets B (descriptions), C (every response), D (launch prompt).</td></tr>
+  <tr><td>5</td><td>Very long session — early instructions decay from effective context</td><td>By design, C is the decay-proof layer: it re-arrives on every board read, adjacent to the agent's next action. This is the core justification for paying its per-response token cost.</td></tr>
+  <tr><td>6</td><td>Agent bypasses MCP entirely (curl, raw SQL, cached file)</td><td>Copy cannot reach a call that never happens. Q2 makes the pattern visible (mutations with no/stale prior reads); per the Requirements non-goal, visibility — not prevention — is the contract.</td></tr>
+  <tr><td>7</td><td>Launch with no task/board context (bare MCP connect)</td><td>Surface D only exists on VibeCodes-built launch prompts; a hand-started session gets A at handshake, then B and C. No launch surface is assumed.</td></tr>
+  <tr><td>8</td><td>Field-name collisions with tool payloads</td><td><code>_reminder</code>: underscore-prefixed, cannot collide with domain data; envelope writes it last. <code>generated_at</code>: spread order lets a tool's own value win if one ever exists (none today). Non-object payloads bypass the envelope entirely.</td></tr>
+  <tr><td>9</td><td><code>get_task</code> already embeds steering (<code>workflow_instruction</code>)</td><td>Compatible precedent, not a conflict: <code>workflow_instruction</code> steers <em>what to do with this task</em>; <code>_reminder</code> steers <em>how to treat this response</em>. Distinct names, distinct positions, no wording overlap.</td></tr>
+</table>
+
+<h2 id="trace">8. Traceability — design elements → acceptance criteria</h2>
+<p>AC numbering per the Requirements step (AC-1.1–AC-4.3, grouped by user story).</p>
+<table>
+  <tr><th>Design element (this doc)</th><th>User story</th><th>ACs satisfied</th></tr>
+  <tr><td>§3a <code>SERVER_INSTRUCTIONS</code> shared constant, sent on both transports</td><td>US-1 fresh reads · US-4 consistency</td><td>AC-1.x (rule present from session start), AC-4.x (identical on stdio and remote)</td></tr>
+  <tr><td>§3b <code>LIVE_DATA_SENTENCE</code> on all three read tools</td><td>US-1 · US-4</td><td>AC-1.x (rule at decision point), AC-4.x (one sentence, three tools — closes today's get_board-only gap)</td></tr>
+  <tr><td>§3c + §4 <code>generated_at</code> first / <code>_reminder</code> last, ≤200 chars, opt-in at <code>jsonResult</code></td><td>US-1</td><td>AC-1.x (freshness metadata on every board read), AC-2/4 support (decay-proof repetition, identical wording each time)</td></tr>
+  <tr><td>§3d + §5 directive in the protected prompt head, ≤131 chars</td><td>US-2</td><td>AC-2.x (survives <code>enforcePromptLength</code> under the real 1,900 ceiling)</td></tr>
+  <tr><td>§6a <code>session_id</code> column + <code>instrument.ts</code> field (nullable, fire-and-forget preserved)</td><td>US-3</td><td>AC-3.x (per-session attribution without touching call latency or reliability)</td></tr>
+  <tr><td>§6b queries Q1 + Q2 (documented, no dashboard)</td><td>US-3</td><td>AC-3.x (bypass is measurable by the admin today, within the stated out-of-scope limits)</td></tr>
+  <tr><td>§3 shared vocabulary table (same clauses on A–D)</td><td>US-4</td><td>AC-4.x (every entry point states the same rule in the same words)</td></tr>
+</table>
+
+<h2 id="scope">9. Out of scope (reaffirmed from Requirements)</h2>
+<p>
+  No detection dashboards or alerts; no client-side enforcement; no TTL/expiry semantics on
+  <code>generated_at</code> (it is information, not a lease); no terminal-relay changes; no scrubbing of
+  step-output context; no edits to users' repos. Guaranteed prevention remains a non-goal — the measure of
+  success is that every path an agent takes carries the rule, and every bypass leaves a queryable trace.
+</p>
+
+</main>
+</body>
+</html>
