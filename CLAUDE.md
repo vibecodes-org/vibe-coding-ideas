@@ -145,7 +145,7 @@ claude --[node-pty PTY]--> BRIDGE --ws--> RELAY (CF Worker + DO) --ws--> BROWSER
 
 ## Database
 
-**157 migrations** in `supabase/migrations/`. `src/types/database.ts` types **48** tables:
+**159 migrations** in `supabase/migrations/`. `src/types/database.ts` types **48** tables:
 
 - **Core**: users, ideas, comments, collaborators, votes, notifications, feedback, idea_attachments
 - **Board**: board_columns, board_tasks, board_labels, board_task_labels, board_task_activity, board_task_comments, board_task_attachments
@@ -171,6 +171,8 @@ Board tables use `is_idea_team_member()` RLS function. `is_super_admin` separate
 ## MCP Server
 
 Two modes sharing **85 tools** via `mcp-server/src/register-tools.ts` (21 tool files in `mcp-server/src/tools/`):
+
+Usage steering (shipped Aug 2026, task b3b9be67): `mcp-server/src/steering-copy.ts` single-sources the "board data is live — call the tool again, never re-parse earlier output" copy; both transports pass it as the MCP server-level `instructions`, the three board read tools (`get_board`/`get_task`/`get_my_tasks`) carry it in their descriptions, and their responses are stamped via `jsonResult(data, { live: true })` with `generated_at` (first key) + `_reminder` (last key). Tool calls are logged to `mcp_tool_log` with `session_id` (migration 00160; admin queries documented in the migration comments).
 - **Local (stdio)**: `mcp-server/src/index.ts` — service-role client, bypasses RLS
 - **Remote (HTTP)**: `src/app/api/mcp/[[...transport]]/route.ts` — OAuth 2.1 + PKCE, per-user RLS
 
@@ -262,7 +264,7 @@ Supabase Branching off prod)".
 - E2E auth uses API-based login (service-role client) to bypass Turnstile CAPTCHA — not browser login
 - CI matrix: Chrome + Mobile Chrome only (Firefox dropped)
 - **22 E2E spec files**, in per-area subfolders (`e2e/board/`, `e2e/auth/`, `e2e/ideas/`, …) — not flat in `e2e/`
-- Current unit suite: **2,910 tests across 176 files** — run the full `npm run test` before pushing; it takes ~10s
+- Current unit suite: **3,137 tests across 189 files** — run the full `npm run test` before pushing; it takes ~10s
 
 ## .vibecodes/ Config
 
