@@ -2283,8 +2283,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                       !isActive && "hover:bg-zinc-800/60 hover:text-zinc-100",
                       // Widen while renaming/confirming — "the tab widens to
                       // its max width while editing so there's room to type"
-                      // (design §3a).
-                      (renaming || confirming) && "max-w-none flex-1",
+                      // (design §3a). Bounded, not unbounded: `max-w-none`
+                      // removed the cap entirely, so with few tabs open the
+                      // confirming/renaming tab grew to fill the ENTIRE
+                      // strip's leftover flex space (bug reported 2026-08-22
+                      // — "End session?" stretching across the screen with
+                      // ✓/✕ pushed to the far edge, and sibling tabs shoved
+                      // out of the visible strip). `flex-1` still lets it
+                      // grow to fit a name when there's room; the explicit
+                      // cap just stops it swallowing the whole row.
+                      (renaming || confirming) && "max-w-[300px] flex-1",
                     )}
                   >
                     {paneSide && (
