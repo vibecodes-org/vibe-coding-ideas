@@ -351,6 +351,24 @@ export default function LaunchingClaudeCodePage() {
         </section>
 
         <section>
+          <h2 className="mb-4 text-2xl font-semibold">Troubleshooting</h2>
+          <div className="rounded-xl border border-border bg-muted/30 p-6">
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">
+                Terminal shows &quot;model not found&quot; as soon as the session starts
+              </strong>{" "}
+              — your starting-model setting names a model Claude Code doesn&apos;t
+              recognise. Fix it in{" "}
+              <strong className="text-foreground">Profile → Model Tiers</strong>{" "}
+              (or ask an admin to check the platform default on the admin
+              Platform tab), then start a fresh session. Resumed sessions
+              aren&apos;t affected — they keep the model they were already
+              running on.
+            </p>
+          </div>
+        </section>
+
+        <section>
           <h2 className="mb-4 text-2xl font-semibold">Desktop Only</h2>
           <div className="mb-4 rounded-xl border border-border bg-muted/30 p-6">
             <p className="text-sm text-muted-foreground">

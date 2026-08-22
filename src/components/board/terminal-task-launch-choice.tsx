@@ -29,6 +29,14 @@ export interface TerminalTaskLaunchChoiceProps {
   onStartFresh: () => void;
   /** Back out entirely — launches nothing. Close button, Escape and outside-click all route here. */
   onCancel: () => void;
+  /**
+   * Task c4ca2d95 ("Terminal starting model") — the terse launch-surface line
+   * (design §4.3 / Design Review note 2: "Starts on Sonnet · your setting"),
+   * scoped to "Start fresh" since Reconnect/Resume keep the session's own
+   * model (AC-8). See terminalDialogModelLine in
+   * src/lib/terminal/model-resolution.ts. Omitted when null/undefined.
+   */
+  modelLine?: string | null;
 }
 
 export function TerminalTaskLaunchChoice({
@@ -39,6 +47,7 @@ export function TerminalTaskLaunchChoice({
   onReconnect,
   onStartFresh,
   onCancel,
+  modelLine = null,
 }: TerminalTaskLaunchChoiceProps) {
   // Narrow on `match.kind` directly at each use (rather than a derived
   // boolean) — `ChooserLiveRow`/`ChooserRecentRow` don't share a `createdAt`/
@@ -80,6 +89,10 @@ export function TerminalTaskLaunchChoice({
             <span className="font-mono">{ageLabel}</span>
             {!canReconnect && <span className="block text-zinc-600">No folder was recorded for it — can&apos;t resume.</span>}
           </DialogDescription>
+          {/* Task c4ca2d95: scoped to "Start fresh" — Reconnect/Resume keep
+              the session's own model (AC-8), so this line is deliberately
+              silent about them. */}
+          {modelLine && <p className="mt-1.5 text-[11px] text-zinc-500">{modelLine}</p>}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-zinc-800 px-4 py-3">
           <Button variant="ghost" size="xs" className="text-zinc-400 hover:text-zinc-100" disabled={busy} onClick={onCancel}>

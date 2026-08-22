@@ -36,6 +36,33 @@ describe("TerminalSessionChooser", () => {
     expect(onStartNew).toHaveBeenCalledOnce();
   });
 
+  it("renders the model line under Start new session when supplied (task c4ca2d95)", () => {
+    render(
+      <TerminalSessionChooser
+        sections={EMPTY}
+        onReconnectHere={vi.fn()}
+        onOpenBoardAndReconnect={vi.fn()}
+        onResume={vi.fn()}
+        onStartNew={vi.fn()}
+        modelLine="New sessions start on Opus · platform default."
+      />,
+    );
+    expect(screen.getByText("New sessions start on Opus · platform default.")).toBeInTheDocument();
+  });
+
+  it("omits the model line entirely when not supplied — never a blank footnote", () => {
+    render(
+      <TerminalSessionChooser
+        sections={EMPTY}
+        onReconnectHere={vi.fn()}
+        onOpenBoardAndReconnect={vi.fn()}
+        onResume={vi.fn()}
+        onStartNew={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/New sessions/)).not.toBeInTheDocument();
+  });
+
   it("shows the task-scoped Start label when a pendingTask is supplied", () => {
     render(
       <TerminalSessionChooser

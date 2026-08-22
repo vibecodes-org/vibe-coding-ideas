@@ -93,6 +93,35 @@ describe("TerminalTaskLaunchChoice", () => {
     expect(onCancel).toHaveBeenCalledTimes(2);
   });
 
+  it("renders the model line when supplied (task c4ca2d95)", () => {
+    render(
+      <TerminalTaskLaunchChoice
+        open
+        taskTitle="Fix login bug"
+        match={LIVE_HERE_MATCH}
+        onReconnect={vi.fn()}
+        onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
+        modelLine="Starts on Sonnet · your setting."
+      />,
+    );
+    expect(screen.getByText("Starts on Sonnet · your setting.")).toBeInTheDocument();
+  });
+
+  it("omits the model line entirely when not supplied", () => {
+    render(
+      <TerminalTaskLaunchChoice
+        open
+        taskTitle="Fix login bug"
+        match={LIVE_HERE_MATCH}
+        onReconnect={vi.fn()}
+        onStartFresh={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect(screen.queryByText(/Starts on/)).not.toBeInTheDocument();
+  });
+
   it("labels a live match 'Reconnect' and fires onReconnect", () => {
     const onReconnect = vi.fn();
     render(

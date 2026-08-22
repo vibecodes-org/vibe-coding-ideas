@@ -78,6 +78,14 @@ import { resolveDockView } from "@/lib/terminal/first-run-flow";
 import type { RecordedProjectPath } from "@/lib/launch-claude-code";
 import { newSessionTooltip } from "@/lib/terminal/session-cap";
 import {
+  resolveEffectiveTerminalModel,
+  resolveTerminalModelSource,
+  terminalLaunchModelLine,
+  terminalDialogModelLine,
+} from "@/lib/terminal/model-resolution";
+import { usePlatformTerminalModelDefault } from "@/hooks/use-platform-terminal-model-default";
+import { useViewerTerminalModel } from "@/hooks/use-viewer-terminal-model";
+import {
   generatePopoutNonce,
   popoutChannelName,
   openPopoutWindow,
@@ -262,6 +270,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // Defence-in-depth: also gated at the page mount. When off, render nothing —
   // no dock, no entry point, board unchanged (B9).
   const enabled = isTerminalEnabled();
+  // Task c4ca2d95 ("Terminal starting model") — called unconditionally
+  // (before the `!enabled` early return below) per the rules of hooks; both
+  // report `undefined` while loading, and the derived launch-surface lines
+  // (computed further down, after the early return) omit themselves until
+  // both resolve rather than showing a placeholder that might be wrong for
+  // a beat.
+  const platformTerminalDefault = usePlatformTerminalModelDefault();
+  const viewerTerminalModel = useViewerTerminalModel();
   // Dock-open persistence (rework 5, card cbe60db5 — Nick's field test: "fix
   // the terminal panel staying open as well"). Initial paint stays collapsed
   // (SSR-safe, matches every other install-first input use-terminal-session.ts
@@ -1919,6 +1935,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   if (!enabled) return null;
 
+  const terminalModelLine =
+    platformTerminalDefault === undefined || viewerTerminalModel === undefined
+      ? null
+      : terminalLaunchModelLine(
+          resolveEffectiveTerminalModel({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault }),
+          resolveTerminalModelSource({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault })
+        );
   const activeSummary = summaries[activeKey];
   const activeStatus: TerminalStatus = activeSummary?.status ?? "idle";
   const multi = sessions.length > 1;
@@ -1968,6 +1991,17 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   const pendingTaskMatch: TaskSessionMatch | null = pendingLaunch?.taskId
     ? findTaskSessionMatch(chooserSections, pendingLaunch.taskId)
     : null;
+
+  // Task c4ca2d95 ("Terminal starting model") — the per-task dialog's terser
+  // variant (chooser footer's own `terminalModelLine` is computed earlier,
+  // before the `!enabled` early return, alongside the hook calls it needs).
+  const terminalTaskDialogModelLine =
+    platformTerminalDefault === undefined || viewerTerminalModel === undefined
+      ? null
+      : terminalDialogModelLine(
+          resolveEffectiveTerminalModel({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault }),
+          resolveTerminalModelSource({ userValue: viewerTerminalModel, platformValue: platformTerminalDefault })
+        );
 
   // Substitute "popped-out" for any tab the dock knows it popped — its real
   // status is usually mid-preemption at this exact moment and would
@@ -2170,6 +2204,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onOpenBoardAndReconnect={handleChooserOpenBoardAndReconnect}
             onResume={handleChooserResume}
             onStartNew={handleChooserStartNew}
+            modelLine={terminalModelLine}
             onRenameSession={renameSession}
             helperStatus={helperStatus}
             onHelperUpdateSettled={refreshAfterHelperUpdate}
@@ -2687,6 +2722,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onOpenBoardAndReconnect={handleChooserOpenBoardAndReconnect}
             onResume={handleChooserResume}
             onStartNew={handleChooserStartNew}
+            modelLine={terminalModelLine}
             onRenameSession={renameSession}
             helperStatus={helperStatus}
             onHelperUpdateSettled={refreshAfterHelperUpdate}
@@ -2715,6 +2751,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           onReconnect={handleTaskChoiceReconnect}
           onStartFresh={handleTaskChoiceStartFresh}
           onCancel={handleTaskChoiceCancel}
+          modelLine={terminalTaskDialogModelLine}
         />
       )}
     </div>
