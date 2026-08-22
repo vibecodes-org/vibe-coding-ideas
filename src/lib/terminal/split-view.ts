@@ -133,6 +133,22 @@ export function applyDropToSplit(
   return { assignment, focusedSide: side };
 }
 
+/**
+ * While split is RENDERED, the tab strip lays out as two half-width groups so
+ * each pane's tab sits directly above its own terminal (Nick's feedback, task
+ * c108ae4a — one strip on the left made the right pane's tab look like it
+ * belonged to the left terminal). The right group holds only the right pane's
+ * tab; every other tab — the left pane's, plus any un-paned session (a 3rd
+ * tab, a popped-out one) — stays in the left group in strip order, so
+ * un-paned tabs keep a stable home rather than jumping between halves.
+ */
+export function splitTabGroups(orderedKeys: string[], assignment: PaneAssignment): { left: string[]; right: string[] } {
+  return {
+    left: orderedKeys.filter((k) => k !== assignment.right),
+    right: orderedKeys.filter((k) => k === assignment.right),
+  };
+}
+
 // ── width floor (design §7 Q3 / §5.8) ───────────────────────────────────────
 
 /** 60 columns at the shipped 12.5px mono metrics (use-terminal-session.ts) + padding/border. */
