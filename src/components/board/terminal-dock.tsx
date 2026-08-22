@@ -154,9 +154,11 @@ import {
   isLiveTabStatus,
   deriveTabLabel,
   findPristineSlot,
+  findReclaimableEndedSlot,
   decideTaskLaunch,
   summarizeSessionStatuses,
   type DedupeCandidate,
+  type ReclaimCandidate,
 } from "./terminal-tabs";
 import {
   TerminalSessionView,
@@ -390,6 +392,15 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // state) because it's read only from inside a native-event callback that
   // must see the CURRENT value without itself triggering a re-render.
   const chooserRenamingActiveRef = useRef(false);
+  // Bug df29b85e (resume opens a new tab, leaves the dead one behind, field
+  // report 22 Aug 2026): `mintAndDeliver`'s ended-tab reclaim path needs a
+  // synchronous read of which tabs are popped out, same reason as the two
+  // refs above — a popped-out tab's OWN reported status is untrustworthy
+  // (see `requestClose`'s identical `poppedOutKeys.has(key) ||
+  // isLiveTabStatus(status)` combined check just below), so reclaim must
+  // never take over one even if its last-known status happens to read
+  // "session-ended".
+  const poppedOutKeysRef = useRef(poppedOutKeys);
   const posthog = usePostHog();
   const posthogRef = useRef(posthog);
   // Session entry chooser (card cbe60db5): mirrors `entryDecision` (declared
@@ -404,8 +415,9 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   useEffect(() => {
     sessionsRef.current = sessions;
     summariesRef.current = summaries;
+    poppedOutKeysRef.current = poppedOutKeys;
     posthogRef.current = posthog;
-  }, [sessions, summaries, posthog]);
+  }, [sessions, summaries, poppedOutKeys, posthog]);
   // Bug B (card cbe60db5 rework 9 — RELEASE-BLOCKING, Nick's field test
   // 2026-08-14): `deliverLaunch` below used to treat `entryDecisionRef.current
   // === null` (the registry fetch is STILL LOADING — genuinely unknown, never
@@ -1340,7 +1352,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // reached either directly (F1's empty-launch state — nothing to choose
   // between) or via the chooser's "Start new session" (see `deliverLaunch`
   // below, which decides which of the two applies).
-  const mintAndDeliver = useCallback((payload: BrowserLaunchPayload | null) => {
+  const mintAndDeliver = useCallback((payload: BrowserLaunchPayload | null, targetSessionId?: string | null) => {
     const currentSessions = sessionsRef.current;
     const currentSummaries = summariesRef.current;
     const candidates: DedupeCandidate[] = currentSessions.map((s) => ({
@@ -1357,6 +1369,48 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     }
 
     setExpanded(true);
+
+    // Ended-tab reclaim (card df29b85e, field report 22 Aug 2026): a resume
+    // that names the sid of a tab already sitting here, already ended, takes
+    // that tab over IN PLACE instead of opening a sibling next to its own
+    // corpse. Checked before the pristine-slot reuse below — the two never
+    // overlap in practice (a reclaimable tab has already connected once, so
+    // its `launchSeq` can't be 0) but reclaim is the more SPECIFIC intent
+    // (an explicit originating sid was named) so it goes first on principle.
+    const reclaimCandidates: ReclaimCandidate[] = currentSessions.map((s) => ({
+      key: s.key,
+      status: currentSummaries[s.key]?.status ?? "idle",
+      sessionId: currentSummaries[s.key]?.sessionId ?? null,
+      poppedOut: poppedOutKeysRef.current.has(s.key),
+    }));
+    const reclaimKey = findReclaimableEndedSlot(reclaimCandidates, targetSessionId);
+    if (reclaimKey) {
+      setSessions((prev) =>
+        prev.map((s) =>
+          s.key === reclaimKey
+            ? {
+                ...s,
+                origin: payload?.resume || payload?.resumeId ? "resume" : payload?.taskId ? "task" : "toolbar",
+                taskId: payload?.taskId,
+                taskTitle: payload?.taskTitle,
+                // Card 3bf262ac (tab rename): match the pristine-slot and
+                // fresh-entry branches below — a reclaimed tab picks up
+                // whatever displayName this launch carries (usually
+                // undefined, falling back to the derived label) rather than
+                // silently keeping a stale custom rename from its dead
+                // session.
+                displayName: payload?.displayName,
+                ideaId: payload?.ideaId ?? ideaId,
+                launchSeq: s.launchSeq + 1,
+                launchPayload: payload ?? null,
+              }
+            : s,
+        ),
+      );
+      setActiveKey(reclaimKey);
+      return;
+    }
+
     const pristineKey = findPristineSlot(
       currentSessions.map((s) => ({ key: s.key, launchSeq: s.launchSeq, hasAttach: !!s.attach })),
     );
@@ -1721,7 +1775,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       toast.error("Couldn't find that session to resume — it may have expired.");
       return;
     }
-    mintAndDeliver(buildResumePayload(row));
+    mintAndDeliver(buildResumePayload(row), row.sid);
   }, [resumeParam, registryRows, pathname, mintAndDeliver, buildResumePayload]);
 
   // ── chooser action handlers ─────────────────────────────────────────────────
@@ -1785,7 +1839,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       // `claude --continue`. Now built by `buildResumePayload` above, which
       // this exact payload shape moved into (cross-board resume fix) so the
       // `?resume=` landing effect can build the identical payload.
-      mintAndDeliver(buildResumePayload(row));
+      mintAndDeliver(buildResumePayload(row), row.sid);
     },
     [mintAndDeliver, buildResumePayload, ideaId, router],
   );
@@ -1829,7 +1883,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         router.push(`/ideas/${row.ideaId}/board?resume=${encodeURIComponent(row.sid)}`);
         return;
       }
-      mintAndDeliver(buildResumePayload(row));
+      mintAndDeliver(buildResumePayload(row), row.sid);
       return;
     }
     if (match.kind === "live-here") {
@@ -1867,7 +1921,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         router.push(`/ideas/${payload.ideaId}/board?resume=${encodeURIComponent(sid)}`);
         return;
       }
-      mintAndDeliver(payload);
+      // The ended panel's own tab is very likely the reclaim target — `sid`
+      // is `pair?.sessionId`, this tab's own last-known session id, so
+      // `mintAndDeliver`'s reclaim check (`findReclaimableEndedSlot`) finds
+      // and takes over THIS tab rather than opening a new one next to it.
+      mintAndDeliver(payload, sid);
     },
     [ideaId, mintAndDeliver, router],
   );

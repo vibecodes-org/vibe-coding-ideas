@@ -229,6 +229,61 @@ export function findPristineSlot(sessions: PristineCandidate[]): string | null {
   return only.launchSeq === 0 && !only.hasAttach ? only.key : null;
 }
 
+// ── ended-tab reclaim: resume takes over its own dead tab in place ─────────
+// Card df29b85e (field report 22 Aug 2026): "Resuming an ended terminal
+// session correctly mints a NEW session (`claude --resume`), but the dock
+// always opens it in a NEW tab, leaving the dead tab behind." Root cause was
+// that `mintAndDeliver` only ever had two outcomes — reuse the single
+// PRISTINE slot (`findPristineSlot` above, which an ended tab can never be:
+// its `launchSeq` is never 0) or append a brand-new `SessionEntry`. This is
+// the third outcome: when a resume names the sid of a tab that's sitting
+// right here, already ended, take THAT tab over instead of opening a
+// sibling next to its own corpse.
+
+export interface ReclaimCandidate {
+  key: string;
+  status: TerminalStatus;
+  /** The session id this tab last reported, or null before one's known. */
+  sessionId: string | null;
+  /**
+   * True for a tab the user has popped into its own window. A popped-out
+   * tab's OWN `status` is untrustworthy the moment the pop-out happens (the
+   * relay's 4001 "preempted" close usually lands as "error"/"session-ended"
+   * even though the session is very much alive, just running in the other
+   * window — see terminal-dock.tsx's `poppedOutKeys` and the identical
+   * `poppedOutKeys.has(key) || isLiveTabStatus(status)` guard in
+   * `requestClose`) — reclaiming it here would tear down a live xterm
+   * instance, socket and scrollback out from under the user, so it's
+   * excluded regardless of what `status` says.
+   */
+  poppedOut: boolean;
+}
+
+/**
+ * Is there a tab here safe for a resume to take over IN PLACE, rather than
+ * opening a new one? Only ever reclaims the ONE tab that's the actual
+ * originator of this resume — `targetSessionId` must be given (the resuming
+ * session's own sid, always known at every call site: the registry row's
+ * `sid`, or the ended panel's own `pair.sessionId`) and must match a
+ * candidate's `sessionId` exactly. No `targetSessionId` means "don't guess"
+ * — always append (same conservative default as `findPristineSlot` returning
+ * null for anything but the single obvious case). A `targetSessionId` that
+ * matches nothing local (the tab that ended isn't open on THIS board/tab
+ * strip right now) also falls through to append — there's nothing to
+ * reclaim, not a bug.
+ */
+export function findReclaimableEndedSlot(
+  candidates: ReclaimCandidate[],
+  targetSessionId?: string | null,
+): string | null {
+  if (!targetSessionId) return null;
+  const match = candidates.find((c) => c.sessionId === targetSessionId);
+  if (!match) return null;
+  if (match.poppedOut) return null;
+  if (match.status !== "session-ended") return null;
+  return match.key;
+}
+
 // ── B10: dedupe a task-scoped launch against existing tabs ─────────────────
 
 export interface DedupeCandidate {
