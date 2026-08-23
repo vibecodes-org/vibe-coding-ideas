@@ -335,3 +335,110 @@ export function formatDockAnnouncement(label: string, side: PaneSide): string {
 export function formatLeaveSplitAnnouncement(label: string): string {
   return `Split view off. Showing ${label}.`;
 }
+
+// ── N-pane support (2 or 3) — Requirements v3 addendum, task eda6598b,
+// docs/design-terminal-split-view.html §10 + docs/design-terminal-third-pane-new.html ──
+//
+// Everything above this line is the shipped 2-pane feature and is UNTOUCHED
+// — the ≤2-session behaviour must stay byte-identical, and its own tests
+// pin `PaneAssignment`'s exact `{ left, right }` shape. What follows is
+// ADDITIVE: the all-or-nothing rule (D1/D2) makes 3-pane assignment much
+// simpler than the 2-pane MRA pick above, because there is no "which
+// session sits out" decision left to make — every open dock session always
+// gets a pane, or the dock is entirely tabs (§10.0/§10.6).
+
+/** 0 (tabs), 2, or 3 — the pane count the CURRENT dock-resident session count maps to (D1/D3). Never 1 or >3. Mirrors the mode table, design §10.1. */
+export function panesForDockCount(dockCount: number): 0 | 2 | 3 {
+  return dockCount === 2 || dockCount === 3 ? dockCount : 0;
+}
+
+/** 3 x 480px panes (MIN_PANE_WIDTH_PX) + 2 x 1px dividers — below this, tabs render instead (design §10.1). */
+export const SPLIT_FALLBACK_BODY_PX_3 = 1442;
+/** 20px hysteresis band, same pattern as the shipped 961/981 pair. */
+export const SPLIT_RESTORE_BODY_PX_3 = 1462;
+
+/**
+ * Generalizes the width-floor hysteresis across BOTH boundary pairs —
+ * `paneCount` selects which pair applies. The count axis itself has no
+ * hysteresis (D5 — it's discrete, changes only on explicit open/close), so
+ * this is the only fallback state that needs one.
+ */
+export function resolveWidthFloorForCount(bodyWidthPx: number, wasBelowFloor: boolean, paneCount: 2 | 3): boolean {
+  if (!Number.isFinite(bodyWidthPx) || bodyWidthPx <= 0) return wasBelowFloor;
+  const fallback = paneCount === 3 ? SPLIT_FALLBACK_BODY_PX_3 : SPLIT_FALLBACK_BODY_PX;
+  const restore = paneCount === 3 ? SPLIT_RESTORE_BODY_PX_3 : SPLIT_RESTORE_BODY_PX;
+  return wasBelowFloor ? bodyWidthPx < restore : bodyWidthPx < fallback;
+}
+
+/**
+ * The all-or-nothing render gate (D1-D4): split may render only when the
+ * CURRENT dock-resident session count maps to a real pane count (2 or 3)
+ * AND the width floor for THAT count is satisfied. There is no state where
+ * fewer panes than sessions renders — `panesForDockCount` returning 0
+ * (4-5 sessions, or 0-1) forces tabs regardless of width.
+ */
+export function isSplitRenderableForCount(input: {
+  preferred: boolean;
+  dockCount: number;
+  belowWidthFloor: boolean;
+  mobileViewport: boolean;
+}): boolean {
+  return input.preferred && panesForDockCount(input.dockCount) !== 0 && !input.belowWidthFloor && !input.mobileViewport;
+}
+
+export type PaneSlotWord = "left" | "middle" | "right";
+
+/** The position word for the pane at `index` of `count` panes (2 or 3) — the L/M/R badge's aria-label, design §10.2. */
+export function paneSideLabel(index: number, count: number): PaneSlotWord {
+  if (count <= 2) return index === 0 ? "left" : "right";
+  return index === 0 ? "left" : index === count - 1 ? "right" : "middle";
+}
+
+/** No-wrap step, generalized to N panes (D9) — Ctrl+Shift+Left/Right at an end is a silent no-op, identical semantics to the shipped 2-pane chord. */
+export function stepPaneFocusIndex(currentIndex: number, direction: PaneSide, paneCount: number): number {
+  if (direction === "left") return Math.max(0, currentIndex - 1);
+  return Math.min(paneCount - 1, currentIndex + 1);
+}
+
+/** "A left, B right" / "A left, B middle, C right" — the shared body of the on/restored announcements below (design §10.5). */
+export function formatPaneLayoutList(labels: string[]): string {
+  return labels.map((label, i) => `${label} ${paneSideLabel(i, labels.length)}`).join(", ");
+}
+
+export function formatSplitOnAnnouncementForPanes(labels: string[], focusedLabel: string): string {
+  return `Split view on. ${formatPaneLayoutList(labels)}. Typing goes to ${focusedLabel}.`;
+}
+
+export function formatSplitRestoredAnnouncementForPanes(labels: string[], focusedLabel: string): string {
+  return `Split view restored. ${formatPaneLayoutList(labels)}. Typing goes to ${focusedLabel}.`;
+}
+
+/** D8 — a 3rd session while split renders always gets its own pane on the right and takes focus. */
+export function formatThirdPaneAddedAnnouncement(label: string): string {
+  return `Third pane added: ${label}, right. Typing goes to ${label}.`;
+}
+
+/** D3 — the 4th dock-resident session forces the WHOLE dock to plain tabs, new tab focused. */
+export function formatForcedTabsCountAnnouncement(newSessionLabel: string): string {
+  return `Side-by-side fits up to 3 terminals — switched to tabs. Showing ${newSessionLabel}.`;
+}
+
+/** The count-triggered width block (2→3 without room) — distinct wording from the width-shrink fallback below (design §10.5). */
+export function formatThirdPaneWidthBlockedAnnouncement(): string {
+  return "Not enough room for a third pane — switched to tabs. Side by side returns when the window is wider or a terminal closes.";
+}
+
+/** The width-shrink fallback while already 3-up — distinct wording from the count-triggered block above (design §10.5). */
+export function formatWidthFallbackThreeAnnouncement(): string {
+  return "Window too narrow for three panes — showing tabs. Split returns when wider.";
+}
+
+/** The visible + screen-reader notice text for D3's 4th-session cap (design §10.3 G-after). */
+export function formatForcedTabsNoticeText(): string {
+  return "Side-by-side fits up to 3 terminals — switched to tabs. Closing a terminal brings side by side back.";
+}
+
+/** The corner chip for popped-out sessions (D7/§10.4) — never a tab-strip column, so it can never recreate "a tab without a pane". Applies at every pane count, and in tabbed mode a pop-out keeps its existing violet tab treatment (unchanged). */
+export function formatPoppedOutChipAriaLabel(labels: string[]): string {
+  return `${labels.length} session${labels.length === 1 ? "" : "s"} popped out: ${labels.join(", ")}`;
+}

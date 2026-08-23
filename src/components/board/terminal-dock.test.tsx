@@ -1626,6 +1626,81 @@ describe("TerminalDock — split view keyboard-focus sync (defect fix, task df7a
   });
 });
 
+// Requirements v3 (task eda6598b, docs/design-terminal-split-view.html §10):
+// side by side supports EXACTLY 2 or 3 panes, all-or-nothing — every open
+// dock session gets a pane, or the dock is entirely plain tabs.
+describe("TerminalDock — a 3rd terminal gets its own pane (task eda6598b, D8/D3)", () => {
+  /** Mints N local tabs via the chooser's "Start new", one at a time. */
+  async function mintSessions(count: number): Promise<string[]> {
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+
+    for (let i = 1; i < count; i++) {
+      act(() => {
+        requestBrowserLaunch();
+      });
+      await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+      fireEvent.click(screen.getByTestId("chooser-start-new"));
+      await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(i + 1));
+    }
+    return screen.getAllByTestId("session-view").map((el) => el.dataset.key as string);
+  }
+
+  function enterSplitView() {
+    fireEvent.click(screen.getByRole("button", { name: /^Split view/ }));
+  }
+
+  it("2 sessions in split, then opening a 3rd gives it its own pane automatically and takes focus (D8)", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [keyA, keyB] = await mintSessions(2);
+    enterSplitView();
+    await waitFor(() => expect(screen.getByTestId(`pane-indicator-${keyA}`)).toBeInTheDocument());
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(3));
+
+    const keys = screen.getAllByTestId("session-view").map((el) => el.dataset.key as string);
+    const keyC = keys.find((k) => k !== keyA && k !== keyB) as string;
+
+    // All THREE sessions get a pane at once — never 2 panes + a 3rd tab
+    // sitting out (the banned state D2 exists to prevent).
+    await waitFor(() => {
+      expect(screen.getByTestId(`pane-indicator-${keyA}`)).toBeInTheDocument();
+      expect(screen.getByTestId(`pane-indicator-${keyB}`)).toBeInTheDocument();
+      expect(screen.getByTestId(`pane-indicator-${keyC}`)).toBeInTheDocument();
+    });
+    // The new 3rd pane takes focus (D8).
+    expect(screen.getByTestId(`pane-indicator-${keyC}`).textContent).toBe("Typing here");
+  });
+
+  it("a 4th session forces the WHOLE dock to plain tabs — no partial pane state survives (D3)", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await mintSessions(3);
+    enterSplitView();
+    await waitFor(() => expect(screen.getAllByTestId(/^pane-indicator-/)).toHaveLength(3));
+
+    act(() => {
+      requestBrowserLaunch();
+    });
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(4));
+
+    // No pane survives — the dock is entirely plain tabs.
+    await waitFor(() => expect(screen.queryAllByTestId(/^pane-indicator-/)).toHaveLength(0));
+    expect(screen.getAllByText(/fits up to 3 terminals/).length).toBeGreaterThan(0);
+    // The split toggle stays pressed — the preference is kept, not cleared.
+    expect(screen.getByRole("button", { name: /^Split view/ })).toHaveAttribute("aria-pressed", "true");
+  });
+});
+
 // Task 9f30ae15 (Nick's field report, 2026-08-22): with several tabs open,
 // confirming "End session?" on the tab he meant to close ended a DIFFERENT
 // one. The re-investigation proved the tab→session key mapping is correct —
