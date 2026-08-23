@@ -211,6 +211,40 @@ test("redactDeepLinkToken leaves model untouched — not a secret or free-form u
   assert.ok(redacted.includes("model=opus"));
 });
 
+// ── terminal auto-accept mode (task d3de150c) ──────────────────────────────
+
+test("build ⇄ parse round-trips permissionMode, positioned before prompt", () => {
+  const withMode = { ...SAMPLE, permissionMode: "acceptEdits", prompt: "hello" };
+  const url = buildLaunchDeepLink(withMode);
+  assert.ok(url.includes("permissionMode=acceptEdits"));
+  assert.ok(url.indexOf("permissionMode=") < url.indexOf("prompt="), "permissionMode precedes the LAST param, prompt");
+  assert.deepEqual(parseLaunchDeepLink(url), withMode);
+});
+
+test("omits permissionMode entirely when absent — no version-skew risk for an old bridge/helper", () => {
+  const url = buildLaunchDeepLink(SAMPLE);
+  assert.ok(!url.includes("permissionMode="));
+  assert.ok(!("permissionMode" in parseLaunchDeepLink(url)));
+});
+
+test("never fires a forbidden permissionMode value — hard whitelist, builder side", () => {
+  const url = buildLaunchDeepLink({ ...SAMPLE, permissionMode: "bypassPermissions" });
+  assert.ok(!url.includes("permissionMode="));
+});
+
+test("a forbidden permissionMode value on the wire (e.g. bypassPermissions) is rejected outright — never forwarded", () => {
+  const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=r&session=s&token=t&permissionMode=bypassPermissions`;
+  const parsed = parseLaunchDeepLink(url);
+  assert.ok(parsed !== null);
+  assert.ok(!("permissionMode" in parsed));
+});
+
+test("redactDeepLinkToken leaves permissionMode untouched — not a secret or free-form user content", () => {
+  const url = buildLaunchDeepLink({ ...SAMPLE, permissionMode: "acceptEdits" });
+  const redacted = redactDeepLinkToken(url);
+  assert.ok(redacted.includes("permissionMode=acceptEdits"));
+});
+
 test("redactDeepLinkToken elides the prompt (user content) as well as the token", () => {
   const url = buildLaunchDeepLink({ ...SAMPLE, prompt: HOSTILE_PROMPT });
   const redacted = redactDeepLinkToken(url);

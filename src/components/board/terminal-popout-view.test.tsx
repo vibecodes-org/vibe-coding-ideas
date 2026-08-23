@@ -36,6 +36,7 @@ const PAYLOAD: PopoutPayload = {
   label: "Session 1",
   identity: "Recipe Saver · session sid-1",
   readOnly: false,
+  autoAccept: false,
 };
 
 function mockActions(): TerminalSessionActions {
@@ -46,6 +47,7 @@ function mockActions(): TerminalSessionActions {
     reconnectNow: vi.fn(),
     end: vi.fn(),
     setReadOnly: vi.fn(),
+    setAutoAccept: vi.fn(),
     copyBridgeCommand: vi.fn(),
     refreshView: vi.fn(),
     serializeNow: vi.fn(),
@@ -66,6 +68,7 @@ function installMockSession(status: "connected" | "error", closeCode: number | n
       cwd: null,
       claudeSessionId: null,
       readOnly: false,
+      autoAccept: false,
       inputEnabled: true,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,

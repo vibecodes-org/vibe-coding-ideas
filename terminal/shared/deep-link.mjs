@@ -75,6 +75,19 @@
 //             resume_id/cols/rows above. An old helper's bundled copy of
 //             this module simply never reads `model` off the URL (AC-13) —
 //             no version-skew risk, same as every other param here.
+//   permissionMode — task d3de150c ("Terminal mode"): set ONLY when the
+//             launching user's terminal_auto_accept preference is on,
+//             resolved server-side at mint time. The ONLY legal value is
+//             the literal string "acceptEdits" (isPermissionModeSafe below,
+//             mirrors src/lib/terminal/auto-accept-mode.ts's
+//             isValidPermissionModeValue) — a hard safety whitelist, not
+//             just a shell-safety check like `model`'s. The bridge appends
+//             `--permission-mode acceptEdits` to the fresh-spawn CMD ONLY
+//             (terminal/bridge/src/resume-cmd.js) — NEVER on a resume/
+//             resumeId launch, same as `model`. An old helper's bundled
+//             copy of this module simply never reads `permissionMode` off
+//             the URL — no version-skew risk, no error surface, silently
+//             ignored, same as every other param here.
 //
 // `token` and `helperToken` are secrets and `prompt` is user content. NEVER log
 // a raw link — use redactDeepLinkToken first (it elides all three; `model` is
@@ -121,6 +134,19 @@ function isSafeModelValue(v) {
   return typeof v === "string" && v.length > 0 && !/[\s\]`$(){}<>\\'"*?~#!;&|[]/.test(v);
 }
 
+/** Task d3de150c ("Terminal mode") — the ONLY legal `permissionMode` value
+ *  is the literal string "acceptEdits". Unlike `isSafeModelValue` above
+ *  (which accepts arbitrary shell-safe free text), this is a hard
+ *  single-literal WHITELIST — the safety requirement is "bypassPermissions
+ *  (or anything else) must never be reachable", not just "must not break
+ *  shell tokenization". Mirrors src/lib/terminal/auto-accept-mode.ts's
+ *  isValidPermissionModeValue exactly (drift-tested).
+ *  @param {unknown} v
+ *  @returns {boolean} */
+function isPermissionModeSafe(v) {
+  return v === "acceptEdits";
+}
+
 /**
  * Build a `vibecodes://launch?relay=…&session=…&token=…[&cwd=…][&cols=…&rows=…][&model=…][&prompt=…]`
  * deep link.
@@ -131,10 +157,10 @@ function isSafeModelValue(v) {
  * (and therefore the app-side prompt budget) is stable. Throws when a required
  * field is missing so a malformed link is never fired.
  *
- * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string }} params
+ * @param {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string }} params
  * @returns {string}
  */
-export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model } = {}) {
+export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, prompt, resume, resumeId, cols, rows, model, permissionMode } = {}) {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
   }
@@ -161,6 +187,12 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
   // Task c4ca2d95: inserted before `prompt` (which stays LAST — see the
   // header comment) alongside the other optional non-secret params.
   if (model) parts.push(`model=${encodeURIComponent(model)}`);
+  // Task d3de150c: same insertion point as `model` — before `prompt`.
+  // Whitelist-checked here too (not just at parse time), so a malformed or
+  // forbidden value can never even be fired in a link.
+  if (permissionMode && isPermissionModeSafe(permissionMode)) {
+    parts.push(`permissionMode=${encodeURIComponent(permissionMode)}`);
+  }
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }
@@ -175,7 +207,7 @@ export function buildLaunchDeepLink({ relay, session, token, helperToken, cwd, p
  * param existed (version-skew safe both ways).
  *
  * @param {unknown} url
- * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string } | null}
+ * @returns {{ relay: string, session: string, token: string, helperToken?: string, cwd?: string, prompt?: string, resume?: boolean, resumeId?: string, cols?: number, rows?: number, model?: string, permissionMode?: string } | null}
  */
 export function parseLaunchDeepLink(url) {
   if (typeof url !== "string" || url.length === 0) return null;
@@ -218,6 +250,17 @@ export function parseLaunchDeepLink(url) {
   // parser simply never reads "model" at all (AC-13) — no version-skew risk.
   const rawModel = parsed.searchParams.get("model");
   const model = rawModel && isSafeModelValue(rawModel) ? rawModel : undefined;
+  // Task d3de150c: re-validated here exactly like model/resumeId/cols/rows
+  // above — it's about to ride the bridge's shellSplit CMD string as a bare
+  // token, so there is no safe partial value. Unlike `model`, this is a
+  // single-literal WHITELIST (isPermissionModeSafe), not a shell-safety
+  // check — anything except the exact literal "acceptEdits" is dropped
+  // silently, including a value an attacker or a bug tried to smuggle in.
+  // An old helper's bundled copy of this parser simply never reads
+  // "permissionMode" at all — no version-skew risk.
+  const rawPermissionMode = parsed.searchParams.get("permissionMode");
+  const permissionMode =
+    rawPermissionMode && isPermissionModeSafe(rawPermissionMode) ? rawPermissionMode : undefined;
   if (!relay || !session || !token) return null;
 
   const out = { relay, session, token };
@@ -230,6 +273,7 @@ export function parseLaunchDeepLink(url) {
     out.rows = parsedRows;
   }
   if (model) out.model = model;
+  if (permissionMode) out.permissionMode = permissionMode;
   if (prompt) out.prompt = prompt;
   return out;
 }

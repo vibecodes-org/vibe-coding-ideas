@@ -73,6 +73,14 @@ export interface TerminalSessionChooserProps {
    */
   modelLine?: string | null;
   /**
+   * Task d3de150c ("Terminal mode" auto-accept toggle) — the amber chip
+   * appended beside `modelLine` when the viewer's toggle is on (design §2.1),
+   * e.g. "⚡ auto-accept on". Omitted entirely when null/undefined —
+   * loading, or the toggle is off (byte-identical to today in that case).
+   * See terminalLaunchAutoAcceptChip in src/lib/terminal/auto-accept-mode.ts.
+   */
+  autoAcceptChip?: string | null;
+  /**
    * Persist a rename (card 3bf262ac) — the dock's shared `renameSession`:
    * PATCHes the session and, on success, keeps the dock's own registry rows
    * and any live tab entry in sync. This component owns its OWN optimistic
@@ -136,6 +144,7 @@ export function TerminalSessionChooser({
   onResume,
   onStartNew,
   modelLine = null,
+  autoAcceptChip = null,
   onRenameSession,
   cap,
   helperStatus = null,
@@ -349,7 +358,21 @@ export function TerminalSessionChooser({
         {/* Task c4ca2d95: passive launch-surface visibility (design §4.2) —
             no dialog, no "Change" link in v1 (kept intentionally terse; see
             the implementation report for the scope trim). */}
-        {modelLine && <p className="mt-1.5 text-[11px] text-zinc-500">{modelLine}</p>}
+        {modelLine && (
+          <p className="mt-1.5 text-[11px] text-zinc-500">
+            {modelLine}
+            {autoAcceptChip && <span className="ml-1 font-semibold text-amber-400">· {autoAcceptChip}</span>}
+          </p>
+        )}
+        {/* Task d3de150c: fresh-launches-only reminder, shown only when the
+            toggle is actually on — a reconnect/resume in the sections below
+            never carries the flag, and this is the one place that matters
+            for a reader deciding whether to reconnect or start fresh. */}
+        {autoAcceptChip && (
+          <p className="mt-1 text-[11px] text-zinc-500">
+            Only a fresh session starts in auto-accept mode — reconnecting or resuming keeps asking.
+          </p>
+        )}
       </div>
 
       {sections.liveHere.length > 0 && (

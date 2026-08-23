@@ -412,6 +412,13 @@ export interface TerminalSessionActions {
   /** User-initiated end. */
   end: () => void;
   setReadOnly: (value: boolean | ((prev: boolean) => boolean)) => void;
+  /**
+   * Task d3de150c — exposed ONLY so the popped-out window can seed its own
+   * `useTerminalSession` instance's `autoAccept` from the pop-out payload on
+   * mount (mirrors `setReadOnly`'s use in terminal-popout-view.tsx exactly).
+   * Not wired to any button — there is no live toggle for this value.
+   */
+  setAutoAccept: (value: boolean) => void;
   copyBridgeCommand: () => void;
   /**
    * Force a refit + resize-frame send + focus, for a reveal that un-hides
@@ -479,6 +486,13 @@ export interface UseTerminalSessionResult {
    */
   claudeSessionId: string | null;
   readOnly: boolean;
+  /**
+   * Task d3de150c ("Terminal mode" auto-accept toggle) — true for the
+   * session's WHOLE life once a fresh launch carried
+   * `permissionMode: "acceptEdits"`. See the `autoAccept` state's own doc
+   * comment above for the fresh-launch-only / reset-per-attempt contract.
+   */
+  autoAccept: boolean;
   /** isInputEnabled(state, readOnly) — convenience, the same predicate xterm's onData gates on. */
   inputEnabled: boolean;
   /** Install-first gate inputs, corrected client-side on mount (SSR default: unsupported/unpaired). */
@@ -537,6 +551,19 @@ export function useTerminalSession(
 
   const [state, dispatch] = useReducer(terminalReducer, initialConnectionState);
   const [readOnly, setReadOnly] = useState(false);
+  /**
+   * Task d3de150c ("Terminal mode" auto-accept toggle) — true for the whole
+   * life of THIS tab's session once a fresh mint's response carried
+   * `permissionMode: "acceptEdits"` (set in connect() below). Unlike
+   * `readOnly`, there is no user-facing toggle for this — it is a launch-
+   * time FACT, not a live control (Shift+Tab inside the terminal is the
+   * live control, and the app has no way to observe that — see the design
+   * doc's "honesty limits" section). Reset to false at the top of every
+   * connect() attempt so a later fresh launch on the SAME tab that didn't
+   * carry the flag doesn't keep showing a stale badge; a reattach
+   * (attachExisting) never touches this — see that branch's own doc.
+   */
+  const [autoAccept, setAutoAccept] = useState(false);
   const [pair, setPair] = useState<PairInfo | null>(null);
   const [xtermReady, setXtermReady] = useState(false);
   // Card cbe60db5 rework 9 (Bug A — timeout resume): the folder + claude
@@ -1211,6 +1238,17 @@ export function useTerminalSession(
          * into this same fresh-launch branch.
          */
         model?: string;
+        /**
+         * Task d3de150c ("Terminal mode" auto-accept toggle) — the mint
+         * route's resolved permission mode (set only when the user's own
+         * `terminal_auto_accept` preference is on). Same threading rule as
+         * `model` immediately above: only ever consumed by the FRESH-launch
+         * branch below, deliberately absent from the reattach/reconnect
+         * call sites — a resumed conversation keeps whatever permission
+         * mode it's already running under (Shift+Tab is the live control
+         * for that, not this flag).
+         */
+        permissionMode?: string;
       },
     ) => {
       const trigger = opts?.trigger ?? "connect";
@@ -1339,6 +1377,8 @@ export function useTerminalSession(
               // Task c4ca2d95: fresh-launch only — the resume branch above
               // never reaches this call.
               model: opts?.model,
+              // Task d3de150c: same fresh-launch-only posture as `model`.
+              permissionMode: opts?.permissionMode,
             }),
         });
         if (!result.ok) {
@@ -1734,6 +1774,10 @@ export function useTerminalSession(
     const autoLaunch = opts?.autoLaunch ?? false;
     teardownSocket();
     clearHelperTimer();
+    // Reset for THIS attempt — set true below only if the mint response
+    // actually carries the flag (task d3de150c). Never carried forward from
+    // a previous connect() on this same tab.
+    setAutoAccept(false);
     removeLaunchIframe();
     // Stuck-pairing watchdog (card cbe60db5): the ONE opt-out — a literal
     // manual connect({autoLaunch:false}) is the legitimate indefinite-wait
@@ -1753,6 +1797,8 @@ export function useTerminalSession(
       expiresAt: number;
       /** Task c4ca2d95 — the mint route's resolved effective terminal model, fresh-launch only. */
       model?: string;
+      /** Task d3de150c — the mint route's resolved permission mode ("acceptEdits" or absent), fresh-launch only. */
+      permissionMode?: string;
     };
     try {
       const res = await fetch("/api/terminal/session", {
@@ -1840,11 +1886,18 @@ export function useTerminalSession(
       /* best-effort only — never blocks the terminal actually connecting */
     }
 
+    // Task d3de150c: the mint route only ever returns the literal
+    // "acceptEdits" or omits the field entirely (see session/route.ts) — no
+    // further validation needed here, but the exact-literal check stays as
+    // defense in depth against a future response shape drifting.
+    setAutoAccept(data.permissionMode === "acceptEdits");
+
     // Same-machine: hand the bridge token to the local helper via the deep link.
     if (autoLaunch)
       fireLaunchDeepLink(data.sessionId, data.bridgeToken, data.helperToken, {
         trigger: "connect",
         model: data.model,
+        permissionMode: data.permissionMode,
       });
 
     openBrowserLeg(data.sessionId, data.browserToken);
@@ -2241,6 +2294,7 @@ export function useTerminalSession(
     cwd: sessionCwd,
     claudeSessionId,
     readOnly,
+    autoAccept,
     inputEnabled: isInputEnabled(state, readOnly),
     platform,
     paired,
@@ -2254,6 +2308,7 @@ export function useTerminalSession(
       reconnectNow,
       end: endSession,
       setReadOnly,
+      setAutoAccept,
       copyBridgeCommand,
       refreshView,
       serializeNow,

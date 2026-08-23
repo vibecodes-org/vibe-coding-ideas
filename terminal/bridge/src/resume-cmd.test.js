@@ -94,3 +94,47 @@ test("an explicit --cmd override NEVER receives --model, even if one is somehow 
   const result = resolveClaudeLaunch({ explicitCmd: "bash", model: "opus", mintId: () => MINTED });
   assert.deepEqual(result, { cmd: "bash", conv: null });
 });
+
+// ── terminal auto-accept mode (task d3de150c) — permissionMode only ever
+// applies to a fresh mint (branch 4); branches 1-3 must never append
+// --permission-mode, and only the literal "acceptEdits" is ever appended. ──
+
+test("a fresh mint with permissionMode acceptEdits appends --permission-mode acceptEdits", () => {
+  const result = resolveClaudeLaunch({ permissionMode: "acceptEdits", mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: `claude --session-id ${MINTED} --permission-mode acceptEdits`, conv: MINTED });
+});
+
+test("a fresh mint with no permissionMode spawns exactly today's command — no trailing space, no flag", () => {
+  const result = resolveClaudeLaunch({ mintId: () => MINTED });
+  assert.equal(result.cmd, `claude --session-id ${MINTED}`);
+});
+
+test("model and permissionMode append together, model first, on a fresh mint", () => {
+  const result = resolveClaudeLaunch({ model: "opus", permissionMode: "acceptEdits", mintId: () => MINTED });
+  assert.equal(result.cmd, `claude --session-id ${MINTED} --model opus --permission-mode acceptEdits`);
+});
+
+test("hard safety requirement: any permissionMode value other than the literal 'acceptEdits' is dropped, never appended", () => {
+  for (const bad of ["bypassPermissions", "plan", "default", "AcceptEdits", " acceptEdits", ""]) {
+    const result = resolveClaudeLaunch({ permissionMode: bad, mintId: () => MINTED });
+    assert.equal(result.cmd, `claude --session-id ${MINTED}`, `permissionMode=${JSON.stringify(bad)} must be dropped`);
+    assert.ok(!result.cmd.includes("--permission-mode"));
+  }
+});
+
+test("resumeId NEVER receives --permission-mode, even if one is somehow passed (fresh-launch-only rule)", () => {
+  const result = resolveClaudeLaunch({ resumeId: RESUME_ID, permissionMode: "acceptEdits", mintId: () => MINTED });
+  assert.equal(result.cmd, `claude --resume ${RESUME_ID}`);
+  assert.ok(!result.cmd.includes("--permission-mode"));
+});
+
+test("the legacy --continue resume NEVER receives --permission-mode, even if one is somehow passed", () => {
+  const result = resolveClaudeLaunch({ resume: true, permissionMode: "acceptEdits", mintId: () => MINTED });
+  assert.equal(result.cmd, "claude --continue");
+  assert.ok(!result.cmd.includes("--permission-mode"));
+});
+
+test("an explicit --cmd override NEVER receives --permission-mode, even if one is somehow passed", () => {
+  const result = resolveClaudeLaunch({ explicitCmd: "bash", permissionMode: "acceptEdits", mintId: () => MINTED });
+  assert.deepEqual(result, { cmd: "bash", conv: null });
+});

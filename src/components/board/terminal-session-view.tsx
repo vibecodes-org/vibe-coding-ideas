@@ -53,6 +53,7 @@ import {
   Undo2,
   RefreshCw,
   X,
+  Zap,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -75,6 +76,7 @@ import {
   type TerminalSessionDescriptor,
 } from "./use-terminal-session";
 import { paneAccessibleName, paneFocusWord } from "@/lib/terminal/split-view";
+import { AUTO_ACCEPT_BADGE_LABEL, AUTO_ACCEPT_BADGE_TITLE } from "@/lib/terminal/auto-accept-mode";
 
 /**
  * Everything the dock needs about ONE tab's session without lifting the whole
@@ -103,6 +105,13 @@ export interface SessionSummary {
   browserToken: string | null;
   /** Mirrored so a pop-out payload can carry the CURRENT read-only toggle across into the popped window (D1). */
   readOnly: boolean;
+  /**
+   * Task d3de150c ("Terminal mode" auto-accept toggle) — mirrored the same
+   * way `readOnly` is, so the dock's collapsed-bar indicator and a pop-out
+   * payload can both read this session's launch-time fact without lifting
+   * the whole hook result out of the component that owns it.
+   */
+  autoAccept: boolean;
 }
 
 interface TerminalSessionViewProps {
@@ -300,6 +309,7 @@ export function TerminalSessionView({
     cwd: sessionCwd,
     claudeSessionId,
     readOnly,
+    autoAccept,
     inputEnabled,
     platform,
     paired,
@@ -351,6 +361,7 @@ export function TerminalSessionView({
       paired,
       browserToken: pair?.browserToken ?? null,
       readOnly,
+      autoAccept,
     });
     if (shouldAnnounceAttention(prevStatusRef.current, state.status, isActive)) {
       onAnnounce(formatAttentionAnnouncement(label, state.status));
@@ -368,6 +379,7 @@ export function TerminalSessionView({
     isActive,
     label,
     readOnly,
+    autoAccept,
   ]);
 
   // Keep the dock's action registry current so a tab strip close (×) — which
@@ -570,6 +582,21 @@ export function TerminalSessionView({
             <meta.Icon className={cn("h-3 w-3", meta.spin && "animate-spin")} />
             {meta.label}
           </span>
+          {/* Auto-accept badge (task d3de150c, design §3.1) — deliberately
+              NOT gated on `state.status === "connected"` like Read-only just
+              below: this is a launch-time FACT about the session, not a
+              live connection state, so it must show for the session's whole
+              life (connected, disconnected, reconnecting) — the forget
+              scenario the design is built around only works if the badge
+              never disappears just because the connection blipped. */}
+          {autoAccept && (
+            <span
+              className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/55 bg-amber-500/10 px-2 py-1 text-[11px] font-bold text-amber-300"
+              title={AUTO_ACCEPT_BADGE_TITLE}
+            >
+              <Zap className="h-3 w-3" /> {AUTO_ACCEPT_BADGE_LABEL}
+            </span>
+          )}
           {readOnly && state.status === "connected" && (
             <span className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/55 bg-violet-500/10 px-2 py-1 text-[11px] font-bold text-violet-300">
               <Lock className="h-3 w-3" /> Read-only

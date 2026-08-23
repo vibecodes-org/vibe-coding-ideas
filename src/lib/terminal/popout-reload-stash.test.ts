@@ -34,6 +34,7 @@ const STASH: PopoutStash = {
   label: "fix-login-bug",
   identity: "Nick's MacBook · session sid-1",
   readOnly: false,
+  autoAccept: false,
   ideaId: "idea-1",
   ideaTitle: "VibeCodes",
 };
@@ -49,6 +50,26 @@ describe("parsePopoutStash", () => {
     expect(parsePopoutStash("")).toBeNull();
     expect(parsePopoutStash("not json")).toBeNull();
     expect(parsePopoutStash(JSON.stringify({ sid: "sid-1" }))).toBeNull();
+  });
+
+  // ── auto-accept mode (task d3de150c) ──────────────────────────────────────
+
+  it("parses autoAccept: true when present", () => {
+    const withAutoAccept = { ...STASH, autoAccept: true };
+    expect(parsePopoutStash(JSON.stringify(withAutoAccept))).toEqual(withAutoAccept);
+  });
+
+  it("deploy skew: a stash saved before this field existed defaults autoAccept to false, not rejected", () => {
+    const { autoAccept: _autoAccept, ...legacyStash } = STASH;
+    const parsed = parsePopoutStash(JSON.stringify(legacyStash));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.autoAccept).toBe(false);
+  });
+
+  it("a wrong-typed autoAccept field is coerced to false rather than rejecting the whole stash", () => {
+    const parsed = parsePopoutStash(JSON.stringify({ ...STASH, autoAccept: "true" }));
+    expect(parsed).not.toBeNull();
+    expect(parsed?.autoAccept).toBe(false);
   });
 });
 

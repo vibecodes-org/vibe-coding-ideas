@@ -1,0 +1,496 @@
+<!--
+  UX Design — Terminal auto-accept mode (opt-in)
+  Task d3de150c ("Terminal mode"), UX Design step. Builds on the Requirements
+  step output. Self-contained, dark-theme (zinc) to match VibeCodes. No
+  external assets. Sibling doc to terminal-starting-model-design.html — same
+  visual language on purpose: this feature mirrors that feature's deep-link +
+  validation + launch-surface pattern (task c4ca2d95) one-for-one.
+-->
+<meta charset="utf-8" />
+<title>Design · Terminal auto-accept mode</title>
+<style>
+  :root {
+    --bg: #09090b; --panel: #18181b; --panel-2: #212124; --panel-3: #27272a;
+    --border: #27272a; --border-2: #3f3f46;
+    --fg: #fafafa; --muted: #a1a1aa; --faint: #71717a;
+    --primary: #fafafa; --primary-fg: #18181b;
+    --emerald: #34d399; --amber: #fbbf24; --rose: #fb7185; --sky: #38bdf8; --violet: #a78bfa;
+    --radius: 10px;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, monospace;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.6; -webkit-font-smoothing: antialiased; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 40px 20px 96px; }
+  header.doc { border-bottom: 1px solid var(--border); padding-bottom: 22px; margin-bottom: 8px; }
+  .kicker { font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--sky); font-weight: 600; }
+  h1 { font-size: 27px; line-height: 1.25; margin: 8px 0 10px; letter-spacing: -.01em; }
+  h2 { font-size: 20px; margin: 46px 0 12px; letter-spacing: -.01em; padding-top: 8px; }
+  h3 { font-size: 15px; margin: 26px 0 8px; }
+  p { color: #e4e4e7; }
+  .lede { color: var(--muted); font-size: 15px; }
+  code, .mono { font-family: var(--mono); font-size: .86em; }
+  code { background: var(--panel-3); padding: 1.5px 6px; border-radius: 5px; color: #e4e4e7; }
+  .muted { color: var(--muted); } .faint { color: var(--faint); }
+  ul { color: #e4e4e7; } li { margin: 4px 0; }
+
+  .callout { background: linear-gradient(180deg, rgba(56,189,248,.07), rgba(56,189,248,.02)); border: 1px solid rgba(56,189,248,.25); border-left: 3px solid var(--sky); border-radius: var(--radius); padding: 14px 16px; margin: 18px 0; font-size: 14px; }
+  .callout.warn { border-color: rgba(251,191,36,.3); border-left-color: var(--amber); background: linear-gradient(180deg, rgba(251,191,36,.07), rgba(251,191,36,.02)); }
+  .callout.good { border-color: rgba(52,211,153,.3); border-left-color: var(--emerald); background: linear-gradient(180deg, rgba(52,211,153,.07), rgba(52,211,153,.02)); }
+  .callout.danger { border-color: rgba(251,113,133,.35); border-left-color: var(--rose); background: linear-gradient(180deg, rgba(251,113,133,.07), rgba(251,113,133,.02)); }
+  .callout b { color: #fff; }
+
+  table { border-collapse: collapse; width: 100%; margin: 14px 0; font-size: 13.5px; }
+  th { text-align: left; color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; padding: 8px 10px; border-bottom: 1px solid var(--border-2); }
+  td { padding: 9px 10px; border-bottom: 1px solid var(--border); vertical-align: top; color: #e4e4e7; }
+  .tbl-scroll { overflow-x: auto; }
+
+  /* ---- Mockup frames ---- */
+  .frame { background: var(--panel); border: 1px solid var(--border); border-radius: 14px; overflow: hidden; margin: 16px 0 6px; box-shadow: 0 12px 40px -18px rgba(0,0,0,.8); }
+  .frame-cap { font-size: 12px; color: var(--faint); margin: 0 2px 20px; }
+  .app { padding: 22px; }
+
+  /* shadcn-ish primitives for mockups */
+  .dlg { max-width: 430px; margin: 0 auto; background: var(--panel); border: 1px solid var(--border-2); border-radius: 12px; padding: 22px; }
+  .dlg-title { font-size: 16px; font-weight: 600; margin: 0 0 6px; }
+  .dlg-desc { font-size: 13px; color: var(--muted); margin: 0 0 16px; }
+  .grp { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: .06em; color: var(--faint); margin: 18px 0 10px; }
+  .field { margin: 0 0 14px; }
+  .lbl { display: block; font-size: 13px; font-weight: 500; margin: 0 0 6px; }
+  .lbl .gloss { font-weight: 400; color: var(--muted); }
+  .sel { display: flex; align-items: center; justify-content: space-between; width: 100%; background: var(--bg); border: 1px solid var(--border-2); border-radius: 8px; padding: 8px 12px; font-size: 13.5px; min-height: 38px; }
+  .sel .ph { color: var(--muted); }
+  .sel .chev { color: var(--faint); font-size: 11px; }
+  .help { font-size: 11.5px; color: var(--muted); margin: 6px 0 0; }
+  .dlg-foot { display: flex; align-items: center; gap: 8px; margin-top: 18px; }
+  .spacer { flex: 1; }
+  .btn { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; border-radius: 8px; padding: 7px 14px; border: 1px solid transparent; }
+  .btn.primary { background: var(--primary); color: var(--primary-fg); }
+  .btn.primary.disabled { opacity: .5; }
+  .btn.outline { border-color: var(--border-2); color: var(--fg); }
+  .btn.ghost { color: var(--muted); }
+  .btn.sky { background: var(--sky); color: #082f49; }
+  .save-why { font-size: 11px; color: var(--muted); text-align: right; margin: 6px 0 0; }
+
+  /* switch (Radix Switch look) */
+  .switchrow { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
+  .sw { flex: none; width: 36px; height: 20px; border-radius: 999px; background: var(--panel-3); border: 1px solid var(--border-2); position: relative; margin-top: 2px; }
+  .sw::after { content: ""; position: absolute; top: 2px; left: 2px; width: 14px; height: 14px; border-radius: 50%; background: var(--faint); }
+  .sw.on { background: var(--amber); border-color: var(--amber); }
+  .sw.on::after { left: auto; right: 2px; background: #422006; }
+
+  /* terminal / chooser mockups */
+  .term-dlg { max-width: 460px; margin: 0 auto; background: #141417; border: 1px solid #3f3f46; border-radius: 10px; overflow: hidden; color: #e4e4e7; }
+  .term-dlg .bd { padding: 16px 16px 12px; }
+  .term-dlg .ti { font-size: 13px; font-weight: 600; color: #f4f4f5; }
+  .term-dlg .de { font-size: 11.5px; color: #a1a1aa; margin-top: 4px; }
+  .term-dlg .ft { display: flex; justify-content: flex-end; gap: 8px; border-top: 1px solid #27272a; padding: 10px 16px; }
+  .term-dlg .btn { font-size: 12px; padding: 5px 10px; }
+  .model-line { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; font-size: 11.5px; color: #a1a1aa; margin-top: 8px; }
+  .model-line .chip { font-family: var(--mono); font-size: 11px; background: #27272a; border-radius: 5px; padding: 1px 6px; color: #e4e4e7; }
+  .model-line .chip.aa { background: rgba(251,191,36,.14); color: var(--amber); border: 1px solid rgba(251,191,36,.35); }
+  .model-line a { color: var(--sky); text-decoration: none; }
+
+  /* session header mockup */
+  .sess-hdr { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; background: #141417; border: 1px solid #27272a; border-radius: 10px 10px 0 0; padding: 8px 12px; font-size: 12px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; border-radius: 6px; border: 1px solid; padding: 3px 9px; font-size: 11px; font-weight: 700; }
+  .pill.ok { border-color: rgba(52,211,153,.45); background: rgba(52,211,153,.1); color: var(--emerald); }
+  .pill.aa { border-color: rgba(251,191,36,.55); background: rgba(251,191,36,.1); color: var(--amber); }
+  .pill.ro { border-color: rgba(167,139,250,.55); background: rgba(167,139,250,.1); color: var(--violet); }
+  .hdr-meta { font-family: var(--mono); font-size: 11px; color: #71717a; }
+  .hdr-btn { display: inline-flex; align-items: center; gap: 5px; border: 1px solid #3f3f46; background: rgba(39,39,42,.6); color: #e4e4e7; border-radius: 7px; padding: 4px 9px; font-size: 11px; }
+  .hdr-btn.end { border-color: rgba(251,113,133,.45); background: transparent; color: var(--rose); }
+  .termwin { background: #0c0c0e; border: 1px solid #27272a; border-top: 0; border-radius: 0 0 10px 10px; padding: 14px 16px; font-family: var(--mono); font-size: 12.5px; line-height: 1.7; color: #d4d4d8; overflow-x: auto; }
+  .termwin .dim { color: var(--faint); }
+  .termwin .aa { color: var(--amber); }
+
+  /* flows */
+  .flow { display: flex; flex-wrap: wrap; align-items: stretch; gap: 8px; margin: 14px 0; }
+  .fstep { background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px; padding: 10px 12px; font-size: 12.5px; max-width: 210px; flex: 1 1 150px; }
+  .fstep b { display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--sky); margin-bottom: 3px; }
+  .fstep.alt b { color: var(--amber); }
+  .fstep.end b { color: var(--emerald); }
+  .farrow { align-self: center; color: var(--faint); font-size: 15px; flex: none; }
+
+  .badge { display: inline-block; font-size: 10.5px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; border-radius: 5px; padding: 2px 7px; }
+  .badge.state { background: rgba(56,189,248,.12); color: var(--sky); }
+  .badge.ok { background: rgba(52,211,153,.12); color: var(--emerald); }
+  .badge.warnb { background: rgba(251,191,36,.12); color: var(--amber); }
+  .toc { font-size: 13.5px; color: var(--muted); columns: 2; margin: 16px 0 0; }
+  .toc a { color: var(--sky); text-decoration: none; display: block; padding: 2px 0; }
+  @media (max-width: 640px) { .toc { columns: 1; } }
+</style>
+
+<div class="wrap">
+  <header class="doc">
+    <div class="kicker">UX Design · Terminal mode (task d3de150c)</div>
+    <h1>Terminal auto-accept mode — an opt-in that stays visible while it's on</h1>
+    <p class="lede">
+      Nick asked why the in-app terminal starts in "manual mode" (Claude Code asks before every edit/command)
+      instead of auto. Requirements answered: manual stays the default — it's the safe posture for a feature
+      running real commands on Nick's own machine — and auto-accept becomes an <b>opt-in toggle</b> that appends
+      <code>--permission-mode acceptEdits</code> to the launch, mirroring the shipped "Terminal starting model"
+      pattern (task c4ca2d95) exactly. This document designs the toggle, its launch-time visibility, and — the
+      part the model feature never needed — a <b>persistent in-session indicator</b>, because a forgotten safety
+      toggle is a different class of surprise than a forgotten model.
+    </p>
+    <nav class="toc">
+      <a href="#decisions">0 · Decisions at a glance</a>
+      <a href="#toggle">1 · The toggle — Profile → Models</a>
+      <a href="#launch">2 · Launch surfaces</a>
+      <a href="#indicator">3 · In-session indicator</a>
+      <a href="#resume">4 · Resume decision (AC-8)</a>
+      <a href="#degrade">5 · Version skew & degradation</a>
+      <a href="#states">6 · State coverage</a>
+      <a href="#a11y">7 · Accessibility (WCAG AA)</a>
+      <a href="#trace">8 · Acceptance-criteria traceability</a>
+    </nav>
+  </header>
+
+  <!-- ============================================================ -->
+  <section id="decisions">
+    <h2>0 · Decisions at a glance</h2>
+    <div class="tbl-scroll"><table>
+      <tr><th>Question</th><th>Decision</th><th>Why (short)</th></tr>
+      <tr>
+        <td>Where does the user set it?</td>
+        <td>A switch <b>"Start in auto-accept mode"</b> in the existing Profile → Models dialog, inside the <b>Terminal sessions</b> group, directly under "Starting model". Default OFF.</td>
+        <td>One home for "how do my fresh terminal sessions launch" (recognition over recall). The model setting trained users where this lives; a second surface for one switch would fail Jakob's Law and Hick's Law both.</td>
+      </tr>
+      <tr>
+        <td>What kind of control?</td>
+        <td>A two-state Switch — <b>no dropdown, no free text, ever</b>. The only value that can exist is <code>acceptEdits</code>.</td>
+        <td>AC-6: <code>bypassPermissions</code> must be unofferable. A boolean control makes the forbidden value structurally impossible, which is stronger than validating it away.</td>
+      </tr>
+      <tr>
+        <td>Platform-wide admin default?</td>
+        <td><b>No. Deliberately none.</b> Unlike the model, this setting gets no Platform-tab card.</td>
+        <td>An admin switching every user's machine into auto-accepting real file edits is an unacceptable blast radius. The model precedent is mirrored for mechanics, not for governance.</td>
+      </tr>
+      <tr>
+        <td>Visible at launch?</td>
+        <td>Yes — the existing model line in the chooser footer and per-task dialog gains an amber <b>auto-accept</b> chip when ON. Nothing added when OFF.</td>
+        <td>Same passive-visibility posture that fixed the "why am I on Opus 4.8?" surprise; zero-friction paths stay dialog-free.</td>
+      </tr>
+      <tr>
+        <td>Visible during the session?</td>
+        <td>Yes — a persistent amber <b>"⚡ Auto-accept"</b> badge in the session header, same slot and anatomy as the shipped Read-only badge. Shown for the session's whole life, in the dock, split view, and pop-out alike.</td>
+        <td>The forget-scenario is the core risk: Nick toggles it on, forgets, and a week later a session silently edits files without asking. A settings toggle he saw once is not an answer; a badge on the running session is.</td>
+      </tr>
+      <tr>
+        <td>Applies on resume?</td>
+        <td><b>No — fresh launches only</b>, exactly like the model flag (bridge branch 4 only).</td>
+        <td>§4. Forgetting to apply it costs two keystrokes (Shift+Tab); applying it unexpectedly to an old session escalates silently in the unsafe direction. Asymmetric costs → pick the recoverable miss.</td>
+      </tr>
+      <tr>
+        <td>Old bridge ignores the param?</td>
+        <td>Silent graceful degradation — no banner, no error. The header badge shows "requested"; Claude Code's own status line is the live truth.</td>
+        <td>§5. The failure direction is <i>safe</i> (Claude asks when it needn't). The existing helper-update nag is the remedy path; inventing a new warning surface for a fail-safe miss isn't worth it.</td>
+      </tr>
+      <tr>
+        <td>Task-pickup behaviour (fix #188)?</td>
+        <td>Untouched, by construction: this feature only changes the <code>claude</code> argv on fresh mints.</td>
+        <td>AC-7. Ask-first task pickup is app-side flow, not CLI permission mode; no shared code paths change.</td>
+      </tr>
+    </table></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="toggle">
+    <h2>1 · The toggle — Profile → Models → Terminal sessions</h2>
+    <p>
+      The Terminal sessions group (added by the model feature in <code>model-tier-settings.tsx</code>) gains a
+      switch row under the Starting model field. Everything else — staged-until-Save, Cancel/Esc discards,
+      "Save enables when…" helper, toast on save — is inherited unchanged.
+    </p>
+
+    <h3>1.1 · Default state — OFF <span class="badge state">empty / default</span></h3>
+    <div class="frame"><div class="app">
+      <div class="dlg" role="dialog" aria-label="Models dialog mockup — auto-accept off">
+        <p class="dlg-title">⌬ Models</p>
+        <p class="dlg-desc">Choose which Claude model runs your workflow tiers and your terminal sessions. Anything left unset uses the platform default.</p>
+
+        <p class="grp">Terminal sessions</p>
+        <div class="field">
+          <span class="lbl">Starting model <span class="gloss">— for new in-browser terminal sessions</span></span>
+          <div class="sel"><span class="ph">Platform default (Opus)</span><span class="chev">▾</span></div>
+        </div>
+        <div class="field">
+          <div class="switchrow">
+            <span class="lbl" style="margin:0;">Start in auto-accept mode
+              <span class="gloss" style="display:block; font-size:11.5px; margin-top:2px;">New sessions accept file edits without asking each time. Claude still asks before anything riskier.</span>
+            </span>
+            <span class="sw" role="switch" aria-checked="false" aria-label="Start in auto-accept mode"></span>
+          </div>
+          <p class="help">Off = Claude Code asks before each edit (recommended). Applies to fresh sessions only — resumed sessions keep asking, and you can switch any session live with Shift+Tab in the terminal.</p>
+        </div>
+
+        <div class="dlg-foot">
+          <span class="btn ghost" style="opacity:.5">Reset to defaults</span>
+          <span class="spacer"></span>
+          <span class="btn outline">Cancel</span>
+          <span class="btn primary disabled">Save</span>
+        </div>
+        <p class="save-why">Save enables when you change a value.</p>
+      </div>
+    </div></div>
+    <p class="frame-cap">OFF is the default and the recommendation, said in plain words in the help text — the safe option is never mystery meat. The label says what the mode <i>does</i> ("accept file edits without asking"), not the CLI flag's name; the flag appears only in this doc and code. Workflow-tier rows above the group elided for brevity.</p>
+
+    <h3>1.2 · Toggled ON — consequence stated before Save <span class="badge warnb">warning</span></h3>
+    <div class="frame"><div class="app">
+      <div class="dlg">
+        <p class="grp" style="margin-top:0;">Terminal sessions</p>
+        <div class="field">
+          <div class="switchrow">
+            <span class="lbl" style="margin:0;">Start in auto-accept mode</span>
+            <span class="sw on" role="switch" aria-checked="true" aria-label="Start in auto-accept mode"></span>
+          </div>
+          <p class="help" style="color: var(--amber);">⚡ New sessions will edit files on your machine without confirming each change. The session header shows an <b>Auto-accept</b> badge whenever this is active.</p>
+        </div>
+        <div class="dlg-foot" style="margin-top:10px;">
+          <span class="btn ghost">Reset to defaults</span>
+          <span class="spacer"></span>
+          <span class="btn outline">Cancel</span>
+          <span class="btn primary">Save</span>
+        </div>
+      </div>
+    </div></div>
+    <p class="frame-cap">Flipping the switch swaps the help line for an amber consequence statement (icon + text, never colour alone) that also <i>teaches the indicator</i>: the user learns at opt-in time what the badge in §3 means, so the badge never needs explaining later. No confirmation dialog — the switch is staged behind the dialog's existing Save, which is already a deliberate second step, and the setting affects only this user's own launches (matching the model feature's "personal blast radius = no extra gate" reasoning). ON-state switch track is amber, not the usual primary colour — the same hue the chip (§2) and badge (§3) use, one colour vocabulary for "auto-accept is on" everywhere.</p>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="launch">
+    <h2>2 · Launch surfaces — one chip on the existing model line</h2>
+    <p>
+      The model feature already put a passive one-liner wherever "start fresh" lives (chooser footer, per-task
+      dedupe dialog) and deliberately left instant direct launches dialog-free. This feature adds <b>one amber
+      chip to that same line</b> when the toggle is ON — no new line, no new dialog, and nothing at all when OFF
+      (criterion 3's byte-identical spirit applies to the UI too: OFF looks exactly like today).
+    </p>
+
+    <h3>2.1 · Chooser footer, toggle ON</h3>
+    <div class="frame"><div class="app">
+      <div class="term-dlg">
+        <div class="bd">
+          <p class="ti">Claude Code sessions</p>
+          <p class="de" style="margin-bottom: 10px;">Reconnect to a running session, resume a recent one, or start fresh.</p>
+          <div style="border: 1px solid #27272a; border-radius: 8px; padding: 9px 12px; font-size: 12px; color: #71717a;">
+            ○ Recent · vibe-coding-ideas — <span class="mono">Terminal mode</span> · ended 3 h ago
+          </div>
+        </div>
+        <div class="ft" style="justify-content: space-between; align-items: center;">
+          <span class="model-line" style="margin:0;">New sessions start on <span class="chip">Opus</span> · <span class="chip aa">⚡ auto-accept on</span> · <a href="#toggle">Change</a></span>
+          <span class="btn sky">▸ Start new session</span>
+        </div>
+      </div>
+    </div></div>
+    <p class="frame-cap">The chip joins the existing line, left of the one button it qualifies (proximity binds fact to action). The existing "Change" link now answers for both facts — model and mode live in the same dialog, so one link suffices. When the toggle is OFF the line is unchanged from today, chip absent.</p>
+
+    <h3>2.2 · Per-task dedupe dialog, toggle ON</h3>
+    <div class="frame"><div class="app">
+      <div class="term-dlg" style="max-width: 400px;">
+        <div class="bd">
+          <p class="ti">This task already has a terminal running</p>
+          <p class="de">
+            <span style="display:block;">Terminal mode</span>
+            <span class="mono">Started 12 min ago</span>
+          </p>
+          <p class="model-line">Start fresh starts on <span class="chip">Sonnet</span> · <span class="chip aa">⚡ auto-accept on</span></p>
+        </div>
+        <div class="ft">
+          <span class="btn ghost">Cancel</span>
+          <span class="btn ghost">▸ Start fresh anyway</span>
+          <span class="btn sky">⟳ Reconnect</span>
+        </div>
+      </div>
+    </div></div>
+    <p class="frame-cap">Same terse variant as the model line here — no link, three actions already compete. The line scopes itself to "Start fresh": reconnecting or resuming never gains the flag (§4), so the chip correctly describes only the fresh path. Dialog stays dismissable in every mode — close, Escape, outside-click — per the project's "never trap the user in a dialog" rule.</p>
+
+    <h3>2.3 · Direct instant launch — nothing new, on purpose</h3>
+    <p>
+      A direct task launch with no existing session mints instantly, no dialog — the model feature fought to
+      keep that path zero-friction and this feature doesn't reopen it. The user's confirmation arrives seconds
+      later twice over: Claude Code's own status line (<span class="mono">⏵⏵ accept edits on</span>) and the
+      header badge (§3), which is present from the session's first frame.
+    </p>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="indicator">
+    <h2>3 · The persistent in-session indicator — the part the model never needed</h2>
+    <div class="callout danger">
+      <b>The forget scenario is the design driver.</b> Nick enables the toggle for a heavy refactor day, forgets,
+      and two weeks later opens a terminal on production-adjacent work. With only a buried settings switch, the
+      first sign auto-accept is on is <i>an edit happening without a prompt</i> — discovering a safety setting by
+      watching it fire is the failure this section exists to prevent. The mode must be legible at a glance on the
+      running session itself, for the session's entire life, everywhere the session renders.
+    </div>
+
+    <h3>3.1 · Session header badge</h3>
+    <p>
+      The session pane header (<code>terminal-session-view.tsx</code>) already has exactly this pattern shipped:
+      the violet <b>Read-only</b> badge — a bordered pill sitting after the status pill. Auto-accept reuses that
+      anatomy one-for-one, in amber, placed immediately after the status pill (before Read-only when both show):
+    </p>
+    <div class="frame"><div class="app">
+      <div style="max-width: 640px; margin: 0 auto;">
+        <div class="sess-hdr">
+          <span class="pill ok">● Connected</span>
+          <span class="pill aa">⚡ Auto-accept</span>
+          <span class="hdr-meta">VibeCodes · session 3f9a02c1</span>
+          <span style="margin-left:auto; display:inline-flex; gap:6px;">
+            <span class="hdr-btn">⧉ Pop out</span>
+            <span class="hdr-btn">🔓 Read-only</span>
+            <span class="hdr-btn end">✕ End session</span>
+          </span>
+        </div>
+        <div class="termwin">
+          <span class="dim">~/projects/vibe-coding-ideas</span><br />
+          ✻ Welcome to Claude Code<br />
+          <span class="aa">⏵⏵ accept edits on (shift+tab to cycle)</span><br />
+          <span class="dim">▌</span>
+        </div>
+      </div>
+    </div></div>
+    <p class="frame-cap">The badge is always-visible text with an icon — never hover-only, never colour-only (amber pill + ⚡ glyph + the word "Auto-accept"). It renders whenever the session was <i>launched</i> with the flag, for the whole life of the tab — connected, disconnected, reconnecting — because the underlying conversation keeps the mode across reconnects. Claude Code's own status line (bottom of the stream) remains the authoritative <i>live</i> truth; the two agree in the normal case and the terminal wins when they don't (§3.3).</p>
+
+    <h3>3.2 · Where the badge follows the session</h3>
+    <ul>
+      <li><b>Dock panel & split view</b> — the badge lives in the pane header, so both split panes carry their own truthful badge independently (one session can be auto-accept while its neighbour isn't).</li>
+      <li><b>Pop-out window</b> — the popped window renders the same <code>terminal-session-view</code> header, so the badge travels with it for free. The dock-side popped-out chip does <i>not</i> gain a glyph: that chip already reports misleading status mid-preemption (a known hard-won rule) and stays minimal.</li>
+      <li><b>Tab strip</b> — <b>no per-tab glyph.</b> Tabs are ~“label + status glyph” at 12px; a second glyph per tab would collide with the existing status→glyph vocabulary and the armed close/rename states (fix #202's reflow lesson). The pane header is one glance away and is the designed home. If field use later shows Nick switching among many tabs and losing track, a tab-strip dot is the v2 slot — deliberately deferred, not forgotten.</li>
+      <li><b>Title attribute</b> (supplementary, never the only channel): <i>"Launched in auto-accept mode — file edits proceed without confirmation. Shift+Tab in the terminal changes the live mode."</i></li>
+    </ul>
+
+    <h3>3.3 · Honesty limits of the badge</h3>
+    <p>
+      The bridge and relay never parse the stream (hard architectural rule), so the app cannot observe the
+      <i>live</i> permission mode — the user can cycle it any time with Shift+Tab inside Claude Code. The badge
+      therefore asserts exactly what the app knows: <b>"this session was launched in auto-accept mode"</b>. That
+      is the right claim for the forget-scenario (the danger is the launch state persisting unnoticed), and the
+      terminal's own status line covers live changes. The badge never toggles off in response to stream content —
+      there is no stream parsing, and a badge that silently vanished would imply a live-tracking fidelity the
+      system honestly doesn't have.
+    </p>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="resume">
+    <h2>4 · Resume decision — fresh launches only (AC-8)</h2>
+    <p>
+      Requirements left this call to design: permission mode isn't conversation state (unlike the model, which
+      <code>--resume</code> can't change), so the flag <i>could</i> technically apply on resume. <b>Decision: it
+      doesn't. The flag rides only bridge branch 4 — a genuinely fresh session — exactly like the model flag.</b>
+    </p>
+    <div class="tbl-scroll"><table>
+      <tr><th>If we're wrong this way…</th><th>Cost</th></tr>
+      <tr><td>Toggle ON, user resumes, session asks before edits anyway</td><td>Two keystrokes (Shift+Tab) fixes it, in the exact spot the user is already looking. Fail-safe, self-evident, instantly recoverable.</td></tr>
+      <tr><td><i>(the rejected alternative)</i> Toggle ON weeks ago, user resumes an old conversation to inspect it, session silently auto-edits</td><td>Escalation in the unsafe direction, on the path (revisiting old work) where the user's mental model is most stale. Not recoverable after the fact.</td></tr>
+    </table></div>
+    <p>Secondary reasons, each independently sufficient:</p>
+    <ul>
+      <li><b>One pattern, one audit.</b> The model flag already established "launch-time flags apply to branch 4 only" in <code>resolveClaudeLaunch</code>; mirroring it keeps criterion 3's byte-identical-when-off guarantee trivially checkable and reuses the existing tests' shape.</li>
+      <li><b>The badge stays honest cheaply.</b> "Launched with the flag" is knowable from the mint path alone. Applying the flag on resume would require threading launch-mode tracking through resume/continue paths too — more surface for a claim the terminal's status line already makes better.</li>
+      <li><b>The copy already says it.</b> The Profile help line (§1.1) and the dedupe dialog's "Start fresh starts on…" scoping (§2.2) both state the fresh-only rule at the moments it's relevant — the decision is communicated, not just made.</li>
+    </ul>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="degrade">
+    <h2>5 · Version skew — silent graceful degradation, and why that's right here</h2>
+    <p>
+      An older helper/bridge that predates the param ignores it and launches normally (criterion 5 — the same
+      guarantee the model param shipped with). Should the UI warn that the setting may not have taken effect?
+      <b>No — silent degradation, deliberately:</b>
+    </p>
+    <ul>
+      <li><b>The miss fails safe.</b> The only consequence is Claude asking before edits when the user hoped it wouldn't — the default behaviour, the safe direction. Warning banners are for failures that hurt; this one merely under-delivers a convenience.</li>
+      <li><b>The mismatch is its own signal.</b> The header badge says "Auto-accept" while the terminal visibly prompts and the status line lacks <span class="mono">accept edits on</span> — a user who cares notices within one edit, and the badge's title text plus the guide sentence (below) name the fix.</li>
+      <li><b>The remedy already exists.</b> Outdated helpers get the shipped update nag (<code>helper-version.ts</code> / <code>helper-update-flow.ts</code>); updating is the fix for this and every other skew. Building a bespoke "your helper ignored a param" surface would duplicate that flow for one fail-safe case — and would require the app to <i>know</i> the bridge ignored it, which the no-stream-parsing rule forbids anyway.</li>
+      <li><b>One guide sentence</b> on <span class="mono">guide/launching-claude-code</span>'s troubleshooting list closes the loop: <i>"Turned on auto-accept but the terminal still asks before every edit — your helper app is out of date; install the update it's offering, then start a fresh session. (Shift+Tab in the terminal switches the mode live meanwhile.)"</i></li>
+    </ul>
+    <div class="callout good">
+      <b>Note the asymmetry with the model feature's failure story:</b> a bad model value fails <i>loud</i> (CLI
+      error in the stream), so that design invested in pre-placed guidance. A skew-dropped permission flag fails
+      <i>quiet and safe</i>, so this design invests nothing beyond one guide sentence. Effort proportional to harm.
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="states">
+    <h2>6 · State coverage matrix</h2>
+    <div class="tbl-scroll"><table>
+      <tr><th>Surface</th><th>Loading</th><th>Empty / default</th><th>Error</th><th>Success</th></tr>
+      <tr>
+        <td>Profile → Models switch</td>
+        <td>None needed — value arrives with the server-rendered page, same prop pattern as <code>terminalModel</code></td>
+        <td>OFF, with the "recommended" help line (§1.1) — the default state explains itself</td>
+        <td>Save failure: existing toast "Failed to save — try again", staged value retained. No invalid-input state exists — a switch can't hold a bad value</td>
+        <td>Toast "Models saved"; amber consequence line while ON (§1.2)</td>
+      </tr>
+      <tr>
+        <td>Launch surfaces</td>
+        <td>Chip simply absent until the preference is known (same "footnotes don't get skeletons" rule as the model line)</td>
+        <td>OFF: line renders exactly as today — no chip, no reserved gap</td>
+        <td>No new failure mode: the flag resolves from the user row at mint time; any resolution failure degrades to omitting the param (launch never blocks)</td>
+        <td>Amber "⚡ auto-accept on" chip beside the model chip (§2.1–2.2)</td>
+      </tr>
+      <tr>
+        <td>Session header badge</td>
+        <td>Renders from first frame (mint-time fact, no fetch)</td>
+        <td>Session launched with toggle OFF: badge absent for the session's whole life — it never appears retroactively</td>
+        <td>Skewed old bridge: badge shows while CLI still asks — accepted, fail-safe, guide sentence covers it (§5)</td>
+        <td>Badge for the session's whole life across connected / disconnected / reconnecting; terminal status line confirms live (§3.1)</td>
+      </tr>
+      <tr>
+        <td>Terminal itself</td>
+        <td>—</td>
+        <td>—</td>
+        <td><code>--permission-mode acceptEdits</code> is a stable documented flag; a CLI too old to know it prints its own error verbatim in the stream (same verbatim-error posture as the model feature)</td>
+        <td>Claude Code status line: <span class="mono">⏵⏵ accept edits on</span> — the authoritative live confirmation, and an edit proceeding without a prompt (criterion 2's verification)</td>
+      </tr>
+    </table></div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="a11y">
+    <h2>7 · Accessibility notes (WCAG 2.1 AA)</h2>
+    <ul>
+      <li><b>The switch is a real labelled control</b> — Radix Switch with <code>role="switch"</code>, <code>aria-checked</code>, and a visible <code>&lt;Label htmlFor&gt;</code> ("Start in auto-accept mode"); the help/consequence line is wired via <code>aria-describedby</code> so the recommendation and the ON-state warning are announced, not just painted.</li>
+      <li><b>State is never colour-only.</b> The switch thumb position, the ⚡ glyph, and the words "auto-accept" each independently carry the state — in the dialog, the chip, and the badge. The amber ON track pairs with the amber help text (icon + words), not instead of it.</li>
+      <li><b>Badge and chip are plain visible text</b> — no tooltip-gated information (the <code>title</code> attribute is supplementary detail only). No hover-dependence anywhere; everything reads on touch.</li>
+      <li><b>Contrast:</b> amber <span class="mono">#fbbf24</span> on the header/panel darks (<span class="mono">#141417</span>/<span class="mono">#18181b</span>) is ≈9.6:1 — comfortably past 4.5:1 for the badge, chip, and warning text. The chip border (<span class="mono">rgba(251,191,36,.35)</span>) is decorative; the text carries the meaning.</li>
+      <li><b>Keyboard:</b> the switch sits in the existing Radix Dialog's tab order and toggles with Space/Enter; "Change" in the chooser footer remains a real link in the tab order; the badge is a static status element (not focusable — it's information, not an action). Launch dialogs stay dismissable via close button, Escape and outside-click in every state.</li>
+      <li><b>Screen-reader parity for the session state:</b> the badge renders as text inside the header, so it's read in the header's natural order ("Connected, Auto-accept, VibeCodes…") — the mode is announced wherever the status is.</li>
+      <li><b>Target size:</b> the Switch control renders at the shared shadcn size with the full label row as its click target (label click toggles — Fitts's Law on a small control); ≥8px from adjacent fields.</li>
+      <li><b>375px screens:</b> the switch row's label wraps above the control; the chooser footer line already wraps above the button (model-feature behaviour) and the extra chip wraps with it; the header badge participates in the header's existing <code>flex-wrap</code>.</li>
+    </ul>
+  </section>
+
+  <!-- ============================================================ -->
+  <section id="trace">
+    <h2>8 · Acceptance-criteria traceability</h2>
+    <div class="tbl-scroll"><table>
+      <tr><th>Criterion</th><th>Design element</th></tr>
+      <tr><td>1 — toggle in launch settings, default OFF</td><td>§1.1: switch in Profile → Models → Terminal sessions, default OFF with "recommended" copy</td></tr>
+      <tr><td>2 — ON → <code>--permission-mode acceptEdits</code> on fresh spawn</td><td>Mint resolves the user row → deep-link param → bridge branch 4 appends the flag (mirrors <code>model</code> exactly); verified by the CLI status line + an unprompted edit (§6 row 4)</td></tr>
+      <tr><td>3 — OFF → byte-identical to today</td><td>OFF sends no param, renders no chip, no badge, no reserved space — UI and argv both identical (§2, §6)</td></tr>
+      <tr><td>4 — whitelist-validated value</td><td>Boolean switch means no free text exists; the deep-link param is validated on both parse sides against the single literal <code>acceptEdits</code> (stricter than the model's structural validation) (§0)</td></tr>
+      <tr><td>5 — older helper/bridge ignores the param</td><td>Unknown param dropped at parse, launch proceeds; silent fail-safe degradation + one guide sentence (§5)</td></tr>
+      <tr><td>6 — <code>bypassPermissions</code> never offered</td><td>Structurally impossible: two-state control, single-literal whitelist, no admin surface, no custom input anywhere (§0, §1)</td></tr>
+      <tr><td>7 — fix #188 task-pickup untouched</td><td>Feature touches only fresh-mint argv; ask-first pickup is app-side flow with no shared path (§0)</td></tr>
+      <tr><td>8 — resume decision, justified</td><td>§4: fresh only — asymmetric-cost argument, pattern parity, badge honesty; escape hatch Shift+Tab, communicated in-copy</td></tr>
+    </table></div>
+
+    <h3>Handoff notes for Implementation</h3>
+    <ul>
+      <li>Storage: a boolean beside <code>users.terminal_model</code> (e.g. <code>terminal_auto_accept</code>, default false) — same fetch/staging path through <code>model-tier-settings.tsx</code> and the profile server action. <b>No <code>platform_settings</code> key</b> — there is deliberately no platform default (§0).</li>
+      <li>Deep link: one non-secret param (e.g. <code>permissionMode=acceptEdits</code>) inserted before <code>prompt</code>, mirrored in <code>terminal/shared/deep-link.mjs</code> with the drift test extended; <code>redactDeepLinkToken</code> leaves it untouched (not secret, not user text). Parser accepts only the literal <code>acceptEdits</code>; anything else drops the param.</li>
+      <li>Bridge: <code>resolveClaudeLaunch</code> branch 4 only — <code>claude --session-id &lt;id&gt;[ --model m][ --permission-mode acceptEdits]</code>; branches 1–3 never read it (§4). Unit tests mirror the model flag's suite shape.</li>
+      <li>Badge: mint response / session-registry entry records the launch's permission mode so <code>terminal-session-view.tsx</code> can render the pill (amber, Zap icon, after the status pill, before Read-only) — same conditional pattern as the Read-only pill. Pop-out inherits for free; add nothing to tabs or the popped-out chip (§3.2).</li>
+      <li>Launch lines: extend <code>terminalLaunchModelLine</code> / <code>terminalDialogModelLine</code> (or sibling helpers) in <code>model-resolution.ts</code>-adjacent pure code — unit-test the copy variants including "machine default + auto-accept on".</li>
+      <li>Copy inventory: switch label "Start in auto-accept mode"; help OFF (§1.1); consequence ON (§1.2); chip "⚡ auto-accept on"; badge "⚡ Auto-accept" + title text (§3.2); guide troubleshooting sentence (§5).</li>
+      <li>Do not touch: task-pickup flow (#188), resume/continue argv, the dedupe dialog's dismissability, tab-strip layout (#202 regression risk).</li>
+    </ul>
+  </section>
+</div>

@@ -33,6 +33,7 @@ const PAYLOAD: PopoutPayload = {
   label: "Add pagination to the recipe list",
   identity: "Recipe Saver · session sid-123",
   readOnly: false,
+  autoAccept: false,
 };
 
 const BUFFER: TransferredBuffer = { data: "some scrollback\r\n", truncated: false };
@@ -130,6 +131,29 @@ describe("parsePopoutChannelMessage", () => {
       expect(parsePopoutChannelMessage(input)).toBeNull();
     },
   );
+
+  // ── auto-accept mode (task d3de150c) ──────────────────────────────────────
+
+  it("parses autoAccept: true when the sender carries it", () => {
+    const withAutoAccept = { ...PAYLOAD, autoAccept: true };
+    expect(parsePopoutChannelMessage({ type: "payload", payload: withAutoAccept })).toEqual({
+      type: "payload",
+      payload: withAutoAccept,
+    });
+  });
+
+  it("deploy skew: a payload with no autoAccept field at all defaults to false, not rejected", () => {
+    const { autoAccept: _autoAccept, ...rest } = PAYLOAD;
+    const parsed = parsePopoutChannelMessage({ type: "payload", payload: rest });
+    expect(parsed).not.toBeNull();
+    expect((parsed as { payload: PopoutPayload }).payload.autoAccept).toBe(false);
+  });
+
+  it("a wrong-typed autoAccept field is coerced to false rather than rejecting the whole payload", () => {
+    const parsed = parsePopoutChannelMessage({ type: "payload", payload: { ...PAYLOAD, autoAccept: "true" } });
+    expect(parsed).not.toBeNull();
+    expect((parsed as { payload: PopoutPayload }).payload.autoAccept).toBe(false);
+  });
 
   // ── scrollback transfer (card 35cffc10) ───────────────────────────────────
 

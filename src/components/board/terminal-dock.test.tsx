@@ -91,6 +91,7 @@ type MockTerminalSessionActions = {
   reconnectNow: ReturnType<typeof vi.fn>;
   end: ReturnType<typeof vi.fn>;
   setReadOnly: ReturnType<typeof vi.fn>;
+  setAutoAccept: ReturnType<typeof vi.fn>;
   copyBridgeCommand: ReturnType<typeof vi.fn>;
   refreshView: ReturnType<typeof vi.fn>;
   serializeNow: ReturnType<typeof vi.fn>;
@@ -151,6 +152,7 @@ vi.mock("./terminal-session-view", () => ({
         reconnectNow: vi.fn(),
         end: vi.fn(),
         setReadOnly: vi.fn(),
+        setAutoAccept: vi.fn(),
         copyBridgeCommand: vi.fn(),
         refreshView: vi.fn(),
         serializeNow: vi.fn(),
@@ -203,6 +205,7 @@ vi.mock("./terminal-session-view", () => ({
               paired: true,
               browserToken: null,
               readOnly: false,
+              autoAccept: false,
             })
           }
         >
@@ -229,6 +232,7 @@ vi.mock("./terminal-session-view", () => ({
               paired: true,
               browserToken: null,
               readOnly: false,
+              autoAccept: false,
             })
           }
         >
@@ -251,6 +255,7 @@ vi.mock("./terminal-session-view", () => ({
               paired: true,
               browserToken: `token-for-${entry.key}`,
               readOnly: false,
+              autoAccept: false,
             })
           }
         >

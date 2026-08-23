@@ -218,8 +218,43 @@ describe("POST /api/terminal/session — effective terminal model resolution (ta
     // rather than blocking or failing the mint.
     expect(body.model).toBe("opus");
     expect(logger.warn).toHaveBeenCalledWith(
-      "Terminal session mint: failed to read terminal_model — omitting user override",
+      "Terminal session mint: failed to read terminal_model/terminal_auto_accept — omitting user overrides",
       expect.objectContaining({ error: "connection reset" }),
     );
+  });
+});
+
+describe("POST /api/terminal/session — effective auto-accept resolution (task d3de150c)", () => {
+  it("omits permissionMode entirely when the user's preference is off (default)", async () => {
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(res.status).toBe(200);
+    expect(body).not.toHaveProperty("permissionMode");
+  });
+
+  it("resolves to the literal 'acceptEdits' when the user's own preference is on", async () => {
+    tableResults.users = { data: { terminal_model: null, terminal_auto_accept: true }, error: null };
+
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(body.permissionMode).toBe("acceptEdits");
+  });
+
+  it("has no platform-wide default input — a platform_settings row never turns this on by itself", async () => {
+    tableResults.platform_settings = { data: { value: { permissionMode: "acceptEdits" } }, error: null };
+
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+    expect(body).not.toHaveProperty("permissionMode");
+  });
+
+  it("degrades to omitting permissionMode (never blocks the mint) when reading the user's row errors", async () => {
+    tableResults.users = { data: null, error: { message: "connection reset" } };
+
+    const res = await POST(req({ ideaId: IDEA_1 }));
+    const body = await res.json();
+
+    expect(res.status).toBe(200);
+    expect(body).not.toHaveProperty("permissionMode");
   });
 });

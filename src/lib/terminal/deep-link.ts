@@ -12,6 +12,8 @@
 // credential (the relay verifies it). It is a SECRET: never log a raw link, always
 // redactDeepLinkToken() first.
 
+import { isValidPermissionModeValue } from "./auto-accept-mode";
+
 /** Custom URL scheme the packaged helper registers (slice 7 OS bit). */
 export const LAUNCH_SCHEME = "vibecodes";
 /** The single action this scheme exposes today: `vibecodes://launch?…`. */
@@ -101,6 +103,21 @@ export interface LaunchDeepLinkParams {
    * (AC-10).
    */
   model?: string;
+  /**
+   * Task d3de150c ("Terminal mode") — set ONLY when the launching user's
+   * `terminal_auto_accept` preference is on, resolved server-side at mint
+   * time (see src/app/api/terminal/session/route.ts). The single valid
+   * value is the literal "acceptEdits" (isValidPermissionModeValue in
+   * src/lib/terminal/auto-accept-mode.ts) — anything else is a programmer
+   * error and is dropped by buildLaunchDeepLink below rather than sent.
+   * Callers must never set this on a resume/resumeId launch (mirrors
+   * `model`'s AC-8 constraint exactly) — the fresh-launch call site in
+   * use-terminal-session.ts is the only one that threads it through. Rides
+   * as one argv element (`claude --permission-mode acceptEdits`), never
+   * shell-split — see terminal/bridge/src/resume-cmd.js. Not a secret or
+   * user-free-text like `prompt`: redactDeepLinkToken leaves it untouched.
+   */
+  permissionMode?: string;
 }
 
 /**
@@ -124,6 +141,7 @@ export function buildLaunchDeepLink({
   cols,
   rows,
   model,
+  permissionMode,
 }: LaunchDeepLinkParams): string {
   if (!relay || !session || !token) {
     throw new Error("buildLaunchDeepLink requires relay, session and token");
@@ -151,6 +169,13 @@ export function buildLaunchDeepLink({
   // Task c4ca2d95: inserted before `prompt` (which stays LAST — see the
   // class doc comment) alongside the other optional non-secret params.
   if (model) parts.push(`model=${encodeURIComponent(model)}`);
+  // Task d3de150c: same insertion point as `model` — before `prompt`,
+  // alongside the other optional non-secret params. Whitelist-checked here
+  // too (not just at parse time) so a malformed/forbidden value passed by a
+  // future caller is never even fired in a link.
+  if (permissionMode && isValidPermissionModeValue(permissionMode)) {
+    parts.push(`permissionMode=${encodeURIComponent(permissionMode)}`);
+  }
   if (prompt) parts.push(`prompt=${encodeURIComponent(prompt)}`);
   return `${LAUNCH_SCHEME}://${LAUNCH_HOST}?${parts.join("&")}`;
 }

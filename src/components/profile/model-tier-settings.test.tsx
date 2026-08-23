@@ -18,6 +18,7 @@ class ResizeObserverStub {
 vi.mock("@/actions/profile", () => ({
   updateModelTierMap: vi.fn(),
   updateTerminalModel: vi.fn(),
+  updateTerminalAutoAccept: vi.fn(),
 }));
 
 vi.mock("@/hooks/use-viewer-model-tier-map", () => ({
@@ -26,6 +27,10 @@ vi.mock("@/hooks/use-viewer-model-tier-map", () => ({
 
 vi.mock("@/hooks/use-viewer-terminal-model", () => ({
   setViewerTerminalModelCache: vi.fn(),
+}));
+
+vi.mock("@/hooks/use-viewer-terminal-auto-accept", () => ({
+  setViewerTerminalAutoAcceptCache: vi.fn(),
 }));
 
 const mockUsePlatformModelDefaults = vi.fn();
@@ -45,7 +50,14 @@ afterEach(cleanup);
 
 function renderDialog(props: Partial<ComponentProps<typeof ModelTierSettings>> = {}) {
   return render(
-    <ModelTierSettings map={null} terminalModel={null} open onOpenChange={() => {}} {...props} />
+    <ModelTierSettings
+      map={null}
+      terminalModel={null}
+      terminalAutoAccept={false}
+      open
+      onOpenChange={() => {}}
+      {...props}
+    />
   );
 }
 
@@ -152,5 +164,73 @@ describe("ModelTierSettings — Terminal sessions group (task c4ca2d95)", () => 
 
     expect(screen.getByText(/Not a known family alias/)).toBeInTheDocument();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+});
+
+describe("ModelTierSettings — auto-accept toggle (task d3de150c)", () => {
+  beforeEach(() => {
+    mockUsePlatformModelDefaults.mockReturnValue({
+      defaults: { frontier: "opus", standard: "sonnet", cheap: "haiku" },
+      fallback: {},
+    });
+    mockUsePlatformTerminalModelDefault.mockReturnValue(null);
+  });
+
+  it("renders as a switch (role=switch), never a select or text input", () => {
+    renderDialog();
+    const toggle = screen.getByRole("switch", { name: "Start in auto-accept mode" });
+    expect(toggle).toBeInTheDocument();
+    expect(toggle).toHaveAttribute("aria-checked", "false");
+  });
+
+  it("defaults to off, with the fresh-launches-only help text", () => {
+    renderDialog({ terminalAutoAccept: false });
+    expect(screen.getByRole("switch", { name: "Start in auto-accept mode" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
+    expect(screen.getByText(/Applies to fresh sessions only/)).toBeInTheDocument();
+  });
+
+  it("reflects an on preference and shows the amber consequence copy", () => {
+    renderDialog({ terminalAutoAccept: true });
+    expect(screen.getByRole("switch", { name: "Start in auto-accept mode" })).toHaveAttribute(
+      "aria-checked",
+      "true",
+    );
+    expect(screen.getByText(/without confirming each change/)).toBeInTheDocument();
+  });
+
+  it("clicking the switch stages the change and enables Save", () => {
+    renderDialog({ terminalAutoAccept: false });
+    const toggle = screen.getByRole("switch", { name: "Start in auto-accept mode" });
+    const saveButton = screen.getByRole("button", { name: /Save/ });
+    expect(saveButton).toBeDisabled();
+
+    fireEvent.click(toggle);
+
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+    expect(saveButton).not.toBeDisabled();
+  });
+
+  it("Cancel/reopen never leaks a staged-but-unsaved toggle back in (uncontrolled trigger, real open/close cycle)", () => {
+    // Uncontrolled mode renders the DialogTrigger — clicking it (and Escape
+    // to close) both route through the component's own handleOpenChange,
+    // which is where re-staging from the persisted prop happens (matches
+    // how the Terminal starting model field's own staged state behaves).
+    render(<ModelTierSettings map={null} terminalModel={null} terminalAutoAccept={false} />);
+
+    fireEvent.click(screen.getByRole("button", { name: /Model Tiers/ }));
+    const toggle = screen.getByRole("switch", { name: "Start in auto-accept mode" });
+    fireEvent.click(toggle);
+    expect(toggle).toHaveAttribute("aria-checked", "true");
+
+    fireEvent.keyDown(toggle, { key: "Escape" });
+
+    fireEvent.click(screen.getByRole("button", { name: /Model Tiers/ }));
+    expect(screen.getByRole("switch", { name: "Start in auto-accept mode" })).toHaveAttribute(
+      "aria-checked",
+      "false",
+    );
   });
 });

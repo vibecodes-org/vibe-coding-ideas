@@ -49,16 +49,32 @@
 // of that) — it contains no whitespace or shell metacharacters, so it's
 // safe to embed directly in this shell-split CMD string as a single token,
 // identical in effect to appending it as a separate argv element.
+//
+// `permissionMode` (task d3de150c, "Terminal mode" auto-accept toggle) is
+// appended as `--permission-mode <value>` ONLY on branch 4, same posture as
+// `model` — a resumed/continued conversation keeps whatever permission mode
+// it's already running under; Shift+Tab in the terminal is the live control
+// for that, not this flag. UNLIKE `model`, this is re-validated here with a
+// single-literal WHITELIST (only "acceptEdits" is ever appended), not just a
+// shell-safety check — a hard requirement, since a wrong value here means
+// Claude Code silently starts with the WRONG permission posture rather than
+// merely picking the wrong model. The value already arrived parse-time
+// validated by the same whitelist (see index.js's LAUNCH_URL parse via the
+// shared deep-link module's isPermissionModeSafe); this is defense in depth,
+// not the only gate.
 
 /**
- * @param {{ explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, mintId: () => string }} opts
+ * @param {{ explicitCmd?: string | null, resumeId?: string | null, resume?: boolean, model?: string | null, permissionMode?: string | null, mintId: () => string }} opts
  * @returns {{ cmd: string, conv: string | null }}
  */
-export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, mintId }) {
+export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, permissionMode, mintId }) {
   if (explicitCmd) return { cmd: explicitCmd, conv: null };
   if (resumeId) return { cmd: `claude --resume ${resumeId}`, conv: resumeId };
   if (resume) return { cmd: "claude --continue", conv: null };
   const conv = mintId();
   const modelFlag = model ? ` --model ${model}` : "";
-  return { cmd: `claude --session-id ${conv}${modelFlag}`, conv };
+  // Defense-in-depth re-check: only the exact literal is ever appended, no
+  // matter what arrives here — see the header comment.
+  const permissionModeFlag = permissionMode === "acceptEdits" ? ` --permission-mode ${permissionMode}` : "";
+  return { cmd: `claude --session-id ${conv}${modelFlag}${permissionModeFlag}`, conv };
 }

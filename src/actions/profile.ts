@@ -246,3 +246,49 @@ export async function updateTerminalModel(model: string | null): Promise<string 
   revalidatePath(`/profile/${user.id}`);
   return toStore;
 }
+
+// ── Terminal auto-accept mode (task d3de150c "Terminal mode") ──────────────
+// Per-user opt-in: fresh in-app terminal sessions launch with
+// `claude --permission-mode acceptEdits` when true. Self-only, same "lives
+// inside the Model Tiers dialog's Terminal sessions group" posture as the
+// starting-model actions above. Deliberately NO platform-wide default and
+// NO admin action mirroring updatePlatformTerminalModelDefault — a safety
+// toggle stays per-user only.
+
+export async function getTerminalAutoAccept(): Promise<boolean> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { data, error } = await supabase
+    .from("users")
+    .select("terminal_auto_accept")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+
+  return data?.terminal_auto_accept ?? false;
+}
+
+export async function updateTerminalAutoAccept(autoAccept: boolean): Promise<boolean> {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  const { error } = await supabase
+    .from("users")
+    .update({ terminal_auto_accept: autoAccept })
+    .eq("id", user.id);
+
+  if (error) throw new Error(error.message);
+
+  revalidatePath(`/profile/${user.id}`);
+  return autoAccept;
+}
