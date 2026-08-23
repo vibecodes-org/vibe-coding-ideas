@@ -1442,6 +1442,23 @@ describe("TerminalDock — browsing renders IN the panel when nothing is running
     // The list gave way to the terminal again once acted on.
     expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
   });
+
+  it("Start New Session from an ended tab's own browse link takes over that tab instead of opening a second one (bug report 2026-08-23)", async () => {
+    stubFetch(Promise.resolve([recentRowForTask("task-9")]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    const key = await openFirstTabViaChooser();
+    endTab(key);
+    fireEvent.click(screen.getByTestId("view-my-other-sessions"));
+    await waitFor(() => expect(screen.getByTestId("chooser-start-new")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+
+    await waitFor(() => expect(screen.queryByTestId("chooser")).not.toBeInTheDocument());
+    // Reclaimed the SAME tab in place — not a sibling next to its corpse.
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
+    expect(screen.getByTestId("session-view").dataset.key).toBe(key);
+  });
 });
 
 describe("TerminalDock — resize handle hidden while the active tab is popped out (card 534d2049, AC3 rework)", () => {

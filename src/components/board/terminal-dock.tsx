@@ -155,6 +155,7 @@ import {
   deriveTabLabel,
   findPristineSlot,
   findReclaimableEndedSlot,
+  findReclaimableEndedSlotByKey,
   decideTaskLaunch,
   summarizeSessionStatuses,
   type DedupeCandidate,
@@ -311,6 +312,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // act on it once the user actually picks something (F1: nothing mints on
   // the bus event itself while there's a choice to make).
   const [pendingLaunch, setPendingLaunch] = useState<BrowserLaunchPayload | null>(null);
+  // Which tab's "View my other sessions" link opened the browse chooser, if
+  // any (bug report 2026-08-23: Start New Session from that link opened a
+  // SIBLING tab instead of replacing the ended one the link was clicked
+  // from). Read only by `handleChooserStartNew`, which reclaims this tab in
+  // place when it's still sitting there ended; every other way of closing
+  // the chooser clears it so a stale origin never leaks into a later launch.
+  const [chooserOriginKey, setChooserOriginKey] = useState<string | null>(null);
   // Disables every chooser action while a click's async work (reattach mint,
   // resume launch) is in flight — never a silent double-submit.
   const [chooserBusy, setChooserBusy] = useState(false);
@@ -1380,7 +1388,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // reached either directly (F1's empty-launch state — nothing to choose
   // between) or via the chooser's "Start new session" (see `deliverLaunch`
   // below, which decides which of the two applies).
-  const mintAndDeliver = useCallback((payload: BrowserLaunchPayload | null, targetSessionId?: string | null) => {
+  const mintAndDeliver = useCallback((payload: BrowserLaunchPayload | null, targetSessionId?: string | null, targetKey?: string | null) => {
     const currentSessions = sessionsRef.current;
     const currentSummaries = summariesRef.current;
     const candidates: DedupeCandidate[] = currentSessions.map((s) => ({
@@ -1411,7 +1419,13 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       sessionId: currentSummaries[s.key]?.sessionId ?? null,
       poppedOut: poppedOutKeysRef.current.has(s.key),
     }));
-    const reclaimKey = findReclaimableEndedSlot(reclaimCandidates, targetSessionId);
+    // Start New Session from a specific ended tab's "View my other sessions"
+    // link (bug report 2026-08-23): there's no session id to match against
+    // (it's a fresh mint, not a resume), so this reclaims by the tab's own
+    // key instead — same in-place takeover, just keyed differently.
+    const reclaimKey =
+      findReclaimableEndedSlot(reclaimCandidates, targetSessionId) ??
+      findReclaimableEndedSlotByKey(reclaimCandidates, targetKey);
     if (reclaimKey) {
       setSessions((prev) =>
         prev.map((s) =>
@@ -1818,10 +1832,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // the way to close it by walking away, and both are always available.
   const handleChooserStartNew = useCallback(() => {
     const payload = pendingLaunch;
+    const originKey = chooserOriginKey;
     setPendingLaunch(null);
+    setChooserOriginKey(null);
     setChooserMode(null);
-    mintAndDeliver(payload);
-  }, [pendingLaunch, mintAndDeliver]);
+    mintAndDeliver(payload, null, originKey);
+  }, [pendingLaunch, chooserOriginKey, mintAndDeliver]);
 
   // Nick, 2026-08-19: "HOW THE HELL AM I GOING TO CLOSE THIS?" — the
   // launch-mode overlay was a dead end by design (forced choice: no close
@@ -1833,12 +1849,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // way out.
   const handleChooserDismiss = useCallback(() => {
     setPendingLaunch(null);
+    setChooserOriginKey(null);
     setChooserMode(null);
   }, []);
 
   const handleChooserReconnectHere = useCallback(
     (row: ChooserLiveRow) => {
       setPendingLaunch(null);
+      setChooserOriginKey(null);
       setChooserMode(null);
       void performReattach(row.sid, { focus: true });
     },
@@ -1847,6 +1865,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
   const handleChooserOpenBoardAndReconnect = useCallback(
     (row: ChooserLiveRow) => {
+      setChooserOriginKey(null);
       setChooserMode(null);
       router.push(`/ideas/${row.ideaId}/board?reconnect=${encodeURIComponent(row.sid)}`);
     },
@@ -1856,6 +1875,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   const handleChooserResume = useCallback(
     (row: ChooserRecentRow) => {
       setPendingLaunch(null);
+      setChooserOriginKey(null);
       setChooserMode(null);
       if (row.ideaId !== ideaId) {
         router.push(`/ideas/${row.ideaId}/board?resume=${encodeURIComponent(row.sid)}`);
@@ -1889,7 +1909,8 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // missing the very row they came looking for. `refreshRegistry` swallows
   // and toasts its own failures, so a stale-but-present list still opens
   // rather than the link doing nothing.
-  const openChooserToBrowse = useCallback(() => {
+  const openChooserToBrowse = useCallback((originKey?: string | null) => {
+    setChooserOriginKey(originKey ?? null);
     setChooserMode("browse");
     void refreshRegistry();
   }, [refreshRegistry]);
@@ -2706,7 +2727,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onRegisterActions={registerActions}
             onAnnounce={announce}
             onCapExceeded={openMySessions}
-            onBrowseSessions={openChooserToBrowse}
+            onBrowseSessions={() => openChooserToBrowse(entry.key)}
             poppedOut={poppedOutKeys.has(entry.key)}
             onPopOut={() => handlePopOut(entry.key)}
             onBringBack={() => bringBackToDock(entry.key)}

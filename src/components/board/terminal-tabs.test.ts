@@ -5,6 +5,7 @@ import {
   deriveTabLabel,
   findPristineSlot,
   findReclaimableEndedSlot,
+  findReclaimableEndedSlotByKey,
   decideTaskLaunch,
   summarizeSessionStatuses,
   shouldAnnounceAttention,
@@ -216,6 +217,44 @@ describe("findReclaimableEndedSlot (ended-tab reclaim, card df29b85e)", () => {
       { key: "s3", status: "session-ended", sessionId: "sid-3", poppedOut: false },
     ];
     expect(findReclaimableEndedSlot(candidates, "sid-1")).toBe("s2");
+  });
+});
+
+describe("findReclaimableEndedSlotByKey (Start New Session from an ended tab's browse link)", () => {
+  it("reclaims the ended tab matching the target key", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "session-ended", sessionId: "sid-1", poppedOut: false },
+    ];
+    expect(findReclaimableEndedSlotByKey(candidates, "s1")).toBe("s1");
+  });
+
+  it("refuses a matching key that's still live", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "connected", sessionId: "sid-1", poppedOut: false },
+    ];
+    expect(findReclaimableEndedSlotByKey(candidates, "s1")).toBeNull();
+  });
+
+  it("refuses a matching key that's popped out", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "session-ended", sessionId: "sid-1", poppedOut: true },
+    ];
+    expect(findReclaimableEndedSlotByKey(candidates, "s1")).toBeNull();
+  });
+
+  it("falls through to append when the target key matches no local tab", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "session-ended", sessionId: "sid-1", poppedOut: false },
+    ];
+    expect(findReclaimableEndedSlotByKey(candidates, "s2")).toBeNull();
+  });
+
+  it("never reclaims arbitrarily when no target key is given — always append", () => {
+    const candidates: ReclaimCandidate[] = [
+      { key: "s1", status: "session-ended", sessionId: "sid-1", poppedOut: false },
+    ];
+    expect(findReclaimableEndedSlotByKey(candidates, undefined)).toBeNull();
+    expect(findReclaimableEndedSlotByKey(candidates, null)).toBeNull();
   });
 });
 

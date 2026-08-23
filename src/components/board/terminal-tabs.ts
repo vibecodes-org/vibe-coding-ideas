@@ -284,6 +284,27 @@ export function findReclaimableEndedSlot(
   return match.key;
 }
 
+/**
+ * Same in-place takeover as `findReclaimableEndedSlot`, but for "Start new
+ * session" fired from a specific ended tab's own "View my other sessions"
+ * link — there's no session id to match against (it's a brand-new mint, not
+ * a resume of a known conversation), so this matches the tab's own `key`
+ * instead. `targetKey` is the tab the link was clicked from; missing,
+ * already-gone, still-live, or popped-out all fall through to append, same
+ * conservative default as the sid-based version above.
+ */
+export function findReclaimableEndedSlotByKey(
+  candidates: ReclaimCandidate[],
+  targetKey?: string | null,
+): string | null {
+  if (!targetKey) return null;
+  const match = candidates.find((c) => c.key === targetKey);
+  if (!match) return null;
+  if (match.poppedOut) return null;
+  if (match.status !== "session-ended") return null;
+  return match.key;
+}
+
 // ── B10: dedupe a task-scoped launch against existing tabs ─────────────────
 
 export interface DedupeCandidate {

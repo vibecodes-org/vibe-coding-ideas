@@ -996,11 +996,6 @@ export function KanbanBoard({
 
       // Reorder the task list optimistically (handles same-column reorder)
       const reordered = arrayMove(col.tasks, activeIndex, overIndex);
-      setColumns((prev) => {
-        const next = prev.map((c) => (c.id === activeColumnId ? { ...c, tasks: reordered } : c));
-        columnsRef.current = next;
-        return next;
-      });
 
       // Calculate position based on the reordered array
       const taskIndex = overIndex;
@@ -1014,6 +1009,20 @@ export function KanbanBoard({
       } else {
         newPosition = Math.round((reordered[taskIndex - 1].position + reordered[taskIndex + 1].position) / 2);
       }
+
+      // Stamp the moved task's position locally too — arrayMove only reorders
+      // the array, it doesn't touch the object's `position` field, which left
+      // sibling cards' "Move to top/bottom" menu reading a stale value until
+      // the next server sync.
+      const activeId = String(active.id);
+      const stamped = reordered.map((t) =>
+        t.id === activeId ? { ...t, position: newPosition } : t
+      );
+      setColumns((prev) => {
+        const next = prev.map((c) => (c.id === activeColumnId ? { ...c, tasks: stamped } : c));
+        columnsRef.current = next;
+        return next;
+      });
 
       // Trust this move over stale server snapshots for the next few seconds.
       trustedTasksRef.current.set(String(active.id), {
