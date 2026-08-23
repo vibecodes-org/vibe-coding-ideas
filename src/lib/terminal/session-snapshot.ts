@@ -228,3 +228,84 @@ export function readLastTabSid(storage: Storage | null = defaultStorage()): stri
     return null;
   }
 }
+
+// ── every session this tab holds (multi-terminal reload restore) ───────────
+//
+// Nick's field report (2026-08-22): two dock tabs open → hard refresh → only
+// one came back, and the orphaned live session was then mislabelled "open in
+// another tab". Root cause: `vc:term:last-sid` above has room for exactly ONE
+// sid (each attach overwrites it), so the reload path could only ever restore
+// the most-recently-attached session. This list is the multi-session
+// replacement: EVERY sid this tab currently has attached, in attach order.
+// The single last-sid slot stays alongside it — it still answers the distinct
+// question "which one row deserves the was-open-in-this-tab pre-focus" for
+// the chooser, and old tabs that predate this key fall back to it (see
+// `readTabSids`).
+
+const TAB_SIDS_KEY = "vc:term:tab-sids";
+
+/** Pure parse — anything that isn't a JSON array of strings parses to `[]`, never throws. */
+export function parseTabSids(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const parsed: unknown = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.filter((v): v is string => typeof v === "string");
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Every session id this tab has attached and not yet released, oldest first.
+ * Falls back to the legacy single `vc:term:last-sid` slot when the list has
+ * never been written — a tab that attached before this key existed still gets
+ * its one session restored on reload.
+ */
+export function readTabSids(storage: Storage | null = defaultStorage()): string[] {
+  if (!storage) return [];
+  try {
+    const list = parseTabSids(storage.getItem(TAB_SIDS_KEY));
+    if (list.length > 0) return list;
+    const legacy = storage.getItem(LAST_TAB_SID_KEY);
+    return legacy ? [legacy] : [];
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Record that this tab holds `sid` (best-effort, never throws). Appends
+ * (deduplicated, attach order preserved) AND refreshes the legacy last-sid
+ * slot, so callers only ever call this one function on attach.
+ */
+export function rememberTabSid(sid: string, storage: Storage | null = defaultStorage()): void {
+  if (!storage) return;
+  try {
+    const list = parseTabSids(storage.getItem(TAB_SIDS_KEY));
+    if (!list.includes(sid)) {
+      list.push(sid);
+      storage.setItem(TAB_SIDS_KEY, JSON.stringify(list));
+    }
+  } catch {
+    /* best-effort only */
+  }
+  rememberLastTabSid(sid, storage);
+}
+
+/**
+ * Release `sid` from this tab's set — called when the session ends, so a
+ * later reload never tries to reattach a dead session. Deliberately leaves
+ * the legacy last-sid slot alone: the chooser's "was open in this tab" badge
+ * on a recently-ended row is exactly that slot's remaining job.
+ */
+export function forgetTabSid(sid: string, storage: Storage | null = defaultStorage()): void {
+  if (!storage) return;
+  try {
+    const list = parseTabSids(storage.getItem(TAB_SIDS_KEY));
+    const next = list.filter((s) => s !== sid);
+    if (next.length !== list.length) storage.setItem(TAB_SIDS_KEY, JSON.stringify(next));
+  } catch {
+    /* best-effort only */
+  }
+}

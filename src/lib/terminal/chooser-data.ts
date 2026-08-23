@@ -161,11 +161,15 @@ function withinRecentWindow(endedAt: string, nowMs: number): boolean {
 
 /**
  * Split the registry's raw rows into the chooser's three sections (design
- * §3). `lastTabSid` (optional — this tab's own remembered sid, see
- * session-snapshot.ts's `readLastTabSid`) badges the matching LIVE row
+ * §3). `tabSids` (optional — this tab's own remembered sid(s), see
+ * session-snapshot.ts's `readTabSids`/`readLastTabSid`; a single string is
+ * accepted for the legacy one-sid callers) badges each matching LIVE row
  * `wasOpenInThisTab`, independent of snapshot freshness — a stale snapshot
  * still deserves the "was open in this tab" hint even once instant-continue
- * itself no longer applies. `storedMachineLabel` (this browser's own recorded
+ * itself no longer applies. Multi-terminal reload restore (Nick's field
+ * report 2026-08-22): this used to be the single last-attached sid, which
+ * left every OTHER session this same tab held reading as "open in another
+ * tab". `storedMachineLabel` (this browser's own recorded
  * machine identity, see machine-identity.ts) filters the Recent section per
  * this module's MACHINE IDENTITY header comment — omit/pass null to show
  * every recent row unfiltered (the pre-this-card behaviour).
@@ -174,9 +178,10 @@ export function deriveChooserSections(
   rows: ChooserRegistryRow[],
   currentIdeaId: string,
   nowMs: number = Date.now(),
-  lastTabSid: string | null = null,
+  tabSids: readonly string[] | string | null = null,
   storedMachineLabel: string | null = null,
 ): ChooserSections {
+  const tabSidSet = new Set(typeof tabSids === "string" ? [tabSids] : (tabSids ?? []));
   const toLiveRow = (r: ChooserRegistryRow): ChooserLiveRow => ({
     sid: r.sid,
     ideaId: r.ideaId,
@@ -186,7 +191,7 @@ export function deriveChooserSections(
     machineLabel: r.machineLabel,
     cwd: r.cwd,
     createdAt: r.createdAt,
-    wasOpenInThisTab: !!lastTabSid && r.sid === lastTabSid,
+    wasOpenInThisTab: tabSidSet.has(r.sid),
     displayName: r.displayName,
   });
 
@@ -369,13 +374,13 @@ export function findTaskSessionMatch(
  *
  * A row counts as "ours" when either:
  *   - `wasOpenInThisTab` is set (this browser TAB's own `sessionStorage`-backed
- *     memory of the last session it attached — see session-snapshot.ts's
- *     `rememberLastTabSid`, genuinely per-tab, unlike `localStorage`), or
+ *     memory of EVERY session it has attached — see session-snapshot.ts's
+ *     `readTabSids`, genuinely per-tab, unlike `localStorage`; before the
+ *     multi-terminal reload-restore fix this was a single last-sid slot, so
+ *     a 2nd own session read as "open in another tab" here), or
  *   - its `sid` is in `ownSessionIds` (the sessionIds this `TerminalDock`
  *     instance currently has mounted, via its own `summaries` state) — this
- *     second check covers a 2nd own tab inside the SAME dock (multi-session,
- *     where only the most-recently-connected sid wins the single
- *     `wasOpenInThisTab` slot) and the brief window right after a fresh mint,
+ *     second check covers the brief window right after a fresh mint,
  *     before that sessionStorage write has landed.
  *
  * Returns the remaining rows — an empty array means nothing to warn about

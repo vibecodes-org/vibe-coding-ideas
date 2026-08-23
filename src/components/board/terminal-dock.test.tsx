@@ -364,7 +364,7 @@ vi.mock("./terminal-task-launch-choice", () => ({
 
 import { TerminalDock } from "./terminal-dock";
 import { requestBrowserLaunch } from "@/lib/terminal/launch-mode";
-import { rememberLastTabSid } from "@/lib/terminal/session-snapshot";
+import { rememberLastTabSid, rememberTabSid, saveSessionSnapshot } from "@/lib/terminal/session-snapshot";
 import { toast } from "sonner";
 
 function deferredRegistryResponse() {
@@ -527,6 +527,10 @@ afterEach(() => {
   vi.unstubAllGlobals();
   vi.clearAllMocks();
   mockSearchParams.current = new URLSearchParams();
+  // The dock reads this tab's remembered sids/snapshots (session-snapshot.ts)
+  // straight from sessionStorage on mount — clear it so one test's tab state
+  // never leaks into the next.
+  window.sessionStorage.clear();
 });
 
 describe("TerminalDock — launch-bus race with the still-loading registry (Bug B)", () => {
@@ -1826,5 +1830,95 @@ describe("TerminalDock — wrong-tab-closes-on-confirm fix (task 9f30ae15)", () 
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// Multi-terminal reload restore (Nick's field report 2026-08-22): two dock
+// tabs open → hard refresh → only one came back, and the orphaned live
+// session was then mislabelled "open in another tab". The tab now remembers
+// EVERY sid it holds (session-snapshot.ts's readTabSids) and instant-continue
+// reattaches each one.
+describe("TerminalDock — multi-terminal reload restore", () => {
+  it("reattaches EVERY remembered live sid on load, with no 'other tabs' strip and no chooser", async () => {
+    rememberTabSid("own-sid-1");
+    rememberTabSid("own-sid-2");
+    saveSessionSnapshot("own-sid-1", { data: "one\r\n", truncated: false });
+    saveSessionSnapshot("own-sid-2", { data: "two\r\n", truncated: false });
+    const reattached: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/terminal/session/list") {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              sessions: [
+                { ...liveHereRow(), sid: "own-sid-1" },
+                { ...liveHereRow(), sid: "own-sid-2" },
+              ],
+            }),
+          });
+        }
+        if (url === "/api/terminal/session/reattach") {
+          const sid = (JSON.parse(String(init?.body)) as { sid: string }).sid;
+          reattached.push(sid);
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ sessionId: sid, browserToken: `token-${sid}` }),
+          });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+    expect(reattached.sort()).toEqual(["own-sid-1", "own-sid-2"]);
+    expect(screen.queryByText(/tabs? .* open here/)).not.toBeInTheDocument();
+    expect(screen.queryByTestId("chooser")).not.toBeInTheDocument();
+  });
+
+  it("skips a remembered sid whose session has since ended, still restoring the rest", async () => {
+    rememberTabSid("own-sid-1");
+    rememberTabSid("own-sid-2");
+    saveSessionSnapshot("own-sid-1", { data: "one\r\n", truncated: false });
+    saveSessionSnapshot("own-sid-2", { data: "two\r\n", truncated: false });
+    const reattached: string[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn((url: string, init?: RequestInit) => {
+        if (url === "/api/terminal/session/list") {
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({
+              sessions: [
+                { ...liveHereRow(), sid: "own-sid-1" },
+                {
+                  ...liveHereRow(),
+                  sid: "own-sid-2",
+                  status: "ended",
+                  endedAt: new Date().toISOString(),
+                },
+              ],
+            }),
+          });
+        }
+        if (url === "/api/terminal/session/reattach") {
+          const sid = (JSON.parse(String(init?.body)) as { sid: string }).sid;
+          reattached.push(sid);
+          return Promise.resolve({
+            ok: true,
+            json: async () => ({ sessionId: sid, browserToken: `token-${sid}` }),
+          });
+        }
+        return Promise.resolve({ ok: false, json: async () => ({}) });
+      }),
+    );
+
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
+    expect(reattached).toEqual(["own-sid-1"]);
   });
 });

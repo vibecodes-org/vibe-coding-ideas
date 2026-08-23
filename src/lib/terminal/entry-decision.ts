@@ -41,7 +41,7 @@ export interface EntrySnapshotInfo {
 }
 
 export type EntryDecision =
-  | { kind: "instant-continue"; sid: string }
+  | { kind: "instant-continue"; sids: string[] }
   | { kind: "chooser" }
   | { kind: "empty-launch" };
 
@@ -57,19 +57,31 @@ function isRecentEnded(row: EntryRegistryRow, nowMs: number): boolean {
 /**
  * `rows` — every one of the caller's registry rows (active + recently-ended,
  * exactly what the extended list route returns; see chooser-data.ts for the
- * shared 48h/cwd rules this mirrors). `snapshotInfo` — this tab's own
- * `vc:term:snap:<sid>` metadata, if any (see session-snapshot.ts); `null`
- * when nothing was ever saved in this tab.
+ * shared 48h/cwd rules this mirrors). `snapshotInfos` — this tab's own
+ * `vc:term:snap:<sid>` metadata for EVERY sid the tab holds (see
+ * session-snapshot.ts's `readTabSids`), in attach order; empty when nothing
+ * was ever saved in this tab.
+ *
+ * Multi-terminal reload restore (Nick's field report 2026-08-22): this used
+ * to take a single snapshot info (the one `vc:term:last-sid`), so a tab with
+ * two live terminals only ever got one back after a refresh. Instant-continue
+ * now returns every sid that is BOTH fresh-snapshotted in this tab AND still
+ * an active, owned row in the registry — each is reattached exactly the way
+ * the single one was.
  */
 export function decideEntryBehaviour(
   rows: EntryRegistryRow[],
-  snapshotInfo: EntrySnapshotInfo | null,
+  snapshotInfos: readonly EntrySnapshotInfo[],
   nowMs: number = Date.now(),
 ): EntryDecision {
-  if (snapshotInfo && isSnapshotFresh(snapshotInfo.savedAt, nowMs)) {
-    const row = rows.find((r) => r.sid === snapshotInfo.sid && r.status === "active");
-    if (row) return { kind: "instant-continue", sid: snapshotInfo.sid };
-  }
+  const continueSids = snapshotInfos
+    .filter(
+      (info) =>
+        isSnapshotFresh(info.savedAt, nowMs) &&
+        rows.some((r) => r.sid === info.sid && r.status === "active"),
+    )
+    .map((info) => info.sid);
+  if (continueSids.length > 0) return { kind: "instant-continue", sids: continueSids };
 
   const hasLive = rows.some((r) => r.status === "active");
   const hasRecent = rows.some((r) => isRecentEnded(r, nowMs));

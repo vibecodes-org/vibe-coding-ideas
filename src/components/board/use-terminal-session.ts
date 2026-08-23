@@ -111,7 +111,8 @@ import {
 import {
   saveSessionSnapshot,
   clearSessionSnapshot,
-  rememberLastTabSid,
+  rememberTabSid,
+  forgetTabSid,
   SNAPSHOT_SAVE_INTERVAL_MS,
 } from "@/lib/terminal/session-snapshot";
 import { matchFocusMoveChord } from "@/lib/terminal/split-view";
@@ -1699,19 +1700,25 @@ export function useTerminalSession(
 
   // Remember this tab's own sid the moment a pair is established (mint,
   // attach-existing, or a fresh-attach-reset reconnect) — independent of the
-  // snapshot's own freshness, this is the chooser's "was open in this tab"
-  // badge (session-snapshot.ts's `rememberLastTabSid`).
+  // snapshot's own freshness. Feeds both the reload-restore set (EVERY sid
+  // this tab holds — multi-terminal reload restore) and the chooser's "was
+  // open in this tab" badge (session-snapshot.ts's `rememberTabSid` updates
+  // the legacy last-sid slot too).
   useEffect(() => {
-    if (pair?.sessionId) rememberLastTabSid(pair.sessionId);
+    if (pair?.sessionId) rememberTabSid(pair.sessionId);
   }, [pair?.sessionId]);
 
-  // Clear this session's snapshot on any terminal end (user End, idle,
-  // max-duration, or a reconnect-grace exhaustion) — a later reload must
-  // never restore a dead session's output as if it were still live.
+  // Clear this session's snapshot AND release its slot in the tab's
+  // reload-restore set on any terminal end (user End, idle, max-duration, or
+  // a reconnect-grace exhaustion) — a later reload must never restore a dead
+  // session's output as if it were still live, nor try to reattach it.
   useEffect(() => {
     if (state.status !== "session-ended") return;
     const sid = pairRef.current?.sessionId;
-    if (sid) clearSessionSnapshot(sid);
+    if (sid) {
+      clearSessionSnapshot(sid);
+      forgetTabSid(sid);
+    }
   }, [state.status]);
 
   // ── connect (browser leg) ───────────────────────────────────────────────────
