@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminal side-by-side — the third pane, and what happens at four</title>
+<style>
+:root{
+  --bg:#09090b; --panel:#0c0c0e; --panel2:#111114; --panel3:#141417; --panel-dim:#101012;
+  --border:#27272a; --border2:#3f3f46;
+  --txt:#e4e4e7; --bright:#f4f4f5; --dim:#a1a1aa; --faint:#71717a;
+  --emerald:#34d399; --emerald-bg:rgba(52,211,153,.09); --emerald-bd:rgba(52,211,153,.4);
+  --sky:#38bdf8; --sky3:#7dd3fc; --sky-bg:rgba(56,189,248,.09); --sky-bd:rgba(56,189,248,.4);
+  --amber:#fbbf24; --amber-bg:rgba(251,191,36,.09); --amber-bd:rgba(251,191,36,.4);
+  --rose:#fb7185; --rose-bd:rgba(251,113,133,.45);
+  --violet:#a78bfa;
+  --mono:ui-monospace,'SF Mono',Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font:14px/1.6 -apple-system,'Segoe UI',Roboto,sans-serif;padding:40px 20px 80px}
+.wrap{max-width:1020px;margin:0 auto}
+h1{font-size:24px;margin-bottom:4px}
+h2{font-size:18px;margin:44px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border)}
+p{margin:8px 0;color:var(--dim)}
+strong{color:var(--txt)}
+.sub{color:var(--faint);font-size:13px;margin-bottom:18px}
+.rule{border:1px solid var(--emerald-bd);background:var(--emerald-bg);border-left-width:3px;border-radius:8px;padding:12px 16px;margin:16px 0;font-size:14px;color:var(--txt)}
+.rule b{color:var(--emerald)}
+table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px}
+th{text-align:left;padding:7px 10px;color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border2)}
+td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--dim)}
+td:first-child{color:var(--txt);font-weight:600}
+.tblwrap{overflow-x:auto}
+.mono{font-family:var(--mono);font-size:11.5px;color:var(--txt)}
+.mock-cap{font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);margin:20px 0 -6px}
+.caption{font-size:11.5px;color:var(--faint);margin-top:6px}
+.mock{background:var(--panel);border:1px solid var(--border2);border-radius:10px;margin:14px 0;overflow:hidden;font-size:13px}
+/* aligned strip: same flex math as the pane row, so edges match by construction */
+.astrip{display:flex;background:var(--panel3);border-bottom:1px solid var(--border);padding:5px 0 0}
+.atab{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:7px;margin:0 3px;padding:7px 10px;border:1px solid var(--border);border-bottom:none;border-top:2px solid transparent;border-radius:6px 6px 0 0;font-size:12.5px;color:var(--dim);background:var(--panel-dim)}
+.atab.on{border-top-color:var(--sky);background:var(--panel);color:var(--txt);font-weight:600}
+.atab .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.x{color:var(--faint);font-size:11px}
+.glyph{font-size:11px;flex:none}
+.g-ok{color:var(--emerald)} .g-mut{color:var(--faint)}
+.badge{font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;border-radius:4px;padding:0 5px;flex:none}
+.badge.pane{background:var(--sky-bg);border:1px solid var(--sky-bd);color:var(--sky)}
+.badge.pane.dim{background:transparent;border-color:var(--border2);color:var(--dim)}
+.util{margin-left:auto;display:flex;align-items:center;gap:8px;border-left:1px solid var(--border2);padding-left:9px;flex:none}
+.util .u{color:var(--dim);font-size:13px}
+.util .u.on{color:var(--sky)}
+.util .u.pop{color:var(--violet)}
+/* plain tab strip (tabbed mode) */
+.tabstrip{display:flex;align-items:stretch;background:var(--panel3);border-bottom:1px solid var(--border)}
+.tabscroll{display:flex;align-items:stretch;min-width:0;flex:1;overflow-x:auto}
+.ttab{display:flex;align-items:center;gap:7px;padding:8px 12px;border-right:1px solid var(--border);border-top:2px solid transparent;font-size:12.5px;color:var(--dim);white-space:nowrap;min-width:0}
+.ttab.on{border-top-color:var(--sky);background:var(--panel);color:var(--txt);font-weight:600}
+.ttab .lbl{overflow:hidden;text-overflow:ellipsis;max-width:180px}
+.pinned{display:flex;align-items:stretch;margin-left:auto;flex:none}
+.iconbtn{display:flex;align-items:center;justify-content:center;width:38px;border-left:1px solid var(--border);color:var(--dim);font-size:15px}
+.iconbtn.on{color:var(--sky);background:var(--sky-bg)}
+/* panes */
+.splitbody{display:flex;align-items:stretch;background:var(--panel)}
+.pane{flex:1 1 0;min-width:0;border:1px solid var(--border);margin:3px;border-radius:6px;overflow:hidden}
+.pane.focus{border-color:var(--sky);box-shadow:0 0 0 1px rgba(56,189,248,.35),0 0 14px rgba(56,189,248,.12)}
+.phead{display:flex;align-items:center;gap:8px;padding:6px 10px;border-bottom:1px solid var(--border);background:var(--panel3);min-width:0}
+.pane:not(.focus) .phead{background:var(--panel-dim)}
+.fword{display:inline-flex;align-items:center;gap:5px;border-radius:6px;padding:2px 8px;font-size:11px;font-weight:700;flex:none}
+.fword.typing{color:var(--sky3);border:1px solid var(--sky-bd);background:var(--sky-bg)}
+.fword.watch{color:var(--dim);border:1px solid var(--border2);background:transparent;font-weight:600}
+.pill{display:inline-flex;align-items:center;gap:5px;border:1px solid var(--border2);border-radius:6px;padding:1px 8px;font-size:11px;font-weight:600;color:var(--dim);flex:none}
+.pill.em{border-color:var(--emerald-bd);color:var(--emerald);background:var(--emerald-bg)}
+.pname{min-width:0;flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:12px;font-weight:600;color:var(--bright)}
+.pane:not(.focus) .pname{color:var(--dim);font-weight:400}
+.pterm{background:var(--panel);padding:10px 12px;font-family:var(--mono);font-size:11.5px;line-height:1.55;color:var(--dim)}
+.pterm .cl{color:var(--txt)}
+.pterm .ac{color:var(--emerald)}
+.cur-solid{display:inline-block;width:7px;height:13px;background:var(--txt);vertical-align:-2px;animation:blink 1.1s steps(1) infinite}
+.cur-hollow{display:inline-block;width:7px;height:13px;border:1px solid var(--dim);vertical-align:-2px}
+@keyframes blink{50%{opacity:0}}
+@media (prefers-reduced-motion: reduce){.cur-solid{animation:none}}
+/* annotation guides */
+.guided{position:relative}
+.guides{position:absolute;inset:0;display:flex;pointer-events:none;z-index:5}
+.guides>div{flex:1 1 0;margin:0 3px;border-left:1px dashed var(--sky-bd);border-right:1px dashed var(--sky-bd)}
+.alab{position:absolute;z-index:6;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--sky);background:#0d1a22;border:1px solid var(--sky-bd);border-radius:4px;padding:1px 7px;pointer-events:none}
+.arrowrow{display:flex;align-items:center;justify-content:center;gap:10px;margin:8px 0;color:var(--faint);font-size:12.5px;text-align:center}
+.notice-sky{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--sky-bd);background:var(--sky-bg);padding:5px 12px;font-size:11.5px;color:var(--sky3)}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<h1>Terminal side by side — the third pane</h1>
+<div class="sub">What changes, in one page. Fixes “a third terminal goes missing instead of getting its own pane”.</div>
+
+<div class="rule"><b>The rule:</b> side by side works for <strong>2 or 3 terminals — never more</strong>. While it's on, <strong>every open terminal has its own pane, and every tab sits exactly above its own pane</strong>. The moment that can't be true (a 4th terminal, or the window gets too narrow), the whole thing switches to plain tabs — no panes at all — and a message tells you why. It switches itself back the moment 3-or-fewer fit again.</div>
+
+<h2>1 · Three terminals, three panes, three tabs — lined up</h2>
+<p>The tab row and the pane row are built from the same layout, so each tab's left and right edges are its pane's edges. The dashed lines are annotation only — they run through both rows to show the alignment.</p>
+
+<div class="mock-cap">Three open terminals · middle one owns the keyboard</div>
+<div class="mock guided">
+  <div class="guides"><div></div><div></div><div></div></div>
+  <span class="alab" style="top:-9px;left:8px">each tab lines up with its pane, edge for edge</span>
+  <div class="astrip">
+    <div class="atab"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="badge pane dim">L</span><span class="x">✕</span></div>
+    <div class="atab on"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open sessions side by…</span><span class="badge pane">M</span><span class="x">✕</span></div>
+    <div class="atab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="badge pane dim">R</span><span class="x">✕</span>
+      <span class="util"><span class="u on" title="Back to tabs">◫</span><span class="u" title="New terminal">＋</span></span>
+    </div>
+  </div>
+  <div class="splitbody">
+    <div class="pane">
+      <div class="phead"><span class="fword watch">◇ Watching</span><span class="pill em">●</span><span class="pname">Fix login redirect loop</span></div>
+      <div class="pterm" style="min-height:96px"><span class="ac">⏺</span> Editing <span class="cl">middleware.ts</span>…<br><span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span></div>
+    </div>
+    <div class="pane focus">
+      <div class="phead"><span class="fword typing">⌨ Typing here</span><span class="pill em">●</span><span class="pname">Terminal: view multiple open…</span></div>
+      <div class="pterm" style="min-height:96px"><span class="ac">⏺</span> Running <span class="cl">npm run test</span>…<br><span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span></div>
+    </div>
+    <div class="pane">
+      <div class="phead"><span class="fword watch">◇ Watching</span><span class="pill">■</span><span class="pname">vibecodes · a3f2</span></div>
+      <div class="pterm" style="min-height:96px"><span class="cl">✓</span> 3,137 passed (10.2s)<br><span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span></div>
+    </div>
+  </div>
+</div>
+<p class="caption">Exactly as many tabs as panes — always. One pane owns the keyboard, shown four ways at once: sky border and glow, “⌨ Typing here” vs “◇ Watching”, brighter header, solid blinking cursor vs hollow one. Ctrl+Shift+←/→ steps the keyboard one pane left or right (it stops at the ends, no wrap-around). The two small buttons at the top-right (back to tabs, new terminal) stay in their usual corner.</p>
+
+<p><strong>How you get here:</strong> if you're already side by side with 2 terminals and you open a third, it simply gets its own pane on the right and the keyboard moves to it — that's the fix. If you turn side by side on while 3 terminals are open, all three get panes at once. If the window is too narrow for three panes at that moment, it stays as tabs and tells you why (“Not enough room for a third pane — switched to tabs. Side by side returns when the window is wider or a terminal closes.”).</p>
+
+<h2>2 · Opening a 4th terminal — everything becomes tabs</h2>
+<p>Four terminals never fit side by side. The instant a 4th one opens, <strong>all panes disappear</strong> and the dock becomes plain tabs — the same tabs you have today — with the new terminal at the front and a message explaining what happened.</p>
+
+<div class="mock-cap">Before — 3 terminals side by side</div>
+<div class="mock">
+  <div class="astrip">
+    <div class="atab"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="badge pane dim">L</span></div>
+    <div class="atab on"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open…</span><span class="badge pane">M</span></div>
+    <div class="atab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="badge pane dim">R</span>
+      <span class="util"><span class="u on">◫</span><span class="u">＋</span></span>
+    </div>
+  </div>
+  <div class="splitbody">
+    <div class="pane"><div class="pterm" style="min-height:44px"><span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span></div></div>
+    <div class="pane focus"><div class="pterm" style="min-height:44px"><span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span></div></div>
+    <div class="pane"><div class="pterm" style="min-height:44px"><span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span></div></div>
+  </div>
+</div>
+
+<div class="arrowrow">▼ &nbsp;a 4th terminal is opened — <strong style="color:var(--txt)">every pane disappears, instantly</strong> &nbsp;▼</div>
+
+<div class="mock-cap">After — 4 plain tabs, no panes, message explains why</div>
+<div class="mock">
+  <div class="tabstrip">
+    <div class="tabscroll">
+      <div class="ttab"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="x">✕</span></div>
+      <div class="ttab"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open ses…</span><span class="x">✕</span></div>
+      <div class="ttab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="x">✕</span></div>
+      <div class="ttab on"><span class="glyph g-ok">●</span><span class="lbl">Recreate staging database properly</span><span class="x">✕</span></div>
+    </div>
+    <div class="pinned">
+      <div class="iconbtn on" title="Side by side (returns when 3 or fewer terminals are open)">◫</div>
+      <div class="iconbtn">＋</div>
+    </div>
+  </div>
+  <div class="notice-sky">ⓘ Side-by-side fits up to 3 terminals — switched to tabs. Closing a terminal brings side by side back. <span style="margin-left:auto">✕</span></div>
+  <div class="pterm" style="border-top:1px solid var(--border);min-height:64px">
+    <span class="ac">⏺</span> Starting Claude Code in <span class="cl">~/projects/vibe-coding-ideas</span>…<br>
+    <span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span>
+  </div>
+</div>
+<p class="caption">Nothing is lost — all four terminals keep running, they're just tabs now. The side-by-side button stays lit (your preference is remembered) and its tooltip says when it comes back. <strong>Close any terminal so 3 remain and the three panes return by themselves</strong> — no button to press. The same message-and-return pattern covers a too-narrow window: too narrow for the current number of panes → tabs; wide enough again → panes come back.</p>
+
+<h2>3 · A popped-out terminal — never one of the lined-up tabs</h2>
+<p>A terminal you've popped out into its own window doesn't have a pane, so it can't have one of the lined-up tabs either. Instead it becomes a small purple <strong>⧉ badge</strong> in the top-right corner, next to the other buttons — click it to bring that window to the front. It doesn't count toward the 3.</p>
+
+<div class="mock-cap">3 panes in the dock + 1 popped-out terminal (the ⧉1 badge, top right)</div>
+<div class="mock">
+  <div class="astrip">
+    <div class="atab"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="badge pane dim">L</span></div>
+    <div class="atab on"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open…</span><span class="badge pane">M</span></div>
+    <div class="atab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="badge pane dim">R</span>
+      <span class="util"><span class="u pop" title="Popped out: Recreate staging database properly — click to bring its window to the front">⧉1</span><span class="u on">◫</span><span class="u">＋</span></span>
+    </div>
+  </div>
+  <div class="splitbody">
+    <div class="pane"><div class="pterm" style="min-height:40px"><span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span></div></div>
+    <div class="pane focus"><div class="pterm" style="min-height:40px"><span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span></div></div>
+    <div class="pane"><div class="pterm" style="min-height:40px"><span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span></div></div>
+  </div>
+</div>
+
+<h2>4 · Every situation, one table</h2>
+<div class="tblwrap"><table>
+<tr><th>Open terminals in the dock</th><th>Window width</th><th>What you see</th></tr>
+<tr><td>1</td><td>any</td><td>One terminal, as today</td></tr>
+<tr><td>2</td><td>wide enough for 2 panes</td><td><strong>2 panes</strong> (unchanged from today)</td></tr>
+<tr><td>2</td><td>too narrow</td><td>Tabs, with the existing “needs a wider window” message</td></tr>
+<tr><td>3</td><td>wide enough for 3 panes</td><td><strong>3 panes</strong> — the new bit</td></tr>
+<tr><td>3</td><td>too narrow for 3</td><td>Tabs — never “2 panes with one terminal hidden”</td></tr>
+<tr><td>4 or 5</td><td>any</td><td>Tabs, always, with the “fits up to 3” message on the way in</td></tr>
+<tr><td>Phone-sized screen</td><td>any</td><td>Tabs, always (unchanged)</td></tr>
+</table></div>
+<p class="caption">Popped-out windows aren't counted — they live outside the dock. Screen-reader users hear the same messages the notices show, plus “Typing goes to …” whenever the keyboard moves. Compass · 2026-08-23.</p>
+
+</div>
+</body>
+</html>
