@@ -97,6 +97,7 @@ async function reattachForStash(
         label: stash.label,
         identity: stash.identity,
         readOnly: stash.readOnly,
+        autoAccept: stash.autoAccept,
         buffer,
       },
     };
@@ -141,6 +142,7 @@ export function TerminalPopoutClient() {
       label: p.label,
       identity: p.identity,
       readOnly: p.readOnly,
+      autoAccept: p.autoAccept,
       ideaId: p.ideaId,
       ideaTitle: p.ideaTitle,
     });

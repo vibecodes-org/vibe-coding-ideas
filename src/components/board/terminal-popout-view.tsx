@@ -21,7 +21,8 @@
 // doc for why that's safe (same-owner reattach, relay's existing 4001 path).
 
 import { useEffect } from "react";
-import { CircleAlert, Loader2, Lock, LockOpen, Power, Square, Undo2 } from "lucide-react";
+import { CircleAlert, Loader2, Lock, LockOpen, Power, Square, Undo2, Zap } from "lucide-react";
+import { AUTO_ACCEPT_BADGE_LABEL, AUTO_ACCEPT_BADGE_TITLE } from "@/lib/terminal/auto-accept-mode";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { resolveDockView, type DockView } from "@/lib/terminal/first-run-flow";
@@ -92,7 +93,7 @@ export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopout
     autoConnectWhenExpanded: false,
     attachExisting: attach,
   });
-  const { state, readOnly, inputEnabled, launchPhase, platform, paired, containerRef, actions } = session;
+  const { state, readOnly, autoAccept, inputEnabled, launchPhase, platform, paired, containerRef, actions } = session;
 
   // Keep the parent's action registry current — same "every render, no deps"
   // pattern as terminal-session-view.tsx's onRegisterActions, since `actions`
@@ -109,6 +110,11 @@ export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopout
   // to run exactly once despite the empty dependency array.
   useEffect(() => {
     actions.setReadOnly(payload.readOnly);
+    // Task d3de150c: mirrors the readOnly seeding immediately above — the
+    // dock tab's launch-time auto-accept fact travels with the pop-out
+    // payload (D1), applied once on mount so the badge below renders from
+    // this window's very first frame too.
+    actions.setAutoAccept(payload.autoAccept);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -160,6 +166,17 @@ export function TerminalPopoutView({ payload, onSessionActions }: TerminalPopout
           <meta.Icon className={cn("h-3 w-3", meta.spin && "animate-spin")} />
           {meta.label}
         </span>
+        {/* Auto-accept badge (task d3de150c) — same "whole session life, not
+            gated on connected" rule as terminal-session-view.tsx's badge;
+            see that file's comment for why. */}
+        {autoAccept && (
+          <span
+            className="inline-flex items-center gap-1.5 rounded-md border border-amber-500/55 bg-amber-500/10 px-2 py-1 text-[11px] font-bold text-amber-300"
+            title={AUTO_ACCEPT_BADGE_TITLE}
+          >
+            <Zap className="h-3 w-3" /> {AUTO_ACCEPT_BADGE_LABEL}
+          </span>
+        )}
         {readOnly && state.status === "connected" && (
           <span className="inline-flex items-center gap-1.5 rounded-md border border-violet-500/55 bg-violet-500/10 px-2 py-1 text-[11px] font-bold text-violet-300">
             <Lock className="h-3 w-3" /> Read-only

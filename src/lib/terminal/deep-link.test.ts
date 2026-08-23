@@ -211,6 +211,40 @@ describe("buildLaunchDeepLink with model (task c4ca2d95, terminal starting model
   });
 });
 
+describe("buildLaunchDeepLink with permissionMode (task d3de150c, terminal auto-accept mode)", () => {
+  it("includes permissionMode, positioned before prompt, and round-trips", () => {
+    const withMode = { ...SAMPLE, permissionMode: "acceptEdits", prompt: "hello" };
+    const url = buildLaunchDeepLink(withMode);
+    expect(url).toContain("permissionMode=acceptEdits");
+    expect(url.indexOf("permissionMode=")).toBeLessThan(url.indexOf("prompt="));
+    expect(parseLaunchDeepLink(url)).toEqual(withMode);
+  });
+
+  it("omits permissionMode entirely when absent — no version-skew risk for an old bridge/helper", () => {
+    const url = buildLaunchDeepLink(SAMPLE);
+    expect(url).not.toContain("permissionMode=");
+    expect(parseLaunchDeepLink(url)).toEqual(SAMPLE);
+  });
+
+  it("never fires any value other than the literal 'acceptEdits' — hard whitelist, builder side", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, permissionMode: "bypassPermissions" });
+    expect(url).not.toContain("permissionMode=");
+  });
+
+  it("a forbidden value on the wire (e.g. bypassPermissions) is rejected by the shared parser, never forwarded", () => {
+    const url = `${LAUNCH_SCHEME}://${LAUNCH_HOST}?relay=${encodeURIComponent(SAMPLE.relay)}&session=${SAMPLE.session}&token=${encodeURIComponent(SAMPLE.token)}&permissionMode=bypassPermissions`;
+    const parsed = parseLaunchDeepLink(url);
+    expect(parsed).not.toBeNull();
+    expect(parsed).not.toHaveProperty("permissionMode");
+  });
+
+  it("is left untouched by redactDeepLinkToken — not a secret or free-form user content", () => {
+    const url = buildLaunchDeepLink({ ...SAMPLE, permissionMode: "acceptEdits" });
+    const redacted = redactDeepLinkToken(url);
+    expect(redacted).toContain("permissionMode=acceptEdits");
+  });
+});
+
 describe("redactDeepLinkToken", () => {
   it("replaces the token value with *** and never leaks the secret", () => {
     const url = buildLaunchDeepLink(SAMPLE);

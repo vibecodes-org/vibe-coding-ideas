@@ -43,6 +43,12 @@ export type Database = {
            *  in src/lib/terminal/model-resolution.ts); any other string = passed
            *  verbatim as `claude --model <value>` on fresh sessions only. */
           terminal_model: string | null;
+          /** Task d3de150c ("Terminal mode") — opt-in: fresh in-app terminal
+           *  sessions launch with `claude --permission-mode acceptEdits`
+           *  when true. Default false. Never applies to a resumed session,
+           *  and has no platform-wide default (per-user only, safety
+           *  setting) — see src/lib/terminal/auto-accept-mode.ts. */
+          terminal_auto_accept: boolean;
           is_admin: boolean;
           is_super_admin: boolean;
           is_bot: boolean;
@@ -86,6 +92,7 @@ export type Database = {
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
           terminal_model?: string | null;
+          terminal_auto_accept?: boolean;
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;
@@ -123,6 +130,7 @@ export type Database = {
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
           model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
           terminal_model?: string | null;
+          terminal_auto_accept?: boolean;
           is_admin?: boolean;
           is_super_admin?: boolean;
           is_bot?: boolean;

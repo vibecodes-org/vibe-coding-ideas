@@ -160,11 +160,21 @@ const explicitCmd = args.cmd || process.env.BRIDGE_CMD || null;
 // resume/resumeId/explicitCmd never read it. `--model` on the bare CLI
 // (BRIDGE_MODEL env, dev/test convenience) mirrors --cmd's own env fallback.
 const MODEL = launched?.model || process.env.BRIDGE_MODEL || null;
+// Task d3de150c ("Terminal mode" auto-accept toggle): the deep link's
+// `permissionMode` param, already parse-time whitelisted by the shared
+// module's isPermissionModeSafe (only the literal "acceptEdits" ever
+// survives parsing — see deep-link.mjs). Only ever applied by
+// resolveClaudeLaunch on a genuinely fresh session (branch 4) — resume/
+// resumeId/explicitCmd never read it, same as MODEL above.
+// `BRIDGE_PERMISSION_MODE` env mirrors BRIDGE_MODEL's own dev/test
+// convenience fallback.
+const PERMISSION_MODE = launched?.permissionMode || process.env.BRIDGE_PERMISSION_MODE || null;
 const { cmd: CMD, conv: CONV } = resolveClaudeLaunch({
   explicitCmd,
   resumeId: RESUME_ID,
   resume: RESUME,
   model: MODEL,
+  permissionMode: PERMISSION_MODE,
   mintId: () => crypto.randomUUID(),
 });
 const CWD = launched?.cwd || args.cwd || process.env.BRIDGE_CWD || process.cwd();

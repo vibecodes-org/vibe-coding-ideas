@@ -20,7 +20,14 @@ vi.mock("next/cache", () => ({
 }));
 
 // Import after mocks are set up
-import { getModelTierMap, updateModelTierMap, getTerminalModel, updateTerminalModel } from "./profile";
+import {
+  getModelTierMap,
+  updateModelTierMap,
+  getTerminalModel,
+  updateTerminalModel,
+  getTerminalAutoAccept,
+  updateTerminalAutoAccept,
+} from "./profile";
 import { MACHINE_DEFAULT_TERMINAL_MODEL } from "@/lib/terminal/model-resolution";
 
 const FAKE_USER_ID = "00000000-0000-0000-0000-000000000001";
@@ -283,5 +290,94 @@ describe("updateTerminalModel", () => {
       update: () => ({ eq: () => Promise.resolve({ error: { message: "write failed" } }) }),
     }));
     await expect(updateTerminalModel("opus")).rejects.toThrow("write failed");
+  });
+});
+
+describe("getTerminalAutoAccept (task d3de150c)", () => {
+  it("returns the stored preference for the authenticated user", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: { terminal_auto_accept: true }, error: null }),
+        }),
+      }),
+    }));
+
+    expect(await getTerminalAutoAccept()).toBe(true);
+  });
+
+  it("returns false when unset (default off)", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: { terminal_auto_accept: false }, error: null }),
+        }),
+      }),
+    }));
+
+    expect(await getTerminalAutoAccept()).toBe(false);
+  });
+
+  it("throws when not authenticated", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
+    await expect(getTerminalAutoAccept()).rejects.toThrow("Not authenticated");
+  });
+
+  it("propagates DB errors", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      select: () => ({
+        eq: () => ({
+          maybeSingle: () => Promise.resolve({ data: null, error: { message: "connection lost" } }),
+        }),
+      }),
+    }));
+    await expect(getTerminalAutoAccept()).rejects.toThrow("connection lost");
+  });
+});
+
+describe("updateTerminalAutoAccept (task d3de150c)", () => {
+  it("stores true scoped to the current user", async () => {
+    let updatedWith: unknown;
+    let scopedTo: unknown;
+    mockSupabase.from.mockImplementation(() => ({
+      update: (data: unknown) => ({
+        eq: (col: string, val: unknown) => {
+          updatedWith = data;
+          scopedTo = { [col]: val };
+          return Promise.resolve({ error: null });
+        },
+      }),
+    }));
+
+    const result = await updateTerminalAutoAccept(true);
+
+    expect(result).toBe(true);
+    expect(updatedWith).toEqual({ terminal_auto_accept: true });
+    expect(scopedTo).toEqual({ id: FAKE_USER_ID });
+  });
+
+  it("stores false", async () => {
+    let updatedWith: unknown;
+    mockSupabase.from.mockImplementation(() => ({
+      update: (data: unknown) => {
+        updatedWith = data;
+        return { eq: () => Promise.resolve({ error: null }) };
+      },
+    }));
+
+    await expect(updateTerminalAutoAccept(false)).resolves.toBe(false);
+    expect(updatedWith).toEqual({ terminal_auto_accept: false });
+  });
+
+  it("throws when not authenticated", async () => {
+    mockSupabase.auth.getUser.mockResolvedValueOnce({ data: { user: null }, error: null });
+    await expect(updateTerminalAutoAccept(true)).rejects.toThrow("Not authenticated");
+  });
+
+  it("propagates DB errors", async () => {
+    mockSupabase.from.mockImplementation(() => ({
+      update: () => ({ eq: () => Promise.resolve({ error: { message: "write failed" } }) }),
+    }));
+    await expect(updateTerminalAutoAccept(true)).rejects.toThrow("write failed");
   });
 });

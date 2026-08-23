@@ -51,6 +51,7 @@ function mockActions(): TerminalSessionActions {
     reconnectNow: vi.fn(),
     end: vi.fn(),
     setReadOnly: vi.fn(),
+    setAutoAccept: vi.fn(),
     copyBridgeCommand: vi.fn(),
     refreshView: vi.fn(),
     serializeNow: vi.fn(),
@@ -80,6 +81,7 @@ function installMockSession() {
       cwd: null,
       claudeSessionId: null,
       readOnly: false,
+      autoAccept: false,
       inputEnabled: true,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,
@@ -119,6 +121,7 @@ function installMockWaitingSession(pairingTimedOut: boolean) {
       cwd: null,
       claudeSessionId: null,
       readOnly: false,
+      autoAccept: false,
       inputEnabled: false,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,
@@ -158,6 +161,7 @@ function installMockErrorSession(state: Partial<TerminalConnectionState> = {}) {
       cwd: null,
       claudeSessionId: null,
       readOnly: false,
+      autoAccept: false,
       inputEnabled: false,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,
@@ -199,6 +203,7 @@ function installMockEndedSession(
       cwd,
       claudeSessionId,
       readOnly: false,
+      autoAccept: false,
       inputEnabled: false,
       platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
       paired: true,
@@ -636,5 +641,77 @@ describe("TerminalSessionView — stuck-pairing watchdog timeout panel", () => {
     const retry = screen.getByRole("button", { name: /Retry/ });
     fireEvent.click(retry);
     expect(actions.connect).toHaveBeenCalledWith({ autoLaunch: true });
+  });
+});
+
+// ── auto-accept badge (task d3de150c) ────────────────────────────────────
+// Design review note 2: this badge must NOT copy the Read-only pill's
+// `state.status === "connected"` gate — it needs to show for the session's
+// whole life (launched, connected, disconnected, reconnecting/waiting), not
+// just while actively connected.
+
+function installMockSessionWithStatus(status: TerminalConnectionState["status"], autoAccept: boolean) {
+  mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
+    const containerRef = useRef<HTMLDivElement | null>(null);
+    return {
+      state: {
+        status,
+        sessionId: "sess-1",
+        errorKind: null,
+        endedReason: null,
+        closeCode: null,
+        closeReason: null,
+      },
+      launchPhase: "idle",
+      peerDegraded: false,
+      helperVersion: null,
+      pair: { sessionId: "sess-1", bridgeToken: "bridge-tok", browserToken: "browser-tok" },
+      cwd: null,
+      claudeSessionId: null,
+      readOnly: false,
+      autoAccept,
+      inputEnabled: true,
+      platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
+      paired: true,
+      xtermReady: true,
+      containerRef,
+      pairingTimedOut: false,
+      actions: mockActions(),
+    };
+  });
+}
+
+describe("TerminalSessionView — auto-accept badge (task d3de150c)", () => {
+  it("shows the Auto-accept badge while connected", () => {
+    installMockSessionWithStatus("connected", true);
+    renderView(false);
+    expect(screen.getByText("Auto-accept")).toBeInTheDocument();
+  });
+
+  it("shows the Auto-accept badge while disconnected — NOT gated on status === connected", () => {
+    installMockSessionWithStatus("disconnected", true);
+    renderView(false);
+    expect(screen.getByText("Auto-accept")).toBeInTheDocument();
+  });
+
+  it("shows the Auto-accept badge while waiting-to-pair/reconnecting", () => {
+    installMockSessionWithStatus("waiting-to-pair", true);
+    renderView(false);
+    expect(screen.getByText("Auto-accept")).toBeInTheDocument();
+  });
+
+  it("never shows the badge when the session was not launched with the flag", () => {
+    installMockSessionWithStatus("connected", false);
+    renderView(false);
+    expect(screen.queryByText("Auto-accept")).not.toBeInTheDocument();
+  });
+
+  it("renders an accessible title explaining the mode, not just an icon", () => {
+    installMockSessionWithStatus("connected", true);
+    renderView(false);
+    expect(screen.getByText("Auto-accept").closest("span")).toHaveAttribute(
+      "title",
+      expect.stringContaining("without confirmation"),
+    );
   });
 });

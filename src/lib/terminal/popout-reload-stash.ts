@@ -23,6 +23,15 @@ export interface PopoutStash {
   label: string;
   identity: string;
   readOnly: boolean;
+  /**
+   * Task d3de150c ("Terminal mode" auto-accept toggle) — mirrors `readOnly`:
+   * this window's launch-time auto-accept fact, stashed so a reload of the
+   * popped window (Cmd+R, crash recovery) can restore the badge along with
+   * everything else. Lenient on parse (see parsePopoutStash below) — a
+   * stash saved before this field existed simply defaults to `false`
+   * instead of failing the whole reattach.
+   */
+  autoAccept: boolean;
   ideaId: string;
   /** Not in the design's literal field list but required by TerminalPopoutView's
    *  descriptor/document-title — carried alongside the rest rather than re-fetched. */
@@ -52,7 +61,8 @@ export function parsePopoutStash(raw: string | null | undefined): PopoutStash | 
       typeof (parsed as PopoutStash).ideaId === "string" &&
       typeof (parsed as PopoutStash).ideaTitle === "string"
     ) {
-      return parsed as PopoutStash;
+      const candidate = parsed as PopoutStash & { autoAccept?: unknown };
+      return { ...candidate, autoAccept: typeof candidate.autoAccept === "boolean" ? candidate.autoAccept : false };
     }
     return null;
   } catch {

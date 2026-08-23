@@ -190,6 +190,15 @@ export interface PopoutPayload {
   identity: string;
   readOnly: boolean;
   /**
+   * Task d3de150c ("Terminal mode" auto-accept toggle) — mirrors `readOnly`:
+   * the dock tab's launch-time fact at the moment of pop-out, applied once
+   * on mount by the popped window's own `useTerminalSession` instance (see
+   * terminal-popout-view.tsx). Absent on a payload sent by a sender that
+   * predates this card (deploy skew) — treated as `false` by
+   * `parsePopoutPayload`, the safe default.
+   */
+  autoAccept: boolean;
+  /**
    * The dock's serialized scrollback at the moment of send (design §1/§2,
    * Flow A) — OPTIONAL and captured FRESH on every send (including retries),
    * never memoized, so a slow handshake still hands over the newest output.
@@ -281,6 +290,11 @@ function parsePopoutPayload(value: unknown): PopoutPayload | null {
     label: p.label as string,
     identity: p.identity as string,
     readOnly: p.readOnly as boolean,
+    // Task d3de150c: lenient, unlike readOnly above — a sender that predates
+    // this card simply never sets it, and `false` (no badge) is the safe
+    // default for that deploy-skew case, not a reason to reject the whole
+    // hand-off.
+    autoAccept: typeof p.autoAccept === "boolean" ? p.autoAccept : false,
   };
   // Optional and leniently parsed (design §1's decision callout): a
   // malformed/absent buffer is dropped on its own — the credentials above

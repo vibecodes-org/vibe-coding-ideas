@@ -24,6 +24,8 @@ interface ProfileSettingsMenuProps {
   modelTierMap: ModelTierMap | null;
   /** In-app terminal starting-model override (task c4ca2d95). */
   terminalModel: string | null;
+  /** In-app terminal auto-accept preference (task d3de150c). */
+  terminalAutoAccept: boolean;
 }
 
 export function ProfileSettingsMenu({
@@ -32,6 +34,7 @@ export function ProfileSettingsMenu({
   hasApiKey,
   modelTierMap,
   terminalModel,
+  terminalAutoAccept,
 }: ProfileSettingsMenuProps) {
   const [showNotifications, setShowNotifications] = useState(false);
   const [showColumns, setShowColumns] = useState(false);
@@ -91,6 +94,7 @@ export function ProfileSettingsMenu({
       <ModelTierSettings
         map={modelTierMap}
         terminalModel={terminalModel}
+        terminalAutoAccept={terminalAutoAccept}
         open={showModelTiers}
         onOpenChange={setShowModelTiers}
       />

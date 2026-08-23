@@ -37,6 +37,13 @@ export interface TerminalTaskLaunchChoiceProps {
    * src/lib/terminal/model-resolution.ts. Omitted when null/undefined.
    */
   modelLine?: string | null;
+  /**
+   * Task d3de150c ("Terminal mode" auto-accept toggle) — the terser chip
+   * counterpart to `modelLine`, same "Start fresh" scoping (Reconnect/Resume
+   * never carry the flag). See terminalLaunchAutoAcceptChip in
+   * src/lib/terminal/auto-accept-mode.ts. Omitted when null/undefined.
+   */
+  autoAcceptChip?: string | null;
 }
 
 export function TerminalTaskLaunchChoice({
@@ -48,6 +55,7 @@ export function TerminalTaskLaunchChoice({
   onStartFresh,
   onCancel,
   modelLine = null,
+  autoAcceptChip = null,
 }: TerminalTaskLaunchChoiceProps) {
   // Narrow on `match.kind` directly at each use (rather than a derived
   // boolean) — `ChooserLiveRow`/`ChooserRecentRow` don't share a `createdAt`/
@@ -92,7 +100,17 @@ export function TerminalTaskLaunchChoice({
           {/* Task c4ca2d95: scoped to "Start fresh" — Reconnect/Resume keep
               the session's own model (AC-8), so this line is deliberately
               silent about them. */}
-          {modelLine && <p className="mt-1.5 text-[11px] text-zinc-500">{modelLine}</p>}
+          {modelLine && (
+            <p className="mt-1.5 text-[11px] text-zinc-500">
+              {modelLine}
+              {autoAcceptChip && <span className="ml-1 font-semibold text-amber-400">· {autoAcceptChip}</span>}
+            </p>
+          )}
+          {/* Task d3de150c: fresh-launches-only reminder — Reconnect/Resume
+              above never carry the flag, only "Start fresh anyway" does. */}
+          {autoAcceptChip && (
+            <p className="mt-1 text-[11px] text-zinc-500">Only starting fresh applies auto-accept.</p>
+          )}
         </div>
         <div className="flex items-center justify-end gap-2 border-t border-zinc-800 px-4 py-3">
           <Button variant="ghost" size="xs" className="text-zinc-400 hover:text-zinc-100" disabled={busy} onClick={onCancel}>

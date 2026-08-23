@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import {
   Select,
   SelectContent,
@@ -24,9 +25,10 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import { updateModelTierMap, updateTerminalModel } from "@/actions/profile";
+import { updateModelTierMap, updateTerminalModel, updateTerminalAutoAccept } from "@/actions/profile";
 import { setViewerModelTierMapCache } from "@/hooks/use-viewer-model-tier-map";
 import { setViewerTerminalModelCache } from "@/hooks/use-viewer-terminal-model";
+import { setViewerTerminalAutoAcceptCache } from "@/hooks/use-viewer-terminal-auto-accept";
 import { usePlatformModelDefaults } from "@/hooks/use-platform-model-defaults";
 import { usePlatformTerminalModelDefault } from "@/hooks/use-platform-terminal-model-default";
 import {
@@ -43,6 +45,7 @@ import {
   validateTerminalModelValue,
   capitalizeTerminalModelName,
 } from "@/lib/terminal/model-resolution";
+import { AUTO_ACCEPT_FRESH_ONLY_HELP, AUTO_ACCEPT_ON_CONSEQUENCE } from "@/lib/terminal/auto-accept-mode";
 
 // Radix Select can't use "" as an item value, so "follow the platform
 // default" uses this sentinel (unset key in the stored map).
@@ -74,6 +77,8 @@ interface ModelTierSettingsProps {
   map: ModelTierMap | null;
   /** The signed-in user's terminal_model override (task c4ca2d95), fetched server-side. */
   terminalModel: string | null;
+  /** The signed-in user's terminal_auto_accept preference (task d3de150c), fetched server-side. */
+  terminalAutoAccept: boolean;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
 }
@@ -98,6 +103,7 @@ function isTerminalCustomValue(value: string | null): boolean {
 export function ModelTierSettings({
   map,
   terminalModel,
+  terminalAutoAccept,
   open: controlledOpen,
   onOpenChange: controlledOnOpenChange,
 }: ModelTierSettingsProps) {
@@ -115,6 +121,10 @@ export function ModelTierSettings({
   // custom value (raw, possibly-invalid text while the user is typing).
   const [terminalStaged, setTerminalStaged] = useState<string | null>(terminalModel);
   const [terminalCustomMode, setTerminalCustomMode] = useState(() => isTerminalCustomValue(terminalModel));
+  // Auto-accept toggle (task d3de150c) — a plain boolean, no custom-mode
+  // escape hatch: the only two legal states are on/off (design §0, AC-6 —
+  // "no dropdown, no free text, ever").
+  const [autoAcceptStaged, setAutoAcceptStaged] = useState(terminalAutoAccept);
 
   // Re-stage from the persisted values on every open so a prior Cancel never
   // leaks into the next open.
@@ -123,6 +133,7 @@ export function ModelTierSettings({
       setStaged(map ?? {});
       setTerminalStaged(terminalModel);
       setTerminalCustomMode(isTerminalCustomValue(terminalModel));
+      setAutoAcceptStaged(terminalAutoAccept);
     }
     setOpen(next);
   }
@@ -131,8 +142,10 @@ export function ModelTierSettings({
     ({ tier }) => (staged[tier] ?? null) !== (map?.[tier] ?? null)
   );
   const isTerminalDirty = terminalStaged !== terminalModel;
-  const isDirty = isTierDirty || isTerminalDirty;
-  const hasAnyOverride = TIER_FIELDS.some(({ tier }) => staged[tier] !== undefined) || terminalStaged !== null;
+  const isAutoAcceptDirty = autoAcceptStaged !== terminalAutoAccept;
+  const isDirty = isTierDirty || isTerminalDirty || isAutoAcceptDirty;
+  const hasAnyOverride =
+    TIER_FIELDS.some(({ tier }) => staged[tier] !== undefined) || terminalStaged !== null || autoAcceptStaged;
 
   const terminalValidation = terminalCustomMode ? validateTerminalModelValue(terminalStaged ?? "") : { ok: true as const };
   const terminalIsNovel =
@@ -162,18 +175,21 @@ export function ModelTierSettings({
     setStaged({});
     setTerminalStaged(null);
     setTerminalCustomMode(false);
+    setAutoAcceptStaged(false);
   }
 
   function handleSave() {
     startTransition(async () => {
       try {
         const terminalToSave = terminalCustomMode ? (terminalStaged ?? "").trim() : terminalStaged;
-        const [savedTiers, savedTerminal] = await Promise.all([
+        const [savedTiers, savedTerminal, savedAutoAccept] = await Promise.all([
           updateModelTierMap(staged),
           updateTerminalModel(terminalToSave),
+          updateTerminalAutoAccept(autoAcceptStaged),
         ]);
         setViewerModelTierMapCache(savedTiers);
         setViewerTerminalModelCache(savedTerminal);
+        setViewerTerminalAutoAcceptCache(savedAutoAccept);
         toast.success("Model tiers saved");
         setOpen(false);
       } catch (err) {
@@ -349,6 +365,31 @@ export function ModelTierSettings({
                 any time by typing /model in the terminal.
               </p>
             )}
+          </div>
+
+          {/* Auto-accept toggle (task d3de150c "Terminal mode") — a two-state
+              Switch, never a dropdown or free text: the only value this can
+              ever produce is the literal "acceptEdits" or nothing (AC-6).
+              No platform-wide default exists for this — per-user only. */}
+          <div className="space-y-1.5">
+            <div className="flex items-start justify-between gap-3">
+              <Label htmlFor="terminal-auto-accept" className="text-sm font-normal">
+                Start in auto-accept mode
+              </Label>
+              <Switch
+                id="terminal-auto-accept"
+                checked={autoAcceptStaged}
+                onCheckedChange={setAutoAcceptStaged}
+                disabled={isPending}
+                aria-describedby="terminal-auto-accept-help"
+              />
+            </div>
+            <p
+              id="terminal-auto-accept-help"
+              className={cn("text-[11px]", autoAcceptStaged ? "text-amber-600 dark:text-amber-500" : "text-muted-foreground")}
+            >
+              {autoAcceptStaged ? AUTO_ACCEPT_ON_CONSEQUENCE : AUTO_ACCEPT_FRESH_ONLY_HELP}
+            </p>
           </div>
         </div>
 

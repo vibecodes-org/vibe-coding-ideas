@@ -44,6 +44,7 @@ import {
 } from "@/lib/terminal/relay-budget";
 import { getPlatformTerminalModelDefault } from "@/lib/terminal/platform-terminal-model";
 import { resolveEffectiveTerminalModel } from "@/lib/terminal/model-resolution";
+import { ACCEPT_EDITS_PERMISSION_MODE } from "@/lib/terminal/auto-accept-mode";
 
 // Pin the runtime: this handler mints per-request, auth-bound tokens and must never
 // be statically optimized or flipped to the Edge runtime. The pin stays as hygiene,
@@ -300,22 +301,29 @@ export async function POST(req: Request) {
     // own posture. The client threads the result into the FRESH-launch deep
     // link only — a resume never carries it (see use-terminal-session.ts).
     let userTerminalModel: string | null = null;
+    // Task d3de150c ("Terminal mode") — read alongside terminal_model in the
+    // SAME row fetch (one extra column, not a second query). Best-effort,
+    // same posture as terminal_model above: a failed/errored read degrades
+    // to "off" (AC-2 equivalent: never block a launch over this), never
+    // throws, never blocks the mint.
+    let userAutoAccept = false;
     try {
       const { data: userRow, error: userRowErr } = await supabase
         .from("users")
-        .select("terminal_model")
+        .select("terminal_model, terminal_auto_accept")
         .eq("id", user.id)
         .maybeSingle();
       if (userRowErr) {
-        logger.warn("Terminal session mint: failed to read terminal_model — omitting user override", {
+        logger.warn("Terminal session mint: failed to read terminal_model/terminal_auto_accept — omitting user overrides", {
           error: userRowErr.message,
           userId: user.id,
         });
       } else {
         userTerminalModel = userRow?.terminal_model ?? null;
+        userAutoAccept = userRow?.terminal_auto_accept ?? false;
       }
     } catch (err) {
-      logger.warn("Terminal session mint: unexpected error reading terminal_model — omitting user override", {
+      logger.warn("Terminal session mint: unexpected error reading terminal_model/terminal_auto_accept — omitting user overrides", {
         error: err instanceof Error ? err.message : String(err),
       });
     }
@@ -324,6 +332,11 @@ export async function POST(req: Request) {
       userValue: userTerminalModel,
       platformValue: platformTerminalModel,
     });
+    // Task d3de150c: no platform-wide default exists for this by design —
+    // the ONLY input is the user's own row. Resolves to the literal
+    // "acceptEdits" or undefined (never any other string) so the deep link
+    // and the mint response can never carry a forbidden value.
+    const effectivePermissionMode = userAutoAccept ? ACCEPT_EDITS_PERMISSION_MODE : undefined;
 
     // ── (d) MINT + register. ────────────────────────────────────────────────
     // The bridge/browser pair (per-launch, random sid) and the helper's OWN
@@ -382,6 +395,12 @@ export async function POST(req: Request) {
       // passed at all — the fresh-launch call site treats absence the same
       // as an explicit undefined.
       model: effectiveModel,
+      // Task d3de150c ("Terminal mode") — set ONLY when this user's own
+      // terminal_auto_accept preference is on, for a FRESH launch only; the
+      // client must never thread this into a resume/resumeId deep link
+      // (mirrors AC-8 for `model` above). Omitted (undefined, dropped by
+      // JSON.stringify) when off — byte-identical to today's response shape.
+      permissionMode: effectivePermissionMode,
     });
   } catch (err) {
     logger.error("Terminal session mint error", {
