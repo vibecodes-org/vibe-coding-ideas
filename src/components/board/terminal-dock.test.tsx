@@ -727,6 +727,62 @@ describe("TerminalDock — chooser overlay when a tab is already open (rework 11
   });
 });
 
+// Card 7ee218b1, Nick's field report 2026-08-23: with only one terminal
+// open, the whole tab strip — including the rename pencil and the "+"
+// button that starts a 2nd terminal — used to be hidden entirely (gated on
+// `sessions.length > 1`). That made the side-by-side feature undiscoverable
+// (its only entry point was invisible until a 2nd tab already existed) and
+// made a lone session impossible to rename. The strip now shows at 1
+// session too.
+describe("TerminalDock — tab strip shows at a single session too (card 7ee218b1)", () => {
+  async function openFirstTabViaChooser() {
+    await waitFor(() => expect(screen.getByTestId("chooser")).toBeInTheDocument());
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    return screen.getByTestId("session-view").dataset.key as string;
+  }
+
+  it("shows the tab strip, the rename pencil and the '+' button with just one terminal open", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await openFirstTabViaChooser();
+
+    expect(screen.getByRole("tablist", { name: "Terminal sessions" })).toBeInTheDocument();
+    expect(screen.getByRole("tab")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /^Rename session/ })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "New terminal session" })).toBeInTheDocument();
+  });
+
+  it("clicking '+' with only one terminal open delivers a launch — same routing every launch goes through (chooser, since another live session exists elsewhere)", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const firstKey = await openFirstTabViaChooser();
+
+    fireEvent.click(screen.getByRole("button", { name: "New terminal session" }));
+    await waitFor(() => expect(screen.getByRole("dialog")).toBeInTheDocument());
+
+    fireEvent.click(screen.getByTestId("chooser-start-new"));
+
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(2));
+    const keys = screen.getAllByTestId("session-view").map((el) => el.dataset.key);
+    expect(keys).toContain(firstKey);
+  });
+
+  it("the split-view toggle is a no-op with only one terminal open — nothing to split against", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    await openFirstTabViaChooser();
+
+    fireEvent.click(screen.getByRole("button", { name: "Split view: show two sessions side by side" }));
+
+    // Still exactly one tab, still tabbed (not paned) — the toggle must not
+    // leave `paneKeys`/`splitPreferred` in a state that only a 2nd session
+    // arriving would silently repair.
+    expect(screen.getAllByTestId("session-view")).toHaveLength(1);
+    expect(screen.getByRole("tablist", { name: "Terminal sessions" })).toBeInTheDocument();
+  });
+});
+
 // Card cbe60db5, Nick's field report 2026-08-15 (Bug A): a hard refresh
 // silently minted a brand-new session instead of reattaching, because the
 // registry fetch's catch block collapsed EVERY failure into `[]` —

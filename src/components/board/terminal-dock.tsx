@@ -113,7 +113,6 @@ import { readDockOpen, writeDockOpen } from "@/lib/terminal/dock-open-persistenc
 import {
   type PaneAssignment,
   type PaneSide,
-  type PaneSlotWord,
   type DropZone,
   eligiblePaneKeys,
   enterSplitAssignment,
@@ -134,7 +133,6 @@ import {
   panesForDockCount,
   resolveWidthFloorForCount,
   isSplitRenderableForCount,
-  paneSideLabel,
   stepPaneFocusIndex,
   formatSplitOnAnnouncementForPanes,
   formatSplitRestoredAnnouncementForPanes,
@@ -1007,6 +1005,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   const toggleSplitView = useCallback(() => {
     const turningOn = splitPreferred !== true;
     if (turningOn) {
+      // Card 7ee218b1: the tab strip (and this button with it) now shows at
+      // 1 session too, so this is reachable with nothing to split against —
+      // `enterSplitAssignment` below assumes exactly 2 eligible sessions.
+      if (eligible.length < 2) return;
       let keys: string[];
       let focusIndex: number;
       if (eligible.length >= 3) {
@@ -1727,9 +1729,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   }, [enabled, deliverLaunch]);
 
   const handlePlus = useCallback(() => {
-    // "+" only appears once a 2nd tab already exists (see the tab-strip render
-    // guard below), so the pristine slot is always already consumed by then —
-    // this always mints a genuinely new, board-level tab (B7).
+    // Card 7ee218b1: the "+" now also shows at 1 session, where the
+    // pristine slot may already be consumed OR may not be — either way this
+    // just delivers a launch (B7) and lets `deliverLaunch` decide: mint
+    // directly, or show the chooser overlay if another live session exists
+    // to choose between (same routing a launch always goes through).
     deliverLaunch(null);
   }, [deliverLaunch]);
 
@@ -2506,7 +2510,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           onDragEnd={handleDragEnd}
           onDragCancel={handleDragCancel}
         >
-          {multi && !inlineBrowse && (
+          {sessions.length > 0 && !inlineBrowse && (
             <>
             {/* Below-floor notice (design §5.8/§10.1, mockup D) — only while
                 split is the standing preference but the window's too narrow
@@ -2590,12 +2594,6 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 const confirming = confirmingKey === entry.key;
                 const renaming = renamingKey === entry.key;
                 const renameLength = codePointLength(renameDraft);
-                // Split view: which pane (if any) this tab currently
-                // occupies — an "L"/"M"/"R" badge (words, not colour alone —
-                // aria-label carries the same fact for screen readers).
-                const paneIndex = splitActive ? paneKeys.indexOf(entry.key) : -1;
-                const paneSide: PaneSlotWord | null = paneIndex === -1 ? null : paneSideLabel(paneIndex, paneKeys.length);
-                const paneSideFocused = paneIndex !== -1 && paneIndex === focusedPaneIndex;
                 return (
                   <DraggableTab key={entry.key} id={entry.key} disabled={poppedOut || renaming || confirming}>
                     {({ setNodeRef, listeners }) => (
@@ -2633,17 +2631,6 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                       // needed rather than growing the tab.
                     )}
                   >
-                    {paneSide && (
-                      <span
-                        aria-label={`in ${paneSide} pane`}
-                        className={cn(
-                          "flex-none rounded border px-1 text-[9px] font-bold leading-[14px]",
-                          paneSideFocused ? "border-sky-500/50 bg-sky-500/10 text-sky-300" : "border-zinc-700 text-zinc-500",
-                        )}
-                      >
-                        {paneSide === "left" ? "L" : paneSide === "middle" ? "M" : "R"}
-                      </span>
-                    )}
                     {renaming ? (
                       // Contents-swap (design §3a mid-edit) — same shape as
                       // the "End session?" confirm below, reusing the tab's
