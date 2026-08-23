@@ -108,7 +108,7 @@ import {
   type TaskSessionMatch,
 } from "@/lib/terminal/chooser-data";
 import { decideEntryBehaviour, type EntryDecision } from "@/lib/terminal/entry-decision";
-import { loadSessionSnapshot, readLastTabSid, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
+import { loadSessionSnapshot, readTabSids, toReconnectBuffer } from "@/lib/terminal/session-snapshot";
 import { readDockOpen, writeDockOpen } from "@/lib/terminal/dock-open-persistence";
 import {
   type PaneAssignment,
@@ -636,20 +636,22 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     void fetchHelperStatus().then(setHelperStatus);
   }, [refreshRegistry]);
 
-  // This tab's own snapshot info (session-snapshot.ts) — read once; a tab
-  // doesn't gain a NEW "last sid" mid-session except by attaching another
-  // session itself, at which point the chooser is long since resolved.
-  const [entrySnapshotInfo] = useState(() => {
-    const sid = readLastTabSid();
-    if (!sid) return null;
-    const snap = loadSessionSnapshot(sid);
-    return snap ? { sid, savedAt: snap.savedAt } : null;
-  });
+  // This tab's own snapshot infos (session-snapshot.ts) — one per sid the
+  // tab held before the reload (multi-terminal reload restore: EVERY session
+  // it had attached, not just the last), read once; a tab doesn't gain NEW
+  // sids mid-session except by attaching another session itself, at which
+  // point the chooser is long since resolved.
+  const [entrySnapshotInfos] = useState(() =>
+    readTabSids().flatMap((sid) => {
+      const snap = loadSessionSnapshot(sid);
+      return snap ? [{ sid, savedAt: snap.savedAt }] : [];
+    }),
+  );
 
   const entryDecision: EntryDecision | null = useMemo(() => {
     if (registryRows === null) return null; // still loading
-    return decideEntryBehaviour(registryRows, entrySnapshotInfo, Date.now());
-  }, [registryRows, entrySnapshotInfo]);
+    return decideEntryBehaviour(registryRows, entrySnapshotInfos, Date.now());
+  }, [registryRows, entrySnapshotInfos]);
   useEffect(() => {
     entryDecisionRef.current = entryDecision;
     // Fix 3 (card 9fb9fced): the client's own page-load/refresh liveness
@@ -676,10 +678,14 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         registryRows ?? [],
         ideaId,
         Date.now(),
-        entrySnapshotInfo?.sid ?? readLastTabSid(),
+        // Every sid this tab holds (re-read per recompute — a mid-session
+        // attach adds to it), so no own session is ever miscounted as "open
+        // in another tab" — the pre-reload set alone isn't enough once a
+        // fresh mint lands.
+        readTabSids(),
         getMachineIdentity(),
       ),
-    [registryRows, ideaId, entrySnapshotInfo],
+    [registryRows, ideaId],
   );
   const chooserCounts = useMemo(() => chooserHeaderCounts(chooserSections), [chooserSections]);
   // Card eaa55290 (Nick's field report, 2026-08-17): "no way to tell another
@@ -1706,7 +1712,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       setActiveKey(fresh.key);
     } else if (entryDecision.kind === "instant-continue" && !instantContinueTriggeredRef.current) {
       instantContinueTriggeredRef.current = true;
-      void performReattach(entryDecision.sid, { focus: false });
+      // Multi-terminal reload restore: reattach EVERY session this tab held,
+      // not just the last-attached one. Each call appends its own dock tab as
+      // its fetch resolves (functional setSessions updates — concurrent
+      // resolutions can't clobber each other).
+      for (const sid of entryDecision.sids) void performReattach(sid, { focus: false });
     }
     // "chooser": nothing to seed — the chooser renders in the body below.
   }, [entryDecision, sessions.length, performReattach, pendingLaunch, mintAndDeliver, chooserSections]);

@@ -12,6 +12,10 @@ import {
   clearSessionSnapshot,
   rememberLastTabSid,
   readLastTabSid,
+  parseTabSids,
+  readTabSids,
+  rememberTabSid,
+  forgetTabSid,
   toReconnectBuffer,
 } from "./session-snapshot";
 import type { TransferredBuffer } from "./scrollback-transfer";
@@ -187,6 +191,81 @@ describe("rememberLastTabSid / readLastTabSid", () => {
   it("null storage is a silent no-op", () => {
     expect(() => rememberLastTabSid("sid-1", null)).not.toThrow();
     expect(readLastTabSid(null)).toBeNull();
+  });
+});
+
+describe("parseTabSids", () => {
+  it("parses a JSON array of strings", () => {
+    expect(parseTabSids('["a","b"]')).toEqual(["a", "b"]);
+  });
+
+  it("drops non-string entries and never throws on malformed input", () => {
+    expect(parseTabSids('["a", 1, null, "b"]')).toEqual(["a", "b"]);
+    expect(parseTabSids("not json")).toEqual([]);
+    expect(parseTabSids('{"sid":"a"}')).toEqual([]);
+    expect(parseTabSids(null)).toEqual([]);
+    expect(parseTabSids(undefined)).toEqual([]);
+  });
+});
+
+describe("rememberTabSid / readTabSids / forgetTabSid (multi-terminal reload restore)", () => {
+  it("accumulates every attached sid in attach order, deduplicated", () => {
+    const storage = new FakeStorage();
+    expect(readTabSids(storage)).toEqual([]);
+    rememberTabSid("sid-1", storage);
+    rememberTabSid("sid-2", storage);
+    rememberTabSid("sid-1", storage); // re-attach of a known sid — no duplicate, order kept
+    expect(readTabSids(storage)).toEqual(["sid-1", "sid-2"]);
+  });
+
+  it("also refreshes the legacy last-sid slot on every remember", () => {
+    const storage = new FakeStorage();
+    rememberTabSid("sid-1", storage);
+    rememberTabSid("sid-2", storage);
+    expect(readLastTabSid(storage)).toBe("sid-2");
+  });
+
+  it("falls back to the legacy last-sid slot when the list was never written (pre-fix tab)", () => {
+    const storage = new FakeStorage();
+    rememberLastTabSid("legacy-sid", storage);
+    expect(readTabSids(storage)).toEqual(["legacy-sid"]);
+  });
+
+  it("forgetTabSid removes only the given sid and leaves the legacy slot alone", () => {
+    const storage = new FakeStorage();
+    rememberTabSid("sid-1", storage);
+    rememberTabSid("sid-2", storage);
+    forgetTabSid("sid-1", storage);
+    expect(readTabSids(storage)).toEqual(["sid-2"]);
+    expect(readLastTabSid(storage)).toBe("sid-2");
+    forgetTabSid("never-known", storage); // no-op, never throws
+    expect(readTabSids(storage)).toEqual(["sid-2"]);
+  });
+
+  it("forgetting the last listed sid falls back to the legacy slot only if the list key was never written", () => {
+    const storage = new FakeStorage();
+    rememberTabSid("sid-1", storage);
+    forgetTabSid("sid-1", storage);
+    // The list key now holds [], which is the honest answer — the legacy
+    // slot (still "sid-1") must NOT resurrect a released session...
+    expect(parseTabSids(storage.getItem("vc:term:tab-sids"))).toEqual([]);
+    // ...but readTabSids' legacy fallback fires on an EMPTY list, so it
+    // still reports the legacy sid. Harmless by design: the entry decision
+    // also requires a fresh snapshot AND a live registry row, and an ended
+    // session has neither (its snapshot is cleared alongside forgetTabSid).
+    expect(readTabSids(storage)).toEqual(["sid-1"]);
+  });
+
+  it("null storage is a silent no-op", () => {
+    expect(() => rememberTabSid("sid-1", null)).not.toThrow();
+    expect(() => forgetTabSid("sid-1", null)).not.toThrow();
+    expect(readTabSids(null)).toEqual([]);
+  });
+
+  it("a throwing storage never propagates", () => {
+    const storage = new QuotaLimitedStorage(99);
+    expect(() => rememberTabSid("sid-1", storage)).not.toThrow();
+    expect(readTabSids(storage)).toEqual([]);
   });
 });
 

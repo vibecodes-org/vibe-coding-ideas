@@ -384,6 +384,24 @@ describe("deriveChooserSections", () => {
     expect(sections.liveHere[0].wasOpenInThisTab).toBe(false);
   });
 
+  // Multi-terminal reload restore (Nick's field report 2026-08-22): the tab
+  // remembers EVERY sid it holds, and each matching live row gets the badge —
+  // previously only the single last-attached sid could, so a 2nd own session
+  // read as "open in another tab".
+  it("badges every row in a tabSids array, and only those", () => {
+    const rows = [
+      row({ sid: "own-1", ideaId: IDEA_A, status: "active" }),
+      row({ sid: "own-2", ideaId: IDEA_A, status: "active" }),
+      row({ sid: "foreign", ideaId: IDEA_A, status: "active" }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW, ["own-1", "own-2"]);
+    expect(sections.liveHere.map((r) => [r.sid, r.wasOpenInThisTab])).toEqual([
+      ["own-1", true],
+      ["own-2", true],
+      ["foreign", false],
+    ]);
+  });
+
   // Machine identity (Nick's sign-off change 2): Recent-section filtering
   // against this browser's own recorded machine identity.
   describe("machine identity filtering (Recent section only)", () => {
@@ -725,5 +743,18 @@ describe("liveSessionsElsewhereOnThisBoard", () => {
     const sections = deriveChooserSections(rows, IDEA_A, NOW, "own-sid-1");
     const others = liveSessionsElsewhereOnThisBoard(sections, new Set(["own-sid-1", "own-sid-2"]));
     expect(others.map((r) => r.sid)).toEqual(["other-sid"]);
+  });
+
+  // Multi-terminal reload restore (Nick's field report 2026-08-22): with the
+  // full tabSids array badging every own session, two own dock tabs stop
+  // being miscounted as "open in another tab" even before ownSessionIds
+  // catches up (e.g. mid-restore after a reload).
+  it("returns nothing when every live-here row is in this tab's own tabSids array", () => {
+    const rows = [
+      row({ sid: "own-sid-1", ideaId: IDEA_A, status: "active" }),
+      row({ sid: "own-sid-2", ideaId: IDEA_A, status: "active" }),
+    ];
+    const sections = deriveChooserSections(rows, IDEA_A, NOW, ["own-sid-1", "own-sid-2"]);
+    expect(liveSessionsElsewhereOnThisBoard(sections)).toEqual([]);
   });
 });
