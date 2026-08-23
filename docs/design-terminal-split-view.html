@@ -40,6 +40,8 @@ kbd{font-family:var(--mono);font-size:11.5px;background:var(--panel2);border:1px
 .reject .rtitle{font-size:14px;font-weight:700;color:var(--rose);margin-bottom:6px}
 .veto{border:1px dashed var(--amber-bd);background:var(--amber-bg);border-radius:8px;padding:10px 14px;margin:10px 0;font-size:12.5px;color:var(--amber)}
 .veto b{color:var(--amber)}
+.sup{color:var(--amber);font-size:12px}
+.sup a, .veto a{color:var(--amber);text-decoration:underline dotted}
 table{width:100%;border-collapse:collapse;margin:12px 0;font-size:12.5px}
 th{text-align:left;padding:7px 10px;color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--border2);vertical-align:bottom}
 td{padding:8px 10px;border-bottom:1px solid var(--border);color:var(--dim);vertical-align:top}
@@ -127,14 +129,14 @@ td.mono, .mono{font-family:var(--mono);font-size:11.5px;color:var(--txt)}
 <tr><td>Unfocused-pane treatment</td><td>Zinc border, header background steps down one shade, <strong>“◇ Watching”</strong> chip, hollow cursor. <strong>Terminal output is never dimmed.</strong></td><td>Watching the second session run is the entire point (Requirements §4: “do not scrim content”).</td></tr>
 <tr><td>Dimming mechanism</td><td>Explicit colour tokens, <strong>never CSS opacity on text</strong>.</td><td>Opacity silently breaks contrast guarantees; tokens keep every state provably AA (§3 table).</td></tr>
 <tr><td>Focus-move shortcut</td><td><kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>→</kbd> — absolute (names the destination pane), intercepted before the PTY.</td><td>Collision audit in §5.4 — every closer chord is taken by the browser, Claude Code, readline or tmux.</td></tr>
-<tr><td>Pane assignment (3+ sessions)</td><td>Active tab + most-recently-active other eligible session; a tab click while split replaces the <em>unfocused</em> pane and takes focus.</td><td>§7 Q1 — never yank the session the user is typing into.</td></tr>
+<tr><td>Pane assignment (3+ sessions)</td><td>Active tab + most-recently-active other eligible session; a tab click while split replaces the <em>unfocused</em> pane and takes focus. <span class="sup">(2-pane-era policy — superseded for 3+ sessions by the all-or-nothing rule: every open session gets a pane; <a href="#s10">see §10</a>.)</span></td><td>§7 Q1 — never yank the session the user is typing into.</td></tr>
 <tr><td>Per-pane swap control</td><td><strong>None in v1.</strong> The tab strip is the single swap affordance.</td><td>§7 Q2 — Hick's law, and there is no room at the 480px floor anyway.</td></tr>
 <tr><td>Width floor</td><td><code>MIN_PANE_WIDTH_PX = 480</code>; split needs a dock body ≥ <code>961px</code>, restore with a 20px hysteresis band at ≥ <code>981px</code>.</td><td>§7 Q3 — derived from the shipped 12.5px mono metrics, not guessed.</td></tr>
 <tr><td>Tabs of paned sessions</td><td>Carry a small “L” / “R” badge; <code>aria-selected</code> follows the <em>focused</em> pane.</td><td>Keeps the tablist's “exactly one selected” invariant coherent with two visible panels (§8).</td></tr>
 </table></div>
 
 <h2>2 · Wireframes</h2>
-<p class="caption">Rendered at the real palette (zinc <code>#09090b/#0c0c0e/#141417</code>, sky accent <code>#38bdf8</code>, glyph vocabulary from <code>terminal-tabs.ts</code>). Three sessions are open throughout — one of them with a deliberately long task title — so truncation and the 3-session pane story are visible, not hypothetical.</p>
+<p class="caption">Rendered at the real palette (zinc <code>#09090b/#0c0c0e/#141417</code>, sky accent <code>#38bdf8</code>, glyph vocabulary from <code>terminal-tabs.ts</code>). Three sessions are open throughout — one of them with a deliberately long task title — so truncation and the 3-session pane story are visible, not hypothetical. <span class="sup">(The 3-session framing in B/C predates Requirements v3 — with three sessions open the product now shows three panes, never panes plus a leftover tab; <a href="#s10">see §10</a> for current behaviour.)</span></p>
 
 <div class="mock-cap">A — Tabbed mode (today's default), with the new split toggle in the pinned region</div>
 <div class="mock">
@@ -164,6 +166,7 @@ td.mono, .mono{font-family:var(--mono);font-size:11.5px;color:var(--txt)}
 </div>
 <p class="caption">The toggle only renders with 2+ eligible tabs; with 0–1 tabs the strip is byte-identical to today. Everything else in this frame is the shipped UI.</p>
 
+<div class="veto" style="margin:20px 0 -2px"><b>⚠ Superseded for 3+ sessions.</b> Wireframes B and C below show the shipped 2-pane behaviour with a third session left as a plain, pane-less tab (“vibecodes · a3f2”). Requirements v3 (D2) now bans that mix — with three sessions open, all three get panes; visible panes never coexist with an unpaned tab. <a href="#s10">→ see §10: this 2-panes-plus-a-tab state no longer occurs</a>. B and C remain accurate for exactly two open sessions.</div>
 <div class="mock-cap">B — Split mode, LEFT pane focused</div>
 <div class="mock">
   <div class="tabstrip">
@@ -207,6 +210,7 @@ td.mono, .mono{font-family:var(--mono);font-size:11.5px;color:var(--txt)}
   </div>
 </div>
 
+<div class="veto" style="margin:20px 0 -2px"><b>⚠ Superseded</b> — same note as B: the pane-less third tab shown here no longer occurs with 3 sessions open (<a href="#s10">→ see §10</a>).</div>
 <div class="mock-cap">C — Split mode, RIGHT pane focused (compare with B directly above)</div>
 <div class="mock">
   <div class="tabstrip">
@@ -299,7 +303,7 @@ td.mono, .mono{font-family:var(--mono);font-size:11.5px;color:var(--txt)}
 <h2>4 · Pane header anatomy</h2>
 <p>Left→right, mirroring the shipped session header so nothing has to be relearned: <strong>focus-state chip</strong> (new, always first — it is the answer to “where will my keys go?”, so it sits where scanning starts) · <strong>status pill</strong> (existing component, compact glyph-only under 560px pane width) · <strong>session name</strong> (new in the header — with two panes visible each needs its own name; <code>deriveTabLabel()</code> output, CSS-truncated, full text in <code>title</code>) · <strong>controls</strong>: Pop out, Read-only, End (the existing three, icon-only below 560px pane width with their existing <code>aria-label</code>s; every target keeps ≥ 24×24px hit area with padding). The host / session-id mono text is dropped from pane headers entirely — it is already hidden below <code>sm</code> today and is the lowest-value item at 480px.</p>
 <p>The header is a click target for focus like everything else in the pane (§5.3) — with one carve-out: clicks on the three control buttons act <em>without</em> first moving focus (ending or popping out the Watching pane must not first steal the keyboard from the pane you're typing in).</p>
-<p>The <strong>3-session case</strong> is visible in wireframes B/C: the third session stays a plain tab, fully live, reachable by one click; the two paned tabs carry “L”/“R” badges so the strip answers “which two am I seeing?” without looking down.</p>
+<p>The <strong>3-session case</strong> is visible in wireframes B/C: the third session stays a plain tab, fully live, reachable by one click; the two paned tabs carry “L”/“R” badges so the strip answers “which two am I seeing?” without looking down. <span class="sup">(Superseded — under Requirements v3 D2 a third open session gets a third pane, never a leftover pane-less tab; <a href="#s10">see §10</a>.)</span></p>
 
 <h2>5 · Interaction flows</h2>
 
@@ -318,7 +322,7 @@ td.mono, .mono{font-family:var(--mono);font-size:11.5px;color:var(--txt)}
 <ul>
 <li><strong>Tab of the focused pane</strong> — no-op (already selected); no announcement.</li>
 <li><strong>Tab of the unfocused pane</strong> — focus moves to that pane. Identical to clicking into it (§5.3).</li>
-<li><strong>Tab of a third session</strong> — its session replaces the <em>unfocused</em> pane's content and <strong>takes focus</strong> (a tab click has always meant “attend to this one”). The replaced session stays mounted and live as a plain tab. The pane you were typing in stays visible and demotes to “◇ Watching”. Both panes refit only if geometry changed (it didn't — 50/50 is stable), so this is a pure re-parent of already-mounted views, never a remount.</li>
+<li><strong>Tab of a third session</strong> — its session replaces the <em>unfocused</em> pane's content and <strong>takes focus</strong> (a tab click has always meant “attend to this one”). The replaced session stays mounted and live as a plain tab. The pane you were typing in stays visible and demotes to “◇ Watching”. Both panes refit only if geometry changed (it didn't — 50/50 is stable), so this is a pure re-parent of already-mounted views, never a remount. <span class="sup">(This “third session as a plain tab” situation is 2-pane-era: it no longer arises once §10's all-or-nothing rule applies — three open sessions means three panes; <a href="#s10">see §10</a>.)</span></li>
 </ul>
 
 <h3>5.3 Clicking into the unfocused pane</h3>
@@ -437,7 +441,7 @@ td.mono, .mono{font-family:var(--mono);font-size:11.5px;color:var(--txt)}
 <h2>7 · The three open questions, answered</h2>
 
 <div class="panel found"><div class="ftitle">Q1 — Pane assignment with 3+ sessions</div>
-<p><strong>Adopt Requirements' recommendation, with the focus rule made explicit.</strong> Panes hold the active tab + the most-recently-active other eligible session (eligible = mounted, not popped out; ended sessions remain eligible — they hold readable scrollback). Clicking a third tab replaces the <strong>unfocused</strong> pane and <strong>takes focus</strong>. Rationale: the unfocused pane is by definition the one the user is not typing in, so it is the only slot that can change without risking a mid-keystroke context switch; and a tab click has meant “make this the one I'm attending to” since tabs shipped — split view must not quietly change what a click means (recognition over recall). MRA beats list-order because it matches “the two things I was just working with”, the same recency logic the chooser already uses.</p></div>
+<p><strong>Adopt Requirements' recommendation, with the focus rule made explicit.</strong> Panes hold the active tab + the most-recently-active other eligible session (eligible = mounted, not popped out; ended sessions remain eligible — they hold readable scrollback). Clicking a third tab replaces the <strong>unfocused</strong> pane and <strong>takes focus</strong>. Rationale: the unfocused pane is by definition the one the user is not typing in, so it is the only slot that can change without risking a mid-keystroke context switch; and a tab click has meant “make this the one I'm attending to” since tabs shipped — split view must not quietly change what a click means (recognition over recall). MRA beats list-order because it matches “the two things I was just working with”, the same recency logic the chooser already uses. <span class="sup">(Historical answer for the 2-pane feature as shipped. Superseded for 3+ sessions by Requirements v3 D2 — every open session gets a pane, so no session is ever left as an unpaned tab alongside visible panes; <a href="#s10">see §10</a>.)</span></p></div>
 
 <div class="panel found"><div class="ftitle">Q2 — Per-pane “swap session” control</div>
 <p><strong>Not in v1.</strong> The tab strip is already a complete, visible, familiar switching surface one glance above the panes, and §5.2 makes it the swap mechanism for free. A per-pane dropdown would be a second, competing way to do the same thing (Hick's law), would cost header space that does not exist at the 480px floor, and would need its own keyboard/a11y surface. Revisit only if real usage shows people popping out sessions just to rearrange panes.</p></div>
@@ -469,7 +473,209 @@ td.mono, .mono{font-family:var(--mono);font-size:11.5px;color:var(--txt)}
 <li><strong>Tab semantics:</strong> dedupe, per-tab close/confirm, cap refusal, task-launch choice and “+” behave identically in both modes; <code>aria-selected</code> stays singular.</li>
 </ul>
 
-<p class="caption" style="margin-top:36px">Compass · UX Design step for “Terminal: view multiple open sessions side by side, not just as tabs” · 2026-08-20. Palette, glyphs and header anatomy taken from <code>terminal-dock.tsx</code>, <code>terminal-session-view.tsx</code>, <code>terminal-tabs.ts</code>; width floor derived from <code>use-terminal-session.ts</code> font metrics; persistence contract from <code>dock-height.ts</code>.</p>
+<h2 id="s10">10 · v3 addendum — a third pane, and the all-or-nothing rule</h2>
+
+<style>
+/* §10-scoped additions — v1 CSS above is untouched */
+.astrip{display:flex;background:var(--panel3);border-bottom:1px solid var(--border);padding:5px 0 0}
+.atab{flex:1 1 0;min-width:0;display:flex;align-items:center;gap:7px;margin:0 3px;padding:7px 10px;border:1px solid var(--border);border-bottom:none;border-top:2px solid transparent;border-radius:6px 6px 0 0;font-size:12.5px;color:var(--dim);background:var(--panel-dim)}
+.atab.on{border-top-color:var(--sky);background:var(--panel);color:var(--txt);font-weight:600}
+.atab .lbl{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.util{margin-left:auto;display:flex;align-items:center;gap:8px;border-left:1px solid var(--border2);padding-left:9px;flex:none}
+.util .u{color:var(--dim);font-size:13px}
+.util .u.on{color:var(--sky)}
+.guides{position:absolute;inset:0;display:flex;pointer-events:none;z-index:5}
+.guides>div{flex:1 1 0;margin:0 3px;border-left:1px dashed var(--sky-bd);border-right:1px dashed var(--sky-bd)}
+.alab{position:absolute;z-index:6;font-size:10px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--sky);background:var(--sky-bg);border:1px solid var(--sky-bd);border-radius:4px;padding:1px 7px;pointer-events:none}
+.arrowrow{display:flex;align-items:center;justify-content:center;gap:10px;margin:6px 0;color:var(--faint);font-size:12px}
+.notice-sky{display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--sky-bd);background:var(--sky-bg);padding:5px 12px;font-size:11.5px;color:var(--sky3)}
+</style>
+
+<div class="meta">
+  <span class="chip sky">2 or 3 panes — never more, never a partial mix</span>
+  <span class="chip em">Tabs line up with panes, edge for edge</span>
+  <span class="chip">4th session → the whole dock is tabs</span>
+</div>
+
+<p><strong>This section is the Requirements-v3 addendum for task <code>eda6598b</code></strong> (“a third one goes missing instead of getting its own pane”). §1–9 above remain the record of shipped v1 and are unchanged, but v3 supersedes four specific v1 decisions. The reason is one rule:</p>
+
+<div class="panel found"><div class="ftitle">The all-or-nothing rule (Requirements v3, D1–D2)</div>
+<p>Split renders <strong>only when every open dock session has its own pane</strong> — 2 sessions → 2 panes, 3 sessions → 3 panes. If that is impossible (a 4th dock session, or not enough width for the <em>current</em> count), the dock is <strong>entirely plain tabbed mode</strong> — no panes anywhere. There is never a state where panes are visible and any session's tab exists without a pane under it. Side by side is allowed for 3 or less, full stop.</p></div>
+
+<h3>10.0 What v3 supersedes in §1–9</h3>
+<ul>
+<li><strong>§1 “Pane assignment (3+ sessions)” and §7 Q1</strong> — dead. There is no “active + most-recently-active, third stays a tab” pick, because a third dock session now always gets its own pane (or the dock is fully tabbed). Nothing is ever left tab-only while panes show.</li>
+<li><strong>§5.2's third bullet</strong> (“tab of a third session replaces the unfocused pane”) — unreachable. While split renders, every tab has a pane; a tab click only ever moves focus.</li>
+<li><strong>The half-width tab groups</strong> (<code>splitTabGroups</code>, the task-c108ae4a fix) — generalised and tightened: the strip becomes exactly N pane-aligned tab columns (§10.2), and no un-paned tab may live among them. Popped-out sessions move to a compact affordance in the pinned utility cluster (§10.4).</li>
+<li><strong>“Open — not shown” tab indicators</strong> (an interim concept from this card's earlier drafts) — removed from scope entirely. The state it labelled can no longer occur.</li>
+</ul>
+<p>Everything else stands: the four focus signals, never unmounting an xterm, popped-out sessions never claiming a pane, mobile never splitting, the toggle + drag entry routes, and ≤2-session behaviour byte-identical to shipped v1 (the one visible ≤2 change: a popped-out session's affordance moves out of the tab columns, §10.4).</p>
+
+<h3>10.1 The complete mode table (testable)</h3>
+<div class="tblwrap"><table>
+<tr><th>Open dock sessions*</th><th>Dock body width</th><th>Renders</th><th>Why</th></tr>
+<tr><td>0–1</td><td class="mono">any</td><td>Single view / tabs — unchanged</td><td>Nothing to split</td></tr>
+<tr><td>2</td><td class="mono">≥ 961 (restore ≥ 981)</td><td><strong>2 panes</strong></td><td>Shipped v1, unchanged</td></tr>
+<tr><td>2</td><td class="mono">&lt; 961</td><td>Tabs</td><td>Shipped width floor, unchanged</td></tr>
+<tr><td>3</td><td class="mono">≥ 1442 (restore ≥ 1462)</td><td><strong>3 panes</strong></td><td>3 × 480px panes + 2 × 1px dividers = 1442; same 20px hysteresis pattern as 961/981</td></tr>
+<tr><td>3</td><td class="mono">&lt; 1442</td><td>Tabs — <strong>never 2 panes</strong></td><td>Dropping to 2 panes would hide a session behind a pane-less tab — the banned state</td></tr>
+<tr><td>4–5 (cap 5)</td><td class="mono">any</td><td>Tabs, always</td><td>Side by side fits up to 3 (D3); no grid, no hybrid</td></tr>
+<tr><td>Mobile viewport</td><td class="mono">any</td><td>Tabs, always</td><td>Shipped gate, unchanged</td></tr>
+</table></div>
+<p class="caption">* “Open dock sessions” = tabs living in the dock. Popped-out sessions are excluded — they live in their own window and never take a pane (shipped invariant). The split preference (<code>vc:term:split-view</code>) persists through every fallback; the count axis has <strong>no hysteresis</strong> (it is discrete — it changes only on explicit opens/closes), the width axis keeps its 20px band at each boundary.</p>
+
+<h3>10.2 Wireframe F — three panes, three tabs, edges locked together</h3>
+<p>Nick, verbatim: <em>“the tabs need to line up with the panes.”</em> Made structural, not cosmetic: while split renders, the tab strip abandons the flow layout and becomes <strong>the same flex row as the pane row</strong> — N cells, <code>flex: 1 1 0</code>, identical 3px gutters. Each tab is a cell, so its left and right edges are the pane's edges by construction (±1px), same order left to right. The dashed guides below run through both rows to make the lock-up visible; they are annotation, not UI.</p>
+
+<div class="mock-cap">F — 3 sessions → 3 panes, middle focused. Exactly 3 tabs. Guides show tab edge = pane edge.</div>
+<div class="mock" style="position:relative">
+  <div class="guides"><div></div><div></div><div></div></div>
+  <span class="alab" style="top:-9px;left:8px">tab edges = pane edges, ±1px</span>
+  <div class="astrip">
+    <div class="atab"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="badge pane dim">L</span><span class="x">✕</span></div>
+    <div class="atab on"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open sessions side by…</span><span class="badge pane">M</span><span class="x">✕</span></div>
+    <div class="atab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="badge pane dim">R</span><span class="x">✕</span>
+      <span class="util"><span class="u on" title="Back to tabs">◫</span><span class="u" title="New terminal">＋</span></span>
+    </div>
+  </div>
+  <div class="splitbody">
+    <div class="pane">
+      <div class="phead">
+        <span class="fword watch">◇ Watching</span>
+        <span class="pill em">●</span>
+        <span class="pname">Fix login redirect loop</span>
+        <span class="pbtns"><span class="pbtn" title="Pop out">⧉</span><span class="pbtn rose" title="End">⏻</span></span>
+      </div>
+      <div class="pterm" style="min-height:96px">
+        <span class="ac">⏺</span> Editing <span class="cl">middleware.ts</span>…<br>
+        <span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div class="pane focus">
+      <div class="phead">
+        <span class="fword typing">⌨ Typing here</span>
+        <span class="pill em">●</span>
+        <span class="pname" title="Terminal: view multiple open sessions side by side, not just as tabs">Terminal: view multiple open…</span>
+        <span class="pbtns"><span class="pbtn" title="Pop out">⧉</span><span class="pbtn rose" title="End">⏻</span></span>
+      </div>
+      <div class="pterm" style="min-height:96px">
+        <span class="ac">⏺</span> Running <span class="cl">npm run test</span>…<br>
+        <span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span>
+      </div>
+    </div>
+    <div class="pane">
+      <div class="phead">
+        <span class="fword watch">◇ Watching</span>
+        <span class="pill" style="border-color:var(--border2)">■</span>
+        <span class="pname">vibecodes · a3f2</span>
+        <span class="pbtns"><span class="pbtn" title="Pop out">⧉</span><span class="pbtn rose" title="End">⏻</span></span>
+      </div>
+      <div class="pterm" style="min-height:96px">
+        <span class="cl">✓</span> 3,137 passed (10.2s)<br>
+        <span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span>
+      </div>
+    </div>
+  </div>
+</div>
+<p class="caption">Three tabs, three panes — the strip can never show a 4th of anything while panes are visible. The pinned utilities (◫ back-to-tabs, ＋ new terminal) keep their flush-right home as a bordered cluster layered at the trailing end of the rightmost tab cell; the cell itself still spans its pane (at the 1442px floor each cell is ≥480px wide, the cluster ≤ ~90px, so the label keeps most of the cell). The L/M/R badges carry <code>aria-label="in left/middle/right pane"</code> — position in words, not geometry alone. Focus clarity is unchanged v1 §3: sky border + glow, “⌨ Typing here” / “◇ Watching”, header brightness, solid vs hollow cursor — all four flip together whichever of the three panes owns the keyboard.</p>
+
+<h3>10.3 The transition that got this card opened — and the one that got the last mockup rejected</h3>
+
+<h4>The fix (D8): a 3rd session gets its own pane, automatically</h4>
+<div class="flow">
+  <span class="step act">2-pane split · user launches or selects a 3rd session<small>via ＋, chooser, or a task launch</small></span><span class="arr">→</span>
+  <span class="step sys">Width check: dock body ≥ 1462?</span><span class="arr">→</span>
+  <span class="step good">Yes → a third pane opens on the right for the new session, and it takes focus<small>all three refit + PTY resize; nothing unmounts</small></span><span class="arr">→</span>
+  <span class="step">Announce: “Third pane added: vibecodes · a3f2, right. Typing goes to vibecodes · a3f2.”</span>
+</div>
+<div class="flow">
+  <span class="step warn">Same trigger, but body &lt; 1462</span><span class="arr">→</span>
+  <span class="step sys">The WHOLE dock falls back to plain tabs — not 2 panes + a hidden session</span><span class="arr">→</span>
+  <span class="step">Amber notice + announce: “Not enough room for a third pane — switched to tabs. Side by side returns when the window is wider or a terminal closes.”</span>
+</div>
+<p>Entering split from tabbed mode (toggle or drag) with 3 sessions panes <strong>all three at once</strong>, in tab-strip order left→middle→right; focus stays with the previously active session. There is no partial entry.</p>
+
+<h4>The cap (D3): a 4th session switches the whole dock to tabs</h4>
+<div class="mock-cap">G-before — 3 panes, 3 aligned tabs (the state above, compressed)</div>
+<div class="mock">
+  <div class="astrip">
+    <div class="atab"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="badge pane dim">L</span></div>
+    <div class="atab on"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open…</span><span class="badge pane">M</span></div>
+    <div class="atab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="badge pane dim">R</span>
+      <span class="util"><span class="u on">◫</span><span class="u">＋</span></span>
+    </div>
+  </div>
+  <div class="splitbody">
+    <div class="pane"><div class="pterm" style="min-height:44px"><span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span></div></div>
+    <div class="pane focus"><div class="pterm" style="min-height:44px"><span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span></div></div>
+    <div class="pane"><div class="pterm" style="min-height:44px"><span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span></div></div>
+  </div>
+</div>
+<div class="arrowrow">▼ &nbsp;user opens a 4th terminal — the instant it exists, <strong style="color:var(--txt)">every pane disappears</strong> &nbsp;▼</div>
+<div class="mock-cap">G-after — 4 plain tabs, zero panes, new tab focused, notice explains why</div>
+<div class="mock">
+  <div class="tabstrip">
+    <div class="tabscroll">
+      <div class="ttab"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="x">✕</span></div>
+      <div class="ttab"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open sessions side by…</span><span class="x">✕</span></div>
+      <div class="ttab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="x">✕</span></div>
+      <div class="ttab on"><span class="glyph g-ok">●</span><span class="lbl">Recreate staging database properly</span><span class="x">✕</span></div>
+    </div>
+    <div class="pinned">
+      <div class="iconbtn on" title="Side by side (returns when 3 or fewer terminals are open)">◫</div>
+      <div class="iconbtn">＋</div>
+    </div>
+  </div>
+  <div class="notice-sky">ⓘ Side-by-side fits up to 3 terminals — switched to tabs. Closing a terminal brings side by side back. <span style="margin-left:auto">✕</span></div>
+  <div class="pterm" style="border-top:1px solid var(--border);min-height:64px">
+    <span class="ac">⏺</span> Starting Claude Code in <span class="cl">~/projects/vibe-coding-ideas</span>…<br>
+    <span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span>
+  </div>
+</div>
+<p class="caption">No pane survives the 4th session — G-after is today's plain tabbed dock plus the sky notice (same dismissible-notice pattern as the amber width bar in mockup D; informational, so sky ⓘ, not amber warning — and never colour alone: icon + words). The new session's tab is focused because opening it was the user's last stated intent. The toggle stays pressed (<code>aria-pressed="true"</code>) and is never disabled: the preference is kept, its tooltip says when split returns. Closing back down to 3 (width permitting) restores the three panes automatically — no user action (D5), announced (§10.5). All four sessions were live the whole time; nothing unmounted, nothing hid.</p>
+
+<h3>10.4 Popped-out sessions — outside the aligned columns</h3>
+<div class="mock-cap">H — 3 panes + 1 popped-out session: the pop-out is a compact ⧉ chip in the utility cluster, never a tab column</div>
+<div class="mock">
+  <div class="astrip">
+    <div class="atab"><span class="glyph g-ok">●</span><span class="lbl">Fix login redirect loop</span><span class="badge pane dim">L</span></div>
+    <div class="atab on"><span class="glyph g-ok">●</span><span class="lbl">Terminal: view multiple open…</span><span class="badge pane">M</span></div>
+    <div class="atab"><span class="glyph g-mut">■</span><span class="lbl">vibecodes · a3f2</span><span class="badge pane dim">R</span>
+      <span class="util"><span class="u g-popped" title="Popped out: Recreate staging database properly — click to bring its window to the front" style="color:var(--violet)">⧉1</span><span class="u on">◫</span><span class="u">＋</span></span>
+    </div>
+  </div>
+  <div class="splitbody">
+    <div class="pane"><div class="pterm" style="min-height:40px"><span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span></div></div>
+    <div class="pane focus"><div class="pterm" style="min-height:40px"><span class="cl">&gt; </span><span class="cur-solid" aria-hidden="true"></span></div></div>
+    <div class="pane"><div class="pterm" style="min-height:40px"><span class="cl">&gt; </span><span class="cur-hollow" aria-hidden="true"></span></div></div>
+  </div>
+</div>
+<p class="caption">A popped-out session has no pane to align to (it lives in its own OS window), so it may never sit among the pane-aligned tab columns — that would recreate “a tab without a pane”. It becomes a compact violet <strong>⧉ chip</strong> in the pinned utility cluster: <code>aria-label="1 session popped out: Recreate staging…"</code>, <code>title</code> lists the name(s), click brings that window to the front (the existing pop-out focus affordance). It does not count toward the 3 (D3's axis is dock-resident sessions only): 3 in the dock + 2 popped out still renders 3 panes. In tabbed mode the popped-out session keeps its existing violet tab treatment unchanged. This chip placement applies at every pane count — the one visible change to shipped 2-pane split, and only when a pop-out exists.</p>
+
+<h3>10.5 Announcements + keyboard, generalised</h3>
+<div class="tblwrap"><table>
+<tr><th>Event</th><th>Live-region string (polite, once per event)</th></tr>
+<tr><td>Split on, 2 sessions</td><td class="mono">“Split view on. {A} left, {B} right. Typing goes to {focus}.” — shipped, unchanged</td></tr>
+<tr><td>Split on, 3 sessions</td><td class="mono">“Split view on. {A} left, {B} middle, {C} right. Typing goes to {focus}.”</td></tr>
+<tr><td>3rd pane added (D8)</td><td class="mono">“Third pane added: {C}, right. Typing goes to {C}.”</td></tr>
+<tr><td>4th session forces tabs (D3)</td><td class="mono">“Side-by-side fits up to 3 terminals — switched to tabs. Showing {new session}.”</td></tr>
+<tr><td>3rd session, too narrow</td><td class="mono">“Not enough room for a third pane — switched to tabs. Side by side returns when the window is wider or a terminal closes.”</td></tr>
+<tr><td>Width fallback while 3-up</td><td class="mono">“Window too narrow for three panes — showing tabs. Split returns when wider.”</td></tr>
+<tr><td>Restore to split (count drop or width regain, D5)</td><td class="mono">“Split view restored. {A} left, {B} middle, {C} right. Typing goes to {focus}.” — the 2-pane variant omits “middle”</td></tr>
+<tr><td>Focus move (click or chord)</td><td class="mono">“Typing now goes to {label}.” — shipped, unchanged</td></tr>
+</table></div>
+<p><strong>Keyboard (D9):</strong> <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>←</kbd>/<kbd>→</kbd> steps focus <strong>one pane</strong> toward that side, <strong>no wrap</strong> — at the leftmost pane, “left” is a silent no-op, same idempotence as shipped. (With 2 panes this is indistinguishable from v1's absolute behaviour, so ≤2 is untouched.) Still intercepted before the PTY in every pane. <code>aria-selected</code> tracks the focused pane's tab; each pane keeps its <code>role="tabpanel"</code> and “— typing here / — watching” accessible name from §8; while split renders a tab click can only mean “focus that pane” — there is no third-session replace branch anymore.</p>
+
+<h3>10.6 Notes for the engineer (delta to <code>split-view.ts</code>)</h3>
+<ul>
+<li>New constants beside the shipped pair, same derivation comment: <code>SPLIT_FALLBACK_BODY_PX_3 = 1442</code> (3 × 480 + 2 dividers), <code>SPLIT_RESTORE_BODY_PX_3 = 1462</code>. <code>resolveWidthFloor</code> takes the pane count so each count checks its own boundary pair.</li>
+<li><code>isSplitRenderable</code> becomes the all-or-nothing gate: <code>preferred && dockCount >= 2 && dockCount <= 3 && widthFitsCount && !mobile</code>. <code>eligibleCount</code>'s meaning shifts from “enough to fill 2 panes” to “every dock session gets a pane”.</li>
+<li><code>splitTabGroups</code>, <code>applyTabClickToSplit</code>'s replace branch, and the MRA pane-picking in <code>enterSplitAssignment</code>/<code>reconcileSplitAssignment</code> are superseded: assignment is simply <em>all dock sessions in strip order</em>. Backfill logic reduces to “re-derive panes from the strip”.</li>
+<li>Count transitions are synchronous with the open/close action — the 4th session must never render a pane for even one frame. Width transitions keep the measured-then-flip behaviour with hysteresis.</li>
+<li>Everything in §9 still binds: never unmount an xterm (the 3↔tabs flip is CSS re-layout of mounted views), one keyboard owner, refit + PTY resize per geometry change, chord never reaches the PTY, popped-out never claims a pane, all behind <code>NEXT_PUBLIC_TERMINAL_ENABLED</code>.</li>
+</ul>
+
+<p class="caption" style="margin-top:36px">Compass · UX Design step for “Terminal: view multiple open sessions side by side, not just as tabs” · 2026-08-20. Palette, glyphs and header anatomy taken from <code>terminal-dock.tsx</code>, <code>terminal-session-view.tsx</code>, <code>terminal-tabs.ts</code>; width floor derived from <code>use-terminal-session.ts</code> font metrics; persistence contract from <code>dock-height.ts</code>. §10 added 2026-08-23 for task <code>eda6598b</code> (Requirements v3), superseding §1/§5.2/§7-Q1 pane-picking and <code>splitTabGroups</code> as noted in §10.0.</p>
 
 </div>
 </body>

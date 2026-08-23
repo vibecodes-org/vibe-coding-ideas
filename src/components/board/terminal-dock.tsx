@@ -113,16 +113,12 @@ import { readDockOpen, writeDockOpen } from "@/lib/terminal/dock-open-persistenc
 import {
   type PaneAssignment,
   type PaneSide,
+  type PaneSlotWord,
   type DropZone,
   eligiblePaneKeys,
   enterSplitAssignment,
-  reconcileSplitAssignment,
-  applyTabClickToSplit,
   applyDropToSplit,
-  splitTabGroups,
-  resolveWidthFloor,
   isMobileViewport,
-  isSplitRenderable,
   readSplitViewPreference,
   writeSplitViewPreference,
   matchFocusMoveChord,
@@ -135,6 +131,19 @@ import {
   formatDockAnnouncement,
   formatLeaveSplitAnnouncement,
   DRAG_ACTIVATION_DISTANCE_PX,
+  panesForDockCount,
+  resolveWidthFloorForCount,
+  isSplitRenderableForCount,
+  paneSideLabel,
+  stepPaneFocusIndex,
+  formatSplitOnAnnouncementForPanes,
+  formatSplitRestoredAnnouncementForPanes,
+  formatThirdPaneAddedAnnouncement,
+  formatForcedTabsCountAnnouncement,
+  formatThirdPaneWidthBlockedAnnouncement,
+  formatWidthFallbackThreeAnnouncement,
+  formatForcedTabsNoticeText,
+  formatPoppedOutChipAriaLabel,
 } from "@/lib/terminal/split-view";
 import { useDockInset } from "./terminal-dock-inset";
 import { useDockHeight, TerminalDockResizeHandle } from "./terminal-dock-resize";
@@ -475,13 +484,23 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   useEffect(() => {
     setSplitPreferred(readSplitViewPreference());
   }, []);
-  // Which session occupies which half. Reconciled below whenever the
-  // eligible set changes (a pane's session popped out/closed, or a 3rd
-  // eligible session appears to backfill an empty half — design §5.5/§5.6,
-  // AC16 "resumes automatically").
-  const [splitAssignment, setSplitAssignment] = useState<PaneAssignment>({ left: null, right: null });
+  // Which sessions occupy panes, in strip (left→middle→right) order. Empty
+  // when split isn't rendering. The all-or-nothing rule (D1/D2, design §10)
+  // means this is always either [] or exactly as many keys as the current
+  // pane count (2 or 3) — there is no partial assignment to reconcile
+  // per-slot the way the shipped 2-pane feature used to (see the count-driven
+  // effect below).
+  const [paneKeys, setPaneKeys] = useState<string[]>([]);
   // Exactly ONE pane owns the keyboard at all times (the hard requirement).
-  const [focusedSide, setFocusedSide] = useState<PaneSide>("left");
+  const [focusedPaneIndex, setFocusedPaneIndex] = useState(0);
+  const paneKeysRef = useRef(paneKeys);
+  const focusedPaneIndexRef = useRef(focusedPaneIndex);
+  useEffect(() => {
+    paneKeysRef.current = paneKeys;
+  }, [paneKeys]);
+  useEffect(() => {
+    focusedPaneIndexRef.current = focusedPaneIndex;
+  }, [focusedPaneIndex]);
   // Split-view focus-sync defect fix (task df7a0134, QA rework): `focusedSide`
   // above is the APP's declared intent — which pane a click/chord/forced move
   // targeted. It says nothing about whether the keyboard is ACTUALLY there
@@ -510,16 +529,22 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
   // same element the two panes actually share (see `splitBodyRef` below).
   const [belowWidthFloor, setBelowWidthFloor] = useState(false);
   const [floorNoticeDismissed, setFloorNoticeDismissed] = useState(false);
+  // D3's 4th-session cap: which sky notice (if any) is showing, and whether
+  // the human dismissed it. "count" = 4th/5th session forced tabs;
+  // "width-entry" = a 3rd session couldn't get a pane for lack of room.
+  const [forcedTabsNotice, setForcedTabsNotice] = useState<"count" | "width-entry" | null>(null);
+  const [forcedTabsNoticeDismissed, setForcedTabsNoticeDismissed] = useState(false);
   // Mobile always renders tabs regardless of stored preference (Design
   // Review required change 3 / AC14) — tracked as an explicit gate, not left
   // as an accident of the width floor.
   const [viewportWidth, setViewportWidth] = useState(0);
   const splitBodyRef = useRef<HTMLDivElement | null>(null);
   // Most-recently-active session keys, most-recent-first — the recency
-  // signal `enterSplitAssignment`/`reconcileSplitAssignment` need for
-  // "the most-recently-active OTHER eligible session" (design §7 Q1),
-  // without threading a bump through every existing `setActiveKey` call
-  // site. Purely additive bookkeeping — never itself drives a render.
+  // signal `enterSplitAssignment` needs for "the most-recently-active OTHER
+  // eligible session" (design §7 Q1, exactly-2-eligible entry only — 3-pane
+  // entry uses strip order instead, design §10.3), without threading a bump
+  // through every existing `setActiveKey` call site. Purely additive
+  // bookkeeping — never itself drives a render.
   const activeHistoryRef = useRef<string[]>([]);
   useEffect(() => {
     if (!activeKey) return;
@@ -798,73 +823,6 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     [ideaTitle],
   );
 
-  // Popped-out sessions never claim a pane (shipped invariant); ended
-  // sessions stay eligible — only pop-out excludes.
-  const eligible = useMemo(
-    () => eligiblePaneKeys(sessions.map((s) => ({ key: s.key, poppedOut: poppedOutKeys.has(s.key) }))),
-    [sessions, poppedOutKeys],
-  );
-  const mobileViewport = isMobileViewport(viewportWidth);
-  const splitActive =
-    isSplitRenderable({
-      preferred: splitPreferred === true,
-      eligibleCount: eligible.length,
-      belowWidthFloor,
-      mobileViewport,
-    }) && !!splitAssignment.left && !!splitAssignment.right;
-
-  // Keep the assignment valid as sessions/pop-out state changes — a pane's
-  // session popping out or closing gets backfilled from the most-recently-
-  // active other eligible session; split resumes automatically the moment a
-  // 2nd eligible session is available again (design §5.5/§5.6, AC16), with
-  // no user action. Gated on the PREFERENCE (not `splitActive`) so it also
-  // keeps the assignment fresh while merely suspended by the width floor —
-  // the gate lifting must restore split immediately, not with stale panes.
-  useEffect(() => {
-    if (splitPreferred !== true) return;
-    setSplitAssignment((prev) => reconcileSplitAssignment(prev, eligible, activeHistoryRef.current));
-  }, [eligible, splitPreferred]);
-
-  // Keep `activeKey` (and so `aria-selected`) pointed at the right session
-  // while split is the standing preference: the focused pane's session when
-  // the assignment is complete (even if not currently RENDERED as split —
-  // width floor / mobile, §5.8), or whichever single session survived when
-  // a pane genuinely has nothing left to backfill it with (§5.5/§5.6).
-  useEffect(() => {
-    if (splitPreferred !== true) return;
-    const bothFilled = !!splitAssignment.left && !!splitAssignment.right;
-    const target = bothFilled ? splitAssignment[focusedSide] : (splitAssignment.left ?? splitAssignment.right);
-    if (target && target !== activeKey) setActiveKey(target);
-  }, [splitPreferred, splitAssignment, focusedSide, activeKey]);
-
-  // Width floor (design §7 Q3 / §5.8): measured off `splitBodyRef`, the SAME
-  // element the two panes actually share — not the whole dock — so the
-  // 480px/pane arithmetic means what it says. `splitPreferredRef` avoids
-  // re-subscribing the ResizeObserver on every toggle.
-  const splitPreferredRef = useRef(splitPreferred);
-  useEffect(() => {
-    splitPreferredRef.current = splitPreferred;
-  }, [splitPreferred]);
-  useEffect(() => {
-    const el = splitBodyRef.current;
-    // Guarded for jsdom and any environment without ResizeObserver — same
-    // pattern as terminal-dock-inset.ts's own measurement effect.
-    if (!el || typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver((entries) => {
-      const width = entries[0]?.contentRect.width ?? el.getBoundingClientRect().width;
-      setBelowWidthFloor((prev) => {
-        const next = resolveWidthFloor(width, prev);
-        if (next !== prev && splitPreferredRef.current) {
-          announce(formatWidthFloorAnnouncement(next ? "fallback" : "restored"));
-          if (next) setFloorNoticeDismissed(false);
-        }
-        return next;
-      });
-    });
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [announce]);
-
   // Split-view focus-sync defect fix: the one place `keyboardLive` is set
   // TRUE — every call site below that deliberately grabs the keyboard
   // (entering split, the chord/click move, a drag-drop dock) calls this
@@ -886,61 +844,249 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     setKeyboardLive(true);
   }, []);
 
+  // Popped-out sessions never claim a pane (shipped invariant); ended
+  // sessions stay eligible — only pop-out excludes.
+  const eligible = useMemo(
+    () => eligiblePaneKeys(sessions.map((s) => ({ key: s.key, poppedOut: poppedOutKeys.has(s.key) }))),
+    [sessions, poppedOutKeys],
+  );
+  const mobileViewport = isMobileViewport(viewportWidth);
+  const dockCount = eligible.length;
+  // 0 (tabs), 2, or 3 — the pane count the CURRENT dock-resident session
+  // count maps to (D1/D3, design §10.1). Never 1 or >3.
+  const paneCount = panesForDockCount(dockCount);
+  const splitActive =
+    isSplitRenderableForCount({
+      preferred: splitPreferred === true,
+      dockCount,
+      belowWidthFloor,
+      mobileViewport,
+    }) && paneKeys.length === paneCount;
+
+  const paneCountRef = useRef(paneCount);
+  useEffect(() => {
+    paneCountRef.current = paneCount;
+  }, [paneCount]);
+  const splitPreferredRef = useRef(splitPreferred);
+  useEffect(() => {
+    splitPreferredRef.current = splitPreferred;
+  }, [splitPreferred]);
+
+  // Count-driven transitions (D3/D8, design §10.3/§10.6): the all-or-nothing
+  // rule means there's no per-slot backfill left to do — either every
+  // eligible session gets a pane (strip order) or the dock is entirely
+  // tabs. Reacts to `dockCount` directly (not a resize) so a 4th session
+  // never renders a pane for even one frame; width for the NEW target pane
+  // count is re-measured synchronously in the same tick, since the count
+  // axis carries no hysteresis of its own (D5).
+  const prevPaneCountRef = useRef(paneCount);
+  useEffect(() => {
+    if (splitPreferred !== true) return;
+    const prevCount = prevPaneCountRef.current;
+    prevPaneCountRef.current = paneCount;
+
+    if (paneCount === 0) {
+      // 0-1, or 4-5 dock sessions: the whole dock is plain tabs. Only the
+      // 4-5 case gets a notice — 0-1 is simply "nothing to split".
+      setPaneKeys([]);
+      if (dockCount >= 4) {
+        setForcedTabsNotice("count");
+        setForcedTabsNoticeDismissed(false);
+        announce(formatForcedTabsCountAnnouncement(labelFor(activeKey)));
+      }
+      return;
+    }
+
+    if (paneCount === prevCount && paneKeysRef.current.length === paneCount) {
+      // Target count unchanged and already fully assigned — just keep
+      // membership fresh (e.g. a popped-out session returned) without
+      // treating it as a new transition to announce.
+      const filtered = paneKeysRef.current.filter((k) => eligible.includes(k));
+      const missing = eligible.filter((k) => !filtered.includes(k));
+      const next = filtered.concat(missing).slice(0, paneCount);
+      if (next.length !== paneKeysRef.current.length || next.some((k, i) => k !== paneKeysRef.current[i])) {
+        setPaneKeys(next);
+      }
+      return;
+    }
+
+    // The target pane count itself just changed (2<->3, or arriving from
+    // tabs) — measure the dock body against the NEW count's floor before
+    // deciding anything (design §10.1's 1442/1462 pair for 3, shipped
+    // 961/981 for 2).
+    const width = splitBodyRef.current?.getBoundingClientRect().width ?? 0;
+    const tooNarrow = resolveWidthFloorForCount(width, false, paneCount === 3 ? 3 : 2);
+    setBelowWidthFloor(tooNarrow);
+    const strip = eligible.slice(0, paneCount);
+
+    if (tooNarrow) {
+      setPaneKeys(strip); // held ready; renders as tabs until width regains (D4/D5)
+      if (paneCount === 3 && prevCount === 2) {
+        setForcedTabsNotice("width-entry");
+        setForcedTabsNoticeDismissed(false);
+        announce(formatThirdPaneWidthBlockedAnnouncement());
+      }
+      return;
+    }
+
+    setForcedTabsNotice(null);
+    const wasFullyPaned = paneKeysRef.current.length === prevCount && prevCount !== 0;
+    setPaneKeys(strip);
+    if (paneCount === 3 && prevCount === 2 && wasFullyPaned) {
+      // D8 — a 3rd session appeared while 2-up: it gets the new pane on the
+      // right and takes focus, automatically.
+      const added = strip.find((k) => !paneKeysRef.current.includes(k));
+      if (added) {
+        const idx = strip.indexOf(added);
+        setFocusedPaneIndex(idx);
+        setActiveKey(added);
+        announce(formatThirdPaneAddedAnnouncement(labelFor(added)));
+        actionsMapRef.current.get(added)?.refreshView({ focus: true });
+        markPaneFocusLive(added);
+      }
+    } else if (prevCount === 0) {
+      // D5 — automatic restore from a forced-tabs state (count or width).
+      const focusIdx = Math.max(0, strip.indexOf(activeKey));
+      setFocusedPaneIndex(focusIdx);
+      announce(formatSplitRestoredAnnouncementForPanes(strip.map((k) => labelFor(k)), labelFor(strip[focusIdx] ?? null)));
+    }
+  }, [dockCount, paneCount, eligible, splitPreferred, activeKey, announce, labelFor, markPaneFocusLive]);
+
+  // Keep `activeKey` (and so `aria-selected`) pointed at the focused pane's
+  // session while split is the standing preference — even if not currently
+  // RENDERED as split (width floor / mobile / count, §10.1).
+  useEffect(() => {
+    if (splitPreferred !== true || paneKeys.length === 0) return;
+    const target = paneKeys[focusedPaneIndex] ?? paneKeys[0];
+    if (target && target !== activeKey) setActiveKey(target);
+  }, [splitPreferred, paneKeys, focusedPaneIndex, activeKey]);
+
+  // Width-shrink fallback WHILE already rendering at the current pane
+  // count (as opposed to the count-transition effect above, which handles
+  // the width check at the moment the target count itself changes). Same
+  // hysteresis idiom as shipped v1 — `splitPreferredRef`/`paneCountRef`
+  // avoid re-subscribing the ResizeObserver on every toggle or count change.
+  useEffect(() => {
+    const el = splitBodyRef.current;
+    // Guarded for jsdom and any environment without ResizeObserver — same
+    // pattern as terminal-dock-inset.ts's own measurement effect.
+    if (!el || typeof ResizeObserver === "undefined") return;
+    const ro = new ResizeObserver((entries) => {
+      const width = entries[0]?.contentRect.width ?? el.getBoundingClientRect().width;
+      const count = paneCountRef.current;
+      if (count === 0) return; // nothing to fall back FROM — already full tabs
+      setBelowWidthFloor((prev) => {
+        const next = resolveWidthFloorForCount(width, prev, count === 3 ? 3 : 2);
+        if (next !== prev && splitPreferredRef.current) {
+          if (count === 3) {
+            if (next) {
+              announce(formatWidthFallbackThreeAnnouncement());
+            } else {
+              const keys = paneKeysRef.current;
+              announce(
+                formatSplitRestoredAnnouncementForPanes(
+                  keys.map((k) => labelFor(k)),
+                  labelFor(keys[focusedPaneIndexRef.current] ?? null),
+                ),
+              );
+            }
+          } else {
+            announce(formatWidthFloorAnnouncement(next ? "fallback" : "restored"));
+          }
+          if (next) setFloorNoticeDismissed(false);
+        }
+        return next;
+      });
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [announce, labelFor]);
+
   // Toggle (design §5.1): the deliberate, keyboard/touch-accessible entry
   // route — drag-to-dock (below) is a shortcut, never the only way in.
   const toggleSplitView = useCallback(() => {
     const turningOn = splitPreferred !== true;
     if (turningOn) {
-      const recency = activeHistoryRef.current.filter((k) => k !== activeKey);
-      const assignment = enterSplitAssignment(activeKey, eligible, recency);
-      setSplitAssignment(assignment);
-      setFocusedSide("left");
+      let keys: string[];
+      let focusIndex: number;
+      if (eligible.length >= 3) {
+        // 3 dock sessions: pane ALL of them at once, tab-strip order,
+        // keeping focus on whichever was already active (design §10.3 —
+        // "there is no partial entry").
+        keys = eligible.slice(0, 3);
+        focusIndex = Math.max(0, keys.indexOf(activeKey));
+      } else {
+        // Exactly 2 eligible — shipped v1 pick, byte-identical: active tab
+        // left, most-recently-active other eligible session right.
+        const recency = activeHistoryRef.current.filter((k) => k !== activeKey);
+        const assignment = enterSplitAssignment(activeKey, eligible, recency);
+        keys = [assignment.left, assignment.right].filter((k): k is string => !!k);
+        focusIndex = 0;
+      }
+      setPaneKeys(keys);
+      setFocusedPaneIndex(focusIndex);
       setFloorNoticeDismissed(false);
-      if (assignment.left && assignment.right) {
-        announce(formatSplitOnAnnouncement(labelFor(assignment.left), labelFor(assignment.right), labelFor(assignment.left)));
-        // Belt and braces for the hard requirement: the LEFT pane's
+      setForcedTabsNoticeDismissed(false);
+      if (keys.length === panesForDockCount(keys.length)) {
+        const focusedKey = keys[focusIndex];
+        const labels = keys.map((k) => labelFor(k));
+        announce(
+          keys.length === 3
+            ? formatSplitOnAnnouncementForPanes(labels, labelFor(focusedKey))
+            : formatSplitOnAnnouncement(labels[0], labels[1], labelFor(focusedKey)),
+        );
+        // Belt and braces for the hard requirement: the focused pane's
         // `grabFocus`/`expanded` props may both already have been `true`
         // (it was the tab the user was just on), so the effect that reacts
         // to THEIR transition wouldn't re-fire on its own — force the
         // keyboard there explicitly rather than trust it was already real
         // DOM focus (it might have been on the toggle button itself).
-        actionsMapRef.current.get(assignment.left)?.refreshView({ focus: true });
-        markPaneFocusLive(assignment.left);
+        actionsMapRef.current.get(focusedKey)?.refreshView({ focus: true });
+        markPaneFocusLive(focusedKey);
       }
     } else {
-      const remaining = splitAssignment[focusedSide] ?? activeKey;
+      const remaining = paneKeys[focusedPaneIndex] ?? activeKey;
       if (remaining) {
         setActiveKey(remaining);
         announce(formatSplitOffAnnouncement(labelFor(remaining)));
       }
-      setSplitAssignment({ left: null, right: null });
+      setPaneKeys([]);
     }
     setSplitPreferred(turningOn);
     writeSplitViewPreference(turningOn);
-  }, [splitPreferred, activeKey, eligible, splitAssignment, focusedSide, announce, labelFor, markPaneFocusLive]);
+  }, [splitPreferred, activeKey, eligible, paneKeys, focusedPaneIndex, announce, labelFor, markPaneFocusLive]);
 
-  // Moving focus between panes (design §5.3/§5.4): click-into-a-pane and the
-  // Ctrl+Shift+←/→ chord both land here — one source of truth for "which
-  // pane owns the keyboard", so visual state (border/glow/words/cursor) and
-  // real DOM focus can never split-brain.
+  // Moving focus between panes (design §5.3/§5.4/§10.5): click-into-a-pane
+  // and the Ctrl+Shift+←/→ chord both land here — one source of truth for
+  // "which pane owns the keyboard", so visual state (border/glow/words/
+  // cursor) and real DOM focus can never split-brain. `direction` steps one
+  // pane that way, no wrap (D9) — generalized to N panes via
+  // `stepPaneFocusIndex`; with 2 panes this is indistinguishable from the
+  // shipped absolute behaviour.
   const movePaneFocus = useCallback(
-    (side: PaneSide) => {
-      const key = splitAssignment[side];
-      if (!key || side === focusedSide) return;
-      setFocusedSide(side);
+    (direction: PaneSide) => {
+      const nextIndex = stepPaneFocusIndex(focusedPaneIndex, direction, paneKeys.length);
+      const key = paneKeys[nextIndex];
+      if (!key || nextIndex === focusedPaneIndex) return;
+      setFocusedPaneIndex(nextIndex);
       setActiveKey(key);
       actionsMapRef.current.get(key)?.refreshView({ focus: true });
       markPaneFocusLive(key);
       announce(formatFocusMoveAnnouncement(labelFor(key)));
     },
-    [splitAssignment, focusedSide, announce, labelFor, markPaneFocusLive],
+    [paneKeys, focusedPaneIndex, announce, labelFor, markPaneFocusLive],
   );
   const focusPaneByKey = useCallback(
     (key: string) => {
-      const side: PaneSide | null = splitAssignment.left === key ? "left" : splitAssignment.right === key ? "right" : null;
-      if (side) movePaneFocus(side);
+      const index = paneKeys.indexOf(key);
+      if (index === -1 || index === focusedPaneIndex) return;
+      setFocusedPaneIndex(index);
+      setActiveKey(key);
+      actionsMapRef.current.get(key)?.refreshView({ focus: true });
+      markPaneFocusLive(key);
+      announce(formatFocusMoveAnnouncement(labelFor(key)));
     },
-    [splitAssignment, movePaneFocus],
+    [paneKeys, focusedPaneIndex, announce, labelFor, markPaneFocusLive],
   );
 
   // Split-view focus-sync defect fix: the other half of the invariant —
@@ -990,23 +1136,22 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     return () => window.removeEventListener("keydown", handler);
   }, [splitActive, movePaneFocus]);
 
-  // A tab click while split (design §5.2): the focused pane's own tab is a
-  // no-op, the unfocused pane's tab just moves focus, a 3rd session's tab
-  // replaces the UNFOCUSED pane and takes focus there.
+  // A tab click while split (design §10.0/§10.5): every tab already has a
+  // pane (the all-or-nothing rule), so a click can only ever mean "focus
+  // that pane" — the focused pane's own tab is a no-op, any other tab moves
+  // focus there. There is no third-session-replaces-unfocused-pane branch
+  // anymore (that was 2-pane-era, superseded — see split-view.ts).
   const handleSplitTabClick = useCallback(
     (key: string) => {
-      const result = applyTabClickToSplit(splitAssignment, focusedSide, key);
-      const changed = result.assignment !== splitAssignment;
-      setSplitAssignment(result.assignment);
-      const focusChanged = result.focusedSide !== focusedSide;
-      setFocusedSide(result.focusedSide);
-      const targetKey = result.assignment[result.focusedSide];
-      if (targetKey) {
-        setActiveKey(targetKey);
-        if (changed || focusChanged) announce(formatFocusMoveAnnouncement(labelFor(targetKey)));
-      }
+      const index = paneKeys.indexOf(key);
+      if (index === -1 || index === focusedPaneIndex) return;
+      setFocusedPaneIndex(index);
+      setActiveKey(key);
+      actionsMapRef.current.get(key)?.refreshView({ focus: true });
+      markPaneFocusLive(key);
+      announce(formatFocusMoveAnnouncement(labelFor(key)));
     },
-    [splitAssignment, focusedSide, announce, labelFor],
+    [paneKeys, focusedPaneIndex, announce, labelFor, markPaneFocusLive],
   );
 
   // ── drag-to-dock (design §6, Design Review required changes 1 + 2) ─────────
@@ -1057,26 +1202,41 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       const zone = dropZone ?? "none";
       setDraggingKey(null);
       setDropZone(null);
-      const isPaned = splitAssignment.left === draggedKey || splitAssignment.right === draggedKey;
+      const isPaned = paneKeys.includes(draggedKey);
       const outcome = resolveDragOutcome(zone, isPaned);
       if (outcome.kind === "cancel") return;
       if (outcome.kind === "leave-split") {
         setActiveKey(draggedKey);
-        setSplitAssignment({ left: null, right: null });
+        setPaneKeys([]);
         setSplitPreferred(false);
         writeSplitViewPreference(false);
         announce(formatLeaveSplitAnnouncement(labelFor(draggedKey)));
         return;
       }
-      // outcome.kind === "dock" — the user chose the side explicitly, so this
-      // may replace EITHER pane, including the focused one (design §6.3).
-      const recency = activeHistoryRef.current.filter((k) => k !== draggedKey);
-      const fallbackOther = recency.find((k) => k !== draggedKey) ?? eligible.find((k) => k !== draggedKey) ?? null;
-      const result = applyDropToSplit(splitAssignment, outcome.side, draggedKey, fallbackOther);
-      setSplitAssignment(result.assignment);
-      setFocusedSide(result.focusedSide);
+      // outcome.kind === "dock" — the user chose a side explicitly.
+      if (eligible.length >= 3) {
+        // A 3rd dock session is open: docking (like the toggle) enters the
+        // full 3-pane split at once, strip order, the dragged key focused —
+        // there is no meaningful "just this one side" with 3 sessions open
+        // (design §10.3 — toggle and drag both trigger 3-at-once entry).
+        const keys = eligible.slice(0, 3);
+        setPaneKeys(keys);
+        const idx = keys.indexOf(draggedKey);
+        setFocusedPaneIndex(idx === -1 ? 0 : idx);
+      } else {
+        // Exactly 2 eligible — shipped v1 behaviour, byte-identical: this
+        // may replace EITHER pane, including the focused one (design §6.3).
+        const recency = activeHistoryRef.current.filter((k) => k !== draggedKey);
+        const fallbackOther = recency.find((k) => k !== draggedKey) ?? eligible.find((k) => k !== draggedKey) ?? null;
+        const assignment: PaneAssignment = { left: paneKeys[0] ?? null, right: paneKeys[1] ?? null };
+        const result = applyDropToSplit(assignment, outcome.side, draggedKey, fallbackOther);
+        const keys = [result.assignment.left, result.assignment.right].filter((k): k is string => !!k);
+        setPaneKeys(keys);
+        setFocusedPaneIndex(result.focusedSide === "left" ? 0 : 1);
+      }
       setActiveKey(draggedKey);
       setFloorNoticeDismissed(false);
+      setForcedTabsNoticeDismissed(false);
       setSplitPreferred(true);
       writeSplitViewPreference(true);
       setExpanded(true);
@@ -1088,7 +1248,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
       actionsMapRef.current.get(draggedKey)?.refreshView({ focus: true });
       markPaneFocusLive(draggedKey);
     },
-    [dropZone, splitAssignment, eligible, announce, labelFor, markPaneFocusLive],
+    [dropZone, paneKeys, eligible, announce, labelFor, markPaneFocusLive],
   );
 
   const handleDragCancel = useCallback(() => {
@@ -2348,21 +2508,45 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         >
           {multi && !inlineBrowse && (
             <>
-            {/* Below-floor notice (design §5.8, mockup D) — only while split
-                is the standing preference but the window's too narrow to
-                render it; dismissible, never blocks the toggle from being
-                pressed again. */}
-            {splitPreferred === true && belowWidthFloor && !mobileViewport && !floorNoticeDismissed && (
+            {/* Below-floor notice (design §5.8/§10.1, mockup D) — only while
+                split is the standing preference but the window's too narrow
+                for the CURRENT target pane count; dismissible, never blocks
+                the toggle from being pressed again. Text depends on which
+                pane count is being blocked (shipped 2-pane wording is
+                unchanged; the 3-pane entry-block vs shrink-fallback wording
+                differs per design §10.5). */}
+            {splitPreferred === true && belowWidthFloor && paneCount !== 0 && !mobileViewport && !floorNoticeDismissed && (
               <div className="flex items-center gap-2 border-b border-amber-500/30 bg-amber-500/10 px-3 py-1.5 text-[11.5px] text-amber-300">
                 <span aria-hidden="true">ⓘ</span>
                 <span className="flex-1">
-                  Split view needs a wider window — it will come back automatically when there&apos;s room.
+                  {paneCount === 2
+                    ? "Split view needs a wider window — it will come back automatically when there's room."
+                    : forcedTabsNotice === "width-entry"
+                      ? formatThirdPaneWidthBlockedAnnouncement()
+                      : formatWidthFallbackThreeAnnouncement()}
                 </span>
                 <button
                   type="button"
                   aria-label="Dismiss"
                   className="text-amber-400 hover:text-amber-200"
                   onClick={() => setFloorNoticeDismissed(true)}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </div>
+            )}
+            {/* D3's 4th-session cap (design §10.3 G-after) — sky, not amber:
+                informational (nothing is lost, just re-laid-out), distinct
+                from the width warning above. */}
+            {forcedTabsNotice === "count" && !forcedTabsNoticeDismissed && (
+              <div className="flex items-center gap-2 border-b border-sky-500/30 bg-sky-500/10 px-3 py-1.5 text-[11.5px] text-sky-300">
+                <span aria-hidden="true">ⓘ</span>
+                <span className="flex-1">{formatForcedTabsNoticeText()}</span>
+                <button
+                  type="button"
+                  aria-label="Dismiss"
+                  className="text-sky-400 hover:text-sky-200"
+                  onClick={() => setForcedTabsNoticeDismissed(true)}
                 >
                   <X className="h-3 w-3" />
                 </button>
@@ -2377,18 +2561,18 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 // Drag-to-dock (design §6.3 "Back to tabs" indicator): a
                 // PANED tab dragged back up over the strip highlights it as
                 // the un-split target, distinct from the ordinary border.
-                dropZone === "strip" && draggingKey && (splitAssignment.left === draggingKey || splitAssignment.right === draggingKey)
-                  ? "border-sky-500/60"
-                  : "border-zinc-800",
+                dropZone === "strip" && draggingKey && paneKeys.includes(draggingKey) ? "border-sky-500/60" : "border-zinc-800",
               )}
             >
               {/* Tabs shrink then scroll; "+"/toggle (stripControls below)
                   stay pinned OUTSIDE the scroll region(s) so launch +
                   oversight are never scrolled away (design §4a: "never wrap,
                   never hide the '+'"). While split actually renders, the
-                  strip lays out as TWO half-width groups so each pane's tab
-                  sits directly above its own terminal (task c108ae4a) — the
-                  grouping decision is splitTabGroups (split-view.ts). */}
+                  strip abandons the flow layout and becomes the SAME flex
+                  row as the pane row below — exactly N `flex-1` cells, so
+                  each tab's edges are its pane's edges by construction
+                  (design §10.2). No un-paned tab can ever live among them —
+                  a popped-out session gets a corner chip instead (§10.4). */}
               {(() => {
               const renderTab = (entry: SessionEntry, index: number) => {
                 const summary = summaries[entry.key];
@@ -2406,17 +2590,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                 const confirming = confirmingKey === entry.key;
                 const renaming = renamingKey === entry.key;
                 const renameLength = codePointLength(renameDraft);
-                // Split view: which half (if any) this tab currently
-                // occupies — an "L"/"R" badge (words, not colour alone —
+                // Split view: which pane (if any) this tab currently
+                // occupies — an "L"/"M"/"R" badge (words, not colour alone —
                 // aria-label carries the same fact for screen readers).
-                const paneSide: PaneSide | null = !splitActive
-                  ? null
-                  : splitAssignment.left === entry.key
-                    ? "left"
-                    : splitAssignment.right === entry.key
-                      ? "right"
-                      : null;
-                const paneSideFocused = paneSide !== null && paneSide === focusedSide;
+                const paneIndex = splitActive ? paneKeys.indexOf(entry.key) : -1;
+                const paneSide: PaneSlotWord | null = paneIndex === -1 ? null : paneSideLabel(paneIndex, paneKeys.length);
+                const paneSideFocused = paneIndex !== -1 && paneIndex === focusedPaneIndex;
                 return (
                   <DraggableTab key={entry.key} id={entry.key} disabled={poppedOut || renaming || confirming}>
                     {({ setNodeRef, listeners }) => (
@@ -2462,7 +2641,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                           paneSideFocused ? "border-sky-500/50 bg-sky-500/10 text-sky-300" : "border-zinc-700 text-zinc-500",
                         )}
                       >
-                        {paneSide === "left" ? "L" : "R"}
+                        {paneSide === "left" ? "L" : paneSide === "middle" ? "M" : "R"}
                       </span>
                     )}
                     {renaming ? (
@@ -2618,8 +2797,35 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
               // pressing it stores the preference and shows the amber notice
               // instead of silently failing). The "+" rides with it; the
               // pair pins at the strip's far right in both layouts.
+              // Popped-out sessions never sit among the pane-aligned tab
+              // columns (D7/§10.4 — that would recreate "a tab without a
+              // pane"). Instead a compact violet chip in the utility
+              // cluster; click brings the frontmost popped window forward.
+              // Applies whenever split renders (the one visible ≤2-session
+              // change from shipped v1, §10.0).
+              const poppedOutEntries = sessions.filter((s) => poppedOutKeys.has(s.key));
+              const poppedOutChip = splitActive && poppedOutEntries.length > 0 && (
+                <button
+                  type="button"
+                  aria-label={formatPoppedOutChipAriaLabel(poppedOutEntries.map((s) => labelFor(s.key)))}
+                  title={`Popped out: ${poppedOutEntries.map((s) => labelFor(s.key)).join(", ")}`}
+                  onClick={() => {
+                    // Same affordance a popped-out tab already gives in
+                    // tabbed mode — switch to it (its own placeholder offers
+                    // "Bring back to dock"). No cross-window focus API is
+                    // wired up beyond what's already shipped.
+                    setExpanded(true);
+                    setActiveKey(poppedOutEntries[0].key);
+                  }}
+                  className="flex h-[38px] flex-none items-center gap-1 border-l border-zinc-800 px-2 text-[11px] font-bold text-violet-400 hover:bg-zinc-800/60"
+                >
+                  <span aria-hidden="true">⧉</span>
+                  {poppedOutEntries.length}
+                </button>
+              );
               const stripControls = (
                 <>
+              {poppedOutChip}
               <button
                 type="button"
                 aria-pressed={splitPreferred === true}
@@ -2656,25 +2862,33 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
                   </>
                 );
               }
-              const groups = splitTabGroups(
-                sessions.map((s) => s.key),
-                splitAssignment,
-              );
+              // N pane-aligned tab columns (design §10.2) — the SAME flex
+              // math as the pane row below (`flex-1 1 0`, matching gutters),
+              // so tab edges are pane edges by construction. No un-paned
+              // tab can ever appear (D2) — the map above already excludes
+              // anything not in `paneKeys`. The utility cluster (toggle,
+              // +, popped-out chip) lives INSIDE the LAST column so it
+              // never shifts the earlier columns' boundaries.
+              const byIndex = sessions.filter((entry) => paneKeys.includes(entry.key));
               return (
                 <>
-                  <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-                    {sessions.map((entry, index) => (groups.left.includes(entry.key) ? renderTab(entry, index) : null))}
-                  </div>
-                  {/* The right half mirrors the pane boundary below exactly:
-                      both halves are flex-1 of the same strip, matching the
-                      two flex-1 panes — the controls live INSIDE this half so
-                      they don't shift the midpoint. */}
-                  <div className="flex min-w-0 flex-1 items-stretch border-l border-zinc-800">
-                    <div className="flex min-w-0 flex-1 items-stretch overflow-x-auto">
-                      {sessions.map((entry, index) => (groups.right.includes(entry.key) ? renderTab(entry, index) : null))}
-                    </div>
-                    {stripControls}
-                  </div>
+                  {paneKeys.map((key, colIndex) => {
+                    const entry = byIndex.find((e) => e.key === key);
+                    const originalIndex = sessions.findIndex((s) => s.key === key);
+                    const isLast = colIndex === paneKeys.length - 1;
+                    return (
+                      <div
+                        key={key}
+                        className={cn(
+                          "flex min-w-0 flex-1 items-stretch overflow-x-auto",
+                          colIndex > 0 && "border-l border-zinc-800",
+                        )}
+                      >
+                        {entry && renderTab(entry, originalIndex)}
+                        {isLast && stripControls}
+                      </div>
+                    );
+                  })}
                 </>
               );
               })()}
@@ -2695,14 +2909,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
               overlay below. */}
           <div ref={splitBodyRef} className={cn("relative", inlineBrowse && "hidden", splitActive && "flex items-stretch")}>
         {sessions.map((entry) => {
-          const paneSide: PaneSide | null = !splitActive
-            ? null
-            : splitAssignment.left === entry.key
-              ? "left"
-              : splitAssignment.right === entry.key
-                ? "right"
-                : null;
-          const isEntryVisible = splitActive ? paneSide !== null : entry.key === activeKey;
+          const paneIndex = splitActive ? paneKeys.indexOf(entry.key) : -1;
+          const inPane = paneIndex !== -1;
+          const isEntryVisible = splitActive ? inPane : entry.key === activeKey;
+          const isFocusedPane = inPane && paneIndex === focusedPaneIndex;
           return (
           <TerminalSessionView
             key={entry.key}
@@ -2716,10 +2926,10 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             })}
             isActive={isEntryVisible}
             expanded={expanded && isEntryVisible}
-            grabFocus={splitActive ? paneSide === focusedSide : true}
-            paneFocused={paneSide !== null ? paneSide === focusedSide && keyboardLive : undefined}
-            onFocusPane={paneSide !== null ? () => focusPaneByKey(entry.key) : undefined}
-            onPaneFocusChange={paneSide !== null ? (focused: boolean) => handlePaneFocusChange(entry.key, focused) : undefined}
+            grabFocus={splitActive ? isFocusedPane : true}
+            paneFocused={inPane ? isFocusedPane && keyboardLive : undefined}
+            onFocusPane={inPane ? () => focusPaneByKey(entry.key) : undefined}
+            onPaneFocusChange={inPane ? (focused: boolean) => handlePaneFocusChange(entry.key, focused) : undefined}
             dragActiveRef={dragActiveRef}
             onRequestExpand={requestExpand}
             autoConnectWhenExpanded={entry.launchSeq === 0 && !entry.attach}

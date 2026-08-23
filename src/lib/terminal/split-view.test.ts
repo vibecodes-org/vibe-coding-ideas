@@ -26,6 +26,22 @@ import {
   SPLIT_FALLBACK_BODY_PX,
   SPLIT_RESTORE_BODY_PX,
   MOBILE_VIEWPORT_MAX_PX,
+  panesForDockCount,
+  SPLIT_FALLBACK_BODY_PX_3,
+  SPLIT_RESTORE_BODY_PX_3,
+  resolveWidthFloorForCount,
+  isSplitRenderableForCount,
+  paneSideLabel,
+  stepPaneFocusIndex,
+  formatPaneLayoutList,
+  formatSplitOnAnnouncementForPanes,
+  formatSplitRestoredAnnouncementForPanes,
+  formatThirdPaneAddedAnnouncement,
+  formatForcedTabsCountAnnouncement,
+  formatThirdPaneWidthBlockedAnnouncement,
+  formatWidthFallbackThreeAnnouncement,
+  formatForcedTabsNoticeText,
+  formatPoppedOutChipAriaLabel,
 } from "./split-view";
 
 describe("eligiblePaneKeys", () => {
@@ -362,6 +378,140 @@ describe("accessible names + announcements", () => {
     expect(formatWidthFloorAnnouncement("restored")).toBe("Split view restored.");
     expect(formatDockAnnouncement("A", "right")).toBe("Split view on. A docked right. Typing goes to A.");
     expect(formatLeaveSplitAnnouncement("A")).toBe("Split view off. Showing A.");
+  });
+});
+
+// ── N-pane (2 or 3) — Requirements v3, task eda6598b ────────────────────────
+
+describe("panesForDockCount (D1/D3 mode table)", () => {
+  it("maps 2 and 3 dock sessions to themselves", () => {
+    expect(panesForDockCount(2)).toBe(2);
+    expect(panesForDockCount(3)).toBe(3);
+  });
+
+  it("maps 0, 1, 4 and 5 to 0 (tabs) — never a partial/grid mix", () => {
+    expect(panesForDockCount(0)).toBe(0);
+    expect(panesForDockCount(1)).toBe(0);
+    expect(panesForDockCount(4)).toBe(0);
+    expect(panesForDockCount(5)).toBe(0);
+  });
+});
+
+describe("resolveWidthFloorForCount (hysteresis, both boundary pairs)", () => {
+  it("2-pane pair matches the shipped resolveWidthFloor exactly", () => {
+    expect(resolveWidthFloorForCount(SPLIT_FALLBACK_BODY_PX - 1, false, 2)).toBe(true);
+    expect(resolveWidthFloorForCount(SPLIT_FALLBACK_BODY_PX, false, 2)).toBe(false);
+    expect(resolveWidthFloorForCount(SPLIT_RESTORE_BODY_PX, true, 2)).toBe(false);
+  });
+
+  it("3-pane pair falls back below 1442 and does not restore in the 1442-1461 hysteresis band", () => {
+    expect(resolveWidthFloorForCount(SPLIT_FALLBACK_BODY_PX_3 - 1, false, 3)).toBe(true);
+    expect(resolveWidthFloorForCount(SPLIT_FALLBACK_BODY_PX_3, false, 3)).toBe(false);
+    expect(resolveWidthFloorForCount(SPLIT_FALLBACK_BODY_PX_3 + 5, true, 3)).toBe(true);
+  });
+
+  it("3-pane pair restores at 1462", () => {
+    expect(resolveWidthFloorForCount(SPLIT_RESTORE_BODY_PX_3, true, 3)).toBe(false);
+  });
+
+  it("three panes at the floor plus two dividers matches the documented body threshold", () => {
+    expect(SPLIT_FALLBACK_BODY_PX_3).toBe(MIN_PANE_WIDTH_PX * 3 + 2);
+  });
+
+  it("keeps the prior state for an unmeasured width regardless of pane count", () => {
+    expect(resolveWidthFloorForCount(0, true, 3)).toBe(true);
+    expect(resolveWidthFloorForCount(NaN, false, 3)).toBe(false);
+  });
+});
+
+describe("isSplitRenderableForCount (the all-or-nothing gate, D1-D4)", () => {
+  const base = { preferred: true, belowWidthFloor: false, mobileViewport: false };
+
+  it("2 or 3 dock sessions, width fits, non-mobile, preferred -> renders", () => {
+    expect(isSplitRenderableForCount({ ...base, dockCount: 2 })).toBe(true);
+    expect(isSplitRenderableForCount({ ...base, dockCount: 3 })).toBe(true);
+  });
+
+  it("4 sessions never renders, regardless of width", () => {
+    expect(isSplitRenderableForCount({ ...base, dockCount: 4 })).toBe(false);
+    expect(isSplitRenderableForCount({ ...base, dockCount: 4, belowWidthFloor: false })).toBe(false);
+  });
+
+  it("3 sessions too narrow -> false, NEVER falls back to a 2-pane render", () => {
+    expect(isSplitRenderableForCount({ ...base, dockCount: 3, belowWidthFloor: true })).toBe(false);
+  });
+
+  it("0 or 1 session, mobile, or not preferred -> false", () => {
+    expect(isSplitRenderableForCount({ ...base, dockCount: 1 })).toBe(false);
+    expect(isSplitRenderableForCount({ ...base, dockCount: 2, mobileViewport: true })).toBe(false);
+    expect(isSplitRenderableForCount({ ...base, dockCount: 2, preferred: false })).toBe(false);
+  });
+});
+
+describe("paneSideLabel / stepPaneFocusIndex (D7 badges, D9 chord)", () => {
+  it("2 panes: index 0 is left, index 1 is right — no middle", () => {
+    expect(paneSideLabel(0, 2)).toBe("left");
+    expect(paneSideLabel(1, 2)).toBe("right");
+  });
+
+  it("3 panes: left, middle, right in order", () => {
+    expect(paneSideLabel(0, 3)).toBe("left");
+    expect(paneSideLabel(1, 3)).toBe("middle");
+    expect(paneSideLabel(2, 3)).toBe("right");
+  });
+
+  it("steps one pane per chord press, no wrap at either end", () => {
+    expect(stepPaneFocusIndex(1, "left", 3)).toBe(0);
+    expect(stepPaneFocusIndex(0, "left", 3)).toBe(0);
+    expect(stepPaneFocusIndex(1, "right", 3)).toBe(2);
+    expect(stepPaneFocusIndex(2, "right", 3)).toBe(2);
+  });
+
+  it("2-pane stepping is indistinguishable from the shipped absolute chord", () => {
+    expect(stepPaneFocusIndex(0, "right", 2)).toBe(1);
+    expect(stepPaneFocusIndex(1, "left", 2)).toBe(0);
+  });
+});
+
+describe("announcement formatters for N panes (design §10.5)", () => {
+  it("formats the on/restored layout lists for 2 and 3 panes", () => {
+    expect(formatPaneLayoutList(["A", "B"])).toBe("A left, B right");
+    expect(formatPaneLayoutList(["A", "B", "C"])).toBe("A left, B middle, C right");
+  });
+
+  it("split-on and restored announcements for 3 panes", () => {
+    expect(formatSplitOnAnnouncementForPanes(["A", "B", "C"], "B")).toBe(
+      "Split view on. A left, B middle, C right. Typing goes to B.",
+    );
+    expect(formatSplitRestoredAnnouncementForPanes(["A", "B"], "A")).toBe(
+      "Split view restored. A left, B right. Typing goes to A.",
+    );
+  });
+
+  it("the D8 third-pane-added, D3 forced-tabs, and width-blocked strings", () => {
+    expect(formatThirdPaneAddedAnnouncement("C")).toBe("Third pane added: C, right. Typing goes to C.");
+    expect(formatForcedTabsCountAnnouncement("New task")).toBe(
+      "Side-by-side fits up to 3 terminals — switched to tabs. Showing New task.",
+    );
+    expect(formatThirdPaneWidthBlockedAnnouncement()).toMatch(/Not enough room for a third pane/);
+    expect(formatWidthFallbackThreeAnnouncement()).toMatch(/too narrow for three panes/);
+    expect(formatForcedTabsNoticeText()).toMatch(/fits up to 3 terminals/);
+  });
+
+  it("the two width-triggered-tabs strings are distinct wording (entry-block vs shrink-fallback)", () => {
+    expect(formatThirdPaneWidthBlockedAnnouncement()).not.toBe(formatWidthFallbackThreeAnnouncement());
+  });
+});
+
+describe("formatPoppedOutChipAriaLabel (D7/§10.4 — never a tab-strip column)", () => {
+  it("singular for one popped-out session", () => {
+    expect(formatPoppedOutChipAriaLabel(["Recreate staging database"])).toBe(
+      "1 session popped out: Recreate staging database",
+    );
+  });
+
+  it("plural + joined list for more than one", () => {
+    expect(formatPoppedOutChipAriaLabel(["A", "B"])).toBe("2 sessions popped out: A, B");
   });
 });
 
