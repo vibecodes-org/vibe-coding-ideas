@@ -223,6 +223,20 @@ export interface PristineCandidate {
    * than overwrite it.
    */
   hasAttach?: boolean;
+  /**
+   * The entry's current connection status. The board's paired-auto-connect
+   * effect (use-terminal-session's "open the panel while idle and paired" path)
+   * connects a sole placeholder entry directly, without ever bumping its
+   * `launchSeq` — by design, so THAT connect doesn't count as a "delivered
+   * launch" for other purposes. But it means `launchSeq === 0` alone can no
+   * longer prove a slot is unused: an auto-connected sole tab still reads
+   * `launchSeq === 0` while genuinely live. Bug report 2026-08-24: clicking
+   * "+" with exactly one auto-connected tab open reused THAT tab's slot
+   * instead of opening a sibling, tearing down its live connection to
+   * re-mint in place. Only a slot still sitting at "idle" (never connected)
+   * is actually free to reuse.
+   */
+  status?: TerminalStatus;
 }
 
 /**
@@ -239,7 +253,8 @@ export interface PristineCandidate {
 export function findPristineSlot(sessions: PristineCandidate[]): string | null {
   if (sessions.length !== 1) return null;
   const [only] = sessions;
-  return only.launchSeq === 0 && !only.hasAttach ? only.key : null;
+  const statusIsFree = only.status === undefined || only.status === "idle";
+  return only.launchSeq === 0 && !only.hasAttach && statusIsFree ? only.key : null;
 }
 
 // ── ended-tab reclaim: resume takes over its own dead tab in place ─────────

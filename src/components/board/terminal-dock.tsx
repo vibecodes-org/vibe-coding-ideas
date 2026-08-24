@@ -1637,7 +1637,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
     }
 
     const pristineKey = findPristineSlot(
-      currentSessions.map((s) => ({ key: s.key, launchSeq: s.launchSeq, hasAttach: !!s.attach })),
+      currentSessions.map((s) => ({
+        key: s.key,
+        launchSeq: s.launchSeq,
+        hasAttach: !!s.attach,
+        status: currentSummaries[s.key]?.status,
+      })),
     );
     if (pristineKey) {
       setSessions((prev) =>
@@ -1817,7 +1822,12 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
 
       const currentSessions = sessionsRef.current;
       const pristineKey = findPristineSlot(
-        currentSessions.map((s) => ({ key: s.key, launchSeq: s.launchSeq, hasAttach: !!s.attach })),
+        currentSessions.map((s) => ({
+          key: s.key,
+          launchSeq: s.launchSeq,
+          hasAttach: !!s.attach,
+          status: summariesRef.current[s.key]?.status,
+        })),
       );
       const entry: SessionEntry = {
         key: pristineKey ?? freshSessionKey(),

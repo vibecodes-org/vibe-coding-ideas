@@ -164,6 +164,24 @@ describe("findPristineSlot (first-launch reuse)", () => {
     const sessions: PristineCandidate[] = [{ key: "s1", launchSeq: 0, hasAttach: true }];
     expect(findPristineSlot(sessions)).toBeNull();
   });
+
+  it("never reuses a sole entry that auto-connected without a launch bump (bug report 2026-08-24)", () => {
+    // Paired auto-connect calls `connect()` directly, without ever bumping
+    // `launchSeq` off 0 — so `launchSeq === 0` alone can't prove the slot is
+    // free once the tab is actually live.
+    const sessions: PristineCandidate[] = [{ key: "s1", launchSeq: 0, status: "connected" }];
+    expect(findPristineSlot(sessions)).toBeNull();
+  });
+
+  it("still reuses the sole entry at launchSeq 0 while genuinely idle", () => {
+    const sessions: PristineCandidate[] = [{ key: "s1", launchSeq: 0, status: "idle" }];
+    expect(findPristineSlot(sessions)).toBe("s1");
+  });
+
+  it("treats a missing status as free, for callers that don't track it", () => {
+    const sessions: PristineCandidate[] = [{ key: "s1", launchSeq: 0 }];
+    expect(findPristineSlot(sessions)).toBe("s1");
+  });
 });
 
 describe("findReclaimableEndedSlot (ended-tab reclaim, card df29b85e)", () => {
