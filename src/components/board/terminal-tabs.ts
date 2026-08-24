@@ -88,6 +88,19 @@ export interface SessionEntry {
    * isn't shown here…") instead of a silently blank terminal.
    */
   showReconnectedNoHistoryNote?: boolean;
+  /**
+   * Bug fix (last-tab-close auto-relaunch): `launchSeq === 0` alone used to
+   * mean BOTH "genuinely never launched" (page-load pristine slot, still
+   * wants the paired auto-connect below) AND "just ended my only tab"
+   * (`removeEntry`'s replacement pristine entry — terminal-dock.tsx) — the
+   * second case rendered the same idle screen but, being launchSeq 0 too,
+   * ALSO satisfied `autoConnectWhenExpanded`, so a paired user who explicitly
+   * ended their last session was auto-reconnected into a brand-new one
+   * within the same render pass. Set only on that replacement entry so the
+   * dock's `autoConnectWhenExpanded` expression can tell the two apart
+   * without touching `launchSeq`'s existing "deliver a launch" meaning.
+   */
+  autoConnectSuppressed?: boolean;
 }
 
 // ── shared tone vocabulary (drives both the per-tab glyph and the collapsed

@@ -609,6 +609,12 @@ describe("useTerminalSession", () => {
       expect(result.current.state.status).not.toBe("idle");
     });
 
+    // Also the hook-level half of the last-tab-close auto-relaunch fix
+    // (terminal-dock.tsx's `createPristineEntry`/`SessionEntry
+    // .autoConnectSuppressed`): the hook itself doesn't know or care WHY
+    // `autoConnectWhenExpanded` is false — a freshly-minted tab and a
+    // just-ended-my-last-session pristine entry both route through this same
+    // guard, so this generic case is the coverage for both.
     it("does NOT auto-connect when autoConnectWhenExpanded is false (a freshly-minted tab)", async () => {
       const requestExpand = vi.fn();
       const { result } = renderHook(() =>

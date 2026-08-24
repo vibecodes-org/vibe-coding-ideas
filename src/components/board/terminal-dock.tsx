@@ -208,7 +208,13 @@ function freshSessionKey(): string {
   return `tab-${Date.now().toString(36)}-${sessionKeySeq}`;
 }
 
-function createPristineEntry(): SessionEntry {
+/**
+ * `suppressAutoConnect` distinguishes the two callers (see `SessionEntry
+ * .autoConnectSuppressed`'s doc): the page-load seeding effect leaves it
+ * unset (unchanged P1 paired auto-connect behaviour), `removeEntry`'s
+ * last-tab-closed replacement passes `true`.
+ */
+function createPristineEntry(suppressAutoConnect = false): SessionEntry {
   return {
     key: freshSessionKey(),
     origin: "toolbar",
@@ -217,6 +223,7 @@ function createPristineEntry(): SessionEntry {
     createdAt: Date.now(),
     launchSeq: 0,
     launchPayload: null,
+    autoConnectSuppressed: suppressAutoConnect,
   };
 }
 
@@ -1421,8 +1428,11 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
         const next = prev.filter((s) => s.key !== key);
         if (next.length === 0) {
           // Last tab closed → back to the true P1 idle/resting state (B8), not a
-          // lingering empty strip.
-          const fresh = createPristineEntry();
+          // lingering empty strip. `suppressAutoConnect: true` — the user just
+          // explicitly ended this session, so an expanded dock must NOT
+          // immediately auto-reconnect them into a fresh one (bug fix:
+          // last-tab-close auto-relaunch).
+          const fresh = createPristineEntry(true);
           setActiveKey(fresh.key);
           return [fresh];
         }
@@ -2942,7 +2952,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
             onPaneFocusChange={inPane ? (focused: boolean) => handlePaneFocusChange(entry.key, focused) : undefined}
             dragActiveRef={dragActiveRef}
             onRequestExpand={requestExpand}
-            autoConnectWhenExpanded={entry.launchSeq === 0 && !entry.attach}
+            autoConnectWhenExpanded={entry.launchSeq === 0 && !entry.attach && !entry.autoConnectSuppressed}
             onReportSummary={reportSummary}
             onRegisterActions={registerActions}
             onAnnounce={announce}
