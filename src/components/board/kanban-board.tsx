@@ -539,6 +539,27 @@ export function KanbanBoard({
     };
   }, []);
 
+  const optimisticCreateTaskAtTop = useCallback((columnId: string, tempTask: BoardTaskWithAssignee) => {
+    setColumns((cols) => {
+      const next = cols.map((col) => (col.id === columnId ? { ...col, tasks: [tempTask, ...col.tasks] } : col));
+      columnsRef.current = next;
+      return next;
+    });
+    // Rollback removes only this temp task by id — rather than reverting to a
+    // captured "prev" snapshot — so rapid multi-add (several quick-adds fired
+    // in quick succession) only undoes the one that actually failed, not
+    // unrelated cards created or still pending alongside it.
+    return () => {
+      setColumns((cols) => {
+        const next = cols.map((col) =>
+          col.id === columnId ? { ...col, tasks: col.tasks.filter((t) => t.id !== tempTask.id) } : col
+        );
+        columnsRef.current = next;
+        return next;
+      });
+    };
+  }, []);
+
   const optimisticDeleteTask = useCallback((taskId: string, columnId: string) => {
     const prev = columnsRef.current;
     setColumns((cols) => {
@@ -699,6 +720,7 @@ export function KanbanBoard({
   const boardOps = useMemo<BoardOptimisticOps>(
     () => ({
       createTask: optimisticCreateTask,
+      createTaskAtTop: optimisticCreateTaskAtTop,
       deleteTask: optimisticDeleteTask,
       archiveTask: optimisticArchiveTask,
       moveTaskWithinColumn: optimisticMoveTaskWithinColumn,
@@ -713,6 +735,7 @@ export function KanbanBoard({
     }),
     [
       optimisticCreateTask,
+      optimisticCreateTaskAtTop,
       optimisticDeleteTask,
       optimisticArchiveTask,
       optimisticMoveTaskWithinColumn,

@@ -1,0 +1,288 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Add Task at Top of Column — Design</title>
+<style>
+  /* Zinc dark palette (shadcn New York, Zinc) */
+  :root {
+    --bg: #09090b;          /* zinc-950 */
+    --panel: #18181b;       /* zinc-900 */
+    --panel-50: rgba(39,39,42,.5);
+    --border: #27272a;      /* zinc-800 */
+    --border-2: #3f3f46;    /* zinc-700 */
+    --fg: #fafafa;          /* zinc-50 */
+    --muted: #a1a1aa;       /* zinc-400 */
+    --muted-2: #71717a;     /* zinc-500 */
+    --primary: #fafafa;
+    --primary-fg: #18181b;
+    --destructive: #f87171; /* red-400 — 4.6:1 on zinc-900 */
+    --destructive-dim: rgba(248,113,113,.12);
+    --ring: rgba(250,250,250,.35);
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font: 14px/1.5 ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 32px 24px 80px;
+  }
+  h1 { font-size: 22px; font-weight: 650; letter-spacing: -.01em; }
+  h2 { font-size: 15px; font-weight: 600; margin: 40px 0 6px; }
+  .sub { color: var(--muted); max-width: 72ch; margin-top: 6px; }
+  .note { color: var(--muted); font-size: 13px; max-width: 72ch; margin: 6px 0 16px; }
+  .note strong { color: var(--fg); font-weight: 600; }
+  kbd {
+    font: 11px/1 ui-monospace, monospace; color: var(--muted);
+    border: 1px solid var(--border-2); border-bottom-width: 2px;
+    border-radius: 4px; padding: 2px 5px; background: var(--panel);
+  }
+
+  .stage { display: flex; gap: 20px; flex-wrap: wrap; align-items: flex-start; margin-top: 16px; }
+
+  /* ---- Column (mirrors board-column.tsx) ---- */
+  .col {
+    width: 300px; background: var(--panel-50);
+    border: 1px solid var(--border); border-radius: 10px;
+    display: flex; flex-direction: column; max-height: 560px;
+  }
+  .col-head {
+    display: flex; align-items: center; justify-content: space-between;
+    border-bottom: 1px solid var(--border); padding: 8px 12px; gap: 8px;
+  }
+  .col-head .left { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .grip { color: var(--muted-2); flex: none; }
+  .col-title { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .col-title .count { color: var(--muted); font-weight: 500; }
+  .head-actions { display: flex; align-items: center; gap: 2px; flex: none; }
+  .icon-btn {
+    width: 28px; height: 28px; border-radius: 6px; border: 0; background: transparent;
+    color: var(--muted); display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; position: relative;
+  }
+  .icon-btn:hover { background: var(--border); color: var(--fg); }
+  .icon-btn:focus-visible { outline: 2px solid var(--ring); outline-offset: 1px; }
+  /* Invisible touch-target extension to 44x44 on coarse pointers */
+  .icon-btn::after { content: ""; position: absolute; inset: -8px; }
+  .icon-btn svg { width: 16px; height: 16px; }
+
+  .col-body { padding: 8px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; }
+  .card {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px 12px; font-size: 13px; box-shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+  .card .meta { display: flex; gap: 6px; margin-top: 8px; align-items: center; }
+  .chip { font-size: 10px; padding: 2px 7px; border-radius: 999px; border: 1px solid var(--border-2); color: var(--muted); }
+  .chip.violet { color: #c4b5fd; border-color: rgba(196,181,253,.35); }
+  .chip.emerald { color: #6ee7b7; border-color: rgba(110,231,183,.35); }
+  .avatar {
+    width: 18px; height: 18px; border-radius: 999px; margin-left: auto;
+    background: linear-gradient(135deg,#52525b,#27272a);
+    font-size: 9px; display: flex; align-items: center; justify-content: center; color: var(--fg);
+  }
+  .card.faded, .fade-rest { opacity: .55; }
+  .more-tasks { text-align: center; color: var(--muted-2); font-size: 12px; padding: 2px 0 6px; }
+
+  .col-foot { border-top: 1px solid var(--border); padding: 8px; }
+  .add-bottom {
+    width: 100%; display: flex; align-items: center; gap: 8px; border: 0; background: transparent;
+    color: var(--muted); font-size: 13px; padding: 7px 10px; border-radius: 6px; cursor: pointer; text-align: left;
+  }
+  .add-bottom:hover { background: var(--border); color: var(--fg); }
+
+  /* ---- Quick composer ---- */
+  .composer {
+    background: var(--panel); border: 1px solid var(--border-2); border-radius: 8px;
+    padding: 8px; box-shadow: 0 4px 12px rgba(0,0,0,.45);
+  }
+  .composer.focus { border-color: var(--ring); box-shadow: 0 0 0 3px rgba(250,250,250,.08), 0 4px 12px rgba(0,0,0,.45); }
+  .composer label { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  .composer textarea {
+    width: 100%; resize: none; border: 0; background: transparent; color: var(--fg);
+    font: 13px/1.45 inherit; outline: none; min-height: 38px; padding: 2px 2px 0;
+  }
+  .composer textarea::placeholder { color: var(--muted-2); }
+  .composer .row { display: flex; align-items: center; gap: 8px; margin-top: 6px; }
+  .btn {
+    border: 0; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer;
+    padding: 7px 14px; min-height: 32px;
+  }
+  .btn-primary { background: var(--primary); color: var(--primary-fg); }
+  .btn-primary:hover { background: #e4e4e7; }
+  .btn-ghost { background: transparent; color: var(--muted); padding: 7px 10px; }
+  .btn-ghost:hover { background: var(--border); color: var(--fg); }
+  .hint { margin-left: auto; font-size: 11px; color: var(--muted-2); display: flex; gap: 4px; align-items: center; }
+  .caret { display: inline-block; width: 1px; height: 15px; background: var(--fg); vertical-align: text-bottom; animation: blink 1.1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+
+  /* Error state */
+  .composer.error { border-color: var(--destructive); }
+  .err {
+    display: flex; gap: 7px; align-items: flex-start; margin-top: 8px;
+    background: var(--destructive-dim); border-radius: 6px; padding: 7px 9px;
+    font-size: 12px; color: var(--destructive);
+  }
+  .err svg { width: 14px; height: 14px; flex: none; margin-top: 1px; }
+
+  /* Optimistic (pending) card */
+  .card.pending { border-style: dashed; border-color: var(--border-2); }
+  .card.pending .spin {
+    width: 12px; height: 12px; border: 2px solid var(--border-2); border-top-color: var(--muted);
+    border-radius: 999px; display: inline-block; animation: rot .8s linear infinite; vertical-align: -2px; margin-right: 6px;
+  }
+  @keyframes rot { to { transform: rotate(360deg); } }
+
+  .state-label {
+    font-size: 11px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase;
+    color: var(--muted-2); margin: 0 2px 8px;
+  }
+  .spec {
+    margin-top: 40px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; max-width: 860px;
+  }
+  .spec table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .spec th, .spec td { text-align: left; padding: 10px 14px; border-top: 1px solid var(--border); vertical-align: top; }
+  .spec th { background: var(--panel); border-top: 0; font-weight: 600; }
+  .spec td:first-child { color: var(--muted); white-space: nowrap; width: 190px; }
+</style>
+</head>
+<body>
+
+<h1>Add task at the top of a column</h1>
+<p class="sub">A quick-add control in every column header. One click opens an inline composer pinned above the first card — no modal, no scrolling. The task appears exactly where the new card will land.</p>
+
+<div class="stage">
+
+  <!-- STATE 1: Default -->
+  <div>
+    <p class="state-label">1 · Default — new “+” beside the column menu</p>
+    <div class="col">
+      <div class="col-head">
+        <div class="left">
+          <svg class="grip" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>
+          <h3 class="col-title">In Progress <span class="count">(7)</span></h3>
+        </div>
+        <div class="head-actions">
+          <button class="icon-btn" title="Add task to top" aria-label="Add task to top of In Progress">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
+          </button>
+          <button class="icon-btn" title="Column options" aria-label="Column options">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="col-body">
+        <div class="card">Fix relay reconnect flicker on tab switch
+          <div class="meta"><span class="chip violet">terminal</span><span class="avatar">NB</span></div>
+        </div>
+        <div class="card">Persist feed filters per-user across devices
+          <div class="meta"><span class="chip emerald">feed</span><span class="avatar">CW</span></div>
+        </div>
+        <div class="card">Very long task title that wraps onto multiple lines to prove the layout holds up with realistic data</div>
+        <div class="more-tasks">· · · 4 more tasks below the fold · · ·</div>
+      </div>
+      <div class="col-foot">
+        <button class="add-bottom"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add task</button>
+      </div>
+    </div>
+    <p class="note" style="width:300px">The existing bottom “Add task” (full dialog with labels, assignee, etc.) is unchanged. The header “+” is the fast path.</p>
+  </div>
+
+  <!-- STATE 2: Composer open -->
+  <div>
+    <p class="state-label">2 · Open — inline composer pinned above first card</p>
+    <div class="col">
+      <div class="col-head">
+        <div class="left">
+          <svg class="grip" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>
+          <h3 class="col-title">In Progress <span class="count">(7)</span></h3>
+        </div>
+        <div class="head-actions">
+          <button class="icon-btn" title="Close" aria-label="Close quick add" style="background:var(--border);color:var(--fg)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+          <button class="icon-btn" title="Column options" aria-label="Column options">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="col-body">
+        <div class="composer focus">
+          <label for="qa-2">Task title</label>
+          <textarea id="qa-2" rows="2" placeholder="Task title…">Wire up header quick-add<span class="caret"></span></textarea>
+          <div class="row">
+            <button class="btn btn-primary">Add task</button>
+            <button class="btn btn-ghost">Cancel</button>
+            <span class="hint"><kbd>↵</kbd> add · <kbd>esc</kbd> cancel</span>
+          </div>
+        </div>
+        <div class="card faded">Fix relay reconnect flicker on tab switch
+          <div class="meta"><span class="chip violet">terminal</span><span class="avatar">NB</span></div>
+        </div>
+        <div class="card faded">Persist feed filters per-user across devices</div>
+        <div class="more-tasks fade-rest">· · ·</div>
+      </div>
+      <div class="col-foot"><button class="add-bottom" style="opacity:.55"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add task</button></div>
+    </div>
+    <p class="note" style="width:300px">The “+” morphs into “×” so the open control is also the close control (Fitts: cancel is where the cursor already is). Enter adds and keeps the composer open for rapid entry; Shift+Enter makes a new line.</p>
+  </div>
+
+  <!-- STATE 3: Error -->
+  <div>
+    <p class="state-label">3 · Error — create failed, nothing lost</p>
+    <div class="col">
+      <div class="col-head">
+        <div class="left">
+          <svg class="grip" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="6" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="9" cy="18" r="1"/><circle cx="15" cy="6" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="15" cy="18" r="1"/></svg>
+          <h3 class="col-title">In Progress <span class="count">(7)</span></h3>
+        </div>
+        <div class="head-actions">
+          <button class="icon-btn" title="Close" aria-label="Close quick add" style="background:var(--border);color:var(--fg)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+          </button>
+          <button class="icon-btn" title="Column options" aria-label="Column options">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="5" cy="12" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/></svg>
+          </button>
+        </div>
+      </div>
+      <div class="col-body">
+        <div class="composer error">
+          <label for="qa-3">Task title</label>
+          <textarea id="qa-3" rows="2">Wire up header quick-add</textarea>
+          <div class="row">
+            <button class="btn btn-primary">Retry</button>
+            <button class="btn btn-ghost">Cancel</button>
+          </div>
+          <div class="err">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="10"/><path d="M12 8v4M12 16h.01"/></svg>
+            <span>Couldn’t create the task. Your text is kept — retry, or cancel to discard.</span>
+          </div>
+        </div>
+        <div class="card pending"><span class="spin"></span>Wire up header quick-add</div>
+        <div class="card faded">Fix relay reconnect flicker on tab switch</div>
+        <div class="more-tasks fade-rest">· · ·</div>
+      </div>
+      <div class="col-foot"><button class="add-bottom" style="opacity:.55"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add task</button></div>
+    </div>
+    <p class="note" style="width:300px">Dashed card = optimistic insert awaiting the server. On failure it rolls back (removed), a toast fires, and the composer re-opens with the title intact and “Add” relabelled “Retry”. Empty or whitespace-only titles disable nothing — pressing Add just shakes the field and shows “Enter a title first”.</p>
+  </div>
+
+</div>
+
+<h2>Interaction spec</h2>
+<div class="spec">
+  <table>
+    <tr><th>Aspect</th><th>Behaviour</th></tr>
+    <tr><td>Placement</td><td>Ghost “+” icon button in the column header, immediately left of the “…” column-options button. Same 28&times;28 visual size and hover treatment; a pseudo-element extends the hit area to 44&times;44 for touch. Header title, count and menu are never obscured.</td></tr>
+    <tr><td>Open</td><td>Click/tap/Enter on “+” renders the composer as the first item of the task list (in normal flow — not a popover or modal), auto-focuses the textarea, and scrolls the column to top if the user had scrolled down. The “+” becomes “×”.</td></tr>
+    <tr><td>Create</td><td><kbd>Enter</kbd> or “Add task” button. Trimmed-empty titles are rejected inline. Optimistic card inserts at position <em>first.position − 1000</em> (existing gap scheme); composer clears and stays open focused for rapid multi-add. Realtime pushes the card to other viewers at the top.</td></tr>
+    <tr><td>Cancel</td><td><kbd>Esc</kbd>, outside-click, the “×” in the header, or the Cancel button — all always work (never trap the user). If text was typed, outside-click keeps the composer open once and shows the hint “Press Esc again to discard”; Esc always closes immediately.</td></tr>
+    <tr><td>Error</td><td>Optimistic card rolls back, <code>toast.error()</code> fires, composer re-opens pre-filled with the failed title, primary button reads “Retry”. No typed text is ever lost.</td></tr>
+    <tr><td>Mobile (375px)</td><td>Identical flow — inline composer, no sheet/modal, so the on-screen keyboard never covers a floating dialog. All targets ≥44px effective. The bottom “Add task” bar remains for users who want the full editor.</td></tr>
+    <tr><td>Keyboard &amp; a11y</td><td>“+” is in the header tab order with <code>aria-label</code> “Add task to top of {column}”. Textarea has a visually-hidden <code>&lt;label&gt;</code>. Focus returns to the “+” button on close. Error message is <code>role="alert"</code>. Contrast: all text ≥4.5:1 on zinc-900 (error red-400 = 4.6:1).</td></tr>
+    <tr><td>Read-only / guest</td><td>Button not rendered at all (mirrors existing <code>isReadOnly</code> handling), never disabled-without-explanation.</td></tr>
+    <tr><td>Unchanged</td><td>Bottom “Add task” full-dialog flow, drag-and-drop, workflow auto-rules (fire identically for top-created tasks), column menu.</td></tr>
+  </table>
+</div>
+
+</body>
+</html>
