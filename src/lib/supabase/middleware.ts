@@ -44,7 +44,7 @@ export async function updateSession(request: NextRequest) {
     } = await getUserWithTimeout;
 
     // Protect authenticated routes
-    const protectedPaths = ["/dashboard", "/ideas", "/members", "/profile", "/admin", "/agents"];
+    const protectedPaths = ["/dashboard", "/ideas", "/members", "/profile", "/admin", "/agents", "/settings"];
     const isProtectedPath = protectedPaths.some((path) =>
       request.nextUrl.pathname.startsWith(path)
     );

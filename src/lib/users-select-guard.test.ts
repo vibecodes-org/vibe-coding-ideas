@@ -217,6 +217,22 @@ describe("profile/[id]/page.tsx: users select is column- AND viewer-scoped", () 
   const PROFILE_PAGE = "src/app/(main)/profile/[id]/page.tsx";
   const content = readFileSync(join(repoRoot, PROFILE_PAGE), "utf8");
 
+  // The settings-only columns (see SETTINGS_ONLY_COLUMNS below) used to be
+  // fetched from HERE, inside an `if (isOwnProfile)` guard. Task 32cf1ee5
+  // ("Move profile page settings into a dedicated Settings area") moved that
+  // query — and the settings UI it fed — out of this file entirely, onto its
+  // own route (`src/app/(main)/settings/page.tsx`), which has no route-param
+  // id to guard against: `requireAuth()` there always returns the caller's
+  // own row. The guard on those two things moving together now lives in the
+  // "settings/page.tsx" describe block below; this file should no longer
+  // mention them at all, which the "excludes the settings-only columns" test
+  // above already covers for the public query — this just pins that the old
+  // isOwnProfile-guarded second query is gone, not just narrowed.
+  it("no longer runs a second, isOwnProfile-guarded users query for the settings-only columns", () => {
+    expect(content).not.toMatch(/if \(isOwnProfile\) \{\s*const \{ data \} = await supabase/);
+    expect(content).not.toContain("ownSettings");
+  });
+
   // The four "settings" columns must NEVER appear in the public query — they
   // regressed once already (a long explicit column list still fetched them
   // unconditionally, so they landed in the RSC payload for every viewer, not
@@ -276,58 +292,38 @@ describe("profile/[id]/page.tsx: users select is column- AND viewer-scoped", () 
     }
   });
 
-  it("the settings-only columns are only ever fetched inside an isOwnProfile guard", () => {
-    // Anchors the select to being lexically nested inside `if (isOwnProfile) {`
-    // — a narrow column list alone doesn't prove the FETCH itself is
-    // conditional, which is what actually stops the ciphertext/preferences
-    // from ever reaching a viewer who isn't the profile owner.
+});
+
+describe("settings/page.tsx: users select is column- and self-scoped", () => {
+  const SETTINGS_PAGE = "src/app/(main)/settings/page.tsx";
+  const content = readFileSync(join(repoRoot, SETTINGS_PAGE), "utf8");
+
+  // Same list as the profile-page describe block above — the settings-only
+  // columns this new page now owns fetching, and the only file that should.
+  const SETTINGS_ONLY_COLUMNS = [
+    "notification_preferences",
+    "default_board_columns",
+    "has_anthropic_key",
+    "model_tier_map",
+  ];
+
+  it("fetches the settings-only columns scoped to the authenticated user's own id", () => {
+    // /settings has no route-param id to guard against — `requireAuth()`
+    // always hands back the caller's own row, so `.eq("id", user.id)` here
+    // (not some route param) is what keeps this self-scoped by construction.
     const match = content.match(
-      /if \(isOwnProfile\) \{\s*const \{ data \} = await supabase\s*\.from\("users"\)\s*\.select\(\s*"([^"]+)"\s*\)\s*\.eq\("id", id\)\s*\.single\(\)/
+      /const \{ data: settings \} = await supabase\s*\.from\("users"\)\s*\.select\(\s*"([^"]+)"\s*\)\s*\.eq\("id", user\.id\)\s*\.single\(\)/
     );
-    expect(
-      match,
-      "expected an isOwnProfile-guarded users query for the settings-only columns"
-    ).not.toBeNull();
+    expect(match, "expected to find the self-scoped settings query in the file").not.toBeNull();
 
     const columns = match![1].split(",").map((c) => c.trim());
     for (const required of SETTINGS_ONLY_COLUMNS) {
-      expect(columns, `expected the own-profile query to include "${required}"`).toContain(
-        required
-      );
+      expect(columns, `expected the settings query to include "${required}"`).toContain(required);
     }
   });
 
-  it("the settings-only columns don't appear in any users select() call OUTSIDE the isOwnProfile guard", () => {
-    // Belt-and-suspenders: find every `.select("...")` call in the file (not
-    // just the two anchored above — catches a future THIRD users query too),
-    // and confirm the only one naming a settings-only column is the one
-    // lexically inside the isOwnProfile-guarded block. Scoped to select()
-    // call arguments (not raw text) so doc comments mentioning these column
-    // names by name — like the ones in this file — don't false-positive.
-    const guardedBlockMatch = content.match(
-      /if \(isOwnProfile\) \{\s*const \{ data \} = await supabase\s*\.from\("users"\)[\s\S]*?\.single\(\);\s*ownSettings = data;\s*\}/
-    );
-    expect(
-      guardedBlockMatch,
-      "expected the isOwnProfile-guarded block to be found for this check"
-    ).not.toBeNull();
-    const guardedStart = guardedBlockMatch!.index!;
-    const guardedEnd = guardedStart + guardedBlockMatch![0].length;
-
-    const selectCallRe = /\.select\(\s*"([^"]+)"\s*\)/g;
-    let call: RegExpExecArray | null;
-    while ((call = selectCallRe.exec(content)) !== null) {
-      const isInsideGuardedBlock = call.index >= guardedStart && call.index < guardedEnd;
-      if (isInsideGuardedBlock) continue;
-
-      const columns = call[1].split(",").map((c) => c.trim());
-      for (const col of SETTINGS_ONLY_COLUMNS) {
-        expect(
-          columns.includes(col),
-          `expected the select() at offset ${call.index} (outside the isOwnProfile guard) NOT to include "${col}"`
-        ).toBe(false);
-      }
-    }
+  it("the query's viewer id comes from requireAuth(), not a route param", () => {
+    expect(content).toContain("const { user, supabase } = await requireAuth();");
   });
 });
 
