@@ -45,6 +45,9 @@ export type NotificationWithDetails = Notification & {
 // Notification preferences
 export type NotificationPreferences = User["notification_preferences"];
 
+// Ideas feed filter preferences (view/status/sort), synced across devices
+export type IdeaFeedPreferences = User["feed_preferences"];
+
 // Board types
 export type BoardColumn = Database["public"]["Tables"]["board_columns"]["Row"];
 export type BoardTask = Database["public"]["Tables"]["board_tasks"]["Row"];

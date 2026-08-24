@@ -37,6 +37,10 @@ export type Database = {
             compliance_alerts?: boolean;
           };
           default_board_columns: { title: string; is_done_column: boolean }[] | null;
+          /** Saved Ideas feed filter defaults (view/status/sort), synced across
+           *  devices. Empty object = no saved preference — see IdeaFeedPreferences
+           *  in src/types/index.ts. */
+          feed_preferences: { view?: string; status?: string; sort?: string };
           model_tier_map: { frontier?: string; standard?: string; cheap?: string } | null;
           /** In-app terminal starting-model override. NULL = platform default;
            *  '__machine_default__' = explicit opt-out (see MACHINE_DEFAULT_TERMINAL_MODEL
@@ -90,6 +94,7 @@ export type Database = {
             compliance_alerts?: boolean;
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
+          feed_preferences?: { view?: string; status?: string; sort?: string };
           model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
           terminal_model?: string | null;
           terminal_auto_accept?: boolean;
@@ -128,6 +133,7 @@ export type Database = {
             compliance_alerts?: boolean;
           };
           default_board_columns?: { title: string; is_done_column: boolean }[] | null;
+          feed_preferences?: { view?: string; status?: string; sort?: string };
           model_tier_map?: { frontier?: string; standard?: string; cheap?: string } | null;
           terminal_model?: string | null;
           terminal_auto_accept?: boolean;

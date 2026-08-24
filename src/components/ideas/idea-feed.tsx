@@ -16,6 +16,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SORT_OPTIONS, STATUS_CONFIG } from "@/lib/constants";
+import { updateFeedPreferences } from "@/actions/ideas";
 import type { IdeaWithAuthor, IdeaStatus, SortOption } from "@/types";
 
 type FeedView = "all" | "mine" | "collaborating";
@@ -79,6 +80,26 @@ export function IdeaFeed({
     });
   }, [searchParams, router, startTransition]);
 
+  // Same as updateParams, but also remembers the choice on the user's
+  // account (view/status/sort only) so it's the default on their next visit,
+  // on any device.
+  const updateParamsAndSave = useCallback(
+    (updates: { view?: string; status?: string; sort?: string }) => {
+      updateParams(updates);
+      const view = "view" in updates ? updates.view : currentView === "all" ? undefined : currentView;
+      const status = "status" in updates ? updates.status : currentStatus;
+      const sort = "sort" in updates ? updates.sort : currentSort;
+      updateFeedPreferences({
+        view: view || undefined,
+        status: status || undefined,
+        sort: sort || undefined,
+      }).catch(() => {
+        // Best-effort — the URL param is already the source of truth for this visit
+      });
+    },
+    [updateParams, currentView, currentStatus, currentSort]
+  );
+
   // Debounced search on keystroke
   useEffect(() => {
     // Don't trigger on initial render or when input matches current search
@@ -121,7 +142,7 @@ export function IdeaFeed({
         <div className="flex items-center gap-2">
           <Select
             value={currentStatus || "all"}
-            onValueChange={(v) => updateParams({ status: v === "all" ? "" : v })}
+            onValueChange={(v) => updateParamsAndSave({ status: v === "all" ? "" : v })}
           >
             <SelectTrigger className="w-full sm:w-[150px]">
               <SelectValue placeholder="Status" />
@@ -139,7 +160,7 @@ export function IdeaFeed({
           </Select>
           <Select
             value={currentSort}
-            onValueChange={(v) => updateParams({ sort: v })}
+            onValueChange={(v) => updateParamsAndSave({ sort: v })}
           >
             <SelectTrigger className="w-full sm:w-[180px]">
               <SelectValue placeholder="Sort by" />
@@ -165,7 +186,9 @@ export function IdeaFeed({
                 ? "bg-background text-foreground shadow-sm"
                 : "text-muted-foreground hover:text-foreground"
             }`}
-            onClick={() => updateParams({ view: option.value === "all" ? "" : option.value })}
+            onClick={() =>
+              updateParamsAndSave({ view: option.value === "all" ? "" : option.value })
+            }
           >
             {option.label}
           </button>
@@ -244,7 +267,7 @@ export function IdeaFeed({
           {currentStatus && (
             <Badge variant="secondary" className="gap-1">
               {STATUS_CONFIG[currentStatus as IdeaStatus]?.label ?? currentStatus}
-              <button className="cursor-pointer" onClick={() => updateParams({ status: "" })}>
+              <button className="cursor-pointer" onClick={() => updateParamsAndSave({ status: "" })}>
                 <X className="h-3 w-3" />
               </button>
             </Badge>
@@ -276,7 +299,7 @@ export function IdeaFeed({
               variant="outline"
               size="sm"
               className="mt-4"
-              onClick={() => updateParams({ view: "" })}
+              onClick={() => updateParamsAndSave({ view: "" })}
             >
               Browse ideas
             </Button>
@@ -296,6 +319,10 @@ export function IdeaFeed({
               onClick={() => {
                 clearSearch();
                 updateParams({ tag: "", status: "", q: "" });
+                updateFeedPreferences({
+                  view: currentView === "all" ? undefined : currentView,
+                  sort: currentSort,
+                }).catch(() => {});
               }}
             >
               Clear filters
