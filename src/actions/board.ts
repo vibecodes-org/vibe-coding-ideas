@@ -3,6 +3,7 @@
 import { after } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { DEFAULT_BOARD_COLUMNS, POSITION_GAP } from "@/lib/constants";
+import { computeTopInsertPosition } from "@/lib/board-position";
 import { validateTitle, validateOptionalDescription, validateLabelName, validateLabelColor, validateComment } from "@/lib/validation";
 import { checkAndApplyAutoRules, checkAutoRuleWorkflow, removeAutoRuleWorkflow } from "@/lib/workflow-helpers";
 import { dismissSuggestionsForLabel } from "@/lib/workflow-matching";
@@ -193,6 +194,49 @@ export async function createBoardTask(
       description: description || null,
       assignee_id: assigneeId || null,
       position: maxPos + POSITION_GAP,
+    })
+    .select("id")
+    .single();
+
+  if (error) throw new Error(error.message);
+
+  // No revalidatePath — board is force-dynamic and Realtime subscription handles sync.
+  return data.id;
+}
+
+/**
+ * Creates a task at the top of a column — used by the column header's "+"
+ * quick-add composer. Unlike `createBoardTask` (which appends to the
+ * bottom), this reads the current *lowest* position in the column and
+ * inserts above it via `computeTopInsertPosition`.
+ */
+export async function createBoardTaskAtTop(ideaId: string, columnId: string, title: string) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) throw new Error("Not authenticated");
+
+  title = validateTitle(title);
+
+  // Get the current first task's position in this column
+  const { data: tasks } = await supabase
+    .from("board_tasks")
+    .select("position")
+    .eq("column_id", columnId)
+    .order("position", { ascending: true })
+    .limit(1);
+
+  const position = computeTopInsertPosition(tasks?.map((t) => t.position) ?? []);
+
+  const { data, error } = await supabase
+    .from("board_tasks")
+    .insert({
+      idea_id: ideaId,
+      column_id: columnId,
+      title,
+      position,
     })
     .select("id")
     .single();

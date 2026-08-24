@@ -1,12 +1,12 @@
 "use client";
 
-import { useState, useMemo, memo } from "react";
+import { useState, useMemo, useRef, memo } from "react";
 import dynamic from "next/dynamic";
 import { toast } from "sonner";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
-import { MoreHorizontal, Plus, Pencil, Trash2, GripVertical, CircleCheckBig, Archive } from "lucide-react";
+import { MoreHorizontal, Plus, X, Pencil, Trash2, GripVertical, CircleCheckBig, Archive } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Tooltip, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip";
 import { BoardTaskCard } from "./board-task-card";
+import { BoardQuickAdd } from "./board-quick-add";
 import { useBoardOps } from "./board-context";
 import { deleteBoardColumn, archiveColumnTasks } from "@/actions/board";
 import { undoableAction } from "@/lib/undo-toast";
@@ -72,7 +73,15 @@ export const BoardColumn = memo(function BoardColumn({
 }: BoardColumnProps) {
   const [addTaskOpen, setAddTaskOpen] = useState(false);
   const [renameOpen, setRenameOpen] = useState(false);
+  const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const quickAddButtonRef = useRef<HTMLButtonElement>(null);
   const ops = useBoardOps();
+
+  function closeQuickAdd() {
+    setQuickAddOpen(false);
+    // Focus returns to the "+" button that opened it.
+    quickAddButtonRef.current?.focus();
+  }
 
   const sortableData = useMemo(
     () => ({ type: "column" as const, columnId: column.id }),
@@ -172,42 +181,69 @@ export const BoardColumn = memo(function BoardColumn({
             </h3>
           </div>
           {!isReadOnly && (
-            <DropdownMenu>
+            <div className="flex items-center gap-0.5">
               <Tooltip>
                 <TooltipTrigger asChild>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="h-7 w-7">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
+                  <Button
+                    ref={quickAddButtonRef}
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7"
+                    aria-label={quickAddOpen ? "Close quick add" : `Add task to top of ${column.title}`}
+                    onClick={() => setQuickAddOpen((open) => !open)}
+                  >
+                    {quickAddOpen ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+                  </Button>
                 </TooltipTrigger>
-                <TooltipContent>Column options</TooltipContent>
+                <TooltipContent>{quickAddOpen ? "Close" : "Add task to top"}</TooltipContent>
               </Tooltip>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem onClick={() => setRenameOpen(true)}>
-                  <Pencil className="mr-2 h-4 w-4" />
-                  Edit
-                </DropdownMenuItem>
-                {column.is_done_column && column.tasks.length > 0 && (
-                  <DropdownMenuItem onClick={handleArchiveAll}>
-                    <Archive className="mr-2 h-4 w-4" />
-                    Archive all
+              <DropdownMenu>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <DropdownMenuTrigger asChild>
+                      <Button variant="ghost" size="icon" className="h-7 w-7">
+                        <MoreHorizontal className="h-4 w-4" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                  </TooltipTrigger>
+                  <TooltipContent>Column options</TooltipContent>
+                </Tooltip>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem onClick={() => setRenameOpen(true)}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Edit
                   </DropdownMenuItem>
-                )}
-                <DropdownMenuItem
-                  onClick={handleDelete}
-                  className="text-destructive"
-                >
-                  <Trash2 className="mr-2 h-4 w-4" />
-                  Delete
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
+                  {column.is_done_column && column.tasks.length > 0 && (
+                    <DropdownMenuItem onClick={handleArchiveAll}>
+                      <Archive className="mr-2 h-4 w-4" />
+                      Archive all
+                    </DropdownMenuItem>
+                  )}
+                  <DropdownMenuItem
+                    onClick={handleDelete}
+                    className="text-destructive"
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
           )}
         </div>
 
         {/* Task list */}
         <div className="min-h-[60px] flex-1 space-y-2 overflow-y-auto p-2">
+          {!isReadOnly && quickAddOpen && (
+            <BoardQuickAdd
+              columnId={column.id}
+              columnTitle={column.title}
+              ideaId={ideaId}
+              currentUserId={currentUserId}
+              existingPositions={columnTaskPositions.map((t) => t.position)}
+              onClose={closeQuickAdd}
+            />
+          )}
           <SortableContext items={taskIds} strategy={verticalListSortingStrategy}>
             {column.tasks.length === 0 && (
               <div className="flex items-center justify-center rounded-md border border-dashed border-border py-8 text-center">

@@ -6,6 +6,8 @@ import type { BoardColumnWithTasks, BoardTaskWithAssignee, BoardColumn } from "@
 export interface BoardOptimisticOps {
   /** Insert a temp task into a column. Returns rollback function. */
   createTask: (columnId: string, tempTask: BoardTaskWithAssignee) => () => void;
+  /** Insert a temp task at the top of a column. Returns rollback function. */
+  createTaskAtTop: (columnId: string, tempTask: BoardTaskWithAssignee) => () => void;
   /** Remove a task from a column. Returns rollback function. */
   deleteTask: (taskId: string, columnId: string) => () => void;
   /** Mark a single task as archived. Returns rollback function. */
