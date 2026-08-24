@@ -1431,9 +1431,16 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
           // lingering empty strip. `suppressAutoConnect: true` — the user just
           // explicitly ended this session, so an expanded dock must NOT
           // immediately auto-reconnect them into a fresh one (bug fix:
-          // last-tab-close auto-relaunch).
+          // last-tab-close auto-relaunch). Also collapse the dock itself —
+          // left expanded, the fresh pristine entry renders `resolveDockView`'s
+          // idle branch, which (reasonably, since a paired browser used to
+          // always auto-connect out of idle before that fix) never checks
+          // `paired` and shows the first-time "one-time setup" wizard even to
+          // an already-paired user (Nick's field report: panel stayed open
+          // showing the install wizard after ending his only session).
           const fresh = createPristineEntry(true);
           setActiveKey(fresh.key);
+          setExpanded(false);
           return [fresh];
         }
         setActiveKey((cur) => {
