@@ -3,40 +3,13 @@ import { requireAuth } from "@/lib/auth";
 import { createClient } from "@/lib/supabase/server";
 import { ProfileHeader } from "@/components/profile/profile-header";
 import { ProfileTabs } from "@/components/profile/profile-tabs";
-import { ProfileSettingsMenu } from "@/components/profile/profile-settings-menu";
 import { DeleteUserButton } from "@/components/profile/delete-user-button";
-import { EditProfileDialog } from "@/components/profile/edit-profile-dialog";
-import { NotificationSettings } from "@/components/profile/notification-settings";
-import { ApiKeySettings } from "@/components/profile/api-key-settings";
-import { ModelTierSettings } from "@/components/profile/model-tier-settings";
-import { BoardColumnSettings } from "@/components/profile/board-column-settings";
-import { McpApiKeys } from "@/components/profile/mcp-api-keys";
-import { GithubConnection } from "@/components/profile/github-connection";
 import Link from "next/link";
-import { Bot } from "lucide-react";
+import { Settings } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { stripMarkdownForMeta } from "@/lib/utils";
-import type { Comment, IdeaWithAuthor, User } from "@/types";
+import type { Comment, IdeaWithAuthor } from "@/types";
 import type { Metadata } from "next";
-
-/** The settings-only columns: never fetched unless the viewer IS the profile
- *  owner (see the `isOwnProfile` query below) — narrowing the `select()`
- *  column list alone still put these in the RSC payload for every viewer, so
- *  the query itself has to be conditional, not just its shape.
- *
- *  `has_anthropic_key` (generated column, migration 00152) stands in for
- *  `encrypted_anthropic_key` — `authenticated` no longer has SELECT on the
- *  ciphertext column at all, even for a user's own row, and this page only
- *  ever renders the BYOK/Platform truthiness (see `ApiKeySettings` /
- *  `ProfileSettingsMenu` below). */
-type OwnProfileSettings = Pick<
-  User,
-  | "notification_preferences"
-  | "default_board_columns"
-  | "has_anthropic_key"
-  | "model_tier_map"
-  | "terminal_model"
-  | "terminal_auto_accept"
->;
 
 /** IdeaCard's entire use of `idea.author` (see src/components/ideas/idea-card.tsx) —
  *  avatar, display name, admin badge. A wildcard embedded-resource select on the
@@ -103,24 +76,6 @@ export default async function ProfilePage({ params }: PageProps) {
     .single();
 
   if (!profileUser) notFound();
-
-  // Settings-only columns (notification_preferences, default_board_columns,
-  // encrypted_anthropic_key, model_tier_map): fetched ONLY when the viewer is
-  // the profile owner. A narrower `select()` column list isn't enough on its
-  // own — an unconditional fetch still lands these in the RSC payload for
-  // anyone viewing anyone's profile, since the settings buttons below are
-  // only gated on *rendering*, not on whether the data was ever requested.
-  let ownSettings: OwnProfileSettings | null = null;
-  if (isOwnProfile) {
-    const { data } = await supabase
-      .from("users")
-      .select(
-        "notification_preferences, default_board_columns, has_anthropic_key, model_tier_map, terminal_model, terminal_auto_accept"
-      )
-      .eq("id", id)
-      .single();
-    ownSettings = data;
-  }
 
   // Fetch user's ideas. The author is by definition someone else's row (or,
   // on this page, possibly the profile owner's) — scoped to exactly what
@@ -254,55 +209,16 @@ export default async function ProfilePage({ params }: PageProps) {
       {(isOwnProfile || showDeleteButton) && (
         <div className="mt-4 flex flex-wrap justify-end gap-2">
           {isOwnProfile && (
-            <>
-              {/* Desktop: all buttons visible */}
-              <div className="hidden sm:contents">
-                <EditProfileDialog user={profileUser} />
-                {ownSettings && (
-                  <>
-                    <NotificationSettings preferences={ownSettings.notification_preferences} />
-                    <BoardColumnSettings columns={ownSettings.default_board_columns} />
-                    <ApiKeySettings hasKey={!!ownSettings.has_anthropic_key} />
-                    <ModelTierSettings
-                      map={ownSettings.model_tier_map}
-                      terminalModel={ownSettings.terminal_model}
-                      terminalAutoAccept={ownSettings.terminal_auto_accept}
-                    />
-                  </>
-                )}
-                <McpApiKeys />
-                <GithubConnection />
-              </div>
-              {/* Mobile: Edit Profile visible + rest in dropdown */}
-              <div className="contents sm:hidden">
-                <EditProfileDialog user={profileUser} />
-                {ownSettings && (
-                  <ProfileSettingsMenu
-                    preferences={ownSettings.notification_preferences}
-                    columns={ownSettings.default_board_columns}
-                    hasApiKey={!!ownSettings.has_anthropic_key}
-                    modelTierMap={ownSettings.model_tier_map}
-                    terminalModel={ownSettings.terminal_model}
-                    terminalAutoAccept={ownSettings.terminal_auto_accept}
-                  />
-                )}
-              </div>
-            </>
+            <Link href="/settings">
+              <Button variant="outline" size="sm" className="gap-2">
+                <Settings className="h-4 w-4" />
+                Settings
+              </Button>
+            </Link>
           )}
           {showDeleteButton && (
             <DeleteUserButton userId={id} userName={profileUser.full_name} redirectTo="/ideas" />
           )}
-        </div>
-      )}
-      {isOwnProfile && (
-        <div className="mt-4">
-          <Link
-            href="/agents"
-            className="inline-flex items-center gap-1.5 text-sm text-muted-foreground hover:text-foreground transition-colors"
-          >
-            <Bot className="h-4 w-4" />
-            Manage agents
-          </Link>
         </div>
       )}
       <ProfileTabs

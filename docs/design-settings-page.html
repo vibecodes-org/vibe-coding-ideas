@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UX Design — Dedicated Settings Area</title>
+<style>
+  :root {
+    --bg: #0b0c0f;
+    --surface: #14161b;
+    --surface-2: #1c1f26;
+    --border: #2a2e37;
+    --text: #e7e9ee;
+    --muted: #9aa1ad;
+    --accent: #7c9cf5;
+    --good: #4ade80;
+    --warn: #fbbf24;
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    padding: 2.5rem 1.25rem 5rem;
+  }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 1.9rem; line-height: 1.25; margin: 0 0 .25rem; }
+  .subtitle { color: var(--muted); margin: 0 0 2.5rem; }
+  h2 {
+    font-size: 1.25rem; margin: 3rem 0 1rem;
+    padding-bottom: .4rem; border-bottom: 1px solid var(--border);
+  }
+  h3 { font-size: 1.02rem; margin: 1.75rem 0 .5rem; }
+  p, li { color: #c6cad3; }
+  strong { color: var(--text); }
+  code { font-family: var(--mono); font-size: .85em; background: var(--surface-2); border: 1px solid var(--border); border-radius: 4px; padding: .1em .35em; }
+  .meta {
+    display: flex; flex-wrap: wrap; gap: .5rem 1.5rem;
+    font-size: .82rem; color: var(--muted); margin-bottom: 2rem;
+  }
+  .meta span b { color: var(--text); font-weight: 600; }
+
+  /* flow diagram */
+  .flow {
+    display: flex; flex-wrap: wrap; align-items: stretch; gap: .5rem;
+    margin: 1rem 0 1.5rem;
+  }
+  .flow .step {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 8px;
+    padding: .6rem .85rem; font-size: .85rem; min-width: 8.5rem; flex: 1 1 9rem;
+  }
+  .flow .step small { display: block; color: var(--muted); font-size: .74rem; margin-top: .15rem; }
+  .flow .arrow { align-self: center; color: var(--muted); font-size: 1.1rem; padding: 0 .1rem; }
+  .flow .step.unchanged { border-style: dashed; }
+  .badge {
+    display: inline-block; font-size: .68rem; font-weight: 600; letter-spacing: .04em;
+    text-transform: uppercase; border-radius: 999px; padding: .1rem .55rem; vertical-align: middle;
+  }
+  .badge.same { background: rgba(74,222,128,.12); color: var(--good); border: 1px solid rgba(74,222,128,.35); }
+  .badge.new { background: rgba(124,156,245,.12); color: var(--accent); border: 1px solid rgba(124,156,245,.35); }
+
+  /* wireframes */
+  .wireframes { display: flex; flex-wrap: wrap; gap: 1.5rem; align-items: flex-start; }
+  .frame {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 1rem; flex: 1 1 380px; max-width: 520px;
+  }
+  .frame.mobile { flex: 0 1 280px; max-width: 300px; }
+  .frame-label { font-size: .75rem; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .75rem; }
+  .wf { border: 1px solid var(--border); border-radius: 8px; background: var(--bg); overflow: hidden; font-size: .78rem; }
+  .wf-nav {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: .5rem .75rem; border-bottom: 1px solid var(--border); color: var(--muted);
+  }
+  .wf-body { padding: .9rem .75rem 1rem; }
+  .wf-h1 { font-weight: 700; font-size: .95rem; color: var(--text); }
+  .wf-sub { color: var(--muted); font-size: .72rem; margin: .15rem 0 .75rem; }
+  .wf-row {
+    display: flex; align-items: center; gap: .6rem;
+    border: 1px solid var(--border); border-radius: 8px;
+    padding: .55rem .6rem; margin-bottom: .45rem; background: var(--surface);
+  }
+  .wf-icon {
+    width: 1.35rem; height: 1.35rem; flex: none; border-radius: 6px;
+    border: 1px dashed var(--muted); display: flex; align-items: center; justify-content: center;
+    color: var(--muted); font-size: .7rem;
+  }
+  .wf-text { flex: 1; min-width: 0; }
+  .wf-title { color: var(--text); font-weight: 600; }
+  .wf-desc { color: var(--muted); font-size: .68rem; }
+  .wf-btn {
+    flex: none; border: 1px solid var(--border); border-radius: 6px;
+    padding: .25rem .6rem; color: var(--text); background: var(--surface-2); font-size: .7rem;
+  }
+  .wf-chev { flex: none; color: var(--muted); }
+  .wf-dropdown {
+    border: 1px solid var(--border); border-radius: 8px; background: var(--surface);
+    width: 11rem; margin-left: auto; font-size: .74rem;
+  }
+  .wf-dropdown div { padding: .4rem .7rem; border-bottom: 1px solid var(--border); color: var(--muted); }
+  .wf-dropdown div:last-child { border-bottom: 0; }
+  .wf-dropdown .hl { color: var(--text); background: var(--surface-2); font-weight: 600; }
+
+  table { border-collapse: collapse; width: 100%; font-size: .88rem; margin: 1rem 0; }
+  th, td { border: 1px solid var(--border); padding: .5rem .7rem; text-align: left; vertical-align: top; }
+  th { background: var(--surface); font-size: .78rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); }
+  td.ok { color: var(--good); font-weight: 600; white-space: nowrap; }
+
+  .callout {
+    border: 1px solid var(--border); border-left: 3px solid var(--warn);
+    background: var(--surface); border-radius: 0 8px 8px 0;
+    padding: .8rem 1rem; margin: 1rem 0;
+  }
+  .callout.blue { border-left-color: var(--accent); }
+  .callout h4 { margin: 0 0 .3rem; font-size: .92rem; }
+  .callout p { margin: .25rem 0; font-size: .9rem; }
+  ul { padding-left: 1.3rem; }
+  li { margin: .3rem 0; }
+  @media (max-width: 640px) { .flow { flex-direction: column; } .flow .arrow { transform: rotate(90deg); align-self: flex-start; margin-left: 3.5rem; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>UX Design: Dedicated Settings Area</h1>
+  <p class="subtitle">Wireframes, interaction flows, and principle validation for moving profile-page settings to <code>/settings</code></p>
+  <div class="meta">
+    <span><b>Task:</b> Move profile page settings into a dedicated Settings area</span>
+    <span><b>Step:</b> UX Design (builds on the Requirements step)</span>
+    <span><b>Date:</b> 24 Aug 2026</span>
+  </div>
+
+  <h2>1. Design summary</h2>
+  <p>The Requirements step identified the core problem: <em>"profile page crams 7 settings controls + a Manage-agents link into one packed button row under the stats — hard to scan, no context per item, mixes identity content with app configuration."</em> This design resolves it with a dedicated, protected <code>/settings</code> page using the industry-standard <strong>settings-row list</strong> pattern: a single vertical column of rows, each with an icon, a title, a one-line description, and the <em>existing, unchanged</em> control on the right.</p>
+  <p>Crucially, this is a <strong>relocation, not a redesign</strong>: every dialog, form, and save path behaves exactly as it did on the profile page — per the Requirements constraint "Each row's control behaves exactly as today (same dialogs, same save logic — no functional changes)". Only the entry point changes.</p>
+
+  <h2>2. User flows</h2>
+
+  <h3>Flow A — Primary: navbar to a saved setting</h3>
+  <div class="flow">
+    <div class="step">Avatar in navbar<small>Desktop dropdown or mobile slide-out menu</small></div>
+    <div class="arrow">→</div>
+    <div class="step"><span class="badge new">New</span> "Settings" item<small>Gear icon, below Profile / Members</small></div>
+    <div class="arrow">→</div>
+    <div class="step"><span class="badge new">New</span> /settings page<small>8 labeled rows, protected route</small></div>
+    <div class="arrow">→</div>
+    <div class="step unchanged"><span class="badge same">Unchanged</span> Row's control<small>Existing dialog opens (e.g. Notifications)</small></div>
+    <div class="arrow">→</div>
+    <div class="step unchanged"><span class="badge same">Unchanged</span> Save<small>Same save logic → toast confirmation</small></div>
+  </div>
+  <p>Everything from "dialog opens" onward is byte-for-byte the pre-existing experience. The user gains one navigational step but loses the scanning cost of an unlabeled icon-button row — a good trade (analyzed under Hick's Law below).</p>
+
+  <h3>Flow B — From the profile page</h3>
+  <div class="flow">
+    <div class="step">Own profile page<small>Identity, stats, ideas — content unchanged</small></div>
+    <div class="arrow">→</div>
+    <div class="step"><span class="badge new">New</span> "Settings" button<small>Single small outline button with gear icon; owner-only</small></div>
+    <div class="arrow">→</div>
+    <div class="step">/settings page<small>Same destination as Flow A</small></div>
+  </div>
+  <p>Visitors viewing someone else's profile never see the button. Owners who habitually went to their profile to change a setting have a one-click bridge, so the old habit still works (recognition over recall — the muscle memory path degrades gracefully rather than dead-ending).</p>
+
+  <h3>Flow C — Signed-out visitor</h3>
+  <div class="flow">
+    <div class="step">Direct visit to /settings<small>Bookmark, shared link, stale tab</small></div>
+    <div class="arrow">→</div>
+    <div class="step">Redirect to /login<small>Middleware protected-path list</small></div>
+    <div class="arrow">→</div>
+    <div class="step">Sign in → back in app<small>Standard auth flow</small></div>
+  </div>
+
+  <h3>Error and edge states</h3>
+  <ul>
+    <li><strong>Settings fetch fails / no row:</strong> the page still renders; the five rows that need the user's saved values are simply omitted, while MCP API Keys, GitHub, and Manage agents (which fetch their own state) always render. Not a blank screen. <em>Improvement noted in §5: a visible partial-state message would be better than silent omission.</em></li>
+    <li><strong>Dialog-level errors:</strong> unchanged from today — each existing component keeps its own error handling and <code>toast.error()</code> behavior.</li>
+    <li><strong>Back navigation:</strong> closing a dialog returns to the settings list with scroll position intact (dialogs overlay the page; no navigation occurs). Browser Back from /settings returns wherever the user came from — navbar or profile.</li>
+  </ul>
+
+  <h2>3. Wireframes</h2>
+  <div class="wireframes">
+    <div class="frame">
+      <div class="frame-label">Desktop — /settings (max-width container, centered)</div>
+      <div class="wf">
+        <div class="wf-nav"><span>VibeCodes &nbsp; Dashboard · Ideas · Members</span><span>🔔 &nbsp; (avatar ▾)</span></div>
+        <div class="wf-body">
+          <div class="wf-h1">Settings</div>
+          <div class="wf-sub">Manage your profile, notifications, and integrations.</div>
+          <div class="wf-row"><div class="wf-icon">👤</div><div class="wf-text"><div class="wf-title">Profile</div><div class="wf-desc">Name, avatar, bio, and contact info.</div></div><div class="wf-btn">Edit Profile</div></div>
+          <div class="wf-row"><div class="wf-icon">🔔</div><div class="wf-text"><div class="wf-title">Notifications</div><div class="wf-desc">Choose which notifications you want to receive.</div></div><div class="wf-btn">Notifications</div></div>
+          <div class="wf-row"><div class="wf-icon">▦</div><div class="wf-text"><div class="wf-title">Board Defaults</div><div class="wf-desc">Default columns for new boards.</div></div><div class="wf-btn">Columns</div></div>
+          <div class="wf-row"><div class="wf-icon">🔑</div><div class="wf-text"><div class="wf-title">AI API Key</div><div class="wf-desc">Bring your own Anthropic key, or use platform credits.</div></div><div class="wf-btn">API Key</div></div>
+          <div class="wf-row"><div class="wf-icon">⚙</div><div class="wf-text"><div class="wf-title">Model Tiers</div><div class="wf-desc">Which Claude model each tier and the in-app terminal use.</div></div><div class="wf-btn">Models</div></div>
+          <div class="wf-row"><div class="wf-icon">⌘</div><div class="wf-text"><div class="wf-title">MCP API Keys</div><div class="wf-desc">Keys for connecting external MCP clients to VibeCodes.</div></div><div class="wf-btn">Keys</div></div>
+          <div class="wf-row"><div class="wf-icon">🐙</div><div class="wf-text"><div class="wf-title">GitHub</div><div class="wf-desc">Connect GitHub to browse and create repos from ideas.</div></div><div class="wf-btn">Connect</div></div>
+          <div class="wf-row"><div class="wf-icon">🤖</div><div class="wf-text"><div class="wf-title">Manage agents</div><div class="wf-desc">View and configure the agents on your boards.</div></div><div class="wf-chev">›</div></div>
+        </div>
+      </div>
+    </div>
+    <div class="frame mobile">
+      <div class="frame-label">Mobile (375px) — same page, rows stack naturally</div>
+      <div class="wf">
+        <div class="wf-nav"><span>☰ VibeCodes</span><span>(avatar)</span></div>
+        <div class="wf-body">
+          <div class="wf-h1">Settings</div>
+          <div class="wf-sub">Manage your profile, notifications…</div>
+          <div class="wf-row"><div class="wf-icon">👤</div><div class="wf-text"><div class="wf-title">Profile</div><div class="wf-desc">Name, avatar, bio…</div></div><div class="wf-btn">Edit</div></div>
+          <div class="wf-row"><div class="wf-icon">🔔</div><div class="wf-text"><div class="wf-title">Notifications</div><div class="wf-desc">Which notifications…</div></div><div class="wf-btn">Open</div></div>
+          <div class="wf-row"><div class="wf-icon">🐙</div><div class="wf-text"><div class="wf-title">GitHub</div><div class="wf-desc">Connect GitHub…</div></div><div class="wf-btn">Connect</div></div>
+          <div class="wf-row"><div class="wf-icon">🤖</div><div class="wf-text"><div class="wf-title">Manage agents</div><div class="wf-desc">Agents on your boards</div></div><div class="wf-chev">›</div></div>
+        </div>
+      </div>
+      <div class="frame-label" style="margin-top: 1rem;">Navbar account dropdown (desktop)</div>
+      <div class="wf" style="padding: .6rem;">
+        <div class="wf-dropdown">
+          <div>Profile</div>
+          <div>Members</div>
+          <div class="hl">⚙ Settings &nbsp;← new</div>
+          <div>Sign out</div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p style="margin-top:1rem;">Layout notes (matching the implementation): single centered column at <code>max-w-2xl</code>; rows are bordered cards with <code>p-4</code> padding stacked with small gaps; icon in muted foreground, title in medium weight, description in small muted text; the row's action is the existing component's own trigger button on the right. The "Manage agents" row is one whole clickable link with a trailing chevron — the chevron plus link semantics signal "this navigates away" while buttons signal "this opens here" (information scent: two distinct affordances for two distinct behaviors).</p>
+
+  <h2>4. Validation against UX principles</h2>
+  <table>
+    <tr><th>Principle</th><th>How this design satisfies it</th></tr>
+    <tr><td><strong>Hick's Law</strong></td><td>The old packed row forced users to decode 7 near-identical unlabeled buttons at once. The new list keeps the same 8 choices but each carries a title <em>and</em> a description, so users scan labels top-to-bottom instead of hovering to discover meaning. Decision cost drops even though the option count is unchanged — the choices became self-describing.</td></tr>
+    <tr><td><strong>Gestalt (Proximity / Similarity / Continuity)</strong></td><td>Each row's border groups icon + text + control as one unit (proximity/closure). All rows share identical anatomy (similarity → "these are all settings"). The single vertical column gives one continuous scan path. Separating settings from identity content on the profile page fixes the original category mixing.</td></tr>
+    <tr><td><strong>Fitts's Law</strong></td><td>Row controls are real buttons at comfortable size with <code>p-4</code> row padding; the link row is full-width tappable, far exceeding 44px height on mobile. Nothing destructive sits adjacent to a primary action at this level (destructive actions like key deletion remain inside their dialogs, behind confirmation, exactly as before).</td></tr>
+    <tr><td><strong>Jakob's Law</strong></td><td>Navbar avatar menu → "Settings" → vertical list of icon+title+description rows is precisely the pattern of GitHub, Linear, Notion, and Slack. Zero novel interaction to learn; the innovation is in removing friction, not inventing patterns.</td></tr>
+    <tr><td><strong>Information scent</strong></td><td>Every row states what it controls in plain words ("Bring your own Anthropic key, or use platform credits"), replacing icon-only guesswork. Buttons open in place; the chevron-link visibly navigates. The dropdown item is labeled "Settings" with a gear — universally understood destination.</td></tr>
+    <tr><td><strong>Recognition over recall</strong></td><td>Descriptions restate each setting's purpose at the point of choice, so users needn't remember which icon did what. The profile-page Settings button preserves the old habitual route.</td></tr>
+    <tr><td><strong>Accessibility (WCAG 2.1 AA)</strong></td><td>Every control is a genuine <code>&lt;button&gt;</code> or <code>&lt;Link&gt;</code> — keyboard reachable in a logical top-to-bottom tab order, no hover-only actions (the link's hover tint is decorative, not gating). Titles are visible text, not placeholders or tooltips. shadcn/ui zinc dark theme tokens meet contrast targets (foreground on background well above 4.5:1; muted description text used only at ≥ small-text sizes). Meaning is never carried by color alone — icons pair with text labels everywhere. Dialogs are the existing shadcn/Radix dialogs with focus trapping and Escape-to-close.</td></tr>
+    <tr><td><strong>All states handled</strong></td><td>Empty/error: rows depending on the user's saved values degrade by omission (see improvement E below); loading: server component — page arrives rendered, no client spinner; success: unchanged per-dialog toasts. Signed-out: middleware redirect, never a broken page.</td></tr>
+    <tr><td><strong>Mobile (375px)</strong></td><td>Single column, rows compress naturally (description wraps, icon and button are <code>shrink-0</code>), no horizontal overflow. The old mobile-only settings dropdown (<code>ProfileSettingsMenu</code>) is deleted — one responsive page replaces two divergent mobile/desktop presentations, reducing maintenance and inconsistency risk.</td></tr>
+  </table>
+
+  <h2>5. UX concerns &amp; follow-up recommendations</h2>
+
+  <div class="callout">
+    <h4>A. Does "Profile" belong in Settings? (honest trade-off)</h4>
+    <p>Identity editing (name, avatar, bio) is arguably profile-page content, not app configuration — Requirements even framed the problem as "mixes identity content with app configuration". Keeping the Edit Profile row in /settings partially re-mixes them. <strong>However</strong>, Jakob's Law favors the current choice: GitHub, Notion, and Linear all put profile editing under Settings, and users hunting for "change my avatar" overwhelmingly open Settings first. Recommendation: keep the row here, and <em>optionally also</em> surface an Edit Profile affordance on the owner's own profile page later (both entry points, one dialog). Not a blocker.</p>
+  </div>
+  <div class="callout">
+    <h4>B. Group rows under headings when the list grows</h4>
+    <p>Eight rows is fine flat. At ~10+, add section headings — e.g. <strong>Account</strong> (Profile, Notifications), <strong>Workspace</strong> (Board Defaults, Manage agents), <strong>AI &amp; Integrations</strong> (AI API Key, Model Tiers, MCP API Keys, GitHub). The row component already supports this with zero structural change. Defer until needed (out of scope now, per Requirements).</p>
+  </div>
+  <div class="callout">
+    <h4>C. Row-click target vs button-click target inconsistency</h4>
+    <p>The "Manage agents" row is clickable across its whole width, but the other rows only respond on their right-side button. On mobile especially, users will tap the row body of "Notifications" and get nothing. Follow-up: make each dialog row's full surface trigger its dialog (keeping the button as the visible affordance and accessible name). Small change, meaningful Fitts's Law win.</p>
+  </div>
+  <div class="callout">
+    <h4>D. Button label vs row title redundancy</h4>
+    <p>Some existing trigger buttons carry their own labels (unchanged by design), which can read redundantly next to the row title ("Notifications … [Notifications]"). Acceptable cost of the reuse-as-is constraint; if concern C is adopted, trigger buttons could later be normalized to a uniform "Open"/"Manage" or icon-only-with-aria form. Explicitly out of scope now.</p>
+  </div>
+  <div class="callout">
+    <h4>E. Silent partial state</h4>
+    <p>If the settings fetch fails, five rows silently vanish rather than showing a "Couldn't load some settings — refresh to retry" notice. Rare (authenticated fetch of own row), but per the handle-all-states rule a visible partial-state message is the better behavior. Low-priority follow-up.</p>
+  </div>
+  <div class="callout blue">
+    <h4>F. Verify dialog focus return</h4>
+    <p>QA note for the verification step: after closing each dialog via Escape, focus should return to the triggering row button (Radix default — expected to pass, worth a keyboard walkthrough of all 7 dialogs on the new page).</p>
+  </div>
+
+  <h2>6. Acceptance criteria traceability (from the Requirements step)</h2>
+  <table>
+    <tr><th>Requirement acceptance criterion</th><th>Status in this design</th></tr>
+    <tr><td>Settings item in navbar account dropdown, navigates to /settings</td><td class="ok">✓ Satisfied</td></tr>
+    <tr><td>/settings is a protected route (redirects signed-out users to login)</td><td class="ok">✓ Satisfied</td></tr>
+    <tr><td>Every setting is its own row with icon, title, short description</td><td class="ok">✓ Satisfied</td></tr>
+    <tr><td>Each row's control behaves exactly as today (same dialogs, same save logic)</td><td class="ok">✓ Satisfied</td></tr>
+    <tr><td>Profile page shows a single Settings link instead of the packed button row</td><td class="ok">✓ Satisfied</td></tr>
+    <tr><td>Profile identity/stats/ideas content unchanged</td><td class="ok">✓ Satisfied</td></tr>
+    <tr><td>Manage agents reachable from /settings</td><td class="ok">✓ Satisfied</td></tr>
+    <tr><td>Works on mobile, no horizontal overflow</td><td class="ok">✓ Satisfied</td></tr>
+    <tr><td>Existing tests pass</td><td class="ok">✓ Design-compatible</td></tr>
+  </table>
+  <p>All nine criteria are met by this design. "Existing tests pass" is an implementation/verification concern; nothing in the design changes tested behavior, since every settings component is reused unchanged.</p>
+</main>
+</body>
+</html>

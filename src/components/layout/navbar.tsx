@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter, usePathname } from "next/navigation";
-import { Sparkles, Plus, LogOut, User as UserIcon, Menu, BookOpen, Users, Shield, Bot, Lightbulb, Moon, Sun, MessageSquarePlus } from "lucide-react";
+import { Sparkles, Plus, LogOut, User as UserIcon, Menu, BookOpen, Users, Shield, Bot, Lightbulb, Moon, Sun, MessageSquarePlus, Settings } from "lucide-react";
 import { useTheme } from "next-themes";
 import { Button } from "@/components/ui/button";
 import {
@@ -177,6 +177,15 @@ export function Navbar() {
                       Members
                     </Link>
                   </DropdownMenuItem>
+                  <DropdownMenuItem asChild>
+                    <Link
+                      href="/settings"
+                      className="flex items-center gap-2"
+                    >
+                      <Settings className="h-4 w-4" />
+                      Settings
+                    </Link>
+                  </DropdownMenuItem>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem
                     onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
@@ -334,6 +343,15 @@ export function Navbar() {
                     <Button variant={isActive("/members") ? "secondary" : "ghost"} className="w-full justify-start gap-2">
                       <Users className="h-4 w-4" />
                       Members
+                    </Button>
+                  </Link>
+                  <Link
+                    href="/settings"
+                    onClick={() => setMobileMenuOpen(false)}
+                  >
+                    <Button variant={isActive("/settings") ? "secondary" : "ghost"} className="w-full justify-start gap-2">
+                      <Settings className="h-4 w-4" />
+                      Settings
                     </Button>
                   </Link>
                   <Button
