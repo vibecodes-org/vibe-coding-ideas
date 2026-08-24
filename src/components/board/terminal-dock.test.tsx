@@ -2048,6 +2048,17 @@ describe("TerminalDock — ending the last tab does not auto-relaunch a fresh se
     const secondEntry = screen.getByTestId("session-view");
     expect(secondEntry.dataset.key).not.toBe(firstKey); // a genuinely fresh entry, not the same tab
     expect(secondEntry.dataset.autoConnectWhenExpanded).toBe("false");
+
+    // Field report (Nick, 2026-08-24): the dock stayed expanded after ending
+    // the last tab, and — since resolveDockView's idle branch never checks
+    // `paired` (it never had to before this fix; a paired browser used to
+    // always auto-connect instantly out of idle) — rendered the first-time
+    // "one-time setup" install wizard to an already-paired user. Ending the
+    // last tab must collapse the dock, not leave it sitting on that view.
+    expect(screen.getByRole("button", { name: /Expand terminal panel/ })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
   });
 });
 
