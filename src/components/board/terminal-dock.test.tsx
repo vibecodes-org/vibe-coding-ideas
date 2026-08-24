@@ -122,6 +122,7 @@ vi.mock("./terminal-session-view", () => ({
     paneFocused,
     grabFocus,
     onPaneFocusChange,
+    autoConnectWhenExpanded,
   }: {
     entry: { key: string; taskId?: string; ideaId?: string };
     onResumeEndedSession?: (payload: { cwd?: string; taskId?: string; ideaId?: string }, sid: string | null) => void;
@@ -133,6 +134,14 @@ vi.mock("./terminal-session-view", () => ({
     // .get(key)?.end()` has a real spy to resolve, keyed exactly like the
     // dock keys it. See `registeredActionsByKey` above.
     onRegisterActions: (key: string, actions: MockTerminalSessionActions | null) => void;
+    // Bug fix (last-tab-close auto-relaunch): the real hook's own paired
+    // auto-connect effect (use-terminal-session.ts) lives entirely inside the
+    // component this stub replaces, so it can't be exercised here — surfaced
+    // as a data attribute instead so a test can assert the DOCK computed the
+    // right value for `autoConnectWhenExpanded` (the only thing the dock
+    // itself is responsible for; the hook's own reaction to it is covered by
+    // use-terminal-session.test.ts).
+    autoConnectWhenExpanded?: boolean;
     // Split-view focus-sync defect fix (task df7a0134, QA rework): a real
     // focusable element stands in for xterm's own hidden input, so a test
     // can drive the SAME real focus/blur events the fix listens for (not
@@ -168,7 +177,13 @@ vi.mock("./terminal-session-view", () => ({
       // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
     return (
-      <div data-testid="session-view" data-key={entry.key} data-task-id={entry.taskId ?? ""} data-idea-id={entry.ideaId ?? ""}>
+      <div
+        data-testid="session-view"
+        data-key={entry.key}
+        data-task-id={entry.taskId ?? ""}
+        data-idea-id={entry.ideaId ?? ""}
+        data-auto-connect-when-expanded={autoConnectWhenExpanded ? "true" : "false"}
+      >
         <button
           data-testid={`resume-ended-${entry.key}`}
           onClick={() =>
@@ -1983,6 +1998,56 @@ describe("TerminalDock — wrong-tab-closes-on-confirm fix (task 9f30ae15)", () 
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+// Bug fix (last-tab-close auto-relaunch, Nick's field report): closing the
+// dock's LAST remaining tab replaces `sessions` with a fresh pristine entry
+// (B8, "back to the P1 idle state") reusing the exact same shape/launchSeq:0
+// as a genuine page-load pristine entry — which normally auto-connects a
+// paired browser the instant the dock is expanded. Since the user just
+// explicitly ended their only session (the dock is still expanded — that's
+// how they saw the × to click), that replacement entry must NOT also satisfy
+// `autoConnectWhenExpanded`, or ending a session silently reconnects into a
+// brand-new one within the same render pass.
+describe("TerminalDock — ending the last tab does not auto-relaunch a fresh session", () => {
+  function tabContainer(key: string): HTMLElement {
+    const el = document.getElementById(`terminal-tab-${key}`);
+    if (!el) throw new Error(`tab element not found for key ${key}`);
+    return el;
+  }
+
+  it("closing the dock's only live tab returns to the idle pristine slot WITHOUT auto-connecting", async () => {
+    stubFetch(Promise.resolve([]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+
+    // The dock auto-seeds its usual page-load pristine tab (empty-launch
+    // decision) — unchanged P1 behaviour: it DOES want auto-connect.
+    await waitFor(() => expect(screen.getByTestId("session-view")).toBeInTheDocument());
+    const firstKey = screen.getByTestId("session-view").dataset.key as string;
+    expect(screen.getByTestId("session-view").dataset.autoConnectWhenExpanded).toBe("true");
+
+    // Bring it to a LIVE status so requestClose treats × as "end this
+    // session" (armed confirm) rather than a bare, already-over close.
+    fireEvent.click(screen.getByTestId(`report-connected-${firstKey}`));
+
+    // Expand the dock (clicking the tab does this in the real component) —
+    // the bug only manifests while the dock is visibly open.
+    fireEvent.click(tabContainer(firstKey));
+
+    // First × click arms the confirm; second confirms and actually ends it.
+    fireEvent.click(
+      within(tabContainer(firstKey)).getByRole("button", { name: /^(End session and close tab|Close tab):/ }),
+    );
+    fireEvent.click(within(tabContainer(firstKey)).getByRole("button", { name: /^Confirm end session:/ }));
+
+    // Back to exactly one tab (the pristine slot reused, B8) — but this one
+    // must report `autoConnectWhenExpanded: false`, unlike the very first
+    // pristine entry above.
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
+    const secondEntry = screen.getByTestId("session-view");
+    expect(secondEntry.dataset.key).not.toBe(firstKey); // a genuinely fresh entry, not the same tab
+    expect(secondEntry.dataset.autoConnectWhenExpanded).toBe("false");
   });
 });
 
