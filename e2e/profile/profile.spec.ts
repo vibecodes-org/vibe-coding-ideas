@@ -16,8 +16,8 @@ test.describe("Profile", () => {
     await expect(page.getByText("Test User A").first()).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 
-  test("should show Manage agents link on own profile", async ({ userAPage: page }) => {
-    await page.goto(`/profile/${userAId}`);
+  test("should show Manage agents link on own settings page", async ({ userAPage: page }) => {
+    await page.goto("/settings");
     await expect(page.getByRole("link", { name: /Manage agents/i })).toBeVisible({ timeout: EXPECT_TIMEOUT });
   });
 

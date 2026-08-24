@@ -195,7 +195,7 @@ test.describe("Profile settings — GitHub connection management", () => {
   });
 
   test("renders connected-state with login + scopes + Disconnect button", async ({ userAPage: page }) => {
-    await page.goto(`/profile/${userAId}`);
+    await page.goto("/settings");
     await page.getByRole("button", { name: /^GitHub$/i }).click();
 
     const dialog = page.getByRole("dialog");
@@ -206,7 +206,7 @@ test.describe("Profile settings — GitHub connection management", () => {
   });
 
   test("disconnects via the confirmation dialog and clears the row", async ({ userAPage: page }) => {
-    await page.goto(`/profile/${userAId}`);
+    await page.goto("/settings");
     await page.getByRole("button", { name: /^GitHub$/i }).click();
 
     const dialog = page.getByRole("dialog");
