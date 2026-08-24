@@ -26,13 +26,30 @@ export default async function FeedPage({
   searchParams: Promise<{ sort?: string; q?: string; tag?: string; status?: string; page?: string; view?: string }>;
 }) {
   const params = await searchParams;
-  const sort = (params.sort as SortOption) || "newest";
+  const { user, supabase } = await requireAuth();
+
+  // Saved per-user feed filter defaults (view/status/sort), used only when
+  // the URL doesn't already specify a value — an explicit link/back-nav
+  // always wins over the saved preference.
+  let savedPreferences: { view?: string; status?: string; sort?: string } = {};
+  if (user) {
+    const { data: prefsRow } = await supabase
+      .from("users")
+      .select("feed_preferences")
+      .eq("id", user.id)
+      .single();
+    savedPreferences = prefsRow?.feed_preferences ?? {};
+  }
+
+  const sort = (params.sort as SortOption) || (savedPreferences.sort as SortOption) || "newest";
   const search = params.q || "";
   const tag = params.tag || "";
-  const status = (params.status as IdeaStatus) || "";
-  const view = (params.view as "all" | "mine" | "collaborating") || "all";
+  const status = (params.status as IdeaStatus) || (savedPreferences.status as IdeaStatus) || "";
+  const view =
+    (params.view as "all" | "mine" | "collaborating") ||
+    (savedPreferences.view as "all" | "mine" | "collaborating") ||
+    "all";
   const page = Math.max(1, parseInt(params.page || "1", 10));
-  const { user, supabase } = await requireAuth();
 
   // For "collaborating" view, fetch idea IDs where user is a collaborator
   let collaboratingIdeaIds: string[] = [];

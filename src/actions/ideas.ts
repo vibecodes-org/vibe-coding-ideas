@@ -5,7 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { validateTitle, validateDescription, validateGithubUrl, validateTags } from "@/lib/validation";
 import { logger } from "@/lib/logger";
-import type { IdeaStatus } from "@/types";
+import type { IdeaStatus, IdeaFeedPreferences } from "@/types";
 import type { ApplyKitResult } from "./kits";
 
 export type CreateIdeaResult = {
@@ -268,4 +268,24 @@ export async function deleteIdea(ideaId: string) {
   }
 
   redirect("/ideas");
+}
+
+export async function updateFeedPreferences(preferences: IdeaFeedPreferences) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    throw new Error("Not authenticated");
+  }
+
+  const { error } = await supabase
+    .from("users")
+    .update({ feed_preferences: preferences })
+    .eq("id", user.id);
+
+  if (error) {
+    throw new Error(error.message);
+  }
 }

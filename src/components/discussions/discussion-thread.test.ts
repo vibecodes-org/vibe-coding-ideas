@@ -43,6 +43,7 @@ function makeReply(
       model_tier_map: null,
       terminal_model: null,
       terminal_auto_accept: false,
+      feed_preferences: {},
       notification_preferences: {
         comments: true,
         votes: true,
