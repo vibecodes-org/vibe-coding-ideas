@@ -107,13 +107,13 @@ export interface LaunchDeepLinkParams {
    * Task d3de150c ("Terminal mode") — set ONLY when the launching user's
    * `terminal_auto_accept` preference is on, resolved server-side at mint
    * time (see src/app/api/terminal/session/route.ts). The single valid
-   * value is the literal "acceptEdits" (isValidPermissionModeValue in
+   * value is the literal "auto" (isValidPermissionModeValue in
    * src/lib/terminal/auto-accept-mode.ts) — anything else is a programmer
    * error and is dropped by buildLaunchDeepLink below rather than sent.
    * Callers must never set this on a resume/resumeId launch (mirrors
    * `model`'s AC-8 constraint exactly) — the fresh-launch call site in
    * use-terminal-session.ts is the only one that threads it through. Rides
-   * as one argv element (`claude --permission-mode acceptEdits`), never
+   * as one argv element (`claude --permission-mode auto`), never
    * shell-split — see terminal/bridge/src/resume-cmd.js. Not a secret or
    * user-free-text like `prompt`: redactDeepLinkToken leaves it untouched.
    */

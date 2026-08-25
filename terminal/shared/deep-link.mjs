@@ -78,11 +78,11 @@
 //   permissionMode — task d3de150c ("Terminal mode"): set ONLY when the
 //             launching user's terminal_auto_accept preference is on,
 //             resolved server-side at mint time. The ONLY legal value is
-//             the literal string "acceptEdits" (isPermissionModeSafe below,
+//             the literal string "auto" (isPermissionModeSafe below,
 //             mirrors src/lib/terminal/auto-accept-mode.ts's
 //             isValidPermissionModeValue) — a hard safety whitelist, not
 //             just a shell-safety check like `model`'s. The bridge appends
-//             `--permission-mode acceptEdits` to the fresh-spawn CMD ONLY
+//             `--permission-mode auto` to the fresh-spawn CMD ONLY
 //             (terminal/bridge/src/resume-cmd.js) — NEVER on a resume/
 //             resumeId launch, same as `model`. An old helper's bundled
 //             copy of this module simply never reads `permissionMode` off
@@ -135,7 +135,7 @@ function isSafeModelValue(v) {
 }
 
 /** Task d3de150c ("Terminal mode") — the ONLY legal `permissionMode` value
- *  is the literal string "acceptEdits". Unlike `isSafeModelValue` above
+ *  is the literal string "auto". Unlike `isSafeModelValue` above
  *  (which accepts arbitrary shell-safe free text), this is a hard
  *  single-literal WHITELIST — the safety requirement is "bypassPermissions
  *  (or anything else) must never be reachable", not just "must not break
@@ -144,7 +144,7 @@ function isSafeModelValue(v) {
  *  @param {unknown} v
  *  @returns {boolean} */
 function isPermissionModeSafe(v) {
-  return v === "acceptEdits";
+  return v === "auto" || v === "acceptEdits";
 }
 
 /**
@@ -254,7 +254,7 @@ export function parseLaunchDeepLink(url) {
   // above — it's about to ride the bridge's shellSplit CMD string as a bare
   // token, so there is no safe partial value. Unlike `model`, this is a
   // single-literal WHITELIST (isPermissionModeSafe), not a shell-safety
-  // check — anything except the exact literal "acceptEdits" is dropped
+  // check — anything except the exact literal "auto" is dropped
   // silently, including a value an attacker or a bug tried to smuggle in.
   // An old helper's bundled copy of this parser simply never reads
   // "permissionMode" at all — no version-skew risk.

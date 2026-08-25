@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
-  ACCEPT_EDITS_PERMISSION_MODE,
+  AUTO_PERMISSION_MODE,
   isValidPermissionModeValue,
   terminalLaunchAutoAcceptChip,
 } from "./auto-accept-mode";
 
 describe("isValidPermissionModeValue (task d3de150c)", () => {
-  it("accepts only the exact literal 'acceptEdits'", () => {
-    expect(isValidPermissionModeValue(ACCEPT_EDITS_PERMISSION_MODE)).toBe(true);
-    expect(isValidPermissionModeValue("acceptEdits")).toBe(true);
+  it("accepts only the exact literal 'auto'", () => {
+    expect(isValidPermissionModeValue(AUTO_PERMISSION_MODE)).toBe(true);
+    expect(isValidPermissionModeValue("auto")).toBe(true);
   });
 
   it("rejects the dangerous bypassPermissions mode — hard safety requirement", () => {
@@ -24,8 +24,8 @@ describe("isValidPermissionModeValue (task d3de150c)", () => {
   it("rejects case variants and whitespace", () => {
     expect(isValidPermissionModeValue("AcceptEdits")).toBe(false);
     expect(isValidPermissionModeValue("ACCEPTEDITS")).toBe(false);
-    expect(isValidPermissionModeValue(" acceptEdits")).toBe(false);
-    expect(isValidPermissionModeValue("acceptEdits ")).toBe(false);
+    expect(isValidPermissionModeValue(" auto")).toBe(false);
+    expect(isValidPermissionModeValue("auto ")).toBe(false);
     expect(isValidPermissionModeValue("accept edits")).toBe(false);
   });
 
@@ -40,7 +40,7 @@ describe("isValidPermissionModeValue (task d3de150c)", () => {
 
 describe("terminalLaunchAutoAcceptChip", () => {
   it("returns the chip text when on", () => {
-    expect(terminalLaunchAutoAcceptChip(true)).toBe("⚡ auto-accept on");
+    expect(terminalLaunchAutoAcceptChip(true)).toBe("⚡ auto mode on");
   });
 
   it("returns null when off — nothing renders, byte-identical to today", () => {

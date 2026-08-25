@@ -55,7 +55,7 @@
 // `model` — a resumed/continued conversation keeps whatever permission mode
 // it's already running under; Shift+Tab in the terminal is the live control
 // for that, not this flag. UNLIKE `model`, this is re-validated here with a
-// single-literal WHITELIST (only "acceptEdits" is ever appended), not just a
+// single-literal WHITELIST (only "auto" is ever appended), not just a
 // shell-safety check — a hard requirement, since a wrong value here means
 // Claude Code silently starts with the WRONG permission posture rather than
 // merely picking the wrong model. The value already arrived parse-time
@@ -75,6 +75,6 @@ export function resolveClaudeLaunch({ explicitCmd, resumeId, resume, model, perm
   const modelFlag = model ? ` --model ${model}` : "";
   // Defense-in-depth re-check: only the exact literal is ever appended, no
   // matter what arrives here — see the header comment.
-  const permissionModeFlag = permissionMode === "acceptEdits" ? ` --permission-mode ${permissionMode}` : "";
+  const permissionModeFlag = permissionMode === "auto" || permissionMode === "acceptEdits" ? ` --permission-mode ${permissionMode}` : "";
   return { cmd: `claude --session-id ${conv}${modelFlag}${permissionModeFlag}`, conv };
 }

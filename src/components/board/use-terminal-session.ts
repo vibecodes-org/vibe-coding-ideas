@@ -489,7 +489,7 @@ export interface UseTerminalSessionResult {
   /**
    * Task d3de150c ("Terminal mode" auto-accept toggle) — true for the
    * session's WHOLE life once a fresh launch carried
-   * `permissionMode: "acceptEdits"`. See the `autoAccept` state's own doc
+   * `permissionMode: "auto"`. See the `autoAccept` state's own doc
    * comment above for the fresh-launch-only / reset-per-attempt contract.
    */
   autoAccept: boolean;
@@ -554,7 +554,7 @@ export function useTerminalSession(
   /**
    * Task d3de150c ("Terminal mode" auto-accept toggle) — true for the whole
    * life of THIS tab's session once a fresh mint's response carried
-   * `permissionMode: "acceptEdits"` (set in connect() below). Unlike
+   * `permissionMode: "auto"` (set in connect() below). Unlike
    * `readOnly`, there is no user-facing toggle for this — it is a launch-
    * time FACT, not a live control (Shift+Tab inside the terminal is the
    * live control, and the app has no way to observe that — see the design
@@ -1797,7 +1797,7 @@ export function useTerminalSession(
       expiresAt: number;
       /** Task c4ca2d95 — the mint route's resolved effective terminal model, fresh-launch only. */
       model?: string;
-      /** Task d3de150c — the mint route's resolved permission mode ("acceptEdits" or absent), fresh-launch only. */
+      /** Task d3de150c — the mint route's resolved permission mode ("auto" or absent), fresh-launch only. */
       permissionMode?: string;
     };
     try {
@@ -1887,10 +1887,10 @@ export function useTerminalSession(
     }
 
     // Task d3de150c: the mint route only ever returns the literal
-    // "acceptEdits" or omits the field entirely (see session/route.ts) — no
+    // "auto" or omits the field entirely (see session/route.ts) — no
     // further validation needed here, but the exact-literal check stays as
     // defense in depth against a future response shape drifting.
-    setAutoAccept(data.permissionMode === "acceptEdits");
+    setAutoAccept(data.permissionMode === "auto");
 
     // Same-machine: hand the bridge token to the local helper via the deep link.
     if (autoLaunch)

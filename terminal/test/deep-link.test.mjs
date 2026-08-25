@@ -214,9 +214,9 @@ test("redactDeepLinkToken leaves model untouched — not a secret or free-form u
 // ── terminal auto-accept mode (task d3de150c) ──────────────────────────────
 
 test("build ⇄ parse round-trips permissionMode, positioned before prompt", () => {
-  const withMode = { ...SAMPLE, permissionMode: "acceptEdits", prompt: "hello" };
+  const withMode = { ...SAMPLE, permissionMode: "auto", prompt: "hello" };
   const url = buildLaunchDeepLink(withMode);
-  assert.ok(url.includes("permissionMode=acceptEdits"));
+  assert.ok(url.includes("permissionMode=auto"));
   assert.ok(url.indexOf("permissionMode=") < url.indexOf("prompt="), "permissionMode precedes the LAST param, prompt");
   assert.deepEqual(parseLaunchDeepLink(url), withMode);
 });
@@ -240,9 +240,9 @@ test("a forbidden permissionMode value on the wire (e.g. bypassPermissions) is r
 });
 
 test("redactDeepLinkToken leaves permissionMode untouched — not a secret or free-form user content", () => {
-  const url = buildLaunchDeepLink({ ...SAMPLE, permissionMode: "acceptEdits" });
+  const url = buildLaunchDeepLink({ ...SAMPLE, permissionMode: "auto" });
   const redacted = redactDeepLinkToken(url);
-  assert.ok(redacted.includes("permissionMode=acceptEdits"));
+  assert.ok(redacted.includes("permissionMode=auto"));
 });
 
 test("redactDeepLinkToken elides the prompt (user content) as well as the token", () => {

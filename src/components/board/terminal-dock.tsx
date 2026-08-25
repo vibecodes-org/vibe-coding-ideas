@@ -2397,7 +2397,7 @@ export function TerminalDock({ ideaId, ideaTitle, ideaGithubUrl, recordedProject
               above it, amber to match the badge/chip elsewhere. Whole-life
               fact, not gated on status, same as the header badge. */}
           {!multi && sessions.length > 0 && activeSummary?.autoAccept && (
-            <Circle className="h-2.5 w-2.5 fill-current text-amber-400" aria-label="Auto-accept" />
+            <Circle className="h-2.5 w-2.5 fill-current text-amber-400" aria-label="Auto mode" />
           )}
           <TerminalIcon className="h-3.5 w-3.5 text-zinc-400" />
           <span className="hidden sm:inline">{multi ? "Terminals" : "Terminal"}</span>
