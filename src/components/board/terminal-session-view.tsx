@@ -61,6 +61,8 @@ import { isSameOwnerPreemptedClose } from "@/lib/terminal/connection";
 import type { TerminalConnectionState, TerminalStatus } from "@/lib/terminal/connection";
 import { type TerminalPlatform, TERMINAL_HELPER_DOWNLOAD_URL } from "@/lib/terminal/platform";
 import { shouldShowHelperUpdateNudge } from "@/lib/terminal/helper-version";
+import { useHelperUpdateFlow } from "@/lib/terminal/use-helper-update-flow";
+import { HelperUpdateButton, HelperUpdateFlowNotice } from "./terminal-helper-update-button";
 import type { BrowserLaunchPayload } from "@/lib/terminal/launch-mode";
 import { FIRST_RUN_COPY } from "@/lib/terminal/first-run-copy";
 import { type DockView, type LaunchPhase, resolveDockView } from "@/lib/terminal/first-run-flow";
@@ -216,6 +218,13 @@ interface TerminalSessionViewProps {
    */
   onBrowseSessions?: () => void;
   /**
+   * Live sessions across the dock (any tab that's connected / connecting /
+   * waiting / reconnecting) — drives the helper-update flow's confirm copy
+   * ("Your N running sessions will end first"). Falls back to this tab's
+   * own liveness when a caller doesn't pass it.
+   */
+  liveSessionCount?: number;
+  /**
    * Split view (task df7a0134, design §3/§9): set (to `true` or `false`)
    * exactly while this view is rendered as one of the split's two panes —
    * `undefined` (the default) means "tabbed mode", rendered exactly as
@@ -279,6 +288,7 @@ export function TerminalSessionView({
   onRetryReconnect,
   onResumeEndedSession,
   onBrowseSessions,
+  liveSessionCount,
   paneFocused,
   onFocusPane,
   grabFocus = true,
@@ -424,7 +434,18 @@ export function TerminalSessionView({
   const showStream = state.status === "connected" || state.status === "disconnected";
   // Only worth showing once there's an actual (live or reconnecting) bridge to
   // update — a setup/coming-soon/idle panel has nothing to nudge about yet.
-  const showHelperNudge = showStream && !dismissedHelperNudge && shouldShowHelperUpdateNudge(helperVersion);
+  // Nick, 2026-08-25: every download affordance in this view goes through
+  // the SAME stand-down-first flow as "Update now" (end sessions → quiesce
+  // the helper → then download) — a bare download while the helper is still
+  // running can never be installed.
+  const thisTabLive =
+    state.status === "connected" ||
+    state.status === "connecting" ||
+    state.status === "waiting-to-pair" ||
+    state.status === "disconnected";
+  const helperUpdate = useHelperUpdateFlow({ sessionCount: liveSessionCount ?? (thisTabLive ? 1 : 0) });
+  const showHelperNudge =
+    showStream && !dismissedHelperNudge && helperUpdate.phase === "idle" && shouldShowHelperUpdateNudge(helperVersion);
   const canLaunch =
     state.status === "idle" ||
     state.status === "error" ||
@@ -678,14 +699,9 @@ export function TerminalSessionView({
           <div className="flex items-center gap-2 border-b border-sky-500/30 bg-sky-500/5 px-3 py-1.5 text-[11px] text-sky-300">
             <Info className="h-3 w-3 shrink-0" />
             <span className="flex-1">
-              Update your terminal helper — faster and lighter on the relay.{" "}
-              <a
-                href={platform.downloadUrl ?? TERMINAL_HELPER_DOWNLOAD_URL}
-                className="underline hover:text-sky-200"
-              >
-                Download
-              </a>
+              Update your terminal helper — faster and lighter on the relay.
             </span>
+            <HelperUpdateButton onClick={helperUpdate.start} />
             <button
               type="button"
               className="shrink-0 text-sky-400 hover:text-sky-200"
@@ -696,6 +712,12 @@ export function TerminalSessionView({
             </button>
           </div>
         )}
+        <HelperUpdateFlowNotice
+          phase={helperUpdate.phase}
+          confirmSessionCount={helperUpdate.confirmSessionCount}
+          onConfirm={helperUpdate.confirm}
+          onCancel={helperUpdate.cancel}
+        />
 
         {/* Session entry chooser — reconnect with no snapshot to restore
             (common foundations F2): never a silently blank screen. Shown
@@ -741,6 +763,7 @@ export function TerminalSessionView({
               canResume={canResume}
               pairingTimedOut={pairingTimedOut}
               onConnect={() => void actions.connect({ autoLaunch: true })}
+              onDownloadHelper={helperUpdate.start}
               onRetry={() => {
                 // Reconnect-relaunch fix: re-attempt THIS session (a fresh
                 // reattach → fresh deep link) instead of minting an unrelated
@@ -875,6 +898,7 @@ function StateOverlay({
   onCopyBridge,
   onReconnectTakenOver,
   onBrowseSessions,
+  onDownloadHelper,
 }: {
   view: DockView;
   state: TerminalConnectionState;
@@ -904,12 +928,14 @@ function StateOverlay({
   onReconnectTakenOver: () => void;
   /** See TerminalSessionViewProps' same-named prop. */
   onBrowseSessions?: () => void;
+  /** Every download affordance runs the shared stand-down-first flow. */
+  onDownloadHelper: () => void;
 }) {
   return (
     <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 overflow-y-auto bg-[#0c0c0e]/95 px-6 py-6 text-center">
       {view === "coming-soon" && <ComingSoonPanel />}
 
-      {view === "setup" && <SetupPanel platform={platform} onConnect={onConnect} />}
+      {view === "setup" && <SetupPanel platform={platform} onConnect={onConnect} onDownload={onDownloadHelper} />}
 
       {view === "ready" && <ReadyPanel onConnect={onConnect} onBrowseSessions={onBrowseSessions} />}
 
@@ -918,14 +944,14 @@ function StateOverlay({
       )}
 
       {view === "timeout-new" && (
-        <TimeoutPanel variant="new" downloadUrl={platform.downloadUrl} onRetry={onRetry} />
+        <TimeoutPanel variant="new" onRetry={onRetry} onDownload={onDownloadHelper} />
       )}
       {view === "timeout-returning" && (
-        <TimeoutPanel variant="returning" downloadUrl={platform.downloadUrl} onRetry={onRetry} />
+        <TimeoutPanel variant="returning" onRetry={onRetry} onDownload={onDownloadHelper} />
       )}
 
       {view === "legacy-waiting" && pairingTimedOut && (
-        <TimeoutPanel variant="returning" downloadUrl={platform.downloadUrl} onRetry={onRetry} />
+        <TimeoutPanel variant="returning" onRetry={onRetry} onDownload={onDownloadHelper} />
       )}
 
       {view === "legacy-waiting" && !pairingTimedOut && (
@@ -1076,7 +1102,15 @@ function ReadyPanel({ onConnect, onBrowseSessions }: { onConnect: () => void; on
 }
 
 // Screen ① — the numbered one-time setup (unpaired). No deep link has fired here.
-function SetupPanel({ platform, onConnect }: { platform: TerminalPlatform; onConnect: () => void }) {
+function SetupPanel({
+  platform,
+  onConnect,
+  onDownload,
+}: {
+  platform: TerminalPlatform;
+  onConnect: () => void;
+  onDownload: () => void;
+}) {
   const copy = FIRST_RUN_COPY.setup;
   return (
     <div className="flex w-full max-w-lg flex-col text-left">
@@ -1088,14 +1122,13 @@ function SetupPanel({ platform, onConnect }: { platform: TerminalPlatform; onCon
 
       <SetupStep n={1} title={copy.step1Title}>
         <p className="mb-2.5 text-[12.5px] text-zinc-400">{copy.step1Desc}</p>
-        <a
-          href={platform.downloadUrl ?? TERMINAL_HELPER_DOWNLOAD_URL}
-          target="_blank"
-          rel="noopener noreferrer"
+        <button
+          type="button"
+          onClick={onDownload}
           className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md bg-emerald-500 px-4 text-sm font-semibold text-emerald-950 hover:bg-emerald-400"
         >
           <Download className="h-4 w-4" /> {platform.downloadLabel}
-        </a>
+        </button>
         {/* We can't reliably tell Apple Silicon from Intel client-side (see
             platform.ts), so the primary button always targets arm64 and Intel
             users self-identify via this opt-in link rather than being silently
@@ -1164,15 +1197,14 @@ function ConnectingPanel({ returning }: { returning: boolean }) {
 // Screen ④ — the calm ~8s fallback. `variant` picks the first-timer vs returning copy.
 function TimeoutPanel({
   variant,
-  downloadUrl,
   onRetry,
+  onDownload,
 }: {
   variant: "new" | "returning";
-  downloadUrl: string | null;
   onRetry: () => void;
+  onDownload: () => void;
 }) {
   const copy = variant === "new" ? FIRST_RUN_COPY.timeoutNew : FIRST_RUN_COPY.timeoutReturning;
-  const href = downloadUrl ?? TERMINAL_HELPER_DOWNLOAD_URL;
   const secondaryLabel = variant === "new" ? FIRST_RUN_COPY.timeoutNew.download : FIRST_RUN_COPY.timeoutReturning.reinstall;
   const footer = variant === "new" ? FIRST_RUN_COPY.timeoutNew.hint : FIRST_RUN_COPY.timeoutReturning.reassure;
   return (
@@ -1187,14 +1219,9 @@ function TimeoutPanel({
         >
           <RotateCw className="h-4 w-4" /> {copy.retry}
         </Button>
-        <a
-          href={href}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-zinc-700 bg-zinc-800/60 px-4 text-sm font-semibold text-zinc-200 hover:bg-zinc-700"
-        >
+        <button type="button" onClick={onDownload} className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-md border border-zinc-700 bg-zinc-800/60 px-4 text-sm font-semibold text-zinc-200 hover:bg-zinc-700">
           <Download className="h-4 w-4" /> {secondaryLabel}
-        </a>
+        </button>
       </div>
       <p className="text-[11.5px] text-zinc-500">{footer}</p>
     </>
