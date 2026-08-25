@@ -53,8 +53,15 @@ export const FIRST_RUN_COPY = {
     download: "Download for Windows",
     hint: "The download unlocks automatically when Windows support ships.",
   },
+  ready: {
+    title: "Ready when you are",
+    body: "This Mac is already set up. Start a new session, or pick up one of your other sessions.",
+    cta: "Start new session",
+    browse: "View my other sessions",
+  },
   pill: {
     setup: "One-time setup",
+    ready: "Ready",
     notConnected: "Not connected yet",
     comingSoon: "Coming soon",
   },

@@ -685,33 +685,106 @@ describe("TerminalSessionView — auto-accept badge (task d3de150c)", () => {
   it("shows the Auto-accept badge while connected", () => {
     installMockSessionWithStatus("connected", true);
     renderView(false);
-    expect(screen.getByText("Auto-accept")).toBeInTheDocument();
+    expect(screen.getByText("Auto mode")).toBeInTheDocument();
   });
 
   it("shows the Auto-accept badge while disconnected — NOT gated on status === connected", () => {
     installMockSessionWithStatus("disconnected", true);
     renderView(false);
-    expect(screen.getByText("Auto-accept")).toBeInTheDocument();
+    expect(screen.getByText("Auto mode")).toBeInTheDocument();
   });
 
   it("shows the Auto-accept badge while waiting-to-pair/reconnecting", () => {
     installMockSessionWithStatus("waiting-to-pair", true);
     renderView(false);
-    expect(screen.getByText("Auto-accept")).toBeInTheDocument();
+    expect(screen.getByText("Auto mode")).toBeInTheDocument();
   });
 
   it("never shows the badge when the session was not launched with the flag", () => {
     installMockSessionWithStatus("connected", false);
     renderView(false);
-    expect(screen.queryByText("Auto-accept")).not.toBeInTheDocument();
+    expect(screen.queryByText("Auto mode")).not.toBeInTheDocument();
   });
 
   it("renders an accessible title explaining the mode, not just an icon", () => {
     installMockSessionWithStatus("connected", true);
     renderView(false);
-    expect(screen.getByText("Auto-accept").closest("span")).toHaveAttribute(
+    expect(screen.getByText("Auto mode").closest("span")).toHaveAttribute(
       "title",
-      expect.stringContaining("without confirmation"),
+      expect.stringContaining("approves routine edits and commands itself"),
     );
+  });
+});
+
+// Nick, 2026-08-25: "When I close the last terminal, and the panel correctly
+// collapses, when I open it I see [the one-time setup wizard]". The dock
+// replaces the last-closed tab with a pristine entry whose paired
+// auto-connect is deliberately suppressed (ending a session must never
+// relaunch one), so the hook sits at idle + paired — and resolveDockView
+// used to send that straight to the install wizard. It now renders a
+// resting "Ready" screen whose primary button is the same connect the
+// wizard's own Connect fires.
+describe("TerminalSessionView — idle + paired shows the Ready screen, not the install wizard", () => {
+  function installMockIdlePairedSession() {
+    const actions = mockActions();
+    mockedUseTerminalSession.mockImplementation((): UseTerminalSessionResult => {
+      const containerRef = useRef<HTMLDivElement | null>(null);
+      lastContainerRef = containerRef;
+      return {
+        state: { status: "idle", sessionId: null, errorKind: null, endedReason: null, closeCode: null, closeReason: null },
+        launchPhase: "idle",
+        peerDegraded: false,
+        helperVersion: null,
+        pair: null,
+        cwd: null,
+        claudeSessionId: null,
+        readOnly: false,
+        autoAccept: false,
+        inputEnabled: false,
+        platform: { os: "mac", isAppleSilicon: true, supported: true, downloadLabel: "Download", downloadUrl: null },
+        paired: true,
+        xtermReady: true,
+        containerRef,
+        pairingTimedOut: false,
+        actions,
+      };
+    });
+    return actions;
+  }
+
+  function renderIdleView(onBrowseSessions?: () => void) {
+    return render(
+      <TerminalSessionView
+        entry={baseEntry()}
+        descriptor={{ ideaId: "idea-1", ideaTitle: "My Idea", ideaGithubUrl: null }}
+        label="Session 1"
+        isActive
+        expanded
+        onRequestExpand={vi.fn()}
+        autoConnectWhenExpanded={false}
+        onReportSummary={vi.fn()}
+        onRegisterActions={vi.fn()}
+        onAnnounce={vi.fn()}
+        onBrowseSessions={onBrowseSessions}
+      />,
+    );
+  }
+
+  it("renders the Ready screen and NOT the download/setup wizard for a paired Mac", () => {
+    installMockIdlePairedSession();
+    renderIdleView();
+    expect(screen.getByTestId("ready-panel")).toBeInTheDocument();
+    expect(screen.queryByText(/Download for Mac/)).not.toBeInTheDocument();
+    expect(screen.queryByText(/one-time setup/i)).not.toBeInTheDocument();
+  });
+
+  it("'Start new session' fires the same connect the wizard's Connect does; the browse link opens the chooser", () => {
+    const actions = installMockIdlePairedSession();
+    const onBrowseSessions = vi.fn();
+    renderIdleView(onBrowseSessions);
+    fireEvent.click(screen.getByRole("button", { name: "Start new session" }));
+    expect(actions.connect).toHaveBeenCalledWith({ autoLaunch: true });
+    fireEvent.click(screen.getByRole("button", { name: "View my other sessions" }));
+    expect(onBrowseSessions).toHaveBeenCalledTimes(1);
   });
 });

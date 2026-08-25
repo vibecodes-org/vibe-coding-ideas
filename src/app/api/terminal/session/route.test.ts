@@ -232,16 +232,16 @@ describe("POST /api/terminal/session — effective auto-accept resolution (task 
     expect(body).not.toHaveProperty("permissionMode");
   });
 
-  it("resolves to the literal 'acceptEdits' when the user's own preference is on", async () => {
+  it("resolves to the literal 'auto' when the user's own preference is on", async () => {
     tableResults.users = { data: { terminal_model: null, terminal_auto_accept: true }, error: null };
 
     const res = await POST(req({ ideaId: IDEA_1 }));
     const body = await res.json();
-    expect(body.permissionMode).toBe("acceptEdits");
+    expect(body.permissionMode).toBe("auto");
   });
 
   it("has no platform-wide default input — a platform_settings row never turns this on by itself", async () => {
-    tableResults.platform_settings = { data: { value: { permissionMode: "acceptEdits" } }, error: null };
+    tableResults.platform_settings = { data: { value: { permissionMode: "auto" } }, error: null };
 
     const res = await POST(req({ ideaId: IDEA_1 }));
     const body = await res.json();

@@ -33,8 +33,12 @@
  *  d3de150c) support — both landed in terminal/bridge on 22–24 Aug WITHOUT a
  *  helper release, so every 0.3.4 install silently ignored them. Lesson: a
  *  bridge/shared change the app relies on is not shipped until the helper is
- *  rebuilt, released, and this constant is bumped. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.5";
+ *  rebuilt, released, and this constant is bumped. 0.3.6 (same day):
+ *  the auto-accept toggle now launches Claude Code's `auto` permission
+ *  mode — what Nick actually asked for on card d3de150c — instead of the
+ *  narrower `acceptEdits`; the bridge/shared whitelist accepts both for
+ *  deploy skew. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.6";
 
 export type HelperVersionParts = readonly [number, number, number];
 

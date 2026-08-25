@@ -249,7 +249,7 @@ export async function updateTerminalModel(model: string | null): Promise<string 
 
 // ── Terminal auto-accept mode (task d3de150c "Terminal mode") ──────────────
 // Per-user opt-in: fresh in-app terminal sessions launch with
-// `claude --permission-mode acceptEdits` when true. Self-only, same "lives
+// `claude --permission-mode auto` when true. Self-only, same "lives
 // inside the Model Tiers dialog's Terminal sessions group" posture as the
 // starting-model actions above. Deliberately NO platform-wide default and
 // NO admin action mirroring updatePlatformTerminalModelDefault — a safety

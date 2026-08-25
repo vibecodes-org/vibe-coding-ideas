@@ -48,7 +48,7 @@ export type Database = {
            *  verbatim as `claude --model <value>` on fresh sessions only. */
           terminal_model: string | null;
           /** Task d3de150c ("Terminal mode") — opt-in: fresh in-app terminal
-           *  sessions launch with `claude --permission-mode acceptEdits`
+           *  sessions launch with `claude --permission-mode auto`
            *  when true. Default false. Never applies to a resumed session,
            *  and has no platform-wide default (per-user only, safety
            *  setting) — see src/lib/terminal/auto-accept-mode.ts. */
