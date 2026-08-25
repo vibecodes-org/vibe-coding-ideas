@@ -2166,6 +2166,44 @@ describe("TerminalDock — closing a non-last tab must not collapse the panel (f
       "true",
     );
   });
+
+  // The actual root cause, found by reproducing in Nick's own browser: the
+  // panel never collapsed — `expanded` stayed true — its BODY went blank.
+  // Split view was on, the freshly opened 2nd tab held pane focus ("Typing
+  // here"), and closing it left the split's `paneKeys` still naming the
+  // closed key for one commit — long enough for the "keep activeKey on the
+  // focused pane" effect to re-point `activeKey` at the dead session,
+  // overriding `removeEntry`'s neighbor pick. With one tab left nothing in
+  // the body matched `activeKey`, the remaining tab rendered
+  // aria-selected="false", and the status chip fell back to idle
+  // ("One-time setup"). Programmatic/keyboard closes never focused the pane,
+  // which is why the three tests above passed all along.
+  it("closing the FOCUSED pane of a 2-up split leaves the remaining tab selected — the body must not go blank (root cause of the 'panel collapsed' report)", async () => {
+    stubFetch(Promise.resolve([liveElsewhereRow()]));
+    render(<TerminalDock ideaId="idea-1" ideaTitle="My Idea" ideaGithubUrl={null} />);
+    const [firstKey, secondKey] = await mintTwoSessions();
+
+    fireEvent.click(screen.getByRole("button", { name: "Split view: show two sessions side by side" }));
+    await waitFor(() => expect(screen.getByTestId(`pane-indicator-${secondKey}`)).toBeInTheDocument());
+    // Put keyboard focus in the SECOND pane — exactly where a real user is
+    // after opening it (the new tab takes focus) and where a mouse click
+    // on its × leaves it.
+    fireEvent.focus(screen.getByTestId(`pane-input-${secondKey}`));
+    await waitFor(() => expect(screen.getByTestId(`pane-indicator-${secondKey}`).textContent).toBe("Typing here"));
+
+    fireEvent.click(screen.getByTestId(`report-connected-${secondKey}`));
+    fireEvent.click(
+      within(tabContainer(secondKey)).getByRole("button", { name: /^(End session and close tab|Close tab):/ }),
+    );
+    fireEvent.click(within(tabContainer(secondKey)).getByRole("button", { name: /^Confirm end session:/ }));
+
+    await waitFor(() => expect(screen.getAllByTestId("session-view")).toHaveLength(1));
+    expect(screen.getByTestId("session-view").dataset.key).toBe(firstKey);
+    // `aria-selected` is driven straight off `activeKey` — the exact value
+    // that was left dangling on the closed session's key.
+    await waitFor(() => expect(tabContainer(firstKey)).toHaveAttribute("aria-selected", "true"));
+    expect(screen.getByRole("button", { name: /Collapse terminal panel/ })).toHaveAttribute("aria-expanded", "true");
+  });
 });
 
 // Multi-terminal reload restore (Nick's field report 2026-08-22): two dock
