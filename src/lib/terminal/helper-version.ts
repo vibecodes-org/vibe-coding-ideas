@@ -26,9 +26,15 @@
  *  0.3.4 (Bug B, Nick's field test 2026-08-15) fixes a promptless/Resume
  *  launch's PTY spawning at a hardcoded 80x24 — it now spawns at the
  *  browser's real panel size, carried on the SAME launch deep link (see
- *  terminal/bridge/src/spawn-dims.js). NOT yet built/notarized/published —
- *  bumped here so the recommended-version gate is ready the moment it is. */
-export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.4";
+ *  terminal/bridge/src/spawn-dims.js). 0.3.5 (Nick's field report
+ *  2026-08-25: fresh sessions started on the machine's default model, not
+ *  the configured one) is the first helper that actually ships the bridge's
+ *  `--model` (task c4ca2d95) and `--permission-mode` auto-accept (task
+ *  d3de150c) support — both landed in terminal/bridge on 22–24 Aug WITHOUT a
+ *  helper release, so every 0.3.4 install silently ignored them. Lesson: a
+ *  bridge/shared change the app relies on is not shipped until the helper is
+ *  rebuilt, released, and this constant is bumped. */
+export const MINIMUM_RECOMMENDED_HELPER_VERSION = "0.3.5";
 
 export type HelperVersionParts = readonly [number, number, number];
 
